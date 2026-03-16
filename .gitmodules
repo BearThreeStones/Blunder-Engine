@@ -1,0 +1,31 @@
+[submodule "engine/3rdparty/EASTL"]
+	path = engine/3rdparty/EASTL
+	url = https://github.com/electronicarts/EASTL.git
+[submodule "engine/3rdparty/spdlog"]
+	path = engine/3rdparty/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "engine/3rdparty/glfw"]
+	path = engine/3rdparty/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "engine/3rdparty/imgui"]
+	path = engine/3rdparty/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking
+[submodule "engine/3rdparty/glm"]
+	path = engine/3rdparty/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "engine/3rdparty/cgltf"]
+	path = engine/3rdparty/cgltf
+	url = https://github.com/jkuhlmann/cgltf.git
+[submodule "engine/3rdparty/assimp"]
+	path = engine/3rdparty/assimp
+	url = https://github.com/assimp/assimp.git
+[submodule "engine/3rdparty/tracy"]
+	path = engine/3rdparty/tracy
+	url = https://github.com/wolfpld/tracy.git
+[submodule "engine/3rdparty/SDL"]
+	path = engine/3rdparty/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "engine/3rdparty/VulkanMemoryAllocator"]
+	path = engine/3rdparty/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
