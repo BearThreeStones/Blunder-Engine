@@ -1,0 +1,122 @@
+#include "runtime/function/global/global_context.h"
+
+#include "runtime/core/layer/layer_stack.h"
+#include "runtime/core/log/log_system.h"
+#include "runtime/engine.h"
+// #include "runtime/function/framework/world/world_manager.h"
+#include "runtime/function/imgui/imgui_system.h"
+#include "runtime/function/render/render_system.h"
+#include "runtime/function/render/vulkan/vulkan_swapchain.h"
+#include "runtime/platform/input/input_system.h"
+// #include "runtime/function/particle/particle_manager.h"
+// #include "runtime/function/physics/physics_manager.h"
+// #include "runtime/function/render/debugdraw/debug_draw_manager.h"
+// #include "runtime/function/render/render_debug_config.h"
+#include "runtime/platform/window/window_system.h"
+// #include "runtime/platform/file_service/file_service.h"
+// #include "runtime/resource/asset_manager/asset_manager.h"
+// #include "runtime/resource/config_manager/config_manager.h"
+
+namespace Blunder {
+RuntimeGlobalContext g_runtime_global_context;
+
+void RuntimeGlobalContext::startSystems() {
+  m_memory_system.initialize();
+
+  // m_config_manager = eastl::make_shared<ConfigManager>();
+  // m_config_manager->initialize(config_file_path);
+
+  // m_file_system = eastl::make_shared<FileSystem>();
+
+  m_logger_system = eastl::make_shared<LogSystem>();
+
+  // m_asset_manager = eastl::make_shared<AssetManager>();
+
+  // m_physics_manager = eastl::make_shared<PhysicsManager>();
+  // m_physics_manager->initialize();
+
+  // m_world_manager = eastl::make_shared<WorldManager>();
+  // m_world_manager->initialize();
+
+  m_window_system = eastl::make_shared<WindowSystem>();
+  WindowCreateInfo window_create_info;
+  m_window_system->initialize(window_create_info);
+
+  // RenderSystem must be created BEFORE ImGuiSystem (owns Vulkan context)
+  m_render_system = eastl::make_shared<RenderSystem>();
+  RenderSystemInitInfo render_init_info;
+  render_init_info.window = m_window_system->getWindow();
+#ifdef NDEBUG
+  render_init_info.enable_validation = false;
+#else
+  render_init_info.enable_validation = true;
+#endif
+  m_render_system->initialize(render_init_info);
+
+  // ImGuiSystem uses engine's Vulkan context and render pass
+  m_imgui_system = eastl::make_shared<ImGuiSystem>();
+  ImGuiSystemInitInfo imgui_init_info;
+  imgui_init_info.window = m_window_system->getWindow();
+  imgui_init_info.vulkan_context = m_render_system->getVulkanContext();
+  imgui_init_info.render_pass = m_render_system->getRenderPass();
+  imgui_init_info.image_count = m_render_system->getSwapchain()->getImageCount();
+  m_imgui_system->initialize(imgui_init_info);
+
+  m_input_system = eastl::make_shared<InputSystem>();
+  m_input_system->initialize();
+
+  m_layer_stack = eastl::make_shared<LayerStack>();
+
+  // m_particle_manager = eastl::make_shared<ParticleManager>();
+  // m_particle_manager->initialize();
+
+  // m_debugdraw_manager = eastl::make_shared<DebugDrawManager>();
+  // m_debugdraw_manager->initialize();
+
+  // m_render_debug_config = eastl::make_shared<RenderDebugConfig>();
+}
+
+void RuntimeGlobalContext::shutdownSystems() {
+  // m_render_debug_config.reset();
+
+  // m_debugdraw_manager.reset();
+
+  m_layer_stack.reset();
+
+  // ImGuiSystem must be shutdown BEFORE RenderSystem (uses Vulkan context)
+  if (m_imgui_system) {
+    m_imgui_system->shutdown();
+    m_imgui_system.reset();
+  }
+
+  if (m_render_system) {
+    m_render_system->shutdown();
+    m_render_system.reset();
+  }
+
+  if (m_input_system) {
+    m_input_system->shutdown();
+    m_input_system.reset();
+  }
+
+  m_window_system.reset();
+
+  // m_world_manager->clear();
+  // m_world_manager.reset();
+
+  // m_physics_manager->clear();
+  // m_physics_manager.reset();
+
+  // m_asset_manager.reset();
+
+  m_logger_system.reset();
+
+  m_memory_system.shutdown();
+
+  // m_file_system.reset();
+
+  // m_config_manager.reset();
+
+  // m_particle_manager.reset();
+}
+}  // namespace Blunder

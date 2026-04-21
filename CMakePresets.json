@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "vs2026-debug",
+      "displayName": "VS 2022 Debug",
+      "generator": "Visual Studio 17 2022",
+      "cmakeExecutable": "C:/Program Files/CMake/bin/cmake.exe",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/vs2026-debug",
+      "environment": {
+        "VULKAN_SDK": "C:/VulkanSDK/1.4.341.1"
+      },
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+      }
+    }
+  ]
+}
