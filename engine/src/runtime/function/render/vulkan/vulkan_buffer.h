@@ -1,9 +1,10 @@
 #pragma once
 
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
-#include <vk_mem_alloc.h>
 
 #include "EASTL/array.h"
 
@@ -12,10 +13,12 @@ namespace Blunder {
 class VulkanAllocator;
 
 struct Vertex {
-  glm::vec3 position;
+  glm::vec2 position;
   glm::vec3 color;
 
+  // 绑定描述
   static VkVertexInputBindingDescription getBindingDescription();
+  // 属性描述
   static eastl::array<VkVertexInputAttributeDescription, 2>
   getAttributeDescriptions();
 };

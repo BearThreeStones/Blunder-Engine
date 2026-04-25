@@ -6,6 +6,7 @@
 
 #include "EASTL/shared_ptr.h"
 #include "EASTL/unique_ptr.h"
+#include "EASTL/vector.h"
 
 struct GLFWwindow;
 
@@ -51,6 +52,10 @@ class RenderSystem final {
   eastl::shared_ptr<VulkanSync> m_sync;
   eastl::shared_ptr<VulkanPipeline> m_pipeline;
   eastl::unique_ptr<VulkanBuffer> m_vertex_buffer;
+  eastl::unique_ptr<VulkanBuffer> m_index_buffer;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_uniform_buffers;
+  VkDescriptorPool m_descriptor_pool{VK_NULL_HANDLE};
+  eastl::vector<VkDescriptorSet> m_descriptor_sets;
   uint32_t m_current_frame{0};
 };
 

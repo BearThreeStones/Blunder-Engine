@@ -22,7 +22,7 @@ Vertex::getAttributeDescriptions() {
 
   attribute_descriptions[0].binding = 0;
   attribute_descriptions[0].location = 0;
-  attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
   attribute_descriptions[0].offset =
       static_cast<uint32_t>(offsetof(Vertex, position));
 
@@ -35,6 +35,13 @@ Vertex::getAttributeDescriptions() {
   return attribute_descriptions;
 }
 
+/// <summary>
+/// 创建缓冲区
+/// </summary>
+/// <param name="allocator"></param>
+/// <param name="size"></param>
+/// <param name="usage"></param>
+/// <param name="memory_usage"></param>
 void VulkanBuffer::create(VulkanAllocator* allocator, VkDeviceSize size,
                           VkBufferUsageFlags usage,
                           VmaMemoryUsage memory_usage) {
@@ -53,9 +60,9 @@ void VulkanBuffer::create(VulkanAllocator* allocator, VkDeviceSize size,
   VmaAllocationCreateInfo allocation_info{};
   allocation_info.usage = memory_usage;
 
-  const VkResult result = vmaCreateBuffer(
-      m_allocator->getAllocator(), &buffer_info, &allocation_info, &m_buffer,
-      &m_allocation, nullptr);
+  const VkResult result =
+      vmaCreateBuffer(m_allocator->getAllocator(), &buffer_info,
+                      &allocation_info, &m_buffer, &m_allocation, nullptr);
   if (result != VK_SUCCESS) {
     LOG_FATAL("[VulkanBuffer::create] vmaCreateBuffer failed: {}",
               static_cast<int>(result));
@@ -63,7 +70,8 @@ void VulkanBuffer::create(VulkanAllocator* allocator, VkDeviceSize size,
 }
 
 void VulkanBuffer::destroy() {
-  if (m_allocator && m_buffer != VK_NULL_HANDLE && m_allocation != VK_NULL_HANDLE) {
+  if (m_allocator && m_buffer != VK_NULL_HANDLE &&
+      m_allocation != VK_NULL_HANDLE) {
     vmaDestroyBuffer(m_allocator->getAllocator(), m_buffer, m_allocation);
   }
 

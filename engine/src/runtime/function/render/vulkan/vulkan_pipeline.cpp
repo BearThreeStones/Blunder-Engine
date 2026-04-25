@@ -32,6 +32,7 @@ void VulkanPipeline::initialize(VulkanContext* context,
   m_slang_compiler = slang_compiler;
 
   createRenderPass();
+  createDescriptorSetLayout();
   createGraphicsPipeline();
   createFramebuffers();
   createCommandPool();
@@ -65,6 +66,11 @@ void VulkanPipeline::shutdown() {
   if (m_pipeline_layout != VK_NULL_HANDLE) {
     vkDestroyPipelineLayout(device, m_pipeline_layout, nullptr);
     m_pipeline_layout = VK_NULL_HANDLE;
+  }
+
+  if (m_descriptor_set_layout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, m_descriptor_set_layout, nullptr);
+    m_descriptor_set_layout = VK_NULL_HANDLE;
   }
 
   if (m_render_pass != VK_NULL_HANDLE) {
@@ -240,6 +246,8 @@ void VulkanPipeline::createGraphicsPipeline() {
   // 创建管线布局：描述管线使用的资源（如描述符集和推送常量）
   VkPipelineLayoutCreateInfo pipeline_layout_info{};
   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipeline_layout_info.setLayoutCount = 1;
+  pipeline_layout_info.pSetLayouts = &m_descriptor_set_layout;
   const VkResult layout_result = vkCreatePipelineLayout(
       device, &pipeline_layout_info, nullptr, &m_pipeline_layout);
   if (layout_result != VK_SUCCESS) {
@@ -280,6 +288,36 @@ void VulkanPipeline::createGraphicsPipeline() {
         "[VulkanPipeline::createGraphicsPipeline] vkCreateGraphicsPipelines "
         "failed: {}",
         static_cast<int>(pipeline_result));
+  }
+}
+
+/// <summary>
+/// 创建并初始化 Vulkan 描述符集布局 (VkDescriptorSetLayout)，将句柄存储到成员
+/// m_descriptor_set_layout；在 vkCreateDescriptorSetLayout
+/// 失败时记录致命日志并终止
+/// </summary>
+void VulkanPipeline::createDescriptorSetLayout() {
+  ASSERT(m_context);
+
+  VkDescriptorSetLayoutBinding ubo_layout_binding{};
+  ubo_layout_binding.binding = 0;
+  ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  ubo_layout_binding.descriptorCount = 1;
+  ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  ubo_layout_binding.pImmutableSamplers = nullptr;
+
+  VkDescriptorSetLayoutCreateInfo layout_info{};
+  layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layout_info.bindingCount = 1;
+  layout_info.pBindings = &ubo_layout_binding;
+
+  const VkResult result = vkCreateDescriptorSetLayout(
+      m_context->getDevice(), &layout_info, nullptr, &m_descriptor_set_layout);
+  if (result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[VulkanPipeline::createDescriptorSetLayout] "
+        "vkCreateDescriptorSetLayout failed: {}",
+        static_cast<int>(result));
   }
 }
 

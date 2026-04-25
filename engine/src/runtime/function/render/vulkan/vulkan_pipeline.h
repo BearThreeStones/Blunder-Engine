@@ -25,6 +25,9 @@ class VulkanPipeline final {
   VkRenderPass getRenderPass() const { return m_render_pass; }
   VkPipelineLayout getPipelineLayout() const { return m_pipeline_layout; }
   VkPipeline getGraphicsPipeline() const { return m_graphics_pipeline; }
+  VkDescriptorSetLayout getDescriptorSetLayout() const {
+    return m_descriptor_set_layout;
+  }
   VkCommandPool getCommandPool() const { return m_command_pool; }
   VkCommandBuffer getCommandBuffer(uint32_t frame_index) const {
     return m_command_buffers[frame_index];
@@ -35,6 +38,7 @@ class VulkanPipeline final {
 
  private:
   void createRenderPass();
+  void createDescriptorSetLayout();
   void createGraphicsPipeline();
   void createFramebuffers();
   void destroyFramebuffers();
@@ -45,6 +49,7 @@ class VulkanPipeline final {
   VulkanSwapchain* m_swapchain{nullptr};
   SlangCompiler* m_slang_compiler{nullptr};
   VkRenderPass m_render_pass{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_descriptor_set_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_pipeline_layout{VK_NULL_HANDLE};
   VkPipeline m_graphics_pipeline{VK_NULL_HANDLE};
   eastl::vector<VkFramebuffer> m_framebuffers;

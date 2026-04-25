@@ -14,7 +14,7 @@
 int main(int argc, char** argv) {
   // std::filesystem::path executable_path(argv[0]);
   // std::filesystem::path config_file_path =
-  //     executable_path.parent_path() / "PiccoloEditor.ini";
+  //     executable_path.parent_path() / "BlunderEditor.ini";
 
   Blunder::BlunderEngine* engine = new Blunder::BlunderEngine();
 
