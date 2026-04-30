@@ -15,3 +15,10 @@ add_subdirectory(SDL)
 # VMA - Vulkan Memory Allocator (header-only)
 add_library(vma INTERFACE)
 target_include_directories(vma INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/VulkanMemoryAllocator/include)
+
+# KTX - Khronos Texture Container Library
+set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TOOLS OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_DOC OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_VULKAN ON CACHE BOOL "" FORCE)
+add_subdirectory(ktx)

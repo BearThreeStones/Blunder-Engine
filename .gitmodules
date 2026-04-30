@@ -29,3 +29,6 @@
 [submodule "engine/3rdparty/VulkanMemoryAllocator"]
 	path = engine/3rdparty/VulkanMemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "engine/3rdparty/ktx"]
+	path = engine/3rdparty/ktx
+	url = https://github.com/KhronosGroup/KTX-Software.git
