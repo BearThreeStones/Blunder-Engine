@@ -29,10 +29,10 @@ const uint64_t k_fence_wait_timeout_ns = 1000000000ULL;
 struct GlobalUniformData {
   glm::mat4 model;
   glm::mat4 view;
-  glm::mat4 proj;
+  glm::mat4 projection;
 };
 
-// 一次性提交的 Buffer 拷贝工具函数：用于将 staging buffer 数据拷贝到 GPU 本地
+// 一次性提交的 Buffer 拷贝工具函数：用于将 staging buffer 数据拧贝到 GPU 本地
 // buffer
 void copyBuffer(VkDevice device, VkCommandPool command_pool, VkQueue queue,
                 VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) {
@@ -103,14 +103,13 @@ void copyBuffer(VkDevice device, VkCommandPool command_pool, VkQueue queue,
   vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
 }
 
-// 示例三角形顶点数据（位置 + 颜色）
-const Vertex k_triangle_vertices[] = {
-    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-};
+// 示例矩形顶点数据（位置 + 颜色）
+const Vertex k_quad_vertices[] = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+                                  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+                                  {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}}};
 
-const uint16_t k_triangle_indices[] = {0, 1, 2};
+const uint16_t k_quad_indices[] = {0, 1, 2, 2, 3, 0};
 
 }  // namespace
 
@@ -161,41 +160,41 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   // 创建 staging buffer，上传 CPU 顶点数据
   eastl::unique_ptr<VulkanBuffer> staging_buffer =
       eastl::make_unique<VulkanBuffer>();
-  staging_buffer->create(m_allocator.get(), sizeof(k_triangle_vertices),
+  staging_buffer->create(m_allocator.get(), sizeof(k_quad_vertices),
                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                          VMA_MEMORY_USAGE_CPU_TO_GPU);
-  staging_buffer->upload(k_triangle_vertices, sizeof(k_triangle_vertices));
+  staging_buffer->upload(k_quad_vertices, sizeof(k_quad_vertices));
 
   // 创建 GPU 本地顶点缓冲
   m_vertex_buffer = eastl::make_unique<VulkanBuffer>();
   m_vertex_buffer->create(
-      m_allocator.get(), sizeof(k_triangle_vertices),
+      m_allocator.get(), sizeof(k_quad_vertices),
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY);
 
   // 将 staging buffer 内容拷贝到 GPU 顶点缓冲
   copyBuffer(m_context->getDevice(), m_pipeline->getCommandPool(),
              m_context->getGraphicsQueue(), staging_buffer->getBuffer(),
-             m_vertex_buffer->getBuffer(), sizeof(k_triangle_vertices));
+             m_vertex_buffer->getBuffer(), sizeof(k_quad_vertices));
 
   staging_buffer->destroy();
 
   eastl::unique_ptr<VulkanBuffer> index_staging_buffer =
       eastl::make_unique<VulkanBuffer>();
-  index_staging_buffer->create(m_allocator.get(), sizeof(k_triangle_indices),
+  index_staging_buffer->create(m_allocator.get(), sizeof(k_quad_indices),
                                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                VMA_MEMORY_USAGE_CPU_TO_GPU);
-  index_staging_buffer->upload(k_triangle_indices, sizeof(k_triangle_indices));
+  index_staging_buffer->upload(k_quad_indices, sizeof(k_quad_indices));
 
   m_index_buffer = eastl::make_unique<VulkanBuffer>();
   m_index_buffer->create(
-      m_allocator.get(), sizeof(k_triangle_indices),
+      m_allocator.get(), sizeof(k_quad_indices),
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY);
 
   copyBuffer(m_context->getDevice(), m_pipeline->getCommandPool(),
              m_context->getGraphicsQueue(), index_staging_buffer->getBuffer(),
-             m_index_buffer->getBuffer(), sizeof(k_triangle_indices));
+             m_index_buffer->getBuffer(), sizeof(k_quad_indices));
 
   index_staging_buffer->destroy();
 
@@ -208,6 +207,7 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
                                  VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 
+  // 创建描述符池
   VkDescriptorPoolSize pool_size{};
   pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_size.descriptorCount = VulkanSync::k_max_frames_in_flight;
@@ -225,6 +225,7 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
               static_cast<int>(descriptor_pool_result));
   }
 
+  // 创建描述符集
   eastl::vector<VkDescriptorSetLayout> layouts(
       VulkanSync::k_max_frames_in_flight, m_pipeline->getDescriptorSetLayout());
   VkDescriptorSetAllocateInfo alloc_info{};
@@ -327,18 +328,27 @@ void RenderSystem::shutdown() {
 }
 
 void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
-  (void)delta_time;
+  m_elapsed_time += delta_time;
 
   GlobalUniformData ubo{};
-  ubo.model = glm::mat4(1.0f);
-  ubo.view =
-      glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
-                  glm::vec3(0.0f, 1.0f, 0.0f));
+
+  // 模型矩阵：围绕 Z 轴旋转，每秒旋转 90 度
+  ubo.model = glm::rotate(glm::mat4(1.0f), m_elapsed_time * glm::radians(90.0f),
+                           glm::vec3(0.0f, 0.0f, 1.0f));
+
+  // 视图矩阵：从 (2,2,2) 位置以 45 度角俯视原点
+  ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                         glm::vec3(0.0f, 0.0f, 0.0f),
+                         glm::vec3(0.0f, 0.0f, 1.0f));
+
   const VkExtent2D extent = m_swapchain->getExtent();
   const float aspect =
       static_cast<float>(extent.width) / static_cast<float>(extent.height);
-  ubo.proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
-  ubo.proj[1][1] *= -1.0f;
+
+  // 投影矩阵：透视投影，垂直视场角 45 度
+  glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
+  proj[1][1] *= -1.0f;
+  ubo.projection = proj;
 
   // 更新统一变量数据
   m_uniform_buffers[m_current_frame]->upload(&ubo, sizeof(ubo));
@@ -400,6 +410,8 @@ void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
   // 绑定图形管线
   vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                     m_pipeline->getGraphicsPipeline());
+
+  // 使用描述符集绑定统一缓冲区数据
   vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_pipeline->getPipelineLayout(), 0, 1,
                           &m_descriptor_sets[m_current_frame], 0, nullptr);
@@ -416,16 +428,16 @@ void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
   scissor.extent = m_swapchain->getExtent();
   vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-  // 绑定顶点缓冲并绘制三角形
+  // 绑定顶点缓冲并绘制矩形
   VkBuffer vertex_buffers[] = {m_vertex_buffer->getBuffer()};
   VkDeviceSize offsets[] = {0};
   vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
   vkCmdBindIndexBuffer(command_buffer, m_index_buffer->getBuffer(), 0,
                        VK_INDEX_TYPE_UINT16);
-  vkCmdDrawIndexed(command_buffer,
-                   static_cast<uint32_t>(sizeof(k_triangle_indices) /
-                                         sizeof(k_triangle_indices[0])),
-                   1, 0, 0, 0);
+  vkCmdDrawIndexed(
+      command_buffer,
+      static_cast<uint32_t>(sizeof(k_quad_indices) / sizeof(k_quad_indices[0])),
+      1, 0, 0, 0);
 
   // 可选叠加绘制（如 ImGui）
   if (overlay_fn) {

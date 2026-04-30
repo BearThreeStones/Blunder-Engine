@@ -57,6 +57,7 @@ class RenderSystem final {
   VkDescriptorPool m_descriptor_pool{VK_NULL_HANDLE};
   eastl::vector<VkDescriptorSet> m_descriptor_sets;
   uint32_t m_current_frame{0};
+  float m_elapsed_time{0.0f};
 };
 
 }  // namespace Blunder

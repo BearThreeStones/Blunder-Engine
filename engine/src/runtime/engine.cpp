@@ -90,26 +90,15 @@ void BlunderEngine::run() {
       g_runtime_global_context.m_window_system;
   ASSERT(window_system);
 
+  m_frame_timer.reset();
+
   while (!window_system->shouldClose()) {
     const float delta_time = calculateDeltaTime();
     tickOneFrame(delta_time);
   }
 }
 
-float BlunderEngine::calculateDeltaTime() {
-  float delta_time;
-  {
-    using namespace std::chrono;
-
-    steady_clock::time_point tick_time_point = steady_clock::now();
-    duration<float> time_span = duration_cast<duration<float>>(
-        tick_time_point - m_last_tick_time_point);
-    delta_time = time_span.count();
-
-    m_last_tick_time_point = tick_time_point;
-  }
-  return delta_time;
-}
+float BlunderEngine::calculateDeltaTime() { return m_frame_timer.tick(); }
 
 bool BlunderEngine::tickOneFrame(float delta_time) {
   g_runtime_global_context.m_memory_system.beginFrame();
@@ -158,8 +147,8 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 // }
 //
 bool BlunderEngine::rendererTick(float delta_time) {
-  g_runtime_global_context.m_render_system->tick(delta_time,
-      [](VkCommandBuffer cmd) {
+  g_runtime_global_context.m_render_system->tick(
+      delta_time, [](VkCommandBuffer cmd) {
         g_runtime_global_context.m_imgui_system->render(cmd);
       });
   return true;

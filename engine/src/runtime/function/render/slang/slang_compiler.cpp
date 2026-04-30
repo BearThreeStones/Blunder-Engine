@@ -119,6 +119,7 @@ SlangCompiler::ShaderResult SlangCompiler::compileShader(
   session_desc.targetCount = 1;
   session_desc.compilerOptionEntries = options;
   session_desc.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
+  session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
 
   Slang::ComPtr<slang::ISession> session;
   SlangResult result =

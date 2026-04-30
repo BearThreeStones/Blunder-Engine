@@ -11,6 +11,8 @@ add_library(engine_runtime
     "function/imgui/imgui_system.cpp"
     "core/log/log_system.h"
     "core/log/log_system.cpp"
+    "core/base/high_precision_timer.h"
+    "core/base/high_precision_timer.cpp"
     "core/base/macro.h"
     "core/memory/allocators.h"
     "core/memory/allocators.cpp"

@@ -1,0 +1,206 @@
+================================================================================
+BLUNDER-ENGINE CODEBASE ANALYSIS - COMPLETE SUMMARY
+================================================================================
+
+ANALYSIS DATE: 2025-02-05
+REPOSITORY: D:\Dev\Blunder-Engine
+SCOPE: GLM integration, math headers, runtime library structure
+
+================================================================================
+KEY FINDINGS
+================================================================================
+
+1. GLM IS INTEGRATED
+   ✓ Location: engine/3rdparty/glm/ (header-only, v1.0+)
+   ✓ CMake: Linked as PUBLIC dependency to engine_runtime
+   ✓ Structure: Ready for immediate use
+   ✗ Usage: Not yet utilized in engine source code
+   
+   Command: target_link_libraries(engine_runtime PUBLIC glm)
+
+2. CRITICAL MISSING HEADER
+   ✗ File: engine/src/runtime/core/math/math.h
+   ✗ Status: DOES NOT EXIST (directory empty)
+   ✓ Referenced by: input_system.h (line 3)
+   ✗ Impact: Build will FAIL
+   
+   Code snippet from input_system.h:
+   ┌─────────────────────────────────────────┐
+   │ #include "runtime/core/math/math.h"     │
+   │                                         │
+   │ class InputSystem {                     │
+   │  public:                                │
+   │   Radian m_cursor_delta_yaw{0};         │
+   │   Radian m_cursor_delta_pitch{0};       │
+   │ };                                      │
+   └─────────────────────────────────────────┘
+
+3. CODE PATTERNS IDENTIFIED
+   • Header guard: #pragma once
+   • Namespace: namespace Blunder { }
+   • Include order: <stdlib>, <3rdparty>, "internal"
+   • Members: Type m_name{default};
+   • Enums: enum class Name : type { };
+   • Templates: Perfect forwarding pattern
+
+4. RUNTIME LIBRARY CONFIGURATION
+   ✓ Public includes: engine/src/runtime/
+   ✓ Exposed headers: core/*, function/*, engine.h
+   ✓ Public deps: glm, spdlog
+   ✓ Private deps: glfw
+
+================================================================================
+DETAILED FINDINGS
+================================================================================
+
+GLM INTEGRATION ANALYSIS
+┌────────────────────────────────────────┐
+│ Location    │ engine/3rdparty/glm/    │
+│ Type        │ Header-only C++ library │
+│ Version     │ 1.0+ (C++17 required)   │
+│ CMake       │ glm::glm target         │
+│ Headers     │ vec*.hpp, mat*.hpp, ... │
+│ Extensions  │ GTC, GTX modules        │
+│ Test Files  │ 150+ comprehensive      │
+└────────────────────────────────────────┘
+
+MISSING HEADER DETAILS
+┌────────────────────────────────────────────────────┐
+│ File              │ math.h                         │
+│ Full Path         │ engine/src/runtime/core/math/  │
+│ Directory Status  │ EXISTS (empty)                 │
+│ Referenced By     │ input_system.h (line 3)        │
+│ Required Type     │ Radian                         │
+│ Build Status      │ WILL FAIL                      │
+│ Priority          │ CRITICAL - blocks compilation  │
+└────────────────────────────────────────────────────┘
+
+TYPE USAGE
+┌────────────────────────────────────────┐
+│ Type           │ Used In               │
+│ Radian         │ InputSystem (2 places)│
+│ Vec2/3/4       │ Not yet used          │
+│ Mat2/3/4       │ Not yet used          │
+│ Quat           │ Not yet used          │
+└────────────────────────────────────────┘
+
+DIRECTORY STRUCTURE
+┌─────────────────────────────────────────────────┐
+│ engine/src/runtime/                            │
+│ ├── core/                                       │
+│ │   ├── base/macro.h           [32 lines]      │
+│ │   ├── log/log_system.h        [52 lines]      │
+│ │   └── math/                   [EMPTY]         │
+│ ├── function/                                   │
+│ │   ├── global/global_context.h [46 lines]      │
+│ │   ├── input/input_system.h    [49 lines]*    │
+│ │   └── (other frameworks)                     │
+│ └── CMakeLists.txt                              │
+│                                                │
+│ *Marked = References missing math.h            │
+└─────────────────────────────────────────────────┘
+
+CMakeLists.txt CONFIGURATION
+┌──────────────────────────────────────────────────┐
+│ add_library(engine_runtime ...)                 │
+│                                                │
+│ target_include_directories(engine_runtime      │
+│     PUBLIC                                     │
+│         ${CMAKE_CURRENT_SOURCE_DIR}            │
+│ )                                              │
+│                                                │
+│ target_link_libraries(engine_runtime            │
+│     PUBLIC   glm spdlog                        │
+│     PRIVATE  glfw                              │
+│ )                                              │
+└──────────────────────────────────────────────────┘
+
+EXPOSED PUBLIC HEADERS
+┌──────────────────────────────────────┐
+│ "runtime/core/base/macro.h"         │ ✓
+│ "runtime/core/log/log_system.h"     │ ✓
+│ "runtime/core/math/math.h"          │ ✗ MISSING
+│ "runtime/function/input/..."        │ ✓
+│ "runtime/function/global/..."       │ ✓
+│ "runtime/engine.h"                  │ ✓
+└──────────────────────────────────────┘
+
+================================================================================
+CODE PATTERNS REFERENCE
+================================================================================
+
+HEADER PATTERN
+┌────────────────────────────────┐
+│ #pragma once                   │
+│                                │
+│ #include <stdlib>              │
+│ #include <3rdparty>            │
+│ #include "runtime/path"        │
+│                                │
+│ namespace Blunder {            │
+│   class MyClass { };           │
+│ }                              │
+└────────────────────────────────┘
+
+CLASS MEMBERS
+┌────────────────────────────────┐
+│ private:                       │
+│   Type m_member_name{default}; │
+│   unsigned int m_flags{0};     │
+│   Radian m_angle{0};           │
+└────────────────────────────────┘
+
+LOGGING MACROS
+┌────────────────────────────────┐
+│ #define LOG_DEBUG(...)         │
+│   LOG_HELPER(LogLevel::debug,  │
+│       __VA_ARGS__)             │
+│                                │
+│ Usage: LOG_DEBUG("message")    │
+└────────────────────────────────┘
+
+ENUM PATTERN
+┌────────────────────────────────┐
+│ enum class Name : type {       │
+│   value1 = 1 << 0,             │
+│   value2 = 1 << 1,             │
+│   ...                          │
+│   invalid = (type)(1 << 31)    │
+│ };                             │
+└────────────────────────────────┘
+
+================================================================================
+WHAT NEEDS TO BE CREATED
+================================================================================
+
+FILE: engine/src/runtime/core/math/math.h
+
+MINIMUM CONTENT:
+┌──────────────────────────────────────────────┐
+│ #pragma once                                 │
+│                                              │
+│ #include <cmath>                             │
+│ #include <glm/glm.hpp>                       │
+│ #include <glm/gtc/quaternion.hpp>            │
+│ #include <glm/gtc/matrix_transform.hpp>     │
+│                                              │
+│ namespace Blunder {                          │
+│                                              │
+│ class Radian {                               │
+│  public:                                     │
+│   Radian() = default;                        │
+│   explicit Radian(float value)               │
+│       : m_value(value) {}                    │
+│   float get() const { return m_value; }     │
+│   operator float() const                    │
+│       { return m_value; }                    │
+│  private:                                    │
+│   float m_value = 0.0f;                      │
+│ };                                           │
+│                                              │
+│ using Vec2 = glm::vec2;                      │
+│ using Vec3 = glm::vec3;                      │
+│ using Vec4 = glm::vec4;                      │
+│ using IVec2 = glm::ivec2;                    │
+│ using IVec3 = glm::ivec3;                    │
+│ using IVec4 = glm::ivec4;             

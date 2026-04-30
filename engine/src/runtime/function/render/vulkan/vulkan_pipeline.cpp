@@ -107,7 +107,7 @@ void VulkanPipeline::createRenderPass() {
   color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-  // 定义一个附件引用，指定子通道将使用哪个附件以及在渲染过程中如何访问它
+  // 定义一个附件引用，指定子通道将使用哪个附件，以及在渲染过程中如何访问它
   VkAttachmentReference color_attachment_ref{};
   color_attachment_ref.attachment = 0;
   color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -211,7 +211,7 @@ void VulkanPipeline::createGraphicsPipeline() {
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0f;
   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-  rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE;
 
   // 设置多重采样状态：定义如何执行多重采样（MSAA）

@@ -1,0 +1,313 @@
+================================================================================
+BLUNDER-ENGINE CODEBASE SEARCH - FINDINGS SUMMARY
+================================================================================
+
+1. GLM INTEGRATION STATUS
+================================================================================
+
+FINDING: GLM is INTEGRATED but NOT ACTIVELY USED in main codebase
+
+Location: engine/3rdparty/glm/
+Status: Header-only library, version 1.0+
+CMake: Linked as PUBLIC dependency in engine_runtime target
+  - target_link_libraries(engine_runtime PUBLIC glm)
+
+GLM Files Found: 150+ test files in 3rdparty directory
+  - Tests cover all GLM features (vectors, matrices, quaternions, SIMD)
+  - Extensions included: GTC (qualified types), GTX (extended functions)
+  
+Engine Source (engine/src/): NO direct GLM includes found
+  - Structure ready for GLM integration
+  - Include paths configured correctly
+  - GLM accessible via CMake linking
+
+
+2. MISSING HEADER CRITICAL FINDING
+================================================================================
+
+FILE MISSING: engine/src/runtime/core/math/math.h
+DIRECTORY: engine/src/runtime/core/math/ (EXISTS BUT EMPTY)
+
+REFERENCED BY:
+  └─ engine/src/runtime/function/input/input_system.h (Line 3)
+     #include "runtime/core/math/math.h"
+
+REQUIRED TYPE:
+  - Radian (used in input_system.h for angle measurements)
+
+CODE SNIPPET FROM input_system.h:
+---
+#include "runtime/core/math/math.h"
+
+class InputSystem {
+ public:
+  Radian m_cursor_delta_yaw{0};      // Type from math.h
+  Radian m_cursor_delta_pitch{0};    // Type from math.h
+};
+---
+
+
+3. MATH-RELATED CODE PATTERNS
+================================================================================
+
+HEADER GUARD PATTERN:
+  #pragma once
+
+INCLUDE CONVENTIONS:
+  - External: #include <spdlog/spdlog.h>
+  - Internal: #include "runtime/core/log/log_system.h"
+
+NAMESPACE CONVENTION:
+  namespace Blunder { ... }
+
+TEMPLATE PATTERN:
+  template <typename... TARGS>
+  void log(LogLevel level, TARGS&&... args) { ... }
+
+ENUM PATTERN:
+  enum class GameCommand : unsigned int { ... }
+
+MEMBER VARIABLE PATTERN:
+  type m_member_name{default_value};
+
+
+4. RUNTIME LIBRARY INCLUDE EXPOSURE
+================================================================================
+
+RUNTIME CMakeLists.txt CONFIGURATION:
+  Location: engine/src/runtime/CMakeLists.txt
+  
+  add_library(engine_runtime ...)
+  
+  target_include_directories(engine_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  
+  target_link_libraries(engine_runtime
+      PUBLIC glm spdlog
+      PRIVATE glfw
+  )
+
+EXPOSED PUBLIC HEADERS (via CMAKE_CURRENT_SOURCE_DIR):
+  - "runtime/core/base/macro.h"
+  - "runtime/core/log/log_system.h"
+  - "runtime/core/math/math.h"          ← MISSING
+  - "runtime/function/input/input_system.h"
+  - "runtime/function/global/global_context.h"
+  - "runtime/engine.h"
+
+DEPENDENCY VISIBILITY:
+  PUBLIC (Exposed to consumers):
+    - glm: GLM math library
+    - spdlog: Logging framework
+  
+  PRIVATE (Internal only):
+    - glfw: Window system
+
+
+5. DIRECTORY STRUCTURE
+================================================================================
+
+engine/src/runtime/
+├── CMakeLists.txt
+├── engine.h / engine.cpp
+├── core/
+│   ├── base/
+│   │   └── macro.h              [Contains: LOG_DEBUG, LOG_INFO, ASSERT, etc.]
+│   ├── log/
+│   │   ├── log_system.h         [Contains: LogSystem class]
+│   │   └── log_system.cpp
+│   └── math/                     [EMPTY - NEEDS math.h]
+├── function/
+│   ├── global/
+│   │   ├── global_context.h     [Contains: RuntimeGlobalContext]
+│   │   └── global_context.cpp
+│   ├── input/
+│   │   ├── input_system.h       [Needs math.h for Radian type]
+│   │   └── input_system.cpp
+│   ├── framework/
+│   ├── physics/
+│   └── render/
+├── platform/
+└── resource/
+
+
+6. KEY CODE SNIPPETS
+================================================================================
+
+FILE: engine/src/runtime/function/input/input_system.h
+---
+#pragma once
+
+#include "runtime/core/math/math.h"
+
+namespace Blunder {
+enum class GameCommand : unsigned int {
+  forward = 1 << 0,
+  backward = 1 << 1,
+  left = 1 << 2,
+  right = 1 << 3,
+  jump = 1 << 4,
+  squat = 1 << 5,
+  sprint = 1 << 6,
+  fire = 1 << 7,
+  free_carema = 1 << 8,
+  invalid = (unsigned int)(1 << 31)
+};
+
+extern unsigned int k_complement_control_command;
+
+class InputSystem {
+ public:
+  void onKey(int key, int scancode, int action, int mods);
+  void onCursorPos(double current_cursor_x, double current_cursor_y);
+
+  void initialize();
+  void tick();
+  void clear();
+
+  int m_cursor_delta_x{0};
+  int m_cursor_delta_y{0};
+
+  Radian m_cursor_delta_yaw{0};
+  Radian m_cursor_delta_pitch{0};
+
+  void resetGameCommand() { m_game_command = 0; }
+  unsigned int getGameCommand() const { return m_game_command; }
+
+ private:
+  void onKeyInGameMode(int key, int scancode, int action, int mods);
+  void calculateCursorDeltaAngles();
+
+  unsigned int m_game_command{0};
+  int m_last_cursor_x{0};
+  int m_last_cursor_y{0};
+};
+}
+---
+
+FILE: engine/src/runtime/core/base/macro.h
+---
+#pragma once
+
+#include <chrono>
+#include <thread>
+
+#include "runtime/core/log/log_system.h"
+#include "runtime/function/global/global_context.h"
+
+#define LOG_HELPER(LOG_LEVEL, ...)               \
+  g_runtime_global_context.m_logger_system->log( \
+      LOG_LEVEL, "[" + std::string(__FUNCTION__) + "] " + __VA_ARGS__);
+
+#define LOG_DEBUG(...) LOG_HELPER(LogSystem::LogLevel::debug, __VA_ARGS__);
+#define LOG_INFO(...) LOG_HELPER(LogSystem::LogLevel::info, __VA_ARGS__);
+#define LOG_WARN(...) LOG_HELPER(LogSystem::LogLevel::warn, __VA_ARGS__);
+#define LOG_ERROR(...) LOG_HELPER(LogSystem::LogLevel::error, __VA_ARGS__);
+#define LOG_FATAL(...) LOG_HELPER(LogSystem::LogLevel::fatal, __VA_ARGS__);
+
+#define PolitSleep(_ms) \
+  std::this_thread::sleep_for(std::chrono::milliseconds(_ms));
+
+#define PolitNameOf(name) #name
+
+#ifdef NDEBUG
+#define ASSERT(statement)
+#else
+#define ASSERT(statement) assert(statement)
+#endif
+---
+
+FILE: engine/src/runtime/core/log/log_system.h
+---
+#pragma once
+
+#include <spdlog/spdlog.h>
+#include <cstdint>
+#include <stdexcept>
+
+namespace Blunder {
+
+class LogSystem final {
+ public:
+  enum class LogLevel : uint8_t { debug, info, warn, error, fatal };
+
+ public:
+  LogSystem();
+  ~LogSystem();
+
+  template <typename... TARGS>
+  void log(LogLevel level, TARGS&&... args) {
+    switch (level) {
+      case LogLevel::debug:
+        m_logger->debug(std::forward<TARGS>(args)...);
+        break;
+      case LogLevel::info:
+        m_logger->info(std::forward<TARGS>(args)...);
+        break;
+      // ... other cases
+    }
+  }
+
+ private:
+  std::shared_ptr<spdlog::logger> m_logger;
+};
+
+}
+---
+
+FILE: engine/src/runtime/CMakeLists.txt
+---
+add_library(engine_runtime
+    engine.cpp
+    "function/input/input_system.cpp" "function/input/input_system.h" 
+    "core/log/log_system.h"
+)
+
+target_include_directories(engine_runtime
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(engine_runtime
+    PUBLIC
+        glm
+        spdlog
+    PRIVATE
+        glfw
+)
+---
+
+
+7. SUMMARY
+================================================================================
+
+✅ WHAT'S IN PLACE:
+   1. GLM 1.0+ integrated as header-only library
+   2. GLM linked as PUBLIC dependency in runtime
+   3. Include path structure supports internal headers
+   4. Code patterns established (namespaces, #pragma once, etc.)
+   5. CMake configuration ready for new headers
+   6. spdlog logging already integrated
+
+❌ WHAT'S MISSING:
+   1. engine/src/runtime/core/math/math.h - MUST BE CREATED
+   2. Radian type definition
+   3. Math utility functions
+   4. GLM typedefs/aliases for engine conventions
+
+📍 CRITICAL ACTION REQUIRED:
+   Create: engine/src/runtime/core/math/math.h
+   - Define Radian type (wrapper around float)
+   - Export GLM types as engine types (Vec3, Mat4, Quat, etc.)
+   - Include necessary GLM headers
+   - Follow Blunder namespace convention
+
+
+8. RECOMMENDED math.h STRUCTURE
+================================================================================
+
+// engine/src/runtime/core/math/math.h
+#pragma once
+
+#include <cmath>
+#include <glm/glm.hpp>
+#include <glm/gtc/quate

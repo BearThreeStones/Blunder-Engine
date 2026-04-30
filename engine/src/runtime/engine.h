@@ -1,12 +1,12 @@
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <filesystem>
 
 #include "EASTL/string.h"
 #include "EASTL/unordered_set.h"
 
+#include "runtime/core/base/high_precision_timer.h"
 #include "runtime/core/event/event.h"
 
 namespace Blunder {
@@ -54,8 +54,7 @@ class BlunderEngine {
  protected:
   bool m_is_quit{false};
 
-  std::chrono::steady_clock::time_point m_last_tick_time_point{
-      std::chrono::steady_clock::now()};
+  HighPrecisionTimer m_frame_timer{};
 
   float m_average_duration{0.f};
   int m_frame_count{0};
