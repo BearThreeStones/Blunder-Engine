@@ -1,7 +1,5 @@
 #include "runtime/platform/input/input_system.h"
 
-#include <SDL3/SDL.h>
-
 #include "runtime/core/base/macro.h"
 #include "runtime/engine.h"
 #include "runtime/function/global/global_context.h"
@@ -12,13 +10,6 @@ namespace Blunder {
 unsigned int k_complement_control_command = 0xFFFFFFFF;
 
 void InputSystem::initialize() {
-  // Initialize SDL3 for events only (no video - GLFW handles windowing)
-  if (!SDL_Init(SDL_INIT_EVENTS)) {
-    LOG_FATAL("[InputSystem::initialize] Failed to initialize SDL3: {}",
-              SDL_GetError());
-    return;
-  }
-
   // Cache keyboard state pointer (valid for application lifetime)
   m_keyboard_state = SDL_GetKeyboardState(nullptr);
   ASSERT(m_keyboard_state);
@@ -27,15 +18,11 @@ void InputSystem::initialize() {
 }
 
 void InputSystem::shutdown() {
-  SDL_Quit();
   m_keyboard_state = nullptr;
   LOG_INFO("[InputSystem::shutdown] SDL3 input system shut down");
 }
 
 void InputSystem::pollKeyboardState() {
-  // Pump SDL events to update internal keyboard state
-  SDL_PumpEvents();
-
   // Clear jump command each frame (one-shot behavior)
   m_game_command &=
       (k_complement_control_command ^ (unsigned int)GameCommand::jump);

@@ -16,7 +16,7 @@ namespace Blunder {
 
 namespace {
 
-const char* k_shader_path = "shaders/basic.slang";
+const char* k_shader_path = "engine/shaders/basic.slang";
 
 }  // namespace
 

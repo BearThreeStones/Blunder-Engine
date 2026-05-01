@@ -1,14 +1,12 @@
 # engine/3rdparty/CMakeLists.txt
 
 add_subdirectory(glm)
-add_subdirectory(glfw)
 add_subdirectory(spdlog)
-add_subdirectory(imgui)
 add_subdirectory(EASTL)
 add_subdirectory(assimp)
 add_subdirectory(cgltf)
 
-# SDL3 - only events subsystem needed (windowing handled by GLFW)
+# SDL3 - active windowing and event backend
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 add_subdirectory(SDL)
 

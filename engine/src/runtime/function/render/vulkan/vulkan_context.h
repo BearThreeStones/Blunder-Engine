@@ -4,12 +4,12 @@
 
 #include <vulkan/vulkan.h>
 
-struct GLFWwindow;
-
 namespace Blunder {
 
+class WindowSystem;
+
 struct VulkanContextCreateInfo {
-  GLFWwindow* window{nullptr};
+  WindowSystem* window_system{nullptr};
   bool enable_validation{true};
 };
 
@@ -38,7 +38,7 @@ class VulkanContext final {
   void selectPhysicalDevice();
   void createLogicalDevice();
 
-  GLFWwindow* m_window{nullptr};
+  WindowSystem* m_window_system{nullptr};
   bool m_enable_validation{true};
 
   VkInstance m_instance{VK_NULL_HANDLE};

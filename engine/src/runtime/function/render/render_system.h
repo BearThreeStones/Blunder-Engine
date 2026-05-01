@@ -8,9 +8,9 @@
 #include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
-struct GLFWwindow;
-
 namespace Blunder {
+
+class WindowSystem;
 
 class SlangCompiler;
 class VulkanAllocator;
@@ -21,7 +21,7 @@ class VulkanSwapchain;
 class VulkanSync;
 
 struct RenderSystemInitInfo {
-  GLFWwindow* window{nullptr};
+  WindowSystem* window_system{nullptr};
   bool enable_validation{true};
 };
 
@@ -44,7 +44,7 @@ class RenderSystem final {
  private:
   void recreateSwapchain();
 
-  GLFWwindow* m_window{nullptr};
+  WindowSystem* m_window_system{nullptr};
   eastl::shared_ptr<SlangCompiler> m_slang_compiler;
   eastl::shared_ptr<VulkanContext> m_context;
   eastl::shared_ptr<VulkanAllocator> m_allocator;

@@ -9,6 +9,7 @@
 namespace Blunder {
 class LogSystem;
 class InputSystem;
+class SlintSystem;
 // class PhysicsManager;
 // class FileSystem;
 // class AssetManager;
@@ -16,7 +17,6 @@ class InputSystem;
 // class WorldManager;
 class RenderSystem;
 class WindowSystem;
-class ImGuiSystem;
 class LayerStack;
 // class ParticleManager;
 // class DebugDrawManager;
@@ -43,7 +43,7 @@ class RuntimeGlobalContext {
   // eastl::shared_ptr<PhysicsManager> m_physics_manager;
   eastl::shared_ptr<WindowSystem> m_window_system;
   eastl::shared_ptr<RenderSystem> m_render_system;
-  eastl::shared_ptr<ImGuiSystem> m_imgui_system;
+  eastl::shared_ptr<SlintSystem> m_slint_system;
   eastl::shared_ptr<LayerStack> m_layer_stack;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
   // eastl::shared_ptr<DebugDrawManager> m_debugdraw_manager;

@@ -22,10 +22,14 @@ endif()
 
 set(_slang_url "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/${_slang_archive}")
 
+set(FETCHCONTENT_QUIET OFF)
+
 FetchContent_Declare(
   slang_sdk
   URL "${_slang_url}"
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  LOG_DOWNLOAD ON
+  USES_TERMINAL_DOWNLOAD ON
 )
 
 FetchContent_MakeAvailable(slang_sdk)

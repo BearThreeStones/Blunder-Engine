@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-mkdir.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-download.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-update.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-patch.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-configure.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-build.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-install.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\186daf59ea054344c8b7e5d27953f59e\slang_sdk-populate-test.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\4620e339470d79cf15b285d9dfa0e20a\slang_sdk-populate-complete.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\bb90a8f59db56532d4854e1c1c3f97fe\slang_sdk-populate.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\slang_sdk-populate" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{93A5BED6-19D8-360A-AC2A-82685E53DE57}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

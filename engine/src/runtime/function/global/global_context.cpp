@@ -4,9 +4,9 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
-#include "runtime/function/imgui/imgui_system.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/vulkan/vulkan_swapchain.h"
+#include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/input/input_system.h"
 // #include "runtime/function/particle/particle_manager.h"
 // #include "runtime/function/physics/physics_manager.h"
@@ -42,10 +42,10 @@ void RuntimeGlobalContext::startSystems() {
   WindowCreateInfo window_create_info;
   m_window_system->initialize(window_create_info);
 
-  // RenderSystem must be created BEFORE ImGuiSystem (owns Vulkan context)
+  // RenderSystem must be created before UI systems (owns Vulkan context)
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
-  render_init_info.window = m_window_system->getWindow();
+  render_init_info.window_system = m_window_system.get();
 #ifdef NDEBUG
   render_init_info.enable_validation = false;
 #else
@@ -53,14 +53,10 @@ void RuntimeGlobalContext::startSystems() {
 #endif
   m_render_system->initialize(render_init_info);
 
-  // ImGuiSystem uses engine's Vulkan context and render pass
-  m_imgui_system = eastl::make_shared<ImGuiSystem>();
-  ImGuiSystemInitInfo imgui_init_info;
-  imgui_init_info.window = m_window_system->getWindow();
-  imgui_init_info.vulkan_context = m_render_system->getVulkanContext();
-  imgui_init_info.render_pass = m_render_system->getRenderPass();
-  imgui_init_info.image_count = m_render_system->getSwapchain()->getImageCount();
-  m_imgui_system->initialize(imgui_init_info);
+  m_slint_system = eastl::make_shared<SlintSystem>();
+  SlintSystemInitInfo slint_init_info;
+  slint_init_info.window_system = m_window_system.get();
+  m_slint_system->initialize(slint_init_info);
 
   m_input_system = eastl::make_shared<InputSystem>();
   m_input_system->initialize();
@@ -83,10 +79,9 @@ void RuntimeGlobalContext::shutdownSystems() {
 
   m_layer_stack.reset();
 
-  // ImGuiSystem must be shutdown BEFORE RenderSystem (uses Vulkan context)
-  if (m_imgui_system) {
-    m_imgui_system->shutdown();
-    m_imgui_system.reset();
+  if (m_slint_system) {
+    m_slint_system->shutdown();
+    m_slint_system.reset();
   }
 
   if (m_render_system) {

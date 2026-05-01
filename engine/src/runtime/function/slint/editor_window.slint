@@ -1,0 +1,48 @@
+import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+export component MainEditorWindow inherits Window {
+    width: 1280px;
+    height: 720px;
+    title: "Blunder Editor";
+    background: #202020;
+
+    VerticalBox {
+        padding: 16px;
+        spacing: 12px;
+
+        Text {
+            text: "Blunder Engine";
+            color: #f5f5f5;
+            font-size: 28px;
+        }
+
+        Text {
+            text: "SDL3 window/event ownership + Slint UI path";
+            color: #a0d8ff;
+            font-size: 16px;
+        }
+
+        HorizontalBox {
+            spacing: 8px;
+
+            Button { text: "Scene"; }
+            Button { text: "Assets"; }
+            Button { text: "Inspector"; }
+        }
+
+        Rectangle {
+            background: #151515;
+            border-color: #404040;
+            border-width: 1px;
+            min-height: 480px;
+
+            Text {
+                x: 24px;
+                y: 24px;
+                text: "Runtime migrated off GLFW/ImGui";
+                color: #d0d0d0;
+                font-size: 18px;
+            }
+        }
+    }
+}

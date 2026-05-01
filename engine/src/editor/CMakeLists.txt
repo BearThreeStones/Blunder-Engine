@@ -38,3 +38,13 @@ if(WIN32 AND SLANG_DLL_PATH)
         )
     endif()
 endif()
+
+if(WIN32)
+    add_custom_command(TARGET engine_editor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            $<TARGET_RUNTIME_DLLS:engine_editor>
+            $<TARGET_FILE_DIR:engine_editor>
+        COMMAND_EXPAND_LISTS
+        COMMENT "Copying runtime DLLs to output directory"
+    )
+endif()

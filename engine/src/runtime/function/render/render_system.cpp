@@ -14,9 +14,7 @@
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
 #include "runtime/function/render/vulkan/vulkan_swapchain.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
-
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
+#include "runtime/platform/window/window_system.h"
 
 namespace Blunder {
 
@@ -118,9 +116,9 @@ RenderSystem::RenderSystem() = default;
 RenderSystem::~RenderSystem() { shutdown(); }
 
 void RenderSystem::initialize(const RenderSystemInitInfo& info) {
-  ASSERT(info.window);
+  ASSERT(info.window_system);
 
-  m_window = info.window;
+  m_window_system = info.window_system;
 
   // 初始化 Slang 编译器（独立于 Vulkan）
   m_slang_compiler = eastl::make_shared<SlangCompiler>();
@@ -129,7 +127,7 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   // 初始化 Vulkan 上下文（实例、设备、队列等）
   m_context = eastl::make_shared<VulkanContext>();
   VulkanContextCreateInfo context_info;
-  context_info.window = info.window;
+  context_info.window_system = info.window_system;
   context_info.enable_validation = info.enable_validation;
   m_context->initialize(context_info);
 
@@ -138,9 +136,9 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   m_allocator->initialize(m_context.get());
 
   // 获取窗口 framebuffer 大小并创建交换链
-  int framebuffer_width = 0;
-  int framebuffer_height = 0;
-  glfwGetFramebufferSize(info.window, &framebuffer_width, &framebuffer_height);
+  eastl::array<int, 2> framebuffer_size = info.window_system->getDrawableSize();
+  int framebuffer_width = framebuffer_size[0];
+  int framebuffer_height = framebuffer_size[1];
   ASSERT(framebuffer_width > 0 && framebuffer_height > 0);
 
   m_swapchain = eastl::make_shared<VulkanSwapchain>();
@@ -323,7 +321,7 @@ void RenderSystem::shutdown() {
     m_slang_compiler.reset();
   }
 
-  m_window = nullptr;
+  m_window_system = nullptr;
   m_current_frame = 0;
 }
 
@@ -439,7 +437,7 @@ void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
       static_cast<uint32_t>(sizeof(k_quad_indices) / sizeof(k_quad_indices[0])),
       1, 0, 0, 0);
 
-  // 可选叠加绘制（如 ImGui）
+  // 可选叠加绘制（如调试 overlay）
   if (overlay_fn) {
     overlay_fn(command_buffer);
   }
@@ -493,9 +491,9 @@ void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
 }
 
 void RenderSystem::recreateSwapchain() {
-  int framebuffer_width = 0;
-  int framebuffer_height = 0;
-  glfwGetFramebufferSize(m_window, &framebuffer_width, &framebuffer_height);
+  eastl::array<int, 2> framebuffer_size = m_window_system->getDrawableSize();
+  int framebuffer_width = framebuffer_size[0];
+  int framebuffer_height = framebuffer_size[1];
   if (framebuffer_width <= 0 || framebuffer_height <= 0) {
     // 窗口最小化等场景，跳过本次重建
     return;

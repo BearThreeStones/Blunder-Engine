@@ -1,14 +1,14 @@
 #include "runtime/function/render/vulkan/vulkan_context.h"
 
 #include <cstring>
+
+#include <SDL3/SDL.h>
+
 #include "EASTL/set.h"
 #include "EASTL/vector.h"
 
-#define GLFW_INCLUDE_NONE
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
 #include "runtime/core/base/macro.h"
+#include "runtime/platform/window/window_system.h"
 
 namespace Blunder {
 
@@ -104,9 +104,9 @@ bool hasDeviceExtension(VkPhysicalDevice physical_device, const char* name) {
 }  // namespace
 
 void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
-  ASSERT(info.window);
+  ASSERT(info.window_system);
 
-  m_window = info.window;
+  m_window_system = info.window_system;
 #ifdef NDEBUG // 非调试模式
   m_enable_validation = false;
 #else
@@ -164,7 +164,7 @@ void VulkanContext::shutdown() {
   m_present_queue = VK_NULL_HANDLE;
   m_graphics_queue_family = 0;
   m_present_queue_family = 0;
-  m_window = nullptr;
+  m_window_system = nullptr;
 }
 
 void VulkanContext::createInstance() {
@@ -183,15 +183,13 @@ void VulkanContext::createInstance() {
                       ? VK_API_VERSION_1_3
                       : VK_API_VERSION_1_1;
 
-  uint32_t glfw_extension_count = 0;
+  uint32_t window_extension_count = 0;
+  eastl::array<const char*, 16> window_extensions =
+      m_window_system->getRequiredVulkanExtensions(&window_extension_count);
 
-  // 返回所需的扩展列表
-  const char** glfw_extensions =
-      glfwGetRequiredInstanceExtensions(&glfw_extension_count);
-  ASSERT(glfw_extensions && glfw_extension_count > 0);
-
-  eastl::vector<const char*> instance_extensions(glfw_extensions,
-                                               glfw_extensions + glfw_extension_count);
+  eastl::vector<const char*> instance_extensions(window_extensions.begin(),
+                                                 window_extensions.begin() +
+                                                     window_extension_count);
 
   if (m_enable_validation &&
       hasInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
@@ -265,14 +263,12 @@ void VulkanContext::setupDebugMessenger() {
 }
 
 void VulkanContext::createSurface() {
-  ASSERT(m_window);
+  ASSERT(m_window_system);
   ASSERT(m_instance != VK_NULL_HANDLE);
 
-  const VkResult result =
-      glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface);
-  if (result != VK_SUCCESS) {
+  if (!m_window_system->createVulkanSurface(m_instance, &m_surface)) {
     LOG_FATAL("[VulkanContext::createSurface] failed: {}",
-              static_cast<int>(result));
+              SDL_GetError());
   }
 }
 

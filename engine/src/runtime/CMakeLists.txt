@@ -7,8 +7,8 @@ add_library(engine_runtime
     "platform/input/input_system.h"
     "function/global/global_context.cpp"
     "function/global/global_context.h"
-    "function/imgui/imgui_system.h"
-    "function/imgui/imgui_system.cpp"
+    "function/slint/slint_system.h"
+    "function/slint/slint_system.cpp"
     "core/log/log_system.h"
     "core/log/log_system.cpp"
     "core/base/high_precision_timer.h"
@@ -40,6 +40,10 @@ add_library(engine_runtime
 
 add_subdirectory(function/render)
 
+slint_target_sources(engine_runtime
+    "function/slint/editor_window.slint"
+)
+
 target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})
 
 target_include_directories(engine_runtime
@@ -67,8 +71,7 @@ target_link_libraries(engine_runtime
         spdlog
         Vulkan::Vulkan
     PRIVATE
-        glfw
-        imgui
+        Slint::Slint
         cgltf
         SDL3::SDL3
         vma

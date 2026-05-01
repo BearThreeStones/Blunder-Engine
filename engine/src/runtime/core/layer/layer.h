@@ -46,12 +46,6 @@ class Layer {
   virtual void onUpdate(float delta_time) {}
 
   /**
-   * Called every frame for ImGui rendering.
-   * Override to draw debug UI, panels, etc.
-   */
-  virtual void onImGuiRender() {}
-
-  /**
    * Called when an event is dispatched to this layer.
    * Set event.handled = true to stop propagation.
    * @param event The event to handle.

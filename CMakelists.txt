@@ -1,4 +1,4 @@
-# �� CMakeLists.txt
+# 根 CMakeLists.txt
 
 cmake_minimum_required(VERSION 3.5)
 
@@ -10,19 +10,28 @@ project(BlunderEngine
     LANGUAGES CXX
 )
 
-# ---------- ������������ ----------
+# ---------- C++ 标准配置 ----------
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ---------- ƽ̨ / ������ͳһ ----------
+# ---------- 平台 / 编译器统一配置 ----------
+# 将 FetchContent 下载目录固定在项目根目录下的 .cmake_deps，避免删除 build 目录后重复下载
+set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.cmake_deps" CACHE PATH "Directory to store FetchContent data")
 include(cmake/compiler.cmake)
 
-# ---------- ��������ֻ�������� ----------
+# ---------- 核心外部依赖 ----------
 find_package(Vulkan REQUIRED)
+
+set(BLUNDER_LOCAL_SLINT_PREFIX "${CMAKE_SOURCE_DIR}/slint-sdk/install")
+if(EXISTS "${BLUNDER_LOCAL_SLINT_PREFIX}/lib/cmake/Slint/SlintConfig.cmake")
+    list(APPEND CMAKE_PREFIX_PATH "${BLUNDER_LOCAL_SLINT_PREFIX}")
+endif()
+
+find_package(Slint REQUIRED)
 
 # ---------- Slang Shader Compiler SDK ----------
 include(cmake/slang.cmake)
 
-# ---------- ��ģ�� ----------
+# ---------- 子模块 ----------
 add_subdirectory(engine)

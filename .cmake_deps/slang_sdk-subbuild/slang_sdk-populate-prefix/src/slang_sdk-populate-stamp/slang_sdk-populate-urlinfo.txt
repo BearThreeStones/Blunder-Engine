@@ -1,0 +1,12 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=url
+command=C:/Program Files/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/download-slang_sdk-populate.cmake;COMMAND;C:/Program Files/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/verify-slang_sdk-populate.cmake;COMMAND;C:/Program Files/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/extract-slang_sdk-populate.cmake
+source_dir=E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-src
+work_dir=E:/Dev/Blunder-Engine/.cmake_deps
+url(s)=https://github.com/shader-slang/slang/releases/download/v2026.5.2/slang-2026.5.2-windows-x86_64.zip
+hash=
+      no_extract=
+
