@@ -32,3 +32,6 @@
 [submodule "engine/3rdparty/ktx"]
 	path = engine/3rdparty/ktx
 	url = https://github.com/KhronosGroup/KTX-Software.git
+[submodule "engine/3rdparty/stb"]
+	path = engine/3rdparty/stb
+	url = https://github.com/nothings/stb.git

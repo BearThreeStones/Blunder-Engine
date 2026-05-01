@@ -3,7 +3,7 @@
   "configurePresets": [
     {
       "name": "vs2026-debug",
-      "displayName": "VS 2022 Debug",
+      "displayName": "VS 2026 Debug",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/vs2026-debug",
