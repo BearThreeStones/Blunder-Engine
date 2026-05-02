@@ -7,6 +7,8 @@
 
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/core/event/event.h"
+#include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/slang/slang_compiler.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
@@ -155,6 +157,8 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   m_pipeline->initialize(m_context.get(), m_swapchain.get(),
                          m_slang_compiler.get());
 
+  m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
+
   // 创建 staging buffer，上传 CPU 顶点数据
   eastl::unique_ptr<VulkanBuffer> staging_buffer =
       eastl::make_unique<VulkanBuffer>();
@@ -298,6 +302,8 @@ void RenderSystem::shutdown() {
     m_pipeline.reset();
   }
 
+  m_editor_camera.reset();
+
   if (m_sync) {
     m_sync->shutdown();
     m_sync.reset();
@@ -334,19 +340,24 @@ void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
   ubo.model = glm::rotate(glm::mat4(1.0f), m_elapsed_time * glm::radians(90.0f),
                            glm::vec3(0.0f, 0.0f, 1.0f));
 
-  // 视图矩阵：从 (2,2,2) 位置以 45 度角俯视原点
-  ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                         glm::vec3(0.0f, 0.0f, 0.0f),
-                         glm::vec3(0.0f, 0.0f, 1.0f));
-
   const VkExtent2D extent = m_swapchain->getExtent();
-  const float aspect =
-      static_cast<float>(extent.width) / static_cast<float>(extent.height);
+  if (m_editor_camera) {
+    m_editor_camera->setViewportSize(static_cast<float>(extent.width),
+                                     static_cast<float>(extent.height));
+    m_editor_camera->onUpdate(delta_time);
+    ubo.view = m_editor_camera->getViewMatrix();
+    ubo.projection = m_editor_camera->getProjectionMatrix();
+  } else {
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                           glm::vec3(0.0f, 0.0f, 0.0f),
+                           glm::vec3(0.0f, 0.0f, 1.0f));
 
-  // 投影矩阵：透视投影，垂直视场角 45 度
-  glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
-  proj[1][1] *= -1.0f;
-  ubo.projection = proj;
+    const float aspect =
+        static_cast<float>(extent.width) / static_cast<float>(extent.height);
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
+    proj[1][1] *= -1.0f;
+    ubo.projection = proj;
+  }
 
   // 更新统一变量数据
   m_uniform_buffers[m_current_frame]->upload(&ubo, sizeof(ubo));
@@ -488,6 +499,12 @@ void RenderSystem::tick(float delta_time, void (*overlay_fn)(VkCommandBuffer)) {
 
   // 轮转到下一帧（帧资源循环复用）
   m_current_frame = (m_current_frame + 1) % VulkanSync::k_max_frames_in_flight;
+}
+
+void RenderSystem::onEvent(Event& event) {
+  if (m_editor_camera) {
+    m_editor_camera->onEvent(event);
+  }
 }
 
 void RenderSystem::recreateSwapchain() {

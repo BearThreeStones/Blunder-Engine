@@ -7,6 +7,9 @@
 #include <string_view>
 #include <utility>
 
+#include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_video.h>
+
 #include "runtime/core/base/macro.h"
 
 namespace Blunder {
@@ -72,7 +75,59 @@ void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
 
   m_renderer.render(std::span<slint::Rgb8Pixel>(m_buffer.data(), m_buffer.size()),
                     physical_size.width);
+
+  blitToSdlWindowSurface(physical_size);
   m_needs_redraw = window().has_active_animations();
+}
+
+bool SlintSystem::SlintWindowAdapter::blitToSdlWindowSurface(
+    const slint::PhysicalSize& physical_size) {
+  if (!m_window_system || !m_window_system->getNativeWindow()) {
+    return false;
+  }
+
+  SDL_Surface* window_surface =
+      SDL_GetWindowSurface(m_window_system->getNativeWindow());
+  if (!window_surface) {
+    if (!m_surface_path_warning_emitted) {
+      LOG_WARN("[SlintSystem] SDL_GetWindowSurface failed: {}", SDL_GetError());
+      m_surface_path_warning_emitted = true;
+    }
+    return false;
+  }
+
+  SDL_Surface* src_surface = SDL_CreateSurfaceFrom(
+      static_cast<int>(physical_size.width), static_cast<int>(physical_size.height),
+      SDL_PIXELFORMAT_RGB24, m_buffer.data(),
+      static_cast<int>(physical_size.width * sizeof(slint::Rgb8Pixel)));
+  if (!src_surface) {
+    if (!m_surface_path_warning_emitted) {
+      LOG_WARN("[SlintSystem] SDL_CreateSurfaceFrom failed: {}", SDL_GetError());
+      m_surface_path_warning_emitted = true;
+    }
+    return false;
+  }
+
+  const bool blit_ok = SDL_BlitSurfaceScaled(src_surface, nullptr, window_surface,
+                                             nullptr, SDL_SCALEMODE_LINEAR);
+  SDL_DestroySurface(src_surface);
+  if (!blit_ok) {
+    if (!m_surface_path_warning_emitted) {
+      LOG_WARN("[SlintSystem] SDL_BlitSurfaceScaled failed: {}", SDL_GetError());
+      m_surface_path_warning_emitted = true;
+    }
+    return false;
+  }
+
+  if (!SDL_UpdateWindowSurface(m_window_system->getNativeWindow())) {
+    if (!m_surface_path_warning_emitted) {
+      LOG_WARN("[SlintSystem] SDL_UpdateWindowSurface failed: {}", SDL_GetError());
+      m_surface_path_warning_emitted = true;
+    }
+    return false;
+  }
+
+  return true;
 }
 
 SlintSystem::SlintPlatform::SlintPlatform(WindowSystem* window_system)
@@ -176,7 +231,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
 void SlintSystem::shutdown() {
   if (m_window_component) {
-    m_window_component->hide();
+    m_window_component->operator->()->hide();
     m_window_component.reset();
   }
 

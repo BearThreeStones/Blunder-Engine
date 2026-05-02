@@ -40,11 +40,14 @@ class SlintSystem final {
     bool needsRedraw() const { return m_needs_redraw; }
 
    private:
+    bool blitToSdlWindowSurface(const slint::PhysicalSize& physical_size);
+
     WindowSystem* m_window_system{nullptr};
     slint::platform::SoftwareRenderer m_renderer{
         slint::platform::SoftwareRenderer::RepaintBufferType::ReusedBuffer};
     bool m_visible{false};
     bool m_needs_redraw{true};
+    bool m_surface_path_warning_emitted{false};
     eastl::vector<slint::Rgb8Pixel> m_buffer;
   };
 

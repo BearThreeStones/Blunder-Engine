@@ -1,6 +1,6 @@
 # engine/src/runtime/CMakeLists.txt
 
-add_library(engine_runtime
+add_library(engine_runtime STATIC
     engine.cpp
     engine.h
     "platform/input/input_system.cpp"
@@ -70,8 +70,8 @@ target_link_libraries(engine_runtime
         glm
         spdlog
         Vulkan::Vulkan
-    PRIVATE
         Slint::Slint
+    PRIVATE
         cgltf
         SDL3::SDL3
         vma

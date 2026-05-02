@@ -2,7 +2,15 @@
 
 add_subdirectory(glm)
 add_subdirectory(spdlog)
+
+# EASTL's CMakeLists uses add_library(EASTL ...) without STATIC/SHARED,
+# so pin it to static build locally to avoid inheriting global BUILD_SHARED_LIBS.
+set(BLUNDER_BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
 add_subdirectory(EASTL)
+set(BUILD_SHARED_LIBS ${BLUNDER_BUILD_SHARED_LIBS_SAVED})
+unset(BLUNDER_BUILD_SHARED_LIBS_SAVED)
+
 add_subdirectory(assimp)
 add_subdirectory(cgltf)
 

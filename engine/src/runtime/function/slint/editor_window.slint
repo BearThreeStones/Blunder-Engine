@@ -1,10 +1,13 @@
-import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
 
 export component MainEditorWindow inherits Window {
     width: 1280px;
     height: 720px;
     title: "Blunder Editor";
     background: #202020;
+    in-out property <int> click-count: 0;
+    in-out property <bool> toggle-enabled: false;
+    in-out property <float> slider-value: 35.0;
 
     VerticalBox {
         padding: 16px;
@@ -36,12 +39,85 @@ export component MainEditorWindow inherits Window {
             border-width: 1px;
             min-height: 480px;
 
-            Text {
-                x: 24px;
-                y: 24px;
-                text: "Runtime migrated off GLFW/ImGui";
-                color: #d0d0d0;
-                font-size: 18px;
+            VerticalBox {
+                padding: 20px;
+                spacing: 12px;
+
+                Text {
+                    text: "UI Test Panel (Slint)";
+                    color: #f0f0f0;
+                    font-size: 20px;
+                }
+
+                Text {
+                    text: "Runtime migrated off GLFW/ImGui";
+                    color: #d0d0d0;
+                    font-size: 16px;
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    alignment: start;
+
+                    Button {
+                        text: "Click Me";
+                        clicked => {
+                            root.click-count += 1;
+                        }
+                    }
+
+                    Button {
+                        text: "Reset";
+                        clicked => {
+                            root.click-count = 0;
+                            root.slider-value = 35.0;
+                            root.toggle-enabled = false;
+                        }
+                    }
+                }
+
+                CheckBox {
+                    text: "Enable test option";
+                    checked: root.toggle-enabled;
+                    toggled => {
+                        root.toggle-enabled = self.checked;
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    alignment: start;
+
+                    Text {
+                        text: "Intensity";
+                        color: #d0d0d0;
+                        vertical-alignment: center;
+                    }
+
+                    Slider {
+                        value: root.slider-value;
+                        changed => {
+                            root.slider-value = self.value;
+                        }
+                        min-width: 320px;
+                    }
+                }
+
+                Rectangle {
+                    background: #1f1f1f;
+                    border-color: #3d3d3d;
+                    border-width: 1px;
+                    border-radius: 4px;
+                    min-height: 80px;
+
+                    Text {
+                        x: 12px;
+                        y: 12px;
+                        text: "Clicks: " + root.click-count + "\nToggle: " + (root.toggle-enabled ? "ON" : "OFF") + "\nIntensity: " + root.slider-value;
+                        color: #bde7ff;
+                        font-size: 14px;
+                    }
+                }
             }
         }
     }

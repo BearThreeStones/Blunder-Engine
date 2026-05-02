@@ -39,6 +39,10 @@ void BlunderEngine::onEvent(Event& e) {
     (*it)->onEvent(e);
   }
 
+  if (!e.handled && g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->onEvent(e);
+  }
+
   // Log events for debugging (skip mouse move to reduce spam)
   if (e.getEventType() != EventType::MouseMoved && !e.handled) {
     LOG_DEBUG("[Event] {}", e.toString().c_str());
@@ -104,7 +108,6 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   g_runtime_global_context.m_memory_system.beginFrame();
 
   g_runtime_global_context.m_window_system->pumpEvents();
-  g_runtime_global_context.m_slint_system->update();
   g_runtime_global_context.m_input_system->tick();
 
   // 更新所有层（正向迭代：Layer1 → OverlayN）
@@ -119,6 +122,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   // exchange data between logic and render contexts
 
   rendererTick(delta_time);
+  g_runtime_global_context.m_slint_system->update();
 
 #ifdef ENABLE_PHYSICS_DEBUG_RENDERER
   g_runtime_global_context.m_physics_manager->renderPhysicsWorld(delta_time);

@@ -1,5 +1,7 @@
 # Render system sources
 set(RENDER_SOURCES
+    "function/render/editor_camera.cpp"
+    "function/render/editor_camera.h"
     "function/render/render_system.cpp"
     "function/render/render_system.h"
     "function/render/slang/slang_compiler.cpp"

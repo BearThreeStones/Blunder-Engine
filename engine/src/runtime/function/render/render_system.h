@@ -11,8 +11,10 @@
 namespace Blunder {
 
 class WindowSystem;
+class Event;
 
 class SlangCompiler;
+class EditorCamera;
 class VulkanAllocator;
 class VulkanBuffer;
 class VulkanContext;
@@ -34,12 +36,14 @@ class RenderSystem final {
   void shutdown();
   void tick(float delta_time,
             void (*overlay_fn)(VkCommandBuffer) = nullptr);
+  void onEvent(Event& event);
 
   VkRenderPass getRenderPass() const;
 
   VulkanContext* getVulkanContext() const { return m_context.get(); }
   VulkanSwapchain* getSwapchain() const { return m_swapchain.get(); }
   VulkanAllocator* getAllocator() const { return m_allocator.get(); }
+  EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }
 
  private:
   void recreateSwapchain();
@@ -51,6 +55,7 @@ class RenderSystem final {
   eastl::shared_ptr<VulkanSwapchain> m_swapchain;
   eastl::shared_ptr<VulkanSync> m_sync;
   eastl::shared_ptr<VulkanPipeline> m_pipeline;
+  eastl::unique_ptr<EditorCamera> m_editor_camera;
   eastl::unique_ptr<VulkanBuffer> m_vertex_buffer;
   eastl::unique_ptr<VulkanBuffer> m_index_buffer;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_uniform_buffers;
