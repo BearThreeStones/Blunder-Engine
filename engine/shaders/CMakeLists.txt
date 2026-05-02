@@ -7,6 +7,7 @@ file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
 # List of Slang shader files to deploy
 set(SHADERS
     basic.slang
+    ui_overlay.slang
 )
 
 # Copy each shader to the build output directory

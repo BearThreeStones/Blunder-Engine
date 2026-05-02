@@ -271,10 +271,14 @@ void WindowSystem::handleKeyboardEvent(const SDL_Event& event) {
   }
 
   if (event.type == SDL_EVENT_KEY_DOWN) {
-    KeyPressedEvent key_event(static_cast<int>(event.key.key), event.key.repeat);
+    KeyPressedEvent key_event(static_cast<int>(event.key.key),
+                              static_cast<int32_t>(event.key.scancode),
+                              static_cast<uint16_t>(event.key.mod), event.key.repeat);
     m_event_callback(key_event);
   } else {
-    KeyReleasedEvent key_event(static_cast<int>(event.key.key));
+    KeyReleasedEvent key_event(static_cast<int>(event.key.key),
+                               static_cast<int32_t>(event.key.scancode),
+                               static_cast<uint16_t>(event.key.mod));
     m_event_callback(key_event);
   }
 }
@@ -285,12 +289,11 @@ void WindowSystem::handleTextInputEvent(const SDL_Event& event) {
     return;
   }
 
-  const unsigned char first = static_cast<unsigned char>(event.text.text[0]);
-  if (first == 0) {
+  if (event.text.text[0] == '\0') {
     return;
   }
 
-  KeyTypedEvent key_event(static_cast<int>(first));
+  KeyTypedEvent key_event(eastl::string(event.text.text));
   m_event_callback(key_event);
 }
 

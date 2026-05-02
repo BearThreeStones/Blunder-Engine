@@ -12,6 +12,9 @@
 #include "runtime/platform/window/window_system.h"
 
 namespace Blunder {
+
+struct UiCpuTextureView;
+
 struct SlintSystemInitInfo {
   WindowSystem* window_system{nullptr};
 };
@@ -26,6 +29,9 @@ class SlintSystem final {
   void update();
   void processEvent(const SDL_Event& event);
 
+  /// Fills @p out with the last Slint CPU framebuffer (RGBA8). Valid until the next update().
+  bool tryFillUiOverlay(UiCpuTextureView& out) const;
+
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
     explicit SlintWindowAdapter(WindowSystem* window_system);
@@ -38,17 +44,17 @@ class SlintSystem final {
 
     void renderIfNeeded();
     bool needsRedraw() const { return m_needs_redraw; }
+    bool fillUiOverlay(UiCpuTextureView& out) const;
 
    private:
-    bool blitToSdlWindowSurface(const slint::PhysicalSize& physical_size);
-
     WindowSystem* m_window_system{nullptr};
     slint::platform::SoftwareRenderer m_renderer{
         slint::platform::SoftwareRenderer::RepaintBufferType::ReusedBuffer};
     bool m_visible{false};
     bool m_needs_redraw{true};
-    bool m_surface_path_warning_emitted{false};
+    bool m_has_ui_bitmap{false};
     eastl::vector<slint::Rgb8Pixel> m_buffer;
+    eastl::vector<uint8_t> m_rgba_buffer;
   };
 
   class SlintPlatform final : public slint::platform::Platform {

@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <CustomBuild Include="E:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\bb90a8f59db56532d4854e1c1c3f97fe\generate.stamp.rule">
+    <CustomBuild Include="D:\Dev\Blunder-Engine\.cmake_deps\slang_sdk-subbuild\CMakeFiles\9c351734bd0853f523dc356262d4c398\generate.stamp.rule">
       <Filter>CMake Rules</Filter>
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="CMake Rules">
-      <UniqueIdentifier>{93A5BED6-19D8-360A-AC2A-82685E53DE57}</UniqueIdentifier>
+      <UniqueIdentifier>{D4BD17CB-1F71-3FF2-814D-186E35014737}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

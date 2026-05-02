@@ -43,8 +43,9 @@ void BlunderEngine::onEvent(Event& e) {
     g_runtime_global_context.m_render_system->onEvent(e);
   }
 
-  // Log events for debugging (skip mouse move to reduce spam)
-  if (e.getEventType() != EventType::MouseMoved && !e.handled) {
+  // Log events for debugging (skip high-frequency or noisy types)
+  if (e.getEventType() != EventType::MouseMoved &&
+      e.getEventType() != EventType::KeyTyped && !e.handled) {
     LOG_DEBUG("[Event] {}", e.toString().c_str());
   }
 
@@ -64,8 +65,22 @@ void BlunderEngine::onEvent(Event& e) {
 
   dispatcher.dispatch<KeyPressedEvent>([](KeyPressedEvent& event) {
     if (!event.isRepeat()) {
-      LOG_DEBUG("[Event] Key pressed: {}", event.getKeyCode());
+      LOG_DEBUG(
+          "[Event] Key pressed: key={} scancode={} ctrl={} shift={} alt={}",
+          event.getKeyCode(), event.getScanCode(), event.isCtrlDown(),
+          event.isShiftDown(), event.isAltDown());
     }
+    return false;
+  });
+
+  dispatcher.dispatch<KeyReleasedEvent>([](KeyReleasedEvent& event) {
+    LOG_DEBUG("[Event] Key released: key={} scancode={}", event.getKeyCode(),
+              event.getScanCode());
+    return false;
+  });
+
+  dispatcher.dispatch<KeyTypedEvent>([](KeyTypedEvent& event) {
+    LOG_DEBUG("[Event] Text input (UTF-8): {}", event.getUtf8().c_str());
     return false;
   });
 }
@@ -121,8 +136,11 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   // single thread
   // exchange data between logic and render contexts
 
-  rendererTick(delta_time);
   g_runtime_global_context.m_slint_system->update();
+  UiCpuTextureView ui_overlay{};
+  const bool has_ui =
+      g_runtime_global_context.m_slint_system->tryFillUiOverlay(ui_overlay);
+  rendererTick(delta_time, has_ui ? &ui_overlay : nullptr);
 
 #ifdef ENABLE_PHYSICS_DEBUG_RENDERER
   g_runtime_global_context.m_physics_manager->renderPhysicsWorld(delta_time);
@@ -141,8 +159,9 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 //   g_runtime_global_context.m_input_system->tick();
 // }
 //
-bool BlunderEngine::rendererTick(float delta_time) {
-  g_runtime_global_context.m_render_system->tick(delta_time);
+bool BlunderEngine::rendererTick(float delta_time,
+                                 const UiCpuTextureView* ui_overlay) {
+  g_runtime_global_context.m_render_system->tick(delta_time, ui_overlay);
   return true;
 }
 

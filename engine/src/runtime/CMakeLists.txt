@@ -59,6 +59,15 @@ target_precompile_headers(engine_runtime
         pch.h
 )
 
+# Tell EASTL to skip its default allocator implementations;
+# we provide our own in core/memory/eastl_allocator.cpp.
+# Applied to the EASTL target directly so the define is active when
+# EASTL's own source files (allocator_eastl.cpp) and headers compile.
+target_compile_definitions(EASTL
+    PUBLIC
+        EASTL_USER_DEFINED_ALLOCATOR
+)
+
 # Enable conformant preprocessor for __VA_OPT__ support (C++20)
 if(MSVC)
     target_compile_options(engine_runtime PRIVATE /Zc:preprocessor)

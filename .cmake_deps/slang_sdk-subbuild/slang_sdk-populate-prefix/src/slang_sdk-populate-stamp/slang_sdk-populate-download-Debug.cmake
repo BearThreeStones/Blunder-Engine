@@ -1,11 +1,11 @@
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION ${CMAKE_VERSION}) # this file comes with cmake
 
-set(command "C:/Program Files/CMake/bin/cmake.exe;-Dmake=${make};-Dconfig=${config};-P;E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-Debug-impl.cmake")
+set(command "D:/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe;-Dmake=${make};-Dconfig=${config};-P;D:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-Debug-impl.cmake")
 set(log_merged "")
 set(log_output_on_failure "")
-set(stdout_log "E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-out.log")
-set(stderr_log "E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-err.log")
+set(stdout_log "D:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-out.log")
+set(stderr_log "D:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-err.log")
 execute_process(
   COMMAND ${command}
   RESULT_VARIABLE result
@@ -31,7 +31,7 @@ if(result)
   if (${log_merged})
     set(msg "${msg}\nSee also\n  ${stderr_log}")
   else()
-    set(msg "${msg}\nSee also\n  E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-*.log")
+    set(msg "${msg}\nSee also\n  D:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-*.log")
   endif()
   if (${log_output_on_failure})
     message(SEND_ERROR "${msg}")
@@ -50,7 +50,7 @@ if(result)
   endif()
 else()
   if(NOT "Visual Studio 17 2022" MATCHES "Ninja")
-    set(msg "slang_sdk-populate download command succeeded.  See also E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-*.log")
+    set(msg "slang_sdk-populate download command succeeded.  See also D:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-*.log")
     message(STATUS "${msg}")
   endif()
 endif()

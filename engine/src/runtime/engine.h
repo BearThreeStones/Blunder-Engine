@@ -10,6 +10,9 @@
 #include "runtime/core/event/event.h"
 
 namespace Blunder {
+
+struct UiCpuTextureView;
+
 extern bool g_is_editor_mode;
 extern eastl::unordered_set<eastl::string> g_editor_tick_component_types;
 
@@ -42,7 +45,8 @@ class BlunderEngine {
 
  protected:
   // void logicalTick(float delta_time);
-  bool rendererTick(float delta_time);
+  bool rendererTick(float delta_time,
+                    const UiCpuTextureView* ui_overlay = nullptr);
 
   void calculateFPS(float delta_time);
 

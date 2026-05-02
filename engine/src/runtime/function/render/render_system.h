@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
 #include "EASTL/shared_ptr.h"
@@ -27,6 +28,13 @@ struct RenderSystemInitInfo {
   bool enable_validation{true};
 };
 
+/// RGBA8 pixels (row-major). Width/height must match the swapchain drawable size when passed to tick().
+struct UiCpuTextureView {
+  const uint8_t* pixels_rgba{nullptr};
+  uint32_t width{0};
+  uint32_t height{0};
+};
+
 class RenderSystem final {
  public:
   RenderSystem();
@@ -34,7 +42,7 @@ class RenderSystem final {
 
   void initialize(const RenderSystemInitInfo& info);
   void shutdown();
-  void tick(float delta_time,
+  void tick(float delta_time, const UiCpuTextureView* ui_overlay = nullptr,
             void (*overlay_fn)(VkCommandBuffer) = nullptr);
   void onEvent(Event& event);
 
@@ -47,6 +55,10 @@ class RenderSystem final {
 
  private:
   void recreateSwapchain();
+  void createUiOverlayResources(VkExtent2D extent);
+  void destroyUiOverlayResources();
+  void ensureUiTexture(VkExtent2D extent);
+  void destroyUiTextureOnly();
 
   WindowSystem* m_window_system{nullptr};
   eastl::shared_ptr<SlangCompiler> m_slang_compiler;
@@ -63,6 +75,20 @@ class RenderSystem final {
   eastl::vector<VkDescriptorSet> m_descriptor_sets;
   uint32_t m_current_frame{0};
   float m_elapsed_time{0.0f};
+
+  VkDescriptorSetLayout m_ui_descriptor_set_layout{VK_NULL_HANDLE};
+  VkPipelineLayout m_ui_pipeline_layout{VK_NULL_HANDLE};
+  VkPipeline m_ui_pipeline{VK_NULL_HANDLE};
+  VkSampler m_ui_sampler{VK_NULL_HANDLE};
+  VkDescriptorPool m_ui_descriptor_pool{VK_NULL_HANDLE};
+  VkDescriptorSet m_ui_descriptor_set{VK_NULL_HANDLE};
+  VkImage m_ui_image{VK_NULL_HANDLE};
+  VmaAllocation m_ui_image_allocation{VK_NULL_HANDLE};
+  VkImageView m_ui_image_view{VK_NULL_HANDLE};
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_ui_staging_buffers;
+  uint32_t m_ui_alloc_width{0};
+  uint32_t m_ui_alloc_height{0};
+  bool m_ui_first_transfer{true};
 };
 
 }  // namespace Blunder

@@ -7,8 +7,7 @@
 #include <string_view>
 #include <utility>
 
-#include <SDL3/SDL_surface.h>
-#include <SDL3/SDL_video.h>
+#include "runtime/function/render/render_system.h"
 
 #include "runtime/core/base/macro.h"
 
@@ -62,13 +61,16 @@ void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
     return;
   }
 
-  if (!m_needs_redraw && !window().has_active_animations()) {
-    return;
-  }
-
   const slint::PhysicalSize physical_size = size();
   const size_t pixel_count =
       static_cast<size_t>(physical_size.width) * physical_size.height;
+
+  const bool slint_dirty =
+      m_needs_redraw || window().has_active_animations();
+  if (!slint_dirty) {
+    return;
+  }
+
   if (m_buffer.size() != pixel_count) {
     m_buffer.resize(pixel_count);
   }
@@ -76,57 +78,27 @@ void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
   m_renderer.render(std::span<slint::Rgb8Pixel>(m_buffer.data(), m_buffer.size()),
                     physical_size.width);
 
-  blitToSdlWindowSurface(physical_size);
+  m_rgba_buffer.resize(pixel_count * 4);
+  const auto* rgb = reinterpret_cast<const uint8_t*>(m_buffer.data());
+  for (size_t i = 0; i < pixel_count; ++i) {
+    m_rgba_buffer[i * 4 + 0] = rgb[i * 3 + 0];
+    m_rgba_buffer[i * 4 + 1] = rgb[i * 3 + 1];
+    m_rgba_buffer[i * 4 + 2] = rgb[i * 3 + 2];
+    m_rgba_buffer[i * 4 + 3] = 255;
+  }
+
+  m_has_ui_bitmap = true;
   m_needs_redraw = window().has_active_animations();
 }
 
-bool SlintSystem::SlintWindowAdapter::blitToSdlWindowSurface(
-    const slint::PhysicalSize& physical_size) {
-  if (!m_window_system || !m_window_system->getNativeWindow()) {
+bool SlintSystem::SlintWindowAdapter::fillUiOverlay(UiCpuTextureView& out) const {
+  if (!m_visible || !m_has_ui_bitmap || m_rgba_buffer.empty() || !m_window_system) {
     return false;
   }
-
-  SDL_Surface* window_surface =
-      SDL_GetWindowSurface(m_window_system->getNativeWindow());
-  if (!window_surface) {
-    if (!m_surface_path_warning_emitted) {
-      LOG_WARN("[SlintSystem] SDL_GetWindowSurface failed: {}", SDL_GetError());
-      m_surface_path_warning_emitted = true;
-    }
-    return false;
-  }
-
-  SDL_Surface* src_surface = SDL_CreateSurfaceFrom(
-      static_cast<int>(physical_size.width), static_cast<int>(physical_size.height),
-      SDL_PIXELFORMAT_RGB24, m_buffer.data(),
-      static_cast<int>(physical_size.width * sizeof(slint::Rgb8Pixel)));
-  if (!src_surface) {
-    if (!m_surface_path_warning_emitted) {
-      LOG_WARN("[SlintSystem] SDL_CreateSurfaceFrom failed: {}", SDL_GetError());
-      m_surface_path_warning_emitted = true;
-    }
-    return false;
-  }
-
-  const bool blit_ok = SDL_BlitSurfaceScaled(src_surface, nullptr, window_surface,
-                                             nullptr, SDL_SCALEMODE_LINEAR);
-  SDL_DestroySurface(src_surface);
-  if (!blit_ok) {
-    if (!m_surface_path_warning_emitted) {
-      LOG_WARN("[SlintSystem] SDL_BlitSurfaceScaled failed: {}", SDL_GetError());
-      m_surface_path_warning_emitted = true;
-    }
-    return false;
-  }
-
-  if (!SDL_UpdateWindowSurface(m_window_system->getNativeWindow())) {
-    if (!m_surface_path_warning_emitted) {
-      LOG_WARN("[SlintSystem] SDL_UpdateWindowSurface failed: {}", SDL_GetError());
-      m_surface_path_warning_emitted = true;
-    }
-    return false;
-  }
-
+  const eastl::array<int, 2> drawable_size = m_window_system->getDrawableSize();
+  out.pixels_rgba = m_rgba_buffer.data();
+  out.width = static_cast<uint32_t>(eastl::max(drawable_size[0], 1));
+  out.height = static_cast<uint32_t>(eastl::max(drawable_size[1], 1));
   return true;
 }
 
@@ -248,6 +220,13 @@ void SlintSystem::update() {
   if (m_window_adapter) {
     m_window_adapter->renderIfNeeded();
   }
+}
+
+bool SlintSystem::tryFillUiOverlay(UiCpuTextureView& out) const {
+  if (!m_window_adapter) {
+    return false;
+  }
+  return m_window_adapter->fillUiOverlay(out);
 }
 
 void SlintSystem::processEvent(const SDL_Event& event) {

@@ -43,20 +43,39 @@ if(NOT EXISTS "${_slint_stamp}")
     endif()
 
     # --- Silent install (NSIS) ---
-    # NSIS requires: /S for silent, /D=<path> must be LAST argument and use
-    # native path separators (backslashes on Windows).
+    # NSIS installers may require elevated privileges on Windows.
+    # We use PowerShell Start-Process with -Verb RunAs to trigger a UAC prompt
+    # if needed, rather than failing silently with "permission denied".
     message(STATUS "[Slint] Extracting SDK to ${_slint_install_dir} ...")
     file(TO_NATIVE_PATH "${_slint_install_dir}" _slint_install_dir_native)
+
+    # First try without elevation (works in admin terminals / CI)
     execute_process(
         COMMAND "${_slint_installer}" /S /D=${_slint_install_dir_native}
         RESULT_VARIABLE _slint_install_result
         TIMEOUT 120
     )
+
+    # If the direct attempt failed, retry with UAC elevation via PowerShell
+    if(NOT _slint_install_result EQUAL 0)
+        message(STATUS "[Slint] Direct install failed (${_slint_install_result}), retrying with elevation ...")
+        file(TO_NATIVE_PATH "${_slint_installer}" _slint_installer_native)
+        execute_process(
+            COMMAND powershell -NoProfile -Command
+                "Start-Process -FilePath '${_slint_installer_native}' -ArgumentList '/S','/D=${_slint_install_dir_native}' -Verb RunAs -Wait"
+            RESULT_VARIABLE _slint_install_result
+            TIMEOUT 180
+        )
+    endif()
+
     if(NOT _slint_install_result EQUAL 0)
         message(FATAL_ERROR
             "[Slint] Silent install failed with code ${_slint_install_result}.\n"
             "  Installer: ${_slint_installer}\n"
-            "  Target dir: ${_slint_install_dir_native}"
+            "  Target dir: ${_slint_install_dir_native}\n"
+            "  Hint: Try running CMake configure from an Administrator terminal,\n"
+            "        or manually run the installer:\n"
+            "          \"${_slint_installer}\" /S /D=${_slint_install_dir_native}"
         )
     endif()
 

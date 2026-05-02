@@ -1,5 +1,8 @@
 # engine/3rdparty/CMakeLists.txt
 
+# GLM - header-only math library; disable library build to avoid
+# producing an empty glm.lib / glmd.lib that the linker can't find.
+set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
 add_subdirectory(glm)
 add_subdirectory(spdlog)
 
@@ -12,7 +15,12 @@ set(BUILD_SHARED_LIBS ${BLUNDER_BUILD_SHARED_LIBS_SAVED})
 unset(BLUNDER_BUILD_SHARED_LIBS_SAVED)
 
 add_subdirectory(assimp)
-add_subdirectory(cgltf)
+# CGLTF - Header-only glTF loader
+# Instead of modifying the submodule, we generate the implementation file in the build directory
+set(CGLTF_IMPL_FILE "${CMAKE_CURRENT_BINARY_DIR}/cgltf_impl.c")
+file(WRITE "${CGLTF_IMPL_FILE}" "#define CGLTF_IMPLEMENTATION\n#include \"cgltf.h\"\n")
+add_library(cgltf STATIC "${CGLTF_IMPL_FILE}")
+target_include_directories(cgltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cgltf)
 
 # SDL3 - active windowing and event backend
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
