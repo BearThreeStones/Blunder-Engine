@@ -30,9 +30,22 @@ add_subdirectory(SDL)
 add_library(vma INTERFACE)
 target_include_directories(vma INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/VulkanMemoryAllocator/include)
 
-# STB - Single-file image loaders (header-only)
-add_library(stb INTERFACE)
-target_include_directories(stb INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+# STB - Single-file image loaders.
+# stb is distributed as header-only sources; we generate a single
+# implementation translation unit per used header so the symbols end up in
+# exactly one static library that the rest of the engine can link against.
+set(STB_IMPL_FILE "${CMAKE_CURRENT_BINARY_DIR}/stb_impl.c")
+file(WRITE "${STB_IMPL_FILE}"
+"#define STB_IMAGE_IMPLEMENTATION\n"
+"#include \"stb_image.h\"\n"
+"#define STB_IMAGE_WRITE_IMPLEMENTATION\n"
+"#include \"stb_image_write.h\"\n")
+add_library(stb STATIC "${STB_IMPL_FILE}")
+target_include_directories(stb PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+if(MSVC)
+    # stb's C sources do not bother with the "secure" CRT helpers.
+    target_compile_definitions(stb PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
 
 # KTX - Khronos Texture Container Library
 set(KTX_FEATURE_TESTS OFF CACHE BOOL "" FORCE)

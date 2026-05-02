@@ -7,14 +7,14 @@
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/vulkan/vulkan_swapchain.h"
 #include "runtime/function/slint/slint_system.h"
+#include "runtime/platform/file_system/file_system.h"
 #include "runtime/platform/input/input_system.h"
 // #include "runtime/function/particle/particle_manager.h"
 // #include "runtime/function/physics/physics_manager.h"
 // #include "runtime/function/render/debugdraw/debug_draw_manager.h"
 // #include "runtime/function/render/render_debug_config.h"
 #include "runtime/platform/window/window_system.h"
-// #include "runtime/platform/file_service/file_service.h"
-// #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
 // #include "runtime/resource/config_manager/config_manager.h"
 
 namespace Blunder {
@@ -26,11 +26,17 @@ void RuntimeGlobalContext::startSystems() {
   // m_config_manager = eastl::make_shared<ConfigManager>();
   // m_config_manager->initialize(config_file_path);
 
-  // m_file_system = eastl::make_shared<FileSystem>();
-
   m_logger_system = eastl::make_shared<LogSystem>();
 
-  // m_asset_manager = eastl::make_shared<AssetManager>();
+  // FileSystem must be live before any system that touches disk (asset
+  // loading, shader compilation, configs, ...).
+  m_file_system = eastl::make_shared<FileSystem>();
+  m_file_system->initialize();
+
+  m_asset_manager = eastl::make_shared<AssetManager>();
+  AssetManagerInitInfo asset_init_info;
+  asset_init_info.file_system = m_file_system.get();
+  m_asset_manager->initialize(asset_init_info);
 
   // m_physics_manager = eastl::make_shared<PhysicsManager>();
   // m_physics_manager->initialize();
@@ -102,13 +108,19 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_physics_manager->clear();
   // m_physics_manager.reset();
 
-  // m_asset_manager.reset();
+  if (m_asset_manager) {
+    m_asset_manager->shutdown();
+    m_asset_manager.reset();
+  }
+
+  if (m_file_system) {
+    m_file_system->shutdown();
+    m_file_system.reset();
+  }
 
   m_logger_system.reset();
 
   m_memory_system.shutdown();
-
-  // m_file_system.reset();
 
   // m_config_manager.reset();
 

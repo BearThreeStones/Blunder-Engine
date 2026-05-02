@@ -38,6 +38,10 @@ add_library(engine_runtime STATIC
     "platform/window/window_system.cpp"
     "platform/file_system/file_system.h"
     "platform/file_system/file_system.cpp"
+    "resource/asset/asset.h"
+    "resource/asset/texture2d_asset.h"
+    "resource/asset_manager/asset_manager.h"
+    "resource/asset_manager/asset_manager.cpp"
 )
 
 add_subdirectory(function/render)
@@ -84,6 +88,7 @@ target_link_libraries(engine_runtime
         Slint::Slint
     PRIVATE
         cgltf
+        stb
         SDL3::SDL3
         vma
         slang::slang
