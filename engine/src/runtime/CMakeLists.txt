@@ -36,6 +36,8 @@ add_library(engine_runtime STATIC
     "core/layer/layer_stack.cpp"
     "platform/window/window_system.h"
     "platform/window/window_system.cpp"
+    "platform/file_system/file_system.h"
+    "platform/file_system/file_system.cpp"
 )
 
 add_subdirectory(function/render)
@@ -85,4 +87,11 @@ target_link_libraries(engine_runtime
         SDL3::SDL3
         vma
         slang::slang
+)
+
+# Inject the project source root so FileSystem can resolve asset/shader paths
+# during dev builds without relying on the executable's working directory.
+target_compile_definitions(engine_runtime
+    PRIVATE
+        BLUNDER_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
