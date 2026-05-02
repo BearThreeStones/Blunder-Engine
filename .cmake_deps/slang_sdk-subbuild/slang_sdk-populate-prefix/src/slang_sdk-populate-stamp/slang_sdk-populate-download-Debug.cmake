@@ -1,7 +1,7 @@
 
-cmake_minimum_required(VERSION ${CMAKE_VERSION}) # this file comes with cmake
+cmake_minimum_required(VERSION 3.15)
 
-set(command "C:/Program Files/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe;-Dmake=${make};-Dconfig=${config};-P;E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-Debug-impl.cmake")
+set(command "C:/Program Files/CMake/bin/cmake.exe;-Dmake=${make};-Dconfig=${config};-P;E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-Debug-impl.cmake")
 set(log_merged "")
 set(log_output_on_failure "")
 set(stdout_log "E:/Dev/Blunder-Engine/.cmake_deps/slang_sdk-subbuild/slang_sdk-populate-prefix/src/slang_sdk-populate-stamp/slang_sdk-populate-download-out.log")

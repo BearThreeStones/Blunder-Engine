@@ -23,12 +23,8 @@ include(cmake/compiler.cmake)
 # ---------- 核心外部依赖 ----------
 find_package(Vulkan REQUIRED)
 
-set(BLUNDER_LOCAL_SLINT_PREFIX "${CMAKE_SOURCE_DIR}/slint-sdk/install")
-if(EXISTS "${BLUNDER_LOCAL_SLINT_PREFIX}/lib/cmake/Slint/SlintConfig.cmake")
-    list(APPEND CMAKE_PREFIX_PATH "${BLUNDER_LOCAL_SLINT_PREFIX}")
-endif()
-
-find_package(Slint REQUIRED)
+# ---------- Slint C++ SDK (pre-built, auto-downloaded) ----------
+include(cmake/slint.cmake)
 
 # ---------- Slang Shader Compiler SDK ----------
 include(cmake/slang.cmake)

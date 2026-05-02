@@ -37,3 +37,10 @@ Thumbs.db
 
 .sisyphus
 .github
+
+# Auto-downloaded SDK caches (managed by cmake/slint.cmake and cmake/slang.cmake)
+.cmake_deps/
+
+# Legacy Slint SDK directories (now auto-managed via cmake/slint.cmake)
+slint-sdk/
+slint/
