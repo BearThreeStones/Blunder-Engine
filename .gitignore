@@ -7,13 +7,25 @@ Debug/
 Release/
 RelWithDebInfo/
 MinSizeRel/
+**/Debug/
+**/Release/
+**/RelWithDebInfo/
+**/MinSizeRel/
+*.dir/
+*.tlog/
 
 .vs/
+.vscode/
+.idea/
+.cursor/
 *.vcxproj.user
 *.VC.db
 *.opendb
 *.user
 *.suo
+*.ipch
+*.sln.docstates
+*.lastbuildstate
 
 CMakeCache.txt
 CMakeFiles/
@@ -22,13 +34,21 @@ install_manifest.txt
 CTestTestfile.cmake
 Testing/
 compile_commands.json
+_deps/
 
 *.obj
+*.o
+*.a
+*.lib
+*.dll
+*.exp
+*.exe
 *.pdb
 *.ilk
 *.idb
 *.log
 *.tmp
+*.cache
 
 CMakeUserPresets.json
 
@@ -44,3 +64,7 @@ Thumbs.db
 # Legacy Slint SDK directories (now auto-managed via cmake/slint.cmake)
 slint-sdk/
 slint/
+
+# Local agent/editor scratch files
+agent-tools/
+agent-transcripts/
