@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
+
 #include "EASTL/string.h"
 
 namespace Blunder {
@@ -20,19 +23,46 @@ class Asset {
     Shader,
   };
 
-  Asset(Type type, eastl::string name)
-      : m_type(type), m_name(eastl::move(name)) {}
+  enum class State : uint8_t {
+    Unloaded = 0,
+    Loaded,
+    Failed,
+  };
+
+  struct Meta {
+    eastl::string virtual_path;
+    std::filesystem::path absolute_path;
+    uint64_t source_timestamp{0};
+  };
+
+  Asset(Type type, Meta meta)
+      : m_type(type),
+        m_state(State::Unloaded),
+        m_virtual_path(eastl::move(meta.virtual_path)),
+        m_absolute_path(eastl::move(meta.absolute_path)),
+        m_source_timestamp(meta.source_timestamp) {}
   virtual ~Asset() = default;
 
   Asset(const Asset&) = delete;
   Asset& operator=(const Asset&) = delete;
 
   Type getType() const { return m_type; }
-  const eastl::string& getName() const { return m_name; }
+  State getState() const { return m_state; }
+  const eastl::string& getName() const { return m_virtual_path; }
+  const eastl::string& getVirtualPath() const { return m_virtual_path; }
+  const std::filesystem::path& getAbsolutePath() const { return m_absolute_path; }
+  uint64_t getSourceTimestamp() const { return m_source_timestamp; }
+
+ protected:
+  void setState(State state) { m_state = state; }
+  void setSourceTimestamp(uint64_t timestamp) { m_source_timestamp = timestamp; }
 
  private:
   Type m_type;
-  eastl::string m_name;  // virtual path used as cache key
+  State m_state;
+  eastl::string m_virtual_path;  // cache key
+  std::filesystem::path m_absolute_path;
+  uint64_t m_source_timestamp{0};  // reserved for hot reload
 };
 
 }  // namespace Blunder

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 
 #include "EASTL/shared_ptr.h"
@@ -8,6 +9,8 @@
 #include "EASTL/vector.h"
 
 #include "runtime/resource/asset/asset.h"
+#include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/shader_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 
 namespace Blunder {
@@ -17,6 +20,32 @@ class FileSystem;
 struct AssetManagerInitInfo {
   /// Required. AssetManager performs all IO through this.
   FileSystem* file_system{nullptr};
+};
+
+struct AssetHandle {
+  Asset::Type type{Asset::Type::Unknown};
+  eastl::string key;
+  uint32_t generation{0};
+
+  bool isValid() const { return type != Asset::Type::Unknown && !key.empty(); }
+};
+
+template <typename T>
+struct AssetTypeTraits;
+
+template <>
+struct AssetTypeTraits<Texture2DAsset> {
+  static constexpr Asset::Type k_type = Asset::Type::Texture2D;
+};
+
+template <>
+struct AssetTypeTraits<ShaderAsset> {
+  static constexpr Asset::Type k_type = Asset::Type::Shader;
+};
+
+template <>
+struct AssetTypeTraits<MeshAsset> {
+  static constexpr Asset::Type k_type = Asset::Type::Mesh;
 };
 
 /// AssetManager owns the lifetime of CPU-side resources loaded from disk.
@@ -46,6 +75,22 @@ class AssetManager final {
   /// channel count, to keep upload paths uniform.
   eastl::shared_ptr<Texture2DAsset> loadTexture2D(
       const eastl::string& virtual_path);
+  eastl::shared_ptr<ShaderAsset> loadShader(const eastl::string& virtual_path);
+  eastl::shared_ptr<MeshAsset> loadMesh(const eastl::string& virtual_path);
+  AssetHandle makeHandle(Asset::Type type, const eastl::string& virtual_path) const;
+  eastl::shared_ptr<Asset> get(const AssetHandle& handle) const;
+
+  template <typename T>
+  eastl::shared_ptr<T> getTyped(const AssetHandle& handle) const {
+    if (handle.type != AssetTypeTraits<T>::k_type) {
+      return nullptr;
+    }
+    auto base = get(handle);
+    if (!base || base->getType() != AssetTypeTraits<T>::k_type) {
+      return nullptr;
+    }
+    return eastl::static_pointer_cast<T>(base);
+  }
 
   // ---- Maintenance -------------------------------------------------------
 
@@ -61,8 +106,12 @@ class AssetManager final {
   template <typename T>
   using Cache = eastl::unordered_map<eastl::string, eastl::weak_ptr<T>>;
 
+  eastl::string canonicalKey(const eastl::string& virtual_path) const;
+
   FileSystem* m_file_system{nullptr};
   Cache<Texture2DAsset> m_texture_cache;
+  Cache<ShaderAsset> m_shader_cache;
+  Cache<MeshAsset> m_mesh_cache;
   bool m_is_initialized{false};
 };
 

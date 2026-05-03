@@ -16,13 +16,15 @@ namespace Blunder {
 /// representation to build their own GPU resources (VkImage, sampler, etc.).
 class Texture2DAsset final : public Asset {
  public:
-  Texture2DAsset(eastl::string name, uint32_t width, uint32_t height,
+  Texture2DAsset(Asset::Meta meta, uint32_t width, uint32_t height,
                  uint32_t channels, eastl::vector<uint8_t> pixels)
-      : Asset(Asset::Type::Texture2D, eastl::move(name)),
+      : Asset(Asset::Type::Texture2D, eastl::move(meta)),
         m_width(width),
         m_height(height),
         m_channels(channels),
-        m_pixels(eastl::move(pixels)) {}
+        m_pixels(eastl::move(pixels)) {
+    setState(State::Loaded);
+  }
 
   uint32_t getWidth() const { return m_width; }
   uint32_t getHeight() const { return m_height; }
