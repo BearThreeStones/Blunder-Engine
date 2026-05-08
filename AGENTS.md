@@ -152,6 +152,61 @@ target_link_libraries(engine_runtime
 
 ---
 
+## Render Data Flow
+
+The editor uses an off-screen render target + Slint composition pipeline. The
+engine itself never presents to the window: Slint's `SkiaRenderer` owns the
+HWND and is in charge of `Present`. Per frame:
+
+```
+SDL3 pumpEvents
+   └─► WindowSystem ─► layers ─► SlintSystem.processEvent (input forwarded)
+
+RenderSystem::tick(dt, viewport_w, viewport_h, slint_system)
+   ├─ resize OffscreenRenderTarget if Slint reports a new central rect size
+   ├─ pass 1: scene pipeline (basic.slang) → OffscreenRenderTarget
+   │            (image format R8G8B8A8_UNORM, finalLayout SHADER_READ_ONLY)
+   ├─ image barrier: SHADER_READ_ONLY → TRANSFER_SRC
+   ├─ vkCmdCopyImageToBuffer → host-visible staging buffer (VMA GPU_TO_CPU)
+   ├─ image barrier: TRANSFER_SRC → SHADER_READ_ONLY
+   ├─ submit + wait fence (single-frame stall)
+   └─ map staging → memcpy → SlintSystem.setViewportImage(rgba8 pixels)
+
+SlintSystem::update()
+   ├─ slint::platform::update_timers_and_animations()
+   └─ SkiaRenderer.render()  // GPU composite + Present on HWND
+            └─ The central `Image` control samples the SharedPixelBuffer
+              created from the engine's readback pixels.
+```
+
+Key integration points:
+
+| Concern              | Owner                            |
+|----------------------|----------------------------------|
+| Window / HWND        | `WindowSystem` (SDL3, no `SDL_WINDOW_VULKAN`) |
+| Vulkan device        | `VulkanContext` (headless, no surface/swapchain) |
+| 3D scene pass        | `VulkanPipeline` + `OffscreenRenderTarget` |
+| Per-frame readback   | `RenderSystem::tick`             |
+| UI composite + Present | `SlintSystem` + `SkiaRenderer` |
+| 3D viewport size     | Slint `viewport-width/height` ► `RenderSystem` |
+| 3D pixels into UI    | `SlintSystem::setViewportImage`  |
+
+Notes / known limitations:
+
+- Slint 1.16.1 SDK ships with `RENDERER_SKIA` enabled but `RENDERER_SKIA_VULKAN`
+  and `RENDERER_SKIA_OPENGL` disabled. Zero-copy GPU texture sharing is not
+  available, hence the CPU readback path. The data flow above is structured so
+  the readback step can later be replaced by a shared-texture path without
+  changing the rest of the pipeline.
+- The readback uses a synchronous fence wait per frame. Pingponging across
+  `VulkanSync::k_max_frames_in_flight` staging buffers (already provisioned)
+  is the next optimisation if this becomes a bottleneck.
+- `EditorCamera` still receives input in window coordinates; for delta-based
+  motion (drag/orbit) this is fine, but absolute-position interactions should
+  later be remapped to the central viewport rect.
+
+---
+
 ## Compiler Defines (MSVC)
 
 - `NOMINMAX` - Disables Windows min/max macros

@@ -113,12 +113,14 @@ void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
   m_enable_validation = info.enable_validation;
 #endif
 
+  // Headless mode: Slint Skia owns presentation on the window's HWND. The
+  // engine's Vulkan context only renders to off-screen images and reads
+  // them back to CPU; we no longer need a surface, swapchain, or present
+  // queue here.
   LOG_INFO("[VulkanContext::initialize] creating Vulkan instance");
   createInstance();
   LOG_INFO("[VulkanContext::initialize] setting up debug messenger");
   setupDebugMessenger();
-  LOG_INFO("[VulkanContext::initialize] creating window surface");
-  createSurface();
   LOG_INFO("[VulkanContext::initialize] selecting physical device");
   selectPhysicalDevice();
   LOG_INFO("[VulkanContext::initialize] creating logical device");
@@ -139,10 +141,7 @@ void VulkanContext::shutdown() {
     m_device = VK_NULL_HANDLE;
   }
 
-  if (m_surface != VK_NULL_HANDLE) {
-    vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
-    m_surface = VK_NULL_HANDLE;
-  }
+  // Headless mode never created a window surface; nothing to destroy here.
 
   if (m_debug_messenger != VK_NULL_HANDLE) {
     auto* destroy_debug_messenger =
@@ -183,13 +182,8 @@ void VulkanContext::createInstance() {
                       ? VK_API_VERSION_1_3
                       : VK_API_VERSION_1_1;
 
-  uint32_t window_extension_count = 0;
-  eastl::array<const char*, 16> window_extensions =
-      m_window_system->getRequiredVulkanExtensions(&window_extension_count);
-
-  eastl::vector<const char*> instance_extensions(window_extensions.begin(),
-                                                 window_extensions.begin() +
-                                                     window_extension_count);
+  // Headless: no window surface extensions required.
+  eastl::vector<const char*> instance_extensions;
 
   if (m_enable_validation &&
       hasInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
@@ -262,16 +256,6 @@ void VulkanContext::setupDebugMessenger() {
   }
 }
 
-void VulkanContext::createSurface() {
-  ASSERT(m_window_system);
-  ASSERT(m_instance != VK_NULL_HANDLE);
-
-  if (!m_window_system->createVulkanSurface(m_instance, &m_surface)) {
-    LOG_FATAL("[VulkanContext::createSurface] failed: {}",
-              SDL_GetError());
-  }
-}
-
 void VulkanContext::selectPhysicalDevice() {
   uint32_t device_count = 0;
   vkEnumeratePhysicalDevices(m_instance, &device_count, nullptr);
@@ -285,13 +269,8 @@ void VulkanContext::selectPhysicalDevice() {
   int best_score = -1;
   VkPhysicalDevice selected_device = VK_NULL_HANDLE;
   uint32_t selected_graphics_family = 0;
-  uint32_t selected_present_family = 0;
 
   for (VkPhysicalDevice device : devices) {
-    if (!hasDeviceExtension(device, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
-      continue;
-    }
-
     uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count,
                                              nullptr);
@@ -304,26 +283,17 @@ void VulkanContext::selectPhysicalDevice() {
                                              queue_families.data());
 
     bool has_graphics = false;
-    bool has_present = false;
     uint32_t graphics_family = 0;
-    uint32_t present_family = 0;
 
-    // 寻找同时支持图形和展示的队列族
     for (uint32_t i = 0; i < queue_family_count; ++i) {
       if ((queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U) {
         has_graphics = true;
         graphics_family = i;
-      }
-
-      VkBool32 present_support = VK_FALSE;
-      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &present_support);
-      if (present_support == VK_TRUE) {
-        has_present = true;
-        present_family = i;
+        break;
       }
     }
 
-    if (!has_graphics || !has_present) {
+    if (!has_graphics) {
       continue;
     }
 
@@ -372,7 +342,6 @@ void VulkanContext::selectPhysicalDevice() {
       best_score = score;
       selected_device = device;
       selected_graphics_family = graphics_family;
-      selected_present_family = present_family;
     }
   }
 
@@ -383,39 +352,30 @@ void VulkanContext::selectPhysicalDevice() {
 
   m_physical_device = selected_device;
   m_graphics_queue_family = selected_graphics_family;
-  m_present_queue_family = selected_present_family;
+  // Headless mode: there is no present queue. We keep m_present_queue_family
+  // mirroring the graphics family so any legacy callers do not crash, but it
+  // is not actually used for present operations.
+  m_present_queue_family = selected_graphics_family;
 }
 
 void VulkanContext::createLogicalDevice() {
   ASSERT(m_physical_device != VK_NULL_HANDLE);
 
-  eastl::set<uint32_t> queue_families = {m_graphics_queue_family,
-                                       m_present_queue_family};
-
+  // Headless: only the graphics queue is required; no swapchain extension.
   const float queue_priority = 1.0f;
 
-  // 为队列族创建队列
-  eastl::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-  queue_create_infos.reserve(queue_families.size());
+  VkDeviceQueueCreateInfo queue_create_info{};
+  queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  queue_create_info.queueFamilyIndex = m_graphics_queue_family;
+  queue_create_info.queueCount = 1;
+  queue_create_info.pQueuePriorities = &queue_priority;
 
-  for (uint32_t queue_family : queue_families) {
-    VkDeviceQueueCreateInfo queue_create_info{};
-    queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queue_create_info.queueFamilyIndex = queue_family;
-    queue_create_info.queueCount = 1;
-    queue_create_info.pQueuePriorities = &queue_priority;
-    queue_create_infos.push_back(queue_create_info);
-  }
-
-  const char* device_extensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
-
-  // 创建逻辑设备
   VkDeviceCreateInfo create_info{};
   create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-  create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
-  create_info.pQueueCreateInfos = queue_create_infos.data();
-  create_info.enabledExtensionCount = 1;
-  create_info.ppEnabledExtensionNames = device_extensions;
+  create_info.queueCreateInfoCount = 1;
+  create_info.pQueueCreateInfos = &queue_create_info;
+  create_info.enabledExtensionCount = 0;
+  create_info.ppEnabledExtensionNames = nullptr;
   // 为了兼容较旧的实现，仍设置 enabledLayerCount 和 ppEnabledLayerNames 字段
   create_info.enabledLayerCount = 1;
   create_info.ppEnabledLayerNames = &k_validation_layer_name;
@@ -427,9 +387,8 @@ void VulkanContext::createLogicalDevice() {
               static_cast<int>(result));
   }
 
-  // 检索队列句柄
   vkGetDeviceQueue(m_device, m_graphics_queue_family, 0, &m_graphics_queue);
-  vkGetDeviceQueue(m_device, m_present_queue_family, 0, &m_present_queue);
+  m_present_queue = m_graphics_queue;
 }
 
 }  // namespace Blunder

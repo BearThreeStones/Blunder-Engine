@@ -136,11 +136,15 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   // single thread
   // exchange data between logic and render contexts
 
+  // 1. Render 3D scene to off-screen RT, read back to CPU, push pixels into
+  //    the Slint Image control via setViewportImage(). The target size comes
+  //    from Slint's central viewport rectangle.
+  rendererTick(delta_time);
+
+  // 2. Slint composites the entire window (including the Image control with
+  //    the freshly-pushed 3D viewport pixels) and presents to the HWND via
+  //    its SkiaRenderer.
   g_runtime_global_context.m_slint_system->update();
-  UiCpuTextureView ui_overlay{};
-  const bool has_ui =
-      g_runtime_global_context.m_slint_system->tryFillUiOverlay(ui_overlay);
-  rendererTick(delta_time, has_ui ? &ui_overlay : nullptr);
 
 #ifdef ENABLE_PHYSICS_DEBUG_RENDERER
   g_runtime_global_context.m_physics_manager->renderPhysicsWorld(delta_time);
@@ -159,9 +163,34 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 //   g_runtime_global_context.m_input_system->tick();
 // }
 //
-bool BlunderEngine::rendererTick(float delta_time,
-                                 const UiCpuTextureView* ui_overlay) {
-  g_runtime_global_context.m_render_system->tick(delta_time, ui_overlay);
+bool BlunderEngine::rendererTick(float delta_time) {
+  SlintSystem* slint_system = g_runtime_global_context.m_slint_system.get();
+
+  // Use the central viewport rectangle reported by Slint as the off-screen
+  // RT target size, falling back to the drawable surface size before the
+  // first Slint layout has computed it.
+  uint32_t target_w = 0;
+  uint32_t target_h = 0;
+  if (slint_system) {
+    eastl::array<uint32_t, 2> vp = slint_system->getViewportLogicalSize();
+    target_w = vp[0];
+    target_h = vp[1];
+  }
+  if (target_w == 0 || target_h == 0) {
+    eastl::array<int, 2> drawable =
+        g_runtime_global_context.m_window_system->getDrawableSize();
+    target_w = static_cast<uint32_t>(drawable[0] > 0 ? drawable[0] : 1);
+    target_h = static_cast<uint32_t>(drawable[1] > 0 ? drawable[1] : 1);
+  }
+  // Guard against degenerate sizes during transient layouts (folded panels,
+  // window minimised, etc.) to avoid creating tiny render targets that get
+  // immediately invalidated on the next frame.
+  constexpr uint32_t k_min_viewport_extent = 16u;
+  if (target_w < k_min_viewport_extent) target_w = k_min_viewport_extent;
+  if (target_h < k_min_viewport_extent) target_h = k_min_viewport_extent;
+
+  g_runtime_global_context.m_render_system->tick(delta_time, target_w,
+                                                 target_h, slint_system);
   return true;
 }
 

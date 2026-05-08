@@ -42,6 +42,11 @@ class WindowSystem final {
   eastl::array<const char*, 16> getRequiredVulkanExtensions(
       uint32_t* count) const;
 
+  /// Native Win32 HWND backing this window, or nullptr if not on Windows.
+  void* getNativeWin32Hwnd() const;
+  /// Native Win32 HINSTANCE associated with the process, or nullptr.
+  void* getNativeWin32HInstance() const;
+
   void setEventCallback(const EventCallbackFn& callback) {
     m_event_callback = callback;
   }

@@ -34,6 +34,8 @@ class VulkanBuffer final {
   void upload(const void* data, VkDeviceSize size);
 
   VkBuffer getBuffer() const { return m_buffer; }
+  VmaAllocation getAllocation() const { return m_allocation; }
+  VkDeviceSize getSize() const { return m_size; }
 
  private:
   VulkanAllocator* m_allocator{nullptr};

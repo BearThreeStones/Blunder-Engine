@@ -9,7 +9,6 @@
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_shader.h"
-#include "runtime/function/render/vulkan/vulkan_swapchain.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 
 namespace Blunder {
@@ -21,28 +20,22 @@ const char* k_shader_path = "engine/shaders/basic.slang";
 }  // namespace
 
 void VulkanPipeline::initialize(VulkanContext* context,
-                                VulkanSwapchain* swapchain,
-                                SlangCompiler* slang_compiler) {
+                                SlangCompiler* slang_compiler,
+                                VkRenderPass render_pass) {
   ASSERT(context);
-  ASSERT(swapchain);
   ASSERT(slang_compiler);
+  ASSERT(render_pass != VK_NULL_HANDLE);
 
   m_context = context;
-  m_swapchain = swapchain;
   m_slang_compiler = slang_compiler;
+  m_render_pass = render_pass;
 
-  createRenderPass();
   createDescriptorSetLayout();
   createGraphicsPipeline();
-  createFramebuffers();
   createCommandPool();
   createCommandBuffers();
 }
 
-/// <summary>
-/// 关闭并清理 Vulkan
-/// 管线资源。销毁命令池、命令缓冲区、帧缓冲区、图形管线、管线布局和渲染通道,并释放相关引用
-/// </summary>
 void VulkanPipeline::shutdown() {
   if (!m_context) {
     return;
@@ -55,8 +48,6 @@ void VulkanPipeline::shutdown() {
     m_command_pool = VK_NULL_HANDLE;
     m_command_buffers.clear();
   }
-
-  destroyFramebuffers();
 
   if (m_graphics_pipeline != VK_NULL_HANDLE) {
     vkDestroyPipeline(device, m_graphics_pipeline, nullptr);
@@ -73,76 +64,9 @@ void VulkanPipeline::shutdown() {
     m_descriptor_set_layout = VK_NULL_HANDLE;
   }
 
-  if (m_render_pass != VK_NULL_HANDLE) {
-    vkDestroyRenderPass(device, m_render_pass, nullptr);
-    m_render_pass = VK_NULL_HANDLE;
-  }
-
+  m_render_pass = VK_NULL_HANDLE;
   m_slang_compiler = nullptr;
-  m_swapchain = nullptr;
   m_context = nullptr;
-}
-
-void VulkanPipeline::recreateFramebuffers(VulkanSwapchain* swapchain) {
-  ASSERT(m_context);
-  ASSERT(swapchain);
-
-  m_swapchain = swapchain;
-  destroyFramebuffers();
-  createFramebuffers();
-}
-
-void VulkanPipeline::createRenderPass() {
-  ASSERT(m_context);
-  ASSERT(m_swapchain);
-
-  // 定义一个颜色附件，描述交换链图像的格式和使用方式
-  VkAttachmentDescription color_attachment{};
-  color_attachment.format = m_swapchain->getImageFormat();
-  color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-  color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-  // 定义一个附件引用，指定子通道将使用哪个附件，以及在渲染过程中如何访问它
-  VkAttachmentReference color_attachment_ref{};
-  color_attachment_ref.attachment = 0;
-  color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-  VkSubpassDescription subpass{};
-  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-  subpass.colorAttachmentCount = 1;
-  subpass.pColorAttachments = &color_attachment_ref;
-
-  // 让渲染通道等待 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-  // 阶段保证交换链完成从图像的读取，然后才访问它
-  VkSubpassDependency dependency{};
-  dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-  dependency.dstSubpass = 0;
-  dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  dependency.srcAccessMask = 0;
-  dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-  VkRenderPassCreateInfo render_pass_info{};
-  render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-  render_pass_info.attachmentCount = 1;
-  render_pass_info.pAttachments = &color_attachment;
-  render_pass_info.subpassCount = 1;
-  render_pass_info.pSubpasses = &subpass;
-  render_pass_info.dependencyCount = 1;
-  render_pass_info.pDependencies = &dependency;
-
-  const VkResult result = vkCreateRenderPass(
-      m_context->getDevice(), &render_pass_info, nullptr, &m_render_pass);
-  if (result != VK_SUCCESS) {
-    LOG_FATAL(
-        "[VulkanPipeline::createRenderPass] vkCreateRenderPass failed: {}",
-        static_cast<int>(result));
-  }
 }
 
 void VulkanPipeline::createGraphicsPipeline() {
@@ -152,7 +76,6 @@ void VulkanPipeline::createGraphicsPipeline() {
 
   VkDevice device = m_context->getDevice();
 
-  // 编译具有两个入口点的 .slang 着色器
   eastl::vector<VulkanShader::EntryPointSpec> entries;
   entries.push_back(
       {"vertexMain", VK_SHADER_STAGE_VERTEX_BIT, SLANG_STAGE_VERTEX});
@@ -163,7 +86,6 @@ void VulkanPipeline::createGraphicsPipeline() {
       VulkanShader::loadFromSlang(device, m_slang_compiler, k_shader_path,
                                   entries);
 
-  // 构建 VkPipelineShaderStageCreateInfo 列表以供管线创建使用
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
   stage_infos.reserve(shader_stages.size());
   for (const VulkanShader::ShaderStage& stage : shader_stages) {
@@ -180,7 +102,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   eastl::array<VkVertexInputAttributeDescription, 2> attribute_descriptions =
       Vertex::getAttributeDescriptions();
 
-  // 设置顶点输入状态：描述将传递给顶点着色器的顶点数据格式
   VkPipelineVertexInputStateCreateInfo vertex_input_info{};
   vertex_input_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -191,7 +112,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   vertex_input_info.pVertexAttributeDescriptions =
       attribute_descriptions.data();
 
-  // 设置输入装配状态：将从顶点绘制何种几何图元，以及是否应启用基元重启
   VkPipelineInputAssemblyStateCreateInfo input_assembly{};
   input_assembly.sType =
       VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -203,7 +123,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   viewport_state.viewportCount = 1;
   viewport_state.scissorCount = 1;
 
-  // 设置光栅化状态：定义如何将几何图元转换为片段
   VkPipelineRasterizationStateCreateInfo rasterizer{};
   rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
   rasterizer.depthClampEnable = VK_FALSE;
@@ -214,14 +133,12 @@ void VulkanPipeline::createGraphicsPipeline() {
   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE;
 
-  // 设置多重采样状态：定义如何执行多重采样（MSAA）
   VkPipelineMultisampleStateCreateInfo multisampling{};
   multisampling.sType =
       VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
   multisampling.sampleShadingEnable = VK_FALSE;
   multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-  // 设置颜色混合状态：定义如何将片段着色器输出的颜色与帧缓冲中的现有颜色混合
   VkPipelineColorBlendAttachmentState color_blend_attachment{};
   color_blend_attachment.colorWriteMask =
       VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -235,7 +152,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   color_blending.attachmentCount = 1;
   color_blending.pAttachments = &color_blend_attachment;
 
-  // 设置动态状态：允许在命令缓冲区录制时更改视口和剪裁矩形
   VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
                                      VK_DYNAMIC_STATE_SCISSOR};
   VkPipelineDynamicStateCreateInfo dynamic_state{};
@@ -243,7 +159,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   dynamic_state.dynamicStateCount = 2;
   dynamic_state.pDynamicStates = dynamic_states;
 
-  // 创建管线布局：描述管线使用的资源（如描述符集和推送常量）
   VkPipelineLayoutCreateInfo pipeline_layout_info{};
   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipeline_layout_info.setLayoutCount = 1;
@@ -278,7 +193,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   const VkResult pipeline_result = vkCreateGraphicsPipelines(
       device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_graphics_pipeline);
 
-  // 清理着色器模块（管线创建后不再需要）
   for (VulkanShader::ShaderStage& stage : shader_stages) {
     VulkanShader::destroyShaderModule(device, &stage.module);
   }
@@ -291,11 +205,6 @@ void VulkanPipeline::createGraphicsPipeline() {
   }
 }
 
-/// <summary>
-/// 创建并初始化 Vulkan 描述符集布局 (VkDescriptorSetLayout)，将句柄存储到成员
-/// m_descriptor_set_layout；在 vkCreateDescriptorSetLayout
-/// 失败时记录致命日志并终止
-/// </summary>
 void VulkanPipeline::createDescriptorSetLayout() {
   ASSERT(m_context);
 
@@ -321,59 +230,6 @@ void VulkanPipeline::createDescriptorSetLayout() {
   }
 }
 
-/// <summary>
-/// 为交换链中的每个图像视图创建 Vulkan 帧缓冲区
-/// </summary>
-void VulkanPipeline::createFramebuffers() {
-  ASSERT(m_context);
-  ASSERT(m_swapchain);
-  ASSERT(m_render_pass != VK_NULL_HANDLE);
-
-  const eastl::vector<VkImageView>& image_views = m_swapchain->getImageViews();
-  m_framebuffers.resize(image_views.size());
-
-  VkExtent2D extent = m_swapchain->getExtent();
-  for (size_t i = 0; i < image_views.size(); ++i) {
-    VkImageView attachments[] = {image_views[i]};
-
-    VkFramebufferCreateInfo framebuffer_info{};
-    framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebuffer_info.renderPass = m_render_pass;
-    framebuffer_info.attachmentCount = 1;
-    framebuffer_info.pAttachments = attachments;
-    framebuffer_info.width = extent.width;
-    framebuffer_info.height = extent.height;
-    framebuffer_info.layers = 1;
-
-    const VkResult result = vkCreateFramebuffer(
-        m_context->getDevice(), &framebuffer_info, nullptr, &m_framebuffers[i]);
-    if (result != VK_SUCCESS) {
-      LOG_FATAL(
-          "[VulkanPipeline::createFramebuffers] vkCreateFramebuffer failed: {}",
-          static_cast<int>(result));
-    }
-  }
-}
-
-/// <summary>
-/// 销毁所有帧缓冲区对象
-/// </summary>
-void VulkanPipeline::destroyFramebuffers() {
-  if (!m_context) {
-    return;
-  }
-
-  for (VkFramebuffer framebuffer : m_framebuffers) {
-    if (framebuffer != VK_NULL_HANDLE) {
-      vkDestroyFramebuffer(m_context->getDevice(), framebuffer, nullptr);
-    }
-  }
-  m_framebuffers.clear();
-}
-
-/// <summary>
-/// 创建 Vulkan 命令池
-/// </summary>
 void VulkanPipeline::createCommandPool() {
   ASSERT(m_context);
 
@@ -391,16 +247,12 @@ void VulkanPipeline::createCommandPool() {
   }
 }
 
-/// <summary>
-/// 创建 Vulkan 命令缓冲区
-/// </summary>
 void VulkanPipeline::createCommandBuffers() {
   ASSERT(m_context);
   ASSERT(m_command_pool != VK_NULL_HANDLE);
 
   m_command_buffers.resize(VulkanSync::k_max_frames_in_flight);
 
-  // 分配命令缓冲区
   VkCommandBufferAllocateInfo alloc_info{};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.commandPool = m_command_pool;

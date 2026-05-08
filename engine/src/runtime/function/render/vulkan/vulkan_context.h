@@ -34,7 +34,6 @@ class VulkanContext final {
  private:
   void createInstance();
   void setupDebugMessenger();
-  void createSurface();
   void selectPhysicalDevice();
   void createLogicalDevice();
 

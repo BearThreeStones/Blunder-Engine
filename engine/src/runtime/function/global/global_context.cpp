@@ -5,7 +5,6 @@
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
 #include "runtime/function/render/render_system.h"
-#include "runtime/function/render/vulkan/vulkan_swapchain.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/platform/input/input_system.h"

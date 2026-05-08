@@ -23,8 +23,13 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
   m_width = create_info.width;
   m_height = create_info.height;
 
-  SDL_WindowFlags window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
-                                 SDL_WINDOW_HIGH_PIXEL_DENSITY;
+  // Slint's SkiaRenderer owns the GPU surface/swapchain on this HWND for
+  // presentation, so the SDL window does not need SDL_WINDOW_VULKAN. The
+  // engine still uses Vulkan internally but only writes to off-screen images
+  // and reads them back; nothing is presented through the window's Vulkan
+  // surface anymore.
+  SDL_WindowFlags window_flags =
+      SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
   if (create_info.is_fullscreen) {
     window_flags |= SDL_WINDOW_FULLSCREEN;
   }
@@ -136,6 +141,30 @@ bool WindowSystem::createVulkanSurface(VkInstance instance,
   ASSERT(m_window);
   ASSERT(surface);
   return SDL_Vulkan_CreateSurface(m_window, instance, nullptr, surface);
+}
+
+void* WindowSystem::getNativeWin32Hwnd() const {
+  if (!m_window) {
+    return nullptr;
+  }
+  SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
+  if (!props) {
+    return nullptr;
+  }
+  return SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+                                nullptr);
+}
+
+void* WindowSystem::getNativeWin32HInstance() const {
+  if (!m_window) {
+    return nullptr;
+  }
+  SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
+  if (!props) {
+    return nullptr;
+  }
+  return SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER,
+                                nullptr);
 }
 
 eastl::array<const char*, 16> WindowSystem::getRequiredVulkanExtensions(

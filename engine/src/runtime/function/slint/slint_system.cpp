@@ -7,8 +7,6 @@
 #include <string_view>
 #include <utility>
 
-#include "runtime/function/render/render_system.h"
-
 #include "runtime/core/base/macro.h"
 
 namespace Blunder {
@@ -26,6 +24,11 @@ SlintSystem::SlintWindowAdapter::SlintWindowAdapter(WindowSystem* window_system)
 
 SlintSystem::~SlintSystem() { shutdown(); }
 
+slint::platform::AbstractRenderer& SlintSystem::SlintWindowAdapter::renderer() {
+  ensureRenderer();
+  return *m_renderer;
+}
+
 slint::PhysicalSize SlintSystem::SlintWindowAdapter::size() {
   eastl::array<int, 2> drawable_size = m_window_system->getDrawableSize();
   return slint::PhysicalSize(
@@ -33,13 +36,33 @@ slint::PhysicalSize SlintSystem::SlintWindowAdapter::size() {
        static_cast<uint32_t>(eastl::max(drawable_size[1], 1))});
 }
 
+void SlintSystem::SlintWindowAdapter::ensureRenderer() {
+  if (m_renderer) {
+    return;
+  }
+  ASSERT(m_window_system);
+#if defined(_WIN32) || defined(_WIN64)
+  void* hwnd = m_window_system->getNativeWin32Hwnd();
+  void* hinstance = m_window_system->getNativeWin32HInstance();
+  ASSERT(hwnd);
+  slint::platform::NativeWindowHandle handle =
+      slint::platform::NativeWindowHandle::from_win32(hwnd, hinstance);
+  m_last_size = size();
+  m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
+      handle, m_last_size);
+#else
+#  error "Slint SkiaRenderer integration is currently implemented for Win32 only"
+#endif
+}
+
 void SlintSystem::SlintWindowAdapter::set_visible(bool visible) {
   m_visible = visible;
   if (visible) {
+    ensureRenderer();
     window().dispatch_scale_factor_change_event(1.0f);
-    window().dispatch_resize_event(
-        slint::LogicalSize({static_cast<float>(size().width),
-                            static_cast<float>(size().height)}));
+    const slint::PhysicalSize phys = size();
+    window().dispatch_resize_event(slint::LogicalSize(
+        {static_cast<float>(phys.width), static_cast<float>(phys.height)}));
     request_redraw();
   }
 }
@@ -57,49 +80,24 @@ void SlintSystem::SlintWindowAdapter::update_window_properties(
 }
 
 void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
-  if (!m_visible) {
+  if (!m_visible || !m_renderer) {
     return;
   }
 
   const slint::PhysicalSize physical_size = size();
-  const size_t pixel_count =
-      static_cast<size_t>(physical_size.width) * physical_size.height;
-
-  const bool slint_dirty =
-      m_needs_redraw || window().has_active_animations();
-  if (!slint_dirty) {
-    return;
+  if (physical_size.width != m_last_size.width ||
+      physical_size.height != m_last_size.height) {
+    window().dispatch_resize_event(
+        slint::LogicalSize({static_cast<float>(physical_size.width),
+                            static_cast<float>(physical_size.height)}));
+    m_last_size = physical_size;
   }
 
-  if (m_buffer.size() != pixel_count) {
-    m_buffer.resize(pixel_count);
-  }
-
-  m_renderer.render(std::span<slint::Rgb8Pixel>(m_buffer.data(), m_buffer.size()),
-                    physical_size.width);
-
-  m_rgba_buffer.resize(pixel_count * 4);
-  const auto* rgb = reinterpret_cast<const uint8_t*>(m_buffer.data());
-  for (size_t i = 0; i < pixel_count; ++i) {
-    m_rgba_buffer[i * 4 + 0] = rgb[i * 3 + 0];
-    m_rgba_buffer[i * 4 + 1] = rgb[i * 3 + 1];
-    m_rgba_buffer[i * 4 + 2] = rgb[i * 3 + 2];
-    m_rgba_buffer[i * 4 + 3] = 255;
-  }
-
-  m_has_ui_bitmap = true;
+  // Always re-render: the engine pushes a new viewport image every frame, so
+  // even if Slint's UI itself isn't dirty, the central Image control needs
+  // to repaint with the latest 3D texture.
+  m_renderer->render();
   m_needs_redraw = window().has_active_animations();
-}
-
-bool SlintSystem::SlintWindowAdapter::fillUiOverlay(UiCpuTextureView& out) const {
-  if (!m_visible || !m_has_ui_bitmap || m_rgba_buffer.empty() || !m_window_system) {
-    return false;
-  }
-  const eastl::array<int, 2> drawable_size = m_window_system->getDrawableSize();
-  out.pixels_rgba = m_rgba_buffer.data();
-  out.width = static_cast<uint32_t>(eastl::max(drawable_size[0], 1));
-  out.height = static_cast<uint32_t>(eastl::max(drawable_size[1], 1));
-  return true;
 }
 
 SlintSystem::SlintPlatform::SlintPlatform(WindowSystem* window_system)
@@ -215,18 +213,34 @@ void SlintSystem::shutdown() {
   m_window_system = nullptr;
 }
 
+void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
+                                   uint32_t height) {
+  if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
+    return;
+  }
+  slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
+      width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
+  slint::Image image(buffer);
+  m_window_component->operator->()->set_viewport_image(image);
+}
+
+eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
+  if (!m_window_component) {
+    return {0u, 0u};
+  }
+  const auto& component = *m_window_component;
+  const float w = component->get_viewport_width();
+  const float h = component->get_viewport_height();
+  const uint32_t wu = w > 0.0f ? static_cast<uint32_t>(w) : 0u;
+  const uint32_t hu = h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+  return {wu, hu};
+}
+
 void SlintSystem::update() {
   slint::platform::update_timers_and_animations();
   if (m_window_adapter) {
     m_window_adapter->renderIfNeeded();
   }
-}
-
-bool SlintSystem::tryFillUiOverlay(UiCpuTextureView& out) const {
-  if (!m_window_adapter) {
-    return false;
-  }
-  return m_window_adapter->fillUiOverlay(out);
 }
 
 void SlintSystem::processEvent(const SDL_Event& event) {

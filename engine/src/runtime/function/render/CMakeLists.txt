@@ -2,6 +2,8 @@
 set(RENDER_SOURCES
     "function/render/editor_camera.cpp"
     "function/render/editor_camera.h"
+    "function/render/offscreen_render_target.cpp"
+    "function/render/offscreen_render_target.h"
     "function/render/render_system.cpp"
     "function/render/render_system.h"
     "function/render/slang/slang_compiler.cpp"
@@ -10,8 +12,6 @@ set(RENDER_SOURCES
     "function/render/vulkan/vulkan_context.h"
     "function/render/vulkan/vulkan_allocator.cpp"
     "function/render/vulkan/vulkan_allocator.h"
-    "function/render/vulkan/vulkan_swapchain.cpp"
-    "function/render/vulkan/vulkan_swapchain.h"
     "function/render/vulkan/vulkan_sync.cpp"
     "function/render/vulkan/vulkan_sync.h"
     "function/render/vulkan/vulkan_shader.cpp"

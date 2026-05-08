@@ -1,123 +1,195 @@
-import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, HorizontalBox, ListView, Slider, VerticalBox } from "std-widgets.slint";
 
+// DCC / Unreal-style editor layout:
+// - Top toolbar
+// - Left dock (Outliner)
+// - Center 3D viewport (Image bound to engine-produced texture)
+// - Right dock (Inspector)
+// - Bottom status bar
 export component MainEditorWindow inherits Window {
     width: 1280px;
     height: 720px;
     title: "Blunder Editor";
-    background: #202020;
+    background: #181818;
+
+    // The engine pushes a freshly composited 3D image here every frame.
+    in property <image> viewport-image;
+
+    // Engine reads back the central viewport size so the offscreen render
+    // target can be resized to match. Updated by the layout binding below.
+    out property <length> viewport-width: viewport-rect.width;
+    out property <length> viewport-height: viewport-rect.height;
+
     in-out property <int> click-count: 0;
     in-out property <bool> toggle-enabled: false;
     in-out property <float> slider-value: 35.0;
 
-    VerticalBox {
-        padding: 16px;
-        spacing: 12px;
-
-        Text {
-            text: "Blunder Engine";
-            color: #f5f5f5;
-            font-size: 28px;
-        }
-
-        Text {
-            text: "SDL3 window/event ownership + Slint UI path";
-            color: #a0d8ff;
-            font-size: 16px;
-        }
-
-        HorizontalBox {
-            spacing: 8px;
-
-            Button { text: "Scene"; }
-            Button { text: "Assets"; }
-            Button { text: "Inspector"; }
-        }
-
+    VerticalLayout {
+        // Top toolbar
         Rectangle {
-            background: #151515;
-            border-color: #404040;
+            background: #1f1f1f;
+            border-color: #2a2a2a;
             border-width: 1px;
-            min-height: 480px;
+            height: 44px;
 
-            VerticalBox {
-                padding: 20px;
-                spacing: 12px;
-
-                Text {
-                    text: "UI Test Panel (Slint)";
-                    color: #f0f0f0;
-                    font-size: 20px;
-                }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                alignment: start;
 
                 Text {
-                    text: "Runtime migrated off GLFW/ImGui";
-                    color: #d0d0d0;
+                    text: "Blunder Editor";
+                    color: #f5f5f5;
                     font-size: 16px;
+                    vertical-alignment: center;
                 }
 
-                HorizontalBox {
-                    spacing: 10px;
-                    alignment: start;
+                Rectangle { width: 16px; }
 
-                    Button {
-                        text: "Click Me";
-                        clicked => {
-                            root.click-count += 1;
-                        }
-                    }
+                Button { text: "File"; }
+                Button { text: "Edit"; }
+                Button { text: "View"; }
+                Button { text: "Play"; }
+            }
+        }
 
-                    Button {
-                        text: "Reset";
-                        clicked => {
-                            root.click-count = 0;
-                            root.slider-value = 35.0;
-                            root.toggle-enabled = false;
-                        }
-                    }
-                }
+        // Main work area: left dock + viewport + right dock
+        HorizontalLayout {
+            // Left dock - Outliner
+            Rectangle {
+                background: #1c1c1c;
+                border-color: #2a2a2a;
+                border-width: 1px;
+                width: 240px;
 
-                CheckBox {
-                    text: "Enable test option";
-                    checked: root.toggle-enabled;
-                    toggled => {
-                        root.toggle-enabled = self.checked;
-                    }
-                }
-
-                HorizontalBox {
-                    spacing: 10px;
-                    alignment: start;
+                VerticalBox {
+                    padding: 10px;
+                    spacing: 6px;
 
                     Text {
-                        text: "Intensity";
+                        text: "Outliner";
                         color: #d0d0d0;
-                        vertical-alignment: center;
-                    }
-
-                    Slider {
-                        value: root.slider-value;
-                        changed => {
-                            root.slider-value = self.value;
-                        }
-                        min-width: 320px;
-                    }
-                }
-
-                Rectangle {
-                    background: #1f1f1f;
-                    border-color: #3d3d3d;
-                    border-width: 1px;
-                    border-radius: 4px;
-                    min-height: 80px;
-
-                    Text {
-                        x: 12px;
-                        y: 12px;
-                        text: "Clicks: " + root.click-count + "\nToggle: " + (root.toggle-enabled ? "ON" : "OFF") + "\nIntensity: " + root.slider-value;
-                        color: #bde7ff;
                         font-size: 14px;
                     }
+                    Rectangle { background: #2a2a2a; height: 1px; }
+                    Text { text: "Scene"; color: #a0a0a0; font-size: 13px; }
+                    Text { text: "  Camera"; color: #909090; font-size: 13px; }
+                    Text { text: "  DemoQuad"; color: #909090; font-size: 13px; }
+                    Text { text: "  Light"; color: #909090; font-size: 13px; }
                 }
+            }
+
+            // Center viewport with the 3D image. The Image fills the whole
+            // rectangle and image-fit:fill keeps it pixel-aligned with the
+            // engine's offscreen render target after the engine resizes the
+            // RT to match this rect's size.
+            viewport-rect := Rectangle {
+                background: #0a0a0a;
+                border-color: #2a2a2a;
+                border-width: 1px;
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.viewport-image;
+                    image-fit: fill;
+                }
+            }
+
+            // Right dock - Inspector / Test panel
+            Rectangle {
+                background: #1c1c1c;
+                border-color: #2a2a2a;
+                border-width: 1px;
+                width: 280px;
+
+                VerticalBox {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Inspector";
+                        color: #d0d0d0;
+                        font-size: 14px;
+                    }
+                    Rectangle { background: #2a2a2a; height: 1px; }
+
+                    Text { text: "UI Test Panel"; color: #f0f0f0; font-size: 13px; }
+
+                    HorizontalBox {
+                        spacing: 8px;
+                        alignment: start;
+                        Button {
+                            text: "Click Me";
+                            clicked => { root.click-count += 1; }
+                        }
+                        Button {
+                            text: "Reset";
+                            clicked => {
+                                root.click-count = 0;
+                                root.slider-value = 35.0;
+                                root.toggle-enabled = false;
+                            }
+                        }
+                    }
+
+                    CheckBox {
+                        text: "Enable test option";
+                        checked: root.toggle-enabled;
+                        toggled => { root.toggle-enabled = self.checked; }
+                    }
+
+                    HorizontalBox {
+                        spacing: 8px;
+                        Text {
+                            text: "Intensity";
+                            color: #d0d0d0;
+                            vertical-alignment: center;
+                        }
+                        Slider {
+                            value: root.slider-value;
+                            changed => { root.slider-value = self.value; }
+                        }
+                    }
+
+                    Rectangle {
+                        background: #1f1f1f;
+                        border-color: #2a2a2a;
+                        border-width: 1px;
+                        border-radius: 4px;
+                        min-height: 80px;
+
+                        Text {
+                            x: 10px;
+                            y: 10px;
+                            text: "Clicks: " + root.click-count
+                                + "\nToggle: " + (root.toggle-enabled ? "ON" : "OFF")
+                                + "\nIntensity: " + root.slider-value;
+                            color: #bde7ff;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottom status bar
+        Rectangle {
+            background: #1f1f1f;
+            border-color: #2a2a2a;
+            border-width: 1px;
+            height: 24px;
+
+            Text {
+                x: 10px;
+                vertical-alignment: center;
+                text: "Viewport " + Math.round(root.viewport-width / 1px) + " x "
+                    + Math.round(root.viewport-height / 1px);
+                color: #808080;
+                font-size: 12px;
             }
         }
     }

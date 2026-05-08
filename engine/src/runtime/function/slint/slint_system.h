@@ -13,8 +13,6 @@
 
 namespace Blunder {
 
-struct UiCpuTextureView;
-
 struct SlintSystemInitInfo {
   WindowSystem* window_system{nullptr};
 };
@@ -26,35 +24,49 @@ class SlintSystem final {
 
   void initialize(const SlintSystemInitInfo& init_info);
   void shutdown();
+
+  /// Drives Slint's per-frame work: timers/animations + window present.
+  /// With the SkiaRenderer backend, this also performs the GPU composite
+  /// and Present on the window's HWND.
   void update();
   void processEvent(const SDL_Event& event);
 
-  /// Fills @p out with the last Slint CPU framebuffer (RGBA8). Valid until the next update().
-  bool tryFillUiOverlay(UiCpuTextureView& out) const;
+  /// Pushes a fresh 3D viewport image (RGBA8, top-left origin) into the
+  /// `viewport-image` property of the editor window. The pixel data is
+  /// copied into a Slint SharedPixelBuffer; the caller does not need to
+  /// keep the source buffer alive after the call returns.
+  void setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
+                        uint32_t height);
+
+  /// Returns the logical pixel size of the central 3D viewport rectangle in
+  /// the Slint UI. {0, 0} until the window has performed its first layout.
+  eastl::array<uint32_t, 2> getViewportLogicalSize() const;
 
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
     explicit SlintWindowAdapter(WindowSystem* window_system);
+    ~SlintWindowAdapter() override = default;
 
-    slint::platform::AbstractRenderer& renderer() override { return m_renderer; }
+    slint::platform::AbstractRenderer& renderer() override;
     slint::PhysicalSize size() override;
     void set_visible(bool visible) override;
     void request_redraw() override;
     void update_window_properties(const WindowProperties& properties) override;
 
+    /// Lazily creates the SkiaRenderer once the window is shown for the
+    /// first time, then composites and presents the Slint scene to the
+    /// HWND. Called from SlintSystem::update().
     void renderIfNeeded();
     bool needsRedraw() const { return m_needs_redraw; }
-    bool fillUiOverlay(UiCpuTextureView& out) const;
 
    private:
+    void ensureRenderer();
+
     WindowSystem* m_window_system{nullptr};
-    slint::platform::SoftwareRenderer m_renderer{
-        slint::platform::SoftwareRenderer::RepaintBufferType::ReusedBuffer};
+    std::unique_ptr<slint::platform::SkiaRenderer> m_renderer;
     bool m_visible{false};
     bool m_needs_redraw{true};
-    bool m_has_ui_bitmap{false};
-    eastl::vector<slint::Rgb8Pixel> m_buffer;
-    eastl::vector<uint8_t> m_rgba_buffer;
+    slint::PhysicalSize m_last_size{{0u, 0u}};
   };
 
   class SlintPlatform final : public slint::platform::Platform {
