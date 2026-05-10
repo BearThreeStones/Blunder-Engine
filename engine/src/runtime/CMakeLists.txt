@@ -9,6 +9,8 @@ add_library(engine_runtime STATIC
     "function/global/global_context.h"
     "function/slint/slint_system.h"
     "function/slint/slint_system.cpp"
+    "core/log/log_access.h"
+    "core/log/log_access.cpp"
     "core/log/log_system.h"
     "core/log/log_system.cpp"
     "core/base/high_precision_timer.h"

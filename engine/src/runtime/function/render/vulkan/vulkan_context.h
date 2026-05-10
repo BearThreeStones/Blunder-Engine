@@ -39,6 +39,7 @@ class VulkanContext final {
 
   WindowSystem* m_window_system{nullptr};
   bool m_enable_validation{true};
+  bool m_enable_validation_layer{false};
 
   VkInstance m_instance{VK_NULL_HANDLE};
   VkDebugUtilsMessengerEXT m_debug_messenger{VK_NULL_HANDLE};

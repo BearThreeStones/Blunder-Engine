@@ -4,6 +4,10 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_scancode.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -28,56 +32,32 @@ namespace {
 
 const uint64_t k_fence_wait_timeout_ns = 1000000000ULL;
 
-struct GlobalUniformData {
-  glm::mat4 model;
+struct GridUniformData {
   glm::mat4 view;
   glm::mat4 projection;
+  glm::vec4 camera_position_and_proj_type;
+  glm::vec4 camera_forward_and_far_clip;
+  glm::vec4 plane_origin;
+  glm::vec4 plane_axis_u;
+  glm::vec4 plane_axis_v;
+  glm::vec4 params0;  // step, major_scale, half_extent, line_count
+  glm::vec4 params1;  // edge_fade, angle_fade, far_fade, stipple_scale
+  glm::vec4 params2;  // stipple_duty, alpha_scale, iteration, reserved
 };
-
-void copyBuffer(VkDevice device, VkCommandPool command_pool, VkQueue queue,
-                VkBuffer src_buffer, VkBuffer dst_buffer, VkDeviceSize size) {
-  VkCommandBufferAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  alloc_info.commandPool = command_pool;
-  alloc_info.commandBufferCount = 1;
-
-  VkCommandBuffer command_buffer = VK_NULL_HANDLE;
-  const VkResult alloc_result =
-      vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
-  if (alloc_result != VK_SUCCESS) {
-    LOG_FATAL("[RenderSystem::copyBuffer] vkAllocateCommandBuffers failed: {}",
-              static_cast<int>(alloc_result));
-  }
-
-  VkCommandBufferBeginInfo begin_info{};
-  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-  vkBeginCommandBuffer(command_buffer, &begin_info);
-
-  VkBufferCopy copy_region{};
-  copy_region.size = size;
-  vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
-  vkEndCommandBuffer(command_buffer);
-
-  VkSubmitInfo submit_info{};
-  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submit_info.commandBufferCount = 1;
-  submit_info.pCommandBuffers = &command_buffer;
-  vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-  vkQueueWaitIdle(queue);
-  vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
-}
-
-const Vertex k_quad_vertices[] = {{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-                                  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-                                  {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.0f}}};
-
-const uint16_t k_quad_indices[] = {0, 1, 2, 2, 3, 0};
 
 constexpr uint32_t k_default_viewport_w = 1024;
 constexpr uint32_t k_default_viewport_h = 720;
+constexpr float k_grid_major_scale = 10.0f;
+constexpr float k_grid_half_extent = 120.0f;
+constexpr float k_grid_base_alpha = 0.22f;
+constexpr float k_grid_minor_alpha = 0.12f;
+constexpr float k_grid_edge_fade = 1.45f;
+constexpr float k_grid_angle_fade = 1.65f;
+constexpr float k_grid_far_fade = 1.0f;
+constexpr float k_grid_stipple_scale = 1.5f;
+constexpr float k_grid_stipple_duty = 0.6f;
+constexpr uint32_t k_grid_iterations = 3;
+constexpr uint32_t k_grid_lines_per_axis = 96;
 
 }  // namespace
 
@@ -110,108 +90,84 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   m_offscreen_rt->initialize(m_context.get(), m_allocator.get(),
                              k_default_viewport_w, k_default_viewport_h);
 
-  m_pipeline = eastl::make_shared<VulkanPipeline>();
-  m_pipeline->initialize(m_context.get(), m_slang_compiler.get(),
-                         m_offscreen_rt->getRenderPass());
+  VulkanPipelineCreateInfo grid_pipeline_info{};
+  grid_pipeline_info.shader_path = "engine/shaders/grid.slang";
+  grid_pipeline_info.enable_vertex_input = false;
+  grid_pipeline_info.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+  grid_pipeline_info.cull_mode = VK_CULL_MODE_NONE;
+  grid_pipeline_info.enable_blend = true;
+  grid_pipeline_info.enable_depth_test = true;
+  grid_pipeline_info.enable_depth_write = false;
+  grid_pipeline_info.enable_depth_bias = true;
+  grid_pipeline_info.depth_bias_constant_factor = -1.2f;
+  grid_pipeline_info.depth_bias_slope_factor = -1.2f;
+  grid_pipeline_info.descriptor_stage_flags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  m_grid_pipeline = eastl::make_shared<VulkanPipeline>();
+  m_grid_pipeline->initialize(m_context.get(), m_slang_compiler.get(),
+                              m_offscreen_rt->getRenderPass(),
+                              grid_pipeline_info);
 
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
 
-  // Vertex/index buffers (rotating quad demo geometry).
-  eastl::unique_ptr<VulkanBuffer> staging_buffer =
-      eastl::make_unique<VulkanBuffer>();
-  staging_buffer->create(m_allocator.get(), sizeof(k_quad_vertices),
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VMA_MEMORY_USAGE_CPU_TO_GPU);
-  staging_buffer->upload(k_quad_vertices, sizeof(k_quad_vertices));
-
-  m_vertex_buffer = eastl::make_unique<VulkanBuffer>();
-  m_vertex_buffer->create(
-      m_allocator.get(), sizeof(k_quad_vertices),
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-      VMA_MEMORY_USAGE_GPU_ONLY);
-
-  copyBuffer(m_context->getDevice(), m_pipeline->getCommandPool(),
-             m_context->getGraphicsQueue(), staging_buffer->getBuffer(),
-             m_vertex_buffer->getBuffer(), sizeof(k_quad_vertices));
-
-  staging_buffer->destroy();
-
-  eastl::unique_ptr<VulkanBuffer> index_staging_buffer =
-      eastl::make_unique<VulkanBuffer>();
-  index_staging_buffer->create(m_allocator.get(), sizeof(k_quad_indices),
-                               VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                               VMA_MEMORY_USAGE_CPU_TO_GPU);
-  index_staging_buffer->upload(k_quad_indices, sizeof(k_quad_indices));
-
-  m_index_buffer = eastl::make_unique<VulkanBuffer>();
-  m_index_buffer->create(
-      m_allocator.get(), sizeof(k_quad_indices),
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-      VMA_MEMORY_USAGE_GPU_ONLY);
-
-  copyBuffer(m_context->getDevice(), m_pipeline->getCommandPool(),
-             m_context->getGraphicsQueue(), index_staging_buffer->getBuffer(),
-             m_index_buffer->getBuffer(), sizeof(k_quad_indices));
-
-  index_staging_buffer->destroy();
-
-  m_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
+  m_grid_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
   for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    m_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
-    m_uniform_buffers[i]->create(m_allocator.get(), sizeof(GlobalUniformData),
-                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                 VMA_MEMORY_USAGE_CPU_TO_GPU);
+    m_grid_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
+    m_grid_uniform_buffers[i]->create(m_allocator.get(), sizeof(GridUniformData),
+                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 
-  VkDescriptorPoolSize pool_size{};
-  pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  pool_size.descriptorCount = VulkanSync::k_max_frames_in_flight;
+  VkDescriptorPoolSize grid_pool_size{};
+  grid_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  grid_pool_size.descriptorCount = VulkanSync::k_max_frames_in_flight;
 
-  VkDescriptorPoolCreateInfo pool_info{};
-  pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pool_info.poolSizeCount = 1;
-  pool_info.pPoolSizes = &pool_size;
-  pool_info.maxSets = VulkanSync::k_max_frames_in_flight;
-
-  const VkResult descriptor_pool_result = vkCreateDescriptorPool(
-      m_context->getDevice(), &pool_info, nullptr, &m_descriptor_pool);
-  if (descriptor_pool_result != VK_SUCCESS) {
-    LOG_FATAL("[RenderSystem::initialize] vkCreateDescriptorPool failed: {}",
-              static_cast<int>(descriptor_pool_result));
+  VkDescriptorPoolCreateInfo grid_pool_info{};
+  grid_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  grid_pool_info.poolSizeCount = 1;
+  grid_pool_info.pPoolSizes = &grid_pool_size;
+  grid_pool_info.maxSets = VulkanSync::k_max_frames_in_flight;
+  const VkResult grid_pool_result = vkCreateDescriptorPool(
+      m_context->getDevice(), &grid_pool_info, nullptr, &m_grid_descriptor_pool);
+  if (grid_pool_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[RenderSystem::initialize] grid vkCreateDescriptorPool failed: {}",
+        static_cast<int>(grid_pool_result));
   }
 
-  eastl::vector<VkDescriptorSetLayout> layouts(
-      VulkanSync::k_max_frames_in_flight, m_pipeline->getDescriptorSetLayout());
-  VkDescriptorSetAllocateInfo alloc_info{};
-  alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  alloc_info.descriptorPool = m_descriptor_pool;
-  alloc_info.descriptorSetCount = VulkanSync::k_max_frames_in_flight;
-  alloc_info.pSetLayouts = layouts.data();
+  eastl::vector<VkDescriptorSetLayout> grid_layouts(
+      VulkanSync::k_max_frames_in_flight,
+      m_grid_pipeline->getDescriptorSetLayout());
+  VkDescriptorSetAllocateInfo grid_alloc_info{};
+  grid_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  grid_alloc_info.descriptorPool = m_grid_descriptor_pool;
+  grid_alloc_info.descriptorSetCount = VulkanSync::k_max_frames_in_flight;
+  grid_alloc_info.pSetLayouts = grid_layouts.data();
 
-  m_descriptor_sets.resize(VulkanSync::k_max_frames_in_flight);
-  const VkResult descriptor_set_result = vkAllocateDescriptorSets(
-      m_context->getDevice(), &alloc_info, m_descriptor_sets.data());
-  if (descriptor_set_result != VK_SUCCESS) {
-    LOG_FATAL("[RenderSystem::initialize] vkAllocateDescriptorSets failed: {}",
-              static_cast<int>(descriptor_set_result));
+  m_grid_descriptor_sets.resize(VulkanSync::k_max_frames_in_flight);
+  const VkResult grid_set_result = vkAllocateDescriptorSets(
+      m_context->getDevice(), &grid_alloc_info, m_grid_descriptor_sets.data());
+  if (grid_set_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[RenderSystem::initialize] grid vkAllocateDescriptorSets failed: {}",
+        static_cast<int>(grid_set_result));
   }
 
   for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    VkDescriptorBufferInfo buffer_info{};
-    buffer_info.buffer = m_uniform_buffers[i]->getBuffer();
-    buffer_info.offset = 0;
-    buffer_info.range = sizeof(GlobalUniformData);
+    VkDescriptorBufferInfo grid_buffer_info{};
+    grid_buffer_info.buffer = m_grid_uniform_buffers[i]->getBuffer();
+    grid_buffer_info.offset = 0;
+    grid_buffer_info.range = sizeof(GridUniformData);
 
-    VkWriteDescriptorSet descriptor_write{};
-    descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptor_write.dstSet = m_descriptor_sets[i];
-    descriptor_write.dstBinding = 0;
-    descriptor_write.dstArrayElement = 0;
-    descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_write.descriptorCount = 1;
-    descriptor_write.pBufferInfo = &buffer_info;
-
-    vkUpdateDescriptorSets(m_context->getDevice(), 1, &descriptor_write, 0,
+    VkWriteDescriptorSet grid_descriptor_write{};
+    grid_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    grid_descriptor_write.dstSet = m_grid_descriptor_sets[i];
+    grid_descriptor_write.dstBinding = 0;
+    grid_descriptor_write.dstArrayElement = 0;
+    grid_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    grid_descriptor_write.descriptorCount = 1;
+    grid_descriptor_write.pBufferInfo = &grid_buffer_info;
+    vkUpdateDescriptorSets(m_context->getDevice(), 1, &grid_descriptor_write, 0,
                            nullptr);
   }
 
@@ -281,34 +237,25 @@ void RenderSystem::shutdown() {
     m_offscreen_rt.reset();
   }
 
-  if (m_vertex_buffer) {
-    m_vertex_buffer->destroy();
-    m_vertex_buffer.reset();
-  }
-
-  if (m_index_buffer) {
-    m_index_buffer->destroy();
-    m_index_buffer.reset();
-  }
-
-  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer : m_uniform_buffers) {
+  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer : m_grid_uniform_buffers) {
     if (uniform_buffer) {
       uniform_buffer->destroy();
       uniform_buffer.reset();
     }
   }
-  m_uniform_buffers.clear();
+  m_grid_uniform_buffers.clear();
 
-  m_descriptor_sets.clear();
+  m_grid_descriptor_sets.clear();
 
-  if (m_descriptor_pool != VK_NULL_HANDLE) {
-    vkDestroyDescriptorPool(m_context->getDevice(), m_descriptor_pool, nullptr);
-    m_descriptor_pool = VK_NULL_HANDLE;
+  if (m_grid_descriptor_pool != VK_NULL_HANDLE) {
+    vkDestroyDescriptorPool(m_context->getDevice(), m_grid_descriptor_pool,
+                            nullptr);
+    m_grid_descriptor_pool = VK_NULL_HANDLE;
   }
 
-  if (m_pipeline) {
-    m_pipeline->shutdown();
-    m_pipeline.reset();
+  if (m_grid_pipeline) {
+    m_grid_pipeline->shutdown();
+    m_grid_pipeline.reset();
   }
 
   m_editor_camera.reset();
@@ -337,8 +284,6 @@ void RenderSystem::shutdown() {
 
 void RenderSystem::tick(float delta_time, uint32_t target_width,
                         uint32_t target_height, SlintSystem* slint_system) {
-  m_elapsed_time += delta_time;
-
   resizeOffscreenIfNeeded(target_width, target_height);
 
   const VkExtent2D offscreen_extent = m_offscreen_rt->getExtent();
@@ -346,27 +291,52 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     return;
   }
 
-  GlobalUniformData ubo{};
-  ubo.model = glm::rotate(glm::mat4(1.0f), m_elapsed_time * glm::radians(90.0f),
-                          glm::vec3(0.0f, 0.0f, 1.0f));
+  glm::mat4 view(1.0f);
+  glm::mat4 projection(1.0f);
+  EditorCamera::ProjectionMode projection_mode =
+      EditorCamera::ProjectionMode::perspective;
+  glm::vec3 camera_position(2.0f, 2.0f, 2.0f);
+  glm::vec3 camera_forward = glm::normalize(glm::vec3(-1.0f, -1.0f, -1.0f));
+  float camera_distance = 6.0f;
+  float near_clip = 0.1f;
+  float far_clip = 1000.0f;
+  float vertical_fov = glm::radians(45.0f);
+  float ortho_size = 10.0f;
   if (m_editor_camera) {
     m_editor_camera->setViewportSize(static_cast<float>(offscreen_extent.width),
                                      static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
-    ubo.view = m_editor_camera->getViewMatrix();
-    ubo.projection = m_editor_camera->getProjectionMatrix();
+    view = m_editor_camera->getViewMatrix();
+    projection = m_editor_camera->getProjectionMatrix();
+    projection_mode = m_editor_camera->getProjectionMode();
+    camera_position = m_editor_camera->getPosition();
+    camera_forward = m_editor_camera->getForwardDirection();
+    camera_distance = m_editor_camera->getDistance();
+    near_clip = m_editor_camera->getNearClip();
+    far_clip = m_editor_camera->getFarClip();
+    vertical_fov = m_editor_camera->getVerticalFov();
+    ortho_size = m_editor_camera->getOrthoSize();
   } else {
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                           glm::vec3(0.0f, 0.0f, 0.0f),
-                           glm::vec3(0.0f, 0.0f, 1.0f));
+    view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
+                       glm::vec3(0.0f, 0.0f, 1.0f));
     const float aspect = static_cast<float>(offscreen_extent.width) /
                          static_cast<float>(offscreen_extent.height);
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
     proj[1][1] *= -1.0f;
-    ubo.projection = proj;
+    projection = proj;
+    far_clip = 10.0f;
   }
 
-  m_uniform_buffers[m_current_frame]->upload(&ubo, sizeof(ubo));
+  const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
+  if (keyboard_state) {
+    if (keyboard_state[SDL_SCANCODE_1]) {
+      m_grid_plane = GridPlane::xy;
+    } else if (keyboard_state[SDL_SCANCODE_2]) {
+      m_grid_plane = GridPlane::xz;
+    } else if (keyboard_state[SDL_SCANCODE_3]) {
+      m_grid_plane = GridPlane::yz;
+    }
+  }
 
   VkDevice device = m_context->getDevice();
   VkFence in_flight_fence = m_sync->getInFlightFence(m_current_frame);
@@ -375,17 +345,18 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   vkResetFences(device, 1, &in_flight_fence);
 
   VkCommandBuffer command_buffer =
-      m_pipeline->getCommandBuffer(m_current_frame);
+      m_grid_pipeline->getCommandBuffer(m_current_frame);
   vkResetCommandBuffer(command_buffer, 0);
 
   VkCommandBufferBeginInfo begin_info{};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   vkBeginCommandBuffer(command_buffer, &begin_info);
 
-  // ===== Pass 1: 3D scene -> offscreen render target =====
+  // ===== Pass 1: editor grid -> offscreen render target =====
   {
-    VkClearValue offscreen_clear{};
-    offscreen_clear.color = {{0.1f, 0.1f, 0.1f, 1.0f}};
+    VkClearValue clear_values[2]{};
+    clear_values[0].color = {{0.1f, 0.1f, 0.1f, 1.0f}};
+    clear_values[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo rp_info{};
     rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -393,15 +364,10 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     rp_info.framebuffer = m_offscreen_rt->getFramebuffer();
     rp_info.renderArea.offset = {0, 0};
     rp_info.renderArea.extent = offscreen_extent;
-    rp_info.clearValueCount = 1;
-    rp_info.pClearValues = &offscreen_clear;
+    rp_info.clearValueCount = 2;
+    rp_info.pClearValues = clear_values;
 
     vkCmdBeginRenderPass(command_buffer, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      m_pipeline->getGraphicsPipeline());
-    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            m_pipeline->getPipelineLayout(), 0, 1,
-                            &m_descriptor_sets[m_current_frame], 0, nullptr);
 
     VkViewport viewport{};
     viewport.width = static_cast<float>(offscreen_extent.width);
@@ -413,15 +379,82 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     scissor.extent = offscreen_extent;
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-    VkBuffer vertex_buffers[] = {m_vertex_buffer->getBuffer()};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer(command_buffer, m_index_buffer->getBuffer(), 0,
-                         VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(command_buffer,
-                     static_cast<uint32_t>(sizeof(k_quad_indices) /
-                                           sizeof(k_quad_indices[0])),
-                     1, 0, 0, 0);
+    GridUniformData grid_ubo{};
+    grid_ubo.view = view;
+    grid_ubo.projection = projection;
+    grid_ubo.camera_position_and_proj_type =
+        glm::vec4(camera_position,
+                  projection_mode == EditorCamera::ProjectionMode::orthographic
+                      ? 1.0f
+                      : 0.0f);
+    grid_ubo.camera_forward_and_far_clip = glm::vec4(camera_forward, far_clip);
+    switch (m_grid_plane) {
+      case GridPlane::xy:
+        grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+        grid_ubo.plane_axis_v = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
+        grid_ubo.plane_origin = glm::vec4(0.0f, 0.0f, camera_position.z, 1.0f);
+        break;
+      case GridPlane::yz:
+        grid_ubo.plane_axis_u = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
+        grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+        grid_ubo.plane_origin = glm::vec4(camera_position.x, 0.0f, 0.0f, 1.0f);
+        break;
+      case GridPlane::xz:
+      default:
+        grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+        grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
+        grid_ubo.plane_origin = glm::vec4(0.0f, camera_position.y, 0.0f, 1.0f);
+        break;
+    }
+
+    const float base_metric =
+        projection_mode == EditorCamera::ProjectionMode::orthographic
+            ? ortho_size
+            : 2.0f * std::tan(vertical_fov * 0.5f) *
+                  std::max(camera_distance, near_clip);
+    const float step_power =
+        std::floor(std::log10(std::max(base_metric * 0.1f, 0.0001f)));
+    const float base_step = std::pow(10.0f, step_power);
+    const float snapped_u = std::floor(
+                                glm::dot(glm::vec3(grid_ubo.plane_origin),
+                                         glm::vec3(grid_ubo.plane_axis_u)) /
+                                base_step) *
+                            base_step;
+    const float snapped_v = std::floor(
+                                glm::dot(glm::vec3(grid_ubo.plane_origin),
+                                         glm::vec3(grid_ubo.plane_axis_v)) /
+                                base_step) *
+                            base_step;
+    grid_ubo.plane_origin =
+        snapped_u * grid_ubo.plane_axis_u + snapped_v * grid_ubo.plane_axis_v;
+    grid_ubo.plane_origin.w = 1.0f;
+
+    grid_ubo.params1 = glm::vec4(k_grid_edge_fade, k_grid_angle_fade,
+                                 k_grid_far_fade, k_grid_stipple_scale);
+    const uint32_t vertex_count = k_grid_lines_per_axis * 4u;
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      m_grid_pipeline->getGraphicsPipeline());
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_grid_pipeline->getPipelineLayout(), 0, 1,
+                            &m_grid_descriptor_sets[m_current_frame], 0,
+                            nullptr);
+    for (uint32_t iteration = 0; iteration < k_grid_iterations; ++iteration) {
+      const float scale = std::pow(k_grid_major_scale, static_cast<float>(iteration));
+      const float step = base_step * scale;
+      const float alpha_scale =
+          iteration == 0 ? k_grid_base_alpha : k_grid_minor_alpha / scale;
+      grid_ubo.params0 =
+          glm::vec4(step, k_grid_major_scale, k_grid_half_extent * scale,
+                    static_cast<float>(k_grid_lines_per_axis));
+      grid_ubo.params2 =
+          glm::vec4(k_grid_stipple_duty, alpha_scale,
+                    static_cast<float>(iteration), 0.0f);
+      m_grid_uniform_buffers[m_current_frame]->upload(&grid_ubo, sizeof(grid_ubo));
+      const float bias_scale = 1.0f + static_cast<float>(iteration) * 0.75f;
+      vkCmdSetDepthBias(command_buffer, -1.2f * bias_scale, 0.0f,
+                        -1.2f * bias_scale);
+      vkCmdDraw(command_buffer, vertex_count, 1, 0, 0);
+    }
     vkCmdEndRenderPass(command_buffer);
     m_offscreen_rt->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }

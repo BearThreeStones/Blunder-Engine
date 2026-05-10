@@ -190,9 +190,9 @@ void VulkanContext::createInstance() {
     instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
   }
 
-  const bool enable_validation_layer =
+  m_enable_validation_layer =
       m_enable_validation && hasLayer(k_validation_layer_name);
-  if (m_enable_validation && !enable_validation_layer) {
+  if (m_enable_validation && !m_enable_validation_layer) {
     LOG_WARN("[VulkanContext::createInstance] validation layer unavailable");
   }
 
@@ -211,7 +211,7 @@ void VulkanContext::createInstance() {
       static_cast<uint32_t>(instance_extensions.size());
   create_info.ppEnabledExtensionNames = instance_extensions.data();
 
-  if (enable_validation_layer) {
+  if (m_enable_validation_layer) {
     // 包含验证层名称
     create_info.enabledLayerCount = 1;
     create_info.ppEnabledLayerNames = &k_validation_layer_name;
@@ -376,9 +376,11 @@ void VulkanContext::createLogicalDevice() {
   create_info.pQueueCreateInfos = &queue_create_info;
   create_info.enabledExtensionCount = 0;
   create_info.ppEnabledExtensionNames = nullptr;
-  // 为了兼容较旧的实现，仍设置 enabledLayerCount 和 ppEnabledLayerNames 字段
-  create_info.enabledLayerCount = 1;
-  create_info.ppEnabledLayerNames = &k_validation_layer_name;
+  // 为了兼容较旧的实现，仅在验证层可用时设置 layer 字段。
+  if (m_enable_validation_layer) {
+    create_info.enabledLayerCount = 1;
+    create_info.ppEnabledLayerNames = &k_validation_layer_name;
+  }
 
   const VkResult result =
       vkCreateDevice(m_physical_device, &create_info, nullptr, &m_device);

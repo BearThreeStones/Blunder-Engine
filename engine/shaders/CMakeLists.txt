@@ -5,10 +5,21 @@ set(SHADER_BINARY_DIR ${CMAKE_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
 
 # List of Slang shader files to deploy
-set(SHADERS
+set(SHADER_CANDIDATES
     basic.slang
+    grid.slang
     ui_overlay.slang
 )
+
+# Keep the deploy target resilient to optional/missing shader sources.
+set(SHADERS)
+foreach(SHADER ${SHADER_CANDIDATES})
+    if(EXISTS ${SHADER_SOURCE_DIR}/${SHADER})
+        list(APPEND SHADERS ${SHADER})
+    else()
+        message(WARNING "Skipping missing shader source: ${SHADER_SOURCE_DIR}/${SHADER}")
+    endif()
+endforeach()
 
 # Copy each shader to the build output directory
 foreach(SHADER ${SHADERS})

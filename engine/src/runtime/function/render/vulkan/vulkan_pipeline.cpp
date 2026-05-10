@@ -13,15 +13,10 @@
 
 namespace Blunder {
 
-namespace {
-
-const char* k_shader_path = "engine/shaders/basic.slang";
-
-}  // namespace
-
 void VulkanPipeline::initialize(VulkanContext* context,
                                 SlangCompiler* slang_compiler,
-                                VkRenderPass render_pass) {
+                                VkRenderPass render_pass,
+                                const VulkanPipelineCreateInfo& create_info) {
   ASSERT(context);
   ASSERT(slang_compiler);
   ASSERT(render_pass != VK_NULL_HANDLE);
@@ -29,6 +24,7 @@ void VulkanPipeline::initialize(VulkanContext* context,
   m_context = context;
   m_slang_compiler = slang_compiler;
   m_render_pass = render_pass;
+  m_create_info = create_info;
 
   createDescriptorSetLayout();
   createGraphicsPipeline();
@@ -83,8 +79,8 @@ void VulkanPipeline::createGraphicsPipeline() {
       {"fragmentMain", VK_SHADER_STAGE_FRAGMENT_BIT, SLANG_STAGE_FRAGMENT});
 
   eastl::vector<VulkanShader::ShaderStage> shader_stages =
-      VulkanShader::loadFromSlang(device, m_slang_compiler, k_shader_path,
-                                  entries);
+      VulkanShader::loadFromSlang(device, m_slang_compiler,
+                                  m_create_info.shader_path, entries);
 
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
   stage_infos.reserve(shader_stages.size());
@@ -97,25 +93,25 @@ void VulkanPipeline::createGraphicsPipeline() {
     stage_infos.push_back(stage_info);
   }
 
-  VkVertexInputBindingDescription binding_description =
-      Vertex::getBindingDescription();
-  eastl::array<VkVertexInputAttributeDescription, 2> attribute_descriptions =
-      Vertex::getAttributeDescriptions();
-
   VkPipelineVertexInputStateCreateInfo vertex_input_info{};
   vertex_input_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-  vertex_input_info.vertexBindingDescriptionCount = 1;
-  vertex_input_info.pVertexBindingDescriptions = &binding_description;
-  vertex_input_info.vertexAttributeDescriptionCount =
-      static_cast<uint32_t>(attribute_descriptions.size());
-  vertex_input_info.pVertexAttributeDescriptions =
-      attribute_descriptions.data();
+  VkVertexInputBindingDescription binding_description{};
+  eastl::array<VkVertexInputAttributeDescription, 2> attribute_descriptions{};
+  if (m_create_info.enable_vertex_input) {
+    binding_description = Vertex::getBindingDescription();
+    attribute_descriptions = Vertex::getAttributeDescriptions();
+    vertex_input_info.vertexBindingDescriptionCount = 1;
+    vertex_input_info.pVertexBindingDescriptions = &binding_description;
+    vertex_input_info.vertexAttributeDescriptionCount =
+        static_cast<uint32_t>(attribute_descriptions.size());
+    vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions.data();
+  }
 
   VkPipelineInputAssemblyStateCreateInfo input_assembly{};
   input_assembly.sType =
       VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  input_assembly.topology = m_create_info.topology;
   input_assembly.primitiveRestartEnable = VK_FALSE;
 
   VkPipelineViewportStateCreateInfo viewport_state{};
@@ -129,9 +125,12 @@ void VulkanPipeline::createGraphicsPipeline() {
   rasterizer.rasterizerDiscardEnable = VK_FALSE;
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0f;
-  rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+  rasterizer.cullMode = m_create_info.cull_mode;
   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-  rasterizer.depthBiasEnable = VK_FALSE;
+  rasterizer.depthBiasEnable =
+      m_create_info.enable_depth_bias ? VK_TRUE : VK_FALSE;
+  rasterizer.depthBiasConstantFactor = m_create_info.depth_bias_constant_factor;
+  rasterizer.depthBiasSlopeFactor = m_create_info.depth_bias_slope_factor;
 
   VkPipelineMultisampleStateCreateInfo multisampling{};
   multisampling.sType =
@@ -143,7 +142,16 @@ void VulkanPipeline::createGraphicsPipeline() {
   color_blend_attachment.colorWriteMask =
       VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
       VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-  color_blend_attachment.blendEnable = VK_FALSE;
+  color_blend_attachment.blendEnable =
+      m_create_info.enable_blend ? VK_TRUE : VK_FALSE;
+  color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+  color_blend_attachment.dstColorBlendFactor =
+      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
+  color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+  color_blend_attachment.dstAlphaBlendFactor =
+      VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
   VkPipelineColorBlendStateCreateInfo color_blending{};
   color_blending.sType =
@@ -153,11 +161,22 @@ void VulkanPipeline::createGraphicsPipeline() {
   color_blending.pAttachments = &color_blend_attachment;
 
   VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                     VK_DYNAMIC_STATE_SCISSOR};
+                                     VK_DYNAMIC_STATE_SCISSOR,
+                                     VK_DYNAMIC_STATE_DEPTH_BIAS};
   VkPipelineDynamicStateCreateInfo dynamic_state{};
   dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-  dynamic_state.dynamicStateCount = 2;
+  dynamic_state.dynamicStateCount = 3;
   dynamic_state.pDynamicStates = dynamic_states;
+
+  VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+  depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depth_stencil.depthTestEnable =
+      m_create_info.enable_depth_test ? VK_TRUE : VK_FALSE;
+  depth_stencil.depthWriteEnable =
+      m_create_info.enable_depth_write ? VK_TRUE : VK_FALSE;
+  depth_stencil.depthCompareOp = m_create_info.depth_compare_op;
+  depth_stencil.depthBoundsTestEnable = VK_FALSE;
+  depth_stencil.stencilTestEnable = VK_FALSE;
 
   VkPipelineLayoutCreateInfo pipeline_layout_info{};
   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -186,6 +205,8 @@ void VulkanPipeline::createGraphicsPipeline() {
   pipeline_info.pMultisampleState = &multisampling;
   pipeline_info.pColorBlendState = &color_blending;
   pipeline_info.pDynamicState = &dynamic_state;
+  pipeline_info.pDepthStencilState =
+      m_create_info.enable_depth_test ? &depth_stencil : nullptr;
   pipeline_info.layout = m_pipeline_layout;
   pipeline_info.renderPass = m_render_pass;
   pipeline_info.subpass = 0;
@@ -212,7 +233,7 @@ void VulkanPipeline::createDescriptorSetLayout() {
   ubo_layout_binding.binding = 0;
   ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   ubo_layout_binding.descriptorCount = 1;
-  ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  ubo_layout_binding.stageFlags = m_create_info.descriptor_stage_flags;
   ubo_layout_binding.pImmutableSamplers = nullptr;
 
   VkDescriptorSetLayoutCreateInfo layout_info{};

@@ -4,7 +4,6 @@
 #include "EASTL/shared_ptr.h"
 #include "EASTL/string.h"
 #include "runtime/core/memory/memory_system.h"
-#include "runtime/function/render/render_system.h"
 
 namespace Blunder {
 class LogSystem;

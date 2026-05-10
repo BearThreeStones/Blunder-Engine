@@ -64,6 +64,12 @@ class RenderSystem final {
   }
 
  private:
+  enum class GridPlane : uint32_t {
+    xy = 0,
+    xz = 1,
+    yz = 2,
+  };
+
   void resizeOffscreenIfNeeded(uint32_t width, uint32_t height);
   void recreateReadbackStaging(uint32_t width, uint32_t height);
 
@@ -72,16 +78,14 @@ class RenderSystem final {
   eastl::shared_ptr<VulkanContext> m_context;
   eastl::shared_ptr<VulkanAllocator> m_allocator;
   eastl::shared_ptr<VulkanSync> m_sync;
-  eastl::shared_ptr<VulkanPipeline> m_pipeline;
+  eastl::shared_ptr<VulkanPipeline> m_grid_pipeline;
   eastl::unique_ptr<OffscreenRenderTarget> m_offscreen_rt;
   eastl::unique_ptr<EditorCamera> m_editor_camera;
-  eastl::unique_ptr<VulkanBuffer> m_vertex_buffer;
-  eastl::unique_ptr<VulkanBuffer> m_index_buffer;
-  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_uniform_buffers;
-  VkDescriptorPool m_descriptor_pool{VK_NULL_HANDLE};
-  eastl::vector<VkDescriptorSet> m_descriptor_sets;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_grid_uniform_buffers;
+  VkDescriptorPool m_grid_descriptor_pool{VK_NULL_HANDLE};
+  eastl::vector<VkDescriptorSet> m_grid_descriptor_sets;
   uint32_t m_current_frame{0};
-  float m_elapsed_time{0.0f};
+  GridPlane m_grid_plane{GridPlane::xz};
 
   // CPU readback staging buffer (one per in-flight frame). Kept as
   // host-visible host-cached so it can be mapped and read directly.

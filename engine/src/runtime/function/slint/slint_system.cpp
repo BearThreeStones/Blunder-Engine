@@ -3,6 +3,7 @@
 #include <slint.h>
 
 #include <cstdint>
+#include <exception>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -41,10 +42,16 @@ void SlintSystem::SlintWindowAdapter::ensureRenderer() {
     return;
   }
   ASSERT(m_window_system);
+  if (!m_window_system) {
+    return;
+  }
 #if defined(_WIN32) || defined(_WIN64)
   void* hwnd = m_window_system->getNativeWin32Hwnd();
   void* hinstance = m_window_system->getNativeWin32HInstance();
-  ASSERT(hwnd);
+  if (!hwnd) {
+    LOG_ERROR("[SlintSystem] native Win32 HWND is null");
+    return;
+  }
   slint::platform::NativeWindowHandle handle =
       slint::platform::NativeWindowHandle::from_win32(hwnd, hinstance);
   m_last_size = size();
@@ -182,21 +189,37 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
   ASSERT(init_info.window_system);
   m_window_system = init_info.window_system;
 
-  if (!g_slint_platform_instance) {
-    auto platform = std::make_unique<SlintPlatform>(m_window_system);
-    g_slint_platform_instance = platform.get();
-    slint::platform::set_platform(std::move(platform));
+  try {
+    if (!g_slint_platform_instance) {
+      auto platform = std::make_unique<SlintPlatform>(m_window_system);
+      g_slint_platform_instance = platform.get();
+      slint::platform::set_platform(std::move(platform));
+    }
+
+    auto component = MainEditorWindow::create();
+    component->show();
+    m_window_component = component;
+
+    m_window_adapter = g_slint_platform_instance->getWindowAdapter();
+    ASSERT(m_window_adapter);
+
+    m_window_system->setNativeEventCallback(
+        [this](const SDL_Event& event) { processEvent(event); });
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::initialize] {}", e.what());
+    m_window_component.reset();
+    m_window_adapter = nullptr;
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::initialize] unknown exception");
+    m_window_component.reset();
+    m_window_adapter = nullptr;
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
   }
-
-  auto component = MainEditorWindow::create();
-  component->show();
-  m_window_component = component;
-
-  m_window_adapter = g_slint_platform_instance->getWindowAdapter();
-  ASSERT(m_window_adapter);
-
-  m_window_system->setNativeEventCallback(
-      [this](const SDL_Event& event) { processEvent(event); });
 }
 
 void SlintSystem::shutdown() {
@@ -218,10 +241,22 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
   if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
     return;
   }
-  slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
-      width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
-  slint::Image image(buffer);
-  m_window_component->operator->()->set_viewport_image(image);
+  try {
+    slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
+        width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
+    slint::Image image(buffer);
+    m_window_component->operator->()->set_viewport_image(image);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::setViewportImage] {}", e.what());
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::setViewportImage] unknown exception");
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  }
 }
 
 eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
@@ -237,9 +272,21 @@ eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
 }
 
 void SlintSystem::update() {
-  slint::platform::update_timers_and_animations();
-  if (m_window_adapter) {
-    m_window_adapter->renderIfNeeded();
+  try {
+    slint::platform::update_timers_and_animations();
+    if (m_window_adapter) {
+      m_window_adapter->renderIfNeeded();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::update] {}", e.what());
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::update] unknown exception");
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
   }
 }
 
@@ -248,105 +295,117 @@ void SlintSystem::processEvent(const SDL_Event& event) {
     return;
   }
 
-  slint::Window& window = m_window_adapter->window();
-  const SDL_WindowID window_id = m_window_system->getWindowId();
+  try {
+    slint::Window& window = m_window_adapter->window();
+    const SDL_WindowID window_id = m_window_system->getWindowId();
 
-  switch (event.type) {
-    case SDL_EVENT_WINDOW_RESIZED:
-    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-      if (event.window.windowID == window_id) {
-        window.dispatch_resize_event(slint::LogicalSize(
-            {static_cast<float>(eastl::max(event.window.data1, 1)),
-             static_cast<float>(eastl::max(event.window.data2, 1))}));
-        m_window_adapter->request_redraw();
-      }
-      break;
-    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
-      if (event.window.windowID == window_id) {
-        window.dispatch_scale_factor_change_event(1.0f);
-        m_window_adapter->request_redraw();
-      }
-      break;
-    case SDL_EVENT_WINDOW_FOCUS_GAINED:
-      if (event.window.windowID == window_id) {
-        window.dispatch_window_active_changed_event(true);
-      }
-      break;
-    case SDL_EVENT_WINDOW_FOCUS_LOST:
-      if (event.window.windowID == window_id) {
-        window.dispatch_window_active_changed_event(false);
-      }
-      break;
-    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-      if (event.window.windowID == window_id) {
-        window.dispatch_pointer_exit_event();
-      }
-      break;
-    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-      if (event.window.windowID == window_id) {
-        window.dispatch_close_requested_event();
-      }
-      break;
-    case SDL_EVENT_MOUSE_MOTION:
-      if (event.motion.windowID == window_id) {
-        window.dispatch_pointer_move_event(
-            slint::LogicalPosition({event.motion.x, event.motion.y}));
-      }
-      break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-      if (event.button.windowID == window_id) {
-        window.dispatch_pointer_press_event(
-            slint::LogicalPosition({event.button.x, event.button.y}),
-            mapPointerButton(event.button.button));
-      }
-      break;
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-      if (event.button.windowID == window_id) {
-        window.dispatch_pointer_release_event(
-            slint::LogicalPosition({event.button.x, event.button.y}),
-            mapPointerButton(event.button.button));
-      }
-      break;
-    case SDL_EVENT_MOUSE_WHEEL:
-      if (event.wheel.windowID == window_id) {
-        const float wheel_x = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
-                                  ? -event.wheel.x
-                                  : event.wheel.x;
-        const float wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
-                                  ? -event.wheel.y
-                                  : event.wheel.y;
-        window.dispatch_pointer_scroll_event(
-            slint::LogicalPosition({event.wheel.mouse_x, event.wheel.mouse_y}),
-            wheel_x * 20.0f, wheel_y * 20.0f);
-      }
-      break;
-    case SDL_EVENT_KEY_DOWN:
-      if (event.key.windowID == window_id) {
-        const slint::SharedString key_text = mapKeycode(event.key.key);
-        if (!key_text.empty() && isSpecialKey(event.key.key)) {
-          if (event.key.repeat) {
-            window.dispatch_key_press_repeat_event(key_text);
-          } else {
-            window.dispatch_key_press_event(key_text);
+    switch (event.type) {
+      case SDL_EVENT_WINDOW_RESIZED:
+      case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        if (event.window.windowID == window_id) {
+          window.dispatch_resize_event(slint::LogicalSize(
+              {static_cast<float>(eastl::max(event.window.data1, 1)),
+               static_cast<float>(eastl::max(event.window.data2, 1))}));
+          m_window_adapter->request_redraw();
+        }
+        break;
+      case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+        if (event.window.windowID == window_id) {
+          window.dispatch_scale_factor_change_event(1.0f);
+          m_window_adapter->request_redraw();
+        }
+        break;
+      case SDL_EVENT_WINDOW_FOCUS_GAINED:
+        if (event.window.windowID == window_id) {
+          window.dispatch_window_active_changed_event(true);
+        }
+        break;
+      case SDL_EVENT_WINDOW_FOCUS_LOST:
+        if (event.window.windowID == window_id) {
+          window.dispatch_window_active_changed_event(false);
+        }
+        break;
+      case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+        if (event.window.windowID == window_id) {
+          window.dispatch_pointer_exit_event();
+        }
+        break;
+      case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        if (event.window.windowID == window_id) {
+          window.dispatch_close_requested_event();
+        }
+        break;
+      case SDL_EVENT_MOUSE_MOTION:
+        if (event.motion.windowID == window_id) {
+          window.dispatch_pointer_move_event(
+              slint::LogicalPosition({event.motion.x, event.motion.y}));
+        }
+        break;
+      case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (event.button.windowID == window_id) {
+          window.dispatch_pointer_press_event(
+              slint::LogicalPosition({event.button.x, event.button.y}),
+              mapPointerButton(event.button.button));
+        }
+        break;
+      case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (event.button.windowID == window_id) {
+          window.dispatch_pointer_release_event(
+              slint::LogicalPosition({event.button.x, event.button.y}),
+              mapPointerButton(event.button.button));
+        }
+        break;
+      case SDL_EVENT_MOUSE_WHEEL:
+        if (event.wheel.windowID == window_id) {
+          const float wheel_x = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
+                                    ? -event.wheel.x
+                                    : event.wheel.x;
+          const float wheel_y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
+                                    ? -event.wheel.y
+                                    : event.wheel.y;
+          window.dispatch_pointer_scroll_event(
+              slint::LogicalPosition({event.wheel.mouse_x, event.wheel.mouse_y}),
+              wheel_x * 20.0f, wheel_y * 20.0f);
+        }
+        break;
+      case SDL_EVENT_KEY_DOWN:
+        if (event.key.windowID == window_id) {
+          const slint::SharedString key_text = mapKeycode(event.key.key);
+          if (!key_text.empty() && isSpecialKey(event.key.key)) {
+            if (event.key.repeat) {
+              window.dispatch_key_press_repeat_event(key_text);
+            } else {
+              window.dispatch_key_press_event(key_text);
+            }
           }
         }
-      }
-      break;
-    case SDL_EVENT_KEY_UP:
-      if (event.key.windowID == window_id) {
-        const slint::SharedString key_text = mapKeycode(event.key.key);
-        if (!key_text.empty() && isSpecialKey(event.key.key)) {
-          window.dispatch_key_release_event(key_text);
+        break;
+      case SDL_EVENT_KEY_UP:
+        if (event.key.windowID == window_id) {
+          const slint::SharedString key_text = mapKeycode(event.key.key);
+          if (!key_text.empty() && isSpecialKey(event.key.key)) {
+            window.dispatch_key_release_event(key_text);
+          }
         }
-      }
-      break;
-    case SDL_EVENT_TEXT_INPUT:
-      if (event.text.windowID == window_id && event.text.text) {
-        window.dispatch_key_press_event(slint::SharedString(event.text.text));
-      }
-      break;
-    default:
-      break;
+        break;
+      case SDL_EVENT_TEXT_INPUT:
+        if (event.text.windowID == window_id && event.text.text) {
+          window.dispatch_key_press_event(slint::SharedString(event.text.text));
+        }
+        break;
+      default:
+        break;
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::processEvent] {}", e.what());
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::processEvent] unknown exception");
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
   }
 }
 }  // namespace Blunder

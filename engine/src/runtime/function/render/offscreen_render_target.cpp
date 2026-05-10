@@ -70,10 +70,25 @@ void OffscreenRenderTarget::createRenderPass() {
   color_attachment_ref.attachment = 0;
   color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+  VkAttachmentDescription depth_attachment{};
+  depth_attachment.format = VK_FORMAT_D32_SFLOAT;
+  depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+  depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+  VkAttachmentReference depth_attachment_ref{};
+  depth_attachment_ref.attachment = 1;
+  depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
   VkSubpassDescription subpass{};
   subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
   subpass.colorAttachmentCount = 1;
   subpass.pColorAttachments = &color_attachment_ref;
+  subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
   VkSubpassDependency dependencies[2]{};
   // External -> 0: ensure previous fragment shader read finishes before we
@@ -97,10 +112,11 @@ void OffscreenRenderTarget::createRenderPass() {
       VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
   dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
+  VkAttachmentDescription attachments[2] = {color_attachment, depth_attachment};
   VkRenderPassCreateInfo render_pass_info{};
   render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-  render_pass_info.attachmentCount = 1;
-  render_pass_info.pAttachments = &color_attachment;
+  render_pass_info.attachmentCount = 2;
+  render_pass_info.pAttachments = attachments;
   render_pass_info.subpassCount = 1;
   render_pass_info.pSubpasses = &subpass;
   render_pass_info.dependencyCount = 2;
@@ -172,11 +188,58 @@ void OffscreenRenderTarget::createImageAndFramebuffer() {
         static_cast<int>(view_result));
   }
 
+  VkImageCreateInfo depth_image_info{};
+  depth_image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  depth_image_info.imageType = VK_IMAGE_TYPE_2D;
+  depth_image_info.format = VK_FORMAT_D32_SFLOAT;
+  depth_image_info.extent.width = m_width;
+  depth_image_info.extent.height = m_height;
+  depth_image_info.extent.depth = 1;
+  depth_image_info.mipLevels = 1;
+  depth_image_info.arrayLayers = 1;
+  depth_image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  depth_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  depth_image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  depth_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  depth_image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+  const VkResult depth_img_result =
+      vmaCreateImage(m_allocator->getAllocator(), &depth_image_info,
+                     &alloc_create, &m_depth_image, &m_depth_image_allocation,
+                     nullptr);
+  if (depth_img_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[OffscreenRenderTarget::createImageAndFramebuffer] depth "
+        "vmaCreateImage failed: {}",
+        static_cast<int>(depth_img_result));
+  }
+
+  VkImageViewCreateInfo depth_view_info{};
+  depth_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  depth_view_info.image = m_depth_image;
+  depth_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  depth_view_info.format = VK_FORMAT_D32_SFLOAT;
+  depth_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+  depth_view_info.subresourceRange.baseMipLevel = 0;
+  depth_view_info.subresourceRange.levelCount = 1;
+  depth_view_info.subresourceRange.baseArrayLayer = 0;
+  depth_view_info.subresourceRange.layerCount = 1;
+
+  const VkResult depth_view_result =
+      vkCreateImageView(device, &depth_view_info, nullptr, &m_depth_image_view);
+  if (depth_view_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[OffscreenRenderTarget::createImageAndFramebuffer] depth "
+        "vkCreateImageView failed: {}",
+        static_cast<int>(depth_view_result));
+  }
+
+  VkImageView attachments[2] = {m_image_view, m_depth_image_view};
   VkFramebufferCreateInfo fb_info{};
   fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
   fb_info.renderPass = m_render_pass;
-  fb_info.attachmentCount = 1;
-  fb_info.pAttachments = &m_image_view;
+  fb_info.attachmentCount = 2;
+  fb_info.pAttachments = attachments;
   fb_info.width = m_width;
   fb_info.height = m_height;
   fb_info.layers = 1;
@@ -207,10 +270,20 @@ void OffscreenRenderTarget::destroyImageAndFramebuffer() {
     vkDestroyImageView(device, m_image_view, nullptr);
     m_image_view = VK_NULL_HANDLE;
   }
+  if (m_depth_image_view != VK_NULL_HANDLE) {
+    vkDestroyImageView(device, m_depth_image_view, nullptr);
+    m_depth_image_view = VK_NULL_HANDLE;
+  }
   if (m_image != VK_NULL_HANDLE) {
     vmaDestroyImage(m_allocator->getAllocator(), m_image, m_image_allocation);
     m_image = VK_NULL_HANDLE;
     m_image_allocation = VK_NULL_HANDLE;
+  }
+  if (m_depth_image != VK_NULL_HANDLE) {
+    vmaDestroyImage(m_allocator->getAllocator(), m_depth_image,
+                    m_depth_image_allocation);
+    m_depth_image = VK_NULL_HANDLE;
+    m_depth_image_allocation = VK_NULL_HANDLE;
   }
   m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }

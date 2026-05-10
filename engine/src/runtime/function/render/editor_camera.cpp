@@ -6,6 +6,7 @@
 #include <SDL3/SDL_scancode.h>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "runtime/core/base/macro.h"
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/platform/window/window_system.h"
 
@@ -33,6 +34,13 @@ void EditorCamera::onUpdate(float delta_time) {
   const bool is_alt_pressed = keyboard_state &&
                               (keyboard_state[SDL_SCANCODE_LALT] ||
                                keyboard_state[SDL_SCANCODE_RALT]);
+  if (keyboard_state) {
+    if (keyboard_state[SDL_SCANCODE_P]) {
+      setProjectionMode(ProjectionMode::perspective);
+    } else if (keyboard_state[SDL_SCANCODE_O]) {
+      setProjectionMode(ProjectionMode::orthographic);
+    }
+  }
 
   if (is_alt_pressed && m_window_system) {
     if (m_window_system->isMouseButtonDown(SDL_BUTTON_LEFT)) {
@@ -87,11 +95,24 @@ void EditorCamera::setViewportSize(float width, float height) {
   updateProjectionMatrix();
 }
 
+void EditorCamera::setProjectionMode(ProjectionMode mode) {
+  if (m_projection_mode == mode) {
+    return;
+  }
+  m_projection_mode = mode;
+  updateProjectionMatrix();
+  LOG_INFO("[EditorCamera] projection mode switched to {}",
+           m_projection_mode == ProjectionMode::perspective ? "perspective"
+                                                            : "orthographic");
+}
+
 void EditorCamera::orbit(float delta_time) {
   const Vec2 frame_delta = m_mouse_delta_accumulator * k_orbit_speed * delta_time;
   m_yaw += frame_delta.x;
   m_pitch -= frame_delta.y;
   m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
+  LOG_DEBUG("[EditorCamera] orbit yaw={}, pitch={}, distance={}", m_yaw, m_pitch,
+            m_distance);
   m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
 }
 
@@ -102,6 +123,8 @@ void EditorCamera::pan(float delta_time) {
   const float pan_y = m_mouse_delta_accumulator.y * pan_scale * delta_time;
   m_focal_point += m_right_direction * pan_x;
   m_focal_point += m_up_direction * pan_y;
+  LOG_DEBUG("[EditorCamera] pan focal=({}, {}, {})", m_focal_point.x,
+            m_focal_point.y, m_focal_point.z);
   m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
 }
 
@@ -112,6 +135,7 @@ void EditorCamera::zoom(float delta_time) {
 
   m_distance -= m_scroll_delta_accumulator * k_zoom_speed * delta_time;
   m_distance = std::max(m_distance, k_min_distance);
+  LOG_DEBUG("[EditorCamera] zoom distance={}", m_distance);
   m_scroll_delta_accumulator = 0.0f;
 }
 
@@ -131,8 +155,16 @@ void EditorCamera::updateViewMatrix() {
 
 void EditorCamera::updateProjectionMatrix() {
   const float aspect = m_viewport_width / m_viewport_height;
-  m_projection_matrix =
-      glm::perspective(m_vertical_fov, aspect, m_near_clip, m_far_clip);
+  if (m_projection_mode == ProjectionMode::perspective) {
+    m_projection_matrix =
+        glm::perspective(m_vertical_fov, aspect, m_near_clip, m_far_clip);
+  } else {
+    const float ortho_half_h = m_ortho_size * 0.5f;
+    const float ortho_half_w = ortho_half_h * aspect;
+    m_projection_matrix =
+        glm::ortho(-ortho_half_w, ortho_half_w, -ortho_half_h, ortho_half_h,
+                   m_near_clip, m_far_clip);
+  }
   // Vulkan NDC has inverted Y and Z range [0, 1].
   m_projection_matrix[1][1] *= -1.0f;
 }

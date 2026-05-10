@@ -6,6 +6,14 @@ set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
 add_subdirectory(glm)
 add_subdirectory(spdlog)
 
+if(MSVC)
+    if(TARGET spdlog)
+        target_precompile_headers(spdlog PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/spdlog/include/spdlog/common.h>"
+        )
+    endif()
+endif()
+
 # EASTL's CMakeLists uses add_library(EASTL ...) without STATIC/SHARED,
 # so pin it to static build locally to avoid inheriting global BUILD_SHARED_LIBS.
 set(BLUNDER_BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
@@ -25,6 +33,20 @@ target_include_directories(cgltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cgltf)
 # SDL3 - active windowing and event backend
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 add_subdirectory(SDL)
+
+if(MSVC)
+    if(TARGET SDL3-shared)
+        target_precompile_headers(SDL3-shared PRIVATE
+            "$<$<COMPILE_LANGUAGE:C>:${CMAKE_CURRENT_SOURCE_DIR}/SDL/src/SDL_internal.h>"
+        )
+    endif()
+
+    if(TARGET SDL_uclibc)
+        target_precompile_headers(SDL_uclibc PRIVATE
+            "$<$<COMPILE_LANGUAGE:C>:${CMAKE_CURRENT_SOURCE_DIR}/SDL/src/SDL_internal.h>"
+        )
+    endif()
+endif()
 
 # VMA - Vulkan Memory Allocator (header-only)
 add_library(vma INTERFACE)

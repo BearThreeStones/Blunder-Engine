@@ -83,6 +83,11 @@ void BlunderEngine::onEvent(Event& e) {
     LOG_DEBUG("[Event] Text input (UTF-8): {}", event.getUtf8().c_str());
     return false;
   });
+
+  dispatcher.dispatch<MouseMovedEvent>([](MouseMovedEvent& event) {
+    // LOG_DEBUG("[Event] Mouse moved: x={}, y={}", event.getX(), event.getY());
+    return false;
+  });
 }
 
 void BlunderEngine::shutdownEngine() {

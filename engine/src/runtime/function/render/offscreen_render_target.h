@@ -32,6 +32,7 @@ class OffscreenRenderTarget final {
   VkRenderPass getRenderPass() const { return m_render_pass; }
   VkImage getImage() const { return m_image; }
   VkImageView getImageView() const { return m_image_view; }
+  VkImageView getDepthImageView() const { return m_depth_image_view; }
   VkFramebuffer getFramebuffer() const { return m_framebuffer; }
   VkExtent2D getExtent() const { return {m_width, m_height}; }
   VkFormat getFormat() const { return m_format; }
@@ -59,6 +60,9 @@ class OffscreenRenderTarget final {
   VkImage m_image{VK_NULL_HANDLE};
   VmaAllocation m_image_allocation{VK_NULL_HANDLE};
   VkImageView m_image_view{VK_NULL_HANDLE};
+  VkImage m_depth_image{VK_NULL_HANDLE};
+  VmaAllocation m_depth_image_allocation{VK_NULL_HANDLE};
+  VkImageView m_depth_image_view{VK_NULL_HANDLE};
   VkFramebuffer m_framebuffer{VK_NULL_HANDLE};
   uint32_t m_width{0};
   uint32_t m_height{0};

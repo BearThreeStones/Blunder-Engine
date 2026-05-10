@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <exception>
 #include <iostream>
 #include <thread>
 
@@ -16,12 +17,15 @@ int main(int argc, char** argv) {
   // std::filesystem::path config_file_path =
   //     executable_path.parent_path() / "BlunderEditor.ini";
 
-  Blunder::BlunderEngine* engine = new Blunder::BlunderEngine();
+  Blunder::BlunderEngine* engine = nullptr;
 
-  engine->startEngine();
-  engine->initialize();
+  try {
+    engine = new Blunder::BlunderEngine();
 
-  engine->run();
+    engine->startEngine();
+    engine->initialize();
+
+    engine->run();
 
   // Blunder::BlunderEditor* editor = new Blunder::BlunderEditor();
   // editor->initialize(engine);
@@ -30,8 +34,26 @@ int main(int argc, char** argv) {
 
   // editor->clear();
 
-  engine->clear();
-  engine->shutdownEngine();
+    engine->clear();
+    engine->shutdownEngine();
+    delete engine;
+  } catch (const std::exception& e) {
+    std::cerr << "Unhandled exception: " << e.what() << std::endl;
+    if (engine) {
+      engine->clear();
+      engine->shutdownEngine();
+      delete engine;
+    }
+    return 1;
+  } catch (...) {
+    std::cerr << "Unhandled unknown exception" << std::endl;
+    if (engine) {
+      engine->clear();
+      engine->shutdownEngine();
+      delete engine;
+    }
+    return 1;
+  }
 
   return 0;
 }
