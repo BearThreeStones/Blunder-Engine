@@ -302,14 +302,22 @@ void VulkanContext::selectPhysicalDevice() {
     vkGetPhysicalDeviceProperties(device, &device_properties);
 
     // 设备特性
-    VkPhysicalDeviceFeatures device_features;
-    vkGetPhysicalDeviceFeatures(device, &device_features);
+    VkPhysicalDeviceVulkan11Features vulkan11_features{};
+    vulkan11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+
+    VkPhysicalDeviceFeatures2 device_features2{};
+    device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    device_features2.pNext = &vulkan11_features;
+    vkGetPhysicalDeviceFeatures2(device, &device_features2);
+
+    const VkPhysicalDeviceFeatures& device_features = device_features2.features;
 
     // 内存信息
     VkPhysicalDeviceMemoryProperties memory_properties;
     vkGetPhysicalDeviceMemoryProperties(device, &memory_properties);
 
-    if (!device_features.geometryShader || !device_features.samplerAnisotropy) {
+    if (!device_features.geometryShader || !device_features.samplerAnisotropy ||
+        !vulkan11_features.shaderDrawParameters) {
       continue;
     }
 
@@ -364,6 +372,31 @@ void VulkanContext::createLogicalDevice() {
   // Headless: only the graphics queue is required; no swapchain extension.
   const float queue_priority = 1.0f;
 
+  VkPhysicalDeviceVulkan11Features supported_vulkan11_features{};
+  supported_vulkan11_features.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+
+  VkPhysicalDeviceFeatures2 supported_features2{};
+  supported_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+  supported_features2.pNext = &supported_vulkan11_features;
+  vkGetPhysicalDeviceFeatures2(m_physical_device, &supported_features2);
+
+  if (!supported_vulkan11_features.shaderDrawParameters) {
+    LOG_FATAL(
+        "[VulkanContext::createLogicalDevice] selected Vulkan device does not "
+        "support shaderDrawParameters, but the current SPIR-V shaders require it");
+  }
+
+  VkPhysicalDeviceFeatures enabled_features{};
+  enabled_features.samplerAnisotropy =
+      supported_features2.features.samplerAnisotropy;
+  enabled_features.geometryShader = supported_features2.features.geometryShader;
+
+  VkPhysicalDeviceVulkan11Features enabled_vulkan11_features{};
+  enabled_vulkan11_features.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+  enabled_vulkan11_features.shaderDrawParameters = VK_TRUE;
+
   VkDeviceQueueCreateInfo queue_create_info{};
   queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
   queue_create_info.queueFamilyIndex = m_graphics_queue_family;
@@ -372,8 +405,10 @@ void VulkanContext::createLogicalDevice() {
 
   VkDeviceCreateInfo create_info{};
   create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  create_info.pNext = &enabled_vulkan11_features;
   create_info.queueCreateInfoCount = 1;
   create_info.pQueueCreateInfos = &queue_create_info;
+  create_info.pEnabledFeatures = &enabled_features;
   create_info.enabledExtensionCount = 0;
   create_info.ppEnabledExtensionNames = nullptr;
   // 为了兼容较旧的实现，仅在验证层可用时设置 layer 字段。

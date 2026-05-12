@@ -17,7 +17,42 @@ slint::SharedString makeSpecialKeyString(std::u8string_view value) {
   return slint::SharedString(utf8.c_str());
 }
 
+const char* renderingStateToString(slint::RenderingState state) {
+  switch (state) {
+    case slint::RenderingState::RenderingSetup:
+      return "RenderingSetup";
+    case slint::RenderingState::BeforeRendering:
+      return "BeforeRendering";
+    case slint::RenderingState::AfterRendering:
+      return "AfterRendering";
+    case slint::RenderingState::RenderingTeardown:
+      return "RenderingTeardown";
+    default:
+      return "UnknownRenderingState";
+  }
+}
+
+const char* graphicsApiToString(slint::GraphicsAPI graphics_api) {
+  switch (graphics_api) {
+    case slint::GraphicsAPI::NativeOpenGL:
+      return "NativeOpenGL";
+    case slint::GraphicsAPI::Inaccessible:
+      return "Inaccessible";
+    default:
+      return "UnknownGraphicsAPI";
+  }
+}
+
 SlintSystem::SlintPlatform* g_slint_platform_instance = nullptr;
+
+class ScopedDispatchGuard final {
+ public:
+  explicit ScopedDispatchGuard(bool& flag) : m_flag(flag) { m_flag = true; }
+  ~ScopedDispatchGuard() { m_flag = false; }
+
+ private:
+  bool& m_flag;
+};
 }
 
 SlintSystem::SlintWindowAdapter::SlintWindowAdapter(WindowSystem* window_system)
@@ -196,7 +231,58 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       slint::platform::set_platform(std::move(platform));
     }
 
+  #if defined(SLINT_FEATURE_RENDERER_SKIA_VULKAN)
+    LOG_INFO(
+      "[SlintSystem::initialize] Slint was compiled with "
+      "RENDERER_SKIA_VULKAN enabled");
+  #else
+    LOG_WARN(
+      "[SlintSystem::initialize] Slint was compiled without "
+      "RENDERER_SKIA_VULKAN");
+  #endif
+
+  #if defined(SLINT_FEATURE_RENDERER_SKIA_OPENGL)
+    LOG_WARN(
+      "[SlintSystem::initialize] Slint was compiled with "
+      "RENDERER_SKIA_OPENGL enabled; runtime may still choose OpenGL if "
+      "the backend allows it");
+  #endif
+
     auto component = MainEditorWindow::create();
+    if (std::optional<slint::SetRenderingNotifierError> notifier_error =
+        component->window().set_rendering_notifier(
+          [](slint::RenderingState state,
+             slint::GraphicsAPI graphics_api) {
+            if (state == slint::RenderingState::RenderingSetup) {
+            const char* graphics_api_name =
+              graphicsApiToString(graphics_api);
+            if (graphics_api == slint::GraphicsAPI::Inaccessible) {
+              LOG_INFO(
+                "[SlintSystem] Slint rendering setup via {}. "
+                "This backend does not expose a native graphics API "
+                "handle through the public C++ API; with "
+                "RENDERER_SKIA_OPENGL disabled this is the expected "
+                "shape for Vulkan-backed Skia.",
+                graphics_api_name);
+            } else {
+              LOG_INFO(
+                "[SlintSystem] Slint rendering setup via {}",
+                graphics_api_name);
+            }
+            return;
+            }
+
+            if (state == slint::RenderingState::RenderingTeardown) {
+            LOG_INFO(
+              "[SlintSystem] Slint rendering teardown for {}",
+              graphicsApiToString(graphics_api));
+            }
+          })) {
+      LOG_WARN(
+        "[SlintSystem::initialize] failed to install Slint rendering "
+        "notifier: {}",
+        static_cast<int>(*notifier_error));
+    }
     component->show();
     m_window_component = component;
 
@@ -241,11 +327,29 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
   if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
     return;
   }
+  if (m_in_slint_dispatch) {
+    return;
+  }
+  static bool s_logged_first_viewport_upload = false;
+  static uint32_t s_last_upload_w = 0;
+  static uint32_t s_last_upload_h = 0;
   try {
+    ScopedDispatchGuard guard(m_in_slint_dispatch);
     slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
         width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
     slint::Image image(buffer);
     m_window_component->operator->()->set_viewport_image(image);
+    if (!s_logged_first_viewport_upload) {
+      LOG_INFO("[SlintSystem] first viewport image upload: {}x{}", width, height);
+      s_logged_first_viewport_upload = true;
+      s_last_upload_w = width;
+      s_last_upload_h = height;
+    } else if (width != s_last_upload_w || height != s_last_upload_h) {
+      LOG_INFO("[SlintSystem] viewport image upload resized: {}x{} -> {}x{}",
+               s_last_upload_w, s_last_upload_h, width, height);
+      s_last_upload_w = width;
+      s_last_upload_h = height;
+    }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::setViewportImage] {}", e.what());
     if (m_window_system) {
@@ -272,7 +376,11 @@ eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
 }
 
 void SlintSystem::update() {
+  if (m_in_slint_dispatch) {
+    return;
+  }
   try {
+    ScopedDispatchGuard guard(m_in_slint_dispatch);
     slint::platform::update_timers_and_animations();
     if (m_window_adapter) {
       m_window_adapter->renderIfNeeded();
@@ -294,8 +402,12 @@ void SlintSystem::processEvent(const SDL_Event& event) {
   if (!m_window_adapter || !m_window_component) {
     return;
   }
+  if (m_in_slint_dispatch) {
+    return;
+  }
 
   try {
+    ScopedDispatchGuard guard(m_in_slint_dispatch);
     slint::Window& window = m_window_adapter->window();
     const SDL_WindowID window_id = m_window_system->getWindowId();
 

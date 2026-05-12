@@ -22,21 +22,33 @@ endif()
 
 set(_slang_url "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/${_slang_archive}")
 
-set(FETCHCONTENT_QUIET OFF)
+set(_slang_root "${FETCHCONTENT_BASE_DIR}/slang_sdk-src")
+set(_slang_has_local_sdk FALSE)
 
-FetchContent_Declare(
-  slang_sdk
-  URL "${_slang_url}"
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-  LOG_DOWNLOAD ON
-  USES_TERMINAL_DOWNLOAD ON
-)
+if(EXISTS "${_slang_root}/bin/slang.dll"
+   AND EXISTS "${_slang_root}/lib/slang.lib"
+   AND EXISTS "${_slang_root}/include/slang.h"
+   AND EXISTS "${_slang_root}/bin/slang-standard-module-${SLANG_VERSION}")
+  set(_slang_has_local_sdk TRUE)
+  message(STATUS "[Slang] Reusing local SDK: ${_slang_root}")
+endif()
 
-FetchContent_MakeAvailable(slang_sdk)
+if(NOT _slang_has_local_sdk)
+  set(FETCHCONTENT_QUIET OFF)
 
-# Find the extracted SDK layout
-# Slang releases typically have: bin/, lib/, include/ at the root
-set(_slang_root "${slang_sdk_SOURCE_DIR}")
+  FetchContent_Declare(
+    slang_sdk
+    URL "${_slang_url}"
+    LOG_DOWNLOAD ON
+    USES_TERMINAL_DOWNLOAD ON
+  )
+
+  FetchContent_MakeAvailable(slang_sdk)
+
+  # Find the extracted SDK layout
+  # Slang releases typically have: bin/, lib/, include/ at the root
+  set(_slang_root "${slang_sdk_SOURCE_DIR}")
+endif()
 
 # Locate key files
 find_file(SLANG_DLL_PATH

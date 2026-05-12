@@ -15,6 +15,8 @@
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/core/event/event.h"
+#include "runtime/core/event/key_event.h"
+#include "runtime/function/render/debug/renderdoc_capture.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/slang/slang_compiler.h"
@@ -25,6 +27,8 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/window/window_system.h"
+
+#include <SDL3/SDL_keycode.h>
 
 namespace Blunder {
 
@@ -172,6 +176,11 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   }
 
   recreateReadbackStaging(k_default_viewport_w, k_default_viewport_h);
+
+  // Best-effort RenderDoc hookup. If the engine wasn't launched from
+  // RenderDoc, this is a silent no-op; otherwise F11 will capture one frame.
+  m_renderdoc_capture = eastl::make_unique<RenderDocCapture>();
+  m_renderdoc_capture->initialize();
 }
 
 void RenderSystem::recreateReadbackStaging(uint32_t width, uint32_t height) {
@@ -222,6 +231,11 @@ void RenderSystem::shutdown() {
   }
 
   vkDeviceWaitIdle(m_context->getDevice());
+
+  if (m_renderdoc_capture) {
+    m_renderdoc_capture->shutdown();
+    m_renderdoc_capture.reset();
+  }
 
   for (eastl::unique_ptr<VulkanBuffer>& buf : m_readback_staging) {
     if (buf) {
@@ -289,6 +303,16 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   const VkExtent2D offscreen_extent = m_offscreen_rt->getExtent();
   if (offscreen_extent.width == 0 || offscreen_extent.height == 0) {
     return;
+  }
+
+  // Bracket the frame's Vulkan work with the RenderDoc In-Application API so
+  // captures triggered from F11 reach Start/EndFrameCapture even though the
+  // engine never calls vkQueuePresentKHR. Bound to the engine's VkInstance so
+  // the capture excludes Slint/Skia's HWND-side work.
+  VkInstance instance =
+      m_context ? m_context->getInstance() : VK_NULL_HANDLE;
+  if (m_renderdoc_capture) {
+    m_renderdoc_capture->beginFrame(instance);
   }
 
   glm::mat4 view(1.0f);
@@ -519,10 +543,22 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     }
   }
 
+  if (m_renderdoc_capture) {
+    m_renderdoc_capture->endFrame(instance);
+  }
+
   m_current_frame = (m_current_frame + 1) % VulkanSync::k_max_frames_in_flight;
 }
 
 void RenderSystem::onEvent(Event& event) {
+  if (m_renderdoc_capture && m_renderdoc_capture->isAttached() &&
+      event.getEventType() == EventType::KeyPressed) {
+    auto& key_event = static_cast<KeyPressedEvent&>(event);
+    if (!key_event.isRepeat() && key_event.getKeyCode() == SDLK_F11) {
+      m_renderdoc_capture->triggerCapture();
+    }
+  }
+
   if (m_editor_camera) {
     m_editor_camera->onEvent(event);
   }

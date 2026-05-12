@@ -59,6 +59,12 @@ target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})
 target_include_directories(engine_runtime
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/..
+    PRIVATE
+        # Vendored RenderDoc In-Application API header (renderdoc_app.h).
+        # Used by function/render/debug/renderdoc_capture.cpp to drive
+        # Start/EndFrameCapture explicitly under headless Vulkan, where
+        # RenderDoc's vkQueuePresentKHR hook never fires.
+        ${CMAKE_SOURCE_DIR}/engine/3rdparty/renderdoc
 )
 
 # ============================================================================

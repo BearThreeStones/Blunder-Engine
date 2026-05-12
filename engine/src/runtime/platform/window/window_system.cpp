@@ -6,6 +6,10 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "runtime/core/base/macro.h"
 #include "runtime/core/event/application_event.h"
 #include "runtime/core/event/key_event.h"
@@ -23,11 +27,10 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
   m_width = create_info.width;
   m_height = create_info.height;
 
-  // Slint's SkiaRenderer owns the GPU surface/swapchain on this HWND for
-  // presentation, so the SDL window does not need SDL_WINDOW_VULKAN. The
-  // engine still uses Vulkan internally but only writes to off-screen images
-  // and reads them back; nothing is presented through the window's Vulkan
-  // surface anymore.
+  // Slint's source-built SkiaRenderer owns the presentation path on this HWND.
+  // The editor therefore keeps the SDL window out of SDL_WINDOW_VULKAN mode:
+  // the engine's Vulkan context still renders to off-screen images and feeds
+  // the UI via CPU readback, while Slint handles composition and present.
   SDL_WindowFlags window_flags =
       SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
   if (create_info.is_fullscreen) {
@@ -160,11 +163,17 @@ void* WindowSystem::getNativeWin32HInstance() const {
     return nullptr;
   }
   SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
-  if (!props) {
-    return nullptr;
+  if (props) {
+    if (void* hinstance = SDL_GetPointerProperty(
+            props, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, nullptr)) {
+      return hinstance;
+    }
   }
-  return SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER,
-                                nullptr);
+#ifdef _WIN32
+  return reinterpret_cast<void*>(GetModuleHandleW(nullptr));
+#else
+  return nullptr;
+#endif
 }
 
 eastl::array<const char*, 16> WindowSystem::getRequiredVulkanExtensions(

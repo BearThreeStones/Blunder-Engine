@@ -91,5 +91,6 @@ class SlintSystem final {
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
+  bool m_in_slint_dispatch{false};
 };
 }  // namespace Blunder

@@ -170,6 +170,9 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 //
 bool BlunderEngine::rendererTick(float delta_time) {
   SlintSystem* slint_system = g_runtime_global_context.m_slint_system.get();
+  static bool s_logged_viewport_ready = false;
+  static uint32_t s_last_viewport_w = 0;
+  static uint32_t s_last_viewport_h = 0;
 
   // Use the central viewport rectangle reported by Slint as the off-screen
   // RT target size, falling back to the drawable surface size before the
@@ -180,6 +183,17 @@ bool BlunderEngine::rendererTick(float delta_time) {
     eastl::array<uint32_t, 2> vp = slint_system->getViewportLogicalSize();
     target_w = vp[0];
     target_h = vp[1];
+    if (target_w > 0 && target_h > 0) {
+      if (!s_logged_viewport_ready) {
+        LOG_INFO("[BlunderEngine] Slint viewport ready: {}x{}", target_w, target_h);
+        s_logged_viewport_ready = true;
+      } else if (target_w != s_last_viewport_w || target_h != s_last_viewport_h) {
+        LOG_INFO("[BlunderEngine] Slint viewport changed: {}x{} -> {}x{}",
+                 s_last_viewport_w, s_last_viewport_h, target_w, target_h);
+      }
+      s_last_viewport_w = target_w;
+      s_last_viewport_h = target_h;
+    }
   }
   if (target_w == 0 || target_h == 0) {
     eastl::array<int, 2> drawable =

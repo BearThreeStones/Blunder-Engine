@@ -193,11 +193,14 @@ Key integration points:
 
 Notes / known limitations:
 
-- Slint 1.16.1 SDK ships with `RENDERER_SKIA` enabled but `RENDERER_SKIA_VULKAN`
-  and `RENDERER_SKIA_OPENGL` disabled. Zero-copy GPU texture sharing is not
-  available, hence the CPU readback path. The data flow above is structured so
-  the readback step can later be replaced by a shared-texture path without
-  changing the rest of the pipeline.
+- Slint is now expected to be source-built so `RENDERER_SKIA_VULKAN` can be
+  enabled and `RENDERER_SKIA_OPENGL` can be disabled at configure time. The
+  runtime still keeps the 3D viewport on the existing CPU readback path; this
+  change only switches Slint/Skia's window composition path to Vulkan.
+- Zero-copy GPU texture sharing is still not implemented. The public C++ API
+  surface currently only exposes `BorrowedOpenGLTexture` and
+  `set_rendering_notifier`, so the data flow above remains structured around
+  readback until a separate Vulkan texture import path is available.
 - The readback uses a synchronous fence wait per frame. Pingponging across
   `VulkanSync::k_max_frames_in_flight` staging buffers (already provisioned)
   is the next optimisation if this becomes a bottleneck.

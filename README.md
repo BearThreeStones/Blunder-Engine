@@ -1,6 +1,18 @@
 # Blunder-Engine
 玩具游戏引擎
 
+## Build Prerequisites
+
+- CMake 3.21 or newer
+- Visual Studio 2022 generator toolchain
+- Vulkan SDK exposed via `VULKAN_SDK`
+- Rust 1.88 or newer, with `rustc` and `cargo` available in `PATH`
+
+The editor's Slint integration is source-built during CMake configure so the
+Skia Vulkan renderer can be enabled. The current viewport path still uses the
+engine's off-screen Vulkan render + CPU readback flow; this change only affects
+Slint's composition/present path.
+
 引擎分为 5 层：
 
 平台层（Platfrom Layer）：硬件与操作系统

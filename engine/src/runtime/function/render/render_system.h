@@ -11,6 +11,7 @@
 namespace Blunder {
 
 class Event;
+class RenderDocCapture;
 class SlangCompiler;
 class EditorCamera;
 class OffscreenRenderTarget;
@@ -81,6 +82,11 @@ class RenderSystem final {
   eastl::shared_ptr<VulkanPipeline> m_grid_pipeline;
   eastl::unique_ptr<OffscreenRenderTarget> m_offscreen_rt;
   eastl::unique_ptr<EditorCamera> m_editor_camera;
+  // RenderDoc In-Application API bridge. Headless rendering means RenderDoc
+  // cannot detect frame boundaries automatically, so we drive
+  // Start/EndFrameCapture explicitly around each tick. F11 (KeyPressedEvent)
+  // schedules a single-frame capture.
+  eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_grid_uniform_buffers;
   VkDescriptorPool m_grid_descriptor_pool{VK_NULL_HANDLE};
   eastl::vector<VkDescriptorSet> m_grid_descriptor_sets;

@@ -20,6 +20,8 @@ set(RENDER_SOURCES
     "function/render/vulkan/vulkan_pipeline.h"
     "function/render/vulkan/vulkan_buffer.cpp"
     "function/render/vulkan/vulkan_buffer.h"
+    "function/render/debug/renderdoc_capture.cpp"
+    "function/render/debug/renderdoc_capture.h"
 )
 
 # Add sources to parent scope for engine_runtime library
