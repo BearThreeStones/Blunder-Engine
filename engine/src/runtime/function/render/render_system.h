@@ -91,7 +91,7 @@ class RenderSystem final {
   VkDescriptorPool m_grid_descriptor_pool{VK_NULL_HANDLE};
   eastl::vector<VkDescriptorSet> m_grid_descriptor_sets;
   uint32_t m_current_frame{0};
-  GridPlane m_grid_plane{GridPlane::xz};
+  GridPlane m_grid_plane{GridPlane::xy};
 
   // CPU readback staging buffer (one per in-flight frame). Kept as
   // host-visible host-cached so it can be mapped and read directly.

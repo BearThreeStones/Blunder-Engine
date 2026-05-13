@@ -5,6 +5,7 @@
 
 #include <slint-platform.h>
 
+#include "EASTL/array.h"
 #include "EASTL/vector.h"
 
 #include "editor_window.h"
@@ -91,6 +92,7 @@ class SlintSystem final {
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
+  eastl::array<uint32_t, 2> m_cached_viewport_logical_size{0u, 0u};
   bool m_in_slint_dispatch{false};
 };
 }  // namespace Blunder

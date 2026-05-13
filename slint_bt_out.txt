@@ -1,0 +1,25 @@
+[info] [FileSystem] executable dir: D:/Dev/Blunder-Engine/build/vs2026-debug/engine/src/editor/Debug
+[info] [FileSystem] project root  : D:/Dev/Blunder-Engine
+[info] [FileSystem] asset root    : D:/Dev/Blunder-Engine/assets
+[info] [FileSystem] shader root   : D:/Dev/Blunder-Engine/engine/shaders
+[info] [AssetManager] initialized (asset root: D:/Dev/Blunder-Engine/assets)
+[info] [SlangCompiler] initialized Slang shader compiler
+[info] [VulkanContext::initialize] creating Vulkan instance
+[info] [VulkanContext::initialize] setting up debug messenger
+[info] [VulkanContext::initialize] selecting physical device
+[info] [VulkanContext::initialize] creating logical device
+[info] [VulkanContext::initialize] Vulkan context initialized
+[info] [VulkanAllocator::initialize] creating VMA allocator
+[info] [VulkanSync::initialize] creating synchronization objects
+[debug] [SlangCompiler] loaded shader source: engine/shaders/grid.slang
+[info] [SlangCompiler] compiled 'engine/shaders/grid.slang' entry 'vertexMain' -> 4768 bytes SPIR-V
+[debug] [SlangCompiler] loaded shader source: engine/shaders/grid.slang
+[info] [SlangCompiler] compiled 'engine/shaders/grid.slang' entry 'fragmentMain' -> 2784 bytes SPIR-V
+[warning] [SlintSystem::initialize] Slint was compiled without RENDERER_SKIA_VULKAN
+[info] [InputSystem::initialize] SDL3 input system initialized
+[info] engine start
+[debug] [Event] WindowResizeEvent: 1280, 720
+[info] [Event] Window resized to 1280x720
+[debug] [Event] WindowFocus
+[info] [BlunderEngine] Slint viewport ready: 760x652
+[info] [SlintSystem] first viewport image upload: 760x652

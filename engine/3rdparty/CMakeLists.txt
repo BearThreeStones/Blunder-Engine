@@ -75,3 +75,15 @@ set(KTX_FEATURE_TOOLS OFF CACHE BOOL "" FORCE)
 set(KTX_FEATURE_DOC OFF CACHE BOOL "" FORCE)
 set(KTX_FEATURE_VULKAN ON CACHE BOOL "" FORCE)
 add_subdirectory(ktx)
+
+# RecastNavigation - navigation mesh generation and query libraries
+set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/recastnavigation/CMakeLists.txt")
+    add_subdirectory(recastnavigation)
+else()
+    message(STATUS
+        "[3rdparty] RecastNavigation submodule not present. Run: git submodule update --init --recursive engine/3rdparty/recastnavigation"
+    )
+endif()

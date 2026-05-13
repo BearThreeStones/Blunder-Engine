@@ -18,13 +18,16 @@ ConstantBuffer<GridUniformData> ubo;
 struct VertexOutput
 {
     float4 sv_position : SV_Position;
-    [[vk::location(0)]] float3 worldPos;
-    [[vk::location(1)]] float lineCoord;
-    [[vk::location(2)]] float alphaWeight;
+    [[vk::location(0)]]
+    float3 worldPos;
+    [[vk::location(1)]]
+    float lineCoord;
+    [[vk::location(2)]]
+    float alphaWeight;
 };
 
 [shader("vertex")]
-VertexOutput vertexMain(uint vertexId : SV_VertexID)
+VertexOutput vertexMain(uint vertexId: SV_VertexID)
 {
     VertexOutput output;
     uint lineId = vertexId / 2;
@@ -68,18 +71,23 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float3 toPixel = input.worldPos - cameraPos;
     float distance = length(toPixel);
     float edgeFade = saturate(1.0 - abs(input.lineCoord) / max(ubo.params0.z, 0.001));
+    edgeFade = lerp(0.35, 1.0, edgeFade);
 
     float angleDot = abs(dot(normalize(toPixel), cameraForward));
-    float angleFade = saturate(pow(angleDot, ubo.params1.y));
+    float angleFade = saturate(pow(angleDot, ubo.params1.y * 0.35));
+    angleFade = lerp(0.55, 1.0, angleFade);
 
     float distanceFade = saturate(1.0 - distance / farClip);
     distanceFade = pow(distanceFade, ubo.params1.z);
+    distanceFade = lerp(0.25, 1.0, distanceFade);
 
     float stipplePhase = frac(distance * ubo.params1.w);
-    float stippleMask = step(stipplePhase, saturate(ubo.params2.x));
+    float stippleMask = smoothstep(1.0, 0.0, saturate((stipplePhase - ubo.params2.x) * 6.0 + 0.5));
+    stippleMask = lerp(0.6, 1.0, stippleMask);
 
     float alpha = edgeFade * angleFade * distanceFade * stippleMask;
-    alpha *= ubo.params2.y * input.alphaWeight;
+    alpha *= (0.55 + ubo.params2.y * 1.6) * input.alphaWeight;
+    alpha = saturate(alpha);
 
     return float4(0.68, 0.73, 0.80, alpha);
 }

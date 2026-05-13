@@ -94,6 +94,10 @@ target_link_libraries(engine_runtime
         EASTL
         glm
         spdlog
+        Recast
+        Detour
+        DetourCrowd
+        DetourTileCache
         Vulkan::Vulkan
         Slint::Slint
     PRIVATE

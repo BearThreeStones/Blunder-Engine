@@ -28,3 +28,6 @@
 [submodule "engine/3rdparty/stb"]
 	path = engine/3rdparty/stb
 	url = https://github.com/nothings/stb.git
+[submodule "engine/3rdparty/recastnavigation"]
+	path = engine/3rdparty/recastnavigation
+	url = https://github.com/recastnavigation/recastnavigation.git

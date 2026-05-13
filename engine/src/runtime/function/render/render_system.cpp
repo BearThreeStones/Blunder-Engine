@@ -1,13 +1,14 @@
 #include "runtime/function/render/render_system.h"
 
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_scancode.h>
 #include <slang.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <cmath>
-#include <algorithm>
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_scancode.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -27,8 +28,6 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/window/window_system.h"
-
-#include <SDL3/SDL_keycode.h>
 
 namespace Blunder {
 
@@ -117,9 +116,9 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   m_grid_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
   for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
     m_grid_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
-    m_grid_uniform_buffers[i]->create(m_allocator.get(), sizeof(GridUniformData),
-                                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
+    m_grid_uniform_buffers[i]->create(
+        m_allocator.get(), sizeof(GridUniformData),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 
   VkDescriptorPoolSize grid_pool_size{};
@@ -131,8 +130,9 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   grid_pool_info.poolSizeCount = 1;
   grid_pool_info.pPoolSizes = &grid_pool_size;
   grid_pool_info.maxSets = VulkanSync::k_max_frames_in_flight;
-  const VkResult grid_pool_result = vkCreateDescriptorPool(
-      m_context->getDevice(), &grid_pool_info, nullptr, &m_grid_descriptor_pool);
+  const VkResult grid_pool_result =
+      vkCreateDescriptorPool(m_context->getDevice(), &grid_pool_info, nullptr,
+                             &m_grid_descriptor_pool);
   if (grid_pool_result != VK_SUCCESS) {
     LOG_FATAL(
         "[RenderSystem::initialize] grid vkCreateDescriptorPool failed: {}",
@@ -197,8 +197,7 @@ void RenderSystem::recreateReadbackStaging(uint32_t width, uint32_t height) {
   }
   m_readback_staging.clear();
 
-  const VkDeviceSize bytes =
-      static_cast<VkDeviceSize>(width) * height * 4u;
+  const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
   m_readback_staging.resize(VulkanSync::k_max_frames_in_flight);
   for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
     m_readback_staging[i] = eastl::make_unique<VulkanBuffer>();
@@ -251,7 +250,8 @@ void RenderSystem::shutdown() {
     m_offscreen_rt.reset();
   }
 
-  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer : m_grid_uniform_buffers) {
+  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer :
+       m_grid_uniform_buffers) {
     if (uniform_buffer) {
       uniform_buffer->destroy();
       uniform_buffer.reset();
@@ -309,8 +309,7 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   // captures triggered from F11 reach Start/EndFrameCapture even though the
   // engine never calls vkQueuePresentKHR. Bound to the engine's VkInstance so
   // the capture excludes Slint/Skia's HWND-side work.
-  VkInstance instance =
-      m_context ? m_context->getInstance() : VK_NULL_HANDLE;
+  VkInstance instance = m_context ? m_context->getInstance() : VK_NULL_HANDLE;
   if (m_renderdoc_capture) {
     m_renderdoc_capture->beginFrame(instance);
   }
@@ -327,8 +326,9 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   float vertical_fov = glm::radians(45.0f);
   float ortho_size = 10.0f;
   if (m_editor_camera) {
-    m_editor_camera->setViewportSize(static_cast<float>(offscreen_extent.width),
-                                     static_cast<float>(offscreen_extent.height));
+    m_editor_camera->setViewportSize(
+        static_cast<float>(offscreen_extent.width),
+        static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
     view = m_editor_camera->getViewMatrix();
     projection = m_editor_camera->getProjectionMatrix();
@@ -376,7 +376,7 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   vkBeginCommandBuffer(command_buffer, &begin_info);
 
-  // ===== Pass 1: editor grid -> offscreen render target =====
+  // Pass 1: 编辑器网格 -> 离屏渲染目标
   {
     VkClearValue clear_values[2]{};
     clear_values[0].color = {{0.1f, 0.1f, 0.1f, 1.0f}};
@@ -406,11 +406,10 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     GridUniformData grid_ubo{};
     grid_ubo.view = view;
     grid_ubo.projection = projection;
-    grid_ubo.camera_position_and_proj_type =
-        glm::vec4(camera_position,
-                  projection_mode == EditorCamera::ProjectionMode::orthographic
-                      ? 1.0f
-                      : 0.0f);
+    grid_ubo.camera_position_and_proj_type = glm::vec4(
+        camera_position,
+        projection_mode == EditorCamera::ProjectionMode::orthographic ? 1.0f
+                                                                      : 0.0f);
     grid_ubo.camera_forward_and_far_clip = glm::vec4(camera_forward, far_clip);
     switch (m_grid_plane) {
       case GridPlane::xy:
@@ -439,16 +438,16 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     const float step_power =
         std::floor(std::log10(std::max(base_metric * 0.1f, 0.0001f)));
     const float base_step = std::pow(10.0f, step_power);
-    const float snapped_u = std::floor(
-                                glm::dot(glm::vec3(grid_ubo.plane_origin),
-                                         glm::vec3(grid_ubo.plane_axis_u)) /
-                                base_step) *
-                            base_step;
-    const float snapped_v = std::floor(
-                                glm::dot(glm::vec3(grid_ubo.plane_origin),
-                                         glm::vec3(grid_ubo.plane_axis_v)) /
-                                base_step) *
-                            base_step;
+    const float snapped_u =
+        std::floor(glm::dot(glm::vec3(grid_ubo.plane_origin),
+                            glm::vec3(grid_ubo.plane_axis_u)) /
+                   base_step) *
+        base_step;
+    const float snapped_v =
+        std::floor(glm::dot(glm::vec3(grid_ubo.plane_origin),
+                            glm::vec3(grid_ubo.plane_axis_v)) /
+                   base_step) *
+        base_step;
     grid_ubo.plane_origin =
         snapped_u * grid_ubo.plane_axis_u + snapped_v * grid_ubo.plane_axis_v;
     grid_ubo.plane_origin.w = 1.0f;
@@ -463,17 +462,18 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
                             &m_grid_descriptor_sets[m_current_frame], 0,
                             nullptr);
     for (uint32_t iteration = 0; iteration < k_grid_iterations; ++iteration) {
-      const float scale = std::pow(k_grid_major_scale, static_cast<float>(iteration));
+      const float scale =
+          std::pow(k_grid_major_scale, static_cast<float>(iteration));
       const float step = base_step * scale;
       const float alpha_scale =
           iteration == 0 ? k_grid_base_alpha : k_grid_minor_alpha / scale;
       grid_ubo.params0 =
           glm::vec4(step, k_grid_major_scale, k_grid_half_extent * scale,
                     static_cast<float>(k_grid_lines_per_axis));
-      grid_ubo.params2 =
-          glm::vec4(k_grid_stipple_duty, alpha_scale,
-                    static_cast<float>(iteration), 0.0f);
-      m_grid_uniform_buffers[m_current_frame]->upload(&grid_ubo, sizeof(grid_ubo));
+      grid_ubo.params2 = glm::vec4(k_grid_stipple_duty, alpha_scale,
+                                   static_cast<float>(iteration), 0.0f);
+      m_grid_uniform_buffers[m_current_frame]->upload(&grid_ubo,
+                                                      sizeof(grid_ubo));
       const float bias_scale = 1.0f + static_cast<float>(iteration) * 0.75f;
       vkCmdSetDepthBias(command_buffer, -1.2f * bias_scale, 0.0f,
                         -1.2f * bias_scale);
@@ -483,7 +483,7 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     m_offscreen_rt->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }
 
-  // ===== Readback: SHADER_READ_ONLY -> TRANSFER_SRC -> copy -> SHADER_READ =====
+  // 回读：SHADER_READ_ONLY -> TRANSFER_SRC -> copy -> SHADER_READ
   m_offscreen_rt->cmdBarrierToTransferSrc(command_buffer);
 
   VkBufferImageCopy copy_region{};
@@ -499,10 +499,10 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   copy_region.imageExtent.height = offscreen_extent.height;
   copy_region.imageExtent.depth = 1;
 
-  vkCmdCopyImageToBuffer(
-      command_buffer, m_offscreen_rt->getImage(),
-      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-      m_readback_staging[m_current_frame]->getBuffer(), 1, &copy_region);
+  vkCmdCopyImageToBuffer(command_buffer, m_offscreen_rt->getImage(),
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         m_readback_staging[m_current_frame]->getBuffer(), 1,
+                         &copy_region);
 
   m_offscreen_rt->cmdBarrierToShaderRead(command_buffer);
 
@@ -515,13 +515,13 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   vkQueueSubmit(m_context->getGraphicsQueue(), 1, &submit_info,
                 in_flight_fence);
 
-  // Synchronously wait so we can map the staging buffer right away. This is
-  // simple but stalls the pipeline; cleanup phase can pingpong over the
-  // k_max_frames_in_flight buffers if profiling shows it matters.
+  // 同步等待，以便我们可以立即映射（Map）暂存缓冲区（Staging Buffer）
+  // 这种方式虽然简单，但会导致流水线停顿（Stall）；
+  // 如果性能分析（Profiling）显示此处存在瓶颈，清理阶段可以在
+  // k_max_frames_in_flight 个缓冲区之间采用乒乓缓冲（Ping-ponging）机制
   vkWaitForFences(device, 1, &in_flight_fence, VK_TRUE,
                   k_fence_wait_timeout_ns);
-
-  // Map the staging buffer and forward pixels to Slint.
+  // 映射缓冲区并将像素转发给 Slint
   if (slint_system) {
     void* mapped = nullptr;
     const VkResult mr = vmaMapMemory(

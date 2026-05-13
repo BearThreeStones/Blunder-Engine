@@ -231,22 +231,8 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       slint::platform::set_platform(std::move(platform));
     }
 
-  #if defined(SLINT_FEATURE_RENDERER_SKIA_VULKAN)
     LOG_INFO(
-      "[SlintSystem::initialize] Slint was compiled with "
-      "RENDERER_SKIA_VULKAN enabled");
-  #else
-    LOG_WARN(
-      "[SlintSystem::initialize] Slint was compiled without "
-      "RENDERER_SKIA_VULKAN");
-  #endif
-
-  #if defined(SLINT_FEATURE_RENDERER_SKIA_OPENGL)
-    LOG_WARN(
-      "[SlintSystem::initialize] Slint was compiled with "
-      "RENDERER_SKIA_OPENGL enabled; runtime may still choose OpenGL if "
-      "the backend allows it");
-  #endif
+        "[SlintSystem::initialize] creating Slint editor window and Skia renderer");
 
     auto component = MainEditorWindow::create();
     if (std::optional<slint::SetRenderingNotifierError> notifier_error =
@@ -364,15 +350,7 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
 }
 
 eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
-  if (!m_window_component) {
-    return {0u, 0u};
-  }
-  const auto& component = *m_window_component;
-  const float w = component->get_viewport_width();
-  const float h = component->get_viewport_height();
-  const uint32_t wu = w > 0.0f ? static_cast<uint32_t>(w) : 0u;
-  const uint32_t hu = h > 0.0f ? static_cast<uint32_t>(h) : 0u;
-  return {wu, hu};
+  return m_cached_viewport_logical_size;
 }
 
 void SlintSystem::update() {
@@ -384,6 +362,17 @@ void SlintSystem::update() {
     slint::platform::update_timers_and_animations();
     if (m_window_adapter) {
       m_window_adapter->renderIfNeeded();
+    }
+    if (m_window_component) {
+      const auto& component = *m_window_component;
+      const float w = component->get_viewport_width();
+      const float h = component->get_viewport_height();
+      m_cached_viewport_logical_size[0] =
+          w > 0.0f ? static_cast<uint32_t>(w) : 0u;
+      m_cached_viewport_logical_size[1] =
+          h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+    } else {
+      m_cached_viewport_logical_size = {0u, 0u};
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::update] {}", e.what());
