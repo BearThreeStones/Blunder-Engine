@@ -3,12 +3,17 @@
 #include <cstdint>
 
 #include "runtime/core/event/event.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
 
 namespace Blunder {
 
+class MouseButtonPressedEvent;
+class MouseButtonReleasedEvent;
 class MouseMovedEvent;
 class MouseScrolledEvent;
+class KeyPressedEvent;
+class WindowLostFocusEvent;
 class WindowSystem;
 
 class EditorCamera final {
@@ -37,16 +42,38 @@ class EditorCamera final {
   float getFarClip() const { return m_far_clip; }
   float getOrthoSize() const { return m_ortho_size; }
 
+  bool isWindowPositionInViewport(const Vec2& window_position) const;
+  Vec2 windowToViewportLocal(const Vec2& window_position) const;
+  Vec2 viewportLocalToNdc(const Vec2& viewport_position) const;
+  Ray makeRayFromWindowPosition(const Vec2& window_position) const;
+
+  void setViewportRect(int32_t x, int32_t y, float width, float height);
   void setViewportSize(float width, float height);
   void setProjectionMode(ProjectionMode mode);
 
  private:
+  enum class InteractionMode : uint32_t {
+    none = 0,
+    pan,
+    free_look,
+  };
+
+  bool onMouseButtonPressed(MouseButtonPressedEvent& event);
+  bool onMouseButtonReleased(MouseButtonReleasedEvent& event);
   bool onMouseMoved(MouseMovedEvent& event);
   bool onMouseScrolled(MouseScrolledEvent& event);
+  bool onKeyPressed(KeyPressedEvent& event);
+  bool onWindowLostFocus(WindowLostFocusEvent& event);
 
-  void orbit(float delta_time);
-  void pan(float delta_time);
-  void zoom(float delta_time);
+  void beginFreeLook();
+  void endFreeLook();
+  Vec2 getCurrentCursorWindowPosition() const;
+  bool isViewportReady() const;
+  bool isCursorInViewport() const;
+  void updateDirectionVectors();
+  void updateFreeLook(float delta_time, const bool* keyboard_state);
+  void pan();
+  void zoom();
 
   void updateViewMatrix();
   void updateProjectionMatrix();
@@ -69,11 +96,16 @@ class EditorCamera final {
 
   float m_viewport_width{1280.0f};
   float m_viewport_height{720.0f};
+  int32_t m_viewport_origin_x{0};
+  int32_t m_viewport_origin_y{0};
   float m_vertical_fov{glm::radians(45.0f)};
   float m_near_clip{0.1f};
   float m_far_clip{1000.0f};
   float m_ortho_size{10.0f};
   ProjectionMode m_projection_mode{ProjectionMode::perspective};
+  InteractionMode m_interaction_mode{InteractionMode::none};
+  bool m_right_drag_started_in_viewport{false};
+  bool m_middle_drag_started_in_viewport{false};
 
   Vec2 m_mouse_delta_accumulator{0.0f, 0.0f};
   float m_scroll_delta_accumulator{0.0f};

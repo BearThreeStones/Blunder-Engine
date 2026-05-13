@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -13,6 +14,13 @@
 #include "runtime/platform/window/window_system.h"
 
 namespace Blunder {
+
+struct ViewportLogicalRect {
+  int32_t x{0};
+  int32_t y{0};
+  uint32_t width{0};
+  uint32_t height{0};
+};
 
 struct SlintSystemInitInfo {
   WindowSystem* window_system{nullptr};
@@ -38,6 +46,11 @@ class SlintSystem final {
   /// keep the source buffer alive after the call returns.
   void setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
                         uint32_t height);
+
+  /// Returns the logical pixel rect of the central 3D viewport rectangle in
+  /// the Slint UI. All values are zero until the window has performed its
+  /// first layout.
+  ViewportLogicalRect getViewportLogicalRect() const;
 
   /// Returns the logical pixel size of the central 3D viewport rectangle in
   /// the Slint UI. {0, 0} until the window has performed its first layout.
@@ -92,7 +105,7 @@ class SlintSystem final {
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
-  eastl::array<uint32_t, 2> m_cached_viewport_logical_size{0u, 0u};
+  ViewportLogicalRect m_cached_viewport_logical_rect{};
   bool m_in_slint_dispatch{false};
 };
 }  // namespace Blunder

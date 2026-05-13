@@ -349,8 +349,13 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
   }
 }
 
+ViewportLogicalRect SlintSystem::getViewportLogicalRect() const {
+  return m_cached_viewport_logical_rect;
+}
+
 eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
-  return m_cached_viewport_logical_size;
+  return {m_cached_viewport_logical_rect.width,
+          m_cached_viewport_logical_rect.height};
 }
 
 void SlintSystem::update() {
@@ -365,14 +370,18 @@ void SlintSystem::update() {
     }
     if (m_window_component) {
       const auto& component = *m_window_component;
+      const float x = component->get_viewport_origin_x();
+      const float y = component->get_viewport_origin_y();
       const float w = component->get_viewport_width();
       const float h = component->get_viewport_height();
-      m_cached_viewport_logical_size[0] =
+      m_cached_viewport_logical_rect.x = static_cast<int32_t>(x);
+      m_cached_viewport_logical_rect.y = static_cast<int32_t>(y);
+      m_cached_viewport_logical_rect.width =
           w > 0.0f ? static_cast<uint32_t>(w) : 0u;
-      m_cached_viewport_logical_size[1] =
+      m_cached_viewport_logical_rect.height =
           h > 0.0f ? static_cast<uint32_t>(h) : 0u;
     } else {
-      m_cached_viewport_logical_size = {0u, 0u};
+      m_cached_viewport_logical_rect = {};
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::update] {}", e.what());

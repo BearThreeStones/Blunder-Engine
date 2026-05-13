@@ -326,8 +326,16 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   float vertical_fov = glm::radians(45.0f);
   float ortho_size = 10.0f;
   if (m_editor_camera) {
-    m_editor_camera->setViewportSize(
-        static_cast<float>(offscreen_extent.width),
+    int32_t viewport_x = 0;
+    int32_t viewport_y = 0;
+    if (slint_system) {
+      const ViewportLogicalRect viewport_rect =
+          slint_system->getViewportLogicalRect();
+      viewport_x = viewport_rect.x;
+      viewport_y = viewport_rect.y;
+    }
+    m_editor_camera->setViewportRect(
+        viewport_x, viewport_y, static_cast<float>(offscreen_extent.width),
         static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
     view = m_editor_camera->getViewMatrix();

@@ -17,6 +17,8 @@ export component MainEditorWindow inherits Window {
 
     // Engine reads back the central viewport size so the offscreen render
     // target can be resized to match. Updated by the layout binding below.
+    out property <length> viewport-origin-x: viewport-rect.absolute-position.x;
+    out property <length> viewport-origin-y: viewport-rect.absolute-position.y;
     out property <length> viewport-width: viewport-rect.width;
     out property <length> viewport-height: viewport-rect.height;
 

@@ -351,10 +351,12 @@ void WindowSystem::handleMouseButtonEvent(const SDL_Event& event) {
 
   const int button = static_cast<int>(event.button.button);
   if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-    MouseButtonPressedEvent button_event(button);
+    MouseButtonPressedEvent button_event(button, event.button.x,
+                                         event.button.y);
     m_event_callback(button_event);
   } else {
-    MouseButtonReleasedEvent button_event(button);
+    MouseButtonReleasedEvent button_event(button, event.button.x,
+                                          event.button.y);
     m_event_callback(button_event);
   }
 }
@@ -370,7 +372,8 @@ void WindowSystem::handleMouseWheelEvent(const SDL_Event& event) {
   const float y = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
                       ? -event.wheel.y
                       : event.wheel.y;
-  MouseScrolledEvent scroll_event(x, y);
+  MouseScrolledEvent scroll_event(x, y, event.wheel.mouse_x,
+                                  event.wheel.mouse_y);
   m_event_callback(scroll_event);
 }
 
