@@ -26,8 +26,12 @@
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
+#include "runtime/function/render/vulkan/vulkan_texture.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/texture2d_asset.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
 
 namespace Blunder {
 
@@ -48,6 +52,17 @@ struct GridUniformData {
   glm::vec4 params2;  // stipple_duty, alpha_scale, iteration, reserved
 };
 
+struct MeshUniformData {
+  glm::mat4 model;
+  glm::mat4 view;
+  glm::mat4 projection;
+};
+
+struct DemoMeshData {
+  eastl::vector<Vertex> vertices;
+  eastl::vector<uint32_t> indices;
+};
+
 constexpr uint32_t k_default_viewport_w = 1024;
 constexpr uint32_t k_default_viewport_h = 720;
 constexpr float k_grid_major_scale = 10.0f;
@@ -61,6 +76,79 @@ constexpr float k_grid_stipple_scale = 1.5f;
 constexpr float k_grid_stipple_duty = 0.6f;
 constexpr uint32_t k_grid_iterations = 3;
 constexpr uint32_t k_grid_lines_per_axis = 96;
+constexpr uint32_t k_smoke_texture_size = 64;
+constexpr float k_demo_mesh_spin_rate = 0.85f;
+constexpr float k_demo_mesh_height = 0.75f;
+constexpr float k_demo_mesh_uniform_scale = 0.85f;
+constexpr const char* k_demo_mesh_asset_path =
+  "models/textured_cube/textured_cube.gltf";
+
+DemoMeshData buildDemoCubeMesh() {
+  constexpr float half_extent = 0.5f;
+
+  DemoMeshData mesh;
+  mesh.vertices = {
+      {{-half_extent, -half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
+      {{ half_extent, -half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}},
+      {{ half_extent,  half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
+      {{-half_extent,  half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
+
+      {{-half_extent,  half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
+      {{ half_extent,  half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
+      {{ half_extent, -half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+      {{-half_extent, -half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+
+      {{-half_extent,  half_extent, -half_extent}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+      {{ half_extent,  half_extent, -half_extent}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+      {{ half_extent,  half_extent,  half_extent}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
+      {{-half_extent,  half_extent,  half_extent}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
+
+      {{ half_extent, -half_extent, -half_extent}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f}},
+      {{-half_extent, -half_extent, -half_extent}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f}},
+      {{-half_extent, -half_extent,  half_extent}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f}},
+      {{ half_extent, -half_extent,  half_extent}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f}},
+
+      {{-half_extent, -half_extent, -half_extent}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+      {{-half_extent,  half_extent, -half_extent}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+      {{-half_extent,  half_extent,  half_extent}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+      {{-half_extent, -half_extent,  half_extent}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+
+      {{ half_extent,  half_extent, -half_extent}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+      {{ half_extent, -half_extent, -half_extent}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+      {{ half_extent, -half_extent,  half_extent}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
+      {{ half_extent,  half_extent,  half_extent}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
+  };
+
+  mesh.indices = {
+      0u, 1u, 2u, 0u, 2u, 3u,
+      4u, 5u, 6u, 4u, 6u, 7u,
+      8u, 9u, 10u, 8u, 10u, 11u,
+      12u, 13u, 14u, 12u, 14u, 15u,
+      16u, 17u, 18u, 16u, 18u, 19u,
+      20u, 21u, 22u, 20u, 22u, 23u,
+  };
+
+  return mesh;
+}
+
+eastl::vector<uint8_t> buildSmokeCheckerboardPixels(uint32_t width,
+                                                    uint32_t height) {
+  eastl::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4u);
+
+  for (uint32_t y = 0; y < height; ++y) {
+    for (uint32_t x = 0; x < width; ++x) {
+      const bool dark_tile = (((x / 8u) + (y / 8u)) & 1u) == 0u;
+      const size_t index =
+          (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4u;
+      pixels[index + 0] = dark_tile ? 36u : 220u;
+      pixels[index + 1] = dark_tile ? 92u : 184u;
+      pixels[index + 2] = dark_tile ? 208u : 52u;
+      pixels[index + 3] = 255u;
+    }
+  }
+
+  return pixels;
+}
 
 }  // namespace
 
@@ -71,6 +159,7 @@ RenderSystem::~RenderSystem() { shutdown(); }
 void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   ASSERT(info.window_system);
 
+  m_asset_manager = info.asset_manager;
   m_window_system = info.window_system;
 
   m_slang_compiler = eastl::make_shared<SlangCompiler>();
@@ -93,6 +182,20 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   m_offscreen_rt->initialize(m_context.get(), m_allocator.get(),
                              k_default_viewport_w, k_default_viewport_h);
 
+  VulkanPipelineCreateInfo mesh_pipeline_info{};
+  mesh_pipeline_info.shader_path = "engine/shaders/basic.slang";
+  mesh_pipeline_info.enable_vertex_input = true;
+  mesh_pipeline_info.cull_mode = VK_CULL_MODE_NONE;
+  mesh_pipeline_info.enable_depth_test = true;
+  mesh_pipeline_info.enable_depth_write = true;
+  mesh_pipeline_info.enable_texture_sampling = true;
+  mesh_pipeline_info.descriptor_stage_flags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  m_mesh_pipeline = eastl::make_shared<VulkanPipeline>();
+  m_mesh_pipeline->initialize(m_context.get(), m_slang_compiler.get(),
+                              m_offscreen_rt->getRenderPass(),
+                              mesh_pipeline_info);
+
   VulkanPipelineCreateInfo grid_pipeline_info{};
   grid_pipeline_info.shader_path = "engine/shaders/grid.slang";
   grid_pipeline_info.enable_vertex_input = false;
@@ -113,12 +216,78 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
 
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
 
+  m_mesh_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
+  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+    m_mesh_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
+    m_mesh_uniform_buffers[i]->create(
+        m_allocator.get(), sizeof(MeshUniformData),
+        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+  }
+
   m_grid_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
   for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
     m_grid_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
     m_grid_uniform_buffers[i]->create(
         m_allocator.get(), sizeof(GridUniformData),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+  }
+
+  VkDescriptorPoolSize mesh_pool_sizes[3]{};
+  mesh_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  mesh_pool_sizes[0].descriptorCount = VulkanSync::k_max_frames_in_flight;
+  mesh_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+  mesh_pool_sizes[1].descriptorCount = VulkanSync::k_max_frames_in_flight;
+  mesh_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+  mesh_pool_sizes[2].descriptorCount = VulkanSync::k_max_frames_in_flight;
+
+  VkDescriptorPoolCreateInfo mesh_pool_info{};
+  mesh_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  mesh_pool_info.poolSizeCount = 3;
+  mesh_pool_info.pPoolSizes = mesh_pool_sizes;
+  mesh_pool_info.maxSets = VulkanSync::k_max_frames_in_flight;
+  const VkResult mesh_pool_result =
+      vkCreateDescriptorPool(m_context->getDevice(), &mesh_pool_info, nullptr,
+                             &m_mesh_descriptor_pool);
+  if (mesh_pool_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[RenderSystem::initialize] mesh vkCreateDescriptorPool failed: {}",
+        static_cast<int>(mesh_pool_result));
+  }
+
+  eastl::vector<VkDescriptorSetLayout> mesh_layouts(
+      VulkanSync::k_max_frames_in_flight,
+      m_mesh_pipeline->getDescriptorSetLayout());
+  VkDescriptorSetAllocateInfo mesh_alloc_info{};
+  mesh_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  mesh_alloc_info.descriptorPool = m_mesh_descriptor_pool;
+  mesh_alloc_info.descriptorSetCount = VulkanSync::k_max_frames_in_flight;
+  mesh_alloc_info.pSetLayouts = mesh_layouts.data();
+
+  m_mesh_descriptor_sets.resize(VulkanSync::k_max_frames_in_flight);
+  const VkResult mesh_set_result = vkAllocateDescriptorSets(
+      m_context->getDevice(), &mesh_alloc_info, m_mesh_descriptor_sets.data());
+  if (mesh_set_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[RenderSystem::initialize] mesh vkAllocateDescriptorSets failed: {}",
+        static_cast<int>(mesh_set_result));
+  }
+
+  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+    VkDescriptorBufferInfo mesh_buffer_info{};
+    mesh_buffer_info.buffer = m_mesh_uniform_buffers[i]->getBuffer();
+    mesh_buffer_info.offset = 0;
+    mesh_buffer_info.range = sizeof(MeshUniformData);
+
+    VkWriteDescriptorSet mesh_descriptor_write{};
+    mesh_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    mesh_descriptor_write.dstSet = m_mesh_descriptor_sets[i];
+    mesh_descriptor_write.dstBinding = 0;
+    mesh_descriptor_write.dstArrayElement = 0;
+    mesh_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    mesh_descriptor_write.descriptorCount = 1;
+    mesh_descriptor_write.pBufferInfo = &mesh_buffer_info;
+    vkUpdateDescriptorSets(m_context->getDevice(), 1, &mesh_descriptor_write,
+                           0, nullptr);
   }
 
   VkDescriptorPoolSize grid_pool_size{};
@@ -175,6 +344,101 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
                            nullptr);
   }
 
+  Asset::Meta smoke_meta;
+  smoke_meta.virtual_path = "generated://render/smoke_checkerboard";
+  Texture2DAsset smoke_asset(smoke_meta, k_smoke_texture_size,
+                             k_smoke_texture_size, 4u,
+                             buildSmokeCheckerboardPixels(k_smoke_texture_size,
+                                                          k_smoke_texture_size));
+  VulkanTexture* mesh_texture = ensureTextureUploaded(&smoke_asset);
+
+  const eastl::shared_ptr<MeshAsset> imported_mesh =
+      m_asset_manager != nullptr
+          ? m_asset_manager->loadMesh(k_demo_mesh_asset_path)
+          : nullptr;
+
+  const void* mesh_vertex_bytes = nullptr;
+  VkDeviceSize mesh_vertex_byte_size = 0;
+  const uint32_t* mesh_indices = nullptr;
+  size_t mesh_index_count = 0;
+
+  DemoMeshData fallback_demo_mesh;
+  if (imported_mesh && imported_mesh->getVertexCount() > 0 &&
+      imported_mesh->getIndexCount() > 0) {
+    mesh_vertex_bytes = imported_mesh->getVertexData();
+    mesh_vertex_byte_size =
+        static_cast<VkDeviceSize>(imported_mesh->getVertexByteSize());
+    mesh_indices = imported_mesh->getIndices().data();
+    mesh_index_count = imported_mesh->getIndexCount();
+    LOG_INFO(
+        "[RenderSystem] loaded demo mesh asset {} (vertices={}, indices={}, material={})",
+        k_demo_mesh_asset_path, imported_mesh->getVertexCount(),
+        imported_mesh->getIndexCount(),
+        imported_mesh->hasMaterial() ? "yes" : "no");
+
+    if (imported_mesh->getMaterialAsset() != nullptr &&
+        imported_mesh->getMaterialAsset()->getBaseColorTextureAsset() != nullptr) {
+      VulkanTexture* material_texture = ensureTextureUploaded(
+          imported_mesh->getMaterialAsset()->getBaseColorTextureAsset().get());
+      if (material_texture != nullptr) {
+        mesh_texture = material_texture;
+      }
+    }
+  } else {
+    fallback_demo_mesh = buildDemoCubeMesh();
+    mesh_vertex_bytes = fallback_demo_mesh.vertices.data();
+    mesh_vertex_byte_size = static_cast<VkDeviceSize>(
+        fallback_demo_mesh.vertices.size() * sizeof(Vertex));
+    mesh_indices = fallback_demo_mesh.indices.data();
+    mesh_index_count = fallback_demo_mesh.indices.size();
+    LOG_INFO("[RenderSystem] using built-in fallback demo mesh");
+  }
+
+  m_demo_mesh_vertex_buffer = eastl::make_unique<VulkanBuffer>();
+  m_demo_mesh_vertex_buffer->create(
+      m_allocator.get(), mesh_vertex_byte_size,
+      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+  m_demo_mesh_vertex_buffer->upload(mesh_vertex_bytes, mesh_vertex_byte_size);
+
+  m_demo_mesh_index_buffer = eastl::make_unique<VulkanBuffer>();
+  m_demo_mesh_index_buffer->create(
+      m_allocator.get(),
+      static_cast<VkDeviceSize>(mesh_index_count * sizeof(uint32_t)),
+      VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+  m_demo_mesh_index_buffer->upload(
+      mesh_indices,
+      static_cast<VkDeviceSize>(mesh_index_count * sizeof(uint32_t)));
+  m_demo_mesh_index_count = static_cast<uint32_t>(mesh_index_count);
+
+  if (mesh_texture != nullptr) {
+    for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+      VkDescriptorImageInfo sampled_image_info{};
+      sampled_image_info.imageView = mesh_texture->getImageView();
+      sampled_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+      VkDescriptorImageInfo sampler_info{};
+      sampler_info.sampler = mesh_texture->getSampler();
+
+      VkWriteDescriptorSet texture_writes[2]{};
+      texture_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      texture_writes[0].dstSet = m_mesh_descriptor_sets[i];
+      texture_writes[0].dstBinding = 1;
+      texture_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      texture_writes[0].descriptorCount = 1;
+      texture_writes[0].pImageInfo = &sampled_image_info;
+
+      texture_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      texture_writes[1].dstSet = m_mesh_descriptor_sets[i];
+      texture_writes[1].dstBinding = 2;
+      texture_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+      texture_writes[1].descriptorCount = 1;
+      texture_writes[1].pImageInfo = &sampler_info;
+
+      vkUpdateDescriptorSets(m_context->getDevice(), 2, texture_writes, 0,
+                             nullptr);
+    }
+  }
+
   recreateReadbackStaging(k_default_viewport_w, k_default_viewport_h);
 
   // Best-effort RenderDoc hookup. If the engine wasn't launched from
@@ -208,6 +472,39 @@ void RenderSystem::recreateReadbackStaging(uint32_t width, uint32_t height) {
   m_readback_width = width;
   m_readback_height = height;
   m_readback_pixels.resize(static_cast<size_t>(bytes));
+}
+
+VulkanTexture* RenderSystem::ensureTextureUploaded(
+    const Texture2DAsset* texture_asset) {
+  if (texture_asset == nullptr || !m_context || !m_allocator) {
+    return nullptr;
+  }
+
+  eastl::string cache_key = texture_asset->getVirtualPath();
+  if (cache_key.empty()) {
+    const std::filesystem::path& absolute_path = texture_asset->getAbsolutePath();
+    if (!absolute_path.empty()) {
+      cache_key = eastl::string(absolute_path.generic_string().c_str());
+    } else {
+      cache_key = "generated://render/anonymous_texture";
+    }
+  }
+
+  if (auto it = m_uploaded_textures.find(cache_key);
+      it != m_uploaded_textures.end()) {
+    return it->second.get();
+  }
+
+  auto uploaded_texture = eastl::make_unique<VulkanTexture>();
+  uploaded_texture->createFromTexture2DAsset(m_context.get(), m_allocator.get(),
+                                             *texture_asset);
+  VulkanTexture* uploaded_texture_ptr = uploaded_texture.get();
+  m_uploaded_textures[cache_key] = eastl::move(uploaded_texture);
+
+  LOG_INFO("[RenderSystem] texture uploaded {} ({}x{}, {} bytes)",
+           cache_key.c_str(), texture_asset->getWidth(),
+           texture_asset->getHeight(), texture_asset->getPixelByteSize());
+  return uploaded_texture_ptr;
 }
 
 void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
@@ -245,10 +542,37 @@ void RenderSystem::shutdown() {
   m_readback_staging.clear();
   m_readback_pixels.clear();
 
+  for (auto& [key, texture] : m_uploaded_textures) {
+    if (texture) {
+      texture->destroy();
+      texture.reset();
+    }
+  }
+  m_uploaded_textures.clear();
+
+  if (m_demo_mesh_index_buffer) {
+    m_demo_mesh_index_buffer->destroy();
+    m_demo_mesh_index_buffer.reset();
+  }
+
+  if (m_demo_mesh_vertex_buffer) {
+    m_demo_mesh_vertex_buffer->destroy();
+    m_demo_mesh_vertex_buffer.reset();
+  }
+
   if (m_offscreen_rt) {
     m_offscreen_rt->shutdown();
     m_offscreen_rt.reset();
   }
+
+  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer :
+       m_mesh_uniform_buffers) {
+    if (uniform_buffer) {
+      uniform_buffer->destroy();
+      uniform_buffer.reset();
+    }
+  }
+  m_mesh_uniform_buffers.clear();
 
   for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer :
        m_grid_uniform_buffers) {
@@ -258,6 +582,14 @@ void RenderSystem::shutdown() {
     }
   }
   m_grid_uniform_buffers.clear();
+
+  m_mesh_descriptor_sets.clear();
+
+  if (m_mesh_descriptor_pool != VK_NULL_HANDLE) {
+    vkDestroyDescriptorPool(m_context->getDevice(), m_mesh_descriptor_pool,
+                            nullptr);
+    m_mesh_descriptor_pool = VK_NULL_HANDLE;
+  }
 
   m_grid_descriptor_sets.clear();
 
@@ -270,6 +602,11 @@ void RenderSystem::shutdown() {
   if (m_grid_pipeline) {
     m_grid_pipeline->shutdown();
     m_grid_pipeline.reset();
+  }
+
+  if (m_mesh_pipeline) {
+    m_mesh_pipeline->shutdown();
+    m_mesh_pipeline.reset();
   }
 
   m_editor_camera.reset();
@@ -293,6 +630,9 @@ void RenderSystem::shutdown() {
   }
 
   m_window_system = nullptr;
+  m_asset_manager = nullptr;
+  m_demo_mesh_index_count = 0;
+  m_demo_mesh_rotation_radians = 0.0f;
   m_current_frame = 0;
 }
 
@@ -384,7 +724,12 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   vkBeginCommandBuffer(command_buffer, &begin_info);
 
-  // Pass 1: 编辑器网格 -> 离屏渲染目标
+  m_demo_mesh_rotation_radians += delta_time * k_demo_mesh_spin_rate;
+  if (m_demo_mesh_rotation_radians > 6.2831853f) {
+    m_demo_mesh_rotation_radians -= 6.2831853f;
+  }
+
+  // Pass 1: 编辑器场景 -> 离屏渲染目标
   {
     VkClearValue clear_values[2]{};
     clear_values[0].color = {{0.1f, 0.1f, 0.1f, 1.0f}};
@@ -466,9 +811,9 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       m_grid_pipeline->getGraphicsPipeline());
     vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            m_grid_pipeline->getPipelineLayout(), 0, 1,
-                            &m_grid_descriptor_sets[m_current_frame], 0,
-                            nullptr);
+                           m_grid_pipeline->getPipelineLayout(), 0, 1,
+                           &m_grid_descriptor_sets[m_current_frame], 0,
+                           nullptr);
     for (uint32_t iteration = 0; iteration < k_grid_iterations; ++iteration) {
       const float scale =
           std::pow(k_grid_major_scale, static_cast<float>(iteration));
@@ -487,6 +832,42 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
                         -1.2f * bias_scale);
       vkCmdDraw(command_buffer, vertex_count, 1, 0, 0);
     }
+
+    if (m_mesh_pipeline && m_demo_mesh_vertex_buffer && m_demo_mesh_index_buffer &&
+        m_demo_mesh_index_count > 0 &&
+        !m_mesh_uniform_buffers.empty() &&
+        m_current_frame < m_mesh_descriptor_sets.size()) {
+      MeshUniformData mesh_ubo{};
+      glm::mat4 model = glm::translate(
+          glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, k_demo_mesh_height));
+      model = glm::rotate(model, m_demo_mesh_rotation_radians,
+                          glm::vec3(0.0f, 0.0f, 1.0f));
+      model = glm::scale(model,
+                         glm::vec3(k_demo_mesh_uniform_scale,
+                                   k_demo_mesh_uniform_scale,
+                                   k_demo_mesh_uniform_scale));
+      mesh_ubo.model = model;
+      mesh_ubo.view = view;
+      mesh_ubo.projection = projection;
+      m_mesh_uniform_buffers[m_current_frame]->upload(&mesh_ubo,
+                                                      sizeof(mesh_ubo));
+
+      VkBuffer vertex_buffers[] = {m_demo_mesh_vertex_buffer->getBuffer()};
+      VkDeviceSize vertex_offsets[] = {0};
+      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_mesh_pipeline->getGraphicsPipeline());
+      vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                             m_mesh_pipeline->getPipelineLayout(), 0, 1,
+                             &m_mesh_descriptor_sets[m_current_frame], 0,
+                             nullptr);
+      vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers,
+                             vertex_offsets);
+      vkCmdBindIndexBuffer(command_buffer,
+                           m_demo_mesh_index_buffer->getBuffer(), 0,
+                           VK_INDEX_TYPE_UINT32);
+      vkCmdDrawIndexed(command_buffer, m_demo_mesh_index_count, 1, 0, 0, 0);
+    }
+
     vkCmdEndRenderPass(command_buffer);
     m_offscreen_rt->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }

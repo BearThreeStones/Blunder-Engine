@@ -97,10 +97,9 @@ void VulkanPipeline::createGraphicsPipeline() {
   vertex_input_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
   VkVertexInputBindingDescription binding_description{};
-  eastl::array<VkVertexInputAttributeDescription, 2> attribute_descriptions{};
+  auto attribute_descriptions = Vertex::getAttributeDescriptions();
   if (m_create_info.enable_vertex_input) {
     binding_description = Vertex::getBindingDescription();
-    attribute_descriptions = Vertex::getAttributeDescriptions();
     vertex_input_info.vertexBindingDescriptionCount = 1;
     vertex_input_info.pVertexBindingDescriptions = &binding_description;
     vertex_input_info.vertexAttributeDescriptionCount =
@@ -229,17 +228,39 @@ void VulkanPipeline::createGraphicsPipeline() {
 void VulkanPipeline::createDescriptorSetLayout() {
   ASSERT(m_context);
 
+  eastl::vector<VkDescriptorSetLayoutBinding> bindings;
+  bindings.reserve(m_create_info.enable_texture_sampling ? 3 : 1);
+
   VkDescriptorSetLayoutBinding ubo_layout_binding{};
   ubo_layout_binding.binding = 0;
   ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   ubo_layout_binding.descriptorCount = 1;
   ubo_layout_binding.stageFlags = m_create_info.descriptor_stage_flags;
   ubo_layout_binding.pImmutableSamplers = nullptr;
+  bindings.push_back(ubo_layout_binding);
+
+  if (m_create_info.enable_texture_sampling) {
+    VkDescriptorSetLayoutBinding sampled_image_binding{};
+    sampled_image_binding.binding = 1;
+    sampled_image_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    sampled_image_binding.descriptorCount = 1;
+    sampled_image_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    sampled_image_binding.pImmutableSamplers = nullptr;
+    bindings.push_back(sampled_image_binding);
+
+    VkDescriptorSetLayoutBinding sampler_binding{};
+    sampler_binding.binding = 2;
+    sampler_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    sampler_binding.descriptorCount = 1;
+    sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    sampler_binding.pImmutableSamplers = nullptr;
+    bindings.push_back(sampler_binding);
+  }
 
   VkDescriptorSetLayoutCreateInfo layout_info{};
   layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layout_info.bindingCount = 1;
-  layout_info.pBindings = &ubo_layout_binding;
+  layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+  layout_info.pBindings = bindings.data();
 
   const VkResult result = vkCreateDescriptorSetLayout(
       m_context->getDevice(), &layout_info, nullptr, &m_descriptor_set_layout);

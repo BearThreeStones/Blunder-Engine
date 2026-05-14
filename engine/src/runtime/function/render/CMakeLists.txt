@@ -20,6 +20,10 @@ set(RENDER_SOURCES
     "function/render/vulkan/vulkan_pipeline.h"
     "function/render/vulkan/vulkan_buffer.cpp"
     "function/render/vulkan/vulkan_buffer.h"
+    "function/render/vulkan/vulkan_image.cpp"
+    "function/render/vulkan/vulkan_image.h"
+    "function/render/vulkan/vulkan_texture.cpp"
+    "function/render/vulkan/vulkan_texture.h"
     "function/render/debug/renderdoc_capture.cpp"
     "function/render/debug/renderdoc_capture.h"
 )

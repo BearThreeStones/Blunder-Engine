@@ -9,6 +9,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/resource/asset/asset.h"
+#include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/shader_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
@@ -20,14 +21,6 @@ class FileSystem;
 struct AssetManagerInitInfo {
   /// Required. AssetManager performs all IO through this.
   FileSystem* file_system{nullptr};
-};
-
-struct AssetHandle {
-  Asset::Type type{Asset::Type::Unknown};
-  eastl::string key;
-  uint32_t generation{0};
-
-  bool isValid() const { return type != Asset::Type::Unknown && !key.empty(); }
 };
 
 template <typename T>
@@ -46,6 +39,11 @@ struct AssetTypeTraits<ShaderAsset> {
 template <>
 struct AssetTypeTraits<MeshAsset> {
   static constexpr Asset::Type k_type = Asset::Type::Mesh;
+};
+
+template <>
+struct AssetTypeTraits<MaterialAsset> {
+  static constexpr Asset::Type k_type = Asset::Type::Material;
 };
 
 /// AssetManager owns the lifetime of CPU-side resources loaded from disk.
@@ -112,6 +110,7 @@ class AssetManager final {
   Cache<Texture2DAsset> m_texture_cache;
   Cache<ShaderAsset> m_shader_cache;
   Cache<MeshAsset> m_mesh_cache;
+  Cache<MaterialAsset> m_material_cache;
   bool m_is_initialized{false};
 };
 

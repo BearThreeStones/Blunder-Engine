@@ -136,6 +136,12 @@ void VulkanContext::shutdown() {
     vkDeviceWaitIdle(m_device);
   }
 
+  if (m_device != VK_NULL_HANDLE &&
+      m_immediate_command_pool != VK_NULL_HANDLE) {
+    vkDestroyCommandPool(m_device, m_immediate_command_pool, nullptr);
+    m_immediate_command_pool = VK_NULL_HANDLE;
+  }
+
   if (m_device != VK_NULL_HANDLE) {
     vkDestroyDevice(m_device, nullptr);
     m_device = VK_NULL_HANDLE;
@@ -163,7 +169,104 @@ void VulkanContext::shutdown() {
   m_present_queue = VK_NULL_HANDLE;
   m_graphics_queue_family = 0;
   m_present_queue_family = 0;
+  m_physical_device_properties = {};
+  m_sampler_anisotropy_enabled = false;
   m_window_system = nullptr;
+}
+
+VkCommandBuffer VulkanContext::beginImmediateCommands() {
+  ASSERT(m_device != VK_NULL_HANDLE);
+  ASSERT(m_immediate_command_pool != VK_NULL_HANDLE);
+
+  VkCommandBufferAllocateInfo alloc_info{};
+  alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  alloc_info.commandPool = m_immediate_command_pool;
+  alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  alloc_info.commandBufferCount = 1;
+
+  VkCommandBuffer command_buffer = VK_NULL_HANDLE;
+  const VkResult alloc_result = vkAllocateCommandBuffers(
+      m_device, &alloc_info, &command_buffer);
+  if (alloc_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[VulkanContext::beginImmediateCommands] "
+        "vkAllocateCommandBuffers failed: {}",
+        static_cast<int>(alloc_result));
+  }
+
+  VkCommandBufferBeginInfo begin_info{};
+  begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  const VkResult begin_result =
+      vkBeginCommandBuffer(command_buffer, &begin_info);
+  if (begin_result != VK_SUCCESS) {
+    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                         &command_buffer);
+    LOG_FATAL(
+        "[VulkanContext::beginImmediateCommands] vkBeginCommandBuffer "
+        "failed: {}",
+        static_cast<int>(begin_result));
+  }
+
+  return command_buffer;
+}
+
+void VulkanContext::endImmediateCommands(VkCommandBuffer command_buffer) {
+  ASSERT(m_device != VK_NULL_HANDLE);
+  ASSERT(m_immediate_command_pool != VK_NULL_HANDLE);
+  ASSERT(command_buffer != VK_NULL_HANDLE);
+
+  const VkResult end_result = vkEndCommandBuffer(command_buffer);
+  if (end_result != VK_SUCCESS) {
+    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                         &command_buffer);
+    LOG_FATAL(
+        "[VulkanContext::endImmediateCommands] vkEndCommandBuffer failed: {}",
+        static_cast<int>(end_result));
+  }
+
+  VkFenceCreateInfo fence_info{};
+  fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+
+  VkFence fence = VK_NULL_HANDLE;
+  const VkResult fence_result =
+      vkCreateFence(m_device, &fence_info, nullptr, &fence);
+  if (fence_result != VK_SUCCESS) {
+    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                         &command_buffer);
+    LOG_FATAL(
+        "[VulkanContext::endImmediateCommands] vkCreateFence failed: {}",
+        static_cast<int>(fence_result));
+  }
+
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer;
+
+  const VkResult submit_result =
+      vkQueueSubmit(m_graphics_queue, 1, &submit_info, fence);
+  if (submit_result != VK_SUCCESS) {
+    vkDestroyFence(m_device, fence, nullptr);
+    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                         &command_buffer);
+    LOG_FATAL("[VulkanContext::endImmediateCommands] vkQueueSubmit failed: {}",
+              static_cast<int>(submit_result));
+  }
+
+  const VkResult wait_result =
+      vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX);
+  if (wait_result != VK_SUCCESS) {
+    vkDestroyFence(m_device, fence, nullptr);
+    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                         &command_buffer);
+    LOG_FATAL("[VulkanContext::endImmediateCommands] vkWaitForFences failed: {}",
+              static_cast<int>(wait_result));
+  }
+
+  vkDestroyFence(m_device, fence, nullptr);
+  vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                       &command_buffer);
 }
 
 void VulkanContext::createInstance() {
@@ -359,6 +462,7 @@ void VulkanContext::selectPhysicalDevice() {
   }
 
   m_physical_device = selected_device;
+  vkGetPhysicalDeviceProperties(m_physical_device, &m_physical_device_properties);
   m_graphics_queue_family = selected_graphics_family;
   // Headless mode: there is no present queue. We keep m_present_queue_family
   // mirroring the graphics family so any legacy callers do not crash, but it
@@ -391,6 +495,8 @@ void VulkanContext::createLogicalDevice() {
   enabled_features.samplerAnisotropy =
       supported_features2.features.samplerAnisotropy;
   enabled_features.geometryShader = supported_features2.features.geometryShader;
+    m_sampler_anisotropy_enabled =
+      enabled_features.samplerAnisotropy == VK_TRUE;
 
   VkPhysicalDeviceVulkan11Features enabled_vulkan11_features{};
   enabled_vulkan11_features.sType =
@@ -426,6 +532,27 @@ void VulkanContext::createLogicalDevice() {
 
   vkGetDeviceQueue(m_device, m_graphics_queue_family, 0, &m_graphics_queue);
   m_present_queue = m_graphics_queue;
+
+  createImmediateCommandPool();
+}
+
+void VulkanContext::createImmediateCommandPool() {
+  ASSERT(m_device != VK_NULL_HANDLE);
+
+  VkCommandPoolCreateInfo pool_info{};
+  pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
+                    VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  pool_info.queueFamilyIndex = m_graphics_queue_family;
+
+  const VkResult result = vkCreateCommandPool(
+      m_device, &pool_info, nullptr, &m_immediate_command_pool);
+  if (result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[VulkanContext::createImmediateCommandPool] vkCreateCommandPool "
+        "failed: {}",
+        static_cast<int>(result));
+  }
 }
 
 }  // namespace Blunder

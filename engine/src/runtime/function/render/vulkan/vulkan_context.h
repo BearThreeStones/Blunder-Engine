@@ -20,6 +20,8 @@ class VulkanContext final {
 
   void initialize(const VulkanContextCreateInfo& info);
   void shutdown();
+  VkCommandBuffer beginImmediateCommands();
+  void endImmediateCommands(VkCommandBuffer command_buffer);
 
   VkInstance getInstance() const { return m_instance; }
   VkPhysicalDevice getPhysicalDevice() const { return m_physical_device; }
@@ -30,24 +32,34 @@ class VulkanContext final {
   uint32_t getPresentQueueFamily() const { return m_present_queue_family; }
   VkSurfaceKHR getSurface() const { return m_surface; }
   uint32_t getApiVersion() const { return m_api_version; }
+  float getMaxSamplerAnisotropy() const {
+    return m_physical_device_properties.limits.maxSamplerAnisotropy;
+  }
+  bool isSamplerAnisotropyEnabled() const {
+    return m_sampler_anisotropy_enabled;
+  }
 
  private:
   void createInstance();
   void setupDebugMessenger();
   void selectPhysicalDevice();
   void createLogicalDevice();
+  void createImmediateCommandPool();
 
   WindowSystem* m_window_system{nullptr};
   bool m_enable_validation{true};
   bool m_enable_validation_layer{false};
+  bool m_sampler_anisotropy_enabled{false};
 
   VkInstance m_instance{VK_NULL_HANDLE};
   VkDebugUtilsMessengerEXT m_debug_messenger{VK_NULL_HANDLE};
   VkSurfaceKHR m_surface{VK_NULL_HANDLE};
   VkPhysicalDevice m_physical_device{VK_NULL_HANDLE};
+  VkPhysicalDeviceProperties m_physical_device_properties{};
   VkDevice m_device{VK_NULL_HANDLE};
   VkQueue m_graphics_queue{VK_NULL_HANDLE};
   VkQueue m_present_queue{VK_NULL_HANDLE};
+  VkCommandPool m_immediate_command_pool{VK_NULL_HANDLE};
   uint32_t m_graphics_queue_family{0};
   uint32_t m_present_queue_family{0};
   uint32_t m_api_version{VK_API_VERSION_1_1};

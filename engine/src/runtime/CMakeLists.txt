@@ -41,6 +41,7 @@ add_library(engine_runtime STATIC
     "platform/file_system/file_system.h"
     "platform/file_system/file_system.cpp"
     "resource/asset/asset.h"
+    "resource/asset/material_asset.h"
     "resource/asset/shader_asset.h"
     "resource/asset/mesh_asset.h"
     "resource/asset/texture2d_asset.h"

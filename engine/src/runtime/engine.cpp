@@ -15,10 +15,18 @@
 // #include "runtime/function/render/debugdraw/debug_draw_manager.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
 
 namespace Blunder {
 bool g_is_editor_mode{false};
 eastl::unordered_set<eastl::string> g_editor_tick_component_types{};
+
+namespace {
+
+constexpr const char* k_startup_demo_mesh_path =
+  "models/textured_cube/textured_cube.gltf";
+
+}  // namespace
 
 void BlunderEngine::startEngine() {
   g_runtime_global_context.startSystems();
@@ -96,7 +104,48 @@ void BlunderEngine::shutdownEngine() {
   g_runtime_global_context.shutdownSystems();
 }
 
-void BlunderEngine::initialize() {}
+void BlunderEngine::initialize() {
+  if (!g_runtime_global_context.m_asset_manager ||
+      !g_runtime_global_context.m_render_system) {
+    LOG_WARN("[BlunderEngine] initialize skipped startup asset verification because required systems are unavailable");
+    return;
+  }
+
+  const eastl::shared_ptr<MeshAsset> demo_mesh =
+      g_runtime_global_context.m_asset_manager->loadMesh(k_startup_demo_mesh_path);
+  if (!demo_mesh) {
+    LOG_ERROR("[BlunderEngine] failed to load startup demo mesh {}",
+              k_startup_demo_mesh_path);
+    return;
+  }
+
+  LOG_INFO(
+      "[BlunderEngine] startup demo mesh ready {} (vertices={}, indices={}, stride={})",
+      k_startup_demo_mesh_path, demo_mesh->getVertexCount(),
+      demo_mesh->getIndexCount(), demo_mesh->getVertexStride());
+
+  const eastl::shared_ptr<MaterialAsset>& material = demo_mesh->getMaterialAsset();
+  if (!material || material->getBaseColorTextureAsset() == nullptr) {
+    LOG_INFO("[BlunderEngine] startup demo mesh has no baseColor texture dependency");
+    return;
+  }
+
+  const eastl::shared_ptr<Texture2DAsset>& base_color_texture =
+      material->getBaseColorTextureAsset();
+  if (g_runtime_global_context.m_render_system->ensureTextureUploaded(
+          base_color_texture.get()) == nullptr) {
+    LOG_ERROR("[BlunderEngine] failed to upload startup demo baseColor texture {}",
+              base_color_texture->getVirtualPath().c_str());
+    return;
+  }
+
+  LOG_INFO(
+      "[BlunderEngine] startup demo baseColor ready {} ({}x{}, factor=({}, {}, {}, {}))",
+      base_color_texture->getVirtualPath().c_str(),
+      base_color_texture->getWidth(), base_color_texture->getHeight(),
+      material->getBaseColorFactor().x, material->getBaseColorFactor().y,
+      material->getBaseColorFactor().z, material->getBaseColorFactor().w);
+}
 void BlunderEngine::clear() {}
 
 void BlunderEngine::pushLayer(Layer* layer) {

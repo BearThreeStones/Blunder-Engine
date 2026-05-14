@@ -13,13 +13,14 @@ namespace Blunder {
 class VulkanAllocator;
 
 struct Vertex {
-  glm::vec2 position;
-  glm::vec3 color;
+  glm::vec3 position;
+  glm::vec3 normal;
+  glm::vec2 uv;
 
   // 绑定描述
   static VkVertexInputBindingDescription getBindingDescription();
   // 属性描述
-  static eastl::array<VkVertexInputAttributeDescription, 2>
+  static eastl::array<VkVertexInputAttributeDescription, 3>
   getAttributeDescriptions();
 };
 

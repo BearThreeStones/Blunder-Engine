@@ -5,12 +5,15 @@
 
 #include "EASTL/array.h"
 #include "EASTL/shared_ptr.h"
+#include "EASTL/string.h"
+#include "EASTL/unordered_map.h"
 #include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
 namespace Blunder {
 
 class Event;
+class AssetManager;
 class RenderDocCapture;
 class SlangCompiler;
 class EditorCamera;
@@ -21,9 +24,14 @@ class VulkanBuffer;
 class VulkanContext;
 class VulkanPipeline;
 class VulkanSync;
+class VulkanTexture;
 class WindowSystem;
+class Texture2DAsset;
+
+struct Vertex;
 
 struct RenderSystemInitInfo {
+  AssetManager* asset_manager{nullptr};
   WindowSystem* window_system{nullptr};
   bool enable_validation{true};
 };
@@ -56,6 +64,7 @@ class RenderSystem final {
   void tick(float delta_time, uint32_t target_width, uint32_t target_height,
             SlintSystem* slint_system);
   void onEvent(Event& event);
+  VulkanTexture* ensureTextureUploaded(const Texture2DAsset* texture_asset);
 
   VulkanContext* getVulkanContext() const { return m_context.get(); }
   VulkanAllocator* getAllocator() const { return m_allocator.get(); }
@@ -74,11 +83,13 @@ class RenderSystem final {
   void resizeOffscreenIfNeeded(uint32_t width, uint32_t height);
   void recreateReadbackStaging(uint32_t width, uint32_t height);
 
+  AssetManager* m_asset_manager{nullptr};
   WindowSystem* m_window_system{nullptr};
   eastl::shared_ptr<SlangCompiler> m_slang_compiler;
   eastl::shared_ptr<VulkanContext> m_context;
   eastl::shared_ptr<VulkanAllocator> m_allocator;
   eastl::shared_ptr<VulkanSync> m_sync;
+  eastl::shared_ptr<VulkanPipeline> m_mesh_pipeline;
   eastl::shared_ptr<VulkanPipeline> m_grid_pipeline;
   eastl::unique_ptr<OffscreenRenderTarget> m_offscreen_rt;
   eastl::unique_ptr<EditorCamera> m_editor_camera;
@@ -87,9 +98,18 @@ class RenderSystem final {
   // Start/EndFrameCapture explicitly around each tick. F11 (KeyPressedEvent)
   // schedules a single-frame capture.
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
+  eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
+      m_uploaded_textures;
+  eastl::unique_ptr<VulkanBuffer> m_demo_mesh_vertex_buffer;
+  eastl::unique_ptr<VulkanBuffer> m_demo_mesh_index_buffer;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_mesh_uniform_buffers;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_grid_uniform_buffers;
+  VkDescriptorPool m_mesh_descriptor_pool{VK_NULL_HANDLE};
+  eastl::vector<VkDescriptorSet> m_mesh_descriptor_sets;
   VkDescriptorPool m_grid_descriptor_pool{VK_NULL_HANDLE};
   eastl::vector<VkDescriptorSet> m_grid_descriptor_sets;
+  uint32_t m_demo_mesh_index_count{0};
+  float m_demo_mesh_rotation_radians{0.0f};
   uint32_t m_current_frame{0};
   GridPlane m_grid_plane{GridPlane::xy};
 

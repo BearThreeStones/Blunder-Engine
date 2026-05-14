@@ -50,6 +50,7 @@ void RuntimeGlobalContext::startSystems() {
   // RenderSystem must be created before UI systems (owns Vulkan context)
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
+  render_init_info.asset_manager = m_asset_manager.get();
   render_init_info.window_system = m_window_system.get();
 #ifdef NDEBUG
   render_init_info.enable_validation = false;

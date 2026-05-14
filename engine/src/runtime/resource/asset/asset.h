@@ -65,4 +65,12 @@ class Asset {
   uint64_t m_source_timestamp{0};  // reserved for hot reload
 };
 
+struct AssetHandle {
+  Asset::Type type{Asset::Type::Unknown};
+  eastl::string key;
+  uint32_t generation{0};
+
+  bool isValid() const { return type != Asset::Type::Unknown && !key.empty(); }
+};
+
 }  // namespace Blunder
