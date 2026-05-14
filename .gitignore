@@ -68,3 +68,5 @@ slint/
 # Local agent/editor scratch files
 agent-tools/
 agent-transcripts/
+slint_bt_*.txt
+skia-*.tar.gz
