@@ -138,7 +138,12 @@ bool EditorCamera::onMouseButtonReleased(MouseButtonReleasedEvent& event) {
 
 bool EditorCamera::onMouseMoved(MouseMovedEvent& event) {
   const Vec2 current_mouse_position(event.getX(), event.getY());
-  if (m_interaction_mode == InteractionMode::free_look) {
+  const bool should_free_look =
+      m_interaction_mode == InteractionMode::free_look ||
+      (m_window_system != nullptr && m_right_drag_started_in_viewport &&
+       m_window_system->isMouseButtonDown(SDL_BUTTON_RIGHT));
+  if (should_free_look) {
+    applyFreeLookRotation(Vec2(event.getDeltaX(), event.getDeltaY()));
     return false;
   }
 
@@ -328,6 +333,17 @@ bool EditorCamera::isCursorInViewport() const {
   return isWindowPositionInViewport(getCurrentCursorWindowPosition());
 }
 
+void EditorCamera::applyFreeLookRotation(const Vec2& mouse_delta) {
+  if (mouse_delta.x == 0.0f && mouse_delta.y == 0.0f) {
+    return;
+  }
+
+  m_yaw -= mouse_delta.x * k_free_look_rotate_speed;
+  m_pitch -= mouse_delta.y * k_free_look_rotate_speed;
+  m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
+  updateDirectionVectors();
+}
+
 void EditorCamera::updateDirectionVectors() {
   const Vec3 world_up(0.0f, 0.0f, 1.0f);
   m_forward_direction.x = cos(m_pitch) * cos(m_yaw);
@@ -340,18 +356,6 @@ void EditorCamera::updateDirectionVectors() {
 }
 
 void EditorCamera::updateFreeLook(float delta_time, const bool* keyboard_state) {
-  float relative_x = 0.0f;
-  float relative_y = 0.0f;
-  SDL_GetRelativeMouseState(&relative_x, &relative_y);
-
-  if (relative_x != 0.0f || relative_y != 0.0f) {
-    const Vec2 frame_delta(relative_x, relative_y);
-    m_yaw += frame_delta.x * k_free_look_rotate_speed;
-    m_pitch -= frame_delta.y * k_free_look_rotate_speed;
-    m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
-    updateDirectionVectors();
-  }
-
   if (!keyboard_state) {
     return;
   }

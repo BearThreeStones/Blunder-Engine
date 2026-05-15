@@ -9,10 +9,17 @@ namespace Blunder {
 // MouseMovedEvent - fired when mouse cursor moves
 class MouseMovedEvent : public Event {
  public:
-  MouseMovedEvent(float x, float y) : m_mouse_x(x), m_mouse_y(y) {}
+  MouseMovedEvent(float x, float y, float delta_x = 0.0f,
+                  float delta_y = 0.0f)
+      : m_mouse_x(x),
+        m_mouse_y(y),
+        m_mouse_delta_x(delta_x),
+        m_mouse_delta_y(delta_y) {}
 
   float getX() const { return m_mouse_x; }
   float getY() const { return m_mouse_y; }
+  float getDeltaX() const { return m_mouse_delta_x; }
+  float getDeltaY() const { return m_mouse_delta_y; }
 
   eastl::string toString() const override {
     std::ostringstream ss;
@@ -26,6 +33,8 @@ class MouseMovedEvent : public Event {
  private:
   float m_mouse_x;
   float m_mouse_y;
+  float m_mouse_delta_x;
+  float m_mouse_delta_y;
 };
 
 // MouseScrolledEvent - fired when mouse wheel is scrolled

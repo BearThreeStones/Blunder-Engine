@@ -286,7 +286,7 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
   cgltf_data* data = nullptr;
   const auto fail_mesh_load = [&](const char* format,
                                   auto&&... args) -> eastl::shared_ptr<MeshAsset> {
-    LOG_ERROR("{}", fmt::vformat(fmt::runtime(format),
+    LOG_ERROR("{}", fmt::vformat(fmt::string_view(format),
                                   fmt::make_format_args(args...)));
     if (data != nullptr) {
       cgltf_free(data);

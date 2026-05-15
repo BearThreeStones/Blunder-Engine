@@ -340,7 +340,8 @@ void WindowSystem::handleMouseMotionEvent(const SDL_Event& event) {
     return;
   }
 
-  MouseMovedEvent mouse_event(event.motion.x, event.motion.y);
+  MouseMovedEvent mouse_event(event.motion.x, event.motion.y,
+                              event.motion.xrel, event.motion.yrel);
   m_event_callback(mouse_event);
 }
 

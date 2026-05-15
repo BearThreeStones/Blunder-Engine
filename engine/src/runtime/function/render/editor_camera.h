@@ -70,6 +70,7 @@ class EditorCamera final {
   Vec2 getCurrentCursorWindowPosition() const;
   bool isViewportReady() const;
   bool isCursorInViewport() const;
+  void applyFreeLookRotation(const Vec2& mouse_delta);
   void updateDirectionVectors();
   void updateFreeLook(float delta_time, const bool* keyboard_state);
   void pan();
