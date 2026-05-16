@@ -29,10 +29,46 @@ set(BLUNDER_SLINT_CARGO_TARGET_DIR "" CACHE PATH
     "Optional short Cargo target directory for rust-skia Windows builds")
 set(BLUNDER_SLINT_SKIA_BUILD_OUTPUT_DIR "" CACHE PATH
     "Optional short gn/ninja output directory for rust-skia full builds")
+set(BLUNDER_SLINT_RUSTC "" CACHE FILEPATH
+    "Optional path to rustc for Slint source builds")
+set(BLUNDER_SLINT_CARGO "" CACHE FILEPATH
+    "Optional path to cargo for Slint source builds")
+
+set(_blunder_slint_rust_bin_hints)
+if(DEFINED ENV{CARGO_HOME})
+    list(APPEND _blunder_slint_rust_bin_hints "$ENV{CARGO_HOME}/bin")
+endif()
+if(DEFINED ENV{USERPROFILE})
+    list(APPEND _blunder_slint_rust_bin_hints "$ENV{USERPROFILE}/.cargo/bin")
+endif()
+if(DEFINED ENV{HOME})
+    list(APPEND _blunder_slint_rust_bin_hints "$ENV{HOME}/.cargo/bin")
+endif()
 
 find_program(SLINT_GIT_EXECUTABLE NAMES git)
-find_program(SLINT_RUSTC_EXECUTABLE NAMES rustc)
-find_program(SLINT_CARGO_EXECUTABLE NAMES cargo)
+find_program(SLINT_RUSTC_EXECUTABLE NAMES rustc rustc.exe
+    HINTS ${_blunder_slint_rust_bin_hints}
+)
+find_program(SLINT_CARGO_EXECUTABLE NAMES cargo cargo.exe
+    HINTS ${_blunder_slint_rust_bin_hints}
+)
+
+if(BLUNDER_SLINT_RUSTC)
+    if(NOT EXISTS "${BLUNDER_SLINT_RUSTC}")
+        message(FATAL_ERROR
+            "[Slint] BLUNDER_SLINT_RUSTC does not exist: ${BLUNDER_SLINT_RUSTC}"
+        )
+    endif()
+    set(SLINT_RUSTC_EXECUTABLE "${BLUNDER_SLINT_RUSTC}")
+endif()
+if(BLUNDER_SLINT_CARGO)
+    if(NOT EXISTS "${BLUNDER_SLINT_CARGO}")
+        message(FATAL_ERROR
+            "[Slint] BLUNDER_SLINT_CARGO does not exist: ${BLUNDER_SLINT_CARGO}"
+        )
+    endif()
+    set(SLINT_CARGO_EXECUTABLE "${BLUNDER_SLINT_CARGO}")
+endif()
 
 if(NOT SLINT_GIT_EXECUTABLE)
     message(FATAL_ERROR
@@ -42,12 +78,16 @@ endif()
 
 if(NOT SLINT_RUSTC_EXECUTABLE OR NOT SLINT_CARGO_EXECUTABLE)
     message(FATAL_ERROR
-        "[Slint] Source builds require Rust and Cargo in PATH.\n"
+        "[Slint] Source builds require Rust and Cargo.\n"
         "  rustc: ${SLINT_RUSTC_EXECUTABLE}\n"
         "  cargo: ${SLINT_CARGO_EXECUTABLE}\n"
-        "Install Rust 1.88 or newer from https://rustup.rs/ and re-run CMake."
+        "Install Rust 1.88 or newer from https://rustup.rs/ .\n"
+        "If rustup is already installed, add %USERPROFILE%\\.cargo\\bin to PATH for this shell, "
+        "or reconfigure with -DBLUNDER_SLINT_RUSTC=... -DBLUNDER_SLINT_CARGO=... ."
     )
 endif()
+
+get_filename_component(_blunder_slint_rust_bin_dir "${SLINT_CARGO_EXECUTABLE}" DIRECTORY)
 
 execute_process(
     COMMAND "${SLINT_RUSTC_EXECUTABLE}" --version
@@ -117,23 +157,37 @@ foreach(_blunder_slint_llvm_candidate IN LISTS _blunder_slint_llvm_candidates)
     endif()
 endforeach()
 
-set(_blunder_slint_ninja_hints
-    "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
-    "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
-)
-
+set(_blunder_slint_ninja_hints)
 if(CMAKE_GENERATOR_INSTANCE)
     list(APPEND _blunder_slint_ninja_hints
         "${CMAKE_GENERATOR_INSTANCE}/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
     )
 endif()
+list(APPEND _blunder_slint_ninja_hints
+    "C:/Program Files (x86)/Microsoft Visual Studio/2026/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+    "C:/Program Files/Microsoft Visual Studio/2026/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+    "C:/Program Files (x86)/Microsoft Visual Studio/2026/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+    "C:/Program Files/Microsoft Visual Studio/2026/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+    "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+    "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja"
+)
 
 find_program(_blunder_slint_detected_ninja_command
     NAMES ninja ninja.exe
     HINTS ${_blunder_slint_ninja_hints}
+    NO_DEFAULT_PATH
 )
 
-set(_blunder_slint_effective_ninja_command "${BLUNDER_SLINT_NINJA_COMMAND}")
+if(BLUNDER_SLINT_NINJA_COMMAND)
+    set(_blunder_slint_effective_ninja_command "${BLUNDER_SLINT_NINJA_COMMAND}")
+elseif(CMAKE_GENERATOR_INSTANCE)
+    set(_blunder_slint_vs_ninja
+        "${CMAKE_GENERATOR_INSTANCE}/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
+    )
+    if(EXISTS "${_blunder_slint_vs_ninja}")
+        set(_blunder_slint_effective_ninja_command "${_blunder_slint_vs_ninja}")
+    endif()
+endif()
 if(NOT _blunder_slint_effective_ninja_command)
     set(_blunder_slint_effective_ninja_command "${_blunder_slint_detected_ninja_command}")
 endif()
@@ -165,6 +219,35 @@ endif()
 
 set(FETCHCONTENT_QUIET OFF)
 
+# Corrosion's FindRust.cmake only checks $ENV{HOME}/.cargo/bin when rustc is not in
+# PATH. On Windows HOME is often unset, so seed it from USERPROFILE and pass explicit
+# tool paths into the Slint/Corrosion subproject.
+if(NOT DEFINED ENV{HOME} AND DEFINED ENV{USERPROFILE})
+    set(ENV{HOME} "$ENV{USERPROFILE}")
+endif()
+
+if(CMAKE_HOST_WIN32)
+    set(ENV{PATH} "${_blunder_slint_rust_bin_dir};$ENV{PATH}")
+else()
+    set(ENV{PATH} "${_blunder_slint_rust_bin_dir}:$ENV{PATH}")
+endif()
+
+set(Rust_COMPILER "${SLINT_RUSTC_EXECUTABLE}" CACHE FILEPATH
+    "Path to rustc for Corrosion/Slint (set by Blunder Engine)" FORCE)
+set(Rust_CARGO "${SLINT_CARGO_EXECUTABLE}" CACHE FILEPATH
+    "Path to cargo for Corrosion/Slint (set by Blunder Engine)" FORCE)
+
+include("${CMAKE_SOURCE_DIR}/cmake/ensure_skia_binaries.cmake")
+set(_blunder_resolved_skia_binaries_url "")
+blunder_ensure_skia_binaries(_blunder_resolved_skia_binaries_url)
+if(_blunder_resolved_skia_binaries_url)
+    set(BLUNDER_SLINT_SKIA_BINARIES_URL "${_blunder_resolved_skia_binaries_url}"
+        CACHE STRING
+        "Optional SKIA_BINARIES_URL template for rust-skia (expects {tag} and {key})"
+        FORCE
+    )
+endif()
+
 FetchContent_Declare(
     Slint
     SOURCE_DIR "${_slint_source_dir}"
@@ -195,6 +278,11 @@ if(NOT EXISTS "${_blunder_slint_generated_internal_header}")
 endif()
 
 if(TARGET slint_cpp)
+    # Do not set PATH via CORROSION_ENVIRONMENT_VARIABLES: semicolons in
+    # $ENV{PATH} break cmake -E env under the VS generator (MSB8066 / "no such
+    # file or directory"). Rust/Cargo are passed via Rust_COMPILER/Rust_CARGO cache
+    # and CARGO_BUILD_RUSTC in the corrosion cargo invocation.
+
     if(BLUNDER_SLINT_SKIA_BINARIES_URL)
         set_property(
             TARGET slint_cpp

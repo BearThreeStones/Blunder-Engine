@@ -6,7 +6,7 @@
 
 C++20 game engine using CMake, targeting Windows with Visual Studio 2026.
 
-**Tech Stack:** C++20 | CMake 3.21+ | Vulkan | VS 2026
+**Tech Stack:** C++20 | CMake 4.0+ | Vulkan | VS 2026 (v145)
 
 **Dependencies (git submodules):** glm, glfw, spdlog, imgui, EASTL
 
@@ -15,20 +15,23 @@ C++20 game engine using CMake, targeting Windows with Visual Studio 2026.
 ## Build Commands
 
 ```bash
-# Configure
+# Configure (use Developer PowerShell for VS 2026 for bundled CMake 4.x)
 cmake --preset vs2026-debug
+cmake --preset vs2026-release
 
-# Build Debug
+# Build Debug / Release
 cmake --build build/vs2026-debug --config Debug
+cmake --build build/vs2026-release --config Release
 
-# Build Release
-cmake --build build/vs2026-debug --config Release
+# Or use build presets
+cmake --build --preset vs2026-debug
+cmake --build --preset vs2026-release
 
 # Build specific target
 cmake --build build/vs2026-debug --config Debug --target engine_editor
 
 # Open in Visual Studio
-start build/vs2026-debug/ToyEngine.sln
+start build/vs2026-debug/BlunderEngine.sln
 
 # Run editor
 ./build/vs2026-debug/engine/src/editor/Debug/engine_editor.exe

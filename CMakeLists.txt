@@ -1,9 +1,10 @@
 # 根 CMakeLists.txt
 
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 4.0)
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
-    set(CMAKE_POLICY_VERSION_MINIMUM "3.21")
+    set(CMAKE_POLICY_VERSION_MINIMUM "3.21" CACHE STRING
+        "Minimum policy version for third-party subdirectories")
 endif()
 
 project(BlunderEngine

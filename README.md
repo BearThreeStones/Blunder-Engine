@@ -3,10 +3,21 @@
 
 ## Build Prerequisites
 
-- CMake 3.21 or newer
-- Visual Studio 2022 generator toolchain
+- CMake 4.0 or newer (Windows: use the CMake bundled with Visual Studio 2026)
+- Visual Studio 2026 with the **v145** platform toolset (`Visual Studio 18 2026` generator)
 - Vulkan SDK exposed via `VULKAN_SDK`
 - Rust 1.88 or newer, with `rustc` and `cargo` available in `PATH`
+
+Configure and build from a **Developer PowerShell for VS 2026** (or open the repo folder in
+Visual Studio) so the bundled CMake 4.x is on `PATH` ahead of any older install.
+
+```bash
+cmake --preset vs2026-debug
+cmake --build build/vs2026-debug --config Debug
+
+cmake --preset vs2026-release
+cmake --build build/vs2026-release --config Release
+```
 
 The editor's Slint integration is source-built during CMake configure so the
 Skia Vulkan renderer can be enabled. The current viewport path still uses the

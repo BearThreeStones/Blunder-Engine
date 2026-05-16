@@ -1,17 +1,48 @@
 {
   "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 0,
+    "patch": 0
+  },
   "configurePresets": [
     {
-      "name": "vs2026-debug",
-      "displayName": "VS 2026 Debug",
-      "generator": "Visual Studio 17 2022",
+      "name": "vs2026-base",
+      "hidden": true,
+      "generator": "Visual Studio 18 2026",
       "architecture": "x64",
-      "binaryDir": "${sourceDir}/build/vs2026-debug",
+      "toolset": "v145",
       "cacheVariables": {
         "Vulkan_ROOT": "$env{VULKAN_SDK}",
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
         "CMAKE_POLICY_VERSION_MINIMUM": "3.21"
       }
+    },
+    {
+      "name": "vs2026-debug",
+      "displayName": "VS 2026 Debug (v145)",
+      "inherits": "vs2026-base",
+      "binaryDir": "${sourceDir}/build/vs2026-debug"
+    },
+    {
+      "name": "vs2026-release",
+      "displayName": "VS 2026 Release (v145)",
+      "inherits": "vs2026-base",
+      "binaryDir": "${sourceDir}/build/vs2026-release"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2026-debug",
+      "displayName": "Build VS 2026 Debug",
+      "configurePreset": "vs2026-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "vs2026-release",
+      "displayName": "Build VS 2026 Release",
+      "configurePreset": "vs2026-release",
+      "configuration": "Release"
     }
   ]
 }
