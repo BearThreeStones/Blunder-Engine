@@ -31,3 +31,6 @@
 [submodule "engine/3rdparty/recastnavigation"]
 	path = engine/3rdparty/recastnavigation
 	url = https://github.com/recastnavigation/recastnavigation.git
+[submodule "engine/3rdparty/slint"]
+	path = engine/3rdparty/slint
+	url = https://github.com/slint-ui/slint.git

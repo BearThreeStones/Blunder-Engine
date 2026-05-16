@@ -47,7 +47,12 @@ void RuntimeGlobalContext::startSystems() {
   WindowCreateInfo window_create_info;
   m_window_system->initialize(window_create_info);
 
-  // RenderSystem must be created before UI systems (owns Vulkan context)
+  // Slint UI (D3D12 on Windows) before the engine's headless Vulkan device.
+  m_slint_system = eastl::make_shared<SlintSystem>();
+  SlintSystemInitInfo slint_init_info;
+  slint_init_info.window_system = m_window_system.get();
+  m_slint_system->initialize(slint_init_info);
+
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
   render_init_info.asset_manager = m_asset_manager.get();
@@ -58,11 +63,6 @@ void RuntimeGlobalContext::startSystems() {
   render_init_info.enable_validation = true;
 #endif
   m_render_system->initialize(render_init_info);
-
-  m_slint_system = eastl::make_shared<SlintSystem>();
-  SlintSystemInitInfo slint_init_info;
-  slint_init_info.window_system = m_window_system.get();
-  m_slint_system->initialize(slint_init_info);
 
   m_input_system = eastl::make_shared<InputSystem>();
   m_input_system->initialize();

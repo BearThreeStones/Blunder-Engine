@@ -1,5 +1,5 @@
-# cmake/slint.cmake
-# Builds Slint from source so the project can enable the Skia Vulkan renderer.
+# engine/3rdparty/slint.cmake
+# Builds Slint from the local submodule so the project can enable the Skia Vulkan renderer.
 
 if(CMAKE_VERSION VERSION_LESS "3.21")
     message(FATAL_ERROR
@@ -8,17 +8,16 @@ if(CMAKE_VERSION VERSION_LESS "3.21")
     )
 endif()
 
-include(FetchContent)
-
 set(SLINT_VERSION "1.16.1" CACHE STRING "Slint version to build from source")
 set(SLINT_GIT_TAG "v${SLINT_VERSION}" CACHE STRING "Slint git tag or commit to fetch")
+include(FetchContent)
+
 set(BLUNDER_SLINT_SKIA_BINARIES_URL "" CACHE STRING
     "Optional SKIA_BINARIES_URL template for rust-skia (expects {tag} and {key})")
-set(_blunder_slint_default_force_skia_build OFF)
-if(WIN32 AND SLINT_FEATURE_RENDERER_SKIA_VULKAN)
-    set(_blunder_slint_default_force_skia_build ON)
-endif()
-set(BLUNDER_SLINT_FORCE_SKIA_BUILD ${_blunder_slint_default_force_skia_build} CACHE BOOL
+# Full Skia source builds on Windows routinely hit MAX_PATH in ninja (harfbuzz
+# paths under SKIA_SOURCE_DIR). Prebuilt skia-binaries include Vulkan; use them
+# unless you have very short absolute paths and LLVM for a deliberate full build.
+set(BLUNDER_SLINT_FORCE_SKIA_BUILD OFF CACHE BOOL
     "Force rust-skia to build Skia from source instead of downloading prebuilt binaries")
 set(BLUNDER_SLINT_LLVM_HOME "" CACHE PATH
     "Optional LLVM root directory for rust-skia full builds (must contain bin/clang-cl.exe)")
@@ -30,8 +29,6 @@ set(BLUNDER_SLINT_CARGO_TARGET_DIR "" CACHE PATH
     "Optional short Cargo target directory for rust-skia Windows builds")
 set(BLUNDER_SLINT_SKIA_BUILD_OUTPUT_DIR "" CACHE PATH
     "Optional short gn/ninja output directory for rust-skia full builds")
-
-set(_blunder_slint_git_executable_override "${CMAKE_SOURCE_DIR}/cmake/git-network-wrapper.bat")
 
 find_program(SLINT_GIT_EXECUTABLE NAMES git)
 find_program(SLINT_RUSTC_EXECUTABLE NAMES rustc)
@@ -145,62 +142,26 @@ set(SLINT_FEATURE_RENDERER_SKIA ON CACHE BOOL "Enable Slint Skia renderer" FORCE
 set(SLINT_FEATURE_RENDERER_SKIA_VULKAN ON CACHE BOOL "Enable Slint Skia Vulkan renderer" FORCE)
 set(SLINT_FEATURE_RENDERER_SKIA_OPENGL OFF CACHE BOOL "Disable Slint Skia OpenGL renderer" FORCE)
 
-set(_slint_deps_dir "${CMAKE_SOURCE_DIR}/.cmake_deps")
-set(_slint_source_dir "${_slint_deps_dir}/slint-src")
-
-file(MAKE_DIRECTORY "${_slint_deps_dir}")
-
-set(_slint_needs_clone TRUE)
-
-if(EXISTS "${_slint_source_dir}/.git" AND EXISTS "${_slint_source_dir}/api/cpp/CMakeLists.txt")
-    execute_process(
-        COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" describe --tags --exact-match
-        OUTPUT_VARIABLE _slint_existing_tag
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _slint_existing_tag_result
-        ERROR_QUIET
+set(_slint_source_dir "${CMAKE_CURRENT_SOURCE_DIR}/slint")
+if(NOT EXISTS "${_slint_source_dir}/.git" OR NOT EXISTS "${_slint_source_dir}/api/cpp/CMakeLists.txt")
+    message(FATAL_ERROR
+        "[Slint] Missing engine/3rdparty/slint submodule. Run: git submodule update --init --recursive engine/3rdparty/slint"
     )
-
-    if(_slint_existing_tag_result EQUAL 0 AND _slint_existing_tag STREQUAL "${SLINT_GIT_TAG}")
-        set(_slint_needs_clone FALSE)
-    endif()
 endif()
 
-if(_slint_needs_clone)
-    message(STATUS "[Slint] Preparing local source checkout for ${SLINT_GIT_TAG}")
-    file(REMOVE_RECURSE "${_slint_source_dir}")
-
-    execute_process(
-        COMMAND "${SLINT_GIT_EXECUTABLE}"
-            -c http.version=HTTP/1.1
-            -c http.sslBackend=schannel
-            -c http.schannelCheckRevoke=false
-            clone
-            --depth 1
-            --branch "${SLINT_GIT_TAG}"
-            https://github.com/slint-ui/slint.git
-            "${_slint_source_dir}"
-        WORKING_DIRECTORY "${_slint_deps_dir}"
-        RESULT_VARIABLE _slint_clone_result
-        OUTPUT_VARIABLE _slint_clone_output
-        ERROR_VARIABLE _slint_clone_error
-    )
-
-    if(NOT _slint_clone_result EQUAL 0)
-        message(FATAL_ERROR
-            "[Slint] Failed to clone ${SLINT_GIT_TAG} into ${_slint_source_dir}.\n"
-            "stdout:\n${_slint_clone_output}\n"
-            "stderr:\n${_slint_clone_error}"
-        )
-    endif()
-else()
-    message(STATUS "[Slint] Reusing local source checkout: ${_slint_source_dir}")
-endif()
-
-file(REMOVE_RECURSE
-    "${_slint_deps_dir}/slint-subbuild"
-    "${_slint_deps_dir}/slint-build"
+execute_process(
+    COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" describe --tags --exact-match
+    OUTPUT_VARIABLE _slint_existing_tag
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _slint_existing_tag_result
+    ERROR_QUIET
 )
+
+if(NOT _slint_existing_tag_result EQUAL 0 OR NOT _slint_existing_tag STREQUAL "${SLINT_GIT_TAG}")
+    message(FATAL_ERROR
+        "[Slint] Expected submodule ${_slint_source_dir} to be checked out at ${SLINT_GIT_TAG}."
+    )
+endif()
 
 set(FETCHCONTENT_QUIET OFF)
 
@@ -216,7 +177,7 @@ set(_blunder_slint_generated_private_dir "${slint_BINARY_DIR}/generated_include/
 set(_blunder_slint_generated_internal_header
     "${_blunder_slint_generated_private_dir}/slint_internal.h")
 set(_blunder_slint_sdk_private_headers_dir
-    "${CMAKE_SOURCE_DIR}/.cmake_deps/slint-sdk-${SLINT_VERSION}/install/include/slint/private")
+    "${PROJECT_SOURCE_DIR}/.cmake_deps/slint-sdk-${SLINT_VERSION}/install/include/slint/private")
 
 if(NOT EXISTS "${_blunder_slint_generated_internal_header}")
     if(EXISTS "${_blunder_slint_sdk_private_headers_dir}/slint_internal.h")
@@ -278,6 +239,15 @@ if(TARGET slint_cpp)
         )
     endif()
 
+    if(WIN32 AND BLUNDER_SLINT_FORCE_SKIA_BUILD)
+        message(STATUS
+            "[Slint] Windows full Skia build: use short paths (e.g. subst S: D:\\skia-m142, "
+            "BLUNDER_SLINT_CARGO_TARGET_DIR=D:/ct, BLUNDER_SLINT_SKIA_BUILD_OUTPUT_DIR=S:/out). "
+            "Enable Windows Developer Mode so Skia dependency symlinks can be created. "
+            "Offline source must be rust-skia/skia tag m142-0.89.1, not google/skia main."
+        )
+    endif()
+
     if(_blunder_slint_effective_ninja_command)
         set_property(
             TARGET slint_cpp
@@ -294,7 +264,31 @@ if(TARGET slint_cpp)
     endif()
 
     if(BLUNDER_SLINT_SKIA_SOURCE_DIR)
+        if(WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/patch_skia_for_rust_skia.ps1")
+            set(_blunder_slint_patch_script
+                "${CMAKE_CURRENT_SOURCE_DIR}/patch_skia_for_rust_skia.ps1")
+            execute_process(
+                COMMAND powershell -NoProfile -ExecutionPolicy Bypass -File
+                    "${_blunder_slint_patch_script}"
+                    -SkiaRoot "${BLUNDER_SLINT_SKIA_SOURCE_DIR}"
+                RESULT_VARIABLE _blunder_slint_patch_result
+            )
+            if(NOT _blunder_slint_patch_result EQUAL 0)
+                message(WARNING
+                    "[Slint] patch_skia_for_rust_skia.ps1 failed (${_blunder_slint_patch_result}). "
+                    "You may need to run it manually on ${BLUNDER_SLINT_SKIA_SOURCE_DIR}."
+                )
+            else()
+                message(STATUS "[Slint] Applied Windows gn compatibility patches under ${BLUNDER_SLINT_SKIA_SOURCE_DIR}")
+            endif()
+        endif()
         if(EXISTS "${BLUNDER_SLINT_SKIA_SOURCE_DIR}/DEPS")
+            if(NOT EXISTS "${BLUNDER_SLINT_SKIA_SOURCE_DIR}/gn/skia/BUILD.gn")
+                message(WARNING
+                    "[Slint] BLUNDER_SLINT_SKIA_SOURCE_DIR does not look like a rust-skia Skia tree (missing gn/skia/BUILD.gn). "
+                    "skia-bindings 0.90 expects tag m142-0.89.1 from https://github.com/rust-skia/skia ."
+                )
+            endif()
             set_property(
                 TARGET slint_cpp
                 APPEND
@@ -319,6 +313,11 @@ if(TARGET slint_cpp)
                     "SKIA_GN_COMMAND=${BLUNDER_SLINT_SKIA_SOURCE_DIR}/bin/gn.exe"
                 )
                 message(STATUS "[Slint] Using Skia gn: ${BLUNDER_SLINT_SKIA_SOURCE_DIR}/bin/gn.exe")
+            else()
+                message(FATAL_ERROR
+                    "[Slint] BLUNDER_SLINT_SKIA_SOURCE_DIR=${BLUNDER_SLINT_SKIA_SOURCE_DIR} has no bin/gn or bin/gn.exe. "
+                    "Run: python bin/fetch-gn (from the Skia tree) or copy gn.exe into bin/."
+                )
             endif()
         else()
             message(WARNING

@@ -2,7 +2,6 @@
 
 #include <slint.h>
 
-#include <cstdint>
 #include <exception>
 #include <string>
 #include <string_view>
@@ -83,13 +82,14 @@ void SlintSystem::SlintWindowAdapter::ensureRenderer() {
 #if defined(_WIN32) || defined(_WIN64)
   void* hwnd = m_window_system->getNativeWin32Hwnd();
   void* hinstance = m_window_system->getNativeWin32HInstance();
+  const slint::PhysicalSize phys = size();
   if (!hwnd) {
     LOG_ERROR("[SlintSystem] native Win32 HWND is null");
     return;
   }
   slint::platform::NativeWindowHandle handle =
       slint::platform::NativeWindowHandle::from_win32(hwnd, hinstance);
-  m_last_size = size();
+  m_last_size = phys;
   m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
       handle, m_last_size);
 #else

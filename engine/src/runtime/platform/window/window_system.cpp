@@ -52,6 +52,7 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
 
   m_should_close = false;
   m_is_focus_mode = false;
+  SDL_ShowWindow(m_window);
   SDL_StartTextInput(m_window);
 }
 

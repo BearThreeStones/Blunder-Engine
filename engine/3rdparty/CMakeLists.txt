@@ -1,5 +1,8 @@
 # engine/3rdparty/CMakeLists.txt
 
+# Slint C++ - source-built UI toolkit with Skia Vulkan renderer
+include(${CMAKE_CURRENT_SOURCE_DIR}/slint.cmake)
+
 # GLM - header-only math library; disable library build to avoid
 # producing an empty glm.lib / glmd.lib that the linker can't find.
 set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)

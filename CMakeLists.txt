@@ -63,9 +63,6 @@ include(cmake/compiler.cmake)
 # ---------- 核心外部依赖 ----------
 find_package(Vulkan REQUIRED)
 
-# ---------- Slint C++ (source-built via FetchContent) ----------
-include(cmake/slint.cmake)
-
 # ---------- Slang Shader Compiler SDK ----------
 include(cmake/slang.cmake)
 
