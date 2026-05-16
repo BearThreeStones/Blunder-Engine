@@ -115,3 +115,13 @@ target_compile_definitions(engine_runtime
     PRIVATE
         BLUNDER_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
+
+if(BLUNDER_RENDER_BACKEND STREQUAL "d3d12")
+    target_compile_definitions(engine_runtime PRIVATE BLUNDER_RENDER_BACKEND_D3D12=1)
+else()
+    target_compile_definitions(engine_runtime PRIVATE BLUNDER_RENDER_BACKEND_VULKAN=1)
+endif()
+
+if(WIN32)
+    target_link_libraries(engine_runtime PRIVATE d3d12 dxgi)
+endif()

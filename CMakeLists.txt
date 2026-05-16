@@ -60,6 +60,8 @@ endif()
 
 include(cmake/compiler.cmake)
 
+set(BLUNDER_RENDER_BACKEND "vulkan" CACHE STRING "Engine RHI backend: vulkan | d3d12")
+
 # ---------- 核心外部依赖 ----------
 find_package(Vulkan REQUIRED)
 

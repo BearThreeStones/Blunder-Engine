@@ -31,6 +31,7 @@ class SlangCompiler final {
   /// Result of compiling a single entry point from a .slang file.
   struct ShaderResult {
     eastl::vector<uint8_t> spirv_code;
+    eastl::vector<uint8_t> dxil_code;
     eastl::string entry_point_name;
   };
 
@@ -44,6 +45,11 @@ class SlangCompiler final {
   ShaderResult compileShader(const char* source_path,
                              const char* entry_point,
                              int stage);
+
+  /// Compile a .slang source file to DXIL for Direct3D 12.
+  ShaderResult compileShaderDxil(const char* source_path,
+                                 const char* entry_point,
+                                 int stage);
 
  private:
   slang::IGlobalSession* m_global_session{nullptr};

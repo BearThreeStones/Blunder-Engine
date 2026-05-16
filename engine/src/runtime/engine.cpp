@@ -257,8 +257,7 @@ bool BlunderEngine::rendererTick(float delta_time) {
   if (target_w < k_min_viewport_extent) target_w = k_min_viewport_extent;
   if (target_h < k_min_viewport_extent) target_h = k_min_viewport_extent;
 
-  g_runtime_global_context.m_render_system->tick(delta_time, target_w,
-                                                 target_h, slint_system);
+  g_runtime_global_context.m_render_system->tick(delta_time, target_w, target_h);
   return true;
 }
 

@@ -9,6 +9,10 @@ namespace Blunder {
 class LogSystem;
 class InputSystem;
 class SlintSystem;
+
+namespace presenter {
+class CpuRgba8ViewportPresenter;
+}
 // class PhysicsManager;
 class FileSystem;
 class AssetManager;
@@ -43,6 +47,7 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<WindowSystem> m_window_system;
   eastl::shared_ptr<RenderSystem> m_render_system;
   eastl::shared_ptr<SlintSystem> m_slint_system;
+  eastl::unique_ptr<presenter::CpuRgba8ViewportPresenter> m_viewport_presenter;
   eastl::shared_ptr<LayerStack> m_layer_stack;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
   // eastl::shared_ptr<DebugDrawManager> m_debugdraw_manager;

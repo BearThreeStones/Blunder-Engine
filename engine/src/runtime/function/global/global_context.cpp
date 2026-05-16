@@ -4,6 +4,7 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
+#include "runtime/function/render/presenter/cpu_rgba8_viewport_presenter.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -53,10 +54,15 @@ void RuntimeGlobalContext::startSystems() {
   slint_init_info.window_system = m_window_system.get();
   m_slint_system->initialize(slint_init_info);
 
+  m_viewport_presenter =
+      eastl::make_unique<presenter::CpuRgba8ViewportPresenter>(m_slint_system.get());
+
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
   render_init_info.asset_manager = m_asset_manager.get();
   render_init_info.window_system = m_window_system.get();
+  render_init_info.viewport_presenter = m_viewport_presenter.get();
+  render_init_info.viewport_layout_source = m_slint_system.get();
 #ifdef NDEBUG
   render_init_info.enable_validation = false;
 #else
@@ -84,6 +90,8 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_debugdraw_manager.reset();
 
   m_layer_stack.reset();
+
+  m_viewport_presenter.reset();
 
   if (m_slint_system) {
     m_slint_system->shutdown();

@@ -224,4 +224,81 @@ SlangCompiler::ShaderResult SlangCompiler::compileShader(
   return shader_result;
 }
 
+SlangCompiler::ShaderResult SlangCompiler::compileShaderDxil(
+    const char* source_path, const char* entry_point, int stage) {
+  ASSERT(m_global_session);
+  ASSERT(source_path);
+  ASSERT(entry_point);
+
+  eastl::string source_code = readFileToString(source_path);
+
+  slang::TargetDesc target_desc{};
+  target_desc.format = SLANG_DXIL;
+  target_desc.profile = m_global_session->findProfile("sm_6_0");
+
+  slang::SessionDesc session_desc{};
+  session_desc.targets = &target_desc;
+  session_desc.targetCount = 1;
+  session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+
+  Slang::ComPtr<slang::ISession> session;
+  SlangResult result =
+      m_global_session->createSession(session_desc, session.writeRef());
+  if (SLANG_FAILED(result) || !session) {
+    LOG_FATAL(
+        "[SlangCompiler::compileShaderDxil] failed to create Slang session");
+  }
+
+  Slang::ComPtr<slang::IBlob> diagnostics_blob;
+  Slang::ComPtr<slang::IModule> shader_module(session->loadModuleFromSourceString(
+      "shader", source_path, source_code.c_str(), diagnostics_blob.writeRef()));
+
+  if (!shader_module) {
+    LOG_FATAL("[SlangCompiler::compileShaderDxil] failed to load module: {}",
+              source_path);
+  }
+
+  Slang::ComPtr<slang::IEntryPoint> entry_point_obj;
+  result = shader_module->findEntryPointByName(entry_point,
+                                               entry_point_obj.writeRef());
+  if (SLANG_FAILED(result) || !entry_point_obj) {
+    LOG_FATAL("[SlangCompiler::compileShaderDxil] entry point '{}' not found",
+              entry_point);
+  }
+
+  slang::IComponentType* components[] = {shader_module, entry_point_obj};
+  Slang::ComPtr<slang::IComponentType> composed_program;
+  result = session->createCompositeComponentType(
+      components, 2, composed_program.writeRef(), diagnostics_blob.writeRef());
+  if (SLANG_FAILED(result) || !composed_program) {
+    LOG_FATAL("[SlangCompiler::compileShaderDxil] failed to compose program");
+  }
+
+  Slang::ComPtr<slang::IComponentType> linked_program;
+  result = composed_program->link(linked_program.writeRef(),
+                                  diagnostics_blob.writeRef());
+  if (SLANG_FAILED(result) || !linked_program) {
+    LOG_FATAL("[SlangCompiler::compileShaderDxil] failed to link program");
+  }
+
+  Slang::ComPtr<slang::IBlob> dxil_blob;
+  result = linked_program->getEntryPointCode(0, 0, dxil_blob.writeRef(),
+                                             diagnostics_blob.writeRef());
+  if (SLANG_FAILED(result) || !dxil_blob) {
+    LOG_FATAL("[SlangCompiler::compileShaderDxil] failed to generate DXIL");
+  }
+
+  ShaderResult shader_result;
+  shader_result.entry_point_name =
+      eastl::string(entry_point, std::strlen(entry_point));
+  const size_t dxil_size = dxil_blob->getBufferSize();
+  shader_result.dxil_code.resize(dxil_size);
+  std::memcpy(shader_result.dxil_code.data(), dxil_blob->getBufferPointer(),
+              dxil_size);
+
+  LOG_INFO("[SlangCompiler] compiled '{}' entry '{}' -> {} bytes DXIL",
+           source_path, entry_point, dxil_size);
+  return shader_result;
+}
+
 }  // namespace Blunder
