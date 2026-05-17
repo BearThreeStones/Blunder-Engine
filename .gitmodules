@@ -33,4 +33,5 @@
 	url = https://github.com/recastnavigation/recastnavigation.git
 [submodule "engine/3rdparty/slint"]
 	path = engine/3rdparty/slint
-	url = https://github.com/slint-ui/slint.git
+	url = https://github.com/BearThreeStones/slint.git
+	branch = blunder/v1.16.1

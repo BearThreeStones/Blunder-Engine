@@ -211,9 +211,40 @@ execute_process(
     ERROR_QUIET
 )
 
-if(NOT _slint_existing_tag_result EQUAL 0 OR NOT _slint_existing_tag STREQUAL "${SLINT_GIT_TAG}")
+set(_slint_on_expected_tag FALSE)
+if(_slint_existing_tag_result EQUAL 0 AND _slint_existing_tag STREQUAL "${SLINT_GIT_TAG}")
+    set(_slint_on_expected_tag TRUE)
+endif()
+
+if(NOT _slint_on_expected_tag)
+    execute_process(
+        COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" merge-base --is-ancestor
+            "${SLINT_GIT_TAG}" HEAD
+        RESULT_VARIABLE _slint_ancestor_result
+        ERROR_QUIET
+    )
+    if(_slint_ancestor_result EQUAL 0)
+        execute_process(
+            COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" rev-parse --abbrev-ref HEAD
+            OUTPUT_VARIABLE _slint_branch_name
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        set(_slint_blunder_branch "blunder/v${SLINT_VERSION}")
+        if(_slint_branch_name STREQUAL _slint_blunder_branch)
+            set(_slint_on_expected_tag TRUE)
+            message(STATUS
+                "[Slint] Using Blunder fork branch ${_slint_branch_name} (based on ${SLINT_GIT_TAG})"
+            )
+        endif()
+    endif()
+endif()
+
+if(NOT _slint_on_expected_tag)
     message(FATAL_ERROR
-        "[Slint] Expected submodule ${_slint_source_dir} to be checked out at ${SLINT_GIT_TAG}."
+        "[Slint] Expected submodule ${_slint_source_dir} at tag ${SLINT_GIT_TAG} "
+        "or branch blunder/v${SLINT_VERSION} based on that tag.\n"
+        "  git -C ${_slint_source_dir} checkout blunder/v${SLINT_VERSION}"
     )
 endif()
 

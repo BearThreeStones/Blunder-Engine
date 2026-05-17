@@ -8,7 +8,7 @@ C++20 game engine using CMake, targeting Windows with Visual Studio 2026.
 
 **Tech Stack:** C++20 | CMake 4.0+ | Vulkan | VS 2026 (v145)
 
-**Dependencies (git submodules):** glm, glfw, spdlog, imgui, EASTL
+**Dependencies (git submodules):** glm, spdlog, EASTL, SDL, Slint (**fork**), …
 
 ---
 
@@ -28,6 +28,10 @@ cmake --build --preset vs2026-debug
 cmake --build --preset vs2026-release
 
 # Build specific target
+cmake --build build/vs2026-debug --config Debug --target engine_editor
+
+# After changing engine/3rdparty/slint (fork branch), rebuild Slint before the editor:
+cmake --build build/vs2026-debug --config Debug --target slint_cpp
 cmake --build build/vs2026-debug --config Debug --target engine_editor
 
 # Open in Visual Studio
@@ -196,10 +200,12 @@ Key integration points:
 
 Notes / known limitations:
 
-- Slint is now expected to be source-built so `RENDERER_SKIA_VULKAN` can be
-  enabled and `RENDERER_SKIA_OPENGL` can be disabled at configure time. The
-  runtime still keeps the 3D viewport on the existing CPU readback path; this
-  change only switches Slint/Skia's window composition path to Vulkan.
+- Slint is source-built from the **fork** submodule (`blunder/v1.16.1` on
+  `BearThreeStones/slint`, based on upstream `v1.16.1`). See
+  `engine/3rdparty/slint/BLUNDER_PATCHES.md`. `RENDERER_SKIA_VULKAN` stays enabled
+  for the build, but the C++ custom platform uses **D3D12** for window composition
+  on Windows (engine Vulkan remains headless + CPU readback for the 3D viewport).
+- Rebuild target `slint_cpp` whenever the Slint submodule commit changes.
 - Zero-copy GPU texture sharing is still not implemented. The public C++ API
   surface currently only exposes `BorrowedOpenGLTexture` and
   `set_rendering_notifier`, so the data flow above remains structured around
@@ -210,6 +216,38 @@ Notes / known limitations:
 - `EditorCamera` still receives input in window coordinates; for delta-based
   motion (drag/orbit) this is fine, but absolute-position interactions should
   later be remapped to the central viewport rect.
+
+---
+
+## Slint fork (`engine/3rdparty/slint`)
+
+Submodule URL: `https://github.com/BearThreeStones/slint.git`, branch **`blunder/v1.16.1`**
+(pinned by commit in the parent repo).
+
+| Remote | URL |
+|--------|-----|
+| `origin` | BearThreeStones/slint (fork, push patches here) |
+| `upstream` | slint-ui/slint (read-only, version bumps) |
+
+**First-time setup (maintainer):**
+
+```bash
+# On GitHub: fork slint-ui/slint -> BearThreeStones/slint (if not done yet)
+cd engine/3rdparty/slint
+git push -u origin blunder/v1.16.1
+cd ../../..
+git submodule update --init engine/3rdparty/slint
+```
+
+**Clone Blunder Engine:**
+
+```bash
+git clone --recurse-submodules https://github.com/BearThreeStones/Blunder-Engine.git
+# or after clone: git submodule update --init --recursive engine/3rdparty/slint
+```
+
+**Bump Slint version:** rebase `blunder/vX.Y.Z` onto upstream tag, update `SLINT_GIT_TAG` /
+`slint.cmake` branch name check, cherry-pick from previous `blunder/*` branch, rebuild `slint_cpp`.
 
 ---
 
