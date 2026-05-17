@@ -3,14 +3,12 @@ bin/
 lib/
 out/
 x64/
-Debug/
-Release/
-RelWithDebInfo/
-MinSizeRel/
-**/Debug/
-**/Release/
-**/RelWithDebInfo/
-**/MinSizeRel/
+# MSVC multi-config output. Leading "/" = repo root only, so we do not
+# ignore source trees such as engine/src/.../render/debug/ on Windows.
+/Debug/
+/Release/
+/RelWithDebInfo/
+/MinSizeRel/
 *.dir/
 *.tlog/
 
