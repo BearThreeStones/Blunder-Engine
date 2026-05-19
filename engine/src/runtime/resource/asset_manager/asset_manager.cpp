@@ -74,9 +74,25 @@ eastl::string buildGeneratedKey(const eastl::string& base_key, const char* kind,
   return generated_key;
 }
 
-eastl::string buildAssetVirtualPath(const std::filesystem::path& asset_root,
-                                    const std::filesystem::path& source_path,
-                                    const char* uri) {
+bool startsWithPrefix(const eastl::string& path, const char* prefix) {
+  const size_t prefix_length = std::strlen(prefix);
+  if (path.size() < prefix_length) {
+    return false;
+  }
+  return path.compare(0, prefix_length, prefix) == 0;
+}
+
+eastl::string stripPrefix(const eastl::string& path, const char* prefix) {
+  const size_t prefix_length = std::strlen(prefix);
+  if (startsWithPrefix(path, prefix)) {
+    return eastl::string(path.c_str() + prefix_length);
+  }
+  return path;
+}
+
+eastl::string buildResourceVirtualPath(
+    const std::filesystem::path& resources_root,
+    const std::filesystem::path& source_path, const char* uri) {
   const std::filesystem::path candidate = std::filesystem::path(uri).is_absolute()
                                               ? std::filesystem::path(uri)
                                               : (source_path.parent_path() / uri);
@@ -84,12 +100,87 @@ eastl::string buildAssetVirtualPath(const std::filesystem::path& asset_root,
 
   std::error_code ec;
   const std::filesystem::path relative =
-      std::filesystem::relative(normalized, asset_root, ec);
+      std::filesystem::relative(normalized, resources_root, ec);
   if (!ec && !relative.empty() && !relativePathEscapesRoot(relative)) {
-    return eastl::string(relative.generic_string().c_str());
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
   }
 
   return eastl::string(normalized.generic_string().c_str());
+}
+
+struct ResolvedContentPath {
+  eastl::string canonical_key;
+  std::filesystem::path absolute;
+};
+
+ResolvedContentPath resolveContentPath(FileSystem* file_system,
+                                       const eastl::string& virtual_path,
+                                       bool default_to_resources) {
+  const eastl::string normalized_key =
+      eastl::string(std::filesystem::path(virtual_path.c_str())
+                        .lexically_normal()
+                        .generic_string()
+                        .c_str());
+
+  ResolvedContentPath resolved{};
+  resolved.canonical_key = normalized_key;
+
+  if (startsWithPrefix(normalized_key, "resources/")) {
+    const eastl::string relative = stripPrefix(normalized_key, "resources/");
+    resolved.absolute = file_system->resolveResource(
+        std::filesystem::path(relative.c_str()));
+    return resolved;
+  }
+
+  if (startsWithPrefix(normalized_key, "assets/")) {
+    const eastl::string relative = stripPrefix(normalized_key, "assets/");
+    resolved.absolute =
+        file_system->resolveAsset(std::filesystem::path(relative.c_str()));
+    return resolved;
+  }
+
+  if (default_to_resources) {
+    resolved.canonical_key = eastl::string("resources/");
+    resolved.canonical_key.append(normalized_key);
+    resolved.absolute = file_system->resolveResource(
+        std::filesystem::path(normalized_key.c_str()));
+  } else {
+    resolved.canonical_key = eastl::string("assets/");
+    resolved.canonical_key.append(normalized_key);
+    resolved.absolute = file_system->resolveAsset(
+        std::filesystem::path(normalized_key.c_str()));
+  }
+  return resolved;
+}
+
+bool parseMeshAssetSource(const eastl::string& json_text,
+                          eastl::string& out_source) {
+  const char* key = "\"source\"";
+  const char* key_pos = std::strstr(json_text.c_str(), key);
+  if (key_pos == nullptr) {
+    return false;
+  }
+
+  const char* colon = std::strchr(key_pos + std::strlen(key), ':');
+  if (colon == nullptr) {
+    return false;
+  }
+
+  const char* quote_start = std::strchr(colon, '"');
+  if (quote_start == nullptr) {
+    return false;
+  }
+  ++quote_start;
+
+  const char* quote_end = std::strchr(quote_start, '"');
+  if (quote_end == nullptr || quote_end == quote_start) {
+    return false;
+  }
+
+  out_source.assign(quote_start, static_cast<size_t>(quote_end - quote_start));
+  return !out_source.empty();
 }
 
 bool isDataUri(const char* uri) {
@@ -120,8 +211,10 @@ void AssetManager::initialize(const AssetManagerInitInfo& info) {
 
   m_file_system = info.file_system;
   m_is_initialized = true;
-  LOG_INFO("[AssetManager] initialized (asset root: {})",
-           m_file_system->getAssetRoot().generic_string());
+  LOG_INFO(
+      "[AssetManager] initialized (assets: {}, resources: {})",
+      m_file_system->getAssetRoot().generic_string(),
+      m_file_system->getResourcesRoot().generic_string());
 }
 
 void AssetManager::shutdown() {
@@ -144,7 +237,9 @@ eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
     return nullptr;
   }
 
-  const eastl::string key = canonicalKey(virtual_path);
+  const ResolvedContentPath resolved =
+      resolveContentPath(m_file_system, virtual_path, true);
+  const eastl::string& key = resolved.canonical_key;
   if (auto it = m_texture_cache.find(key);
       it != m_texture_cache.end()) {
     if (auto cached = it->second.lock()) {
@@ -153,8 +248,7 @@ eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
     m_texture_cache.erase(it);
   }
 
-  const auto absolute =
-      m_file_system->resolveAsset(std::filesystem::path(key.c_str()));
+  const auto& absolute = resolved.absolute;
 
   eastl::vector<uint8_t> bytes;
   if (!m_file_system->readBinary(absolute, bytes)) {
@@ -260,7 +354,37 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
     return nullptr;
   }
 
-  const eastl::string key = canonicalKey(virtual_path);
+  const eastl::string request_key = canonicalKey(virtual_path);
+  const auto endsWithSuffix = [](const eastl::string& value, const char* suffix) {
+    const size_t suffix_length = std::strlen(suffix);
+    if (value.size() < suffix_length) {
+      return false;
+    }
+    return value.compare(value.size() - suffix_length, suffix_length, suffix) ==
+           0;
+  };
+  if (endsWithSuffix(request_key, ".mesh.asset")) {
+    const ResolvedContentPath descriptor_path =
+        resolveContentPath(m_file_system, virtual_path, false);
+    eastl::string descriptor_text;
+    if (!m_file_system->readText(descriptor_path.absolute, descriptor_text)) {
+      LOG_ERROR("[AssetManager] loadMesh: cannot read mesh descriptor {}",
+                descriptor_path.absolute.generic_string());
+      return nullptr;
+    }
+
+    eastl::string source_path;
+    if (!parseMeshAssetSource(descriptor_text, source_path)) {
+      LOG_ERROR("[AssetManager] loadMesh: missing source in {}",
+                descriptor_path.absolute.generic_string());
+      return nullptr;
+    }
+    return loadMesh(source_path);
+  }
+
+  const ResolvedContentPath resolved =
+      resolveContentPath(m_file_system, virtual_path, true);
+  const eastl::string& key = resolved.canonical_key;
   if (auto it = m_mesh_cache.find(key); it != m_mesh_cache.end()) {
     if (auto cached = it->second.lock()) {
       return cached;
@@ -268,19 +392,18 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
     m_mesh_cache.erase(it);
   }
 
-  const auto absolute =
-      m_file_system->resolveAsset(std::filesystem::path(key.c_str()));
+  const auto& absolute = resolved.absolute;
   eastl::vector<uint8_t> bytes;
   if (!m_file_system->readBinary(absolute, bytes)) {
     LOG_ERROR("[AssetManager] loadMesh: cannot read {}", absolute.generic_string());
     return nullptr;
   }
 
-  const eastl::string extension(
+  const eastl::string mesh_extension(
       absolute.extension().generic_string().c_str());
-  if (extension != ".gltf" && extension != ".glb") {
+  if (mesh_extension != ".gltf" && mesh_extension != ".glb") {
     LOG_ERROR("[AssetManager] loadMesh: unsupported mesh format {} for {}",
-              extension.c_str(), absolute.generic_string());
+              mesh_extension.c_str(), absolute.generic_string());
     return nullptr;
   }
 
@@ -502,8 +625,8 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
                   absolute.generic_string(), material_index, usage_label);
             }
 
-            const eastl::string texture_virtual_path = buildAssetVirtualPath(
-                m_file_system->getAssetRoot(), absolute, image->uri);
+            const eastl::string texture_virtual_path = buildResourceVirtualPath(
+                m_file_system->getResourcesRoot(), absolute, image->uri);
             base_color_texture_asset = loadTexture2D(texture_virtual_path);
             if (!base_color_texture_asset) {
               return fail_mesh_load(

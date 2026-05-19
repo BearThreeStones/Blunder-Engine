@@ -47,11 +47,31 @@ add_library(engine_runtime STATIC
     "resource/asset/texture2d_asset.h"
     "resource/asset_manager/asset_manager.h"
     "resource/asset_manager/asset_manager.cpp"
+    "resource/content/content_entry.h"
+    "resource/content/content_index.h"
+    "resource/content/content_index.cpp"
+    "resource/thumbnail/thumbnail_types.h"
+    "resource/thumbnail/thumbnail_cache.h"
+    "resource/thumbnail/thumbnail_cache.cpp"
+    "resource/thumbnail/thumbnail_resize.h"
+    "resource/thumbnail/thumbnail_resize.cpp"
+    "resource/thumbnail/thumbnail_placeholders.h"
+    "resource/thumbnail/thumbnail_placeholders.cpp"
+    "resource/thumbnail/thumbnail_generator.h"
+    "resource/thumbnail/thumbnail_generator.cpp"
+    "resource/content_browser/content_browser_types.h"
+    "resource/content_browser/content_browser_drag.h"
+    "resource/content_browser/content_browser_drag.cpp"
+    "resource/content_browser/content_browser_system.h"
+    "resource/content_browser/content_browser_system.cpp"
+    "resource/content_browser/content_browser_watch.h"
+    "resource/content_browser/content_browser_watch.cpp"
 )
 
 add_subdirectory(function/render)
 
 slint_target_sources(engine_runtime
+    "function/slint/content_browser.slint"
     "function/slint/editor_window.slint"
 )
 
@@ -108,6 +128,11 @@ target_link_libraries(engine_runtime
         vma
         slang::slang
 )
+
+if(TARGET efsw)
+    target_compile_definitions(engine_runtime PRIVATE BLUNDER_HAS_EFSW=1)
+    target_link_libraries(engine_runtime PRIVATE efsw)
+endif()
 
 # Inject the project source root so FileSystem can resolve asset/shader paths
 # during dev builds without relying on the executable's working directory.

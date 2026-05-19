@@ -279,6 +279,12 @@ if(_blunder_resolved_skia_binaries_url)
     )
 endif()
 
+# rust-skia C++ symbols are not embedded in slint_cpp.lib; with BUILD_SHARED_LIBS=OFF
+# the final executable must also link skia.lib and friends. Building Slint as a DLL
+# keeps Skia inside slint_cpp.dll, which matches how Corrosion/Slint expect MSVC consumers.
+set(_blunder_slint_saved_build_shared_libs "${BUILD_SHARED_LIBS}")
+set(BUILD_SHARED_LIBS ON)
+
 FetchContent_Declare(
     Slint
     SOURCE_DIR "${_slint_source_dir}"
@@ -286,6 +292,9 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(Slint)
+
+set(BUILD_SHARED_LIBS "${_blunder_slint_saved_build_shared_libs}")
+unset(_blunder_slint_saved_build_shared_libs)
 
 set(_blunder_slint_generated_private_dir "${slint_BINARY_DIR}/generated_include/private")
 set(_blunder_slint_generated_internal_header

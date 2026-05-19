@@ -25,6 +25,8 @@ struct ViewportLogicalRect {
   uint32_t height{0};
 };
 
+using BrowserLogicalRect = ViewportLogicalRect;
+
 struct SlintSystemInitInfo {
   WindowSystem* window_system{nullptr};
 };
@@ -66,6 +68,12 @@ class SlintSystem final {
   /// Source mesh material used by "Sync Asset" and initial inspector sync.
   void setBlinnPhongMaterialSource(const MaterialAsset* material);
   void syncBlinnPhongFromMaterialSource();
+
+  /// Pushes ContentBrowserSystem tree/grid rows into the Slint panel.
+  void syncContentBrowser();
+
+  BrowserLogicalRect getBrowserLogicalRect() const;
+  bool isContentBrowserDragActive() const;
 
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
@@ -117,7 +125,11 @@ class SlintSystem final {
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
   ViewportLogicalRect m_cached_viewport_logical_rect{};
+  BrowserLogicalRect m_cached_browser_logical_rect{};
   bool m_in_slint_dispatch{false};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
+  eastl::string m_drop_highlight_path;
+  eastl::vector<eastl::string> m_pending_os_drop_files;
+  bool m_os_drop_targets_browser{false};
 };
 }  // namespace Blunder

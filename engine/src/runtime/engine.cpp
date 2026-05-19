@@ -15,7 +15,9 @@
 // #include "runtime/function/render/debugdraw/debug_draw_manager.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/content_browser/content_browser_system.h"
 
 namespace Blunder {
 bool g_is_editor_mode{false};
@@ -24,7 +26,7 @@ eastl::unordered_set<eastl::string> g_editor_tick_component_types{};
 namespace {
 
 constexpr const char* k_startup_demo_mesh_path =
-  "models/textured_cube/textured_cube.gltf";
+  "assets/Meshes/textured_cube.mesh.asset";
 
 }  // namespace
 
@@ -124,6 +126,20 @@ void BlunderEngine::initialize() {
       k_startup_demo_mesh_path, demo_mesh->getVertexCount(),
       demo_mesh->getIndexCount(), demo_mesh->getVertexStride());
 
+  if (g_runtime_global_context.m_content_browser) {
+    const ContentBrowserRefreshStats stats =
+        g_runtime_global_context.m_content_browser->refresh();
+    LOG_INFO(
+        "[BlunderEngine] content index: {} entries (thumbnails: {} generated, "
+        "{} cached, {} skipped, {} failed)",
+        stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
+        stats.thumbnails_skipped, stats.thumbnails_failed);
+
+    if (g_runtime_global_context.m_slint_system) {
+      g_runtime_global_context.m_slint_system->syncContentBrowser();
+    }
+  }
+
   const eastl::shared_ptr<MaterialAsset>& material = demo_mesh->getMaterialAsset();
   if (!material || material->getBaseColorTextureAsset() == nullptr) {
     LOG_INFO("[BlunderEngine] startup demo mesh has no baseColor texture dependency");
@@ -177,6 +193,15 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   g_runtime_global_context.m_memory_system.beginFrame();
 
   g_runtime_global_context.m_window_system->pumpEvents();
+
+  if (g_runtime_global_context.m_content_browser &&
+      g_runtime_global_context.m_content_browser->tickFileWatch()) {
+    g_runtime_global_context.m_content_browser->refresh();
+    if (g_runtime_global_context.m_slint_system) {
+      g_runtime_global_context.m_slint_system->syncContentBrowser();
+    }
+  }
+
   g_runtime_global_context.m_input_system->tick();
 
   // 更新所有层（正向迭代：Layer1 → OverlayN）

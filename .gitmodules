@@ -35,3 +35,6 @@
 	path = engine/3rdparty/slint
 	url = https://github.com/BearThreeStones/slint.git
 	branch = blunder/v1.16.1
+[submodule "engine/3rdparty/efsw"]
+	path = engine/3rdparty/efsw
+	url = https://github.com/SpartanJ/efsw.git

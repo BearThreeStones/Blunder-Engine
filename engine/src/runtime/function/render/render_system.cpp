@@ -70,7 +70,7 @@ constexpr float k_demo_mesh_spin_rate = 0.85f;
 constexpr float k_demo_mesh_height = 0.75f;
 constexpr float k_demo_mesh_uniform_scale = 0.85f;
 constexpr const char* k_demo_mesh_asset_path =
-  "models/textured_cube/textured_cube.gltf";
+  "assets/Meshes/textured_cube.mesh.asset";
 
 DemoMeshData buildDemoCubeMesh() {
   constexpr float half_extent = 0.5f;

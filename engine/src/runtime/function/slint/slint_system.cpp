@@ -3,14 +3,18 @@
 #include <slint.h>
 
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <glm/vec3.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/resource/asset/material_asset.h"
+#include "runtime/resource/content_browser/content_browser_system.h"
 
 namespace Blunder {
 namespace {
@@ -274,6 +278,92 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     }
     component->on_sync_shading_from_asset(
         [this]() { syncBlinnPhongFromMaterialSource(); });
+
+    component->on_browser_refresh_requested([this]() {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->refresh();
+      syncContentBrowser();
+    });
+    component->on_browser_root_assets_selected([this]() {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->setActiveRoot(ContentRoot::Assets);
+      g_runtime_global_context.m_content_browser->rebuildVisibleTree();
+      syncContentBrowser();
+    });
+    component->on_browser_root_resources_selected([this]() {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->setActiveRoot(
+          ContentRoot::Resources);
+      g_runtime_global_context.m_content_browser->rebuildVisibleTree();
+      syncContentBrowser();
+    });
+    component->on_browser_folder_selected(
+        [this](const slint::SharedString& path) {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->setSelectedFolder(
+          eastl::string(path.data()));
+      syncContentBrowser();
+    });
+    component->on_browser_folder_toggle(
+        [this](const slint::SharedString& path) {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->toggleFolderExpanded(
+          eastl::string(path.data()));
+      syncContentBrowser();
+    });
+    component->on_browser_item_press(
+        [this](const slint::SharedString& path, float x, float y) {
+          if (!g_runtime_global_context.m_content_browser) {
+            return;
+          }
+          g_runtime_global_context.m_content_browser->dragController().beginPress(
+              eastl::string(path.data()), x, y);
+          m_drop_highlight_path.clear();
+          syncContentBrowser();
+        });
+    component->on_browser_item_move(
+        [this](const slint::SharedString& path, float x, float y) {
+          (void)path;
+          if (!g_runtime_global_context.m_content_browser) {
+            return;
+          }
+          g_runtime_global_context.m_content_browser->dragController().updateMove(
+              x, y);
+        });
+    component->on_browser_item_release(
+        [this](const slint::SharedString& path, float x, float y) {
+          (void)x;
+          (void)y;
+          if (!g_runtime_global_context.m_content_browser) {
+            return;
+          }
+          ContentBrowserSystem& browser_system =
+              *g_runtime_global_context.m_content_browser;
+          ContentBrowserDragController& drag = browser_system.dragController();
+          const bool was_dragging = drag.isDragging();
+          const eastl::string source = drag.sourcePath();
+          drag.endPress();
+
+          if (was_dragging && !source.empty() &&
+              !m_drop_highlight_path.empty()) {
+            browser_system.reparentEntry(source, m_drop_highlight_path);
+          }
+          m_drop_highlight_path.clear();
+          drag.reset();
+          syncContentBrowser();
+          (void)path;
+        });
+
     component->show();
     m_window_component = component;
 
@@ -397,6 +487,94 @@ void SlintSystem::syncBlinnPhongFromMaterialSource() {
   }
 }
 
+namespace {
+
+slint::Image loadThumbnailImage(const eastl::string& cache_path) {
+  if (cache_path.empty()) {
+    return slint::Image();
+  }
+  try {
+    return slint::Image::load_from_path(
+        slint::SharedString(cache_path.c_str()));
+  } catch (...) {
+    return slint::Image();
+  }
+}
+
+bool pointInRect(float x, float y, const BrowserLogicalRect& rect) {
+  if (rect.width == 0 || rect.height == 0) {
+    return false;
+  }
+  return x >= static_cast<float>(rect.x) &&
+         y >= static_cast<float>(rect.y) &&
+         x < static_cast<float>(rect.x + static_cast<int32_t>(rect.width)) &&
+         y < static_cast<float>(rect.y + static_cast<int32_t>(rect.height));
+}
+
+}  // namespace
+
+void SlintSystem::syncContentBrowser() {
+  if (!m_window_component || !g_runtime_global_context.m_content_browser) {
+    return;
+  }
+  if (m_in_slint_dispatch) {
+    return;
+  }
+
+  ContentBrowserSystem& browser_system =
+      *g_runtime_global_context.m_content_browser;
+
+  try {
+    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    auto tree_model = std::make_shared<slint::VectorModel<BrowserTreeRow>>();
+    for (const ContentBrowserTreeRow& row : browser_system.treeRows()) {
+      BrowserTreeRow slint_row{};
+      slint_row.path = slint::SharedString(row.virtual_path.c_str());
+      slint_row.name = slint::SharedString(row.display_name.c_str());
+      slint_row.depth = row.depth;
+      slint_row.is_dir = row.is_directory;
+      slint_row.expanded = row.is_expanded;
+      slint_row.has_children = row.has_children;
+      tree_model->push_back(slint_row);
+    }
+    m_window_component->operator->()->set_browser_tree_rows(tree_model);
+
+    auto grid_model = std::make_shared<slint::VectorModel<BrowserGridRow>>();
+    for (const ContentBrowserGridItem& item : browser_system.gridItems()) {
+      BrowserGridRow slint_row{};
+      slint_row.path = slint::SharedString(item.virtual_path.c_str());
+      slint_row.name = slint::SharedString(item.display_name.c_str());
+      slint_row.thumb = loadThumbnailImage(item.thumbnail_cache_path);
+      grid_model->push_back(slint_row);
+    }
+    m_window_component->operator->()->set_browser_grid_rows(grid_model);
+
+    const ContentBrowserDragController& drag = browser_system.dragController();
+    m_window_component->operator->()->set_browser_drag_active(drag.isDragging());
+    m_window_component->operator->()->set_browser_drag_source_path(
+        slint::SharedString(drag.sourcePath().c_str()));
+    m_window_component->operator->()->set_browser_drop_highlight_path(
+        slint::SharedString(m_drop_highlight_path.c_str()));
+    m_window_component->operator->()->set_browser_show_assets_root(
+        browser_system.activeRoot() == ContentRoot::Assets);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncContentBrowser] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncContentBrowser] unknown exception");
+  }
+}
+
+BrowserLogicalRect SlintSystem::getBrowserLogicalRect() const {
+  return m_cached_browser_logical_rect;
+}
+
+bool SlintSystem::isContentBrowserDragActive() const {
+  if (!g_runtime_global_context.m_content_browser) {
+    return false;
+  }
+  return g_runtime_global_context.m_content_browser->dragController().isDragging();
+}
+
 BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
   BlinnPhongEditorSettings settings;
   if (!m_window_component) {
@@ -441,8 +619,20 @@ void SlintSystem::update() {
           w > 0.0f ? static_cast<uint32_t>(w) : 0u;
       m_cached_viewport_logical_rect.height =
           h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+
+      m_cached_browser_logical_rect.x =
+          static_cast<int32_t>(component->get_browser_origin_x());
+      m_cached_browser_logical_rect.y =
+          static_cast<int32_t>(component->get_browser_origin_y());
+      const float browser_w = component->get_browser_width();
+      const float browser_h = component->get_browser_height();
+      m_cached_browser_logical_rect.width =
+          browser_w > 0.0f ? static_cast<uint32_t>(browser_w) : 0u;
+      m_cached_browser_logical_rect.height =
+          browser_h > 0.0f ? static_cast<uint32_t>(browser_h) : 0u;
     } else {
       m_cached_viewport_logical_rect = {};
+      m_cached_browser_logical_rect = {};
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::update] {}", e.what());
@@ -508,6 +698,17 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_MOTION:
         if (event.motion.windowID == window_id) {
+          if (g_runtime_global_context.m_content_browser &&
+              g_runtime_global_context.m_content_browser->dragController()
+                  .isDragging()) {
+            ContentBrowserSystem& browser_system =
+                *g_runtime_global_context.m_content_browser;
+            const int32_t tree_origin_y = static_cast<int32_t>(
+                (*m_window_component)->get_browser_tree_origin_y());
+            m_drop_highlight_path = browser_system.hitTestFolderAt(
+                event.motion.x, event.motion.y, tree_origin_y, 22.0f);
+            syncContentBrowser();
+          }
           window.dispatch_pointer_move_event(
               slint::LogicalPosition({event.motion.x, event.motion.y}));
         }
@@ -563,6 +764,38 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         if (event.text.windowID == window_id && event.text.text) {
           window.dispatch_key_press_event(slint::SharedString(event.text.text));
         }
+        break;
+      case SDL_EVENT_DROP_BEGIN:
+        if (event.drop.windowID == window_id) {
+          m_pending_os_drop_files.clear();
+          m_os_drop_targets_browser =
+              pointInRect(event.drop.x, event.drop.y, m_cached_browser_logical_rect);
+        }
+        break;
+      case SDL_EVENT_DROP_FILE:
+        if (event.drop.windowID == window_id && event.drop.data) {
+          m_pending_os_drop_files.push_back(
+              eastl::string(event.drop.data));
+          if (!m_os_drop_targets_browser) {
+            m_os_drop_targets_browser = pointInRect(
+                event.drop.x, event.drop.y, m_cached_browser_logical_rect);
+          }
+        }
+        break;
+      case SDL_EVENT_DROP_COMPLETE:
+        if (event.drop.windowID == window_id && m_os_drop_targets_browser &&
+            g_runtime_global_context.m_content_browser &&
+            !m_pending_os_drop_files.empty()) {
+          const uint32_t imported =
+              g_runtime_global_context.m_content_browser->importExternalFiles(
+                  m_pending_os_drop_files,
+                  g_runtime_global_context.m_content_browser->selectedFolder());
+          LOG_INFO("[SlintSystem] imported {} file(s) into content browser",
+                   imported);
+          syncContentBrowser();
+        }
+        m_pending_os_drop_files.clear();
+        m_os_drop_targets_browser = false;
         break;
       default:
         break;

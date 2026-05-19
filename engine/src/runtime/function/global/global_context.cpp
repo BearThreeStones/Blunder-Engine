@@ -15,6 +15,8 @@
 // #include "runtime/function/render/render_debug_config.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/thumbnail/thumbnail_generator.h"
+#include "runtime/resource/content_browser/content_browser_system.h"
 // #include "runtime/resource/config_manager/config_manager.h"
 
 namespace Blunder {
@@ -37,6 +39,20 @@ void RuntimeGlobalContext::startSystems() {
   AssetManagerInitInfo asset_init_info;
   asset_init_info.file_system = m_file_system.get();
   m_asset_manager->initialize(asset_init_info);
+
+  m_thumbnail_generator = eastl::make_shared<ThumbnailGenerator>();
+  ThumbnailGeneratorInit thumbnail_init{};
+  thumbnail_init.file_system = m_file_system.get();
+  thumbnail_init.asset_manager = m_asset_manager.get();
+  m_thumbnail_generator->initialize(thumbnail_init);
+
+  m_content_browser = eastl::make_shared<ContentBrowserSystem>();
+  ContentBrowserInit browser_init{};
+  browser_init.file_system = m_file_system.get();
+  browser_init.asset_manager = m_asset_manager.get();
+  browser_init.thumbnail_generator = m_thumbnail_generator.get();
+  m_content_browser->initialize(browser_init);
+  m_content_browser->startFileWatch();
 
   // m_physics_manager = eastl::make_shared<PhysicsManager>();
   // m_physics_manager->initialize();
@@ -115,6 +131,16 @@ void RuntimeGlobalContext::shutdownSystems() {
 
   // m_physics_manager->clear();
   // m_physics_manager.reset();
+
+  if (m_content_browser) {
+    m_content_browser->shutdown();
+    m_content_browser.reset();
+  }
+
+  if (m_thumbnail_generator) {
+    m_thumbnail_generator->shutdown();
+    m_thumbnail_generator.reset();
+  }
 
   if (m_asset_manager) {
     m_asset_manager->shutdown();

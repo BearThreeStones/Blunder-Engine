@@ -85,7 +85,8 @@ void FileSystem::initialize(const FileSystemInitInfo& info) {
     ec.clear();
   }
 
-  m_asset_root = m_project_root / info.asset_subdir;
+  m_asset_root = m_project_root / info.assets_subdir;
+  m_resources_root = m_project_root / info.resources_subdir;
   m_shader_root = m_project_root / info.shader_subdir;
 
   m_is_initialized = true;
@@ -93,7 +94,9 @@ void FileSystem::initialize(const FileSystemInitInfo& info) {
   LOG_INFO("[FileSystem] executable dir: {}",
            m_executable_dir.generic_string());
   LOG_INFO("[FileSystem] project root  : {}", m_project_root.generic_string());
-  LOG_INFO("[FileSystem] asset root    : {}", m_asset_root.generic_string());
+  LOG_INFO("[FileSystem] assets root   : {}", m_asset_root.generic_string());
+  LOG_INFO("[FileSystem] resources root: {}",
+           m_resources_root.generic_string());
   LOG_INFO("[FileSystem] shader root   : {}", m_shader_root.generic_string());
 }
 
@@ -101,8 +104,20 @@ void FileSystem::shutdown() {
   m_is_initialized = false;
   m_project_root.clear();
   m_asset_root.clear();
+  m_resources_root.clear();
   m_shader_root.clear();
   m_executable_dir.clear();
+}
+
+eastl::vector<ContentRootInfo> FileSystem::getContentRoots() const {
+  eastl::vector<ContentRootInfo> roots;
+  roots.push_back(
+      {ContentRoot::Assets, "Assets", m_asset_root});
+  roots.push_back(
+      {ContentRoot::Resources, "Resources", m_resources_root});
+  roots.push_back(
+      {ContentRoot::EngineShaders, "Engine Shaders", m_shader_root});
+  return roots;
 }
 
 fs::path FileSystem::resolve(const fs::path& relative) const {
@@ -117,6 +132,13 @@ fs::path FileSystem::resolveAsset(const fs::path& relative) const {
     return relative;
   }
   return m_asset_root / relative;
+}
+
+fs::path FileSystem::resolveResource(const fs::path& relative) const {
+  if (relative.is_absolute()) {
+    return relative;
+  }
+  return m_resources_root / relative;
 }
 
 fs::path FileSystem::resolveShader(const fs::path& relative) const {
@@ -150,6 +172,15 @@ uint64_t FileSystem::fileSize(const fs::path& path) const {
   return static_cast<uint64_t>(size);
 }
 
+uint64_t FileSystem::lastWriteTime(const fs::path& path) const {
+  std::error_code ec;
+  const auto time = fs::last_write_time(path, ec);
+  if (ec) {
+    return 0;
+  }
+  return static_cast<uint64_t>(time.time_since_epoch().count());
+}
+
 eastl::vector<fs::path> FileSystem::listDirectory(const fs::path& path) const {
   eastl::vector<fs::path> entries;
   std::error_code ec;
@@ -166,6 +197,45 @@ eastl::vector<fs::path> FileSystem::listDirectory(const fs::path& path) const {
     LOG_WARN("[FileSystem] listDirectory({}) iteration error: {}",
              path.generic_string(), ec.message());
   }
+  return entries;
+}
+
+void FileSystem::listDirectoryRecursiveImpl(
+    const fs::path& path, const fs::path& relative_root, int32_t depth_remaining,
+    eastl::vector<DirectoryEntry>& out) const {
+  std::error_code ec;
+  if (!fs::is_directory(path, ec)) {
+    return;
+  }
+
+  for (const auto& entry : fs::directory_iterator(path, ec)) {
+    if (ec) {
+      break;
+    }
+
+    const fs::path absolute = entry.path();
+    fs::path relative = absolute.lexically_relative(relative_root);
+    relative = relative.lexically_normal();
+
+    DirectoryEntry dir_entry{};
+    dir_entry.absolute_path = absolute;
+    dir_entry.relative_path = eastl::string(relative.generic_string().c_str());
+    dir_entry.is_directory = entry.is_directory(ec);
+    out.push_back(dir_entry);
+
+    if (dir_entry.is_directory && depth_remaining != 0) {
+      const int32_t next_depth =
+          depth_remaining < 0 ? depth_remaining : depth_remaining - 1;
+      listDirectoryRecursiveImpl(absolute, relative_root, next_depth, out);
+    }
+  }
+}
+
+eastl::vector<DirectoryEntry> FileSystem::listDirectoryRecursive(
+    const fs::path& path, const fs::path& relative_root,
+    int32_t max_depth) const {
+  eastl::vector<DirectoryEntry> entries;
+  listDirectoryRecursiveImpl(path, relative_root, max_depth, entries);
   return entries;
 }
 
@@ -251,6 +321,73 @@ bool FileSystem::writeBinary(const fs::path& path, const void* data,
 bool FileSystem::writeText(const fs::path& path,
                            const eastl::string& text) const {
   return writeBinary(path, text.data(), text.size());
+}
+
+bool FileSystem::ensureParentDirectory(const fs::path& path) const {
+  if (!path.has_parent_path()) {
+    return true;
+  }
+  std::error_code ec;
+  fs::create_directories(path.parent_path(), ec);
+  if (ec) {
+    LOG_ERROR("[FileSystem] ensureParentDirectory failed: {} ({})",
+              path.parent_path().generic_string(), ec.message());
+    return false;
+  }
+  return true;
+}
+
+bool FileSystem::copyFile(const fs::path& src, const fs::path& dst,
+                          bool overwrite) const {
+  std::error_code ec;
+  if (!fs::is_regular_file(src, ec)) {
+    LOG_ERROR("[FileSystem] copyFile source is not a file: {}",
+              src.generic_string());
+    return false;
+  }
+  if (!overwrite && fs::exists(dst, ec)) {
+    LOG_WARN("[FileSystem] copyFile destination exists: {}",
+             dst.generic_string());
+    return false;
+  }
+  if (!ensureParentDirectory(dst)) {
+    return false;
+  }
+  fs::copy_file(src, dst,
+                overwrite ? fs::copy_options::overwrite_existing
+                          : fs::copy_options::none,
+                ec);
+  if (ec) {
+    LOG_ERROR("[FileSystem] copyFile failed {} -> {} ({})",
+              src.generic_string(), dst.generic_string(), ec.message());
+    return false;
+  }
+  return true;
+}
+
+bool FileSystem::movePath(const fs::path& src, const fs::path& dst) const {
+  std::error_code ec;
+  if (!fs::exists(src, ec)) {
+    LOG_ERROR("[FileSystem] movePath source missing: {}", src.generic_string());
+    return false;
+  }
+  if (!ensureParentDirectory(dst)) {
+    return false;
+  }
+  fs::rename(src, dst, ec);
+  if (!ec) {
+    return true;
+  }
+  if (!copyFile(src, dst, false)) {
+    return false;
+  }
+  fs::remove(src, ec);
+  if (ec) {
+    LOG_ERROR("[FileSystem] movePath remove after copy failed: {} ({})",
+              src.generic_string(), ec.message());
+    return false;
+  }
+  return true;
 }
 
 }  // namespace Blunder

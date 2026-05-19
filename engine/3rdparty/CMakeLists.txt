@@ -79,6 +79,22 @@ set(KTX_FEATURE_DOC OFF CACHE BOOL "" FORCE)
 set(KTX_FEATURE_VULKAN ON CACHE BOOL "" FORCE)
 add_subdirectory(ktx)
 
+# efsw - cross-platform file system watcher (static library only)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/efsw/CMakeLists.txt")
+    set(BLUNDER_BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_STATIC_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TEST_APP OFF CACHE BOOL "" FORCE)
+    set(EFSW_INSTALL OFF CACHE BOOL "" FORCE)
+    add_subdirectory(efsw)
+    set(BUILD_SHARED_LIBS ${BLUNDER_BUILD_SHARED_LIBS_SAVED})
+    unset(BLUNDER_BUILD_SHARED_LIBS_SAVED)
+else()
+    message(STATUS
+        "[3rdparty] efsw submodule not present. Run: git submodule update --init engine/3rdparty/efsw"
+    )
+endif()
+
 # RecastNavigation - navigation mesh generation and query libraries
 set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
 set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
