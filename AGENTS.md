@@ -169,15 +169,18 @@ HWND and is in charge of `Present`. Per frame:
 SDL3 pumpEvents
    └─► WindowSystem ─► layers ─► SlintSystem.processEvent (input forwarded)
 
-RenderSystem::tick(dt, viewport_w, viewport_h, slint_system)
+RenderSystem::tick(dt, viewport_w, viewport_h)
    ├─ resize OffscreenRenderTarget if Slint reports a new central rect size
-   ├─ pass 1: scene pipeline (basic.slang) → OffscreenRenderTarget
-   │            (image format R8G8B8A8_UNORM, finalLayout SHADER_READ_ONLY)
-   ├─ image barrier: SHADER_READ_ONLY → TRANSFER_SRC
-   ├─ vkCmdCopyImageToBuffer → host-visible staging buffer (VMA GPU_TO_CPU)
-   ├─ image barrier: TRANSFER_SRC → SHADER_READ_ONLY
+   ├─ assemble ForwardFrameState + opaque draw list (N mesh sources)
+   └─► ForwardRenderPath::renderFrame
+         ├─ RHI beginRenderPass (color + depth clear) on offscreen RT
+         ├─ grid (grid.slang, depth bias iterations)
+         ├─ opaque draw list [0..N) (basic.slang, per-slot descriptors)
+         ├─ RHI endRenderPass → SHADER_READ_ONLY
+         ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
+         └─ RHI transitionToShaderRead
    ├─ submit + wait fence (single-frame stall)
-   └─ map staging → memcpy → SlintSystem.setViewportImage(rgba8 pixels)
+   └─ map staging → memcpy → viewport presenter → Slint viewport Image
 
 SlintSystem::update()
    ├─ slint::platform::update_timers_and_animations()
@@ -192,8 +195,8 @@ Key integration points:
 |----------------------|----------------------------------|
 | Window / HWND        | `WindowSystem` (SDL3, no `SDL_WINDOW_VULKAN`) |
 | Vulkan device        | `VulkanContext` (headless, no surface/swapchain) |
-| 3D scene pass        | `VulkanPipeline` + `OffscreenRenderTarget` |
-| Per-frame readback   | `RenderSystem::tick`             |
+| 3D scene pass        | `ForwardRenderPath` + `OffscreenRenderTarget` (RHI pass API) |
+| Per-frame readback   | `RenderSystem::tick` (submit/fence/map after forward path) |
 | UI composite + Present | `SlintSystem` + `SkiaRenderer` |
 | 3D viewport size     | Slint `viewport-width/height` ► `RenderSystem` |
 | 3D pixels into UI    | `SlintSystem::setViewportImage`  |

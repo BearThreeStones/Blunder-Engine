@@ -1,6 +1,10 @@
 #include "runtime/function/render/render_system.h"
 
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/forward/forward_opaque_draw.h"
+#include "runtime/function/render/forward/forward_opaque_draw_source.h"
+#include "runtime/function/render/forward/forward_render_path.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_keycode.h>
@@ -14,6 +18,7 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
@@ -51,61 +56,6 @@ namespace {
 
 const uint64_t k_fence_wait_timeout_ns = 1000000000ULL;
 
-struct GridUniformData {
-  glm::mat4 view;
-  glm::mat4 projection;
-  glm::vec4 camera_position_and_proj_type;
-  glm::vec4 camera_forward_and_far_clip;
-  glm::vec4 plane_origin;
-  glm::vec4 plane_axis_u;
-  glm::vec4 plane_axis_v;
-  glm::vec4 params0;  // step, major_scale, half_extent, line_count
-  glm::vec4 params1;  // edge_fade, angle_fade, far_fade, stipple_scale
-  glm::vec4 params2;  // stipple_duty, alpha_scale, iteration, reserved
-};
-
-struct MeshUniformData {
-  glm::mat4 model;
-  glm::mat4 view;
-  glm::mat4 projection;
-  glm::vec4 camera_position{0.0f};
-  glm::vec4 light_direction{0.45f, 0.7f, 0.55f, 0.0f};
-  glm::vec4 light_color{1.0f};
-  glm::vec4 base_color_factor{1.0f};
-  glm::vec4 ambient_color{0.15f, 0.15f, 0.15f, 0.0f};
-  glm::vec4 diffuse_color{0.85f, 0.85f, 0.85f, 0.0f};
-  glm::vec4 specular_color_and_shininess{0.4f, 0.4f, 0.4f, 32.0f};
-  glm::vec4 material_flags{0.0f};
-  glm::mat4 normal_matrix{1.0f};
-};
-
-const glm::vec3 k_mesh_light_direction =
-    glm::normalize(glm::vec3(0.45f, 0.7f, 0.55f));
-
-void applyBlinnPhongEditorToMeshUniforms(
-    MeshUniformData& mesh_ubo, const MaterialAsset* material,
-    const BlinnPhongEditorSettings& editor) {
-  if (material != nullptr) {
-    mesh_ubo.base_color_factor = material->getBaseColorFactor();
-  } else {
-    mesh_ubo.base_color_factor = glm::vec4(1.0f);
-  }
-
-  const float light_dir_length = glm::length(editor.light_direction);
-  const glm::vec3 light_dir =
-      light_dir_length > 0.0001f
-          ? editor.light_direction / light_dir_length
-          : k_mesh_light_direction;
-  mesh_ubo.light_direction = glm::vec4(light_dir, 0.0f);
-  mesh_ubo.light_color = glm::vec4(editor.light_color, 0.0f);
-  mesh_ubo.ambient_color = glm::vec4(editor.ambient_color, 0.0f);
-  mesh_ubo.diffuse_color = glm::vec4(editor.diffuse_color, 0.0f);
-  mesh_ubo.specular_color_and_shininess =
-      glm::vec4(editor.specular_color, editor.shininess);
-  mesh_ubo.material_flags =
-      glm::vec4(editor.unlit ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
-}
-
 struct DemoMeshData {
   eastl::vector<Vertex> vertices;
   eastl::vector<uint32_t> indices;
@@ -113,18 +63,9 @@ struct DemoMeshData {
 
 constexpr uint32_t k_default_viewport_w = 1024;
 constexpr uint32_t k_default_viewport_h = 720;
-constexpr float k_grid_major_scale = 10.0f;
-constexpr float k_grid_half_extent = 120.0f;
-constexpr float k_grid_base_alpha = 0.22f;
-constexpr float k_grid_minor_alpha = 0.12f;
-constexpr float k_grid_edge_fade = 1.45f;
-constexpr float k_grid_angle_fade = 1.65f;
-constexpr float k_grid_far_fade = 1.0f;
-constexpr float k_grid_stipple_scale = 1.5f;
-constexpr float k_grid_stipple_duty = 0.6f;
-constexpr uint32_t k_grid_iterations = 3;
-constexpr uint32_t k_grid_lines_per_axis = 96;
 constexpr uint32_t k_smoke_texture_size = 64;
+constexpr glm::vec3 k_secondary_mesh_translation{-1.5f, 0.0f, 0.75f};
+constexpr glm::vec3 k_secondary_mesh_scale{0.55f};
 constexpr float k_demo_mesh_spin_rate = 0.85f;
 constexpr float k_demo_mesh_height = 0.75f;
 constexpr float k_demo_mesh_uniform_scale = 0.85f;
@@ -301,155 +242,13 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
 
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
 
-  m_mesh_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    m_mesh_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
-    m_mesh_uniform_buffers[i]->create(
-        vkAlloc(this), sizeof(MeshUniformData),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-  }
-
-  m_grid_uniform_buffers.resize(VulkanSync::k_max_frames_in_flight);
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    m_grid_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
-    m_grid_uniform_buffers[i]->create(
-        vkAlloc(this), sizeof(GridUniformData),
-        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-  }
-
-  VkDescriptorPoolSize mesh_pool_sizes[3]{};
-  mesh_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  mesh_pool_sizes[0].descriptorCount = VulkanSync::k_max_frames_in_flight;
-  mesh_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  mesh_pool_sizes[1].descriptorCount = VulkanSync::k_max_frames_in_flight;
-  mesh_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
-  mesh_pool_sizes[2].descriptorCount = VulkanSync::k_max_frames_in_flight;
-
-  VkDescriptorPoolCreateInfo mesh_pool_info{};
-  mesh_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  mesh_pool_info.poolSizeCount = 3;
-  mesh_pool_info.pPoolSizes = mesh_pool_sizes;
-  mesh_pool_info.maxSets = VulkanSync::k_max_frames_in_flight;
-  VkDescriptorPool mesh_pool = VK_NULL_HANDLE;
-  const VkResult mesh_pool_result =
-      vkCreateDescriptorPool(vkCtx(this)->getDevice(), &mesh_pool_info, nullptr,
-                             &mesh_pool);
-  if (mesh_pool_result != VK_SUCCESS) {
-    LOG_FATAL(
-        "[RenderSystem::initialize] mesh vkCreateDescriptorPool failed: {}",
-        static_cast<int>(mesh_pool_result));
-  }
-  m_mesh_descriptor_pool = reinterpret_cast<uintptr_t>(mesh_pool);
-
-  eastl::vector<VkDescriptorSetLayout> mesh_layouts(
-      VulkanSync::k_max_frames_in_flight,
-      m_mesh_pipeline->nativePipeline()->getDescriptorSetLayout());
-  VkDescriptorSetAllocateInfo mesh_alloc_info{};
-  mesh_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  mesh_alloc_info.descriptorPool = mesh_pool;
-  mesh_alloc_info.descriptorSetCount = VulkanSync::k_max_frames_in_flight;
-  mesh_alloc_info.pSetLayouts = mesh_layouts.data();
-
-  eastl::vector<VkDescriptorSet> mesh_sets(VulkanSync::k_max_frames_in_flight);
-  const VkResult mesh_set_result = vkAllocateDescriptorSets(
-      vkCtx(this)->getDevice(), &mesh_alloc_info, mesh_sets.data());
-  if (mesh_set_result != VK_SUCCESS) {
-    LOG_FATAL(
-        "[RenderSystem::initialize] mesh vkAllocateDescriptorSets failed: {}",
-        static_cast<int>(mesh_set_result));
-  }
-  m_mesh_descriptor_sets.resize(VulkanSync::k_max_frames_in_flight);
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    m_mesh_descriptor_sets[i] = reinterpret_cast<uintptr_t>(mesh_sets[i]);
-  }
-
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    VkDescriptorBufferInfo mesh_buffer_info{};
-    mesh_buffer_info.buffer = m_mesh_uniform_buffers[i]->getBuffer();
-    mesh_buffer_info.offset = 0;
-    mesh_buffer_info.range = sizeof(MeshUniformData);
-
-    VkWriteDescriptorSet mesh_descriptor_write{};
-    mesh_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    mesh_descriptor_write.dstSet =
-        reinterpret_cast<VkDescriptorSet>(m_mesh_descriptor_sets[i]);
-    mesh_descriptor_write.dstBinding = 0;
-    mesh_descriptor_write.dstArrayElement = 0;
-    mesh_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    mesh_descriptor_write.descriptorCount = 1;
-    mesh_descriptor_write.pBufferInfo = &mesh_buffer_info;
-    vkUpdateDescriptorSets(vkCtx(this)->getDevice(), 1, &mesh_descriptor_write,
-                           0, nullptr);
-  }
-
-  VkDescriptorPoolSize grid_pool_size{};
-  grid_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  grid_pool_size.descriptorCount = VulkanSync::k_max_frames_in_flight;
-
-  VkDescriptorPoolCreateInfo grid_pool_info{};
-  grid_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  grid_pool_info.poolSizeCount = 1;
-  grid_pool_info.pPoolSizes = &grid_pool_size;
-  grid_pool_info.maxSets = VulkanSync::k_max_frames_in_flight;
-  VkDescriptorPool grid_pool = VK_NULL_HANDLE;
-  const VkResult grid_pool_result =
-      vkCreateDescriptorPool(vkCtx(this)->getDevice(), &grid_pool_info, nullptr,
-                             &grid_pool);
-  if (grid_pool_result != VK_SUCCESS) {
-    LOG_FATAL(
-        "[RenderSystem::initialize] grid vkCreateDescriptorPool failed: {}",
-        static_cast<int>(grid_pool_result));
-  }
-  m_grid_descriptor_pool = reinterpret_cast<uintptr_t>(grid_pool);
-
-  eastl::vector<VkDescriptorSetLayout> grid_layouts(
-      VulkanSync::k_max_frames_in_flight,
-      m_grid_pipeline->nativePipeline()->getDescriptorSetLayout());
-  VkDescriptorSetAllocateInfo grid_alloc_info{};
-  grid_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  grid_alloc_info.descriptorPool = grid_pool;
-  grid_alloc_info.descriptorSetCount = VulkanSync::k_max_frames_in_flight;
-  grid_alloc_info.pSetLayouts = grid_layouts.data();
-
-  eastl::vector<VkDescriptorSet> grid_sets(VulkanSync::k_max_frames_in_flight);
-  const VkResult grid_set_result = vkAllocateDescriptorSets(
-      vkCtx(this)->getDevice(), &grid_alloc_info, grid_sets.data());
-  if (grid_set_result != VK_SUCCESS) {
-    LOG_FATAL(
-        "[RenderSystem::initialize] grid vkAllocateDescriptorSets failed: {}",
-        static_cast<int>(grid_set_result));
-  }
-  m_grid_descriptor_sets.resize(VulkanSync::k_max_frames_in_flight);
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    m_grid_descriptor_sets[i] = reinterpret_cast<uintptr_t>(grid_sets[i]);
-  }
-
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    VkDescriptorBufferInfo grid_buffer_info{};
-    grid_buffer_info.buffer = m_grid_uniform_buffers[i]->getBuffer();
-    grid_buffer_info.offset = 0;
-    grid_buffer_info.range = sizeof(GridUniformData);
-
-    VkWriteDescriptorSet grid_descriptor_write{};
-    grid_descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    grid_descriptor_write.dstSet =
-        reinterpret_cast<VkDescriptorSet>(m_grid_descriptor_sets[i]);
-    grid_descriptor_write.dstBinding = 0;
-    grid_descriptor_write.dstArrayElement = 0;
-    grid_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    grid_descriptor_write.descriptorCount = 1;
-    grid_descriptor_write.pBufferInfo = &grid_buffer_info;
-    vkUpdateDescriptorSets(vkCtx(this)->getDevice(), 1, &grid_descriptor_write, 0,
-                           nullptr);
-  }
-
   Asset::Meta smoke_meta;
   smoke_meta.virtual_path = "generated://render/smoke_checkerboard";
   Texture2DAsset smoke_asset(smoke_meta, k_smoke_texture_size,
                              k_smoke_texture_size, 4u,
                              buildSmokeCheckerboardPixels(k_smoke_texture_size,
                                                           k_smoke_texture_size));
-  VulkanTexture* mesh_texture = ensureTextureUploaded(&smoke_asset);
+  m_fallback_texture = ensureTextureUploaded(&smoke_asset);
 
   const eastl::shared_ptr<MeshAsset> imported_mesh =
       m_asset_manager != nullptr
@@ -475,17 +274,9 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
         imported_mesh->getIndexCount(),
         imported_mesh->hasMaterial() ? "yes" : "no");
 
-    m_demo_mesh_material = imported_mesh->getMaterialAsset();
-    if (m_demo_mesh_material != nullptr &&
-        m_demo_mesh_material->getBaseColorTextureAsset() != nullptr) {
-      VulkanTexture* material_texture = ensureTextureUploaded(
-          m_demo_mesh_material->getBaseColorTextureAsset().get());
-      if (material_texture != nullptr) {
-        mesh_texture = material_texture;
-      }
-    }
+    m_inspector_material = imported_mesh->getMaterialAsset();
   } else {
-    m_demo_mesh_material.reset();
+    m_inspector_material.reset();
     fallback_demo_mesh = buildDemoCubeMesh();
     mesh_vertex_bytes = fallback_demo_mesh.vertices.data();
     mesh_vertex_byte_size = static_cast<VkDeviceSize>(
@@ -495,59 +286,46 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
     LOG_INFO("[RenderSystem] using built-in fallback demo mesh");
   }
 
-  m_demo_mesh_vertex_buffer = eastl::make_unique<VulkanBuffer>();
-  m_demo_mesh_vertex_buffer->create(
-      vkAlloc(this), mesh_vertex_byte_size,
-      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-  m_demo_mesh_vertex_buffer->upload(mesh_vertex_bytes, mesh_vertex_byte_size);
+  VulkanTexture* primary_texture = m_fallback_texture;
+  if (m_inspector_material != nullptr &&
+      m_inspector_material->getBaseColorTextureAsset() != nullptr) {
+    VulkanTexture* material_texture = ensureTextureUploaded(
+        m_inspector_material->getBaseColorTextureAsset().get());
+    if (material_texture != nullptr) {
+      primary_texture = material_texture;
+    }
+  }
 
-  m_demo_mesh_index_buffer = eastl::make_unique<VulkanBuffer>();
-  m_demo_mesh_index_buffer->create(
-      vkAlloc(this),
-      static_cast<VkDeviceSize>(mesh_index_count * sizeof(uint32_t)),
-      VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-  m_demo_mesh_index_buffer->upload(
-      mesh_indices,
-      static_cast<VkDeviceSize>(mesh_index_count * sizeof(uint32_t)));
-  m_demo_mesh_index_count = static_cast<uint32_t>(mesh_index_count);
+  const glm::vec3 primary_scale(k_demo_mesh_uniform_scale);
+  createOpaqueDrawSourceFromMesh(
+      mesh_vertex_bytes, mesh_vertex_byte_size, mesh_indices, mesh_index_count,
+      m_inspector_material, primary_texture, 0u,
+      glm::vec3(0.0f, 0.0f, k_demo_mesh_height), primary_scale, true);
+
+  DemoMeshData secondary_mesh = buildDemoCubeMesh();
+  createOpaqueDrawSourceFromMesh(
+      secondary_mesh.vertices.data(),
+      static_cast<VkDeviceSize>(secondary_mesh.vertices.size() * sizeof(Vertex)),
+      secondary_mesh.indices.data(), secondary_mesh.indices.size(), nullptr,
+      m_fallback_texture, 1u, k_secondary_mesh_translation,
+      k_secondary_mesh_scale, false);
 
   if (m_viewport_layout_source != nullptr) {
     SlintSystem* slint_system =
         static_cast<SlintSystem*>(m_viewport_layout_source);
-    slint_system->setBlinnPhongMaterialSource(m_demo_mesh_material.get());
+    slint_system->setBlinnPhongMaterialSource(m_inspector_material.get());
     slint_system->syncBlinnPhongFromMaterialSource();
   }
 
-  if (mesh_texture != nullptr) {
-    for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-      VkDescriptorImageInfo sampled_image_info{};
-      sampled_image_info.imageView = mesh_texture->getImageView();
-      sampled_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-      VkDescriptorImageInfo sampler_info{};
-      sampler_info.sampler = mesh_texture->getSampler();
-
-      VkWriteDescriptorSet texture_writes[2]{};
-      texture_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      texture_writes[0].dstSet =
-          reinterpret_cast<VkDescriptorSet>(m_mesh_descriptor_sets[i]);
-      texture_writes[0].dstBinding = 1;
-      texture_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-      texture_writes[0].descriptorCount = 1;
-      texture_writes[0].pImageInfo = &sampled_image_info;
-
-      texture_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-      texture_writes[1].dstSet =
-          reinterpret_cast<VkDescriptorSet>(m_mesh_descriptor_sets[i]);
-      texture_writes[1].dstBinding = 2;
-      texture_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-      texture_writes[1].descriptorCount = 1;
-      texture_writes[1].pImageInfo = &sampler_info;
-
-      vkUpdateDescriptorSets(vkCtx(this)->getDevice(), 2, texture_writes, 0,
-                             nullptr);
-    }
-  }
+  m_forward_path = eastl::make_unique<ForwardRenderPath>();
+  ForwardRenderPathInit forward_init{};
+  forward_init.vk_context = vkCtx(this);
+  forward_init.vk_allocator = vkAlloc(this);
+  forward_init.offscreen = m_offscreen.get();
+  forward_init.grid_pipeline = m_grid_pipeline.get();
+  forward_init.opaque_pipeline = m_mesh_pipeline.get();
+  forward_init.fallback_texture = m_fallback_texture;
+  m_forward_path->initialize(forward_init);
 
   recreateReadbackStaging(k_default_viewport_w, k_default_viewport_h);
 
@@ -555,6 +333,43 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   // RenderDoc, this is a silent no-op; otherwise F11 will capture one frame.
   m_renderdoc_capture = eastl::make_unique<RenderDocCapture>();
   m_renderdoc_capture->initialize();
+}
+
+bool RenderSystem::createOpaqueDrawSourceFromMesh(
+    const void* vertex_bytes, VkDeviceSize vertex_byte_size,
+    const uint32_t* indices, size_t index_count,
+    eastl::shared_ptr<MaterialAsset> material, VulkanTexture* base_color_texture,
+    uint32_t slot_index, const glm::vec3& translation, const glm::vec3& scale,
+    bool animate_spin) {
+  if (vertex_bytes == nullptr || indices == nullptr || index_count == 0 ||
+      slot_index >= ForwardRenderPath::k_max_opaque_draws) {
+    return false;
+  }
+
+  ForwardOpaqueDrawSource source;
+  source.vertex_buffer = eastl::make_unique<VulkanBuffer>();
+  source.vertex_buffer->create(vkAlloc(this), vertex_byte_size,
+                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                               VMA_MEMORY_USAGE_CPU_TO_GPU);
+  source.vertex_buffer->upload(vertex_bytes, vertex_byte_size);
+
+  source.index_buffer = eastl::make_unique<VulkanBuffer>();
+  const VkDeviceSize index_byte_size =
+      static_cast<VkDeviceSize>(index_count * sizeof(uint32_t));
+  source.index_buffer->create(vkAlloc(this), index_byte_size,
+                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                              VMA_MEMORY_USAGE_CPU_TO_GPU);
+  source.index_buffer->upload(indices, index_byte_size);
+
+  source.index_count = static_cast<uint32_t>(index_count);
+  source.slot_index = slot_index;
+  source.material = eastl::move(material);
+  source.base_color_texture = base_color_texture;
+  source.translation = translation;
+  source.scale = scale;
+  source.animate_spin = animate_spin;
+  m_opaque_draw_sources.push_back(eastl::move(source));
+  return true;
 }
 
 void RenderSystem::recreateReadbackStaging(uint32_t width, uint32_t height) {
@@ -667,15 +482,24 @@ void RenderSystem::shutdown() {
   }
   m_uploaded_textures.clear();
 
-  if (m_demo_mesh_index_buffer) {
-    m_demo_mesh_index_buffer->destroy();
-    m_demo_mesh_index_buffer.reset();
+  if (m_forward_path) {
+    m_forward_path->shutdown();
+    m_forward_path.reset();
   }
 
-  if (m_demo_mesh_vertex_buffer) {
-    m_demo_mesh_vertex_buffer->destroy();
-    m_demo_mesh_vertex_buffer.reset();
+  for (ForwardOpaqueDrawSource& source : m_opaque_draw_sources) {
+    if (source.index_buffer) {
+      source.index_buffer->destroy();
+      source.index_buffer.reset();
+    }
+    if (source.vertex_buffer) {
+      source.vertex_buffer->destroy();
+      source.vertex_buffer.reset();
+    }
   }
+  m_opaque_draw_sources.clear();
+  m_inspector_material.reset();
+  m_fallback_texture = nullptr;
 
   if (m_offscreen) {
     if (auto* vk_target =
@@ -683,42 +507,6 @@ void RenderSystem::shutdown() {
       vk_target->shutdown();
     }
     m_offscreen.reset();
-  }
-
-  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer :
-       m_mesh_uniform_buffers) {
-    if (uniform_buffer) {
-      uniform_buffer->destroy();
-      uniform_buffer.reset();
-    }
-  }
-  m_mesh_uniform_buffers.clear();
-
-  for (eastl::unique_ptr<VulkanBuffer>& uniform_buffer :
-       m_grid_uniform_buffers) {
-    if (uniform_buffer) {
-      uniform_buffer->destroy();
-      uniform_buffer.reset();
-    }
-  }
-  m_grid_uniform_buffers.clear();
-
-  m_mesh_descriptor_sets.clear();
-
-  if (m_mesh_descriptor_pool != 0) {
-    vkDestroyDescriptorPool(
-        vkCtx(this)->getDevice(),
-        reinterpret_cast<VkDescriptorPool>(m_mesh_descriptor_pool), nullptr);
-    m_mesh_descriptor_pool = 0;
-  }
-
-  m_grid_descriptor_sets.clear();
-
-  if (m_grid_descriptor_pool != 0) {
-    vkDestroyDescriptorPool(
-        vkCtx(this)->getDevice(),
-        reinterpret_cast<VkDescriptorPool>(m_grid_descriptor_pool), nullptr);
-    m_grid_descriptor_pool = 0;
   }
 
   if (m_grid_pipeline) {
@@ -738,8 +526,7 @@ void RenderSystem::shutdown() {
 
   m_window_system = nullptr;
   m_asset_manager = nullptr;
-  m_demo_mesh_index_count = 0;
-  m_demo_mesh_rotation_radians = 0.0f;
+  m_primary_mesh_rotation_radians = 0.0f;
   m_current_frame = 0;
 }
 
@@ -835,12 +622,65 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
   if (keyboard_state) {
     if (keyboard_state[SDL_SCANCODE_1]) {
-      m_grid_plane = GridPlane::xy;
+      m_grid_plane = ForwardGridPlane::xy;
     } else if (keyboard_state[SDL_SCANCODE_2]) {
-      m_grid_plane = GridPlane::xz;
+      m_grid_plane = ForwardGridPlane::xz;
     } else if (keyboard_state[SDL_SCANCODE_3]) {
-      m_grid_plane = GridPlane::yz;
+      m_grid_plane = ForwardGridPlane::yz;
     }
+  }
+
+  m_primary_mesh_rotation_radians += delta_time * k_demo_mesh_spin_rate;
+  if (m_primary_mesh_rotation_radians > 6.2831853f) {
+    m_primary_mesh_rotation_radians -= 6.2831853f;
+  }
+
+  ForwardFrameState frame_state{};
+  frame_state.view = view;
+  frame_state.projection = projection;
+  frame_state.camera_position = camera_position;
+  frame_state.camera_forward = camera_forward;
+  frame_state.camera_distance = camera_distance;
+  frame_state.near_clip = near_clip;
+  frame_state.far_clip = far_clip;
+  frame_state.vertical_fov = vertical_fov;
+  frame_state.ortho_size = ortho_size;
+  frame_state.projection_mode = projection_mode;
+  frame_state.grid_plane = m_grid_plane;
+  if (m_viewport_layout_source != nullptr) {
+    frame_state.shading =
+        static_cast<SlintSystem*>(m_viewport_layout_source)
+            ->getBlinnPhongEditorSettings();
+  }
+
+  eastl::vector<ForwardOpaqueDraw> opaque_draws;
+  opaque_draws.reserve(m_opaque_draw_sources.size());
+  for (const ForwardOpaqueDrawSource& source : m_opaque_draw_sources) {
+    if (!source.vertex_buffer || !source.index_buffer ||
+        source.index_count == 0) {
+      continue;
+    }
+
+    float rotation = source.rotation_z;
+    if (source.animate_spin) {
+      rotation = m_primary_mesh_rotation_radians;
+    }
+
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), source.translation);
+    model = glm::rotate(model, rotation, glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::scale(model, source.scale);
+
+    ForwardOpaqueDraw draw{};
+    draw.slot_index = source.slot_index;
+    draw.vertex_buffer = source.vertex_buffer.get();
+    draw.index_buffer = source.index_buffer.get();
+    draw.index_count = source.index_count;
+    draw.model = model;
+    draw.normal_matrix =
+        glm::mat4(glm::transpose(glm::inverse(glm::mat3(model))));
+    draw.material = source.material.get();
+    draw.base_color_texture = source.base_color_texture;
+    opaque_draws.push_back(draw);
   }
 
   VkDevice device = vkCtx(this)->getDevice();
@@ -857,191 +697,29 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   vkBeginCommandBuffer(command_buffer, &begin_info);
 
-  m_demo_mesh_rotation_radians += delta_time * k_demo_mesh_spin_rate;
-  if (m_demo_mesh_rotation_radians > 6.2831853f) {
-    m_demo_mesh_rotation_radians -= 6.2831853f;
+  if (m_forward_path) {
+    m_forward_path->renderFrame(command_buffer, frame_state, opaque_draws.data(),
+                                static_cast<uint32_t>(opaque_draws.size()),
+                                m_current_frame);
   }
 
-  // Pass 1: 编辑器场景 -> 离屏渲染目标
-  {
-    VkClearValue clear_values[2]{};
-    clear_values[0].color = {{0.1f, 0.1f, 0.1f, 1.0f}};
-    clear_values[1].depthStencil = {1.0f, 0};
-
-    VkRenderPassBeginInfo rp_info{};
-    rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rp_info.renderPass = vkOffscreenRt(this)->getRenderPass();
-    rp_info.framebuffer = vkOffscreenRt(this)->getFramebuffer();
-    rp_info.renderArea.offset = {0, 0};
-    rp_info.renderArea.extent = offscreen_extent;
-    rp_info.clearValueCount = 2;
-    rp_info.pClearValues = clear_values;
-
-    vkCmdBeginRenderPass(command_buffer, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
-
-    VkViewport viewport{};
-    viewport.width = static_cast<float>(offscreen_extent.width);
-    viewport.height = static_cast<float>(offscreen_extent.height);
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.extent = offscreen_extent;
-    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-    GridUniformData grid_ubo{};
-    grid_ubo.view = view;
-    grid_ubo.projection = projection;
-    grid_ubo.camera_position_and_proj_type = glm::vec4(
-        camera_position,
-        projection_mode == EditorCamera::ProjectionMode::orthographic ? 1.0f
-                                                                      : 0.0f);
-    grid_ubo.camera_forward_and_far_clip = glm::vec4(camera_forward, far_clip);
-    switch (m_grid_plane) {
-      case GridPlane::xy:
-        grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-        grid_ubo.plane_axis_v = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
-        grid_ubo.plane_origin = glm::vec4(0.0f, 0.0f, camera_position.z, 1.0f);
-        break;
-      case GridPlane::yz:
-        grid_ubo.plane_axis_u = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
-        grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-        grid_ubo.plane_origin = glm::vec4(camera_position.x, 0.0f, 0.0f, 1.0f);
-        break;
-      case GridPlane::xz:
-      default:
-        grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-        grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-        grid_ubo.plane_origin = glm::vec4(0.0f, camera_position.y, 0.0f, 1.0f);
-        break;
-    }
-
-    const float base_metric =
-        projection_mode == EditorCamera::ProjectionMode::orthographic
-            ? ortho_size
-            : 2.0f * std::tan(vertical_fov * 0.5f) *
-                  std::max(camera_distance, near_clip);
-    const float step_power =
-        std::floor(std::log10(std::max(base_metric * 0.1f, 0.0001f)));
-    const float base_step = std::pow(10.0f, step_power);
-    const float snapped_u =
-        std::floor(glm::dot(glm::vec3(grid_ubo.plane_origin),
-                            glm::vec3(grid_ubo.plane_axis_u)) /
-                   base_step) *
-        base_step;
-    const float snapped_v =
-        std::floor(glm::dot(glm::vec3(grid_ubo.plane_origin),
-                            glm::vec3(grid_ubo.plane_axis_v)) /
-                   base_step) *
-        base_step;
-    grid_ubo.plane_origin =
-        snapped_u * grid_ubo.plane_axis_u + snapped_v * grid_ubo.plane_axis_v;
-    grid_ubo.plane_origin.w = 1.0f;
-
-    grid_ubo.params1 = glm::vec4(k_grid_edge_fade, k_grid_angle_fade,
-                                 k_grid_far_fade, k_grid_stipple_scale);
-    const uint32_t vertex_count = k_grid_lines_per_axis * 4u;
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      m_grid_pipeline->nativePipeline()->getGraphicsPipeline());
-    const VkDescriptorSet grid_descriptor_set =
-        reinterpret_cast<VkDescriptorSet>(
-            m_grid_descriptor_sets[m_current_frame]);
-    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                           m_grid_pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
-                           &grid_descriptor_set, 0, nullptr);
-    for (uint32_t iteration = 0; iteration < k_grid_iterations; ++iteration) {
-      const float scale =
-          std::pow(k_grid_major_scale, static_cast<float>(iteration));
-      const float step = base_step * scale;
-      const float alpha_scale =
-          iteration == 0 ? k_grid_base_alpha : k_grid_minor_alpha / scale;
-      grid_ubo.params0 =
-          glm::vec4(step, k_grid_major_scale, k_grid_half_extent * scale,
-                    static_cast<float>(k_grid_lines_per_axis));
-      grid_ubo.params2 = glm::vec4(k_grid_stipple_duty, alpha_scale,
-                                   static_cast<float>(iteration), 0.0f);
-      m_grid_uniform_buffers[m_current_frame]->upload(&grid_ubo,
-                                                      sizeof(grid_ubo));
-      const float bias_scale = 1.0f + static_cast<float>(iteration) * 0.75f;
-      vkCmdSetDepthBias(command_buffer, -1.2f * bias_scale, 0.0f,
-                        -1.2f * bias_scale);
-      vkCmdDraw(command_buffer, vertex_count, 1, 0, 0);
-    }
-
-    if (m_mesh_pipeline && m_demo_mesh_vertex_buffer && m_demo_mesh_index_buffer &&
-        m_demo_mesh_index_count > 0 &&
-        !m_mesh_uniform_buffers.empty() &&
-        m_current_frame < m_mesh_descriptor_sets.size()) {
-      MeshUniformData mesh_ubo{};
-      glm::mat4 model = glm::translate(
-          glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, k_demo_mesh_height));
-      model = glm::rotate(model, m_demo_mesh_rotation_radians,
-                          glm::vec3(0.0f, 0.0f, 1.0f));
-      model = glm::scale(model,
-                         glm::vec3(k_demo_mesh_uniform_scale,
-                                   k_demo_mesh_uniform_scale,
-                                   k_demo_mesh_uniform_scale));
-      mesh_ubo.model = model;
-      mesh_ubo.normal_matrix =
-          glm::mat4(glm::transpose(glm::inverse(glm::mat3(model))));
-      mesh_ubo.view = view;
-      mesh_ubo.projection = projection;
-      mesh_ubo.camera_position = glm::vec4(camera_position, 1.0f);
-      BlinnPhongEditorSettings editor_settings;
-      if (m_viewport_layout_source != nullptr) {
-        editor_settings =
-            static_cast<SlintSystem*>(m_viewport_layout_source)
-                ->getBlinnPhongEditorSettings();
-      }
-      applyBlinnPhongEditorToMeshUniforms(mesh_ubo, m_demo_mesh_material.get(),
-                                           editor_settings);
-      m_mesh_uniform_buffers[m_current_frame]->upload(&mesh_ubo,
-                                                      sizeof(mesh_ubo));
-
-      VkBuffer vertex_buffers[] = {m_demo_mesh_vertex_buffer->getBuffer()};
-      VkDeviceSize vertex_offsets[] = {0};
-      vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        m_mesh_pipeline->nativePipeline()->getGraphicsPipeline());
-      const VkDescriptorSet mesh_descriptor_set =
-          reinterpret_cast<VkDescriptorSet>(
-              m_mesh_descriptor_sets[m_current_frame]);
-      vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                             m_mesh_pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
-                             &mesh_descriptor_set, 0, nullptr);
-      vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers,
-                             vertex_offsets);
-      vkCmdBindIndexBuffer(command_buffer,
-                           m_demo_mesh_index_buffer->getBuffer(), 0,
-                           VK_INDEX_TYPE_UINT32);
-      vkCmdDrawIndexed(command_buffer, m_demo_mesh_index_count, 1, 0, 0, 0);
-    }
-
-    vkCmdEndRenderPass(command_buffer);
-    m_offscreen->markPostRenderPassShaderRead();
-  }
-
-  // 回读：SHADER_READ_ONLY -> TRANSFER_SRC -> copy -> SHADER_READ
-  vkOffscreenRt(this)->cmdBarrierToTransferSrc(command_buffer);
+  vulkan_backend::VulkanCommandList command_list;
+  command_list.bind(vkCtx(this), command_buffer);
+  m_offscreen->transitionToCopySource(command_list);
 
   VkBufferImageCopy copy_region{};
-  copy_region.bufferOffset = 0;
-  copy_region.bufferRowLength = 0;
-  copy_region.bufferImageHeight = 0;
   copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   copy_region.imageSubresource.mipLevel = 0;
   copy_region.imageSubresource.baseArrayLayer = 0;
   copy_region.imageSubresource.layerCount = 1;
-  copy_region.imageOffset = {0, 0, 0};
-  copy_region.imageExtent.width = offscreen_extent.width;
-  copy_region.imageExtent.height = offscreen_extent.height;
-  copy_region.imageExtent.depth = 1;
+  copy_region.imageExtent = {offscreen_extent.width, offscreen_extent.height, 1};
 
   vkCmdCopyImageToBuffer(command_buffer, vkOffscreenRt(this)->getImage(),
                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                          m_readback_staging[m_current_frame]->getBuffer(), 1,
                          &copy_region);
 
-  vkOffscreenRt(this)->cmdBarrierToShaderRead(command_buffer);
+  m_offscreen->transitionToShaderRead(command_list);
 
   vkEndCommandBuffer(command_buffer);
 

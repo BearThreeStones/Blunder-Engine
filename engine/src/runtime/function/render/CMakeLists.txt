@@ -2,6 +2,13 @@
 set(RENDER_SOURCES
     "function/render/editor_camera.cpp"
     "function/render/editor_camera.h"
+    "function/render/forward/forward_frame_state.h"
+    "function/render/forward/forward_opaque_draw.h"
+    "function/render/forward/forward_opaque_draw_source.h"
+    "function/render/forward/forward_render_path.cpp"
+    "function/render/forward/forward_render_path.h"
+    "function/render/forward/forward_shading.cpp"
+    "function/render/forward/forward_shading.h"
     "function/render/offscreen_render_target.cpp"
     "function/render/offscreen_render_target.h"
     "function/render/render_system.cpp"
