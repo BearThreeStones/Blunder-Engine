@@ -32,8 +32,13 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
   info.depth_bias_constant_factor = desc.depth_bias_constant_factor;
   info.depth_bias_slope_factor = desc.depth_bias_slope_factor;
   info.enable_texture_sampling = desc.enable_texture_sampling;
+  info.enable_shadow_sampling = desc.enable_shadow_sampling;
+  info.depth_only_subpass = desc.depth_only_subpass;
   info.descriptor_stage_flags =
       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  info.depth_compare_op = desc.depth_compare_op == rhi::CompareOp::Less
+                              ? VK_COMPARE_OP_LESS
+                              : VK_COMPARE_OP_LESS_OR_EQUAL;
   return info;
 }
 
@@ -52,9 +57,16 @@ void VulkanGraphicsPipeline::initialize(
     const rhi::GraphicsPipelineDesc& desc) {
   auto& vk_target = static_cast<VulkanOffscreenTarget&>(render_target);
   ASSERT(m_context && m_compiler && vk_target.nativeTarget());
+  initializeWithRenderPass(vk_target.nativeTarget()->getRenderPass(), desc);
+}
+
+void VulkanGraphicsPipeline::initializeWithRenderPass(
+    VkRenderPass render_pass, const rhi::GraphicsPipelineDesc& desc) {
+  ASSERT(m_context && m_compiler);
+  ASSERT(render_pass != VK_NULL_HANDLE);
 
   m_pipeline = eastl::make_shared<VulkanPipeline>();
-  m_pipeline->initialize(m_context, m_compiler, vk_target.nativeTarget()->getRenderPass(),
+  m_pipeline->initialize(m_context, m_compiler, render_pass,
                          toVulkanPipelineCreateInfo(desc));
 
   for (uint32_t i = 0; i < k_max_command_lists; ++i) {

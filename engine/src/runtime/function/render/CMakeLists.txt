@@ -11,6 +11,8 @@ set(RENDER_SOURCES
     "function/render/forward/forward_shading.h"
     "function/render/offscreen_render_target.cpp"
     "function/render/offscreen_render_target.h"
+    "function/render/shadow/shadow_map_target.cpp"
+    "function/render/shadow/shadow_map_target.h"
     "function/render/render_system.cpp"
     "function/render/render_system.h"
     "function/render/slang/slang_compiler.cpp"

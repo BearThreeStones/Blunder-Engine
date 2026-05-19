@@ -12,6 +12,7 @@ namespace Blunder {
 class VulkanAllocator;
 class VulkanBuffer;
 class VulkanContext;
+class ShadowMapTarget;
 class VulkanTexture;
 
 namespace rhi {
@@ -31,6 +32,8 @@ struct ForwardRenderPathInit {
   rhi::IOffscreenRenderTarget* offscreen{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* grid_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* opaque_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* shadow_pipeline{nullptr};
+  ShadowMapTarget* shadow_map{nullptr};
   VulkanTexture* fallback_texture{nullptr};
 };
 
@@ -60,20 +63,29 @@ class ForwardRenderPath final {
   void drawOpaqueList(VkCommandBuffer cmd, const ForwardFrameState& frame_state,
                       const ForwardOpaqueDraw* opaque_draws,
                       uint32_t opaque_draw_count, uint32_t frame_index);
+  void drawShadowOpaqueList(VkCommandBuffer cmd,
+                            const ForwardFrameState& frame_state,
+                            const ForwardOpaqueDraw* opaque_draws,
+                            uint32_t opaque_draw_count, uint32_t frame_index);
 
   VulkanContext* m_vk_context{nullptr};
   VulkanAllocator* m_vk_allocator{nullptr};
   rhi::IOffscreenRenderTarget* m_offscreen{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_grid_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_opaque_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* m_shadow_pipeline{nullptr};
+  ShadowMapTarget* m_shadow_map{nullptr};
   VulkanTexture* m_fallback_texture{nullptr};
 
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_grid_uniform_buffers;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_opaque_uniform_buffers;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_shadow_uniform_buffers;
   uintptr_t m_grid_descriptor_pool{0};
   eastl::vector<uintptr_t> m_grid_descriptor_sets;
   uintptr_t m_opaque_descriptor_pool{0};
   eastl::vector<uintptr_t> m_opaque_descriptor_sets;
+  uintptr_t m_shadow_descriptor_pool{0};
+  eastl::vector<uintptr_t> m_shadow_descriptor_sets;
 };
 
 }  // namespace Blunder

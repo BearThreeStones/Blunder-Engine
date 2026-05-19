@@ -31,6 +31,11 @@ struct ForwardFrameState {
       EditorCamera::ProjectionMode::perspective};
   ForwardGridPlane grid_plane{ForwardGridPlane::xy};
   BlinnPhongEditorSettings shading;
+  glm::mat4 light_view{1.0f};
+  glm::mat4 light_projection{1.0f};
+  glm::mat4 light_view_projection{1.0f};
+  float shadow_bias{0.002f};
+  bool shadows_enabled{true};
 };
 
 }  // namespace Blunder

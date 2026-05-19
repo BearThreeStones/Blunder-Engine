@@ -12,6 +12,8 @@ struct GlobalUniformData
     float4 specularColorAndShininess;
     float4 materialFlags;
     float4x4 normalMatrix;
+    float4x4 lightViewProjection;
+    float4 shadowParams;
 };
 
 [[vk::binding(0, 0)]]
@@ -22,6 +24,12 @@ Texture2D<float4> baseColorTexture;
 
 [[vk::binding(2, 0)]]
 SamplerState baseColorSampler;
+
+[[vk::binding(3, 0)]]
+Texture2D<float> shadowMap;
+
+[[vk::binding(3, 0)]]
+SamplerComparisonState shadowSampler;
 
 struct VertexInput
 {
@@ -59,6 +67,35 @@ VertexOutput vertexMain(VertexInput input)
     return output;
 }
 
+float sampleShadowPCF(float3 worldPos)
+{
+    if (ubo.shadowParams.y < 0.5)
+    {
+        return 1.0;
+    }
+
+    float4 lightClip = mul(ubo.lightViewProjection, float4(worldPos, 1.0));
+    float3 ndc = lightClip.xyz / lightClip.w;
+    float2 uv = ndc.xy * 0.5 + 0.5;
+    uv.y = 1.0 - uv.y;
+    float refDepth = ndc.z - ubo.shadowParams.x;
+
+    float texel = ubo.shadowParams.z;
+    float2 offsets[4] = {
+        float2(-texel, -texel),
+        float2(texel, -texel),
+        float2(-texel, texel),
+        float2(texel, texel),
+    };
+
+    float shadow = 0.0;
+    for (int i = 0; i < 4; ++i)
+    {
+        shadow += shadowMap.SampleCmp(shadowSampler, uv + offsets[i], refDepth);
+    }
+    return shadow * 0.25;
+}
+
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
@@ -78,12 +115,14 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float ndotl = saturate(dot(normal, lightDir));
     float ndoth = saturate(dot(normal, halfDir));
 
+    float shadow = sampleShadowPCF(input.worldPos);
+
     float3 ambient = ubo.ambientColor.rgb * albedo;
     float3 diffuse =
-        ubo.diffuseColor.rgb * albedo * ndotl * ubo.lightColor.rgb;
+        ubo.diffuseColor.rgb * albedo * ndotl * ubo.lightColor.rgb * shadow;
     float shininess = ubo.specularColorAndShininess.w;
     float3 specular = ubo.specularColorAndShininess.rgb * ubo.lightColor.rgb *
-                      pow(ndoth, shininess);
+                      pow(ndoth, shininess) * shadow;
 
     float3 litColor = ambient + diffuse + specular;
     return float4(litColor, ubo.baseColorFactor.a);

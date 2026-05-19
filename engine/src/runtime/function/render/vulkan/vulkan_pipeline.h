@@ -24,6 +24,8 @@ struct VulkanPipelineCreateInfo {
   float depth_bias_constant_factor{0.0f};
   float depth_bias_slope_factor{0.0f};
   bool enable_texture_sampling{false};
+  bool enable_shadow_sampling{false};
+  bool depth_only_subpass{false};
   VkShaderStageFlags descriptor_stage_flags{VK_SHADER_STAGE_VERTEX_BIT};
 };
 

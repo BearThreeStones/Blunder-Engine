@@ -5,6 +5,8 @@
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/forward/forward_opaque_draw_source.h"
 #include "runtime/function/render/forward/forward_render_path.h"
+#include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/shadow/shadow_map_target.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_keycode.h>
@@ -69,6 +71,9 @@ constexpr glm::vec3 k_secondary_mesh_scale{0.55f};
 constexpr float k_demo_mesh_spin_rate = 0.85f;
 constexpr float k_demo_mesh_height = 0.75f;
 constexpr float k_demo_mesh_uniform_scale = 0.85f;
+constexpr float k_shadow_ortho_half_extent = 14.0f;
+constexpr float k_shadow_near_plane = 0.1f;
+constexpr float k_shadow_far_plane = 60.0f;
 constexpr const char* k_demo_mesh_asset_path =
   "assets/Meshes/textured_cube.mesh.asset";
 
@@ -221,9 +226,26 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   mesh_pipeline_desc.enable_depth_test = true;
   mesh_pipeline_desc.enable_depth_write = true;
   mesh_pipeline_desc.enable_texture_sampling = true;
+  mesh_pipeline_desc.enable_shadow_sampling = true;
   m_mesh_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_mesh_pipeline->initialize(*m_offscreen, mesh_pipeline_desc);
+
+  m_shadow_map = eastl::make_unique<ShadowMapTarget>();
+  m_shadow_map->initialize(vkCtx(this), vkAlloc(this));
+
+  rhi::GraphicsPipelineDesc shadow_pipeline_desc{};
+  shadow_pipeline_desc.shader_path = "engine/shaders/shadow_depth.slang";
+  shadow_pipeline_desc.enable_vertex_input = true;
+  shadow_pipeline_desc.cull_mode = rhi::CullMode::Back;
+  shadow_pipeline_desc.enable_depth_test = true;
+  shadow_pipeline_desc.enable_depth_write = true;
+  shadow_pipeline_desc.depth_compare_op = rhi::CompareOp::Less;
+  shadow_pipeline_desc.depth_only_subpass = true;
+  m_shadow_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+  m_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
+  m_shadow_pipeline->initializeWithRenderPass(m_shadow_map->getRenderPass(),
+                                              shadow_pipeline_desc);
 
   rhi::GraphicsPipelineDesc grid_pipeline_desc{};
   grid_pipeline_desc.shader_path = "engine/shaders/grid.slang";
@@ -324,6 +346,8 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   forward_init.offscreen = m_offscreen.get();
   forward_init.grid_pipeline = m_grid_pipeline.get();
   forward_init.opaque_pipeline = m_mesh_pipeline.get();
+  forward_init.shadow_pipeline = m_shadow_pipeline.get();
+  forward_init.shadow_map = m_shadow_map.get();
   forward_init.fallback_texture = m_fallback_texture;
   m_forward_path->initialize(forward_init);
 
@@ -519,6 +543,16 @@ void RenderSystem::shutdown() {
     m_mesh_pipeline.reset();
   }
 
+  if (m_shadow_pipeline) {
+    m_shadow_pipeline->shutdown();
+    m_shadow_pipeline.reset();
+  }
+
+  if (m_shadow_map) {
+    m_shadow_map->shutdown();
+    m_shadow_map.reset();
+  }
+
   m_editor_camera.reset();
 
   m_backend.reset();
@@ -652,6 +686,12 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         static_cast<SlintSystem*>(m_viewport_layout_source)
             ->getBlinnPhongEditorSettings();
   }
+
+  const glm::vec3 shadow_focus(0.0f);
+  computeDirectionalLightMatrices(
+      frame_state.shading.light_direction, shadow_focus, k_shadow_ortho_half_extent,
+      k_shadow_near_plane, k_shadow_far_plane, frame_state.light_view,
+      frame_state.light_projection, frame_state.light_view_projection);
 
   eastl::vector<ForwardOpaqueDraw> opaque_draws;
   opaque_draws.reserve(m_opaque_draw_sources.size());

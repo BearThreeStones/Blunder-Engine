@@ -156,15 +156,24 @@ void VulkanPipeline::createGraphicsPipeline() {
   color_blending.sType =
       VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
   color_blending.logicOpEnable = VK_FALSE;
-  color_blending.attachmentCount = 1;
-  color_blending.pAttachments = &color_blend_attachment;
+  if (m_create_info.depth_only_subpass) {
+    color_blending.attachmentCount = 0;
+    color_blending.pAttachments = nullptr;
+  } else {
+    color_blending.attachmentCount = 1;
+    color_blending.pAttachments = &color_blend_attachment;
+  }
 
-  VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                     VK_DYNAMIC_STATE_SCISSOR,
-                                     VK_DYNAMIC_STATE_DEPTH_BIAS};
+  VkDynamicState dynamic_states[3] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                      VK_DYNAMIC_STATE_SCISSOR,
+                                      VK_DYNAMIC_STATE_DEPTH_BIAS};
+  uint32_t dynamic_state_count = 2;
+  if (m_create_info.enable_depth_bias) {
+    dynamic_state_count = 3;
+  }
   VkPipelineDynamicStateCreateInfo dynamic_state{};
   dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-  dynamic_state.dynamicStateCount = 3;
+  dynamic_state.dynamicStateCount = dynamic_state_count;
   dynamic_state.pDynamicStates = dynamic_states;
 
   VkPipelineDepthStencilStateCreateInfo depth_stencil{};
@@ -202,7 +211,8 @@ void VulkanPipeline::createGraphicsPipeline() {
   pipeline_info.pViewportState = &viewport_state;
   pipeline_info.pRasterizationState = &rasterizer;
   pipeline_info.pMultisampleState = &multisampling;
-  pipeline_info.pColorBlendState = &color_blending;
+  pipeline_info.pColorBlendState =
+      m_create_info.depth_only_subpass ? nullptr : &color_blending;
   pipeline_info.pDynamicState = &dynamic_state;
   pipeline_info.pDepthStencilState =
       m_create_info.enable_depth_test ? &depth_stencil : nullptr;
@@ -229,7 +239,14 @@ void VulkanPipeline::createDescriptorSetLayout() {
   ASSERT(m_context);
 
   eastl::vector<VkDescriptorSetLayoutBinding> bindings;
-  bindings.reserve(m_create_info.enable_texture_sampling ? 3 : 1);
+  uint32_t binding_reserve = 1;
+  if (m_create_info.enable_texture_sampling) {
+    binding_reserve += 2;
+  }
+  if (m_create_info.enable_shadow_sampling) {
+    binding_reserve += 1;
+  }
+  bindings.reserve(binding_reserve);
 
   VkDescriptorSetLayoutBinding ubo_layout_binding{};
   ubo_layout_binding.binding = 0;
@@ -255,6 +272,16 @@ void VulkanPipeline::createDescriptorSetLayout() {
     sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     sampler_binding.pImmutableSamplers = nullptr;
     bindings.push_back(sampler_binding);
+  }
+
+  if (m_create_info.enable_shadow_sampling) {
+    VkDescriptorSetLayoutBinding shadow_binding{};
+    shadow_binding.binding = 3;
+    shadow_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    shadow_binding.descriptorCount = 1;
+    shadow_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shadow_binding.pImmutableSamplers = nullptr;
+    bindings.push_back(shadow_binding);
   }
 
   VkDescriptorSetLayoutCreateInfo layout_info{};

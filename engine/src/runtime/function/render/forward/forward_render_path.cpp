@@ -14,6 +14,7 @@
 #include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/rhi_types.h"
+#include "runtime/function/render/shadow/shadow_map_target.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
@@ -26,6 +27,12 @@
 namespace Blunder {
 
 namespace {
+
+struct ShadowUniformData {
+  glm::mat4 model;
+  glm::mat4 light_view;
+  glm::mat4 light_projection;
+};
 
 struct GridUniformData {
   glm::mat4 view;
@@ -87,6 +94,27 @@ void writeOpaqueTextureBindings(VkDevice device, VkDescriptorSet descriptor_set,
   vkUpdateDescriptorSets(device, 2, texture_writes, 0, nullptr);
 }
 
+void writeOpaqueShadowBinding(VkDevice device, VkDescriptorSet descriptor_set,
+                              ShadowMapTarget* shadow_map) {
+  if (shadow_map == nullptr) {
+    return;
+  }
+
+  VkDescriptorImageInfo shadow_info{};
+  shadow_info.imageView = shadow_map->getDepthImageView();
+  shadow_info.sampler = shadow_map->getComparisonSampler();
+  shadow_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+  VkWriteDescriptorSet shadow_write{};
+  shadow_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  shadow_write.dstSet = descriptor_set;
+  shadow_write.dstBinding = 3;
+  shadow_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  shadow_write.descriptorCount = 1;
+  shadow_write.pImageInfo = &shadow_info;
+  vkUpdateDescriptorSets(device, 1, &shadow_write, 0, nullptr);
+}
+
 }  // namespace
 
 ForwardRenderPath::~ForwardRenderPath() { shutdown(); }
@@ -103,6 +131,8 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   m_offscreen = init.offscreen;
   m_grid_pipeline = init.grid_pipeline;
   m_opaque_pipeline = init.opaque_pipeline;
+  m_shadow_pipeline = init.shadow_pipeline;
+  m_shadow_map = init.shadow_map;
   m_fallback_texture = init.fallback_texture;
 
   const uint32_t frames = VulkanSync::k_max_frames_in_flight;
@@ -125,19 +155,29 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 
+  m_shadow_uniform_buffers.resize(total_opaque_sets);
+  for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+    m_shadow_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
+    m_shadow_uniform_buffers[i]->create(m_vk_allocator, sizeof(ShadowUniformData),
+                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
+  }
+
   VkDevice device = m_vk_context->getDevice();
 
-  VkDescriptorPoolSize opaque_pool_sizes[3]{};
+  VkDescriptorPoolSize opaque_pool_sizes[4]{};
   opaque_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   opaque_pool_sizes[0].descriptorCount = total_opaque_sets;
   opaque_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   opaque_pool_sizes[1].descriptorCount = total_opaque_sets;
   opaque_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
   opaque_pool_sizes[2].descriptorCount = total_opaque_sets;
+  opaque_pool_sizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  opaque_pool_sizes[3].descriptorCount = total_opaque_sets;
 
   VkDescriptorPoolCreateInfo opaque_pool_info{};
   opaque_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  opaque_pool_info.poolSizeCount = 3;
+  opaque_pool_info.poolSizeCount = 4;
   opaque_pool_info.pPoolSizes = opaque_pool_sizes;
   opaque_pool_info.maxSets = total_opaque_sets;
   VkDescriptorPool opaque_pool = VK_NULL_HANDLE;
@@ -188,6 +228,66 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
 
     if (m_fallback_texture != nullptr) {
       writeOpaqueTextureBindings(device, opaque_sets[i], m_fallback_texture);
+    }
+    if (m_shadow_map != nullptr) {
+      writeOpaqueShadowBinding(device, opaque_sets[i], m_shadow_map);
+    }
+  }
+
+  if (m_shadow_pipeline != nullptr) {
+    VkDescriptorPoolSize shadow_pool_size{};
+    shadow_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    shadow_pool_size.descriptorCount = total_opaque_sets;
+
+    VkDescriptorPoolCreateInfo shadow_pool_info{};
+    shadow_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    shadow_pool_info.poolSizeCount = 1;
+    shadow_pool_info.pPoolSizes = &shadow_pool_size;
+    shadow_pool_info.maxSets = total_opaque_sets;
+    VkDescriptorPool shadow_pool = VK_NULL_HANDLE;
+    const VkResult shadow_pool_result = vkCreateDescriptorPool(
+        device, &shadow_pool_info, nullptr, &shadow_pool);
+    if (shadow_pool_result != VK_SUCCESS) {
+      LOG_FATAL("[ForwardRenderPath] shadow vkCreateDescriptorPool failed: {}",
+                static_cast<int>(shadow_pool_result));
+    }
+    m_shadow_descriptor_pool = reinterpret_cast<uintptr_t>(shadow_pool);
+
+    const VkDescriptorSetLayout shadow_layout =
+        m_shadow_pipeline->nativePipeline()->getDescriptorSetLayout();
+    eastl::vector<VkDescriptorSetLayout> shadow_layouts(total_opaque_sets,
+                                                        shadow_layout);
+    VkDescriptorSetAllocateInfo shadow_alloc_info{};
+    shadow_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    shadow_alloc_info.descriptorPool = shadow_pool;
+    shadow_alloc_info.descriptorSetCount = total_opaque_sets;
+    shadow_alloc_info.pSetLayouts = shadow_layouts.data();
+
+    eastl::vector<VkDescriptorSet> shadow_sets(total_opaque_sets);
+    const VkResult shadow_set_result = vkAllocateDescriptorSets(
+        device, &shadow_alloc_info, shadow_sets.data());
+    if (shadow_set_result != VK_SUCCESS) {
+      LOG_FATAL(
+          "[ForwardRenderPath] shadow vkAllocateDescriptorSets failed: {}",
+          static_cast<int>(shadow_set_result));
+    }
+    m_shadow_descriptor_sets.resize(total_opaque_sets);
+    for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+      m_shadow_descriptor_sets[i] = reinterpret_cast<uintptr_t>(shadow_sets[i]);
+
+      VkDescriptorBufferInfo buffer_info{};
+      buffer_info.buffer = m_shadow_uniform_buffers[i]->getBuffer();
+      buffer_info.offset = 0;
+      buffer_info.range = sizeof(ShadowUniformData);
+
+      VkWriteDescriptorSet ubo_write{};
+      ubo_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      ubo_write.dstSet = shadow_sets[i];
+      ubo_write.dstBinding = 0;
+      ubo_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      ubo_write.descriptorCount = 1;
+      ubo_write.pBufferInfo = &buffer_info;
+      vkUpdateDescriptorSets(device, 1, &ubo_write, 0, nullptr);
     }
   }
 
@@ -260,6 +360,14 @@ void ForwardRenderPath::shutdown() {
   }
   m_opaque_uniform_buffers.clear();
 
+  for (eastl::unique_ptr<VulkanBuffer>& buf : m_shadow_uniform_buffers) {
+    if (buf) {
+      buf->destroy();
+      buf.reset();
+    }
+  }
+  m_shadow_uniform_buffers.clear();
+
   for (eastl::unique_ptr<VulkanBuffer>& buf : m_grid_uniform_buffers) {
     if (buf) {
       buf->destroy();
@@ -276,6 +384,14 @@ void ForwardRenderPath::shutdown() {
     m_opaque_descriptor_pool = 0;
   }
 
+  m_shadow_descriptor_sets.clear();
+  if (m_shadow_descriptor_pool != 0) {
+    vkDestroyDescriptorPool(
+        device, reinterpret_cast<VkDescriptorPool>(m_shadow_descriptor_pool),
+        nullptr);
+    m_shadow_descriptor_pool = 0;
+  }
+
   m_grid_descriptor_sets.clear();
   if (m_grid_descriptor_pool != 0) {
     vkDestroyDescriptorPool(
@@ -285,6 +401,8 @@ void ForwardRenderPath::shutdown() {
   }
 
   m_fallback_texture = nullptr;
+  m_shadow_map = nullptr;
+  m_shadow_pipeline = nullptr;
   m_opaque_pipeline = nullptr;
   m_grid_pipeline = nullptr;
   m_offscreen = nullptr;
@@ -425,7 +543,8 @@ void ForwardRenderPath::drawOpaqueList(
     mesh_ubo.view = frame_state.view;
     mesh_ubo.projection = frame_state.projection;
     mesh_ubo.camera_position = glm::vec4(frame_state.camera_position, 1.0f);
-    applyBlinnPhongToMeshUniforms(mesh_ubo, draw.material, frame_state.shading);
+    applyBlinnPhongToMeshUniforms(mesh_ubo, draw.material, frame_state.shading,
+                                  frame_state);
 
     VulkanTexture* texture = draw.base_color_texture != nullptr
                                  ? draw.base_color_texture
@@ -451,6 +570,59 @@ void ForwardRenderPath::drawOpaqueList(
   }
 }
 
+void ForwardRenderPath::drawShadowOpaqueList(
+    VkCommandBuffer cmd, const ForwardFrameState& frame_state,
+    const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
+    uint32_t frame_index) {
+  if (m_shadow_pipeline == nullptr || m_shadow_map == nullptr ||
+      !frame_state.shadows_enabled || opaque_draws == nullptr ||
+      opaque_draw_count == 0) {
+    return;
+  }
+
+  const VkExtent2D shadow_extent = m_shadow_map->getExtent();
+  bindViewportScissor(cmd, shadow_extent.width, shadow_extent.height);
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_shadow_pipeline->nativePipeline()->getGraphicsPipeline());
+
+  for (uint32_t draw_i = 0; draw_i < opaque_draw_count; ++draw_i) {
+    const ForwardOpaqueDraw& draw = opaque_draws[draw_i];
+    if (draw.vertex_buffer == nullptr || draw.index_buffer == nullptr ||
+        draw.index_count == 0 || draw.slot_index >= k_max_opaque_draws) {
+      continue;
+    }
+
+    const uint32_t descriptor_index =
+        opaqueDescriptorIndex(draw.slot_index, frame_index);
+    if (descriptor_index >= m_shadow_descriptor_sets.size()) {
+      continue;
+    }
+
+    ShadowUniformData shadow_ubo{};
+    shadow_ubo.model = draw.model;
+    shadow_ubo.light_view = frame_state.light_view;
+    shadow_ubo.light_projection = frame_state.light_projection;
+
+    m_shadow_uniform_buffers[descriptor_index]->upload(&shadow_ubo,
+                                                     sizeof(shadow_ubo));
+
+    const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
+        m_shadow_descriptor_sets[descriptor_index]);
+
+    VkBuffer vertex_buffers[] = {draw.vertex_buffer->getBuffer()};
+    VkDeviceSize vertex_offsets[] = {0};
+    vkCmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_shadow_pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
+        &descriptor_set, 0, nullptr);
+    vkCmdBindVertexBuffers(cmd, 0, 1, vertex_buffers, vertex_offsets);
+    vkCmdBindIndexBuffer(cmd, draw.index_buffer->getBuffer(), 0,
+                         VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(cmd, draw.index_count, 1, 0, 0, 0);
+  }
+}
+
 void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
                                     const ForwardFrameState& frame_state,
                                     const ForwardOpaqueDraw* opaque_draws,
@@ -460,6 +632,14 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
   const rhi::Extent2D extent = m_offscreen->extent();
   if (extent.width == 0 || extent.height == 0) {
     return;
+  }
+
+  if (m_shadow_map != nullptr && frame_state.shadows_enabled) {
+    m_shadow_map->beginRenderPass(command_buffer);
+    drawShadowOpaqueList(command_buffer, frame_state, opaque_draws,
+                         opaque_draw_count, frame_index);
+    m_shadow_map->endRenderPass(command_buffer);
+    m_shadow_map->cmdBarrierToShaderReadDepth(command_buffer);
   }
 
   vulkan_backend::VulkanCommandList command_list;

@@ -19,6 +19,7 @@ class AssetManager;
 class EditorCamera;
 class ForwardRenderPath;
 class RenderDocCapture;
+class ShadowMapTarget;
 class MaterialAsset;
 class Texture2DAsset;
 class VulkanBuffer;
@@ -110,6 +111,8 @@ class RenderSystem final {
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_offscreen;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_mesh_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_grid_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_shadow_pipeline;
+  eastl::unique_ptr<ShadowMapTarget> m_shadow_map;
   eastl::unique_ptr<EditorCamera> m_editor_camera;
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;

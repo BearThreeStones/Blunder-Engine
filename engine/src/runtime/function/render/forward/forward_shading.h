@@ -7,6 +7,7 @@ namespace Blunder {
 
 class MaterialAsset;
 struct BlinnPhongEditorSettings;
+struct ForwardFrameState;
 
 /// Mesh UBO layout shared with engine/shaders/basic.slang (std140).
 struct ForwardMeshUniformData {
@@ -22,10 +23,18 @@ struct ForwardMeshUniformData {
   glm::vec4 specular_color_and_shininess{0.4f, 0.4f, 0.4f, 32.0f};
   glm::vec4 material_flags{0.0f};
   glm::mat4 normal_matrix{1.0f};
+  glm::mat4 light_view_projection{1.0f};
+  glm::vec4 shadow_params{0.0f};
 };
+
+void computeDirectionalLightMatrices(
+    glm::vec3 light_dir, glm::vec3 focus, float ortho_half_extent,
+    float near_plane, float far_plane, glm::mat4& out_light_view,
+    glm::mat4& out_light_projection, glm::mat4& out_light_view_projection);
 
 void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                                     const MaterialAsset* material,
-                                    const BlinnPhongEditorSettings& editor);
+                                    const BlinnPhongEditorSettings& editor,
+                                    const ForwardFrameState& frame_state);
 
 }  // namespace Blunder

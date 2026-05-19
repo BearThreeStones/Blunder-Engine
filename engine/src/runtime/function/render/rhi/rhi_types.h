@@ -37,6 +37,7 @@ enum class PrimitiveTopology : uint8_t {
 
 enum class CompareOp : uint8_t {
   LessOrEqual = 0,
+  Less = 1,
 };
 
 enum class CullMode : uint8_t {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
+
 #include "EASTL/array.h"
 #include "EASTL/shared_ptr.h"
 #include "EASTL/unique_ptr.h"
@@ -26,6 +28,8 @@ class VulkanGraphicsPipeline final : public rhi::IGraphicsPipeline {
 
   void initialize(rhi::IOffscreenRenderTarget& render_target,
                   const rhi::GraphicsPipelineDesc& desc) override;
+  void initializeWithRenderPass(VkRenderPass render_pass,
+                                const rhi::GraphicsPipelineDesc& desc);
   void shutdown() override;
 
   rhi::ICommandList* commandList(uint32_t frame_index) override;
