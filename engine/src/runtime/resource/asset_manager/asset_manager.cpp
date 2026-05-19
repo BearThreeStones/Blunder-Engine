@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <limits>
 
+#include <algorithm>
+
 #include "EASTL/utility.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -472,41 +474,85 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
       glm::vec4 base_color_factor(1.0f);
       AssetHandle base_color_texture_handle;
       eastl::shared_ptr<Texture2DAsset> base_color_texture_asset;
-      const cgltf_material& material = *primitive.material;
+      glm::vec3 ambient_color(0.15f);
+      glm::vec3 diffuse_color(1.0f);
+      glm::vec3 specular_color(0.4f);
+      float shininess = 32.0f;
+      bool unlit = false;
 
-      if (material.has_pbr_metallic_roughness) {
+      const cgltf_material& material = *primitive.material;
+      unlit = material.unlit != 0;
+
+      const auto loadGltfImageTexture =
+          [&](const cgltf_texture* texture, const char* usage_label)
+              -> eastl::shared_ptr<MeshAsset> {
+            if (texture == nullptr) {
+              return nullptr;
+            }
+            const cgltf_image* image = texture->image;
+            if (image == nullptr) {
+              return fail_mesh_load(
+                  "[AssetManager] loadMesh: {} material {} uses unsupported non-URI {} image source",
+                  absolute.generic_string(), material_index, usage_label);
+            }
+            if (image->buffer_view != nullptr || image->uri == nullptr ||
+                isDataUri(image->uri)) {
+              return fail_mesh_load(
+                  "[AssetManager] loadMesh: {} material {} only supports external image URIs for {} textures",
+                  absolute.generic_string(), material_index, usage_label);
+            }
+
+            const eastl::string texture_virtual_path = buildAssetVirtualPath(
+                m_file_system->getAssetRoot(), absolute, image->uri);
+            base_color_texture_asset = loadTexture2D(texture_virtual_path);
+            if (!base_color_texture_asset) {
+              return fail_mesh_load(
+                  "[AssetManager] loadMesh: {} failed loading {} texture {}",
+                  absolute.generic_string(), usage_label,
+                  texture_virtual_path.c_str());
+            }
+            base_color_texture_handle =
+                makeHandle(Asset::Type::Texture2D, texture_virtual_path);
+            return nullptr;
+          };
+
+      if (material.has_pbr_specular_glossiness) {
+        const cgltf_pbr_specular_glossiness& sg =
+            material.pbr_specular_glossiness;
+        base_color_factor =
+            glm::vec4(sg.diffuse_factor[0], sg.diffuse_factor[1],
+                      sg.diffuse_factor[2], sg.diffuse_factor[3]);
+        diffuse_color = glm::vec3(1.0f);
+        specular_color = glm::vec3(sg.specular_factor[0], sg.specular_factor[1],
+                                   sg.specular_factor[2]);
+        shininess = std::clamp(sg.glossiness_factor * 128.0f, 8.0f, 256.0f);
+
+        if (const auto texture_error =
+                loadGltfImageTexture(sg.diffuse_texture.texture, "diffuse");
+            texture_error != nullptr) {
+          return texture_error;
+        }
+      } else if (material.has_pbr_metallic_roughness) {
         const cgltf_pbr_metallic_roughness& pbr =
             material.pbr_metallic_roughness;
         base_color_factor =
             glm::vec4(pbr.base_color_factor[0], pbr.base_color_factor[1],
                       pbr.base_color_factor[2], pbr.base_color_factor[3]);
 
-        const cgltf_texture* base_color_texture =
-            pbr.base_color_texture.texture;
-        if (base_color_texture != nullptr) {
-          const cgltf_image* image = base_color_texture->image;
-          if (image == nullptr) {
-            return fail_mesh_load(
-                "[AssetManager] loadMesh: {} material {} uses unsupported non-URI baseColor image source",
-                absolute.generic_string(), material_index);
-          }
-          if (image->buffer_view != nullptr || image->uri == nullptr ||
-              isDataUri(image->uri)) {
-            return fail_mesh_load(
-                "[AssetManager] loadMesh: {} material {} only supports external image URIs for baseColor textures",
-                absolute.generic_string(), material_index);
-          }
+        const float metallic = pbr.metallic_factor;
+        const float roughness = pbr.roughness_factor;
+        diffuse_color = glm::vec3(1.0f);
+        specular_color =
+            glm::vec3(0.04f) * (1.0f - metallic) +
+            glm::vec3(base_color_factor.x, base_color_factor.y,
+                      base_color_factor.z) *
+                metallic;
+        shininess = 8.0f + (256.0f - 8.0f) * (1.0f - roughness);
 
-          const eastl::string texture_virtual_path = buildAssetVirtualPath(
-              m_file_system->getAssetRoot(), absolute, image->uri);
-          base_color_texture_asset = loadTexture2D(texture_virtual_path);
-          if (!base_color_texture_asset) {
-            return fail_mesh_load(
-                "[AssetManager] loadMesh: {} failed loading baseColor texture {}",
-                absolute.generic_string(), texture_virtual_path.c_str());
-          }
-          base_color_texture_handle =
-              makeHandle(Asset::Type::Texture2D, texture_virtual_path);
+        if (const auto texture_error = loadGltfImageTexture(
+                pbr.base_color_texture.texture, "baseColor");
+            texture_error != nullptr) {
+          return texture_error;
         }
       }
 
@@ -516,7 +562,8 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
       material_meta.source_timestamp = querySourceTimestamp(absolute);
       material_asset = eastl::make_shared<MaterialAsset>(
           eastl::move(material_meta), base_color_factor,
-          base_color_texture_handle, base_color_texture_asset);
+          base_color_texture_handle, base_color_texture_asset, ambient_color,
+          diffuse_color, specular_color, shininess, unlit);
       m_material_cache[material_key] = material_asset;
     }
 

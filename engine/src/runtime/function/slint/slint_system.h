@@ -12,8 +12,11 @@
 #include "editor_window.h"
 
 #include "runtime/platform/window/window_system.h"
+#include "runtime/function/render/blinn_phong_editor_settings.h"
 
 namespace Blunder {
+
+class MaterialAsset;
 
 struct ViewportLogicalRect {
   int32_t x{0};
@@ -55,6 +58,14 @@ class SlintSystem final {
   /// Returns the logical pixel size of the central 3D viewport rectangle in
   /// the Slint UI. {0, 0} until the window has performed its first layout.
   eastl::array<uint32_t, 2> getViewportLogicalSize() const;
+
+  /// Reads the inspector Blinn-Phong properties. Returns defaults if the window
+  /// is not ready.
+  BlinnPhongEditorSettings getBlinnPhongEditorSettings() const;
+
+  /// Source mesh material used by "Sync Asset" and initial inspector sync.
+  void setBlinnPhongMaterialSource(const MaterialAsset* material);
+  void syncBlinnPhongFromMaterialSource();
 
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
@@ -107,5 +118,6 @@ class SlintSystem final {
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
   ViewportLogicalRect m_cached_viewport_logical_rect{};
   bool m_in_slint_dispatch{false};
+  const MaterialAsset* m_blinn_phong_material_source{nullptr};
 };
 }  // namespace Blunder

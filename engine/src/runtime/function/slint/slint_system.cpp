@@ -7,7 +7,10 @@
 #include <string_view>
 #include <utility>
 
+#include <glm/vec3.hpp>
+
 #include "runtime/core/base/macro.h"
+#include "runtime/resource/asset/material_asset.h"
 
 namespace Blunder {
 namespace {
@@ -269,6 +272,8 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         "notifier: {}",
         static_cast<int>(*notifier_error));
     }
+    component->on_sync_shading_from_asset(
+        [this]() { syncBlinnPhongFromMaterialSource(); });
     component->show();
     m_window_component = component;
 
@@ -356,6 +361,62 @@ ViewportLogicalRect SlintSystem::getViewportLogicalRect() const {
 eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
   return {m_cached_viewport_logical_rect.width,
           m_cached_viewport_logical_rect.height};
+}
+
+void SlintSystem::setBlinnPhongMaterialSource(const MaterialAsset* material) {
+  m_blinn_phong_material_source = material;
+}
+
+void SlintSystem::syncBlinnPhongFromMaterialSource() {
+  if (!m_window_component || !m_blinn_phong_material_source) {
+    return;
+  }
+  if (m_in_slint_dispatch) {
+    return;
+  }
+
+  const MaterialAsset& material = *m_blinn_phong_material_source;
+  try {
+    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    auto& ui = *m_window_component;
+    ui->set_ambient_r(material.getAmbientColor().x);
+    ui->set_ambient_g(material.getAmbientColor().y);
+    ui->set_ambient_b(material.getAmbientColor().z);
+    ui->set_diffuse_r(material.getDiffuseColor().x);
+    ui->set_diffuse_g(material.getDiffuseColor().y);
+    ui->set_diffuse_b(material.getDiffuseColor().z);
+    ui->set_specular_r(material.getSpecularColor().x);
+    ui->set_specular_g(material.getSpecularColor().y);
+    ui->set_specular_b(material.getSpecularColor().z);
+    ui->set_shininess(material.getShininess());
+    ui->set_shading_unlit(material.isUnlit());
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncBlinnPhongFromMaterialSource] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncBlinnPhongFromMaterialSource] unknown exception");
+  }
+}
+
+BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
+  BlinnPhongEditorSettings settings;
+  if (!m_window_component) {
+    return settings;
+  }
+
+  const auto& ui = *m_window_component;
+  settings.light_direction =
+      glm::vec3(ui->get_light_dir_x(), ui->get_light_dir_y(), ui->get_light_dir_z());
+  settings.light_color = glm::vec3(ui->get_light_color_r(), ui->get_light_color_g(),
+                                   ui->get_light_color_b());
+  settings.ambient_color =
+      glm::vec3(ui->get_ambient_r(), ui->get_ambient_g(), ui->get_ambient_b());
+  settings.diffuse_color =
+      glm::vec3(ui->get_diffuse_r(), ui->get_diffuse_g(), ui->get_diffuse_b());
+  settings.specular_color =
+      glm::vec3(ui->get_specular_r(), ui->get_specular_g(), ui->get_specular_b());
+  settings.shininess = ui->get_shininess();
+  settings.unlit = ui->get_shading_unlit();
+  return settings;
 }
 
 void SlintSystem::update() {

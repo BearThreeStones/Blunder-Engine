@@ -1,33 +1,97 @@
-import { Button, CheckBox, HorizontalBox, ListView, Slider, VerticalBox } from "std-widgets.slint";
+import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
 
-// DCC / Unreal-style editor layout:
-// - Top toolbar
-// - Left dock (Outliner)
-// - Center 3D viewport (Image bound to engine-produced texture)
-// - Right dock (Inspector)
-// - Bottom status bar
+// Full-width slider row for the inspector (avoids collapsed track / tiny handle).
+component ShadingSlider inherits VerticalBox {
+    spacing: 2px;
+    in property <string> label;
+    in-out property <float> value;
+    in property <float> minimum: 0.0;
+    in property <float> maximum: 1.0;
+
+    min-height: 36px;
+
+    HorizontalBox {
+        spacing: 4px;
+        Text {
+            text: root.label;
+            color: #c0c0c0;
+            font-size: 11px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: Math.round(root.value * 100) / 100;
+            color: #bde7ff;
+            font-size: 11px;
+            width: 44px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Slider {
+        width: 100%;
+        min-height: 22px;
+        minimum: root.minimum;
+        maximum: root.maximum;
+        value <=> root.value;
+    }
+}
+
 export component MainEditorWindow inherits Window {
     width: 1280px;
     height: 720px;
     title: "Blunder Editor";
     background: #181818;
 
-    // The engine pushes a freshly composited 3D image here every frame.
     in property <image> viewport-image;
 
-    // Engine reads back the central viewport size so the offscreen render
-    // target can be resized to match. Updated by the layout binding below.
     out property <length> viewport-origin-x: viewport-rect.absolute-position.x;
     out property <length> viewport-origin-y: viewport-rect.absolute-position.y;
     out property <length> viewport-width: viewport-rect.width;
     out property <length> viewport-height: viewport-rect.height;
 
-    in-out property <int> click-count: 0;
-    in-out property <bool> toggle-enabled: false;
-    in-out property <float> slider-value: 35.0;
+    in-out property <float> light-dir-x: 0.45;
+    in-out property <float> light-dir-y: 0.7;
+    in-out property <float> light-dir-z: 0.55;
+    in-out property <float> light-color-r: 1.0;
+    in-out property <float> light-color-g: 1.0;
+    in-out property <float> light-color-b: 1.0;
+    in-out property <float> ambient-r: 0.15;
+    in-out property <float> ambient-g: 0.15;
+    in-out property <float> ambient-b: 0.15;
+    in-out property <float> diffuse-r: 1.0;
+    in-out property <float> diffuse-g: 1.0;
+    in-out property <float> diffuse-b: 1.0;
+    in-out property <float> specular-r: 0.4;
+    in-out property <float> specular-g: 0.4;
+    in-out property <float> specular-b: 0.4;
+    in-out property <float> shininess: 32.0;
+    in-out property <bool> shading-unlit: false;
+
+    callback sync-shading-from-asset();
+
+    function reset-shading-defaults() {
+        root.light-dir-x = 0.45;
+        root.light-dir-y = 0.7;
+        root.light-dir-z = 0.55;
+        root.light-color-r = 1.0;
+        root.light-color-g = 1.0;
+        root.light-color-b = 1.0;
+        root.ambient-r = 0.15;
+        root.ambient-g = 0.15;
+        root.ambient-b = 0.15;
+        root.diffuse-r = 1.0;
+        root.diffuse-g = 1.0;
+        root.diffuse-b = 1.0;
+        root.specular-r = 0.04;
+        root.specular-g = 0.04;
+        root.specular-b = 0.04;
+        root.shininess = 169.0;
+        root.shading-unlit = false;
+    }
 
     VerticalLayout {
-        // Top toolbar
         Rectangle {
             background: #1f1f1f;
             border-color: #2a2a2a;
@@ -56,9 +120,9 @@ export component MainEditorWindow inherits Window {
             }
         }
 
-        // Main work area: left dock + viewport + right dock
         HorizontalLayout {
-            // Left dock - Outliner
+            vertical-stretch: 1;
+
             Rectangle {
                 background: #1c1c1c;
                 border-color: #2a2a2a;
@@ -77,15 +141,11 @@ export component MainEditorWindow inherits Window {
                     Rectangle { background: #2a2a2a; height: 1px; }
                     Text { text: "Scene"; color: #a0a0a0; font-size: 13px; }
                     Text { text: "  Camera"; color: #909090; font-size: 13px; }
-                    Text { text: "  DemoQuad"; color: #909090; font-size: 13px; }
-                    Text { text: "  Light"; color: #909090; font-size: 13px; }
+                    Text { text: "  DemoMesh"; color: #909090; font-size: 13px; }
+                    Text { text: "  DirectionalLight"; color: #909090; font-size: 13px; }
                 }
             }
 
-            // Center viewport with the 3D image. The Image fills the whole
-            // rectangle and image-fit:fill keeps it pixel-aligned with the
-            // engine's offscreen render target after the engine resizes the
-            // RT to match this rect's size.
             viewport-rect := Rectangle {
                 background: #0a0a0a;
                 border-color: #2a2a2a;
@@ -101,14 +161,15 @@ export component MainEditorWindow inherits Window {
                 }
             }
 
-            // Right dock - Inspector / Test panel
-            Rectangle {
+            inspector-dock := Rectangle {
                 background: #1c1c1c;
                 border-color: #2a2a2a;
                 border-width: 1px;
-                width: 280px;
+                width: 320px;
+                vertical-stretch: 1;
+                clip: true;
 
-                VerticalBox {
+                VerticalLayout {
                     padding: 10px;
                     spacing: 8px;
 
@@ -119,66 +180,102 @@ export component MainEditorWindow inherits Window {
                     }
                     Rectangle { background: #2a2a2a; height: 1px; }
 
-                    Text { text: "UI Test Panel"; color: #f0f0f0; font-size: 13px; }
+                    Text {
+                        text: "Blinn-Phong Shading";
+                        color: #f0f0f0;
+                        font-size: 13px;
+                    }
 
                     HorizontalBox {
-                        spacing: 8px;
-                        alignment: start;
+                        spacing: 6px;
                         Button {
-                            text: "Click Me";
-                            clicked => { root.click-count += 1; }
+                            text: "Sync Asset";
+                            clicked => { root.sync-shading-from-asset(); }
                         }
                         Button {
                             text: "Reset";
-                            clicked => {
-                                root.click-count = 0;
-                                root.slider-value = 35.0;
-                                root.toggle-enabled = false;
-                            }
+                            clicked => { root.reset-shading-defaults(); }
                         }
                     }
 
                     CheckBox {
-                        text: "Enable test option";
-                        checked: root.toggle-enabled;
-                        toggled => { root.toggle-enabled = self.checked; }
+                        text: "Unlit (albedo only)";
+                        checked: root.shading-unlit;
+                        toggled => { root.shading-unlit = self.checked; }
                     }
 
-                    HorizontalBox {
-                        spacing: 8px;
-                        Text {
-                            text: "Intensity";
-                            color: #d0d0d0;
-                            vertical-alignment: center;
-                        }
-                        Slider {
-                            value: root.slider-value;
-                            changed => { root.slider-value = self.value; }
-                        }
+                    Text {
+                        text: "Scroll with mouse wheel; drag sliders horizontally";
+                        color: #707070;
+                        font-size: 10px;
+                        wrap: word-wrap;
                     }
 
-                    Rectangle {
-                        background: #1f1f1f;
-                        border-color: #2a2a2a;
-                        border-width: 1px;
-                        border-radius: 4px;
-                        min-height: 80px;
+                    inspector-scroll := Flickable {
+                        vertical-stretch: 1;
+                        interactive: true;
+                        viewport-width: parent.width - 20px;
+                        viewport-height: shading-panel.preferred-height;
 
-                        Text {
-                            x: 10px;
-                            y: 10px;
-                            text: "Clicks: " + root.click-count
-                                + "\nToggle: " + (root.toggle-enabled ? "ON" : "OFF")
-                                + "\nIntensity: " + root.slider-value;
-                            color: #bde7ff;
-                            font-size: 12px;
+                        shading-panel := VerticalBox {
+                            width: parent.width;
+                            spacing: 6px;
+                            padding-right: 4px;
+
+                            Text { text: "Light direction"; color: #a8a8a8; font-size: 12px; }
+                            ShadingSlider { label: "Dir X"; minimum: -1; maximum: 1; value <=> root.light-dir-x; }
+                            ShadingSlider { label: "Dir Y"; minimum: -1; maximum: 1; value <=> root.light-dir-y; }
+                            ShadingSlider { label: "Dir Z"; minimum: -1; maximum: 1; value <=> root.light-dir-z; }
+
+                            Text { text: "Light color"; color: #a8a8a8; font-size: 12px; }
+                            ShadingSlider { label: "R"; value <=> root.light-color-r; }
+                            ShadingSlider { label: "G"; value <=> root.light-color-g; }
+                            ShadingSlider { label: "B"; value <=> root.light-color-b; }
+
+                            Text { text: "Ambient (ka)"; color: #a8a8a8; font-size: 12px; }
+                            ShadingSlider { label: "R"; value <=> root.ambient-r; }
+                            ShadingSlider { label: "G"; value <=> root.ambient-g; }
+                            ShadingSlider { label: "B"; value <=> root.ambient-b; }
+
+                            Text { text: "Diffuse (kd)"; color: #a8a8a8; font-size: 12px; }
+                            ShadingSlider { label: "R"; value <=> root.diffuse-r; }
+                            ShadingSlider { label: "G"; value <=> root.diffuse-g; }
+                            ShadingSlider { label: "B"; value <=> root.diffuse-b; }
+
+                            Text { text: "Specular (ks)"; color: #a8a8a8; font-size: 12px; }
+                            ShadingSlider { label: "R"; value <=> root.specular-r; }
+                            ShadingSlider { label: "G"; value <=> root.specular-g; }
+                            ShadingSlider { label: "B"; value <=> root.specular-b; }
+
+                            ShadingSlider {
+                                label: "Shininess";
+                                minimum: 8;
+                                maximum: 256;
+                                value <=> root.shininess;
+                            }
+
+                            Rectangle {
+                                background: #1f1f1f;
+                                border-color: #2a2a2a;
+                                border-width: 1px;
+                                border-radius: 4px;
+                                min-height: 52px;
+
+                                Text {
+                                    x: 10px;
+                                    y: 8px;
+                                    text: "Shininess: " + Math.round(root.shininess)
+                                        + "\nUnlit: " + (root.shading-unlit ? "yes" : "no");
+                                    color: #bde7ff;
+                                    font-size: 11px;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Bottom status bar
         Rectangle {
             background: #1f1f1f;
             border-color: #2a2a2a;
@@ -188,7 +285,7 @@ export component MainEditorWindow inherits Window {
             Text {
                 x: 10px;
                 vertical-alignment: center;
-                text: "Viewport";
+                text: "Viewport — Inspector: wheel to scroll, drag slider track";
                 color: #808080;
                 font-size: 12px;
             }

@@ -1,5 +1,7 @@
 #include "runtime/function/render/render_system.h"
 
+#include "runtime/function/render/blinn_phong_editor_settings.h"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_scancode.h>
@@ -38,6 +40,7 @@
 #include "runtime/function/render/vulkan_backend/vulkan_render_backend.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -65,7 +68,43 @@ struct MeshUniformData {
   glm::mat4 model;
   glm::mat4 view;
   glm::mat4 projection;
+  glm::vec4 camera_position{0.0f};
+  glm::vec4 light_direction{0.45f, 0.7f, 0.55f, 0.0f};
+  glm::vec4 light_color{1.0f};
+  glm::vec4 base_color_factor{1.0f};
+  glm::vec4 ambient_color{0.15f, 0.15f, 0.15f, 0.0f};
+  glm::vec4 diffuse_color{0.85f, 0.85f, 0.85f, 0.0f};
+  glm::vec4 specular_color_and_shininess{0.4f, 0.4f, 0.4f, 32.0f};
+  glm::vec4 material_flags{0.0f};
+  glm::mat4 normal_matrix{1.0f};
 };
+
+const glm::vec3 k_mesh_light_direction =
+    glm::normalize(glm::vec3(0.45f, 0.7f, 0.55f));
+
+void applyBlinnPhongEditorToMeshUniforms(
+    MeshUniformData& mesh_ubo, const MaterialAsset* material,
+    const BlinnPhongEditorSettings& editor) {
+  if (material != nullptr) {
+    mesh_ubo.base_color_factor = material->getBaseColorFactor();
+  } else {
+    mesh_ubo.base_color_factor = glm::vec4(1.0f);
+  }
+
+  const float light_dir_length = glm::length(editor.light_direction);
+  const glm::vec3 light_dir =
+      light_dir_length > 0.0001f
+          ? editor.light_direction / light_dir_length
+          : k_mesh_light_direction;
+  mesh_ubo.light_direction = glm::vec4(light_dir, 0.0f);
+  mesh_ubo.light_color = glm::vec4(editor.light_color, 0.0f);
+  mesh_ubo.ambient_color = glm::vec4(editor.ambient_color, 0.0f);
+  mesh_ubo.diffuse_color = glm::vec4(editor.diffuse_color, 0.0f);
+  mesh_ubo.specular_color_and_shininess =
+      glm::vec4(editor.specular_color, editor.shininess);
+  mesh_ubo.material_flags =
+      glm::vec4(editor.unlit ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+}
 
 struct DemoMeshData {
   eastl::vector<Vertex> vertices;
@@ -436,15 +475,17 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
         imported_mesh->getIndexCount(),
         imported_mesh->hasMaterial() ? "yes" : "no");
 
-    if (imported_mesh->getMaterialAsset() != nullptr &&
-        imported_mesh->getMaterialAsset()->getBaseColorTextureAsset() != nullptr) {
+    m_demo_mesh_material = imported_mesh->getMaterialAsset();
+    if (m_demo_mesh_material != nullptr &&
+        m_demo_mesh_material->getBaseColorTextureAsset() != nullptr) {
       VulkanTexture* material_texture = ensureTextureUploaded(
-          imported_mesh->getMaterialAsset()->getBaseColorTextureAsset().get());
+          m_demo_mesh_material->getBaseColorTextureAsset().get());
       if (material_texture != nullptr) {
         mesh_texture = material_texture;
       }
     }
   } else {
+    m_demo_mesh_material.reset();
     fallback_demo_mesh = buildDemoCubeMesh();
     mesh_vertex_bytes = fallback_demo_mesh.vertices.data();
     mesh_vertex_byte_size = static_cast<VkDeviceSize>(
@@ -469,6 +510,13 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
       mesh_indices,
       static_cast<VkDeviceSize>(mesh_index_count * sizeof(uint32_t)));
   m_demo_mesh_index_count = static_cast<uint32_t>(mesh_index_count);
+
+  if (m_viewport_layout_source != nullptr) {
+    SlintSystem* slint_system =
+        static_cast<SlintSystem*>(m_viewport_layout_source);
+    slint_system->setBlinnPhongMaterialSource(m_demo_mesh_material.get());
+    slint_system->syncBlinnPhongFromMaterialSource();
+  }
 
   if (mesh_texture != nullptr) {
     for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
@@ -934,8 +982,19 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                    k_demo_mesh_uniform_scale,
                                    k_demo_mesh_uniform_scale));
       mesh_ubo.model = model;
+      mesh_ubo.normal_matrix =
+          glm::mat4(glm::transpose(glm::inverse(glm::mat3(model))));
       mesh_ubo.view = view;
       mesh_ubo.projection = projection;
+      mesh_ubo.camera_position = glm::vec4(camera_position, 1.0f);
+      BlinnPhongEditorSettings editor_settings;
+      if (m_viewport_layout_source != nullptr) {
+        editor_settings =
+            static_cast<SlintSystem*>(m_viewport_layout_source)
+                ->getBlinnPhongEditorSettings();
+      }
+      applyBlinnPhongEditorToMeshUniforms(mesh_ubo, m_demo_mesh_material.get(),
+                                           editor_settings);
       m_mesh_uniform_buffers[m_current_frame]->upload(&mesh_ubo,
                                                       sizeof(mesh_ubo));
 

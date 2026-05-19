@@ -15,6 +15,7 @@ class Event;
 class AssetManager;
 class EditorCamera;
 class RenderDocCapture;
+class MaterialAsset;
 class Texture2DAsset;
 class VulkanBuffer;
 class VulkanPipeline;
@@ -109,6 +110,7 @@ class RenderSystem final {
       m_uploaded_textures;
   eastl::unique_ptr<VulkanBuffer> m_demo_mesh_vertex_buffer;
   eastl::unique_ptr<VulkanBuffer> m_demo_mesh_index_buffer;
+  eastl::shared_ptr<MaterialAsset> m_demo_mesh_material;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_mesh_uniform_buffers;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_grid_uniform_buffers;
   uintptr_t m_mesh_descriptor_pool{0};
