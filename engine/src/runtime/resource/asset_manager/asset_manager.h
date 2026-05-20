@@ -8,11 +8,15 @@
 #include "EASTL/unordered_map.h"
 #include "EASTL/vector.h"
 
+#include <cgltf.h>
+
 #include "runtime/resource/asset/asset.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset/shader_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
+#include "runtime/resource/asset_manager/asset_manager_gltf.h"
 
 namespace Blunder {
 
@@ -46,6 +50,11 @@ struct AssetTypeTraits<MaterialAsset> {
   static constexpr Asset::Type k_type = Asset::Type::Material;
 };
 
+template <>
+struct AssetTypeTraits<SceneAsset> {
+  static constexpr Asset::Type k_type = Asset::Type::Scene;
+};
+
 /// AssetManager owns the lifetime of CPU-side resources loaded from disk.
 ///
 /// Lookup is by virtual path (relative to the FileSystem's asset root). A
@@ -75,6 +84,22 @@ class AssetManager final {
       const eastl::string& virtual_path);
   eastl::shared_ptr<ShaderAsset> loadShader(const eastl::string& virtual_path);
   eastl::shared_ptr<MeshAsset> loadMesh(const eastl::string& virtual_path);
+  eastl::shared_ptr<MeshAsset> loadMeshPrimitive(
+      cgltf_data* data, size_t mesh_index, size_t primitive_index,
+      const std::filesystem::path& absolute,
+      const eastl::string& gltf_canonical_key);
+  eastl::shared_ptr<MaterialAsset> loadGltfMaterial(
+      cgltf_data* data, size_t material_index,
+      const std::filesystem::path& absolute,
+      const eastl::string& gltf_canonical_key);
+  eastl::shared_ptr<SceneAsset> loadScene(const eastl::string& virtual_path);
+
+  /// Opens a glTF/GLB file for import. On success, `out_document.data` must be
+  /// released with closeGltfImportDocument().
+  bool openGltfImportDocument(const eastl::string& virtual_path,
+                              GltfImportDocument& out_document);
+  void closeGltfImportDocument(GltfImportDocument& document);
+
   AssetHandle makeHandle(Asset::Type type, const eastl::string& virtual_path) const;
   eastl::shared_ptr<Asset> get(const AssetHandle& handle) const;
 
@@ -111,6 +136,7 @@ class AssetManager final {
   Cache<ShaderAsset> m_shader_cache;
   Cache<MeshAsset> m_mesh_cache;
   Cache<MaterialAsset> m_material_cache;
+  Cache<SceneAsset> m_scene_cache;
   bool m_is_initialized{false};
 };
 

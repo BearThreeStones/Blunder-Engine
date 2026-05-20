@@ -10,7 +10,10 @@
 #include "EASTL/vector.h"
 #include <glm/vec3.hpp>
 
+#include <cgltf.h>
+
 #include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/opaque_mesh_draw.h"
 
 namespace Blunder {
 
@@ -18,9 +21,11 @@ class Event;
 class AssetManager;
 class EditorCamera;
 class ForwardRenderPath;
+class GpuMesh;
 class RenderDocCapture;
 class ShadowMapTarget;
 class MaterialAsset;
+class MeshAsset;
 class Texture2DAsset;
 class VulkanBuffer;
 class VulkanPipeline;
@@ -39,7 +44,6 @@ namespace vulkan_backend {
 class VulkanGraphicsPipeline;
 }
 
-struct ForwardOpaqueDrawSource;
 struct Vertex;
 
 struct RenderSystemInitInfo {
@@ -74,6 +78,26 @@ class RenderSystem final {
   void onEvent(Event& event);
 
   VulkanTexture* ensureTextureUploaded(const Texture2DAsset* texture_asset);
+  GpuMesh* getOrUploadGpuMesh(const MeshAsset* mesh_asset);
+  GpuMesh* getOrUploadGpuMeshByKey(const eastl::string& cache_key,
+                                   const void* vertex_bytes,
+                                   size_t vertex_byte_size, const uint32_t* indices,
+                                   size_t index_count);
+
+  bool addOpaqueMeshDraw(
+      GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
+      VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
+      VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
+      const glm::mat4& model, float alpha_cutoff = 0.5f,
+      cgltf_alpha_mode alpha_mode = cgltf_alpha_mode_opaque, bool double_sided = false);
+  bool addTransparentMeshDraw(
+      GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
+      VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
+      VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
+      const glm::mat4& model, float alpha_cutoff = 0.5f, bool double_sided = false);
+  void clearOpaqueMeshDraws();
+  void clearTransparentMeshDraws();
+  VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
 
   EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }
   rhi::IRenderBackend* getRenderBackend() const { return m_backend.get(); }
@@ -92,15 +116,7 @@ class RenderSystem final {
 
   void resizeOffscreenIfNeeded(uint32_t width, uint32_t height);
   void recreateReadbackStaging(uint32_t width, uint32_t height);
-  bool createOpaqueDrawSourceFromMesh(const void* vertex_bytes,
-                                      VkDeviceSize vertex_byte_size,
-                                      const uint32_t* indices,
-                                      size_t index_count,
-                                      eastl::shared_ptr<MaterialAsset> material,
-                                      VulkanTexture* base_color_texture,
-                                      uint32_t slot_index,
-                                      const glm::vec3& translation,
-                                      const glm::vec3& scale, bool animate_spin);
+  void clearGpuMeshes();
 
   AssetManager* m_asset_manager{nullptr};
   WindowSystem* m_window_system{nullptr};
@@ -110,6 +126,7 @@ class RenderSystem final {
 
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_offscreen;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_mesh_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_transparent_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_grid_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_shadow_pipeline;
   eastl::unique_ptr<ShadowMapTarget> m_shadow_map;
@@ -119,10 +136,11 @@ class RenderSystem final {
 
   eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
       m_uploaded_textures;
+  eastl::unordered_map<eastl::string, eastl::unique_ptr<GpuMesh>> m_gpu_meshes;
   VulkanTexture* m_fallback_texture{nullptr};
-  eastl::vector<ForwardOpaqueDrawSource> m_opaque_draw_sources;
+  eastl::vector<OpaqueMeshDraw> m_opaque_mesh_draws;
+  eastl::vector<OpaqueMeshDraw> m_transparent_mesh_draws;
   eastl::shared_ptr<MaterialAsset> m_inspector_material;
-  float m_primary_mesh_rotation_radians{0.0f};
   uint32_t m_current_frame{0};
   ForwardGridPlane m_grid_plane{ForwardGridPlane::xy};
 

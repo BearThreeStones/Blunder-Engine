@@ -3,7 +3,8 @@
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
-#include "runtime/function/render/forward/forward_opaque_draw_source.h"
+#include "runtime/function/render/gpu_mesh.h"
+#include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
@@ -14,6 +15,7 @@
 #include <slang.h>
 
 #include <algorithm>
+
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -24,6 +26,7 @@
 
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/core/event/event.h"
 #include "runtime/core/event/key_event.h"
 #include "runtime/function/render/debug/renderdoc_capture.h"
@@ -51,6 +54,9 @@
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
 
 namespace Blunder {
 
@@ -76,6 +82,8 @@ constexpr float k_shadow_near_plane = 0.1f;
 constexpr float k_shadow_far_plane = 60.0f;
 constexpr const char* k_demo_mesh_asset_path =
   "assets/Meshes/textured_cube.mesh.asset";
+constexpr const char* k_builtin_demo_cube_mesh_key =
+  "generated://render/builtin_demo_cube";
 
 DemoMeshData buildDemoCubeMesh() {
   constexpr float half_extent = 0.5f;
@@ -220,16 +228,28 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_offscreen = vkBackend(this)->device().createOffscreenTarget(offscreen_desc);
 
   rhi::GraphicsPipelineDesc mesh_pipeline_desc{};
-  mesh_pipeline_desc.shader_path = "engine/shaders/basic.slang";
+  mesh_pipeline_desc.shader_path = "engine/shaders/pbr.slang";
   mesh_pipeline_desc.enable_vertex_input = true;
   mesh_pipeline_desc.cull_mode = rhi::CullMode::None;
   mesh_pipeline_desc.enable_depth_test = true;
   mesh_pipeline_desc.enable_depth_write = true;
   mesh_pipeline_desc.enable_texture_sampling = true;
   mesh_pipeline_desc.enable_shadow_sampling = true;
+  mesh_pipeline_desc.enable_pbr_texture_sampling = true;
   m_mesh_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_mesh_pipeline->initialize(*m_offscreen, mesh_pipeline_desc);
+
+  rhi::GraphicsPipelineDesc transparent_pipeline_desc = mesh_pipeline_desc;
+  transparent_pipeline_desc.enable_blend = true;
+  transparent_pipeline_desc.enable_depth_write = false;
+  transparent_pipeline_desc.cull_mode = rhi::CullMode::None;
+  transparent_pipeline_desc.shared_descriptor_set_layout = reinterpret_cast<uint64_t>(
+      m_mesh_pipeline->nativePipeline()->getDescriptorSetLayout());
+  m_transparent_pipeline =
+      eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+  m_transparent_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
+  m_transparent_pipeline->initialize(*m_offscreen, transparent_pipeline_desc);
 
   m_shadow_map = eastl::make_unique<ShadowMapTarget>();
   m_shadow_map->initialize(vkCtx(this), vkAlloc(this));
@@ -272,66 +292,6 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
                                                           k_smoke_texture_size));
   m_fallback_texture = ensureTextureUploaded(&smoke_asset);
 
-  const eastl::shared_ptr<MeshAsset> imported_mesh =
-      m_asset_manager != nullptr
-          ? m_asset_manager->loadMesh(k_demo_mesh_asset_path)
-          : nullptr;
-
-  const void* mesh_vertex_bytes = nullptr;
-  VkDeviceSize mesh_vertex_byte_size = 0;
-  const uint32_t* mesh_indices = nullptr;
-  size_t mesh_index_count = 0;
-
-  DemoMeshData fallback_demo_mesh;
-  if (imported_mesh && imported_mesh->getVertexCount() > 0 &&
-      imported_mesh->getIndexCount() > 0) {
-    mesh_vertex_bytes = imported_mesh->getVertexData();
-    mesh_vertex_byte_size =
-        static_cast<VkDeviceSize>(imported_mesh->getVertexByteSize());
-    mesh_indices = imported_mesh->getIndices().data();
-    mesh_index_count = imported_mesh->getIndexCount();
-    LOG_INFO(
-        "[RenderSystem] loaded demo mesh asset {} (vertices={}, indices={}, material={})",
-        k_demo_mesh_asset_path, imported_mesh->getVertexCount(),
-        imported_mesh->getIndexCount(),
-        imported_mesh->hasMaterial() ? "yes" : "no");
-
-    m_inspector_material = imported_mesh->getMaterialAsset();
-  } else {
-    m_inspector_material.reset();
-    fallback_demo_mesh = buildDemoCubeMesh();
-    mesh_vertex_bytes = fallback_demo_mesh.vertices.data();
-    mesh_vertex_byte_size = static_cast<VkDeviceSize>(
-        fallback_demo_mesh.vertices.size() * sizeof(Vertex));
-    mesh_indices = fallback_demo_mesh.indices.data();
-    mesh_index_count = fallback_demo_mesh.indices.size();
-    LOG_INFO("[RenderSystem] using built-in fallback demo mesh");
-  }
-
-  VulkanTexture* primary_texture = m_fallback_texture;
-  if (m_inspector_material != nullptr &&
-      m_inspector_material->getBaseColorTextureAsset() != nullptr) {
-    VulkanTexture* material_texture = ensureTextureUploaded(
-        m_inspector_material->getBaseColorTextureAsset().get());
-    if (material_texture != nullptr) {
-      primary_texture = material_texture;
-    }
-  }
-
-  const glm::vec3 primary_scale(k_demo_mesh_uniform_scale);
-  createOpaqueDrawSourceFromMesh(
-      mesh_vertex_bytes, mesh_vertex_byte_size, mesh_indices, mesh_index_count,
-      m_inspector_material, primary_texture, 0u,
-      glm::vec3(0.0f, 0.0f, k_demo_mesh_height), primary_scale, true);
-
-  DemoMeshData secondary_mesh = buildDemoCubeMesh();
-  createOpaqueDrawSourceFromMesh(
-      secondary_mesh.vertices.data(),
-      static_cast<VkDeviceSize>(secondary_mesh.vertices.size() * sizeof(Vertex)),
-      secondary_mesh.indices.data(), secondary_mesh.indices.size(), nullptr,
-      m_fallback_texture, 1u, k_secondary_mesh_translation,
-      k_secondary_mesh_scale, false);
-
   if (m_viewport_layout_source != nullptr) {
     SlintSystem* slint_system =
         static_cast<SlintSystem*>(m_viewport_layout_source);
@@ -346,10 +306,17 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   forward_init.offscreen = m_offscreen.get();
   forward_init.grid_pipeline = m_grid_pipeline.get();
   forward_init.opaque_pipeline = m_mesh_pipeline.get();
+  forward_init.transparent_pipeline = m_transparent_pipeline.get();
   forward_init.shadow_pipeline = m_shadow_pipeline.get();
   forward_init.shadow_map = m_shadow_map.get();
   forward_init.fallback_texture = m_fallback_texture;
   m_forward_path->initialize(forward_init);
+
+  LOG_INFO(
+      "[RenderSystem] PBR pipelines ready (descriptor layout shared: opaque={}, "
+      "transparent={})",
+      reinterpret_cast<void*>(m_mesh_pipeline->nativePipeline()->getDescriptorSetLayout()),
+      reinterpret_cast<void*>(m_transparent_pipeline->nativePipeline()->getDescriptorSetLayout()));
 
   recreateReadbackStaging(k_default_viewport_w, k_default_viewport_h);
 
@@ -359,41 +326,138 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_renderdoc_capture->initialize();
 }
 
-bool RenderSystem::createOpaqueDrawSourceFromMesh(
-    const void* vertex_bytes, VkDeviceSize vertex_byte_size,
-    const uint32_t* indices, size_t index_count,
-    eastl::shared_ptr<MaterialAsset> material, VulkanTexture* base_color_texture,
-    uint32_t slot_index, const glm::vec3& translation, const glm::vec3& scale,
-    bool animate_spin) {
-  if (vertex_bytes == nullptr || indices == nullptr || index_count == 0 ||
-      slot_index >= ForwardRenderPath::k_max_opaque_draws) {
+GpuMesh* RenderSystem::getOrUploadGpuMesh(const MeshAsset* mesh_asset) {
+  if (mesh_asset == nullptr || !isVulkanBackend() || !vkAlloc(this)) {
+    return nullptr;
+  }
+
+  eastl::string cache_key = mesh_asset->getVirtualPath();
+  if (cache_key.empty()) {
+    const std::filesystem::path& absolute_path = mesh_asset->getAbsolutePath();
+    if (!absolute_path.empty()) {
+      cache_key = eastl::string(absolute_path.generic_string().c_str());
+    } else {
+      cache_key = "generated://render/anonymous_mesh";
+    }
+  }
+
+  return getOrUploadGpuMeshByKey(cache_key, mesh_asset->getVertexData(),
+                                 mesh_asset->getVertexByteSize(),
+                                 mesh_asset->getIndices().data(),
+                                 mesh_asset->getIndexCount());
+}
+
+GpuMesh* RenderSystem::getOrUploadGpuMeshByKey(const eastl::string& cache_key,
+                                               const void* vertex_bytes,
+                                               size_t vertex_byte_size,
+                                               const uint32_t* indices,
+                                               size_t index_count) {
+  if (cache_key.empty() || vertex_bytes == nullptr || indices == nullptr ||
+      vertex_byte_size == 0 || index_count == 0 || !isVulkanBackend() ||
+      !vkAlloc(this)) {
+    return nullptr;
+  }
+
+  if (auto it = m_gpu_meshes.find(cache_key); it != m_gpu_meshes.end()) {
+    return it->second.get();
+  }
+
+  auto uploaded_mesh = GpuMesh::createFromGeometry(
+      vkAlloc(this), vertex_bytes, static_cast<VkDeviceSize>(vertex_byte_size),
+      indices, index_count);
+  if (!uploaded_mesh) {
+    LOG_ERROR("[RenderSystem] GpuMesh upload failed for {}", cache_key.c_str());
+    return nullptr;
+  }
+
+  GpuMesh* uploaded_mesh_ptr = uploaded_mesh.get();
+  m_gpu_meshes[cache_key] = eastl::move(uploaded_mesh);
+  LOG_INFO("[RenderSystem] GpuMesh uploaded {} (indices={})", cache_key.c_str(),
+           index_count);
+  return uploaded_mesh_ptr;
+}
+
+bool RenderSystem::addOpaqueMeshDraw(
+    GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
+    VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
+    VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
+    const glm::mat4& model, float alpha_cutoff, cgltf_alpha_mode alpha_mode,
+    bool double_sided) {
+  if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
+      gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
     return false;
   }
 
-  ForwardOpaqueDrawSource source;
-  source.vertex_buffer = eastl::make_unique<VulkanBuffer>();
-  source.vertex_buffer->create(vkAlloc(this), vertex_byte_size,
-                               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                               VMA_MEMORY_USAGE_CPU_TO_GPU);
-  source.vertex_buffer->upload(vertex_bytes, vertex_byte_size);
+  if (m_opaque_mesh_draws.size() + m_transparent_mesh_draws.size() >=
+      ForwardRenderPath::k_max_opaque_draws) {
+    LOG_ERROR("[RenderSystem] mesh draw limit reached ({})",
+              ForwardRenderPath::k_max_opaque_draws);
+    return false;
+  }
 
-  source.index_buffer = eastl::make_unique<VulkanBuffer>();
-  const VkDeviceSize index_byte_size =
-      static_cast<VkDeviceSize>(index_count * sizeof(uint32_t));
-  source.index_buffer->create(vkAlloc(this), index_byte_size,
-                              VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                              VMA_MEMORY_USAGE_CPU_TO_GPU);
-  source.index_buffer->upload(indices, index_byte_size);
-
-  source.index_count = static_cast<uint32_t>(index_count);
-  source.slot_index = slot_index;
-  source.material = eastl::move(material);
-  source.base_color_texture = base_color_texture;
-  source.translation = translation;
-  source.scale = scale;
-  source.animate_spin = animate_spin;
-  m_opaque_draw_sources.push_back(eastl::move(source));
+  OpaqueMeshDraw draw{};
+  draw.gpu_mesh = gpu_mesh;
+  draw.material = eastl::move(material);
+  draw.base_color_texture = base_color_texture;
+  draw.metallic_roughness_texture = metallic_roughness_texture;
+  draw.normal_texture = normal_texture;
+  draw.occlusion_texture = occlusion_texture;
+  draw.model = model;
+  draw.alpha_cutoff = alpha_cutoff;
+  draw.alpha_mode = alpha_mode;
+  draw.double_sided = double_sided;
+  draw.slot_index = static_cast<uint32_t>(m_opaque_mesh_draws.size());
+  m_opaque_mesh_draws.push_back(eastl::move(draw));
   return true;
+}
+
+bool RenderSystem::addTransparentMeshDraw(
+    GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
+    VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
+    VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
+    const glm::mat4& model, float alpha_cutoff, bool double_sided) {
+  if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
+      gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
+    return false;
+  }
+
+  if (m_opaque_mesh_draws.size() + m_transparent_mesh_draws.size() >=
+      ForwardRenderPath::k_max_opaque_draws) {
+    LOG_ERROR("[RenderSystem] mesh draw limit reached ({})",
+              ForwardRenderPath::k_max_opaque_draws);
+    return false;
+  }
+
+  OpaqueMeshDraw draw{};
+  draw.gpu_mesh = gpu_mesh;
+  draw.material = eastl::move(material);
+  draw.base_color_texture = base_color_texture;
+  draw.metallic_roughness_texture = metallic_roughness_texture;
+  draw.normal_texture = normal_texture;
+  draw.occlusion_texture = occlusion_texture;
+  draw.model = model;
+  draw.alpha_cutoff = alpha_cutoff;
+  draw.alpha_mode = cgltf_alpha_mode_blend;
+  draw.double_sided = double_sided;
+  draw.is_transparent = true;
+  draw.slot_index =
+      static_cast<uint32_t>(m_opaque_mesh_draws.size() + m_transparent_mesh_draws.size());
+  m_transparent_mesh_draws.push_back(eastl::move(draw));
+  return true;
+}
+
+void RenderSystem::clearOpaqueMeshDraws() { m_opaque_mesh_draws.clear(); }
+
+void RenderSystem::clearTransparentMeshDraws() { m_transparent_mesh_draws.clear(); }
+
+void RenderSystem::clearGpuMeshes() {
+  for (auto& [key, mesh] : m_gpu_meshes) {
+    if (mesh) {
+      mesh->destroy();
+      mesh.reset();
+    }
+  }
+  m_gpu_meshes.clear();
 }
 
 void RenderSystem::recreateReadbackStaging(uint32_t width, uint32_t height) {
@@ -511,17 +575,9 @@ void RenderSystem::shutdown() {
     m_forward_path.reset();
   }
 
-  for (ForwardOpaqueDrawSource& source : m_opaque_draw_sources) {
-    if (source.index_buffer) {
-      source.index_buffer->destroy();
-      source.index_buffer.reset();
-    }
-    if (source.vertex_buffer) {
-      source.vertex_buffer->destroy();
-      source.vertex_buffer.reset();
-    }
-  }
-  m_opaque_draw_sources.clear();
+  clearOpaqueMeshDraws();
+  clearTransparentMeshDraws();
+  clearGpuMeshes();
   m_inspector_material.reset();
   m_fallback_texture = nullptr;
 
@@ -543,6 +599,11 @@ void RenderSystem::shutdown() {
     m_mesh_pipeline.reset();
   }
 
+  if (m_transparent_pipeline) {
+    m_transparent_pipeline->shutdown();
+    m_transparent_pipeline.reset();
+  }
+
   if (m_shadow_pipeline) {
     m_shadow_pipeline->shutdown();
     m_shadow_pipeline.reset();
@@ -560,7 +621,6 @@ void RenderSystem::shutdown() {
 
   m_window_system = nullptr;
   m_asset_manager = nullptr;
-  m_primary_mesh_rotation_radians = 0.0f;
   m_current_frame = 0;
 }
 
@@ -593,7 +653,7 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
 }
 
 void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
-                              uint32_t target_height) {
+                                uint32_t target_height) {
   resizeOffscreenIfNeeded(target_width, target_height);
 
   const rhi::Extent2D offscreen_extent_rhi = m_offscreen->extent();
@@ -664,11 +724,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     }
   }
 
-  m_primary_mesh_rotation_radians += delta_time * k_demo_mesh_spin_rate;
-  if (m_primary_mesh_rotation_radians > 6.2831853f) {
-    m_primary_mesh_rotation_radians -= 6.2831853f;
-  }
-
   ForwardFrameState frame_state{};
   frame_state.view = view;
   frame_state.projection = projection;
@@ -687,40 +742,78 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
             ->getBlinnPhongEditorSettings();
   }
 
-  const glm::vec3 shadow_focus(0.0f);
+  glm::vec3 shadow_focus(0.0f);
+  float shadow_ortho_half_extent = k_shadow_ortho_half_extent;
+  if (g_runtime_global_context.m_scene_system != nullptr) {
+    SceneInstance* active_scene =
+        g_runtime_global_context.m_scene_system->getActiveInstance();
+    if (active_scene != nullptr && active_scene->hasWorldBounds()) {
+      const AABB& bounds = active_scene->getWorldBounds();
+      shadow_focus = bounds.center();
+      shadow_ortho_half_extent = computeShadowOrthoHalfExtentFromAABB(
+          bounds, frame_state.shading.light_direction);
+    }
+  }
+
   computeDirectionalLightMatrices(
-      frame_state.shading.light_direction, shadow_focus, k_shadow_ortho_half_extent,
+      frame_state.shading.light_direction, shadow_focus, shadow_ortho_half_extent,
       k_shadow_near_plane, k_shadow_far_plane, frame_state.light_view,
       frame_state.light_projection, frame_state.light_view_projection);
 
+  const auto append_forward_draw =
+      [&](const OpaqueMeshDraw& mesh_draw, eastl::vector<ForwardOpaqueDraw>& out) {
+        if (mesh_draw.gpu_mesh == nullptr) {
+          return;
+        }
+
+        VulkanBuffer* vertex_buffer = mesh_draw.gpu_mesh->getVertexBuffer();
+        VulkanBuffer* index_buffer = mesh_draw.gpu_mesh->getIndexBuffer();
+        const uint32_t index_count = mesh_draw.gpu_mesh->getIndexCount();
+        if (vertex_buffer == nullptr || index_buffer == nullptr || index_count == 0) {
+          return;
+        }
+
+        const glm::mat4& model = mesh_draw.model;
+        ForwardOpaqueDraw draw{};
+        draw.slot_index = mesh_draw.slot_index;
+        draw.vertex_buffer = vertex_buffer;
+        draw.index_buffer = index_buffer;
+        draw.index_count = index_count;
+        draw.model = model;
+        draw.normal_matrix =
+            glm::mat4(glm::transpose(glm::inverse(glm::mat3(model))));
+        draw.material = mesh_draw.material.get();
+        draw.base_color_texture = mesh_draw.base_color_texture;
+        draw.metallic_roughness_texture = mesh_draw.metallic_roughness_texture;
+        draw.normal_texture = mesh_draw.normal_texture;
+        draw.occlusion_texture = mesh_draw.occlusion_texture;
+        draw.alpha_cutoff = mesh_draw.alpha_cutoff;
+        draw.alpha_mode = mesh_draw.alpha_mode;
+        draw.double_sided = mesh_draw.double_sided;
+        out.push_back(draw);
+      };
+
   eastl::vector<ForwardOpaqueDraw> opaque_draws;
-  opaque_draws.reserve(m_opaque_draw_sources.size());
-  for (const ForwardOpaqueDrawSource& source : m_opaque_draw_sources) {
-    if (!source.vertex_buffer || !source.index_buffer ||
-        source.index_count == 0) {
-      continue;
-    }
+  opaque_draws.reserve(m_opaque_mesh_draws.size());
+  for (const OpaqueMeshDraw& mesh_draw : m_opaque_mesh_draws) {
+    append_forward_draw(mesh_draw, opaque_draws);
+  }
 
-    float rotation = source.rotation_z;
-    if (source.animate_spin) {
-      rotation = m_primary_mesh_rotation_radians;
-    }
+  for (OpaqueMeshDraw& mesh_draw : m_transparent_mesh_draws) {
+    const glm::vec3 world_position =
+        glm::vec3(mesh_draw.model * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    mesh_draw.sort_depth =
+        glm::length(world_position - frame_state.camera_position);
+  }
+  std::sort(m_transparent_mesh_draws.begin(), m_transparent_mesh_draws.end(),
+            [](const OpaqueMeshDraw& a, const OpaqueMeshDraw& b) {
+              return a.sort_depth > b.sort_depth;
+            });
 
-    glm::mat4 model = glm::translate(glm::mat4(1.0f), source.translation);
-    model = glm::rotate(model, rotation, glm::vec3(0.0f, 0.0f, 1.0f));
-    model = glm::scale(model, source.scale);
-
-    ForwardOpaqueDraw draw{};
-    draw.slot_index = source.slot_index;
-    draw.vertex_buffer = source.vertex_buffer.get();
-    draw.index_buffer = source.index_buffer.get();
-    draw.index_count = source.index_count;
-    draw.model = model;
-    draw.normal_matrix =
-        glm::mat4(glm::transpose(glm::inverse(glm::mat3(model))));
-    draw.material = source.material.get();
-    draw.base_color_texture = source.base_color_texture;
-    opaque_draws.push_back(draw);
+  eastl::vector<ForwardOpaqueDraw> transparent_draws;
+  transparent_draws.reserve(m_transparent_mesh_draws.size());
+  for (const OpaqueMeshDraw& mesh_draw : m_transparent_mesh_draws) {
+    append_forward_draw(mesh_draw, transparent_draws);
   }
 
   VkDevice device = vkCtx(this)->getDevice();
@@ -738,9 +831,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vkBeginCommandBuffer(command_buffer, &begin_info);
 
   if (m_forward_path) {
-    m_forward_path->renderFrame(command_buffer, frame_state, opaque_draws.data(),
-                                static_cast<uint32_t>(opaque_draws.size()),
-                                m_current_frame);
+    m_forward_path->renderFrame(
+        command_buffer, frame_state, opaque_draws.data(),
+        static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
+        static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
   }
 
   vulkan_backend::VulkanCommandList command_list;

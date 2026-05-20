@@ -4,6 +4,7 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
+#include "runtime/function/scene/scene_system.h"
 #include "runtime/function/render/presenter/cpu_rgba8_viewport_presenter.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/slint/slint_system.h"
@@ -39,6 +40,11 @@ void RuntimeGlobalContext::startSystems() {
   AssetManagerInitInfo asset_init_info;
   asset_init_info.file_system = m_file_system.get();
   m_asset_manager->initialize(asset_init_info);
+
+  m_scene_system = eastl::make_shared<SceneSystem>();
+  SceneSystemInitInfo scene_init_info{};
+  scene_init_info.asset_manager = m_asset_manager.get();
+  m_scene_system->initialize(scene_init_info);
 
   m_thumbnail_generator = eastl::make_shared<ThumbnailGenerator>();
   ThumbnailGeneratorInit thumbnail_init{};
@@ -140,6 +146,11 @@ void RuntimeGlobalContext::shutdownSystems() {
   if (m_thumbnail_generator) {
     m_thumbnail_generator->shutdown();
     m_thumbnail_generator.reset();
+  }
+
+  if (m_scene_system) {
+    m_scene_system->shutdown();
+    m_scene_system.reset();
   }
 
   if (m_asset_manager) {

@@ -30,6 +30,56 @@ Minimal JSON wrapper that points at a Resources glTF:
 
 `AssetManager::loadMesh("assets/Meshes/textured_cube.mesh.asset")` reads the descriptor and loads the `source` path.
 
+## Scene descriptor (`.scene.asset`)
+
+Static scene data (entity templates and nested child scene references). Runtime instantiation is handled by `SceneSystem::loadScene` (Stride-style `Scene` vs `SceneInstance` split).
+
+```json
+{
+  "type": "Scene",
+  "entities": [
+    {
+      "name": "Sun",
+      "position": [0, 10, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    },
+    {
+      "name": "CameraRig",
+      "parent": "Sun",
+      "position": [0, 0, 5],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    }
+  ],
+  "childScenes": [
+    {
+      "scene": "assets/Scenes/sub.scene.asset",
+      "name": "SubLevel",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "scale": [1, 1, 1]
+    }
+  ]
+}
+```
+
+- `AssetManager::loadScene("assets/Scenes/root.scene.asset")` deserializes CPU-side `SceneAsset` data.
+- `SceneSystem::loadScene` creates a `SceneInstance`, recursively loads `childScenes`, and sets `child.Parent` on the child instance (parent does not track children).
+- Example startup scene: [`Assets/Scenes/root.scene.asset`](Assets/Scenes/root.scene.asset) with nested [`Assets/Scenes/sub.scene.asset`](Assets/Scenes/sub.scene.asset).
+
+## glTF scene import (Sponza)
+
+Large glTF scenes can be imported directly without a `.scene.asset` wrapper:
+
+- Place Khronos [Sponza](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) under [`Resources/Models/Sponza/`](Resources/Models/Sponza/) (`Sponza.gltf` + external textures, no Draco).
+- `SceneSystem::loadGltfScene("resources/Models/Sponza/Sponza.gltf")` parses the default scene, creates one entity per mesh primitive, and stores `MeshRendererComponent` data on the `SceneInstance`.
+- `syncSceneToRender(RenderSystem*, SceneInstance*)` uploads meshes/textures and registers opaque/transparent draws (up to 256).
+- `AssetManager::loadMeshPrimitive` caches each primitive as `{gltf_key}#mesh{m}#prim{p}`.
+
+Editor startup loads Sponza when the files are present; see [`Resources/Models/Sponza/README.md`](Resources/Models/Sponza/README.md).
+
 ## Content browser data
 
 `ContentIndex::scan(FileSystem)` recursively lists files under `Assets/` and `Resources/`

@@ -40,6 +40,10 @@ struct GraphicsPipelineDesc {
   float depth_bias_slope_factor{0.0f};
   bool enable_texture_sampling{false};
   bool enable_shadow_sampling{false};
+  /// PBR: metallic-roughness, normal, occlusion (bindings 4-9 in pbr.slang).
+  bool enable_pbr_texture_sampling{false};
+  /// Non-zero: reuse an existing VkDescriptorSetLayout (opaque mesh layout).
+  uint64_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
 };
 

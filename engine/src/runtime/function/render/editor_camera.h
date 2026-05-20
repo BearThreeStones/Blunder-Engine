@@ -50,6 +50,7 @@ class EditorCamera final {
   void setViewportRect(int32_t x, int32_t y, float width, float height);
   void setViewportSize(float width, float height);
   void setProjectionMode(ProjectionMode mode);
+  void focusOnAABB(const AABB& bounds);
 
  private:
   enum class InteractionMode : uint32_t {

@@ -16,11 +16,10 @@ struct Vertex {
   glm::vec3 position;
   glm::vec3 normal;
   glm::vec2 uv;
+  glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
 
-  // 绑定描述
   static VkVertexInputBindingDescription getBindingDescription();
-  // 属性描述
-  static eastl::array<VkVertexInputAttributeDescription, 3>
+  static eastl::array<VkVertexInputAttributeDescription, 4>
   getAttributeDescriptions();
 };
 

@@ -3,6 +3,10 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 
+#include <cgltf.h>
+
+#include "runtime/core/math/geometry.h"
+
 namespace Blunder {
 
 class MaterialAsset;
@@ -25,6 +29,8 @@ struct ForwardMeshUniformData {
   glm::mat4 normal_matrix{1.0f};
   glm::mat4 light_view_projection{1.0f};
   glm::vec4 shadow_params{0.0f};
+  glm::vec4 metallic_roughness_factors{1.0f, 1.0f, 0.5f, 0.0f};
+  glm::vec4 pbr_texture_flags{0.0f};
 };
 
 void computeDirectionalLightMatrices(
@@ -36,5 +42,15 @@ void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                                     const MaterialAsset* material,
                                     const BlinnPhongEditorSettings& editor,
                                     const ForwardFrameState& frame_state);
+
+void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
+                            const MaterialAsset* material,
+                            const BlinnPhongEditorSettings& editor,
+                            const ForwardFrameState& frame_state,
+                            cgltf_alpha_mode alpha_mode, float alpha_cutoff,
+                            bool double_sided);
+
+float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
+                                           const glm::vec3& light_direction);
 
 }  // namespace Blunder

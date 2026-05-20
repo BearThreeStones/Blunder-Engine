@@ -14,6 +14,10 @@
 // #include "runtime/function/physics/physics_manager.h"
 // #include "runtime/function/render/debugdraw/debug_draw_manager.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
+#include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/function/render/editor_camera.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -25,8 +29,8 @@ eastl::unordered_set<eastl::string> g_editor_tick_component_types{};
 
 namespace {
 
-constexpr const char* k_startup_demo_mesh_path =
-  "assets/Meshes/textured_cube.mesh.asset";
+constexpr const char* k_startup_gltf_scene_path =
+    "resources/Models/Sponza/glTF/Sponza.gltf";
 
 }  // namespace
 
@@ -113,19 +117,6 @@ void BlunderEngine::initialize() {
     return;
   }
 
-  const eastl::shared_ptr<MeshAsset> demo_mesh =
-      g_runtime_global_context.m_asset_manager->loadMesh(k_startup_demo_mesh_path);
-  if (!demo_mesh) {
-    LOG_ERROR("[BlunderEngine] failed to load startup demo mesh {}",
-              k_startup_demo_mesh_path);
-    return;
-  }
-
-  LOG_INFO(
-      "[BlunderEngine] startup demo mesh ready {} (vertices={}, indices={}, stride={})",
-      k_startup_demo_mesh_path, demo_mesh->getVertexCount(),
-      demo_mesh->getIndexCount(), demo_mesh->getVertexStride());
-
   if (g_runtime_global_context.m_content_browser) {
     const ContentBrowserRefreshStats stats =
         g_runtime_global_context.m_content_browser->refresh();
@@ -140,27 +131,31 @@ void BlunderEngine::initialize() {
     }
   }
 
-  const eastl::shared_ptr<MaterialAsset>& material = demo_mesh->getMaterialAsset();
-  if (!material || material->getBaseColorTextureAsset() == nullptr) {
-    LOG_INFO("[BlunderEngine] startup demo mesh has no baseColor texture dependency");
-    return;
-  }
+  if (g_runtime_global_context.m_scene_system) {
+    const eastl::shared_ptr<SceneInstance> sponza_scene =
+        g_runtime_global_context.m_scene_system->loadGltfScene(k_startup_gltf_scene_path);
+    if (!sponza_scene) {
+      LOG_ERROR("[BlunderEngine] failed to load startup glTF scene {}",
+                k_startup_gltf_scene_path);
+      return;
+    }
 
-  const eastl::shared_ptr<Texture2DAsset>& base_color_texture =
-      material->getBaseColorTextureAsset();
-  if (g_runtime_global_context.m_render_system->ensureTextureUploaded(
-          base_color_texture.get()) == nullptr) {
-    LOG_ERROR("[BlunderEngine] failed to upload startup demo baseColor texture {}",
-              base_color_texture->getVirtualPath().c_str());
-    return;
-  }
+    g_runtime_global_context.m_scene_system->setActiveInstance(sponza_scene.get());
+    syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                      sponza_scene.get());
 
-  LOG_INFO(
-      "[BlunderEngine] startup demo baseColor ready {} ({}x{}, factor=({}, {}, {}, {}))",
-      base_color_texture->getVirtualPath().c_str(),
-      base_color_texture->getWidth(), base_color_texture->getHeight(),
-      material->getBaseColorFactor().x, material->getBaseColorFactor().y,
-      material->getBaseColorFactor().z, material->getBaseColorFactor().w);
+    if (sponza_scene->hasWorldBounds() &&
+        g_runtime_global_context.m_render_system != nullptr) {
+      EditorCamera* editor_camera =
+          g_runtime_global_context.m_render_system->getEditorCamera();
+      if (editor_camera != nullptr) {
+        editor_camera->focusOnAABB(sponza_scene->getWorldBounds());
+      }
+    }
+
+    LOG_INFO("[BlunderEngine] active glTF scene '{}' (entities={})",
+             sponza_scene->getSourcePath().c_str(), sponza_scene->getEntityCount());
+  }
 }
 void BlunderEngine::clear() {}
 
@@ -209,7 +204,15 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     layer->onUpdate(delta_time);
   }
 
-  // logicalTick(delta_time);
+  if (g_runtime_global_context.m_scene_system) {
+    g_runtime_global_context.m_scene_system->tick(delta_time);
+    if (g_runtime_global_context.m_render_system &&
+        g_runtime_global_context.m_scene_system->getActiveInstance()) {
+      syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                        g_runtime_global_context.m_scene_system->getActiveInstance());
+    }
+  }
+
   calculateFPS(delta_time);
 
   // single thread

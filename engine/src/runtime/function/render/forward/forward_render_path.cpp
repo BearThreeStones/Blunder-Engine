@@ -1,5 +1,6 @@
 #include "runtime/function/render/forward/forward_render_path.h"
 
+
 #include <cmath>
 #include <vulkan/vulkan.h>
 
@@ -63,8 +64,9 @@ uint32_t opaqueDescriptorIndex(uint32_t slot_index, uint32_t frame_index) {
   return slot_index * VulkanSync::k_max_frames_in_flight + frame_index;
 }
 
-void writeOpaqueTextureBindings(VkDevice device, VkDescriptorSet descriptor_set,
-                                VulkanTexture* texture) {
+void writeTextureSamplerPair(VkDevice device, VkDescriptorSet descriptor_set,
+                             uint32_t texture_binding, uint32_t sampler_binding,
+                             VulkanTexture* texture) {
   if (texture == nullptr) {
     return;
   }
@@ -79,19 +81,39 @@ void writeOpaqueTextureBindings(VkDevice device, VkDescriptorSet descriptor_set,
   VkWriteDescriptorSet texture_writes[2]{};
   texture_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   texture_writes[0].dstSet = descriptor_set;
-  texture_writes[0].dstBinding = 1;
+  texture_writes[0].dstBinding = texture_binding;
   texture_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   texture_writes[0].descriptorCount = 1;
   texture_writes[0].pImageInfo = &sampled_image_info;
 
   texture_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   texture_writes[1].dstSet = descriptor_set;
-  texture_writes[1].dstBinding = 2;
+  texture_writes[1].dstBinding = sampler_binding;
   texture_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
   texture_writes[1].descriptorCount = 1;
   texture_writes[1].pImageInfo = &sampler_info;
 
   vkUpdateDescriptorSets(device, 2, texture_writes, 0, nullptr);
+}
+
+void writeOpaqueTextureBindings(VkDevice device, VkDescriptorSet descriptor_set,
+                                VulkanTexture* base_color,
+                                VulkanTexture* metallic_roughness,
+                                VulkanTexture* normal_map,
+                                VulkanTexture* occlusion,
+                                VulkanTexture* fallback_texture) {
+  if (fallback_texture == nullptr) {
+    return;
+  }
+  writeTextureSamplerPair(device, descriptor_set, 1, 2,
+                          base_color != nullptr ? base_color : fallback_texture);
+  writeTextureSamplerPair(
+      device, descriptor_set, 4, 5,
+      metallic_roughness != nullptr ? metallic_roughness : fallback_texture);
+  writeTextureSamplerPair(device, descriptor_set, 6, 7,
+                          normal_map != nullptr ? normal_map : fallback_texture);
+  writeTextureSamplerPair(device, descriptor_set, 8, 9,
+                          occlusion != nullptr ? occlusion : fallback_texture);
 }
 
 void writeOpaqueShadowBinding(VkDevice device, VkDescriptorSet descriptor_set,
@@ -132,6 +154,7 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   m_grid_pipeline = init.grid_pipeline;
   m_opaque_pipeline = init.opaque_pipeline;
   m_shadow_pipeline = init.shadow_pipeline;
+  m_transparent_pipeline = init.transparent_pipeline;
   m_shadow_map = init.shadow_map;
   m_fallback_texture = init.fallback_texture;
 
@@ -169,9 +192,9 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   opaque_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   opaque_pool_sizes[0].descriptorCount = total_opaque_sets;
   opaque_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  opaque_pool_sizes[1].descriptorCount = total_opaque_sets;
+  opaque_pool_sizes[1].descriptorCount = total_opaque_sets * 4u;
   opaque_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
-  opaque_pool_sizes[2].descriptorCount = total_opaque_sets;
+  opaque_pool_sizes[2].descriptorCount = total_opaque_sets * 4u;
   opaque_pool_sizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   opaque_pool_sizes[3].descriptorCount = total_opaque_sets;
 
@@ -227,7 +250,9 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
     vkUpdateDescriptorSets(device, 1, &ubo_write, 0, nullptr);
 
     if (m_fallback_texture != nullptr) {
-      writeOpaqueTextureBindings(device, opaque_sets[i], m_fallback_texture);
+      writeOpaqueTextureBindings(device, opaque_sets[i], m_fallback_texture,
+                                 m_fallback_texture, m_fallback_texture,
+                                 m_fallback_texture, m_fallback_texture);
     }
     if (m_shadow_map != nullptr) {
       writeOpaqueShadowBinding(device, opaque_sets[i], m_shadow_map);
@@ -403,6 +428,7 @@ void ForwardRenderPath::shutdown() {
   m_fallback_texture = nullptr;
   m_shadow_map = nullptr;
   m_shadow_pipeline = nullptr;
+  m_transparent_pipeline = nullptr;
   m_opaque_pipeline = nullptr;
   m_grid_pipeline = nullptr;
   m_offscreen = nullptr;
@@ -511,29 +537,32 @@ void ForwardRenderPath::drawGrid(VkCommandBuffer cmd,
   }
 }
 
-void ForwardRenderPath::drawOpaqueList(
-    VkCommandBuffer cmd, const ForwardFrameState& frame_state,
-    const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
-    uint32_t frame_index) {
-  if (opaque_draws == nullptr || opaque_draw_count == 0) {
+namespace {
+
+void drawMeshList(VkCommandBuffer cmd, VkDevice device,
+                  vulkan_backend::VulkanGraphicsPipeline* pipeline,
+                  const ForwardFrameState& frame_state,
+                  const ForwardOpaqueDraw* draws, uint32_t draw_count,
+                  uint32_t frame_index, VulkanTexture* fallback_texture,
+                  const eastl::vector<uintptr_t>& descriptor_sets,
+                  const eastl::vector<eastl::unique_ptr<VulkanBuffer>>& uniform_buffers) {
+  if (pipeline == nullptr || draws == nullptr || draw_count == 0) {
     return;
   }
 
-  VkDevice device = m_vk_context->getDevice();
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_opaque_pipeline->nativePipeline()->getGraphicsPipeline());
+                    pipeline->nativePipeline()->getGraphicsPipeline());
 
-  for (uint32_t draw_i = 0; draw_i < opaque_draw_count; ++draw_i) {
-    const ForwardOpaqueDraw& draw = opaque_draws[draw_i];
+  for (uint32_t draw_i = 0; draw_i < draw_count; ++draw_i) {
+    const ForwardOpaqueDraw& draw = draws[draw_i];
     if (draw.vertex_buffer == nullptr || draw.index_buffer == nullptr ||
-        draw.index_count == 0 ||
-        draw.slot_index >= k_max_opaque_draws) {
+        draw.index_count == 0 || draw.slot_index >= ForwardRenderPath::k_max_opaque_draws) {
       continue;
     }
 
     const uint32_t descriptor_index =
         opaqueDescriptorIndex(draw.slot_index, frame_index);
-    if (descriptor_index >= m_opaque_descriptor_sets.size()) {
+    if (descriptor_index >= descriptor_sets.size()) {
       continue;
     }
 
@@ -543,31 +572,59 @@ void ForwardRenderPath::drawOpaqueList(
     mesh_ubo.view = frame_state.view;
     mesh_ubo.projection = frame_state.projection;
     mesh_ubo.camera_position = glm::vec4(frame_state.camera_position, 1.0f);
-    applyBlinnPhongToMeshUniforms(mesh_ubo, draw.material, frame_state.shading,
-                                  frame_state);
+    applyPbrToMeshUniforms(mesh_ubo, draw.material, frame_state.shading, frame_state,
+                             draw.alpha_mode, draw.alpha_cutoff, draw.double_sided);
 
-    VulkanTexture* texture = draw.base_color_texture != nullptr
-                                 ? draw.base_color_texture
-                                 : m_fallback_texture;
-    const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
-        m_opaque_descriptor_sets[descriptor_index]);
-    if (texture != nullptr) {
-      writeOpaqueTextureBindings(device, descriptor_set, texture);
-    }
+    VulkanTexture* base_color =
+        draw.base_color_texture != nullptr ? draw.base_color_texture : fallback_texture;
+    VulkanTexture* metallic_roughness = draw.metallic_roughness_texture != nullptr
+                                            ? draw.metallic_roughness_texture
+                                            : fallback_texture;
+    VulkanTexture* normal_map =
+        draw.normal_texture != nullptr ? draw.normal_texture : fallback_texture;
+    VulkanTexture* occlusion =
+        draw.occlusion_texture != nullptr ? draw.occlusion_texture : fallback_texture;
 
-    m_opaque_uniform_buffers[descriptor_index]->upload(&mesh_ubo,
-                                                       sizeof(mesh_ubo));
+    const VkDescriptorSet descriptor_set =
+        reinterpret_cast<VkDescriptorSet>(descriptor_sets[descriptor_index]);
+    writeOpaqueTextureBindings(device, descriptor_set, base_color, metallic_roughness,
+                               normal_map, occlusion, fallback_texture);
+
+    uniform_buffers[descriptor_index]->upload(&mesh_ubo, sizeof(mesh_ubo));
 
     VkBuffer vertex_buffers[] = {draw.vertex_buffer->getBuffer()};
     VkDeviceSize vertex_offsets[] = {0};
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            m_opaque_pipeline->nativePipeline()->getPipelineLayout(),
-                            0, 1, &descriptor_set, 0, nullptr);
+                            pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
+                            &descriptor_set, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, vertex_buffers, vertex_offsets);
     vkCmdBindIndexBuffer(cmd, draw.index_buffer->getBuffer(), 0,
                          VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, draw.index_count, 1, 0, 0, 0);
   }
+}
+
+}  // namespace
+
+void ForwardRenderPath::drawOpaqueList(
+    VkCommandBuffer cmd, const ForwardFrameState& frame_state,
+    const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
+    uint32_t frame_index) {
+  drawMeshList(cmd, m_vk_context->getDevice(), m_opaque_pipeline, frame_state,
+               opaque_draws, opaque_draw_count, frame_index, m_fallback_texture,
+               m_opaque_descriptor_sets, m_opaque_uniform_buffers);
+}
+
+void ForwardRenderPath::drawTransparentList(
+    VkCommandBuffer cmd, const ForwardFrameState& frame_state,
+    const ForwardOpaqueDraw* transparent_draws, uint32_t transparent_draw_count,
+    uint32_t frame_index) {
+  if (m_transparent_pipeline == nullptr) {
+    return;
+  }
+  drawMeshList(cmd, m_vk_context->getDevice(), m_transparent_pipeline, frame_state,
+               transparent_draws, transparent_draw_count, frame_index,
+               m_fallback_texture, m_opaque_descriptor_sets, m_opaque_uniform_buffers);
 }
 
 void ForwardRenderPath::drawShadowOpaqueList(
@@ -627,6 +684,8 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
                                     const ForwardFrameState& frame_state,
                                     const ForwardOpaqueDraw* opaque_draws,
                                     uint32_t opaque_draw_count,
+                                    const ForwardOpaqueDraw* transparent_draws,
+                                    uint32_t transparent_draw_count,
                                     uint32_t frame_index) {
   ASSERT(m_offscreen);
   const rhi::Extent2D extent = m_offscreen->extent();
@@ -654,6 +713,8 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
   drawGrid(command_buffer, frame_state, frame_index);
   drawOpaqueList(command_buffer, frame_state, opaque_draws, opaque_draw_count,
                  frame_index);
+  drawTransparentList(command_buffer, frame_state, transparent_draws,
+                      transparent_draw_count, frame_index);
   m_offscreen->endRenderPass(command_list);
   m_offscreen->markPostRenderPassShaderRead();
 }

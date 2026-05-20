@@ -7,7 +7,9 @@ file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
 # List of Slang shader files to deploy
 set(SHADER_CANDIDATES
     basic.slang
+    pbr.slang
     grid.slang
+    shadow_depth.slang
     ui_overlay.slang
 )
 

@@ -32,6 +32,7 @@ struct ForwardRenderPathInit {
   rhi::IOffscreenRenderTarget* offscreen{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* grid_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* opaque_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* transparent_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* shadow_pipeline{nullptr};
   ShadowMapTarget* shadow_map{nullptr};
   VulkanTexture* fallback_texture{nullptr};
@@ -40,7 +41,7 @@ struct ForwardRenderPathInit {
 /// Single offscreen forward pass: grid + opaque draw list + RHI readback barriers.
 class ForwardRenderPath final {
  public:
-  static constexpr uint32_t k_max_opaque_draws = 8;
+  static constexpr uint32_t k_max_opaque_draws = 256;
 
   ForwardRenderPath() = default;
   ~ForwardRenderPath();
@@ -54,6 +55,8 @@ class ForwardRenderPath final {
                    const ForwardFrameState& frame_state,
                    const ForwardOpaqueDraw* opaque_draws,
                    uint32_t opaque_draw_count,
+                   const ForwardOpaqueDraw* transparent_draws,
+                   uint32_t transparent_draw_count,
                    uint32_t frame_index);
 
  private:
@@ -63,6 +66,10 @@ class ForwardRenderPath final {
   void drawOpaqueList(VkCommandBuffer cmd, const ForwardFrameState& frame_state,
                       const ForwardOpaqueDraw* opaque_draws,
                       uint32_t opaque_draw_count, uint32_t frame_index);
+  void drawTransparentList(VkCommandBuffer cmd,
+                           const ForwardFrameState& frame_state,
+                           const ForwardOpaqueDraw* transparent_draws,
+                           uint32_t transparent_draw_count, uint32_t frame_index);
   void drawShadowOpaqueList(VkCommandBuffer cmd,
                             const ForwardFrameState& frame_state,
                             const ForwardOpaqueDraw* opaque_draws,
@@ -73,6 +80,7 @@ class ForwardRenderPath final {
   rhi::IOffscreenRenderTarget* m_offscreen{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_grid_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_opaque_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* m_transparent_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_shadow_pipeline{nullptr};
   ShadowMapTarget* m_shadow_map{nullptr};
   VulkanTexture* m_fallback_texture{nullptr};

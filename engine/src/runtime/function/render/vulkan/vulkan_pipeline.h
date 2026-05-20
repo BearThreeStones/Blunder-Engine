@@ -25,6 +25,8 @@ struct VulkanPipelineCreateInfo {
   float depth_bias_slope_factor{0.0f};
   bool enable_texture_sampling{false};
   bool enable_shadow_sampling{false};
+  bool enable_pbr_texture_sampling{false};
+  uintptr_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
   VkShaderStageFlags descriptor_stage_flags{VK_SHADER_STAGE_VERTEX_BIT};
 };
@@ -63,6 +65,7 @@ class VulkanPipeline final {
   SlangCompiler* m_slang_compiler{nullptr};
   VkRenderPass m_render_pass{VK_NULL_HANDLE};
   VulkanPipelineCreateInfo m_create_info{};
+  bool m_owns_descriptor_set_layout{true};
   VkDescriptorSetLayout m_descriptor_set_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_pipeline_layout{VK_NULL_HANDLE};
   VkPipeline m_graphics_pipeline{VK_NULL_HANDLE};

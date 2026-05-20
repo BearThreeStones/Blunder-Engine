@@ -1,0 +1,28 @@
+{
+  "type": "Scene",
+  "entities": [
+    {
+      "name": "Sun",
+      "position": [0, 10, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    },
+    {
+      "name": "CameraRig",
+      "parent": "Sun",
+      "position": [0, 0, 5],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    }
+  ],
+  "childScenes": [
+    {
+      "scene": "assets/Scenes/sub.scene.asset",
+      "name": "SubLevel",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "scale": [1, 1, 1]
+    }
+  ]
+}

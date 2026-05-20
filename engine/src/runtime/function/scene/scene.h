@@ -1,0 +1,52 @@
+#pragma once
+
+#include "EASTL/string.h"
+#include "EASTL/vector.h"
+
+#include "runtime/core/math/math_types.h"
+
+namespace Blunder {
+
+/// Static entity definition deserialized from a Scene asset.
+struct SceneEntityDefinition final {
+  eastl::string name;
+  Vec3 position{0.0f};
+  Quat rotation{glm::identity<Quat>()};
+  Vec3 scale{1.0f, 1.0f, 1.0f};
+  eastl::string parent_name;
+};
+
+/// Reference to a nested child scene (loaded explicitly by SceneSystem).
+struct SceneChildReference final {
+  eastl::string scene_virtual_path;
+  eastl::string instance_name;
+  Vec3 position{0.0f};
+  Quat rotation{glm::identity<Quat>()};
+  Vec3 scale{1.0f, 1.0f, 1.0f};
+};
+
+/// Static scene data: entity templates and child scene references.
+class Scene final {
+ public:
+  Scene() = default;
+
+  const eastl::vector<SceneEntityDefinition>& getEntities() const {
+    return m_entities;
+  }
+  eastl::vector<SceneEntityDefinition>& getEntities() { return m_entities; }
+
+  const eastl::vector<SceneChildReference>& getChildScenes() const {
+    return m_child_scenes;
+  }
+  eastl::vector<SceneChildReference>& getChildScenes() { return m_child_scenes; }
+
+  const eastl::string& getName() const { return m_name; }
+  void setName(eastl::string name) { m_name = eastl::move(name); }
+
+ private:
+  eastl::string m_name;
+  eastl::vector<SceneEntityDefinition> m_entities;
+  eastl::vector<SceneChildReference> m_child_scenes;
+};
+
+}  // namespace Blunder

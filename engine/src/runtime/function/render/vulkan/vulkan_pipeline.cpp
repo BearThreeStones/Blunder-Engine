@@ -1,5 +1,6 @@
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
 
+
 #include <slang.h>
 
 #include <cstddef>
@@ -55,7 +56,7 @@ void VulkanPipeline::shutdown() {
     m_pipeline_layout = VK_NULL_HANDLE;
   }
 
-  if (m_descriptor_set_layout != VK_NULL_HANDLE) {
+  if (m_owns_descriptor_set_layout && m_descriptor_set_layout != VK_NULL_HANDLE) {
     vkDestroyDescriptorSetLayout(device, m_descriptor_set_layout, nullptr);
     m_descriptor_set_layout = VK_NULL_HANDLE;
   }
@@ -238,6 +239,15 @@ void VulkanPipeline::createGraphicsPipeline() {
 void VulkanPipeline::createDescriptorSetLayout() {
   ASSERT(m_context);
 
+  if (m_create_info.shared_descriptor_set_layout != 0) {
+    m_descriptor_set_layout = reinterpret_cast<VkDescriptorSetLayout>(
+        m_create_info.shared_descriptor_set_layout);
+    m_owns_descriptor_set_layout = false;
+    return;
+  }
+
+  m_owns_descriptor_set_layout = true;
+
   eastl::vector<VkDescriptorSetLayoutBinding> bindings;
   uint32_t binding_reserve = 1;
   if (m_create_info.enable_texture_sampling) {
@@ -245,6 +255,9 @@ void VulkanPipeline::createDescriptorSetLayout() {
   }
   if (m_create_info.enable_shadow_sampling) {
     binding_reserve += 1;
+  }
+  if (m_create_info.enable_pbr_texture_sampling) {
+    binding_reserve += 6;
   }
   bindings.reserve(binding_reserve);
 
@@ -282,6 +295,27 @@ void VulkanPipeline::createDescriptorSetLayout() {
     shadow_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     shadow_binding.pImmutableSamplers = nullptr;
     bindings.push_back(shadow_binding);
+  }
+
+  if (m_create_info.enable_pbr_texture_sampling) {
+    for (uint32_t pair_index = 0; pair_index < 3; ++pair_index) {
+      const uint32_t texture_binding = 4 + pair_index * 2;
+      const uint32_t sampler_binding = 5 + pair_index * 2;
+
+      VkDescriptorSetLayoutBinding image_binding{};
+      image_binding.binding = texture_binding;
+      image_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+      image_binding.descriptorCount = 1;
+      image_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+      bindings.push_back(image_binding);
+
+      VkDescriptorSetLayoutBinding sampler_binding_info{};
+      sampler_binding_info.binding = sampler_binding;
+      sampler_binding_info.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+      sampler_binding_info.descriptorCount = 1;
+      sampler_binding_info.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+      bindings.push_back(sampler_binding_info);
+    }
   }
 
   VkDescriptorSetLayoutCreateInfo layout_info{};

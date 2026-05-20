@@ -1,5 +1,8 @@
 #include "runtime/resource/asset_manager/asset_manager.h"
 
+#include "runtime/function/scene/scene_serializer.h"
+#include "runtime/resource/asset/scene_asset.h"
+
 #include <cgltf.h>
 #include <spdlog/fmt/fmt.h>
 #include <stb_image.h>
@@ -343,6 +346,126 @@ eastl::shared_ptr<ShaderAsset> AssetManager::loadShader(
   return asset;
 }
 
+eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
+    const eastl::string& virtual_path) {
+  if (!m_is_initialized) {
+    LOG_ERROR("[AssetManager] loadScene before initialize()");
+    return nullptr;
+  }
+  if (virtual_path.empty()) {
+    LOG_ERROR("[AssetManager] loadScene: empty path");
+    return nullptr;
+  }
+
+  const eastl::string request_key = canonicalKey(virtual_path);
+  const ResolvedContentPath resolved =
+      resolveContentPath(m_file_system, virtual_path, false);
+  const eastl::string& key = resolved.canonical_key;
+
+  if (auto it = m_scene_cache.find(key); it != m_scene_cache.end()) {
+    if (auto cached = it->second.lock()) {
+      return cached;
+    }
+    m_scene_cache.erase(it);
+  }
+
+  const auto& absolute = resolved.absolute;
+  eastl::string json_text;
+  if (!m_file_system->readText(absolute, json_text)) {
+    LOG_ERROR("[AssetManager] loadScene: cannot read {}",
+              absolute.generic_string());
+    return nullptr;
+  }
+
+  Scene scene;
+  if (!SceneSerializer::deserialize(json_text, scene)) {
+    LOG_ERROR("[AssetManager] loadScene: deserialize failed for {}",
+              absolute.generic_string());
+    return nullptr;
+  }
+
+  scene.setName(eastl::string(absolute.stem().generic_string().c_str()));
+
+  Asset::Meta meta;
+  meta.virtual_path = key;
+  meta.absolute_path = absolute;
+  meta.source_timestamp = querySourceTimestamp(absolute);
+  auto asset = eastl::make_shared<SceneAsset>(eastl::move(meta), eastl::move(scene));
+  m_scene_cache[key] = asset;
+
+  LOG_INFO("[AssetManager] loaded Scene {} (resolved: {}, entities={}, childScenes={})",
+           key.c_str(), absolute.generic_string(), asset->getScene().getEntities().size(),
+           asset->getScene().getChildScenes().size());
+  return asset;
+}
+
+bool AssetManager::openGltfImportDocument(const eastl::string& virtual_path,
+                                          GltfImportDocument& out_document) {
+  out_document = {};
+  if (!m_is_initialized || virtual_path.empty()) {
+    return false;
+  }
+
+  const ResolvedContentPath resolved =
+      resolveContentPath(m_file_system, virtual_path, true);
+  const eastl::string mesh_extension(
+      resolved.absolute.extension().generic_string().c_str());
+  if (mesh_extension != ".gltf" && mesh_extension != ".glb") {
+    LOG_ERROR("[AssetManager] openGltfImportDocument: unsupported format {}",
+              resolved.absolute.generic_string());
+    return false;
+  }
+
+  eastl::vector<uint8_t> bytes;
+  if (!m_file_system->readBinary(resolved.absolute, bytes)) {
+    LOG_ERROR("[AssetManager] openGltfImportDocument: cannot read {}",
+              resolved.absolute.generic_string());
+    return false;
+  }
+
+  cgltf_options options{};
+  cgltf_data* data = nullptr;
+  const cgltf_result parse_result =
+      cgltf_parse(&options, bytes.data(), bytes.size(), &data);
+  if (parse_result != cgltf_result_success || data == nullptr) {
+    LOG_ERROR("[AssetManager] openGltfImportDocument: cgltf_parse failed for {} ({})",
+              resolved.absolute.generic_string(), cgltfResultToString(parse_result));
+    return false;
+  }
+
+  const std::string absolute_string = resolved.absolute.string();
+  const cgltf_result buffer_result =
+      cgltf_load_buffers(&options, data, absolute_string.c_str());
+  if (buffer_result != cgltf_result_success) {
+    cgltf_free(data);
+    LOG_ERROR(
+        "[AssetManager] openGltfImportDocument: cgltf_load_buffers failed for {} ({})",
+        resolved.absolute.generic_string(), cgltfResultToString(buffer_result));
+    return false;
+  }
+
+  const cgltf_result validate_result = cgltf_validate(data);
+  if (validate_result != cgltf_result_success) {
+    cgltf_free(data);
+    LOG_ERROR(
+        "[AssetManager] openGltfImportDocument: cgltf_validate failed for {} ({})",
+        resolved.absolute.generic_string(), cgltfResultToString(validate_result));
+    return false;
+  }
+
+  out_document.absolute = resolved.absolute;
+  out_document.canonical_key = resolved.canonical_key;
+  out_document.data = data;
+  return true;
+}
+
+void AssetManager::closeGltfImportDocument(GltfImportDocument& document) {
+  if (document.data != nullptr) {
+    cgltf_free(document.data);
+    document.data = nullptr;
+  }
+}
+
 eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
     const eastl::string& virtual_path) {
   if (!m_is_initialized) {
@@ -444,274 +567,40 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
         absolute.generic_string(), cgltfResultToString(validate_result));
   }
 
-  const cgltf_mesh* selected_mesh = nullptr;
-  const cgltf_primitive* selected_primitive = nullptr;
   size_t selected_mesh_index = 0;
   size_t selected_primitive_index = 0;
-  size_t total_primitives = 0;
-  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count;
-       ++mesh_index) {
+  bool found_primitive = false;
+  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
     const cgltf_mesh& mesh = data->meshes[mesh_index];
     for (cgltf_size primitive_index = 0;
          primitive_index < mesh.primitives_count; ++primitive_index) {
-      ++total_primitives;
-      if (selected_primitive == nullptr) {
-        selected_mesh = &mesh;
-        selected_primitive = &mesh.primitives[primitive_index];
+      if (!found_primitive) {
         selected_mesh_index = static_cast<size_t>(mesh_index);
         selected_primitive_index = static_cast<size_t>(primitive_index);
+        found_primitive = true;
+        break;
       }
+    }
+    if (found_primitive) {
+      break;
     }
   }
 
-  if (selected_primitive == nullptr || selected_mesh == nullptr) {
+  if (!found_primitive) {
     return fail_mesh_load(
         "[AssetManager] loadMesh: no mesh primitives found in {}",
         absolute.generic_string());
   }
-  if (total_primitives != 1u) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} contains {} primitives; only single-primitive meshes are supported for now",
-        absolute.generic_string(), total_primitives);
-  }
 
-  const cgltf_primitive& primitive = *selected_primitive;
-  if (primitive.type != cgltf_primitive_type_triangles) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} primitive {} uses unsupported mode {}",
-        absolute.generic_string(), selected_primitive_index,
-        static_cast<int>(primitive.type));
-  }
-  if (primitive.has_draco_mesh_compression) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} primitive {} uses unsupported Draco compression",
-        absolute.generic_string(), selected_primitive_index);
-  }
-
-  const cgltf_attribute* position_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_position, 0);
-  const cgltf_attribute* normal_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_normal, 0);
-  const cgltf_attribute* uv_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_texcoord, 0);
-  if (position_attribute == nullptr || position_attribute->data == nullptr) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} primitive {} is missing POSITION data",
-        absolute.generic_string(), selected_primitive_index);
-  }
-
-  const cgltf_accessor* position_accessor = position_attribute->data;
-  const cgltf_accessor* normal_accessor =
-      normal_attribute != nullptr ? normal_attribute->data : nullptr;
-  const cgltf_accessor* uv_accessor =
-      uv_attribute != nullptr ? uv_attribute->data : nullptr;
-  const size_t vertex_count = static_cast<size_t>(position_accessor->count);
-  if (vertex_count == 0u) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} primitive {} has zero vertices",
-        absolute.generic_string(), selected_primitive_index);
-  }
-  if (normal_accessor != nullptr &&
-      static_cast<size_t>(normal_accessor->count) != vertex_count) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} primitive {} has mismatched NORMAL count",
-        absolute.generic_string(), selected_primitive_index);
-  }
-  if (uv_accessor != nullptr &&
-      static_cast<size_t>(uv_accessor->count) != vertex_count) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: {} primitive {} has mismatched TEXCOORD_0 count",
-        absolute.generic_string(), selected_primitive_index);
-  }
-
-  eastl::vector<MeshVertex> vertices(vertex_count);
-  for (size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-    float position[3] = {0.0f, 0.0f, 0.0f};
-    if (!cgltf_accessor_read_float(position_accessor, vertex_index, position,
-                                   3)) {
-      return fail_mesh_load(
-          "[AssetManager] loadMesh: {} failed reading POSITION at vertex {}",
-          absolute.generic_string(), vertex_index);
-    }
-    vertices[vertex_index].position =
-        glm::vec3(position[0], position[1], position[2]);
-
-    if (normal_accessor != nullptr) {
-      float normal[3] = {0.0f, 0.0f, 1.0f};
-      if (!cgltf_accessor_read_float(normal_accessor, vertex_index, normal,
-                                     3)) {
-        return fail_mesh_load(
-            "[AssetManager] loadMesh: {} failed reading NORMAL at vertex {}",
-            absolute.generic_string(), vertex_index);
-      }
-      vertices[vertex_index].normal = glm::vec3(normal[0], normal[1], normal[2]);
-    }
-
-    if (uv_accessor != nullptr) {
-      float uv[2] = {0.0f, 0.0f};
-      if (!cgltf_accessor_read_float(uv_accessor, vertex_index, uv, 2)) {
-        return fail_mesh_load(
-            "[AssetManager] loadMesh: {} failed reading TEXCOORD_0 at vertex {}",
-            absolute.generic_string(), vertex_index);
-      }
-      vertices[vertex_index].uv = glm::vec2(uv[0], uv[1]);
-    }
-  }
-
-  eastl::vector<uint32_t> indices;
-  if (primitive.indices != nullptr) {
-    const size_t index_count = static_cast<size_t>(primitive.indices->count);
-    indices.resize(index_count);
-    for (size_t index = 0; index < index_count; ++index) {
-      const cgltf_size value = cgltf_accessor_read_index(primitive.indices, index);
-      if (value > std::numeric_limits<uint32_t>::max()) {
-        return fail_mesh_load(
-            "[AssetManager] loadMesh: {} index {} exceeds uint32 range",
-            absolute.generic_string(), index);
-      }
-      indices[index] = static_cast<uint32_t>(value);
-    }
-  } else {
-    indices.resize(vertex_count);
-    for (size_t index = 0; index < vertex_count; ++index) {
-      indices[index] = static_cast<uint32_t>(index);
-    }
-  }
-
-  AssetHandle material_handle;
-  eastl::shared_ptr<MaterialAsset> material_asset;
-  if (primitive.material != nullptr) {
-    const size_t material_index =
-        static_cast<size_t>(primitive.material - data->materials);
-    const eastl::string material_key =
-        canonicalKey(buildGeneratedKey(key, "material", material_index));
-    if (auto it = m_material_cache.find(material_key);
-        it != m_material_cache.end()) {
-      material_asset = it->second.lock();
-      if (!material_asset) {
-        m_material_cache.erase(it);
-      }
-    }
-
-    if (!material_asset) {
-      glm::vec4 base_color_factor(1.0f);
-      AssetHandle base_color_texture_handle;
-      eastl::shared_ptr<Texture2DAsset> base_color_texture_asset;
-      glm::vec3 ambient_color(0.15f);
-      glm::vec3 diffuse_color(1.0f);
-      glm::vec3 specular_color(0.4f);
-      float shininess = 32.0f;
-      bool unlit = false;
-
-      const cgltf_material& material = *primitive.material;
-      unlit = material.unlit != 0;
-
-      const auto loadGltfImageTexture =
-          [&](const cgltf_texture* texture, const char* usage_label)
-              -> eastl::shared_ptr<MeshAsset> {
-            if (texture == nullptr) {
-              return nullptr;
-            }
-            const cgltf_image* image = texture->image;
-            if (image == nullptr) {
-              return fail_mesh_load(
-                  "[AssetManager] loadMesh: {} material {} uses unsupported non-URI {} image source",
-                  absolute.generic_string(), material_index, usage_label);
-            }
-            if (image->buffer_view != nullptr || image->uri == nullptr ||
-                isDataUri(image->uri)) {
-              return fail_mesh_load(
-                  "[AssetManager] loadMesh: {} material {} only supports external image URIs for {} textures",
-                  absolute.generic_string(), material_index, usage_label);
-            }
-
-            const eastl::string texture_virtual_path = buildResourceVirtualPath(
-                m_file_system->getResourcesRoot(), absolute, image->uri);
-            base_color_texture_asset = loadTexture2D(texture_virtual_path);
-            if (!base_color_texture_asset) {
-              return fail_mesh_load(
-                  "[AssetManager] loadMesh: {} failed loading {} texture {}",
-                  absolute.generic_string(), usage_label,
-                  texture_virtual_path.c_str());
-            }
-            base_color_texture_handle =
-                makeHandle(Asset::Type::Texture2D, texture_virtual_path);
-            return nullptr;
-          };
-
-      if (material.has_pbr_specular_glossiness) {
-        const cgltf_pbr_specular_glossiness& sg =
-            material.pbr_specular_glossiness;
-        base_color_factor =
-            glm::vec4(sg.diffuse_factor[0], sg.diffuse_factor[1],
-                      sg.diffuse_factor[2], sg.diffuse_factor[3]);
-        diffuse_color = glm::vec3(1.0f);
-        specular_color = glm::vec3(sg.specular_factor[0], sg.specular_factor[1],
-                                   sg.specular_factor[2]);
-        shininess = std::clamp(sg.glossiness_factor * 128.0f, 8.0f, 256.0f);
-
-        if (const auto texture_error =
-                loadGltfImageTexture(sg.diffuse_texture.texture, "diffuse");
-            texture_error != nullptr) {
-          return texture_error;
-        }
-      } else if (material.has_pbr_metallic_roughness) {
-        const cgltf_pbr_metallic_roughness& pbr =
-            material.pbr_metallic_roughness;
-        base_color_factor =
-            glm::vec4(pbr.base_color_factor[0], pbr.base_color_factor[1],
-                      pbr.base_color_factor[2], pbr.base_color_factor[3]);
-
-        const float metallic = pbr.metallic_factor;
-        const float roughness = pbr.roughness_factor;
-        diffuse_color = glm::vec3(1.0f);
-        specular_color =
-            glm::vec3(0.04f) * (1.0f - metallic) +
-            glm::vec3(base_color_factor.x, base_color_factor.y,
-                      base_color_factor.z) *
-                metallic;
-        shininess = 8.0f + (256.0f - 8.0f) * (1.0f - roughness);
-
-        if (const auto texture_error = loadGltfImageTexture(
-                pbr.base_color_texture.texture, "baseColor");
-            texture_error != nullptr) {
-          return texture_error;
-        }
-      }
-
-      Asset::Meta material_meta;
-      material_meta.virtual_path = material_key;
-      material_meta.absolute_path = absolute;
-      material_meta.source_timestamp = querySourceTimestamp(absolute);
-      material_asset = eastl::make_shared<MaterialAsset>(
-          eastl::move(material_meta), base_color_factor,
-          base_color_texture_handle, base_color_texture_asset, ambient_color,
-          diffuse_color, specular_color, shininess, unlit);
-      m_material_cache[material_key] = material_asset;
-    }
-
-    material_handle = makeHandle(Asset::Type::Material, material_key);
-  }
-
-  Asset::Meta meta;
-  meta.virtual_path = key;
-  meta.absolute_path = absolute;
-  meta.source_timestamp = querySourceTimestamp(absolute);
-  auto asset = eastl::make_shared<MeshAsset>(
-      eastl::move(meta), eastl::move(vertices), eastl::move(indices),
-      material_handle, material_asset);
-  m_mesh_cache[key] = asset;
-
-  LOG_INFO(
-      "[AssetManager] loaded Mesh {} (resolved: {}, mesh={}, mesh_index={}, primitive_index={}, vertices={}, indices={}, material={}, baseColorTexture={})",
-      key.c_str(), absolute.generic_string(),
-      selected_mesh->name != nullptr ? selected_mesh->name : "<unnamed>",
-      selected_mesh_index, selected_primitive_index, asset->getVertexCount(),
-      asset->getIndexCount(), asset->hasMaterial() ? "yes" : "no",
-      material_asset && material_asset->hasBaseColorTexture() ? "yes" : "no");
-
+  const eastl::shared_ptr<MeshAsset> loaded = loadMeshPrimitive(
+      data, selected_mesh_index, selected_primitive_index, absolute, key);
   cgltf_free(data);
-  return asset;
+  if (loaded) {
+    LOG_INFO("[AssetManager] loaded Mesh {} (resolved: {}, mesh_index={}, primitive_index={})",
+             key.c_str(), absolute.generic_string(), selected_mesh_index,
+             selected_primitive_index);
+  }
+  return loaded;
 }
 
 AssetHandle AssetManager::makeHandle(Asset::Type type,
@@ -773,6 +662,17 @@ eastl::shared_ptr<Asset> AssetManager::get(const AssetHandle& handle) const {
       }
       return eastl::static_pointer_cast<Asset>(ptr);
     }
+    case Asset::Type::Scene: {
+      auto it = m_scene_cache.find(handle.key);
+      if (it == m_scene_cache.end()) {
+        return nullptr;
+      }
+      auto ptr = it->second.lock();
+      if (!ptr) {
+        return nullptr;
+      }
+      return eastl::static_pointer_cast<Asset>(ptr);
+    }
     default:
       return nullptr;
   }
@@ -807,6 +707,13 @@ void AssetManager::garbageCollect() {
       ++it;
     }
   }
+  for (auto it = m_scene_cache.begin(); it != m_scene_cache.end();) {
+    if (it->second.expired()) {
+      it = m_scene_cache.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void AssetManager::clearCache() {
@@ -814,6 +721,7 @@ void AssetManager::clearCache() {
   m_shader_cache.clear();
   m_mesh_cache.clear();
   m_material_cache.clear();
+  m_scene_cache.clear();
 }
 
 eastl::string AssetManager::canonicalKey(const eastl::string& virtual_path) const {

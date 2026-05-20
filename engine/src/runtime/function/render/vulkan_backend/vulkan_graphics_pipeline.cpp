@@ -33,6 +33,9 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
   info.depth_bias_slope_factor = desc.depth_bias_slope_factor;
   info.enable_texture_sampling = desc.enable_texture_sampling;
   info.enable_shadow_sampling = desc.enable_shadow_sampling;
+  info.enable_pbr_texture_sampling = desc.enable_pbr_texture_sampling;
+  info.shared_descriptor_set_layout =
+      static_cast<uintptr_t>(desc.shared_descriptor_set_layout);
   info.depth_only_subpass = desc.depth_only_subpass;
   info.descriptor_stage_flags =
       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;

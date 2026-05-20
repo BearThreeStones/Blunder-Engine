@@ -21,6 +21,7 @@ class Asset {
     Mesh,
     Material,
     Shader,
+    Scene,
   };
 
   enum class State : uint8_t {

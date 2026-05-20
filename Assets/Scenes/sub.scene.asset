@@ -1,0 +1,13 @@
+{
+  "type": "Scene",
+  "entities": [
+    {
+      "name": "SubMarker",
+      "position": [2, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "scale": [1, 1, 1]
+    }
+  ],
+  "childScenes": []
+}

@@ -21,6 +21,7 @@ class ContentBrowserSystem;
 // class ConfigManager;
 // class WorldManager;
 class RenderSystem;
+class SceneSystem;
 class WindowSystem;
 class LayerStack;
 // class ParticleManager;
@@ -43,6 +44,7 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<InputSystem> m_input_system;
   eastl::shared_ptr<FileSystem> m_file_system;
   eastl::shared_ptr<AssetManager> m_asset_manager;
+  eastl::shared_ptr<SceneSystem> m_scene_system;
   eastl::shared_ptr<ThumbnailGenerator> m_thumbnail_generator;
   eastl::shared_ptr<ContentBrowserSystem> m_content_browser;
   // eastl::shared_ptr<ConfigManager> m_config_manager;

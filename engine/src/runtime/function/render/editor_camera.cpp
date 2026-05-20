@@ -11,6 +11,9 @@
 #include "runtime/core/event/key_event.h"
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
 
 namespace Blunder {
 
@@ -191,7 +194,14 @@ bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {
   }
 
   if (event.getKeyCode() == SDLK_F) {
-    LOG_INFO("[EditorCamera] focus action requested, but scene focus target is not implemented yet");
+    if (g_runtime_global_context.m_scene_system != nullptr) {
+      SceneInstance* active_scene =
+          g_runtime_global_context.m_scene_system->getActiveInstance();
+      if (active_scene != nullptr && active_scene->hasWorldBounds()) {
+        focusOnAABB(active_scene->getWorldBounds());
+        return true;
+      }
+    }
   }
 
   return false;
@@ -437,6 +447,16 @@ void EditorCamera::updateProjectionMatrix() {
   }
   // Vulkan NDC has inverted Y and Z range [0, 1].
   m_projection_matrix[1][1] *= -1.0f;
+}
+
+void EditorCamera::focusOnAABB(const AABB& bounds) {
+  m_focal_point = bounds.center();
+  const glm::vec3 extents = bounds.extents();
+  const float radius = glm::length(extents);
+  m_distance = std::max(radius * 2.5f, 1.0f);
+  updateViewMatrix();
+  LOG_INFO("[EditorCamera] focused on AABB center=({}, {}, {}) distance={}",
+           m_focal_point.x, m_focal_point.y, m_focal_point.z, m_distance);
 }
 
 }  // namespace Blunder

@@ -1,6 +1,9 @@
 #include "runtime/function/render/forward/forward_shading.h"
 
 #include <cmath>
+#include <limits>
+
+#include "runtime/core/math/geometry.h"
 
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -77,6 +80,76 @@ void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
   mesh_ubo.shadow_params = glm::vec4(
       frame_state.shadow_bias, frame_state.shadows_enabled ? 1.0f : 0.0f,
       inv_shadow_map_size, 0.0f);
+}
+
+void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
+                              const MaterialAsset* material,
+                              const BlinnPhongEditorSettings& editor,
+                              const ForwardFrameState& frame_state,
+                              cgltf_alpha_mode alpha_mode, float alpha_cutoff,
+                              bool double_sided) {
+  applyBlinnPhongToMeshUniforms(mesh_ubo, material, editor, frame_state);
+
+  float metallic = 1.0f;
+  float roughness = 1.0f;
+  if (material != nullptr) {
+    metallic = material->getMetallicFactor();
+    roughness = material->getRoughnessFactor();
+    mesh_ubo.material_flags.x = material->isUnlit() ? 1.0f : 0.0f;
+  }
+
+  mesh_ubo.metallic_roughness_factors =
+      glm::vec4(metallic, roughness, alpha_cutoff,
+                static_cast<float>(static_cast<int>(alpha_mode)));
+  mesh_ubo.pbr_texture_flags = glm::vec4(
+      material != nullptr && material->hasMetallicRoughnessTexture() ? 1.0f : 0.0f,
+      material != nullptr && material->hasNormalTexture() ? 1.0f : 0.0f,
+      material != nullptr && material->hasOcclusionTexture() ? 1.0f : 0.0f,
+      double_sided ? 1.0f : 0.0f);
+}
+
+float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
+                                         const glm::vec3& light_direction) {
+  const glm::vec3 light_dir =
+      glm::length(light_direction) > 0.0001f
+          ? glm::normalize(light_direction)
+          : k_default_light_direction;
+
+  glm::vec3 tangent = glm::cross(light_dir, glm::vec3(0.0f, 0.0f, 1.0f));
+  if (glm::dot(tangent, tangent) < 0.0001f) {
+    tangent = glm::cross(light_dir, glm::vec3(0.0f, 1.0f, 0.0f));
+  }
+  tangent = glm::normalize(tangent);
+  const glm::vec3 bitangent = glm::normalize(glm::cross(light_dir, tangent));
+
+  const glm::vec3 corners[8] = {
+      {bounds.min.x, bounds.min.y, bounds.min.z},
+      {bounds.max.x, bounds.min.y, bounds.min.z},
+      {bounds.min.x, bounds.max.y, bounds.min.z},
+      {bounds.max.x, bounds.max.y, bounds.min.z},
+      {bounds.min.x, bounds.min.y, bounds.max.z},
+      {bounds.max.x, bounds.min.y, bounds.max.z},
+      {bounds.min.x, bounds.max.y, bounds.max.z},
+      {bounds.max.x, bounds.max.y, bounds.max.z},
+  };
+
+  float min_u = std::numeric_limits<float>::max();
+  float max_u = std::numeric_limits<float>::lowest();
+  float min_v = std::numeric_limits<float>::max();
+  float max_v = std::numeric_limits<float>::lowest();
+  for (const glm::vec3& corner : corners) {
+    const float u = glm::dot(corner, tangent);
+    const float v = glm::dot(corner, bitangent);
+    min_u = std::min(min_u, u);
+    max_u = std::max(max_u, u);
+    min_v = std::min(min_v, v);
+    max_v = std::max(max_v, v);
+  }
+
+  const float half_u = (max_u - min_u) * 0.5f;
+  const float half_v = (max_v - min_v) * 0.5f;
+  const float radius = std::sqrt(half_u * half_u + half_v * half_v);
+  return std::max(radius * 1.05f, 2.0f);
 }
 
 }  // namespace Blunder
