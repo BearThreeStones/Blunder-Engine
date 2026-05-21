@@ -32,6 +32,7 @@ class OffscreenRenderTarget final {
   VkRenderPass getRenderPass() const { return m_render_pass; }
   VkImage getImage() const { return m_image; }
   VkImageView getImageView() const { return m_image_view; }
+  VkImage getDepthImage() const { return m_depth_image; }
   VkImageView getDepthImageView() const { return m_depth_image_view; }
   VkFramebuffer getFramebuffer() const { return m_framebuffer; }
   VkExtent2D getExtent() const { return {m_width, m_height}; }
@@ -41,6 +42,8 @@ class OffscreenRenderTarget final {
   /// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL.
   VkImageLayout getCurrentLayout() const { return m_current_layout; }
   void setCurrentLayout(VkImageLayout layout) { m_current_layout = layout; }
+  VkImageLayout getDepthLayout() const { return m_depth_layout; }
+  void setDepthLayout(VkImageLayout layout) { m_depth_layout = layout; }
 
   /// Transition the color image from SHADER_READ_ONLY_OPTIMAL to
   /// TRANSFER_SRC_OPTIMAL so it can be copied with vkCmdCopyImageToBuffer.
@@ -48,6 +51,8 @@ class OffscreenRenderTarget final {
   /// Transition back to SHADER_READ_ONLY_OPTIMAL after the copy completes,
   /// so subsequent passes can sample the image again.
   void cmdBarrierToShaderRead(VkCommandBuffer cmd);
+  /// Transition depth to DEPTH_STENCIL_READ_ONLY_OPTIMAL for SSAO sampling.
+  void cmdBarrierDepthToShaderRead(VkCommandBuffer cmd);
 
  private:
   void createRenderPass();
@@ -68,6 +73,7 @@ class OffscreenRenderTarget final {
   uint32_t m_height{0};
   VkFormat m_format{VK_FORMAT_R8G8B8A8_UNORM};
   VkImageLayout m_current_layout{VK_IMAGE_LAYOUT_UNDEFINED};
+  VkImageLayout m_depth_layout{VK_IMAGE_LAYOUT_UNDEFINED};
 };
 
 }  // namespace Blunder

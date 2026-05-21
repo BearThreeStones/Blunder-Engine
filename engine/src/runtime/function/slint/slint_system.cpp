@@ -453,6 +453,39 @@ eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
           m_cached_viewport_logical_rect.height};
 }
 
+BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
+  BlinnPhongEditorSettings settings{};
+  if (!m_window_component) {
+    return settings;
+  }
+
+  try {
+    const auto& ui = *m_window_component;
+    settings.light_direction = glm::vec3(ui->get_light_dir_x(), ui->get_light_dir_y(),
+                                         ui->get_light_dir_z());
+    settings.light_color = glm::vec3(ui->get_light_color_r(), ui->get_light_color_g(),
+                                     ui->get_light_color_b());
+    settings.ambient_color = glm::vec3(ui->get_ambient_r(), ui->get_ambient_g(),
+                                       ui->get_ambient_b());
+    settings.diffuse_color = glm::vec3(ui->get_diffuse_r(), ui->get_diffuse_g(),
+                                       ui->get_diffuse_b());
+    settings.specular_color = glm::vec3(ui->get_specular_r(), ui->get_specular_g(),
+                                        ui->get_specular_b());
+    settings.shininess = ui->get_shininess();
+    settings.unlit = ui->get_shading_unlit();
+    settings.ssao_enabled = ui->get_ssao_enabled();
+    settings.ssao_radius = ui->get_ssao_radius();
+    settings.ssao_bias = ui->get_ssao_bias();
+    settings.ssao_strength = ui->get_ssao_strength();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::getBlinnPhongEditorSettings] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::getBlinnPhongEditorSettings] unknown exception");
+  }
+
+  return settings;
+}
+
 void SlintSystem::setBlinnPhongMaterialSource(const MaterialAsset* material) {
   m_blinn_phong_material_source = material;
 }
@@ -573,28 +606,6 @@ bool SlintSystem::isContentBrowserDragActive() const {
     return false;
   }
   return g_runtime_global_context.m_content_browser->dragController().isDragging();
-}
-
-BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
-  BlinnPhongEditorSettings settings;
-  if (!m_window_component) {
-    return settings;
-  }
-
-  const auto& ui = *m_window_component;
-  settings.light_direction =
-      glm::vec3(ui->get_light_dir_x(), ui->get_light_dir_y(), ui->get_light_dir_z());
-  settings.light_color = glm::vec3(ui->get_light_color_r(), ui->get_light_color_g(),
-                                   ui->get_light_color_b());
-  settings.ambient_color =
-      glm::vec3(ui->get_ambient_r(), ui->get_ambient_g(), ui->get_ambient_b());
-  settings.diffuse_color =
-      glm::vec3(ui->get_diffuse_r(), ui->get_diffuse_g(), ui->get_diffuse_b());
-  settings.specular_color =
-      glm::vec3(ui->get_specular_r(), ui->get_specular_g(), ui->get_specular_b());
-  settings.shininess = ui->get_shininess();
-  settings.unlit = ui->get_shading_unlit();
-  return settings;
 }
 
 void SlintSystem::update() {

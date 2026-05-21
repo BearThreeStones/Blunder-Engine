@@ -28,7 +28,7 @@ SamplerState baseColorSampler;
 [[vk::binding(3, 0)]]
 Texture2D<float> shadowMap;
 
-[[vk::binding(3, 0)]]
+[[vk::binding(4, 0)]]
 SamplerComparisonState shadowSampler;
 
 struct VertexInput

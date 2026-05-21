@@ -119,6 +119,7 @@ void VulkanOffscreenTarget::copyColorToBuffer(rhi::ICommandList& command_list,
 void VulkanOffscreenTarget::markPostRenderPassShaderRead() {
   if (m_target) {
     m_target->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    m_target->setDepthLayout(VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
   }
 }
 

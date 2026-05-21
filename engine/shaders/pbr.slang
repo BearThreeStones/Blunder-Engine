@@ -30,25 +30,25 @@ SamplerState baseColorSampler;
 [[vk::binding(3, 0)]]
 Texture2D<float> shadowMap;
 
-[[vk::binding(3, 0)]]
+[[vk::binding(4, 0)]]
 SamplerComparisonState shadowSampler;
 
-[[vk::binding(4, 0)]]
+[[vk::binding(5, 0)]]
 Texture2D<float4> metallicRoughnessTexture;
 
-[[vk::binding(5, 0)]]
+[[vk::binding(6, 0)]]
 SamplerState metallicRoughnessSampler;
 
-[[vk::binding(6, 0)]]
+[[vk::binding(7, 0)]]
 Texture2D<float4> normalTexture;
 
-[[vk::binding(7, 0)]]
+[[vk::binding(8, 0)]]
 SamplerState normalSampler;
 
-[[vk::binding(8, 0)]]
+[[vk::binding(9, 0)]]
 Texture2D<float4> occlusionTexture;
 
-[[vk::binding(9, 0)]]
+[[vk::binding(10, 0)]]
 SamplerState occlusionSampler;
 
 struct VertexInput

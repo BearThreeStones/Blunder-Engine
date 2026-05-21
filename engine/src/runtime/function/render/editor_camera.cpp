@@ -82,10 +82,12 @@ void EditorCamera::onUpdate(float delta_time) {
       m_interaction_mode = desired_mode;
     }
 
-    if (m_interaction_mode == InteractionMode::free_look) {
-      updateFreeLook(delta_time, keyboard_state);
-    } else if (m_interaction_mode == InteractionMode::pan) {
+    if (m_interaction_mode == InteractionMode::pan) {
       pan();
+    } else if (keyboard_state &&
+               (m_interaction_mode == InteractionMode::free_look ||
+                isCursorInViewport())) {
+      applyKeyboardFlyMovement(delta_time, keyboard_state);
     }
   }
 
@@ -365,7 +367,8 @@ void EditorCamera::updateDirectionVectors() {
   m_up_direction = glm::normalize(glm::cross(m_right_direction, m_forward_direction));
 }
 
-void EditorCamera::updateFreeLook(float delta_time, const bool* keyboard_state) {
+void EditorCamera::applyKeyboardFlyMovement(float delta_time,
+                                          const bool* keyboard_state) {
   if (!keyboard_state) {
     return;
   }

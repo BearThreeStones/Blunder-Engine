@@ -7,6 +7,7 @@
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/post/ssao_pass.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 
 #include <SDL3/SDL.h>
@@ -41,8 +42,8 @@
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
-#include "runtime/function/render/vulkan/vulkan_pipeline.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
+#include "runtime/function/render/vulkan/vulkan_pipeline.h"
 #include "runtime/function/render/vulkan/vulkan_texture.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
@@ -312,6 +313,11 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   forward_init.fallback_texture = m_fallback_texture;
   m_forward_path->initialize(forward_init);
 
+  m_ssao_pass = eastl::make_unique<SsaOPass>();
+  m_ssao_pass->initialize(vkCtx(this), vkAlloc(this),
+                          vkBackend(this)->nativeSlangCompiler());
+  m_ssao_pass->resize(k_default_viewport_w, k_default_viewport_h);
+
   LOG_INFO(
       "[RenderSystem] PBR pipelines ready (descriptor layout shared: opaque={}, "
       "transparent={})",
@@ -537,6 +543,9 @@ void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
     recreateReadbackStaging(width, height);
   }
   m_offscreen->resize(width, height);
+  if (isVulkanBackend() && m_ssao_pass) {
+    m_ssao_pass->resize(width, height);
+  }
 }
 
 void RenderSystem::shutdown() {
@@ -569,6 +578,11 @@ void RenderSystem::shutdown() {
     }
   }
   m_uploaded_textures.clear();
+
+  if (m_ssao_pass) {
+    m_ssao_pass->shutdown();
+    m_ssao_pass.reset();
+  }
 
   if (m_forward_path) {
     m_forward_path->shutdown();
@@ -835,6 +849,11 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         command_buffer, frame_state, opaque_draws.data(),
         static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
         static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
+  }
+
+  if (m_ssao_pass) {
+    m_ssao_pass->apply(command_buffer, vkOffscreenRt(this), frame_state.shading,
+                       projection, near_clip, far_clip);
   }
 
   vulkan_backend::VulkanCommandList command_list;

@@ -10,6 +10,8 @@ set(SHADER_CANDIDATES
     pbr.slang
     grid.slang
     shadow_depth.slang
+    ssao_generate.slang
+    ssao_apply.slang
     ui_overlay.slang
 )
 

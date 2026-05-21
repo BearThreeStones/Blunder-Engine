@@ -74,11 +74,11 @@ void OffscreenRenderTarget::createRenderPass() {
   depth_attachment.format = VK_FORMAT_D32_SFLOAT;
   depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
   depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
   depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
   depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
   VkAttachmentReference depth_attachment_ref{};
   depth_attachment_ref.attachment = 1;
@@ -104,10 +104,12 @@ void OffscreenRenderTarget::createRenderPass() {
   // reads (UI overlay) or transfer reads (CPU readback).
   dependencies[1].srcSubpass = 0;
   dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-  dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
   dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
                                  VK_PIPELINE_STAGE_TRANSFER_BIT;
-  dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   dependencies[1].dstAccessMask =
       VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
   dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
@@ -199,7 +201,8 @@ void OffscreenRenderTarget::createImageAndFramebuffer() {
   depth_image_info.arrayLayers = 1;
   depth_image_info.samples = VK_SAMPLE_COUNT_1_BIT;
   depth_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-  depth_image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  depth_image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                           VK_IMAGE_USAGE_SAMPLED_BIT;
   depth_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   depth_image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -254,6 +257,7 @@ void OffscreenRenderTarget::createImageAndFramebuffer() {
   }
 
   m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  m_depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 void OffscreenRenderTarget::destroyImageAndFramebuffer() {
@@ -286,6 +290,7 @@ void OffscreenRenderTarget::destroyImageAndFramebuffer() {
     m_depth_image_allocation = VK_NULL_HANDLE;
   }
   m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  m_depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 void OffscreenRenderTarget::cmdBarrierToTransferSrc(VkCommandBuffer cmd) {
@@ -355,6 +360,36 @@ void OffscreenRenderTarget::cmdBarrierToShaderRead(VkCommandBuffer cmd) {
                        0, nullptr, 0, nullptr, 1, &barrier);
 
   m_current_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+}
+
+void OffscreenRenderTarget::cmdBarrierDepthToShaderRead(VkCommandBuffer cmd) {
+  if (m_depth_image == VK_NULL_HANDLE) {
+    return;
+  }
+  if (m_depth_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+    return;
+  }
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout = m_depth_layout;
+  barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = m_depth_image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &barrier);
+
+  m_depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 }
 
 }  // namespace Blunder

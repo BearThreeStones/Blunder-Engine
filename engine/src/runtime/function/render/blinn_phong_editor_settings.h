@@ -13,6 +13,11 @@ struct BlinnPhongEditorSettings {
   glm::vec3 specular_color{0.4f};
   float shininess{32.0f};
   bool unlit{false};
+
+  bool ssao_enabled{true};
+  float ssao_radius{0.45f};
+  float ssao_bias{0.025f};
+  float ssao_strength{0.85f};
 };
 
 }  // namespace Blunder

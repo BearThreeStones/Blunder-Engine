@@ -254,7 +254,7 @@ void VulkanPipeline::createDescriptorSetLayout() {
     binding_reserve += 2;
   }
   if (m_create_info.enable_shadow_sampling) {
-    binding_reserve += 1;
+    binding_reserve += 2;
   }
   if (m_create_info.enable_pbr_texture_sampling) {
     binding_reserve += 6;
@@ -288,19 +288,25 @@ void VulkanPipeline::createDescriptorSetLayout() {
   }
 
   if (m_create_info.enable_shadow_sampling) {
-    VkDescriptorSetLayoutBinding shadow_binding{};
-    shadow_binding.binding = 3;
-    shadow_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    shadow_binding.descriptorCount = 1;
-    shadow_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    shadow_binding.pImmutableSamplers = nullptr;
-    bindings.push_back(shadow_binding);
+    VkDescriptorSetLayoutBinding shadow_image_binding{};
+    shadow_image_binding.binding = 3;
+    shadow_image_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    shadow_image_binding.descriptorCount = 1;
+    shadow_image_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings.push_back(shadow_image_binding);
+
+    VkDescriptorSetLayoutBinding shadow_sampler_binding{};
+    shadow_sampler_binding.binding = 4;
+    shadow_sampler_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    shadow_sampler_binding.descriptorCount = 1;
+    shadow_sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings.push_back(shadow_sampler_binding);
   }
 
   if (m_create_info.enable_pbr_texture_sampling) {
     for (uint32_t pair_index = 0; pair_index < 3; ++pair_index) {
-      const uint32_t texture_binding = 4 + pair_index * 2;
-      const uint32_t sampler_binding = 5 + pair_index * 2;
+      const uint32_t texture_binding = 5 + pair_index * 2;
+      const uint32_t sampler_binding = 6 + pair_index * 2;
 
       VkDescriptorSetLayoutBinding image_binding{};
       image_binding.binding = texture_binding;

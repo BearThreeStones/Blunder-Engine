@@ -517,11 +517,9 @@ void VulkanContext::createLogicalDevice() {
   create_info.pEnabledFeatures = &enabled_features;
   create_info.enabledExtensionCount = 0;
   create_info.ppEnabledExtensionNames = nullptr;
-  // 为了兼容较旧的实现，仅在验证层可用时设置 layer 字段。
-  if (m_enable_validation_layer) {
-    create_info.enabledLayerCount = 1;
-    create_info.ppEnabledLayerNames = &k_validation_layer_name;
-  }
+  // Validation layers are instance-only (Vulkan 1.0+); device layer fields must stay zero.
+  create_info.enabledLayerCount = 0;
+  create_info.ppEnabledLayerNames = nullptr;
 
   const VkResult result =
       vkCreateDevice(m_physical_device, &create_info, nullptr, &m_device);

@@ -21,6 +21,7 @@ class Event;
 class AssetManager;
 class EditorCamera;
 class ForwardRenderPath;
+class SsaOPass;
 class GpuMesh;
 class RenderDocCapture;
 class ShadowMapTarget;
@@ -133,6 +134,7 @@ class RenderSystem final {
   eastl::unique_ptr<EditorCamera> m_editor_camera;
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;
+  eastl::unique_ptr<SsaOPass> m_ssao_pass;
 
   eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
       m_uploaded_textures;

@@ -108,11 +108,11 @@ void writeOpaqueTextureBindings(VkDevice device, VkDescriptorSet descriptor_set,
   writeTextureSamplerPair(device, descriptor_set, 1, 2,
                           base_color != nullptr ? base_color : fallback_texture);
   writeTextureSamplerPair(
-      device, descriptor_set, 4, 5,
+      device, descriptor_set, 5, 6,
       metallic_roughness != nullptr ? metallic_roughness : fallback_texture);
-  writeTextureSamplerPair(device, descriptor_set, 6, 7,
+  writeTextureSamplerPair(device, descriptor_set, 7, 8,
                           normal_map != nullptr ? normal_map : fallback_texture);
-  writeTextureSamplerPair(device, descriptor_set, 8, 9,
+  writeTextureSamplerPair(device, descriptor_set, 9, 10,
                           occlusion != nullptr ? occlusion : fallback_texture);
 }
 
@@ -122,19 +122,29 @@ void writeOpaqueShadowBinding(VkDevice device, VkDescriptorSet descriptor_set,
     return;
   }
 
-  VkDescriptorImageInfo shadow_info{};
-  shadow_info.imageView = shadow_map->getDepthImageView();
-  shadow_info.sampler = shadow_map->getComparisonSampler();
-  shadow_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  VkDescriptorImageInfo shadow_image_info{};
+  shadow_image_info.imageView = shadow_map->getDepthImageView();
+  shadow_image_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-  VkWriteDescriptorSet shadow_write{};
-  shadow_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  shadow_write.dstSet = descriptor_set;
-  shadow_write.dstBinding = 3;
-  shadow_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  shadow_write.descriptorCount = 1;
-  shadow_write.pImageInfo = &shadow_info;
-  vkUpdateDescriptorSets(device, 1, &shadow_write, 0, nullptr);
+  VkDescriptorImageInfo shadow_sampler_info{};
+  shadow_sampler_info.sampler = shadow_map->getComparisonSampler();
+
+  VkWriteDescriptorSet shadow_writes[2]{};
+  shadow_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  shadow_writes[0].dstSet = descriptor_set;
+  shadow_writes[0].dstBinding = 3;
+  shadow_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+  shadow_writes[0].descriptorCount = 1;
+  shadow_writes[0].pImageInfo = &shadow_image_info;
+
+  shadow_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  shadow_writes[1].dstSet = descriptor_set;
+  shadow_writes[1].dstBinding = 4;
+  shadow_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+  shadow_writes[1].descriptorCount = 1;
+  shadow_writes[1].pImageInfo = &shadow_sampler_info;
+
+  vkUpdateDescriptorSets(device, 2, shadow_writes, 0, nullptr);
 }
 
 }  // namespace
@@ -188,19 +198,17 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
 
   VkDevice device = m_vk_context->getDevice();
 
-  VkDescriptorPoolSize opaque_pool_sizes[4]{};
+  VkDescriptorPoolSize opaque_pool_sizes[3]{};
   opaque_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   opaque_pool_sizes[0].descriptorCount = total_opaque_sets;
   opaque_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  opaque_pool_sizes[1].descriptorCount = total_opaque_sets * 4u;
+  opaque_pool_sizes[1].descriptorCount = total_opaque_sets * 5u;
   opaque_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
-  opaque_pool_sizes[2].descriptorCount = total_opaque_sets * 4u;
-  opaque_pool_sizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  opaque_pool_sizes[3].descriptorCount = total_opaque_sets;
+  opaque_pool_sizes[2].descriptorCount = total_opaque_sets * 5u;
 
   VkDescriptorPoolCreateInfo opaque_pool_info{};
   opaque_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  opaque_pool_info.poolSizeCount = 4;
+  opaque_pool_info.poolSizeCount = 3;
   opaque_pool_info.pPoolSizes = opaque_pool_sizes;
   opaque_pool_info.maxSets = total_opaque_sets;
   VkDescriptorPool opaque_pool = VK_NULL_HANDLE;

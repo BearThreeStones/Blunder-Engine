@@ -70,6 +70,11 @@ export component MainEditorWindow inherits Window {
     in-out property <float> shininess: 32.0;
     in-out property <bool> shading-unlit: false;
 
+    in-out property <bool> ssao-enabled: true;
+    in-out property <float> ssao-radius: 0.45;
+    in-out property <float> ssao-bias: 0.025;
+    in-out property <float> ssao-strength: 0.85;
+
     callback sync-shading-from-asset();
 
     in-out property <[BrowserTreeRow]> browser-tree-rows: [];
@@ -112,6 +117,10 @@ export component MainEditorWindow inherits Window {
         root.specular-b = 0.04;
         root.shininess = 169.0;
         root.shading-unlit = false;
+        root.ssao-enabled = true;
+        root.ssao-radius = 0.45;
+        root.ssao-bias = 0.025;
+        root.ssao-strength = 0.85;
     }
 
     VerticalLayout {
@@ -272,6 +281,31 @@ export component MainEditorWindow inherits Window {
                                 value <=> root.shininess;
                             }
 
+                            Text { text: "SSAO"; color: #a8a8a8; font-size: 12px; }
+                            CheckBox {
+                                text: "Enabled";
+                                checked: root.ssao-enabled;
+                                toggled => { root.ssao-enabled = self.checked; }
+                            }
+                            ShadingSlider {
+                                label: "Radius";
+                                minimum: 0.05;
+                                maximum: 1.0;
+                                value <=> root.ssao-radius;
+                            }
+                            ShadingSlider {
+                                label: "Bias";
+                                minimum: 0.0;
+                                maximum: 0.1;
+                                value <=> root.ssao-bias;
+                            }
+                            ShadingSlider {
+                                label: "Strength";
+                                minimum: 0.0;
+                                maximum: 1.0;
+                                value <=> root.ssao-strength;
+                            }
+
                             Rectangle {
                                 background: #1f1f1f;
                                 border-color: #2a2a2a;
@@ -283,7 +317,8 @@ export component MainEditorWindow inherits Window {
                                     x: 10px;
                                     y: 8px;
                                     text: "Shininess: " + Math.round(root.shininess)
-                                        + "\nUnlit: " + (root.shading-unlit ? "yes" : "no");
+                                        + "\nUnlit: " + (root.shading-unlit ? "yes" : "no")
+                                        + "\nSSAO: " + (root.ssao-enabled ? "on" : "off");
                                     color: #bde7ff;
                                     font-size: 11px;
                                 }

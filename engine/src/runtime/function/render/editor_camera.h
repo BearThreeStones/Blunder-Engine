@@ -72,8 +72,8 @@ class EditorCamera final {
   bool isViewportReady() const;
   bool isCursorInViewport() const;
   void applyFreeLookRotation(const Vec2& mouse_delta);
+  void applyKeyboardFlyMovement(float delta_time, const bool* keyboard_state);
   void updateDirectionVectors();
-  void updateFreeLook(float delta_time, const bool* keyboard_state);
   void pan();
   void zoom();
 
