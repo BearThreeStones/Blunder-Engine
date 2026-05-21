@@ -462,4 +462,61 @@ void EditorCamera::focusOnAABB(const AABB& bounds) {
            m_focal_point.x, m_focal_point.y, m_focal_point.z, m_distance);
 }
 
+void EditorCamera::setLookAt(const Vec3& position, const Vec3& target) {
+  Vec3 forward = target - position;
+  const float distance = glm::length(forward);
+  if (distance < 1e-4f) {
+    return;
+  }
+
+  forward /= distance;
+  m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+  m_yaw = std::atan2(forward.y, forward.x);
+  m_focal_point = target;
+  m_distance = distance;
+  updateViewMatrix();
+  LOG_INFO("[EditorCamera] look-at position=({}, {}, {}) target=({}, {}, {})",
+           position.x, position.y, position.z, target.x, target.y, target.z);
+}
+
+void EditorCamera::placeInsideAABB(const AABB& bounds) {
+  constexpr float k_eye_height = 1.7f;
+  constexpr float k_look_ahead = 6.0f;
+
+  const Vec3 size = bounds.size();
+  const Vec3 center = bounds.center();
+
+  Vec3 position = center;
+  Vec3 look_target = center;
+
+  // Crytek Sponza (Khronos glTF) is Y-up; pick the tallest axis as vertical.
+  if (size.y >= size.x && size.y >= size.z) {
+    const float eye_y = bounds.min.y + k_eye_height;
+    position = Vec3(center.x, eye_y, center.z);
+    if (size.x >= size.z) {
+      look_target = Vec3(center.x + k_look_ahead, eye_y, center.z);
+    } else {
+      look_target = Vec3(center.x, eye_y, center.z + k_look_ahead);
+    }
+  } else if (size.z >= size.x && size.z >= size.y) {
+    const float eye_z = bounds.min.z + k_eye_height;
+    position = Vec3(center.x, center.y, eye_z);
+    if (size.x >= size.y) {
+      look_target = Vec3(center.x + k_look_ahead, center.y, eye_z);
+    } else {
+      look_target = Vec3(center.x, center.y + k_look_ahead, eye_z);
+    }
+  } else {
+    const float eye_x = bounds.min.x + k_eye_height;
+    position = Vec3(eye_x, center.y, center.z);
+    if (size.y >= size.z) {
+      look_target = Vec3(eye_x, center.y + k_look_ahead, center.z);
+    } else {
+      look_target = Vec3(eye_x, center.y, center.z + k_look_ahead);
+    }
+  }
+
+  setLookAt(position, look_target);
+}
+
 }  // namespace Blunder

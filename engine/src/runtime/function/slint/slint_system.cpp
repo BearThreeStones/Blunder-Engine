@@ -3,12 +3,12 @@
 #include <slint.h>
 
 #include <exception>
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include <SDL3/SDL.h>
 #include <glm/vec3.hpp>
 
 #include "runtime/core/base/macro.h"
@@ -50,14 +50,17 @@ const char* graphicsApiToString(slint::GraphicsAPI graphics_api) {
 }
 
 SlintSystem::SlintPlatform* g_slint_platform_instance = nullptr;
+}  // namespace
+
+namespace {
 
 class ScopedDispatchGuard final {
  public:
-  explicit ScopedDispatchGuard(bool& flag) : m_flag(flag) { m_flag = true; }
-  ~ScopedDispatchGuard() { m_flag = false; }
+  explicit ScopedDispatchGuard(int& depth) : m_depth(depth) { ++m_depth; }
+  ~ScopedDispatchGuard() { --m_depth; }
 
  private:
-  bool& m_flag;
+  int& m_depth;
 };
 }
 
@@ -160,29 +163,31 @@ SlintSystem::SlintPlatform::create_window_adapter() {
 }
 
 slint::SharedString SlintSystem::mapKeycode(SDL_Keycode keycode) {
-  using namespace slint::platform::key_codes;
+  // Fully qualify key_codes: Win32 wingdi.h declares ::Escape(HDC,...) which
+  // collides with unqualified lookup when windows.h is included (SkiaRenderer).
+  namespace keys = slint::platform::key_codes;
 
   switch (keycode) {
     case SDLK_RETURN:
-      return makeSpecialKeyString(Return);
+      return makeSpecialKeyString(keys::Return);
     case SDLK_ESCAPE:
-      return makeSpecialKeyString(Escape);
+      return makeSpecialKeyString(keys::Escape);
     case SDLK_BACKSPACE:
-      return makeSpecialKeyString(Backspace);
+      return makeSpecialKeyString(keys::Backspace);
     case SDLK_TAB:
-      return makeSpecialKeyString(Tab);
+      return makeSpecialKeyString(keys::Tab);
     case SDLK_SPACE:
-      return makeSpecialKeyString(Space);
+      return makeSpecialKeyString(keys::Space);
     case SDLK_DELETE:
-      return makeSpecialKeyString(Delete);
+      return makeSpecialKeyString(keys::Delete);
     case SDLK_UP:
-      return makeSpecialKeyString(UpArrow);
+      return makeSpecialKeyString(keys::UpArrow);
     case SDLK_DOWN:
-      return makeSpecialKeyString(DownArrow);
+      return makeSpecialKeyString(keys::DownArrow);
     case SDLK_LEFT:
-      return makeSpecialKeyString(LeftArrow);
+      return makeSpecialKeyString(keys::LeftArrow);
     case SDLK_RIGHT:
-      return makeSpecialKeyString(RightArrow);
+      return makeSpecialKeyString(keys::RightArrow);
     default:
       if (keycode >= 32 && keycode <= 126) {
         char text[2] = {static_cast<char>(keycode), '\0'};
@@ -305,6 +310,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     });
     component->on_browser_folder_selected(
         [this](const slint::SharedString& path) {
+      m_tree_folder_handled_by_slint = true;
       if (!g_runtime_global_context.m_content_browser) {
         return;
       }
@@ -314,6 +320,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     });
     component->on_browser_folder_toggle(
         [this](const slint::SharedString& path) {
+      m_tree_folder_handled_by_slint = true;
       if (!g_runtime_global_context.m_content_browser) {
         return;
       }
@@ -408,14 +415,14 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
   if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
     return;
   }
-  if (m_in_slint_dispatch) {
+  if (m_slint_dispatch_depth > 0) {
     return;
   }
   static bool s_logged_first_viewport_upload = false;
   static uint32_t s_last_upload_w = 0;
   static uint32_t s_last_upload_h = 0;
   try {
-    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
     slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
         width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
     slint::Image image(buffer);
@@ -494,13 +501,13 @@ void SlintSystem::syncBlinnPhongFromMaterialSource() {
   if (!m_window_component || !m_blinn_phong_material_source) {
     return;
   }
-  if (m_in_slint_dispatch) {
+  if (m_slint_dispatch_depth > 0) {
     return;
   }
 
   const MaterialAsset& material = *m_blinn_phong_material_source;
   try {
-    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
     auto& ui = *m_window_component;
     ui->set_ambient_r(material.getAmbientColor().x);
     ui->set_ambient_g(material.getAmbientColor().y);
@@ -544,21 +551,128 @@ bool pointInRect(float x, float y, const BrowserLogicalRect& rect) {
          y < static_cast<float>(rect.y + static_cast<int32_t>(rect.height));
 }
 
+BrowserLogicalRect readBrowserRectFromUi(const MainEditorWindow& ui) {
+  BrowserLogicalRect rect{};
+  const float w = ui.get_browser_width();
+  const float h = ui.get_browser_height();
+  rect.x = static_cast<int32_t>(ui.get_browser_origin_x());
+  rect.y = static_cast<int32_t>(ui.get_browser_origin_y());
+  rect.width = w > 0.0f ? static_cast<uint32_t>(w) : 0u;
+  rect.height = h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+  return rect;
+}
+
+struct SlintPointerCoords {
+  float x{0.0f};
+  float y{0.0f};
+  float scale_x{1.0f};
+  float scale_y{1.0f};
+};
+
+SlintPointerCoords mapWindowPointerToSlint(WindowSystem* window_system, float x,
+                                           float y) {
+  SlintPointerCoords out{x, y, 1.0f, 1.0f};
+  if (!window_system) {
+    return out;
+  }
+  const eastl::array<int, 2> window_size = window_system->getWindowSize();
+  const eastl::array<int, 2> drawable_size = window_system->getDrawableSize();
+  if (window_size[0] > 0 && window_size[1] > 0) {
+    out.scale_x =
+        static_cast<float>(drawable_size[0]) / static_cast<float>(window_size[0]);
+    out.scale_y =
+        static_cast<float>(drawable_size[1]) / static_cast<float>(window_size[1]);
+    out.x = x * out.scale_x;
+    out.y = y * out.scale_y;
+  }
+  return out;
+}
+
+struct WindowClientMouseState {
+  float x{0.0f};
+  float y{0.0f};
+  bool left_down{false};
+  const char* source{"none"};
+};
+
+#if defined(_WIN32)
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <Windows.h>
+namespace win32_mouse_query {
+bool sample(WindowSystem* window_system, float* out_x, float* out_y,
+            bool* out_left_down) {
+  if (!window_system || !out_x || !out_y || !out_left_down) {
+    return false;
+  }
+  void* hwnd_opaque = window_system->getNativeWin32Hwnd();
+  if (!hwnd_opaque) {
+    return false;
+  }
+  HWND hwnd = static_cast<HWND>(hwnd_opaque);
+  POINT cursor{};
+  if (GetCursorPos(&cursor) == 0 || ScreenToClient(hwnd, &cursor) == 0) {
+    return false;
+  }
+  *out_x = static_cast<float>(cursor.x);
+  *out_y = static_cast<float>(cursor.y);
+  *out_left_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+  return true;
+}
+}  // namespace win32_mouse_query
+#endif
+
+WindowClientMouseState queryWindowClientMouseState(WindowSystem* window_system) {
+  WindowClientMouseState state{};
+#if defined(_WIN32)
+  if (win32_mouse_query::sample(window_system, &state.x, &state.y, &state.left_down)) {
+    state.source = "win32";
+    return state;
+  }
+#endif
+  if (window_system) {
+    SDL_MouseButtonFlags buttons = SDL_GetMouseState(&state.x, &state.y);
+    state.left_down = (buttons & SDL_BUTTON_LMASK) != 0;
+    state.source = "sdl";
+  }
+  return state;
+}
+
+slint::LogicalPosition slintPointerPosition(WindowSystem* window_system, float window_x,
+                                           float window_y) {
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(window_system, window_x, window_y);
+  return slint::LogicalPosition({pointer.x, pointer.y});
+}
+
+int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
+  const int32_t browser_origin_y = static_cast<int32_t>(ui.get_browser_origin_y());
+  const int32_t slint_tree_y =
+      static_cast<int32_t>(ui.get_browser_tree_origin_y());
+  // Slint absolute_position for the tree is in the same space as
+  // browser-origin (window/logical layout units, not drawable pixels).
+  constexpr int32_t k_max_tree_origin_below_browser = 160;
+  if (slint_tree_y > browser_origin_y &&
+      slint_tree_y <= browser_origin_y + k_max_tree_origin_below_browser) {
+    return slint_tree_y;
+  }
+  // Fallback when grid layout reports a bogus tree Y (e.g. 394).
+  constexpr int32_t k_tree_chrome_height_px = 66;
+  return browser_origin_y + k_tree_chrome_height_px;
+}
+
 }  // namespace
 
 void SlintSystem::syncContentBrowser() {
   if (!m_window_component || !g_runtime_global_context.m_content_browser) {
     return;
   }
-  if (m_in_slint_dispatch) {
-    return;
-  }
-
   ContentBrowserSystem& browser_system =
       *g_runtime_global_context.m_content_browser;
 
   try {
-    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
     auto tree_model = std::make_shared<slint::VectorModel<BrowserTreeRow>>();
     for (const ContentBrowserTreeRow& row : browser_system.treeRows()) {
       BrowserTreeRow slint_row{};
@@ -608,12 +722,87 @@ bool SlintSystem::isContentBrowserDragActive() const {
   return g_runtime_global_context.m_content_browser->dragController().isDragging();
 }
 
-void SlintSystem::update() {
-  if (m_in_slint_dispatch) {
+void SlintSystem::clearContentBrowserSlintClickFlag() {
+  m_tree_folder_handled_by_slint = false;
+}
+
+void SlintSystem::beginContentBrowserInputFrame() {
+  m_tree_folder_handled_by_slint = false;
+}
+
+void SlintSystem::tickContentBrowserTreePointerPoll() {
+  if (!m_window_system || !m_window_component ||
+      !g_runtime_global_context.m_content_browser) {
     return;
   }
+
+  const WindowClientMouseState mouse =
+      queryWindowClientMouseState(m_window_system);
+
+  if (mouse.left_down && !m_left_mouse_down_prev && !m_tree_folder_handled_by_slint) {
+    trySelectContentBrowserTreeFolder(mouse.x, mouse.y);
+  }
+
+  m_left_mouse_down_prev = mouse.left_down;
+}
+
+bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
+                                                    float window_y) {
+  if (!m_window_system || !m_window_component ||
+      !g_runtime_global_context.m_content_browser) {
+    return false;
+  }
+
+  if (m_tree_folder_handled_by_slint) {
+    return false;
+  }
+
+  ContentBrowserSystem& browser_system =
+      *g_runtime_global_context.m_content_browser;
+  if (browser_system.dragController().isDragging()) {
+    return false;
+  }
+
+  if (m_window_component) {
+    m_cached_browser_logical_rect =
+        readBrowserRectFromUi(*m_window_component->operator->());
+  }
+
+  const MainEditorWindow& ui = *m_window_component->operator->();
+  const int32_t browser_origin_x = static_cast<int32_t>(ui.get_browser_origin_x());
+  const BrowserLogicalRect browser_rect = readBrowserRectFromUi(ui);
+  const int32_t tree_origin_y = resolveContentBrowserTreeOriginY(ui);
+  constexpr float k_tree_panel_height_px = 140.0f;
+  constexpr float k_tree_row_pitch_px = 24.0f;
+  const bool in_browser_x =
+      window_x >= static_cast<float>(browser_origin_x) &&
+      window_x <
+          static_cast<float>(browser_origin_x +
+                             static_cast<int32_t>(browser_rect.width));
+  const bool in_tree_band =
+      in_browser_x && window_y >= static_cast<float>(tree_origin_y) &&
+      window_y <
+          static_cast<float>(tree_origin_y) + k_tree_panel_height_px;
+  if (!in_tree_band) {
+    return false;
+  }
+
+  const eastl::string folder = browser_system.hitTestFolderAt(
+      window_x, window_y, tree_origin_y, k_tree_row_pitch_px);
+  if (folder.empty()) {
+    return false;
+  }
+
+  m_tree_folder_handled_by_slint = true;
+
+  browser_system.setSelectedFolder(folder);
+  syncContentBrowser();
+  return true;
+}
+
+void SlintSystem::update() {
   try {
-    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
     slint::platform::update_timers_and_animations();
     if (m_window_adapter) {
       m_window_adapter->renderIfNeeded();
@@ -645,6 +834,8 @@ void SlintSystem::update() {
       m_cached_viewport_logical_rect = {};
       m_cached_browser_logical_rect = {};
     }
+
+    tickContentBrowserTreePointerPoll();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::update] {}", e.what());
     if (m_window_system) {
@@ -662,14 +853,14 @@ void SlintSystem::processEvent(const SDL_Event& event) {
   if (!m_window_adapter || !m_window_component) {
     return;
   }
-  if (m_in_slint_dispatch) {
-    return;
-  }
-
   try {
-    ScopedDispatchGuard guard(m_in_slint_dispatch);
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
     slint::Window& window = m_window_adapter->window();
     const SDL_WindowID window_id = m_window_system->getWindowId();
+    if (m_window_component) {
+      m_cached_browser_logical_rect =
+          readBrowserRectFromUi(*m_window_component->operator->());
+    }
 
     switch (event.type) {
       case SDL_EVENT_WINDOW_RESIZED:
@@ -709,37 +900,72 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_MOTION:
         if (event.motion.windowID == window_id) {
+          const float window_x = static_cast<float>(event.motion.x);
+          const float window_y = static_cast<float>(event.motion.y);
           if (g_runtime_global_context.m_content_browser &&
               g_runtime_global_context.m_content_browser->dragController()
                   .isDragging()) {
             ContentBrowserSystem& browser_system =
                 *g_runtime_global_context.m_content_browser;
-            const int32_t tree_origin_y = static_cast<int32_t>(
-                (*m_window_component)->get_browser_tree_origin_y());
+            const int32_t tree_origin_y =
+                resolveContentBrowserTreeOriginY(*m_window_component->operator->());
             m_drop_highlight_path = browser_system.hitTestFolderAt(
-                event.motion.x, event.motion.y, tree_origin_y, 22.0f);
+                window_x, window_y, tree_origin_y, 24.0f);
             syncContentBrowser();
           }
           window.dispatch_pointer_move_event(
-              slint::LogicalPosition({event.motion.x, event.motion.y}));
+              slintPointerPosition(m_window_system, window_x, window_y));
         }
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (event.button.windowID == window_id) {
+          const float window_x = static_cast<float>(event.button.x);
+          const float window_y = static_cast<float>(event.button.y);
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            m_left_mouse_down_prev = true;
+          }
           window.dispatch_pointer_press_event(
-              slint::LogicalPosition({event.button.x, event.button.y}),
+              slintPointerPosition(m_window_system, window_x, window_y),
               mapPointerButton(event.button.button));
         }
         break;
       case SDL_EVENT_MOUSE_BUTTON_UP:
         if (event.button.windowID == window_id) {
+          const float window_x = static_cast<float>(event.button.x);
+          const float window_y = static_cast<float>(event.button.y);
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            m_left_mouse_down_prev = false;
+          }
+          if (event.button.button == SDL_BUTTON_LEFT &&
+              g_runtime_global_context.m_content_browser && m_window_component) {
+            ContentBrowserSystem& browser_system =
+                *g_runtime_global_context.m_content_browser;
+            ContentBrowserDragController& drag = browser_system.dragController();
+
+            if (drag.isDragging()) {
+              const eastl::string source = drag.sourcePath();
+              drag.endPress();
+              if (!source.empty() && !m_drop_highlight_path.empty()) {
+                browser_system.reparentEntry(source, m_drop_highlight_path);
+              }
+              m_drop_highlight_path.clear();
+              drag.reset();
+              syncContentBrowser();
+            }
+          }
           window.dispatch_pointer_release_event(
-              slint::LogicalPosition({event.button.x, event.button.y}),
+              slintPointerPosition(m_window_system, window_x, window_y),
               mapPointerButton(event.button.button));
+          if (event.button.button == SDL_BUTTON_LEFT &&
+              !m_tree_folder_handled_by_slint) {
+            trySelectContentBrowserTreeFolder(window_x, window_y);
+          }
         }
         break;
       case SDL_EVENT_MOUSE_WHEEL:
         if (event.wheel.windowID == window_id) {
+          const float window_x = static_cast<float>(event.wheel.mouse_x);
+          const float window_y = static_cast<float>(event.wheel.mouse_y);
           const float wheel_x = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
                                     ? -event.wheel.x
                                     : event.wheel.x;
@@ -747,7 +973,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
                                     ? -event.wheel.y
                                     : event.wheel.y;
           window.dispatch_pointer_scroll_event(
-              slint::LogicalPosition({event.wheel.mouse_x, event.wheel.mouse_y}),
+              slintPointerPosition(m_window_system, window_x, window_y),
               wheel_x * 20.0f, wheel_y * 20.0f);
         }
         break;

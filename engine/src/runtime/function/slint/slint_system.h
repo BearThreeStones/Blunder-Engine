@@ -75,6 +75,18 @@ class SlintSystem final {
   BrowserLogicalRect getBrowserLogicalRect() const;
   bool isContentBrowserDragActive() const;
 
+  /// Select/expand a content-browser tree folder from window mouse coordinates.
+  /// Returns true when a folder row was hit and state was updated.
+  bool trySelectContentBrowserTreeFolder(float window_x, float window_y);
+
+  void clearContentBrowserSlintClickFlag();
+
+  /// Clears per-frame content-browser input state; call once before pumpEvents.
+  void beginContentBrowserInputFrame();
+
+  /// Detects tree-folder clicks via cursor poll (Win32/SDL); call after pumpEvents.
+  void tickContentBrowserTreePointerPoll();
+
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
     explicit SlintWindowAdapter(WindowSystem* window_system);
@@ -126,10 +138,12 @@ class SlintSystem final {
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
   ViewportLogicalRect m_cached_viewport_logical_rect{};
   BrowserLogicalRect m_cached_browser_logical_rect{};
-  bool m_in_slint_dispatch{false};
+  int m_slint_dispatch_depth{0};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
   eastl::string m_drop_highlight_path;
   eastl::vector<eastl::string> m_pending_os_drop_files;
   bool m_os_drop_targets_browser{false};
+  bool m_tree_folder_handled_by_slint{false};
+  bool m_left_mouse_down_prev{false};
 };
 }  // namespace Blunder

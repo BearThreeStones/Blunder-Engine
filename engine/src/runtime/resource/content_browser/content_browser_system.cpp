@@ -8,6 +8,7 @@
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content/content_index.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
+#include "runtime/function/global/global_context.h"
 
 namespace Blunder {
 
@@ -177,6 +178,7 @@ void ContentBrowserSystem::setSelectedFolder(const eastl::string& virtual_path) 
     m_selected_folder.push_back('/');
   }
   m_expanded_folders[m_selected_folder] = true;
+  rebuildVisibleTree();
   rebuildGrid();
 }
 
@@ -186,8 +188,8 @@ void ContentBrowserSystem::toggleFolderExpanded(
   if (!folder.empty() && !endsWith(folder, "/")) {
     folder.push_back('/');
   }
-  const bool expanded = isFolderExpanded(folder);
-  m_expanded_folders[folder] = !expanded;
+  const bool expanded_before = isFolderExpanded(folder);
+  m_expanded_folders[folder] = !expanded_before;
   rebuildVisibleTree();
 }
 

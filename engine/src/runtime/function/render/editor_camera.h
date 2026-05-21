@@ -51,6 +51,8 @@ class EditorCamera final {
   void setViewportSize(float width, float height);
   void setProjectionMode(ProjectionMode mode);
   void focusOnAABB(const AABB& bounds);
+  void setLookAt(const Vec3& position, const Vec3& target);
+  void placeInsideAABB(const AABB& bounds);
 
  private:
   enum class InteractionMode : uint32_t {

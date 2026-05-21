@@ -21,6 +21,8 @@
 #include "runtime/platform/window/window_system.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/core/event/mouse_event.h"
+#include "runtime/function/slint/slint_system.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 
 namespace Blunder {
@@ -102,6 +104,20 @@ void BlunderEngine::onEvent(Event& e) {
     // LOG_DEBUG("[Event] Mouse moved: x={}, y={}", event.getX(), event.getY());
     return false;
   });
+
+  dispatcher.dispatch<MouseButtonReleasedEvent>(
+      [](MouseButtonReleasedEvent& event) {
+        if (event.getMouseButton() != SDL_BUTTON_LEFT ||
+            !g_runtime_global_context.m_slint_system) {
+          return false;
+        }
+        if (!event.hasMousePosition()) {
+          return false;
+        }
+        g_runtime_global_context.m_slint_system->trySelectContentBrowserTreeFolder(
+            event.getX(), event.getY());
+        return false;
+      });
 }
 
 void BlunderEngine::shutdownEngine() {
@@ -149,7 +165,7 @@ void BlunderEngine::initialize() {
       EditorCamera* editor_camera =
           g_runtime_global_context.m_render_system->getEditorCamera();
       if (editor_camera != nullptr) {
-        editor_camera->focusOnAABB(sponza_scene->getWorldBounds());
+        editor_camera->placeInsideAABB(sponza_scene->getWorldBounds());
       }
     }
 
@@ -186,6 +202,10 @@ float BlunderEngine::calculateDeltaTime() { return m_frame_timer.tick(); }
 
 bool BlunderEngine::tickOneFrame(float delta_time) {
   g_runtime_global_context.m_memory_system.beginFrame();
+
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->beginContentBrowserInputFrame();
+  }
 
   g_runtime_global_context.m_window_system->pumpEvents();
 
