@@ -42,6 +42,28 @@ class SceneInstance final {
   size_t getEntityCount() const { return m_entities.size(); }
   Mat4 getWorldMatrix(EntityId id) const;
 
+  void markTransformsDirty() { m_world_matrices_dirty = true; }
+
+  EntityId getEntityIdAtIndex(size_t index) const;
+
+  template <typename Fn>
+  void forEachEntity(const Fn& fn) const {
+    for (size_t i = 0; i < m_entities.size(); ++i) {
+      fn(indexToId(i), m_entities[i]);
+    }
+  }
+
+  template <typename Fn>
+  void forEachChild(EntityId parent_id, const Fn& fn) const {
+    for (size_t i = 0; i < m_entities.size(); ++i) {
+      if (m_entities[i].getParentId() == parent_id) {
+        fn(indexToId(i), m_entities[i]);
+      }
+    }
+  }
+
+  bool exportToScene(Scene& out_scene) const;
+
   void setMeshRenderer(EntityId id, MeshRendererComponent renderer);
   const MeshRendererComponent* getMeshRenderer(EntityId id) const;
   template <typename Fn>

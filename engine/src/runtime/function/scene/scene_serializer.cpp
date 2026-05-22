@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -75,13 +76,30 @@ const char* findArrayAfterKey(const char* text, const char* key, const char** ou
   return bracket + 1;
 }
 
-Quat rotationFromEulerDegrees(const Vec3& euler_degrees) {
+Quat rotationFromEulerDegreesImpl(const Vec3& euler_degrees) {
   const Vec3 radians(glm::radians(euler_degrees.x), glm::radians(euler_degrees.y),
                      glm::radians(euler_degrees.z));
   const Quat qx = glm::angleAxis(radians.x, Vec3(1.0f, 0.0f, 0.0f));
   const Quat qy = glm::angleAxis(radians.y, Vec3(0.0f, 1.0f, 0.0f));
   const Quat qz = glm::angleAxis(radians.z, Vec3(0.0f, 0.0f, 1.0f));
   return qz * qy * qx;
+}
+
+Vec3 rotationToEulerDegreesImpl(const Quat& rotation) {
+  const Quat q = glm::normalize(rotation);
+  const float sy = 2.0f * (q.w * q.z + q.x * q.y);
+  const float cy = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+  const float y = std::atan2(sy, cy);
+
+  const float sx = 2.0f * (q.w * q.x + q.y * q.z);
+  const float cx = 1.0f - 2.0f * (q.x * q.x + q.z * q.z);
+  const float x = std::atan2(sx, cx);
+
+  const float sz = 2.0f * (q.w * q.y + q.z * q.x);
+  const float cz = 1.0f - 2.0f * (q.y * q.y + q.x * q.x);
+  const float z = std::atan2(sz, cz);
+
+  return glm::degrees(Vec3(x, y, z));
 }
 
 bool parseRotation(const char* object_start, const char* object_end, Quat& out_rotation) {
@@ -101,7 +119,8 @@ bool parseRotation(const char* object_start, const char* object_end, Quat& out_r
   }
 
   if (is_euler) {
-    out_rotation = rotationFromEulerDegrees(Vec3(values[0], values[1], values[2]));
+    out_rotation =
+        rotationFromEulerDegreesImpl(Vec3(values[0], values[1], values[2]));
   } else {
     out_rotation = glm::normalize(Quat(values[3], values[0], values[1], values[2]));
   }
@@ -267,6 +286,59 @@ bool parseChildCallback(const char* object_start, const char* object_end, void* 
   return true;
 }
 
+void appendFloat3(eastl::string& out, const Vec3& v) {
+  char buffer[128];
+  std::snprintf(buffer, sizeof(buffer), "[%.6g, %.6g, %.6g]", v.x, v.y, v.z);
+  out.append(buffer);
+}
+
+void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
+                      bool is_last) {
+  out.append("    {\n");
+  out.append("      \"name\": \"");
+  out.append(entity.name);
+  out.append("\",\n");
+
+  out.append("      \"position\": ");
+  appendFloat3(out, entity.position);
+  out.append(",\n");
+
+  const Vec3 euler = rotationToEulerDegreesImpl(entity.rotation);
+  out.append("      \"rotation\": ");
+  appendFloat3(out, euler);
+  out.append(",\n");
+  out.append("      \"rotationMode\": \"euler_degrees\"");
+
+  if (entity.scale.x != 1.0f || entity.scale.y != 1.0f || entity.scale.z != 1.0f) {
+    out.append(",\n      \"scale\": ");
+    appendFloat3(out, entity.scale);
+  }
+
+  if (!entity.parent_name.empty()) {
+    out.append(",\n      \"parent\": \"");
+    out.append(entity.parent_name);
+    out.append("\"");
+  }
+
+  out.append(is_last ? "\n    }\n" : "\n    },\n");
+}
+
+void appendChildSceneJson(eastl::string& out, const SceneChildReference& child,
+                          bool is_last) {
+  out.append("    {\n");
+  out.append("      \"scene\": \"");
+  out.append(child.scene_virtual_path);
+  out.append("\",\n      \"name\": \"");
+  out.append(child.instance_name);
+  out.append("\",\n      \"position\": ");
+  appendFloat3(out, child.position);
+  out.append(",\n      \"rotation\": ");
+  appendFloat3(out, rotationToEulerDegreesImpl(child.rotation));
+  out.append(",\n      \"rotationMode\": \"euler_degrees\",\n      \"scale\": ");
+  appendFloat3(out, child.scale);
+  out.append(is_last ? "\n    }\n" : "\n    },\n");
+}
+
 }  // namespace
 
 bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_scene) {
@@ -292,6 +364,41 @@ bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_sce
     return false;
   }
 
+  return true;
+}
+
+Quat SceneSerializer::rotationFromEulerDegrees(const Vec3& euler_degrees) {
+  return rotationFromEulerDegreesImpl(euler_degrees);
+}
+
+Vec3 SceneSerializer::rotationToEulerDegrees(const Quat& rotation) {
+  return rotationToEulerDegreesImpl(rotation);
+}
+
+bool SceneSerializer::serialize(const Scene& scene, eastl::string& out_json) {
+  out_json.clear();
+  out_json.append("{\n");
+  out_json.append("  \"type\": \"Scene\"");
+
+  const eastl::vector<SceneEntityDefinition>& entities = scene.getEntities();
+  if (!entities.empty()) {
+    out_json.append(",\n  \"entities\": [\n");
+    for (size_t i = 0; i < entities.size(); ++i) {
+      appendEntityJson(out_json, entities[i], i + 1 == entities.size());
+    }
+    out_json.append("  ]");
+  }
+
+  const eastl::vector<SceneChildReference>& children = scene.getChildScenes();
+  if (!children.empty()) {
+    out_json.append(",\n  \"childScenes\": [\n");
+    for (size_t i = 0; i < children.size(); ++i) {
+      appendChildSceneJson(out_json, children[i], i + 1 == children.size());
+    }
+    out_json.append("  ]");
+  }
+
+  out_json.append("\n}\n");
   return true;
 }
 

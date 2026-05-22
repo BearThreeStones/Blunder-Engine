@@ -83,6 +83,13 @@ add_library(engine_runtime STATIC
     "function/scene/gltf_scene_importer.cpp"
     "function/scene/scene_render_bridge.h"
     "function/scene/scene_render_bridge.cpp"
+    "function/editor/editor_selection_system.h"
+    "function/editor/editor_selection_system.cpp"
+    "function/editor/hierarchy_types.h"
+    "function/editor/hierarchy_system.h"
+    "function/editor/hierarchy_system.cpp"
+    "function/editor/editor_scene_edit_system.h"
+    "function/editor/editor_scene_edit_system.cpp"
     "resource/asset/scene_asset.h"
 )
 
@@ -90,6 +97,7 @@ add_subdirectory(function/render)
 
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
+    "function/slint/hierarchy.slint"
     "function/slint/editor_window.slint"
 )
 

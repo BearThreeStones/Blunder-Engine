@@ -1,7 +1,7 @@
 import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
 import { ContentBrowser, BrowserTreeRow, BrowserGridRow } from "content_browser.slint";
+import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 
-// Full-width slider row for the inspector (avoids collapsed track / tiny handle).
 component ShadingSlider inherits VerticalBox {
     spacing: 2px;
     in property <string> label;
@@ -36,6 +36,45 @@ component ShadingSlider inherits VerticalBox {
         minimum: root.minimum;
         maximum: root.maximum;
         value <=> root.value;
+    }
+}
+
+component TransformSlider inherits VerticalBox {
+    spacing: 2px;
+    in property <string> label;
+    in-out property <float> value;
+    in property <float> minimum: -100.0;
+    in property <float> maximum: 100.0;
+    callback edited();
+
+    min-height: 36px;
+
+    HorizontalBox {
+        spacing: 4px;
+        Text {
+            text: root.label;
+            color: #c0c0c0;
+            font-size: 11px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: Math.round(root.value * 100) / 100;
+            color: #bde7ff;
+            font-size: 11px;
+            width: 44px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Slider {
+        width: 100%;
+        min-height: 22px;
+        minimum: root.minimum;
+        maximum: root.maximum;
+        value <=> root.value;
+        changed => { root.edited(); }
     }
 }
 
@@ -77,6 +116,18 @@ export component MainEditorWindow inherits Window {
 
     callback sync-shading-from-asset();
 
+    in-out property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
+    in property <int> hierarchy-selected-entity-id: 0;
+
+    out property <length> hierarchy-origin-x: hierarchy_panel.hierarchy-origin-x;
+    out property <length> hierarchy-origin-y: hierarchy_panel.hierarchy-origin-y;
+    out property <length> hierarchy-width: hierarchy_panel.hierarchy-width;
+    out property <length> hierarchy-height: hierarchy_panel.hierarchy-height;
+    out property <length> hierarchy-tree-origin-y: hierarchy_panel.tree-origin-y;
+
+    callback hierarchy-entity-selected(int);
+    callback hierarchy-entity-toggle(int);
+
     in-out property <[BrowserTreeRow]> browser-tree-rows: [];
     in-out property <[BrowserGridRow]> browser-grid-rows: [];
     in property <bool> browser-drag-active: false;
@@ -98,6 +149,21 @@ export component MainEditorWindow inherits Window {
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
     callback browser-item-release(string, float, float);
+
+    in property <string> inspector-entity-name: "";
+    in property <bool> inspector-has-selection: false;
+    in-out property <float> inspector-pos-x: 0.0;
+    in-out property <float> inspector-pos-y: 0.0;
+    in-out property <float> inspector-pos-z: 0.0;
+    in-out property <float> inspector-rot-x: 0.0;
+    in-out property <float> inspector-rot-y: 0.0;
+    in-out property <float> inspector-rot-z: 0.0;
+    in-out property <float> inspector-scale-x: 1.0;
+    in-out property <float> inspector-scale-y: 1.0;
+    in-out property <float> inspector-scale-z: 1.0;
+
+    callback inspector-transform-edited();
+    callback save-scene-requested();
 
     function reset-shading-defaults() {
         root.light-dir-x = 0.45;
@@ -145,7 +211,10 @@ export component MainEditorWindow inherits Window {
 
                 Rectangle { width: 16px; }
 
-                Button { text: "File"; }
+                Button {
+                    text: "Save";
+                    clicked => { root.save-scene-requested(); }
+                }
                 Button { text: "Edit"; }
                 Button { text: "View"; }
                 Button { text: "Play"; }
@@ -155,22 +224,35 @@ export component MainEditorWindow inherits Window {
         HorizontalLayout {
             vertical-stretch: 1;
 
-            content_browser := ContentBrowser {
+            left-dock := VerticalLayout {
                 width: 240px;
-                tree-rows <=> root.browser-tree-rows;
-                grid-rows <=> root.browser-grid-rows;
-                drag-active: root.browser-drag-active;
-                drag-source-path: root.browser-drag-source-path;
-                drop-highlight-path: root.browser-drop-highlight-path;
-                show-assets-root: root.browser-show-assets-root;
-                folder-selected(path) => { root.browser-folder-selected(path); }
-                folder-toggle(path) => { root.browser-folder-toggle(path); }
-                refresh-requested => { root.browser-refresh-requested(); }
-                root-assets-selected => { root.browser-root-assets-selected(); }
-                root-resources-selected => { root.browser-root-resources-selected(); }
-                item-press(path, x, y) => { root.browser-item-press(path, x, y); }
-                item-move(path, x, y) => { root.browser-item-move(path, x, y); }
-                item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                spacing: 4px;
+                vertical-stretch: 1;
+
+                hierarchy_panel := HierarchyPanel {
+                    tree-rows <=> root.hierarchy-tree-rows;
+                    selected-entity-id: root.hierarchy-selected-entity-id;
+                    entity-selected(id) => { root.hierarchy-entity-selected(id); }
+                    entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
+                }
+
+                content_browser := ContentBrowser {
+                    vertical-stretch: 1;
+                    tree-rows <=> root.browser-tree-rows;
+                    grid-rows <=> root.browser-grid-rows;
+                    drag-active: root.browser-drag-active;
+                    drag-source-path: root.browser-drag-source-path;
+                    drop-highlight-path: root.browser-drop-highlight-path;
+                    show-assets-root: root.browser-show-assets-root;
+                    folder-selected(path) => { root.browser-folder-selected(path); }
+                    folder-toggle(path) => { root.browser-folder-toggle(path); }
+                    refresh-requested => { root.browser-refresh-requested(); }
+                    root-assets-selected => { root.browser-root-assets-selected(); }
+                    root-resources-selected => { root.browser-root-resources-selected(); }
+                    item-press(path, x, y) => { root.browser-item-press(path, x, y); }
+                    item-move(path, x, y) => { root.browser-item-move(path, x, y); }
+                    item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                }
             }
 
             viewport-rect := Rectangle {
@@ -207,47 +289,125 @@ export component MainEditorWindow inherits Window {
                     }
                     Rectangle { background: #2a2a2a; height: 1px; }
 
-                    Text {
-                        text: "Blinn-Phong Shading";
-                        color: #f0f0f0;
-                        font-size: 13px;
-                    }
-
-                    HorizontalBox {
-                        spacing: 6px;
-                        Button {
-                            text: "Sync Asset";
-                            clicked => { root.sync-shading-from-asset(); }
-                        }
-                        Button {
-                            text: "Reset";
-                            clicked => { root.reset-shading-defaults(); }
-                        }
-                    }
-
-                    CheckBox {
-                        text: "Unlit (albedo only)";
-                        checked: root.shading-unlit;
-                        toggled => { root.shading-unlit = self.checked; }
-                    }
-
-                    Text {
-                        text: "Scroll with mouse wheel; drag sliders horizontally";
-                        color: #707070;
-                        font-size: 10px;
-                        wrap: word-wrap;
-                    }
-
                     inspector-scroll := Flickable {
                         vertical-stretch: 1;
                         interactive: true;
                         viewport-width: parent.width - 20px;
-                        viewport-height: shading-panel.preferred-height;
+                        viewport-height: inspector-panel.preferred-height;
 
-                        shading-panel := VerticalBox {
+                        inspector-panel := VerticalBox {
                             width: parent.width;
                             spacing: 6px;
                             padding-right: 4px;
+
+                            Text {
+                                text: "Transform";
+                                color: #f0f0f0;
+                                font-size: 13px;
+                            }
+
+                            Text {
+                                text: root.inspector-has-selection
+                                    ? root.inspector-entity-name
+                                    : "No selection";
+                                color: #a8a8a8;
+                                font-size: 12px;
+                            }
+
+                            Text { text: "Position"; color: #a8a8a8; font-size: 12px; }
+                            TransformSlider {
+                                label: "X";
+                                minimum: -200;
+                                maximum: 200;
+                                value <=> root.inspector-pos-x;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+                            TransformSlider {
+                                label: "Y";
+                                minimum: -200;
+                                maximum: 200;
+                                value <=> root.inspector-pos-y;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+                            TransformSlider {
+                                label: "Z";
+                                minimum: -200;
+                                maximum: 200;
+                                value <=> root.inspector-pos-z;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+
+                            Text { text: "Rotation (deg)"; color: #a8a8a8; font-size: 12px; }
+                            TransformSlider {
+                                label: "X";
+                                minimum: -180;
+                                maximum: 180;
+                                value <=> root.inspector-rot-x;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+                            TransformSlider {
+                                label: "Y";
+                                minimum: -180;
+                                maximum: 180;
+                                value <=> root.inspector-rot-y;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+                            TransformSlider {
+                                label: "Z";
+                                minimum: -180;
+                                maximum: 180;
+                                value <=> root.inspector-rot-z;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+
+                            Text { text: "Scale"; color: #a8a8a8; font-size: 12px; }
+                            TransformSlider {
+                                label: "X";
+                                minimum: 0.01;
+                                maximum: 10;
+                                value <=> root.inspector-scale-x;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+                            TransformSlider {
+                                label: "Y";
+                                minimum: 0.01;
+                                maximum: 10;
+                                value <=> root.inspector-scale-y;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+                            TransformSlider {
+                                label: "Z";
+                                minimum: 0.01;
+                                maximum: 10;
+                                value <=> root.inspector-scale-z;
+                                edited => { root.inspector-transform-edited(); }
+                            }
+
+                            Rectangle { background: #2a2a2a; height: 1px; }
+
+                            Text {
+                                text: "Blinn-Phong Shading";
+                                color: #f0f0f0;
+                                font-size: 13px;
+                            }
+
+                            HorizontalBox {
+                                spacing: 6px;
+                                Button {
+                                    text: "Sync Asset";
+                                    clicked => { root.sync-shading-from-asset(); }
+                                }
+                                Button {
+                                    text: "Reset";
+                                    clicked => { root.reset-shading-defaults(); }
+                                }
+                            }
+
+                            CheckBox {
+                                text: "Unlit (albedo only)";
+                                checked: root.shading-unlit;
+                                toggled => { root.shading-unlit = self.checked; }
+                            }
 
                             Text { text: "Light direction"; color: #a8a8a8; font-size: 12px; }
                             ShadingSlider { label: "Dir X"; minimum: -1; maximum: 1; value <=> root.light-dir-x; }
@@ -305,24 +465,6 @@ export component MainEditorWindow inherits Window {
                                 maximum: 1.0;
                                 value <=> root.ssao-strength;
                             }
-
-                            Rectangle {
-                                background: #1f1f1f;
-                                border-color: #2a2a2a;
-                                border-width: 1px;
-                                border-radius: 4px;
-                                min-height: 52px;
-
-                                Text {
-                                    x: 10px;
-                                    y: 8px;
-                                    text: "Shininess: " + Math.round(root.shininess)
-                                        + "\nUnlit: " + (root.shading-unlit ? "yes" : "no")
-                                        + "\nSSAO: " + (root.ssao-enabled ? "on" : "off");
-                                    color: #bde7ff;
-                                    font-size: 11px;
-                                }
-                            }
                         }
                     }
                 }
@@ -338,7 +480,7 @@ export component MainEditorWindow inherits Window {
             Text {
                 x: 10px;
                 vertical-alignment: center;
-                text: "Viewport — Inspector: wheel to scroll, drag slider track";
+                text: "Hierarchy — Content Browser — Inspector";
                 color: #808080;
                 font-size: 12px;
             }

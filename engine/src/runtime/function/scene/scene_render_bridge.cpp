@@ -44,10 +44,12 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
 
   scene_instance->forEachMeshRenderer(
       [&](EntityId entity_id, const MeshRendererComponent& renderer) {
-        (void)entity_id;
         if (!renderer.mesh) {
           return;
         }
+
+        MeshRendererComponent draw_renderer = renderer;
+        draw_renderer.world_matrix = scene_instance->getWorldMatrix(entity_id);
 
         GpuMesh* gpu_mesh = render_system->getOrUploadGpuMesh(renderer.mesh.get());
         if (gpu_mesh == nullptr) {
@@ -80,13 +82,14 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
         if (is_blend) {
           render_system->addTransparentMeshDraw(
               gpu_mesh, material, base_color_texture, metallic_roughness_texture,
-              normal_texture, occlusion_texture, renderer.world_matrix,
-              renderer.alpha_cutoff, renderer.double_sided);
+              normal_texture, occlusion_texture, draw_renderer.world_matrix,
+              draw_renderer.alpha_cutoff, draw_renderer.double_sided);
         } else {
           render_system->addOpaqueMeshDraw(
               gpu_mesh, material, base_color_texture, metallic_roughness_texture,
-              normal_texture, occlusion_texture, renderer.world_matrix,
-              renderer.alpha_cutoff, renderer.alpha_mode, renderer.double_sided);
+              normal_texture, occlusion_texture, draw_renderer.world_matrix,
+              draw_renderer.alpha_cutoff, draw_renderer.alpha_mode,
+              draw_renderer.double_sided);
         }
       });
 }

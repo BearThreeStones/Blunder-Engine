@@ -72,7 +72,14 @@ class SlintSystem final {
   /// Pushes ContentBrowserSystem tree/grid rows into the Slint panel.
   void syncContentBrowser();
 
+  void syncHierarchy();
+  void syncInspectorFromSelection();
+  void applyInspectorTransform();
+
+  void refreshEditorScenePanels();
+
   BrowserLogicalRect getBrowserLogicalRect() const;
+  BrowserLogicalRect getHierarchyLogicalRect() const;
   bool isContentBrowserDragActive() const;
 
   /// Select/expand a content-browser tree folder from window mouse coordinates.
@@ -86,6 +93,11 @@ class SlintSystem final {
 
   /// Detects tree-folder clicks via cursor poll (Win32/SDL); call after pumpEvents.
   void tickContentBrowserTreePointerPoll();
+
+  bool trySelectHierarchyEntity(float window_x, float window_y);
+  void tickHierarchyPointerPoll();
+
+  void clearHierarchySlintClickFlag();
 
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
@@ -138,12 +150,15 @@ class SlintSystem final {
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
   ViewportLogicalRect m_cached_viewport_logical_rect{};
   BrowserLogicalRect m_cached_browser_logical_rect{};
+  BrowserLogicalRect m_cached_hierarchy_logical_rect{};
   int m_slint_dispatch_depth{0};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
   eastl::string m_drop_highlight_path;
   eastl::vector<eastl::string> m_pending_os_drop_files;
   bool m_os_drop_targets_browser{false};
   bool m_tree_folder_handled_by_slint{false};
+  bool m_hierarchy_handled_by_slint{false};
   bool m_left_mouse_down_prev{false};
+  bool m_applying_inspector_sync{false};
 };
 }  // namespace Blunder

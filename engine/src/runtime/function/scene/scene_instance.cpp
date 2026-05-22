@@ -2,6 +2,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/function/scene/scene_serializer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -160,6 +161,38 @@ EntityId SceneInstance::findEntityByName(const eastl::string& name) const {
     return k_invalid_entity_id;
   }
   return it->second;
+}
+
+EntityId SceneInstance::getEntityIdAtIndex(size_t index) const {
+  if (index >= m_entities.size()) {
+    return k_invalid_entity_id;
+  }
+  return indexToId(index);
+}
+
+bool SceneInstance::exportToScene(Scene& out_scene) const {
+  out_scene.getEntities().clear();
+
+  for (size_t i = 0; i < m_entities.size(); ++i) {
+    const Entity& entity = m_entities[i];
+    SceneEntityDefinition definition;
+    definition.name = entity.getName();
+    definition.position = entity.getPosition();
+    definition.rotation = entity.getRotation();
+    definition.scale = entity.getScale();
+
+    const EntityId parent_id = entity.getParentId();
+    if (isValid(parent_id)) {
+      const Entity* parent = getEntity(parent_id);
+      if (parent != nullptr) {
+        definition.parent_name = parent->getName();
+      }
+    }
+
+    out_scene.getEntities().push_back(eastl::move(definition));
+  }
+
+  return true;
 }
 
 Mat4 SceneInstance::getWorldMatrix(EntityId id) const {

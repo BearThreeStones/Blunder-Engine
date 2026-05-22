@@ -18,6 +18,9 @@
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/hierarchy_system.h"
+#include "runtime/function/editor/editor_scene_edit_system.h"
 // #include "runtime/resource/config_manager/config_manager.h"
 
 namespace Blunder {
@@ -45,6 +48,12 @@ void RuntimeGlobalContext::startSystems() {
   SceneSystemInitInfo scene_init_info{};
   scene_init_info.asset_manager = m_asset_manager.get();
   m_scene_system->initialize(scene_init_info);
+
+  m_editor_selection = eastl::make_shared<EditorSelectionSystem>();
+  m_hierarchy = eastl::make_shared<HierarchySystem>();
+  m_editor_scene_edit = eastl::make_shared<EditorSceneEditSystem>();
+  m_editor_scene_edit->initialize(m_file_system.get(), m_asset_manager.get(),
+                                    m_scene_system.get());
 
   m_thumbnail_generator = eastl::make_shared<ThumbnailGenerator>();
   ThumbnailGeneratorInit thumbnail_init{};
@@ -147,6 +156,10 @@ void RuntimeGlobalContext::shutdownSystems() {
     m_thumbnail_generator->shutdown();
     m_thumbnail_generator.reset();
   }
+
+  m_editor_scene_edit.reset();
+  m_hierarchy.reset();
+  m_editor_selection.reset();
 
   if (m_scene_system) {
     m_scene_system->shutdown();

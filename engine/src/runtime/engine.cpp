@@ -24,6 +24,9 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/function/editor/editor_scene_edit_system.h"
+
+#include <SDL3/SDL.h>
 
 namespace Blunder {
 bool g_is_editor_mode{false};
@@ -31,8 +34,34 @@ eastl::unordered_set<eastl::string> g_editor_tick_component_types{};
 
 namespace {
 
-constexpr const char* k_startup_gltf_scene_path =
-    "resources/Models/Sponza/glTF/Sponza.gltf";
+constexpr const char* k_startup_scene_path = "assets/Scenes/root.scene.asset";
+
+void activateEditorScene(const eastl::string& virtual_path) {
+  if (g_runtime_global_context.m_editor_scene_edit) {
+    if (!g_runtime_global_context.m_editor_scene_edit->openScene(virtual_path)) {
+      return;
+    }
+  } else if (!g_runtime_global_context.m_scene_system || virtual_path.empty()) {
+    return;
+  } else {
+    const eastl::shared_ptr<SceneInstance> instance =
+        g_runtime_global_context.m_scene_system->loadScene(virtual_path);
+    if (!instance) {
+      LOG_ERROR("[BlunderEngine] failed to load scene '{}'", virtual_path.c_str());
+      return;
+    }
+    g_runtime_global_context.m_scene_system->setActiveInstance(instance.get());
+  }
+
+  if (g_runtime_global_context.m_render_system &&
+      g_runtime_global_context.m_scene_system) {
+    syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                      g_runtime_global_context.m_scene_system->getActiveInstance());
+  }
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->refreshEditorScenePanels();
+  }
+}
 
 }  // namespace
 
@@ -85,6 +114,12 @@ void BlunderEngine::onEvent(Event& e) {
           "[Event] Key pressed: key={} scancode={} ctrl={} shift={} alt={}",
           event.getKeyCode(), event.getScanCode(), event.isCtrlDown(),
           event.isShiftDown(), event.isAltDown());
+    }
+    if (!event.isRepeat() && event.isCtrlDown() &&
+        event.getKeyCode() == SDLK_S &&
+        g_runtime_global_context.m_editor_scene_edit) {
+      g_runtime_global_context.m_editor_scene_edit->saveActiveScene();
+      return true;
     }
     return false;
   });
@@ -148,29 +183,12 @@ void BlunderEngine::initialize() {
   }
 
   if (g_runtime_global_context.m_scene_system) {
-    const eastl::shared_ptr<SceneInstance> sponza_scene =
-        g_runtime_global_context.m_scene_system->loadGltfScene(k_startup_gltf_scene_path);
-    if (!sponza_scene) {
-      LOG_ERROR("[BlunderEngine] failed to load startup glTF scene {}",
-                k_startup_gltf_scene_path);
-      return;
+    activateEditorScene(k_startup_scene_path);
+    if (SceneInstance* active =
+            g_runtime_global_context.m_scene_system->getActiveInstance()) {
+      LOG_INFO("[BlunderEngine] active scene '{}' (entities={})",
+               active->getSourcePath().c_str(), active->getEntityCount());
     }
-
-    g_runtime_global_context.m_scene_system->setActiveInstance(sponza_scene.get());
-    syncSceneToRender(g_runtime_global_context.m_render_system.get(),
-                      sponza_scene.get());
-
-    if (sponza_scene->hasWorldBounds() &&
-        g_runtime_global_context.m_render_system != nullptr) {
-      EditorCamera* editor_camera =
-          g_runtime_global_context.m_render_system->getEditorCamera();
-      if (editor_camera != nullptr) {
-        editor_camera->placeInsideAABB(sponza_scene->getWorldBounds());
-      }
-    }
-
-    LOG_INFO("[BlunderEngine] active glTF scene '{}' (entities={})",
-             sponza_scene->getSourcePath().c_str(), sponza_scene->getEntityCount());
   }
 }
 void BlunderEngine::clear() {}

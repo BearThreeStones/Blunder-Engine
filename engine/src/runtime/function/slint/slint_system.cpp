@@ -15,6 +15,16 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/hierarchy_system.h"
+#include "runtime/function/scene/entity.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_serializer.h"
+#include "runtime/function/scene/scene_system.h"
+#include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/function/render/render_system.h"
 
 namespace Blunder {
 namespace {
@@ -284,6 +294,40 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_sync_shading_from_asset(
         [this]() { syncBlinnPhongFromMaterialSource(); });
 
+    component->on_save_scene_requested([this]() {
+      if (g_runtime_global_context.m_editor_scene_edit) {
+        g_runtime_global_context.m_editor_scene_edit->saveActiveScene();
+      }
+    });
+
+    component->on_hierarchy_entity_selected([this](int entity_id) {
+      m_hierarchy_handled_by_slint = true;
+      if (!g_runtime_global_context.m_editor_selection) {
+        return;
+      }
+      g_runtime_global_context.m_editor_selection->setSelection(
+          static_cast<EntityId>(entity_id));
+      syncInspectorFromSelection();
+      syncHierarchy();
+    });
+
+    component->on_hierarchy_entity_toggle([this](int entity_id) {
+      m_hierarchy_handled_by_slint = true;
+      if (!g_runtime_global_context.m_hierarchy) {
+        return;
+      }
+      g_runtime_global_context.m_hierarchy->toggleExpanded(
+          static_cast<EntityId>(entity_id));
+      if (g_runtime_global_context.m_scene_system &&
+          g_runtime_global_context.m_scene_system->getActiveInstance()) {
+        g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
+            g_runtime_global_context.m_scene_system->getActiveInstance());
+      }
+      syncHierarchy();
+    });
+
+    component->on_inspector_transform_edited([this]() { applyInspectorTransform(); });
+
     component->on_browser_refresh_requested([this]() {
       if (!g_runtime_global_context.m_content_browser) {
         return;
@@ -368,7 +412,24 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
           m_drop_highlight_path.clear();
           drag.reset();
           syncContentBrowser();
-          (void)path;
+
+          const eastl::string path_str(path.data());
+          constexpr const char* k_scene_suffix = ".scene.asset";
+          const size_t suffix_len = 14u;
+          if (!was_dragging && path_str.size() >= suffix_len &&
+              path_str.compare(path_str.size() - suffix_len, suffix_len,
+                               k_scene_suffix) == 0 &&
+              g_runtime_global_context.m_editor_scene_edit) {
+            if (g_runtime_global_context.m_editor_scene_edit->openScene(path_str)) {
+              if (g_runtime_global_context.m_render_system &&
+                  g_runtime_global_context.m_scene_system) {
+                syncSceneToRender(
+                    g_runtime_global_context.m_render_system.get(),
+                    g_runtime_global_context.m_scene_system->getActiveInstance());
+              }
+              refreshEditorScenePanels();
+            }
+          }
         });
 
     component->show();
@@ -646,6 +707,20 @@ slint::LogicalPosition slintPointerPosition(WindowSystem* window_system, float w
   return slint::LogicalPosition({pointer.x, pointer.y});
 }
 
+int32_t resolveHierarchyTreeOriginY(const MainEditorWindow& ui) {
+  const int32_t hierarchy_origin_y =
+      static_cast<int32_t>(ui.get_hierarchy_origin_y());
+  const int32_t slint_tree_y =
+      static_cast<int32_t>(ui.get_hierarchy_tree_origin_y());
+  constexpr int32_t k_max_tree_origin_below_panel = 120;
+  if (slint_tree_y > hierarchy_origin_y &&
+      slint_tree_y <= hierarchy_origin_y + k_max_tree_origin_below_panel) {
+    return slint_tree_y;
+  }
+  constexpr int32_t k_tree_chrome_height_px = 36;
+  return hierarchy_origin_y + k_tree_chrome_height_px;
+}
+
 int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
   const int32_t browser_origin_y = static_cast<int32_t>(ui.get_browser_origin_y());
   const int32_t slint_tree_y =
@@ -663,6 +738,151 @@ int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
 }
 
 }  // namespace
+
+void SlintSystem::syncHierarchy() {
+  if (!m_window_component || !g_runtime_global_context.m_hierarchy) {
+    return;
+  }
+
+  HierarchySystem& hierarchy = *g_runtime_global_context.m_hierarchy;
+  const EntityId selected =
+      g_runtime_global_context.m_editor_selection
+          ? g_runtime_global_context.m_editor_selection->getSelection()
+          : k_invalid_entity_id;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto tree_model = std::make_shared<slint::VectorModel<HierarchyTreeRow>>();
+    for (const EditorHierarchyTreeRow& row : hierarchy.treeRows()) {
+      ::HierarchyTreeRow slint_row{};
+      slint_row.entity_id = static_cast<int>(row.entity_id);
+      slint_row.name = slint::SharedString(row.display_name.c_str());
+      slint_row.depth = row.depth;
+      slint_row.expanded = row.is_expanded;
+      slint_row.has_children = row.has_children;
+      slint_row.selected =
+          isValid(selected) && row.entity_id == static_cast<uint32_t>(selected);
+      tree_model->push_back(slint_row);
+    }
+    m_window_component->operator->()->set_hierarchy_tree_rows(tree_model);
+    m_window_component->operator->()->set_hierarchy_selected_entity_id(
+        isValid(selected) ? static_cast<int>(selected) : 0);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncHierarchy] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncHierarchy] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  EditorSelectionSystem* selection = g_runtime_global_context.m_editor_selection.get();
+  SceneInstance* scene =
+      g_runtime_global_context.m_scene_system
+          ? g_runtime_global_context.m_scene_system->getActiveInstance()
+          : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_applying_inspector_sync = true;
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_has_selection(false);
+      ui->set_inspector_entity_name(slint::SharedString(""));
+      m_applying_inspector_sync = false;
+      if (selection) {
+        selection->clearDirty();
+      }
+      return;
+    }
+
+    const Entity* entity = scene->getEntity(selection->getSelection());
+    if (entity == nullptr) {
+      ui->set_inspector_has_selection(false);
+      ui->set_inspector_entity_name(slint::SharedString(""));
+      m_applying_inspector_sync = false;
+      selection->clearDirty();
+      return;
+    }
+
+    const Vec3 euler = SceneSerializer::rotationToEulerDegrees(entity->getRotation());
+    ui->set_inspector_has_selection(true);
+    ui->set_inspector_entity_name(
+        slint::SharedString(entity->getName().c_str()));
+    ui->set_inspector_pos_x(entity->getPosition().x);
+    ui->set_inspector_pos_y(entity->getPosition().y);
+    ui->set_inspector_pos_z(entity->getPosition().z);
+    ui->set_inspector_rot_x(euler.x);
+    ui->set_inspector_rot_y(euler.y);
+    ui->set_inspector_rot_z(euler.z);
+    ui->set_inspector_scale_x(entity->getScale().x);
+    ui->set_inspector_scale_y(entity->getScale().y);
+    ui->set_inspector_scale_z(entity->getScale().z);
+    selection->clearDirty();
+    m_applying_inspector_sync = false;
+  } catch (const std::exception& e) {
+    m_applying_inspector_sync = false;
+    LOG_ERROR("[SlintSystem::syncInspectorFromSelection] {}", e.what());
+  } catch (...) {
+    m_applying_inspector_sync = false;
+    LOG_ERROR("[SlintSystem::syncInspectorFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorTransform() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  EditorSelectionSystem* selection = g_runtime_global_context.m_editor_selection.get();
+  SceneInstance* scene =
+      g_runtime_global_context.m_scene_system
+          ? g_runtime_global_context.m_scene_system->getActiveInstance()
+          : nullptr;
+  if (!selection || !scene || !selection->hasSelection()) {
+    return;
+  }
+
+  Entity* entity = scene->getEntity(selection->getSelection());
+  if (entity == nullptr) {
+    return;
+  }
+
+  try {
+    const auto& ui = *m_window_component;
+    entity->setPosition(
+        Vec3(ui->get_inspector_pos_x(), ui->get_inspector_pos_y(),
+             ui->get_inspector_pos_z()));
+    entity->setRotation(SceneSerializer::rotationFromEulerDegrees(Vec3(
+        ui->get_inspector_rot_x(), ui->get_inspector_rot_y(),
+        ui->get_inspector_rot_z())));
+    entity->setScale(Vec3(ui->get_inspector_scale_x(), ui->get_inspector_scale_y(),
+                          ui->get_inspector_scale_z()));
+    scene->markTransformsDirty();
+    if (g_runtime_global_context.m_editor_scene_edit) {
+      g_runtime_global_context.m_editor_scene_edit->markDirty();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorTransform] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorTransform] unknown exception");
+  }
+}
+
+void SlintSystem::refreshEditorScenePanels() {
+  if (g_runtime_global_context.m_scene_system &&
+      g_runtime_global_context.m_hierarchy) {
+    g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
+        g_runtime_global_context.m_scene_system->getActiveInstance());
+    g_runtime_global_context.m_hierarchy->markDirty();
+  }
+  syncHierarchy();
+  syncInspectorFromSelection();
+}
 
 void SlintSystem::syncContentBrowser() {
   if (!m_window_component || !g_runtime_global_context.m_content_browser) {
@@ -715,6 +935,10 @@ BrowserLogicalRect SlintSystem::getBrowserLogicalRect() const {
   return m_cached_browser_logical_rect;
 }
 
+BrowserLogicalRect SlintSystem::getHierarchyLogicalRect() const {
+  return m_cached_hierarchy_logical_rect;
+}
+
 bool SlintSystem::isContentBrowserDragActive() const {
   if (!g_runtime_global_context.m_content_browser) {
     return false;
@@ -728,6 +952,11 @@ void SlintSystem::clearContentBrowserSlintClickFlag() {
 
 void SlintSystem::beginContentBrowserInputFrame() {
   m_tree_folder_handled_by_slint = false;
+  m_hierarchy_handled_by_slint = false;
+}
+
+void SlintSystem::clearHierarchySlintClickFlag() {
+  m_hierarchy_handled_by_slint = false;
 }
 
 void SlintSystem::tickContentBrowserTreePointerPoll() {
@@ -739,11 +968,68 @@ void SlintSystem::tickContentBrowserTreePointerPoll() {
   const WindowClientMouseState mouse =
       queryWindowClientMouseState(m_window_system);
 
-  if (mouse.left_down && !m_left_mouse_down_prev && !m_tree_folder_handled_by_slint) {
-    trySelectContentBrowserTreeFolder(mouse.x, mouse.y);
+  if (mouse.left_down && !m_left_mouse_down_prev) {
+    if (!m_hierarchy_handled_by_slint) {
+      trySelectHierarchyEntity(mouse.x, mouse.y);
+    }
+    if (!m_tree_folder_handled_by_slint) {
+      trySelectContentBrowserTreeFolder(mouse.x, mouse.y);
+    }
   }
 
   m_left_mouse_down_prev = mouse.left_down;
+}
+
+void SlintSystem::tickHierarchyPointerPoll() {
+  (void)0;
+}
+
+bool SlintSystem::trySelectHierarchyEntity(float window_x, float window_y) {
+  if (!m_window_system || !m_window_component ||
+      !g_runtime_global_context.m_hierarchy ||
+      !g_runtime_global_context.m_editor_selection) {
+    return false;
+  }
+
+  if (m_hierarchy_handled_by_slint) {
+    return false;
+  }
+
+  if (m_window_component) {
+    const MainEditorWindow& ui = *m_window_component->operator->();
+    m_cached_hierarchy_logical_rect.x =
+        static_cast<int32_t>(ui.get_hierarchy_origin_x());
+    m_cached_hierarchy_logical_rect.y =
+        static_cast<int32_t>(ui.get_hierarchy_origin_y());
+    const float hierarchy_w = ui.get_hierarchy_width();
+    const float hierarchy_h = ui.get_hierarchy_height();
+    m_cached_hierarchy_logical_rect.width =
+        hierarchy_w > 0.0f ? static_cast<uint32_t>(hierarchy_w) : 0u;
+    m_cached_hierarchy_logical_rect.height =
+        hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
+  }
+
+  HierarchySystem& hierarchy = *g_runtime_global_context.m_hierarchy;
+  EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
+
+  const int32_t hierarchy_origin_x = m_cached_hierarchy_logical_rect.x;
+  const int32_t tree_origin_y =
+      m_window_component
+          ? resolveHierarchyTreeOriginY(*m_window_component->operator->())
+          : m_cached_hierarchy_logical_rect.y + 36;
+
+  constexpr float k_row_pitch = 24.0f;
+  const bool selected = hierarchy.selectEntityAt(
+      window_x, window_y, hierarchy_origin_x, tree_origin_y,
+      static_cast<float>(m_cached_hierarchy_logical_rect.width),
+      static_cast<float>(m_cached_hierarchy_logical_rect.height), k_row_pitch,
+      selection);
+  if (selected) {
+    m_hierarchy_handled_by_slint = true;
+    syncInspectorFromSelection();
+    syncHierarchy();
+  }
+  return selected;
 }
 
 bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
@@ -830,9 +1116,30 @@ void SlintSystem::update() {
           browser_w > 0.0f ? static_cast<uint32_t>(browser_w) : 0u;
       m_cached_browser_logical_rect.height =
           browser_h > 0.0f ? static_cast<uint32_t>(browser_h) : 0u;
+
+      m_cached_hierarchy_logical_rect.x =
+          static_cast<int32_t>(component->get_hierarchy_origin_x());
+      m_cached_hierarchy_logical_rect.y =
+          static_cast<int32_t>(component->get_hierarchy_origin_y());
+      const float hierarchy_w = component->get_hierarchy_width();
+      const float hierarchy_h = component->get_hierarchy_height();
+      m_cached_hierarchy_logical_rect.width =
+          hierarchy_w > 0.0f ? static_cast<uint32_t>(hierarchy_w) : 0u;
+      m_cached_hierarchy_logical_rect.height =
+          hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
     } else {
       m_cached_viewport_logical_rect = {};
       m_cached_browser_logical_rect = {};
+      m_cached_hierarchy_logical_rect = {};
+    }
+
+    if (g_runtime_global_context.m_editor_selection &&
+        g_runtime_global_context.m_editor_selection->isDirty()) {
+      syncInspectorFromSelection();
+    }
+    if (g_runtime_global_context.m_hierarchy &&
+        g_runtime_global_context.m_hierarchy->isDirty()) {
+      syncHierarchy();
     }
 
     tickContentBrowserTreePointerPoll();
