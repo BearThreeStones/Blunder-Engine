@@ -9,10 +9,10 @@
     },
     {
       "name": "CameraRig",
-      "parent": "Sun",
       "position": [0, 0, 5],
       "rotation": [0, 0, 0],
-      "rotationMode": "euler_degrees"
+      "rotationMode": "euler_degrees",
+      "parent": "Sun"
     }
   ],
   "childScenes": [

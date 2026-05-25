@@ -26,7 +26,19 @@
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 
+
 #include <SDL3/SDL.h>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+#include <SDL3/SDL_system.h>
+#endif
 
 namespace Blunder {
 bool g_is_editor_mode{false};
@@ -65,6 +77,115 @@ void activateEditorScene(const eastl::string& virtual_path) {
 
 }  // namespace
 
+namespace {
+
+#if defined(_WIN32)
+bool SDLCALL win32ModalResizeMessageHook(void* userdata, MSG* msg) {
+  if (userdata == nullptr || msg == nullptr) {
+    return true;
+  }
+  auto* engine = static_cast<BlunderEngine*>(userdata);
+  switch (msg->message) {
+    case WM_ENTERSIZEMOVE:
+      engine->onWin32ModalResizeBegin();
+      break;
+    case WM_EXITSIZEMOVE:
+      engine->onWin32ModalResizeEnd();
+      break;
+    case WM_SIZING:
+      if (g_runtime_global_context.m_slint_system) {
+        g_runtime_global_context.m_slint_system->noteWin32SizingTick();
+      }
+      break;
+    case WM_SIZE: {
+      if (msg->wParam == SIZE_MINIMIZED ||
+          !g_runtime_global_context.m_slint_system) {
+        break;
+      }
+      int client_w = static_cast<int>(LOWORD(msg->lParam));
+      int client_h = static_cast<int>(HIWORD(msg->lParam));
+      if (g_runtime_global_context.m_window_system) {
+        void* hwnd = g_runtime_global_context.m_window_system->getNativeWin32Hwnd();
+        if (hwnd != nullptr) {
+          RECT client_rect{};
+          if (GetClientRect(static_cast<HWND>(hwnd), &client_rect)) {
+            const int rect_w =
+                static_cast<int>(client_rect.right - client_rect.left);
+            const int rect_h =
+                static_cast<int>(client_rect.bottom - client_rect.top);
+            if (rect_w > 0) {
+              client_w = eastl::max(client_w, rect_w);
+            }
+            if (rect_h > 0) {
+              client_h = eastl::max(client_h, rect_h);
+            }
+          }
+        }
+        if (client_w <= 0 || client_h <= 0) {
+          const eastl::array<int, 2> px =
+              g_runtime_global_context.m_window_system->getDrawableSize();
+          client_w = px[0];
+          client_h = px[1];
+        }
+      }
+      g_runtime_global_context.m_slint_system->notifyWin32ClientAreaChanged(
+          static_cast<uintptr_t>(msg->wParam), client_w, client_h);
+      break;
+    }
+    default:
+      break;
+  }
+  return true;
+}
+#endif
+
+}  // namespace
+
+void BlunderEngine::onWin32ModalResizeBegin() {
+  if (g_runtime_global_context.m_window_system) {
+    g_runtime_global_context.m_window_system->setWin32ModalSizeLoopActive(true);
+  }
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->setWin32SizeModalActive(true);
+  }
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->notifyWindowResizeActivity();
+  }
+  LOG_DEBUG("[BlunderEngine] Win32 modal resize begin");
+}
+
+void BlunderEngine::onWin32ModalResizeEnd() {
+  if (g_runtime_global_context.m_window_system) {
+    g_runtime_global_context.m_window_system->setWin32ModalSizeLoopActive(false);
+  }
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->setWin32SizeModalActive(false);
+  }
+  m_pending_finalize_window_resize = true;
+  LOG_DEBUG("[BlunderEngine] Win32 modal resize end queued");
+}
+
+void BlunderEngine::finalizePendingWindowResize() {
+  if (!m_pending_finalize_window_resize) {
+    return;
+  }
+  m_pending_finalize_window_resize = false;
+
+  SlintSystem* slint = g_runtime_global_context.m_slint_system.get();
+  if (slint) {
+    // Layout commit only; keep resize cooldown so rendererTick/composite stay
+    // deferred for subsequent frames (avoids one mega-stall frame on release).
+    slint->finishLiveResizeModal();
+  }
+  LOG_DEBUG("[BlunderEngine] resize layout committed");
+}
+
+void BlunderEngine::processSdlEvent(const SDL_Event& event) {
+  if (g_runtime_global_context.m_window_system) {
+    g_runtime_global_context.m_window_system->dispatchApplicationEvent(event);
+  }
+}
+
 void BlunderEngine::startEngine() {
   g_runtime_global_context.startSystems();
 
@@ -72,7 +193,13 @@ void BlunderEngine::startEngine() {
   g_runtime_global_context.m_window_system->setEventCallback(
       [](Event& e) { onEvent(e); });
 
-  LOG_INFO("engine start");
+#if defined(_WIN32)
+  SDL_SetWindowsMessageHook(win32ModalResizeMessageHook, this);
+  LOG_INFO(
+      "[BlunderEngine] Win32 modal resize message hook installed (post-fix24)");
+#endif
+
+  LOG_INFO("engine start (SDL main callbacks, post-fix24)");
 }
 
 void BlunderEngine::onEvent(Event& e) {
@@ -103,8 +230,8 @@ void BlunderEngine::onEvent(Event& e) {
   });
 
   dispatcher.dispatch<WindowResizeEvent>([](WindowResizeEvent& event) {
-    LOG_INFO("[Event] Window resized to {}x{}", event.getWidth(),
-             event.getHeight());
+    LOG_DEBUG("[Event] Window resized to {}x{}", event.getWidth(),
+              event.getHeight());
     return true;
   });
 
@@ -211,70 +338,90 @@ void BlunderEngine::run() {
   m_frame_timer.reset();
 
   while (!window_system->shouldClose()) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+      processSdlEvent(event);
+    }
     const float delta_time = calculateDeltaTime();
-    tickOneFrame(delta_time);
+    if (!tickOneFrame(delta_time)) {
+      break;
+    }
   }
 }
 
 float BlunderEngine::calculateDeltaTime() { return m_frame_timer.tick(); }
 
 bool BlunderEngine::tickOneFrame(float delta_time) {
+  finalizePendingWindowResize();
+
   g_runtime_global_context.m_memory_system.beginFrame();
 
   if (g_runtime_global_context.m_slint_system) {
     g_runtime_global_context.m_slint_system->beginContentBrowserInputFrame();
   }
 
-  g_runtime_global_context.m_window_system->pumpEvents();
+  SlintSystem* slint_system = g_runtime_global_context.m_slint_system.get();
+  const bool defer_heavy =
+      slint_system != nullptr && slint_system->shouldDeferHeavyFrameWork();
 
-  if (g_runtime_global_context.m_content_browser &&
-      g_runtime_global_context.m_content_browser->tickFileWatch()) {
-    g_runtime_global_context.m_content_browser->refresh();
-    if (g_runtime_global_context.m_slint_system) {
-      g_runtime_global_context.m_slint_system->syncContentBrowser();
+  static bool s_was_defer_heavy = false;
+  if (s_was_defer_heavy && !defer_heavy) {
+    m_skip_renderer_after_defer = true;
+  }
+  s_was_defer_heavy = defer_heavy;
+
+  if (!defer_heavy) {
+    if (g_runtime_global_context.m_content_browser &&
+        g_runtime_global_context.m_content_browser->tickFileWatch()) {
+      g_runtime_global_context.m_content_browser->refresh();
+      if (slint_system) {
+        slint_system->syncContentBrowser();
+      }
     }
-  }
 
-  g_runtime_global_context.m_input_system->tick();
+    g_runtime_global_context.m_input_system->tick();
 
-  // 更新所有层（正向迭代：Layer1 → OverlayN）
-  for (Layer* layer : *g_runtime_global_context.m_layer_stack) {
-    layer->onUpdate(delta_time);
-  }
+    for (Layer* layer : *g_runtime_global_context.m_layer_stack) {
+      layer->onUpdate(delta_time);
+    }
 
-  if (g_runtime_global_context.m_scene_system) {
-    g_runtime_global_context.m_scene_system->tick(delta_time);
-    if (g_runtime_global_context.m_render_system &&
-        g_runtime_global_context.m_scene_system->getActiveInstance()) {
-      syncSceneToRender(g_runtime_global_context.m_render_system.get(),
-                        g_runtime_global_context.m_scene_system->getActiveInstance());
+    if (g_runtime_global_context.m_scene_system) {
+      g_runtime_global_context.m_scene_system->tick(delta_time);
+      if (g_runtime_global_context.m_render_system &&
+          g_runtime_global_context.m_scene_system->getActiveInstance()) {
+        syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                          g_runtime_global_context.m_scene_system->getActiveInstance());
+      }
     }
   }
 
   calculateFPS(delta_time);
 
-  // single thread
-  // exchange data between logic and render contexts
-
-  // 1. Render 3D scene to off-screen RT, read back to CPU, push pixels into
-  //    the Slint Image control via setViewportImage(). The target size comes
-  //    from Slint's central viewport rectangle.
-  rendererTick(delta_time);
-
-  // 2. Slint composites the entire window (including the Image control with
-  //    the freshly-pushed 3D viewport pixels) and presents to the HWND via
-  //    its SkiaRenderer.
-  g_runtime_global_context.m_slint_system->update();
+  if (slint_system) {
+    slint_system->beginFrame();
+    if (!defer_heavy && !m_skip_renderer_after_defer) {
+      rendererTick(delta_time);
+    }
+    if (m_skip_renderer_after_defer) {
+      m_skip_renderer_after_defer = false;
+    }
+    slint_system->endFrame();
+  }
 
 #ifdef ENABLE_PHYSICS_DEBUG_RENDERER
-  g_runtime_global_context.m_physics_manager->renderPhysicsWorld(delta_time);
+  if (!defer_heavy && g_runtime_global_context.m_physics_manager) {
+    g_runtime_global_context.m_physics_manager->renderPhysicsWorld(delta_time);
+  }
 #endif
 
-  g_runtime_global_context.m_window_system->setTitle(
-      std::string("Blunder - " + std::to_string(getFPS()) + " FPS").c_str());
+  if (!defer_heavy) {
+    g_runtime_global_context.m_window_system->setTitle(
+        std::string("Blunder - " + std::to_string(getFPS()) + " FPS").c_str());
+  }
 
   const bool should_window_close =
       g_runtime_global_context.m_window_system->shouldClose();
+
   return !should_window_close;
 }
 

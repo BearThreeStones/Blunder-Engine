@@ -2,13 +2,20 @@
 
 #include <slint.h>
 
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <exception>
 #include <string>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_timer.h>
 #include <glm/vec3.hpp>
 
 #include "runtime/core/base/macro.h"
@@ -25,6 +32,7 @@
 #include "runtime/function/scene/scene_render_bridge.h"
 #include "runtime/function/scene/scene_render_bridge.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/platform/file_system/file_system.h"
 
 namespace Blunder {
 namespace {
@@ -60,6 +68,21 @@ const char* graphicsApiToString(slint::GraphicsAPI graphics_api) {
 }
 
 SlintSystem::SlintPlatform* g_slint_platform_instance = nullptr;
+
+int g_chrome_prev_logical_w = 0;
+int g_chrome_prev_logical_h = 0;
+int g_chrome_prev_px_w = 0;
+int g_chrome_prev_px_h = 0;
+float g_chrome_prev_scale = 0.0f;
+
+void resetChromeSizeCache() {
+  g_chrome_prev_logical_w = 0;
+  g_chrome_prev_logical_h = 0;
+  g_chrome_prev_px_w = 0;
+  g_chrome_prev_px_h = 0;
+  g_chrome_prev_scale = 0.0f;
+}
+
 }  // namespace
 
 namespace {
@@ -72,6 +95,52 @@ class ScopedDispatchGuard final {
  private:
   int& m_depth;
 };
+}
+
+slint::PhysicalSize queryLogicalWindowSize(WindowSystem* window_system) {
+  if (!window_system) {
+    return slint::PhysicalSize{{1u, 1u}};
+  }
+  const eastl::array<int, 2> window_size = window_system->getLogicalWindowSize();
+  return slint::PhysicalSize(
+      {static_cast<uint32_t>(window_size[0]), static_cast<uint32_t>(window_size[1])});
+}
+
+/// SDL logical size can lag after maximize; derive logical points from physical px / DPI.
+slint::PhysicalSize reconcileLogicalWithPhysical(WindowSystem* window_system,
+                                                 slint::PhysicalSize physical_size,
+                                                 slint::PhysicalSize reported_logical) {
+  if (!window_system || physical_size.width == 0 || physical_size.height == 0) {
+    return reported_logical;
+  }
+  const float scale = window_system->getDisplayScale();
+  if (scale <= 0.0f) {
+    return reported_logical;
+  }
+  const uint32_t from_physical_w =
+      static_cast<uint32_t>(static_cast<float>(physical_size.width) / scale + 0.5f);
+  const uint32_t from_physical_h =
+      static_cast<uint32_t>(static_cast<float>(physical_size.height) / scale + 0.5f);
+  return slint::PhysicalSize(
+      {eastl::max(reported_logical.width, from_physical_w),
+       eastl::max(reported_logical.height, from_physical_h)});
+}
+
+float queryWindowScaleFactor(WindowSystem* window_system) {
+  if (!window_system) {
+    return 1.0f;
+  }
+  const float display_scale = window_system->getDisplayScale();
+  if (display_scale > 0.0f) {
+    return display_scale;
+  }
+  const eastl::array<int, 2> logical_size = window_system->getLogicalWindowSize();
+  const eastl::array<int, 2> drawable_size = window_system->getDrawableSize();
+  if (logical_size[0] <= 0) {
+    return 1.0f;
+  }
+  return static_cast<float>(drawable_size[0]) /
+         static_cast<float>(logical_size[0]);
 }
 
 SlintSystem::SlintWindowAdapter::SlintWindowAdapter(WindowSystem* window_system)
@@ -109,9 +178,11 @@ void SlintSystem::SlintWindowAdapter::ensureRenderer() {
   }
   slint::platform::NativeWindowHandle handle =
       slint::platform::NativeWindowHandle::from_win32(hwnd, hinstance);
-  m_last_size = phys;
+  m_target_size = phys;
+  m_committed_size = phys;
+  m_renderer_size = phys;
   m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
-      handle, m_last_size);
+      handle, m_committed_size);
 #else
 #  error "Slint SkiaRenderer integration is currently implemented for Win32 only"
 #endif
@@ -121,10 +192,10 @@ void SlintSystem::SlintWindowAdapter::set_visible(bool visible) {
   m_visible = visible;
   if (visible) {
     ensureRenderer();
-    window().dispatch_scale_factor_change_event(1.0f);
-    const slint::PhysicalSize phys = size();
-    window().dispatch_resize_event(slint::LogicalSize(
-        {static_cast<float>(phys.width), static_cast<float>(phys.height)}));
+    window().dispatch_scale_factor_change_event(
+        queryWindowScaleFactor(m_window_system));
+    pollDrawableSize();
+    commitWindowSize(true);
     request_redraw();
   }
 }
@@ -141,25 +212,225 @@ void SlintSystem::SlintWindowAdapter::update_window_properties(
   }
 }
 
-void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
-  if (!m_visible || !m_renderer) {
+void SlintSystem::SlintWindowAdapter::pollDrawableSize() {
+  if (!m_visible) {
     return;
   }
 
   const slint::PhysicalSize physical_size = size();
-  if (physical_size.width != m_last_size.width ||
-      physical_size.height != m_last_size.height) {
-    window().dispatch_resize_event(
-        slint::LogicalSize({static_cast<float>(physical_size.width),
-                            static_cast<float>(physical_size.height)}));
-    m_last_size = physical_size;
+  const slint::PhysicalSize reported_logical = queryLogicalWindowSize(m_window_system);
+  const slint::PhysicalSize logical_size =
+      reconcileLogicalWithPhysical(m_window_system, physical_size, reported_logical);
+  if (physical_size.width == m_target_size.width &&
+      physical_size.height == m_target_size.height &&
+      logical_size.width == m_target_logical_size.width &&
+      logical_size.height == m_target_logical_size.height) {
+    return;
+  }
+
+  const slint::PhysicalSize previous_target = m_target_size;
+  m_target_size = physical_size;
+  m_target_logical_size = logical_size;
+  m_size_stable_frames = 0;
+
+  if (previous_target.width > 0 && previous_target.height > 0) {
+    const uint32_t dw = previous_target.width > physical_size.width
+                            ? previous_target.width - physical_size.width
+                            : physical_size.width - previous_target.width;
+    const uint32_t dh = previous_target.height > physical_size.height
+                            ? previous_target.height - physical_size.height
+                            : physical_size.height - previous_target.height;
+    if (dw > previous_target.width / 3u || dh > previous_target.height / 3u) {
+      const bool growing =
+          physical_size.width > previous_target.width ||
+          physical_size.height > previous_target.height;
+      // Maximize grows the client — suppressing present leaves the old quarter-layout
+      // frame stretched until cooldown ends.
+      if (!growing) {
+        m_present_suppress_frames = eastl::max(m_present_suppress_frames, 4u);
+      }
+    }
+  }
+}
+
+void SlintSystem::SlintWindowAdapter::refreshTargetSizesFromWindow() {
+  if (!m_visible || !m_window_system) {
+    return;
+  }
+  const slint::PhysicalSize physical_size = size();
+  const slint::PhysicalSize reported_logical = queryLogicalWindowSize(m_window_system);
+  const slint::PhysicalSize logical_size =
+      reconcileLogicalWithPhysical(m_window_system, physical_size, reported_logical);
+  if (physical_size.width != m_target_size.width ||
+      physical_size.height != m_target_size.height ||
+      logical_size.width != m_target_logical_size.width ||
+      logical_size.height != m_target_logical_size.height) {
+    m_target_size = physical_size;
+    m_target_logical_size = logical_size;
+    m_size_stable_frames = 0;
+  }
+}
+
+void SlintSystem::SlintWindowAdapter::applyWindowLayoutNow(int override_logical_w,
+                                                           int override_logical_h) {
+  if (!m_visible) {
+    return;
+  }
+
+  refreshTargetSizesFromWindow();
+  const float layout_scale = queryWindowScaleFactor(m_window_system);
+  if (layout_scale > 0.0f && m_target_size.width > 0 && m_target_size.height > 0) {
+    const uint32_t from_physical_w = static_cast<uint32_t>(
+        static_cast<float>(m_target_size.width) / layout_scale + 0.5f);
+    const uint32_t from_physical_h = static_cast<uint32_t>(
+        static_cast<float>(m_target_size.height) / layout_scale + 0.5f);
+    m_target_logical_size = slint::PhysicalSize(
+        {eastl::max(from_physical_w, 1u), eastl::max(from_physical_h, 1u)});
+  }
+  if (override_logical_w > 0 && override_logical_h > 0) {
+    const uint32_t override_w = static_cast<uint32_t>(override_logical_w);
+    const uint32_t override_h = static_cast<uint32_t>(override_logical_h);
+    m_target_logical_size = slint::PhysicalSize(
+        {eastl::max(override_w, m_target_logical_size.width),
+         eastl::max(override_h, m_target_logical_size.height)});
+  }
+
+  constexpr uint32_t k_min_present_extent = 8u;
+  if (m_target_size.width < k_min_present_extent ||
+      m_target_size.height < k_min_present_extent) {
+    return;
+  }
+
+  const bool physical_size_changed =
+      m_renderer &&
+      (m_target_size.width != m_renderer_size.width ||
+       m_target_size.height != m_renderer_size.height);
+  if (physical_size_changed) {
+    if (m_renderer) {
+      m_renderer->resize(m_target_size);
+#if defined(_WIN32)
+      if (void* hwnd_opaque = m_window_system->getNativeWin32Hwnd()) {
+        InvalidateRect(static_cast<HWND>(hwnd_opaque), nullptr, FALSE);
+      }
+      SDL_PumpEvents();
+#endif
+      m_present_suppress_frames = eastl::max(m_present_suppress_frames, 1u);
+    }
+  }
+
+  if (!m_renderer) {
+    ensureRenderer();
+    if (!m_renderer) {
+      return;
+    }
+    m_renderer_size = m_target_size;
+    m_committed_size = m_target_size;
+    m_committed_logical_size = m_target_logical_size;
+  }
+
+  const float scale = queryWindowScaleFactor(m_window_system);
+  window().dispatch_resize_event(
+      slint::LogicalSize({static_cast<float>(m_target_logical_size.width),
+                          static_cast<float>(m_target_logical_size.height)}));
+  window().dispatch_scale_factor_change_event(scale);
+  m_committed_logical_size = m_target_logical_size;
+  m_committed_size = m_target_size;
+  m_renderer_size = m_target_size;
+  m_size_stable_frames = 0;
+}
+
+void SlintSystem::SlintWindowAdapter::commitWindowSize(bool force) {
+  if (!m_visible) {
+    return;
+  }
+
+  refreshTargetSizesFromWindow();
+
+  constexpr uint32_t k_min_present_extent = 8u;
+  if (m_target_size.width < k_min_present_extent ||
+      m_target_size.height < k_min_present_extent) {
+    return;
+  }
+
+  const bool layout_pending =
+      m_target_logical_size.width != m_committed_logical_size.width ||
+      m_target_logical_size.height != m_committed_logical_size.height ||
+      m_target_size.width != m_committed_size.width ||
+      m_target_size.height != m_committed_size.height;
+  if (!layout_pending) {
+    return;
+  }
+
+  if (force) {
+    applyWindowLayoutNow();
+    return;
+  }
+
+  if (++m_size_stable_frames < 2u) {
+    return;
+  }
+
+  applyWindowLayoutNow();
+}
+
+void SlintSystem::SlintWindowAdapter::suppressPresentFrames(uint32_t frame_count) {
+  m_present_suppress_frames = eastl::max(m_present_suppress_frames, frame_count);
+}
+
+void SlintSystem::SlintWindowAdapter::compositeFrame() {
+  if (!m_visible || !m_renderer) {
+    return;
+  }
+  if (m_present_suppress_frames > 0) {
+    --m_present_suppress_frames;
+    request_redraw();
+    return;
+  }
+  if (m_committed_size.width < 8u || m_committed_size.height < 8u ||
+      m_committed_logical_size.width < 8u || m_committed_logical_size.height < 8u) {
+    request_redraw();
+    return;
+  }
+  if (m_target_logical_size.width != m_committed_logical_size.width ||
+      m_target_logical_size.height != m_committed_logical_size.height ||
+      m_target_size.width != m_committed_size.width ||
+      m_target_size.height != m_committed_size.height) {
+    applyWindowLayoutNow();
+    if (m_present_suppress_frames > 0) {
+      request_redraw();
+      return;
+    }
+    if (m_target_logical_size.width != m_committed_logical_size.width ||
+        m_target_logical_size.height != m_committed_logical_size.height) {
+      request_redraw();
+      return;
+    }
   }
 
   // Always re-render: the engine pushes a new viewport image every frame, so
   // even if Slint's UI itself isn't dirty, the central Image control needs
   // to repaint with the latest 3D texture.
-  m_renderer->render();
+#if defined(_WIN32)
+  SDL_PumpEvents();
+#endif
+  try {
+    m_renderer->render();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem] SkiaRenderer::render failed: {}", e.what());
+    m_present_suppress_frames = 2u;
+    return;
+  } catch (...) {
+    LOG_ERROR("[SlintSystem] SkiaRenderer::render failed: unknown exception");
+    m_present_suppress_frames = 2u;
+    return;
+  }
   m_needs_redraw = window().has_active_animations();
+}
+
+void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
+  pollDrawableSize();
+  commitWindowSize();
+  compositeFrame();
 }
 
 SlintSystem::SlintPlatform::SlintPlatform(WindowSystem* window_system)
@@ -298,6 +569,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       if (g_runtime_global_context.m_editor_scene_edit) {
         g_runtime_global_context.m_editor_scene_edit->saveActiveScene();
       }
+    });
+
+    component->on_dock_layout_drag_changed([this](bool active) {
+      m_dock_layout_drag_active = active;
+      if (!active) {
+        m_layout_cooldown_frames = k_layout_cooldown_frames;
+      }
+      LOG_DEBUG("[SlintSystem] dock layout drag active={}", active);
     });
 
     component->on_hierarchy_entity_selected([this](int entity_id) {
@@ -440,6 +719,9 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
     m_window_system->setNativeEventCallback(
         [this](const SDL_Event& event) { processEvent(event); });
+
+    syncWindowChromeSize();
+    LOG_INFO("[SlintSystem] editor initialized");
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::initialize] {}", e.what());
     m_window_component.reset();
@@ -636,15 +918,25 @@ SlintPointerCoords mapWindowPointerToSlint(WindowSystem* window_system, float x,
   if (!window_system) {
     return out;
   }
-  const eastl::array<int, 2> window_size = window_system->getWindowSize();
-  const eastl::array<int, 2> drawable_size = window_system->getDrawableSize();
-  if (window_size[0] > 0 && window_size[1] > 0) {
-    out.scale_x =
-        static_cast<float>(drawable_size[0]) / static_cast<float>(window_size[0]);
-    out.scale_y =
-        static_cast<float>(drawable_size[1]) / static_cast<float>(window_size[1]);
-    out.x = x * out.scale_x;
-    out.y = y * out.scale_y;
+  const eastl::array<int, 2> sdl_win = window_system->getWindowSize();
+  const eastl::array<int, 2> logical = window_system->getLogicalWindowSize();
+  const eastl::array<int, 2> drawable = window_system->getDrawableSize();
+
+  // Slint layout uses logical client size. Map SDL mouse coords into that space.
+#if defined(_WIN32)
+  // Win32 high-DPI: mouse coords usually track drawable pixels when logical < drawable.
+  if (drawable[0] > logical[0] + 2 && logical[0] > 0 && drawable[0] > 0) {
+    out.x = x * static_cast<float>(logical[0]) / static_cast<float>(drawable[0]);
+    out.y = y * static_cast<float>(logical[1]) / static_cast<float>(drawable[1]);
+    out.scale_x = static_cast<float>(drawable[0]) / static_cast<float>(logical[0]);
+    out.scale_y = static_cast<float>(drawable[1]) / static_cast<float>(logical[1]);
+    return out;
+  }
+#endif
+  if (sdl_win[0] > 0 && sdl_win[1] > 0 && logical[0] > 0 && logical[1] > 0 &&
+      (logical[0] != sdl_win[0] || logical[1] != sdl_win[1])) {
+    out.x = x * static_cast<float>(logical[0]) / static_cast<float>(sdl_win[0]);
+    out.y = y * static_cast<float>(logical[1]) / static_cast<float>(sdl_win[1]);
   }
   return out;
 }
@@ -727,7 +1019,7 @@ int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
       static_cast<int32_t>(ui.get_browser_tree_origin_y());
   // Slint absolute_position for the tree is in the same space as
   // browser-origin (window/logical layout units, not drawable pixels).
-  constexpr int32_t k_max_tree_origin_below_browser = 160;
+  constexpr int32_t k_max_tree_origin_below_browser = 220;
   if (slint_tree_y > browser_origin_y &&
       slint_tree_y <= browser_origin_y + k_max_tree_origin_below_browser) {
     return slint_tree_y;
@@ -1058,8 +1350,12 @@ bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
   const int32_t browser_origin_x = static_cast<int32_t>(ui.get_browser_origin_x());
   const BrowserLogicalRect browser_rect = readBrowserRectFromUi(ui);
   const int32_t tree_origin_y = resolveContentBrowserTreeOriginY(ui);
-  constexpr float k_tree_panel_height_px = 140.0f;
   constexpr float k_tree_row_pitch_px = 24.0f;
+  const float tree_panel_height =
+      static_cast<float>(ui.get_browser_tree_panel_height());
+  if (tree_panel_height <= 0.0f) {
+    return false;
+  }
   const bool in_browser_x =
       window_x >= static_cast<float>(browser_origin_x) &&
       window_x <
@@ -1067,8 +1363,7 @@ bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
                              static_cast<int32_t>(browser_rect.width));
   const bool in_tree_band =
       in_browser_x && window_y >= static_cast<float>(tree_origin_y) &&
-      window_y <
-          static_cast<float>(tree_origin_y) + k_tree_panel_height_px;
+      window_y < static_cast<float>(tree_origin_y) + tree_panel_height;
   if (!in_tree_band) {
     return false;
   }
@@ -1086,74 +1381,394 @@ bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
   return true;
 }
 
-void SlintSystem::update() {
+void SlintSystem::syncWindowChromeSize(int override_logical_w,
+                                       int override_logical_h) {
+  if (!m_window_component || !m_window_system || !m_window_adapter) {
+    return;
+  }
+
+  m_window_system->refreshClientPixelSizeFromHwnd();
+
+  const eastl::array<int, 2> sdl_win = m_window_system->getWindowSize();
+  const eastl::array<int, 2> logical_win = m_window_system->getLogicalWindowSize();
+  const eastl::array<int, 2> px = m_window_system->getDrawableSize();
+  const float scale = queryWindowScaleFactor(m_window_system);
+  const int derived_logical_w =
+      scale > 0.0f ? static_cast<int>(static_cast<float>(px[0]) / scale + 0.5f) : logical_win[0];
+  const int derived_logical_h =
+      scale > 0.0f ? static_cast<int>(static_cast<float>(px[1]) / scale + 0.5f)
+                     : logical_win[1];
+  const int reconciled_w = eastl::max(logical_win[0], derived_logical_w);
+  const int reconciled_h = eastl::max(logical_win[1], derived_logical_h);
+  const int logical_w = override_logical_w > 0
+                            ? eastl::max(override_logical_w, reconciled_w)
+                            : reconciled_w;
+  const int logical_h = override_logical_h > 0
+                            ? eastl::max(override_logical_h, reconciled_h)
+                            : reconciled_h;
+
+  const bool size_changed =
+      g_chrome_prev_logical_w == 0 || logical_w != g_chrome_prev_logical_w ||
+      logical_h != g_chrome_prev_logical_h;
+  const bool px_changed =
+      g_chrome_prev_px_w == 0 || px[0] != g_chrome_prev_px_w ||
+      px[1] != g_chrome_prev_px_h;
+  const bool scale_changed =
+      g_chrome_prev_scale <= 0.0f || std::fabs(scale - g_chrome_prev_scale) > 0.01f;
+  const bool force_resync =
+      m_layout_resync_frames > 0 && (size_changed || px_changed || scale_changed);
+  if (!size_changed && !px_changed && !scale_changed && !force_resync &&
+      m_maximize_layout_frames == 0) {
+    return;
+  }
+
+  if (g_chrome_prev_logical_w > 0 &&
+      (std::abs(logical_w - g_chrome_prev_logical_w) > 48 ||
+       std::abs(logical_h - g_chrome_prev_logical_h) > 48)) {
+    m_force_window_commit = true;
+    m_layout_resync_frames = k_layout_resync_frames;
+  }
+  if (g_chrome_prev_px_w > 0 &&
+      (std::abs(px[0] - g_chrome_prev_px_w) > 48 ||
+       std::abs(px[1] - g_chrome_prev_px_h) > 48)) {
+    m_force_window_commit = true;
+    m_layout_resync_frames = k_layout_resync_frames;
+  }
+  g_chrome_prev_logical_w = logical_w;
+  g_chrome_prev_logical_h = logical_h;
+  g_chrome_prev_px_w = px[0];
+  g_chrome_prev_px_h = px[1];
+  g_chrome_prev_scale = scale;
+
+  m_window_adapter->pollDrawableSize();
+  m_window_adapter->applyWindowLayoutNow(logical_w, logical_h);
+  m_window_adapter->request_redraw();
+}
+
+void SlintSystem::cacheLayoutRects() {
+  if (m_window_component) {
+    const auto& component = *m_window_component;
+    const float x = component->get_viewport_origin_x();
+    const float y = component->get_viewport_origin_y();
+    const float w = component->get_viewport_width();
+    const float h = component->get_viewport_height();
+    m_cached_viewport_logical_rect.x = static_cast<int32_t>(x);
+    m_cached_viewport_logical_rect.y = static_cast<int32_t>(y);
+    m_cached_viewport_logical_rect.width =
+        w > 0.0f ? static_cast<uint32_t>(w) : 0u;
+    m_cached_viewport_logical_rect.height =
+        h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+
+    m_cached_browser_logical_rect.x =
+        static_cast<int32_t>(component->get_browser_origin_x());
+    m_cached_browser_logical_rect.y =
+        static_cast<int32_t>(component->get_browser_origin_y());
+    const float browser_w = component->get_browser_width();
+    const float browser_h = component->get_browser_height();
+    m_cached_browser_logical_rect.width =
+        browser_w > 0.0f ? static_cast<uint32_t>(browser_w) : 0u;
+    m_cached_browser_logical_rect.height =
+        browser_h > 0.0f ? static_cast<uint32_t>(browser_h) : 0u;
+
+    m_cached_hierarchy_logical_rect.x =
+        static_cast<int32_t>(component->get_hierarchy_origin_x());
+    m_cached_hierarchy_logical_rect.y =
+        static_cast<int32_t>(component->get_hierarchy_origin_y());
+    const float hierarchy_w = component->get_hierarchy_width();
+    const float hierarchy_h = component->get_hierarchy_height();
+    m_cached_hierarchy_logical_rect.width =
+        hierarchy_w > 0.0f ? static_cast<uint32_t>(hierarchy_w) : 0u;
+    m_cached_hierarchy_logical_rect.height =
+        hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
+
+    const uint32_t vp_w = m_cached_viewport_logical_rect.width;
+    const uint32_t vp_h = m_cached_viewport_logical_rect.height;
+    const bool viewport_changed =
+        m_last_viewport_w != 0 &&
+        (vp_w != m_last_viewport_w || vp_h != m_last_viewport_h);
+    if (viewport_changed && !m_dock_layout_drag_active) {
+      m_layout_cooldown_frames = k_layout_cooldown_frames;
+    }
+    m_last_viewport_w = vp_w;
+    m_last_viewport_h = vp_h;
+    if (!viewport_changed && m_layout_cooldown_frames > 0) {
+      --m_layout_cooldown_frames;
+    }
+  } else {
+    m_cached_viewport_logical_rect = {};
+    m_cached_browser_logical_rect = {};
+    m_cached_hierarchy_logical_rect = {};
+  }
+}
+
+void SlintSystem::cacheViewportLogicalRectOnly() {
+  if (!m_window_component) {
+    return;
+  }
+  const auto& component = *m_window_component;
+  const float x = component->get_viewport_origin_x();
+  const float y = component->get_viewport_origin_y();
+  const float w = component->get_viewport_width();
+  const float h = component->get_viewport_height();
+  m_cached_viewport_logical_rect.x = static_cast<int32_t>(x);
+  m_cached_viewport_logical_rect.y = static_cast<int32_t>(y);
+  m_cached_viewport_logical_rect.width = w > 0.0f ? static_cast<uint32_t>(w) : 0u;
+  m_cached_viewport_logical_rect.height = h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+
+  const uint32_t vp_w = m_cached_viewport_logical_rect.width;
+  const uint32_t vp_h = m_cached_viewport_logical_rect.height;
+  const bool viewport_changed =
+      m_last_viewport_w != 0 &&
+      (vp_w != m_last_viewport_w || vp_h != m_last_viewport_h);
+  if (viewport_changed && !m_dock_layout_drag_active) {
+    m_layout_cooldown_frames = k_layout_cooldown_frames;
+  }
+  m_last_viewport_w = vp_w;
+  m_last_viewport_h = vp_h;
+  if (!viewport_changed && m_layout_cooldown_frames > 0) {
+    --m_layout_cooldown_frames;
+  }
+}
+
+void SlintSystem::refreshBrowserRectCache() {
+  if (!m_window_component) {
+    return;
+  }
+  m_cached_browser_logical_rect =
+      readBrowserRectFromUi(*m_window_component->operator->());
+}
+
+void SlintSystem::runEditorPanelSync() {
+  if (g_runtime_global_context.m_editor_selection &&
+      g_runtime_global_context.m_editor_selection->isDirty()) {
+    syncInspectorFromSelection();
+  }
+  if (g_runtime_global_context.m_hierarchy &&
+      g_runtime_global_context.m_hierarchy->isDirty()) {
+    syncHierarchy();
+  }
+
+  tickContentBrowserTreePointerPoll();
+}
+
+void SlintSystem::notifyWindowResizeActivity() {
+  m_resize_cooldown_frames = k_resize_cooldown_frames;
+}
+
+bool SlintSystem::isDockLayoutDragActive() const { return m_dock_layout_drag_active; }
+
+bool SlintSystem::shouldSkipSkiaPresentDuringDefer() const {
+  // Only skip present during live Win32 border drag (OS stretches the last frame).
+  // Maximize/restore must still composite so the new layout is visible immediately.
+  return m_win32_size_modal;
+}
+
+void SlintSystem::notifyWin32ClientAreaChanged(uintptr_t wm_size_param, int client_w,
+                                               int client_h) {
+  resetChromeSizeCache();
+  m_layout_resync_frames = k_layout_resync_frames;
+  m_force_window_commit = true;
+  m_window_resize_active = true;
+  // WM_SIZE (maximize/restore) is instantaneous — do not arm resize cooldown; that
+  // defers Skia present and leaves the UI drawn at the old size in a larger HWND.
+  m_resize_cooldown_frames = 0;
+#if defined(_WIN32)
+  if (wm_size_param == SIZE_MAXIMIZED) {
+    m_maximize_layout_frames = k_maximize_layout_frames;
+  }
+#endif
+  try {
+    if (m_window_system) {
+      if (client_w > 0 && client_h > 0) {
+        m_window_system->notifyClientPixelSize(client_w, client_h);
+      } else {
+        m_window_system->refreshClientPixelSizeFromHwnd();
+      }
+    }
+    if (m_window_adapter) {
+      m_window_adapter->pollDrawableSize();
+    }
+    if (m_slint_dispatch_depth == 0) {
+      syncWindowChromeSize();
+      slint::platform::update_timers_and_animations();
+      if (m_window_adapter) {
+        m_window_adapter->request_redraw();
+      }
+      cacheLayoutRects();
+    } else {
+      m_pending_win32_chrome_sync = true;
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::notifyWin32ClientAreaChanged] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::notifyWin32ClientAreaChanged] unknown exception");
+  }
+}
+
+void SlintSystem::noteWin32SizingTick() {
+  notifyWindowResizeActivity();
+  try {
+    if (m_window_adapter) {
+      m_window_adapter->pollDrawableSize();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::noteWin32SizingTick] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::noteWin32SizingTick] unknown exception");
+  }
+}
+
+void SlintSystem::clearDeferAfterWindowResize() {
+  m_resize_cooldown_frames = 0;
+  m_layout_cooldown_frames = 0;
+  m_window_resize_active = false;
+}
+
+void SlintSystem::finishLiveResizeModal() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     slint::platform::update_timers_and_animations();
+    resetChromeSizeCache();
     if (m_window_adapter) {
-      m_window_adapter->renderIfNeeded();
+      m_window_adapter->pollDrawableSize();
+      m_window_adapter->commitWindowSize(true);
     }
-    if (m_window_component) {
-      const auto& component = *m_window_component;
-      const float x = component->get_viewport_origin_x();
-      const float y = component->get_viewport_origin_y();
-      const float w = component->get_viewport_width();
-      const float h = component->get_viewport_height();
-      m_cached_viewport_logical_rect.x = static_cast<int32_t>(x);
-      m_cached_viewport_logical_rect.y = static_cast<int32_t>(y);
-      m_cached_viewport_logical_rect.width =
-          w > 0.0f ? static_cast<uint32_t>(w) : 0u;
-      m_cached_viewport_logical_rect.height =
-          h > 0.0f ? static_cast<uint32_t>(h) : 0u;
-
-      m_cached_browser_logical_rect.x =
-          static_cast<int32_t>(component->get_browser_origin_x());
-      m_cached_browser_logical_rect.y =
-          static_cast<int32_t>(component->get_browser_origin_y());
-      const float browser_w = component->get_browser_width();
-      const float browser_h = component->get_browser_height();
-      m_cached_browser_logical_rect.width =
-          browser_w > 0.0f ? static_cast<uint32_t>(browser_w) : 0u;
-      m_cached_browser_logical_rect.height =
-          browser_h > 0.0f ? static_cast<uint32_t>(browser_h) : 0u;
-
-      m_cached_hierarchy_logical_rect.x =
-          static_cast<int32_t>(component->get_hierarchy_origin_x());
-      m_cached_hierarchy_logical_rect.y =
-          static_cast<int32_t>(component->get_hierarchy_origin_y());
-      const float hierarchy_w = component->get_hierarchy_width();
-      const float hierarchy_h = component->get_hierarchy_height();
-      m_cached_hierarchy_logical_rect.width =
-          hierarchy_w > 0.0f ? static_cast<uint32_t>(hierarchy_w) : 0u;
-      m_cached_hierarchy_logical_rect.height =
-          hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
-    } else {
-      m_cached_viewport_logical_rect = {};
-      m_cached_browser_logical_rect = {};
-      m_cached_hierarchy_logical_rect = {};
-    }
-
-    if (g_runtime_global_context.m_editor_selection &&
-        g_runtime_global_context.m_editor_selection->isDirty()) {
-      syncInspectorFromSelection();
-    }
-    if (g_runtime_global_context.m_hierarchy &&
-        g_runtime_global_context.m_hierarchy->isDirty()) {
-      syncHierarchy();
-    }
-
-    tickContentBrowserTreePointerPoll();
+    syncWindowChromeSize();
+    cacheLayoutRects();
   } catch (const std::exception& e) {
-    LOG_ERROR("[SlintSystem::update] {}", e.what());
+    LOG_ERROR("[SlintSystem::finishLiveResizeModal] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::finishLiveResizeModal] unknown exception");
+  }
+}
+
+void SlintSystem::compositeEditorFrame() {
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    if (m_window_adapter) {
+      m_window_adapter->compositeFrame();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::compositeEditorFrame] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::compositeEditorFrame] unknown exception");
+  }
+}
+
+void SlintSystem::beginFrame() {
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    const bool defer_heavy = shouldDeferHeavyFrameWork();
+    if (!defer_heavy) {
+      slint::platform::update_timers_and_animations();
+    }
+    if (m_window_adapter) {
+      const uint32_t resize_events_this_frame = m_resize_events_pumped;
+      m_resize_events_pumped = 0;
+
+      if (resize_events_this_frame > 0) {
+        m_resize_cooldown_frames = k_resize_cooldown_frames;
+      } else if (m_resize_cooldown_frames > 0) {
+        --m_resize_cooldown_frames;
+      }
+
+      if (resize_events_this_frame > 8u) {
+        LOG_DEBUG("[SlintSystem] coalesced {} resize SDL events this frame",
+                  resize_events_this_frame);
+      }
+
+      if (m_pending_win32_chrome_sync) {
+        m_pending_win32_chrome_sync = false;
+        syncWindowChromeSize();
+      }
+      if (m_maximize_layout_frames > 0) {
+        --m_maximize_layout_frames;
+        m_force_window_commit = true;
+        m_resize_cooldown_frames = 0;
+        if (m_window_system) {
+          m_window_system->refreshClientPixelSizeFromHwnd();
+        }
+        syncWindowChromeSize();
+        if (m_window_adapter) {
+          m_window_adapter->request_redraw();
+        }
+      }
+      // Always poll: defer must not leave stale logical size after maximize (H-A).
+      m_window_adapter->pollDrawableSize();
+      if (m_layout_resync_frames > 0) {
+        --m_layout_resync_frames;
+      }
+      syncWindowChromeSize();
+      if (!defer_heavy || m_force_window_commit) {
+        m_window_adapter->commitWindowSize(m_force_window_commit);
+        syncWindowChromeSize();
+      } else if (m_layout_resync_frames > 0) {
+        syncWindowChromeSize();
+      }
+      m_force_window_commit = false;
+    }
+    if (shouldSkipSkiaPresentDuringDefer() || m_dock_layout_drag_active) {
+      cacheViewportLogicalRectOnly();
+    } else {
+      cacheLayoutRects();
+    }
+    if (!defer_heavy) {
+      runEditorPanelSync();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::beginFrame] {}", e.what());
     if (m_window_system) {
       m_window_system->requestClose();
     }
   } catch (...) {
-    LOG_ERROR("[SlintSystem::update] unknown exception");
+    LOG_ERROR("[SlintSystem::beginFrame] unknown exception");
     if (m_window_system) {
       m_window_system->requestClose();
     }
   }
+}
+
+void SlintSystem::endFrame() {
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    if (m_window_adapter) {
+      const bool defer_heavy = shouldDeferHeavyFrameWork();
+      if (defer_heavy) {
+        if (shouldSkipSkiaPresentDuringDefer()) {
+          m_window_adapter->request_redraw();
+        } else {
+          static uint64_t s_last_dock_present_ns = 0;
+          const uint64_t now_ns = SDL_GetTicksNS();
+          if (s_last_dock_present_ns == 0 ||
+              now_ns - s_last_dock_present_ns >= 50'000'000) {
+            s_last_dock_present_ns = now_ns;
+            m_window_adapter->compositeFrame();
+          } else {
+            m_window_adapter->request_redraw();
+          }
+        }
+      } else {
+        m_window_adapter->compositeFrame();
+        cacheLayoutRects();
+      }
+    }
+    m_window_resize_active = false;
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::endFrame] {}", e.what());
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::endFrame] unknown exception");
+    if (m_window_system) {
+      m_window_system->requestClose();
+    }
+  }
+}
+
+void SlintSystem::update() {
+  beginFrame();
+  endFrame();
 }
 
 void SlintSystem::processEvent(const SDL_Event& event) {
@@ -1164,24 +1779,113 @@ void SlintSystem::processEvent(const SDL_Event& event) {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     slint::Window& window = m_window_adapter->window();
     const SDL_WindowID window_id = m_window_system->getWindowId();
-    if (m_window_component) {
-      m_cached_browser_logical_rect =
-          readBrowserRectFromUi(*m_window_component->operator->());
-    }
 
     switch (event.type) {
+      case SDL_EVENT_WINDOW_EXPOSED:
+        if (event.window.windowID == window_id && event.window.data1 != 0 &&
+            m_window_adapter) {
+          notifyWindowResizeActivity();
+          m_window_resize_active = true;
+          m_window_adapter->request_redraw();
+        }
+        break;
       case SDL_EVENT_WINDOW_RESIZED:
+        if (event.window.windowID == window_id && m_window_adapter) {
+          m_window_resize_active = true;
+          m_layout_resync_frames = k_layout_resync_frames;
+          ++m_resize_events_pumped;
+          m_force_window_commit = true;
+          resetChromeSizeCache();
+          if (m_window_system) {
+            m_window_system->refreshClientPixelSizeFromHwnd();
+          }
+          m_window_adapter->pollDrawableSize();
+          {
+            const eastl::array<int, 2> px = m_window_system->getDrawableSize();
+            const float scale = queryWindowScaleFactor(m_window_system);
+            const int derived_w =
+                scale > 0.0f
+                    ? static_cast<int>(static_cast<float>(px[0]) / scale + 0.5f)
+                    : static_cast<int>(event.window.data1);
+            // Growing client (maximize): do not arm resize cooldown — it defers the
+            // Skia present that WM_SIZE / reconcile just prepared.
+            if (derived_w <= static_cast<int>(event.window.data1) + 48) {
+              m_resize_cooldown_frames = k_resize_cooldown_frames;
+            } else {
+              m_resize_cooldown_frames = 0;
+            }
+          }
+          syncWindowChromeSize();
+          if (m_resize_cooldown_frames > 0) {
+            m_window_adapter->clearPresentSuppress();
+          }
+          m_window_adapter->compositeFrame();
+          cacheLayoutRects();
+          m_window_adapter->request_redraw();
+        }
+        break;
       case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-        if (event.window.windowID == window_id) {
-          window.dispatch_resize_event(slint::LogicalSize(
-              {static_cast<float>(eastl::max(event.window.data1, 1)),
-               static_cast<float>(eastl::max(event.window.data2, 1))}));
+        if (event.window.windowID == window_id && m_window_adapter) {
+          m_window_resize_active = true;
+          m_layout_resync_frames = k_layout_resync_frames;
+          ++m_resize_events_pumped;
+          m_force_window_commit = true;
+          resetChromeSizeCache();
+          if (m_window_system) {
+            m_window_system->refreshClientPixelSizeFromHwnd();
+          }
+          m_window_adapter->pollDrawableSize();
+          {
+            const eastl::array<int, 2> px = m_window_system->getDrawableSize();
+            const float scale = queryWindowScaleFactor(m_window_system);
+            const int derived_w =
+                scale > 0.0f
+                    ? static_cast<int>(static_cast<float>(px[0]) / scale + 0.5f)
+                    : 0;
+            const eastl::array<int, 2> logical =
+                m_window_system->getLogicalWindowSize();
+            if (derived_w > logical[0] + 48) {
+              m_resize_cooldown_frames = 0;
+            } else {
+              m_resize_cooldown_frames = k_resize_cooldown_frames;
+            }
+          }
+          syncWindowChromeSize();
+          if (m_resize_cooldown_frames > 0) {
+            m_window_adapter->clearPresentSuppress();
+          }
+          m_window_adapter->compositeFrame();
+          cacheLayoutRects();
+          m_window_adapter->request_redraw();
+        }
+        break;
+      case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+      case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+      case SDL_EVENT_WINDOW_MAXIMIZED:
+      case SDL_EVENT_WINDOW_RESTORED:
+        if (event.window.windowID == window_id && m_window_adapter) {
+          m_window_resize_active = true;
+          m_resize_cooldown_frames = 0;
+          ++m_resize_events_pumped;
+          m_force_window_commit = true;
+          m_layout_resync_frames = k_layout_resync_frames;
+          if (event.type == SDL_EVENT_WINDOW_MAXIMIZED) {
+            m_maximize_layout_frames = k_maximize_layout_frames;
+          }
+          resetChromeSizeCache();
+          if (m_window_system) {
+            m_window_system->refreshClientPixelSizeFromHwnd();
+          }
+          m_window_adapter->pollDrawableSize();
+          syncWindowChromeSize();
+          cacheLayoutRects();
           m_window_adapter->request_redraw();
         }
         break;
       case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
         if (event.window.windowID == window_id) {
-          window.dispatch_scale_factor_change_event(1.0f);
+          window.dispatch_scale_factor_change_event(
+              queryWindowScaleFactor(m_window_system));
           m_window_adapter->request_redraw();
         }
         break;
@@ -1207,6 +1911,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_MOTION:
         if (event.motion.windowID == window_id) {
+          if (m_window_resize_active || isDockLayoutDragActive()) {
+            break;
+          }
           const float window_x = static_cast<float>(event.motion.x);
           const float window_y = static_cast<float>(event.motion.y);
           if (g_runtime_global_context.m_content_browser &&
@@ -1216,8 +1923,10 @@ void SlintSystem::processEvent(const SDL_Event& event) {
                 *g_runtime_global_context.m_content_browser;
             const int32_t tree_origin_y =
                 resolveContentBrowserTreeOriginY(*m_window_component->operator->());
+            const slint::LogicalPosition logical_pos =
+                slintPointerPosition(m_window_system, window_x, window_y);
             m_drop_highlight_path = browser_system.hitTestFolderAt(
-                window_x, window_y, tree_origin_y, 24.0f);
+                logical_pos.x, logical_pos.y, tree_origin_y, 24.0f);
             syncContentBrowser();
           }
           window.dispatch_pointer_move_event(
@@ -1226,6 +1935,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (event.button.windowID == window_id) {
+          if (m_window_resize_active || isDockLayoutDragActive()) {
+            break;
+          }
           const float window_x = static_cast<float>(event.button.x);
           const float window_y = static_cast<float>(event.button.y);
           if (event.button.button == SDL_BUTTON_LEFT) {
@@ -1238,6 +1950,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_BUTTON_UP:
         if (event.button.windowID == window_id) {
+          if (m_window_resize_active || isDockLayoutDragActive()) {
+            break;
+          }
           const float window_x = static_cast<float>(event.button.x);
           const float window_y = static_cast<float>(event.button.y);
           if (event.button.button == SDL_BUTTON_LEFT) {
@@ -1265,12 +1980,19 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               mapPointerButton(event.button.button));
           if (event.button.button == SDL_BUTTON_LEFT &&
               !m_tree_folder_handled_by_slint) {
-            trySelectContentBrowserTreeFolder(window_x, window_y);
+            {
+              const slint::LogicalPosition logical_pos =
+                  slintPointerPosition(m_window_system, window_x, window_y);
+              trySelectContentBrowserTreeFolder(logical_pos.x, logical_pos.y);
+            }
           }
         }
         break;
       case SDL_EVENT_MOUSE_WHEEL:
         if (event.wheel.windowID == window_id) {
+          if (m_window_resize_active || isDockLayoutDragActive()) {
+            break;
+          }
           const float window_x = static_cast<float>(event.wheel.mouse_x);
           const float window_y = static_cast<float>(event.wheel.mouse_y);
           const float wheel_x = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED
@@ -1311,6 +2033,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_DROP_BEGIN:
         if (event.drop.windowID == window_id) {
+          refreshBrowserRectCache();
           m_pending_os_drop_files.clear();
           m_os_drop_targets_browser =
               pointInRect(event.drop.x, event.drop.y, m_cached_browser_logical_rect);
@@ -1318,6 +2041,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_DROP_FILE:
         if (event.drop.windowID == window_id && event.drop.data) {
+          refreshBrowserRectCache();
           m_pending_os_drop_files.push_back(
               eastl::string(event.drop.data));
           if (!m_os_drop_targets_browser) {

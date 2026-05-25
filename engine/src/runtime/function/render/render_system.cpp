@@ -17,9 +17,12 @@
 
 #include <algorithm>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -535,8 +538,40 @@ void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
   }
   const rhi::Extent2D current = m_offscreen->extent();
   if (current.width == width && current.height == height) {
+    m_deferred_rt_width = 0;
+    m_deferred_rt_height = 0;
     return;
   }
+
+  if (m_deferred_rt_width != width || m_deferred_rt_height != height) {
+    m_deferred_rt_stable_frames = 0;
+  }
+  m_deferred_rt_width = width;
+  m_deferred_rt_height = height;
+}
+
+void RenderSystem::applyDeferredOffscreenResize() {
+  if (!m_offscreen || m_deferred_rt_width == 0 || m_deferred_rt_height == 0) {
+    return;
+  }
+
+  const rhi::Extent2D current = m_offscreen->extent();
+  if (current.width == m_deferred_rt_width &&
+      current.height == m_deferred_rt_height) {
+    m_deferred_rt_width = 0;
+    m_deferred_rt_height = 0;
+    return;
+  }
+
+  if (++m_deferred_rt_stable_frames < 2u) {
+    return;
+  }
+
+  const uint32_t width = m_deferred_rt_width;
+  const uint32_t height = m_deferred_rt_height;
+  m_deferred_rt_width = 0;
+  m_deferred_rt_height = 0;
+  m_deferred_rt_stable_frames = 0;
 
   if (isVulkanBackend()) {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
@@ -654,6 +689,7 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
                                      uint32_t target_height) {
   (void)delta_time;
   resizeOffscreenIfNeeded(target_width, target_height);
+  applyDeferredOffscreenResize();
   const rhi::Extent2D extent = m_offscreen->extent();
   if (extent.width == 0 || extent.height == 0) {
     return;
@@ -669,6 +705,7 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
 void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                 uint32_t target_height) {
   resizeOffscreenIfNeeded(target_width, target_height);
+  applyDeferredOffscreenResize();
 
   const rhi::Extent2D offscreen_extent_rhi = m_offscreen->extent();
   const VkExtent2D offscreen_extent{offscreen_extent_rhi.width,

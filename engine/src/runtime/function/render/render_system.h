@@ -116,6 +116,7 @@ class RenderSystem final {
                          uint32_t target_height);
 
   void resizeOffscreenIfNeeded(uint32_t width, uint32_t height);
+  void applyDeferredOffscreenResize();
   void recreateReadbackStaging(uint32_t width, uint32_t height);
   void clearGpuMeshes();
 
@@ -150,6 +151,10 @@ class RenderSystem final {
   uint32_t m_readback_width{0};
   uint32_t m_readback_height{0};
   eastl::vector<uint8_t> m_readback_pixels;
+
+  uint32_t m_deferred_rt_width{0};
+  uint32_t m_deferred_rt_height{0};
+  uint32_t m_deferred_rt_stable_frames{0};
 };
 
 }  // namespace Blunder

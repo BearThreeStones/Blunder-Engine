@@ -1,59 +1,93 @@
-#include <filesystem>
 #include <exception>
 #include <iostream>
-#include <thread>
 
-#include "EASTL/string.h"
-#include "EASTL/unordered_map.h"
+#include <SDL3/SDL.h>
+#define SDL_MAIN_USE_CALLBACKS
+#include <SDL3/SDL_main.h>
 
-// #include "editor/include/editor.h"
 #include "runtime/engine.h"
 
-#define BLUNDER_XSTR(s) BLUNDER_STR(s)
-#define BLUNDER_STR(s) #s
+namespace {
 
-int main(int argc, char** argv) {
-  // std::filesystem::path executable_path(argv[0]);
-  // std::filesystem::path config_file_path =
-  //     executable_path.parent_path() / "BlunderEditor.ini";
+Blunder::BlunderEngine* g_engine = nullptr;
 
-  Blunder::BlunderEngine* engine = nullptr;
+}  // namespace
 
+SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
+  (void)argc;
+  (void)argv;
   try {
-    engine = new Blunder::BlunderEngine();
-
-    engine->startEngine();
-    engine->initialize();
-
-    engine->run();
-
-  // Blunder::BlunderEditor* editor = new Blunder::BlunderEditor();
-  // editor->initialize(engine);
-
-  // editor->run();
-
-  // editor->clear();
-
-    engine->clear();
-    engine->shutdownEngine();
-    delete engine;
+    g_engine = new Blunder::BlunderEngine();
+    *appstate = g_engine;
+    g_engine->startEngine();
+    g_engine->initialize();
+    return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {
-    std::cerr << "Unhandled exception: " << e.what() << std::endl;
-    if (engine) {
-      engine->clear();
-      engine->shutdownEngine();
-      delete engine;
-    }
-    return 1;
+    std::cerr << "SDL_AppInit failed: " << e.what() << std::endl;
+    delete g_engine;
+    g_engine = nullptr;
+    return SDL_APP_FAILURE;
   } catch (...) {
-    std::cerr << "Unhandled unknown exception" << std::endl;
-    if (engine) {
+    std::cerr << "SDL_AppInit failed: unknown exception" << std::endl;
+    delete g_engine;
+    g_engine = nullptr;
+    return SDL_APP_FAILURE;
+  }
+}
+
+SDL_AppResult SDL_AppIterate(void* appstate) {
+  auto* engine = static_cast<Blunder::BlunderEngine*>(appstate);
+  if (!engine) {
+    return SDL_APP_FAILURE;
+  }
+  try {
+    const float delta_time = engine->calculateDeltaTime();
+    if (!engine->tickOneFrame(delta_time)) {
+      return SDL_APP_SUCCESS;
+    }
+    return SDL_APP_CONTINUE;
+  } catch (const std::exception& e) {
+    std::cerr << "SDL_AppIterate failed: " << e.what() << std::endl;
+    return SDL_APP_FAILURE;
+  } catch (...) {
+    std::cerr << "SDL_AppIterate failed: unknown exception" << std::endl;
+    return SDL_APP_FAILURE;
+  }
+}
+
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
+  auto* engine = static_cast<Blunder::BlunderEngine*>(appstate);
+  if (!engine || !event) {
+    return SDL_APP_CONTINUE;
+  }
+  if (event->type == SDL_EVENT_QUIT) {
+    return SDL_APP_SUCCESS;
+  }
+  try {
+    engine->processSdlEvent(*event);
+  } catch (const std::exception& e) {
+    std::cerr << "SDL_AppEvent failed: " << e.what() << std::endl;
+    return SDL_APP_FAILURE;
+  } catch (...) {
+    std::cerr << "SDL_AppEvent failed: unknown exception" << std::endl;
+    return SDL_APP_FAILURE;
+  }
+  return SDL_APP_CONTINUE;
+}
+
+void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+  (void)result;
+  auto* engine = static_cast<Blunder::BlunderEngine*>(appstate);
+  if (!engine) {
+    engine = g_engine;
+  }
+  if (engine) {
+    try {
       engine->clear();
       engine->shutdownEngine();
-      delete engine;
+    } catch (...) {
     }
-    return 1;
+    delete engine;
   }
-
-  return 0;
+  g_engine = nullptr;
 }

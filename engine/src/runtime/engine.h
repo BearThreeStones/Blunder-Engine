@@ -1,5 +1,7 @@
 #pragma once
 
+#include <SDL3/SDL.h>
+
 #include <atomic>
 #include <filesystem>
 
@@ -32,6 +34,16 @@ class BlunderEngine {
   void run();
   bool tickOneFrame(float delta_time);
 
+  /// SDL_AppEvent / legacy run-loop event delivery (does not pump SDL).
+  void processSdlEvent(const SDL_Event& event);
+
+  float calculateDeltaTime();
+
+  void onWin32ModalResizeBegin();
+  void onWin32ModalResizeEnd();
+
+  void finalizePendingWindowResize();
+
   int getFPS() const { return m_fps; }
 
   // Event handling
@@ -47,11 +59,6 @@ class BlunderEngine {
 
   void calculateFPS(float delta_time);
 
-  /**
-   *  Each frame can only be called once
-   */
-  float calculateDeltaTime();
-
  protected:
   bool m_is_quit{false};
 
@@ -60,6 +67,9 @@ class BlunderEngine {
   float m_average_duration{0.f};
   int m_frame_count{0};
   int m_fps{0};
+
+  bool m_pending_finalize_window_resize{false};
+  bool m_skip_renderer_after_defer{false};
 };
 
 }  // namespace Blunder

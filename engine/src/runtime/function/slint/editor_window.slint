@@ -1,6 +1,7 @@
 import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
 import { ContentBrowser, BrowserTreeRow, BrowserGridRow } from "content_browser.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
+import { VerticalResizeHandle, HorizontalResizeHandle } from "resize_splitter.slint";
 
 component ShadingSlider inherits VerticalBox {
     spacing: 2px;
@@ -79,12 +80,16 @@ component TransformSlider inherits VerticalBox {
 }
 
 export component MainEditorWindow inherits Window {
-    width: 1280px;
-    height: 720px;
+    // Logical size comes only from C++ dispatch_resize_event (see SlintWindowAdapter).
     title: "Blunder Editor";
     background: #181818;
 
     in property <image> viewport-image;
+
+    in-out property <length> left-dock-width: 240px;
+    in-out property <length> right-dock-width: 320px;
+    in-out property <length> hierarchy-pane-height: 180px;
+    callback dock-layout-drag-changed(bool);
 
     out property <length> viewport-origin-x: viewport-rect.absolute-position.x;
     out property <length> viewport-origin-y: viewport-rect.absolute-position.y;
@@ -140,6 +145,7 @@ export component MainEditorWindow inherits Window {
     out property <length> browser-width: content_browser.browser-width;
     out property <length> browser-height: content_browser.browser-height;
     out property <length> browser-tree-origin-y: content_browser.tree-origin-y;
+    out property <length> browser-tree-panel-height: content_browser.tree-panel-height;
 
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
@@ -190,6 +196,9 @@ export component MainEditorWindow inherits Window {
     }
 
     VerticalLayout {
+        width: 100%;
+        height: 100%;
+
         Rectangle {
             background: #1f1f1f;
             border-color: #2a2a2a;
@@ -221,19 +230,27 @@ export component MainEditorWindow inherits Window {
             }
         }
 
-        HorizontalLayout {
+        editor-body := HorizontalLayout {
             vertical-stretch: 1;
 
             left-dock := VerticalLayout {
-                width: 240px;
-                spacing: 4px;
+                width: root.left-dock-width;
+                spacing: 0px;
                 vertical-stretch: 1;
 
                 hierarchy_panel := HierarchyPanel {
+                    height: root.hierarchy-pane-height;
                     tree-rows <=> root.hierarchy-tree-rows;
                     selected-entity-id: root.hierarchy-selected-entity-id;
                     entity-selected(id) => { root.hierarchy-entity-selected(id); }
                     entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
+                }
+
+                hierarchy-splitter := HorizontalResizeHandle {
+                    pane-size <=> root.hierarchy-pane-height;
+                    min-pane: 120px;
+                    max-pane: Math.max(120px, left-dock.height - 200px);
+                    drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
                 }
 
                 content_browser := ContentBrowser {
@@ -252,7 +269,15 @@ export component MainEditorWindow inherits Window {
                     item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                     item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                     item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                    layout-drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
                 }
+            }
+
+            left-splitter := VerticalResizeHandle {
+                pane-size <=> root.left-dock-width;
+                min-pane: 180px;
+                max-pane: Math.max(180px, editor-body.width - root.right-dock-width - 360px);
+                drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
             }
 
             viewport-rect := Rectangle {
@@ -261,6 +286,7 @@ export component MainEditorWindow inherits Window {
                 border-width: 1px;
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
+                min-width: 320px;
 
                 Image {
                     width: parent.width;
@@ -270,11 +296,19 @@ export component MainEditorWindow inherits Window {
                 }
             }
 
+            right-splitter := VerticalResizeHandle {
+                pane-size <=> root.right-dock-width;
+                min-pane: 260px;
+                max-pane: Math.max(260px, editor-body.width - root.left-dock-width - 360px);
+                trailing-pane: true;
+                drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
+            }
+
             inspector-dock := Rectangle {
                 background: #1c1c1c;
                 border-color: #2a2a2a;
                 border-width: 1px;
-                width: 320px;
+                width: root.right-dock-width;
                 vertical-stretch: 1;
                 clip: true;
 

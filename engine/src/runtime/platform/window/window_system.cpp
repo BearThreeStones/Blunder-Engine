@@ -50,6 +50,11 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
               SDL_GetError());
   }
 
+  if (!SDL_SetWindowMinimumSize(m_window, 960, 600)) {
+    LOG_WARN("[WindowSystem::initialize] failed to set minimum window size: {}",
+             SDL_GetError());
+  }
+
   m_should_close = false;
   m_is_focus_mode = false;
   SDL_ShowWindow(m_window);
@@ -72,12 +77,35 @@ void WindowSystem::shutdown() {
 }
 
 void WindowSystem::pumpEvents() {
+  m_resize_notify_pending = false;
+  // SDL_PollEvent can block for the entire interactive resize (see SDL
+  // AppFreezeDuringDrag). Pump Win32 messages once per frame, then drain the
+  // SDL queue without blocking.
+  if (!m_win32_modal_size_loop) {
+    SDL_PumpEvents();
+  }
   SDL_Event event;
-  while (SDL_PollEvent(&event)) {
+  while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_EVENT_FIRST,
+                         SDL_EVENT_LAST) > 0) {
     if (m_native_event_callback) {
       m_native_event_callback(event);
     }
     processEvent(event);
+  }
+  if (m_resize_notify_pending) {
+    refreshWindowPixelSize();
+    m_resize_notify_pending = false;
+  }
+}
+
+void WindowSystem::dispatchApplicationEvent(const SDL_Event& event) {
+  if (m_native_event_callback) {
+    m_native_event_callback(event);
+  }
+  processEvent(event);
+  if (m_resize_notify_pending) {
+    refreshWindowPixelSize();
+    m_resize_notify_pending = false;
   }
 }
 
@@ -106,13 +134,110 @@ eastl::array<int, 2> WindowSystem::getWindowSize() const {
   return eastl::array<int, 2>({width, height});
 }
 
+eastl::array<int, 2> WindowSystem::getLogicalWindowSize() const {
+  int width = 0;
+  int height = 0;
+  if (m_window) {
+    SDL_GetWindowSize(m_window, &width, &height);
+  }
+#if defined(_WIN32)
+  if (m_window) {
+    void* hwnd = getNativeWin32Hwnd();
+    if (hwnd != nullptr) {
+      RECT client_rect{};
+      if (GetClientRect(static_cast<HWND>(hwnd), &client_rect)) {
+        const int client_w =
+            eastl::max(static_cast<int>(client_rect.right - client_rect.left), 1);
+        const int client_h =
+            eastl::max(static_cast<int>(client_rect.bottom - client_rect.top), 1);
+        const float display_scale = getDisplayScale();
+        const int client_logical_w =
+            static_cast<int>(static_cast<float>(client_w) / display_scale + 0.5f);
+        const int client_logical_h =
+            static_cast<int>(static_cast<float>(client_h) / display_scale + 0.5f);
+        // SDL can lag low after maximize; if SDL overshoots client-derived logical
+        // (pixels mistaken for points), trust the client rect so scale stays correct.
+        if (width > client_logical_w + 2) {
+          width = client_logical_w;
+        }
+        if (height > client_logical_h + 2) {
+          height = client_logical_h;
+        }
+        if (client_logical_w > width) {
+          width = client_logical_w;
+        }
+        if (client_logical_h > height) {
+          height = client_logical_h;
+        }
+      }
+    }
+  }
+#endif
+  return eastl::array<int, 2>({eastl::max(width, 1), eastl::max(height, 1)});
+}
+
+float WindowSystem::getDisplayScale() const {
+  if (!m_window) {
+    return 1.0f;
+  }
+  const float scale = SDL_GetWindowDisplayScale(m_window);
+  return scale > 0.0f ? scale : 1.0f;
+}
+
+void WindowSystem::notifyClientPixelSize(int width, int height) {
+  if (width > 0 && height > 0) {
+    m_client_pixel_w = width;
+    m_client_pixel_h = height;
+  }
+}
+
+void WindowSystem::refreshClientPixelSizeFromHwnd() {
+#if defined(_WIN32)
+  void* hwnd = getNativeWin32Hwnd();
+  if (hwnd == nullptr) {
+    return;
+  }
+  RECT client_rect{};
+  if (!GetClientRect(static_cast<HWND>(hwnd), &client_rect)) {
+    return;
+  }
+  const int client_w =
+      static_cast<int>(client_rect.right - client_rect.left);
+  const int client_h =
+      static_cast<int>(client_rect.bottom - client_rect.top);
+  if (client_w > 0 && client_h > 0) {
+    notifyClientPixelSize(client_w, client_h);
+  }
+#endif
+}
+
 eastl::array<int, 2> WindowSystem::getDrawableSize() const {
   int width = 0;
   int height = 0;
   if (m_window) {
     SDL_GetWindowSizeInPixels(m_window, &width, &height);
   }
-  return eastl::array<int, 2>({width, height});
+#if defined(_WIN32)
+  if (m_client_pixel_w > 0 && m_client_pixel_h > 0) {
+    width = eastl::max(width, m_client_pixel_w);
+    height = eastl::max(height, m_client_pixel_h);
+  }
+  if (m_window) {
+    void* hwnd = getNativeWin32Hwnd();
+    if (hwnd != nullptr) {
+      RECT client_rect{};
+      if (GetClientRect(static_cast<HWND>(hwnd), &client_rect)) {
+        const int client_w =
+            eastl::max(static_cast<int>(client_rect.right - client_rect.left), 1);
+        const int client_h =
+            eastl::max(static_cast<int>(client_rect.bottom - client_rect.top), 1);
+        width = eastl::max(width, client_w);
+        height = eastl::max(height, client_h);
+      }
+    }
+  }
+#endif
+  return eastl::array<int, 2>({eastl::max(width, 1), eastl::max(height, 1)});
 }
 
 bool WindowSystem::isMouseButtonDown(int button) const {
@@ -218,6 +343,8 @@ bool WindowSystem::processEvent(const SDL_Event& event) {
     case SDL_EVENT_WINDOW_MINIMIZED:
     case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESTORED:
+    case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+    case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
     case SDL_EVENT_WINDOW_MOUSE_ENTER:
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
     case SDL_EVENT_WINDOW_FOCUS_GAINED:
@@ -252,6 +379,30 @@ bool WindowSystem::processEvent(const SDL_Event& event) {
   }
 }
 
+void WindowSystem::refreshWindowPixelSize() {
+  if (!m_window) {
+    return;
+  }
+
+  int width = 0;
+  int height = 0;
+  if (!SDL_GetWindowSizeInPixels(m_window, &width, &height)) {
+    LOG_WARN("[WindowSystem::refreshWindowPixelSize] failed: {}", SDL_GetError());
+    return;
+  }
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  m_width = width;
+  m_height = height;
+  if (m_event_callback) {
+    WindowResizeEvent resize_event(static_cast<unsigned int>(width),
+                                   static_cast<unsigned int>(height));
+    m_event_callback(resize_event);
+  }
+}
+
 void WindowSystem::handleWindowEvent(const SDL_Event& event) {
   if (event.window.windowID != getWindowId()) {
     return;
@@ -266,15 +417,12 @@ void WindowSystem::handleWindowEvent(const SDL_Event& event) {
       break;
     }
     case SDL_EVENT_WINDOW_RESIZED:
-    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
-      m_width = event.window.data1;
-      m_height = event.window.data2;
-      if (m_event_callback) {
-        WindowResizeEvent resize_event(
-            static_cast<unsigned int>(event.window.data1),
-            static_cast<unsigned int>(event.window.data2));
-        m_event_callback(resize_event);
-      }
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+    case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+    case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
+    case SDL_EVENT_WINDOW_MAXIMIZED:
+    case SDL_EVENT_WINDOW_RESTORED: {
+      m_resize_notify_pending = true;
       break;
     }
     case SDL_EVENT_WINDOW_FOCUS_GAINED: {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <memory>
 #include <optional>
 
@@ -43,6 +44,51 @@ class SlintSystem final {
   /// With the SkiaRenderer backend, this also performs the GPU composite
   /// and Present on the window's HWND.
   void update();
+
+  /// Layout pass: timers, window resize sync, and cache of panel/viewport rects.
+  /// Call before rendererTick() so 3D off-screen size matches current UI layout.
+  void beginFrame();
+
+  /// Skia composite/present for the editor window.
+  void endFrame();
+
+  /// True while a window-edge resize drag is in progress (includes cooldown
+  /// frames after the last SDL resize event — Windows often omits events
+  /// between drag steps).
+  bool isWindowResizeActive() const {
+    return m_window_resize_active || m_resize_cooldown_frames > 0;
+  }
+
+  /// Skip Vulkan readback and deferred Slint commits (window resize + dock splitters).
+  bool isDockLayoutDragActive() const;
+
+  bool shouldDeferHeavyFrameWork() const {
+    return m_win32_size_modal || isWindowResizeActive() ||
+           m_layout_cooldown_frames > 0 || isDockLayoutDragActive();
+  }
+
+  /// True only for Win32 border sizing — skip Skia present (OS stretch).
+  bool shouldSkipSkiaPresentDuringDefer() const;
+
+  /// Refreshes the resize cooldown (SDL resize / live-resize expose).
+  void notifyWindowResizeActivity();
+
+  /// Records drawable size during Win32 modal resize; must stay cheap.
+  void noteWin32SizingTick();
+
+  /// Win32 WM_SIZE (maximize/restore); client_w/h are WM_SIZE lParam client pixels.
+  void notifyWin32ClientAreaChanged(uintptr_t wm_size_param = 0, int client_w = 0,
+                                    int client_h = 0);
+
+  /// Slint layout commit after WM_EXITSIZEMOVE (no composite).
+  void finishLiveResizeModal();
+
+  void clearDeferAfterWindowResize();
+
+  void compositeEditorFrame();
+
+  void setWin32SizeModalActive(bool active) { m_win32_size_modal = active; }
+
   void processEvent(const SDL_Event& event);
 
   /// Pushes a fresh 3D viewport image (RGBA8, top-left origin) into the
@@ -114,6 +160,25 @@ class SlintSystem final {
     /// first time, then composites and presents the Slint scene to the
     /// HWND. Called from SlintSystem::update().
     void renderIfNeeded();
+
+    /// Reads SDL drawable size; defers Slint dispatch until commitWindowSize().
+    void pollDrawableSize();
+
+    /// Re-reads logical + physical size from SDL (used at commit time).
+    void refreshTargetSizesFromWindow();
+
+    /// Dispatches Slint resize/scale and syncs committed sizes (for compositeFrame).
+    void applyWindowLayoutNow(int override_logical_w = 0, int override_logical_h = 0);
+
+    /// Dispatches Slint resize + rebuilds Skia after size is stable (or when forced).
+    void commitWindowSize(bool force = false);
+
+    /// Skia composite/present only (assumes commitWindowSize ran in beginFrame).
+    void compositeFrame();
+
+    void suppressPresentFrames(uint32_t frame_count);
+    void clearPresentSuppress() { m_present_suppress_frames = 0; }
+
     bool needsRedraw() const { return m_needs_redraw; }
 
    private:
@@ -123,7 +188,14 @@ class SlintSystem final {
     std::unique_ptr<slint::platform::SkiaRenderer> m_renderer;
     bool m_visible{false};
     bool m_needs_redraw{true};
-    slint::PhysicalSize m_last_size{{0u, 0u}};
+    slint::PhysicalSize m_target_size{{0u, 0u}};
+    slint::PhysicalSize m_target_logical_size{{0u, 0u}};
+    slint::PhysicalSize m_committed_size{{0u, 0u}};
+    slint::PhysicalSize m_committed_logical_size{{0u, 0u}};
+    slint::PhysicalSize m_renderer_size{{0u, 0u}};
+    uint32_t m_size_stable_frames{0};
+    /// Skip Skia present for N frames after resize (swapchain settle).
+    uint32_t m_present_suppress_frames{0};
   };
 
   class SlintPlatform final : public slint::platform::Platform {
@@ -144,6 +216,13 @@ class SlintSystem final {
   static bool isSpecialKey(SDL_Keycode keycode);
 
  private:
+  void cacheLayoutRects();
+  void cacheViewportLogicalRectOnly();
+  void runEditorPanelSync();
+  void refreshBrowserRectCache();
+  /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
+  /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
+  void syncWindowChromeSize(int override_logical_w = 0, int override_logical_h = 0);
 
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
@@ -160,5 +239,21 @@ class SlintSystem final {
   bool m_hierarchy_handled_by_slint{false};
   bool m_left_mouse_down_prev{false};
   bool m_applying_inspector_sync{false};
+  bool m_force_window_commit{false};
+  bool m_window_resize_active{false};
+  uint32_t m_resize_events_pumped{0};
+  uint32_t m_resize_cooldown_frames{0};
+  uint32_t m_layout_cooldown_frames{0};
+  uint32_t m_last_viewport_w{0};
+  uint32_t m_last_viewport_h{0};
+  bool m_win32_size_modal{false};
+  bool m_dock_layout_drag_active{false};
+  uint32_t m_layout_resync_frames{0};
+  bool m_pending_win32_chrome_sync{false};
+  uint32_t m_maximize_layout_frames{0};
+  static constexpr uint32_t k_resize_cooldown_frames = 4;
+  static constexpr uint32_t k_maximize_layout_frames = 12;
+  static constexpr uint32_t k_layout_cooldown_frames = 6;
+  static constexpr uint32_t k_layout_resync_frames = 16;
 };
 }  // namespace Blunder

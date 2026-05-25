@@ -25,6 +25,12 @@ class WindowSystem final {
   void initialize(WindowCreateInfo create_info);
   void shutdown();
   void pumpEvents();
+  /// Win32 modal resize/move loop (WM_ENTERSIZEMOVE). While true, pumpEvents
+  /// must not call SDL_PollEvent/SDL_PumpEvents (they block — see SDL wiki).
+  void setWin32ModalSizeLoopActive(bool active) {
+    m_win32_modal_size_loop = active;
+  }
+  bool isWin32ModalSizeLoopActive() const { return m_win32_modal_size_loop; }
   bool shouldClose() const;
   void requestClose();
   void setTitle(const char* title);
@@ -32,7 +38,15 @@ class WindowSystem final {
   SDL_Window* getNativeWindow() const { return m_window; }
   SDL_WindowID getWindowId() const;
   eastl::array<int, 2> getWindowSize() const;
+  /// Best-effort logical size (SDL + Win32 client rect when larger).
+  eastl::array<int, 2> getLogicalWindowSize() const;
   eastl::array<int, 2> getDrawableSize() const;
+  /// Win32 WM_SIZE client pixels (authoritative when SDL lags on maximize).
+  void notifyClientPixelSize(int width, int height);
+  /// Reads Win32 GetClientRect into notifyClientPixelSize (no-op off Windows).
+  void refreshClientPixelSizeFromHwnd();
+  /// SDL per-window DPI scale (preferred for Slint dispatch_scale_factor_change_event).
+  float getDisplayScale() const;
 
   bool isMouseButtonDown(int button) const;
   bool getFocusMode() const { return m_is_focus_mode; }
@@ -56,7 +70,11 @@ class WindowSystem final {
 
   bool processEvent(const SDL_Event& event);
 
+  /// Dispatches one SDL event (used with SDL_MAIN_USE_CALLBACKS / SDL_AppEvent).
+  void dispatchApplicationEvent(const SDL_Event& event);
+
  private:
+  void refreshWindowPixelSize();
   void handleWindowEvent(const SDL_Event& event);
   void handleKeyboardEvent(const SDL_Event& event);
   void handleTextInputEvent(const SDL_Event& event);
@@ -68,8 +86,12 @@ class WindowSystem final {
   SDL_Window* m_window{nullptr};
   int m_width{0};
   int m_height{0};
+  int m_client_pixel_w{0};
+  int m_client_pixel_h{0};
   bool m_should_close{false};
   bool m_is_focus_mode{false};
+  bool m_resize_notify_pending{false};
+  bool m_win32_modal_size_loop{false};
   EventCallbackFn m_event_callback;
   eastl::function<void(const SDL_Event&)> m_native_event_callback;
 };
