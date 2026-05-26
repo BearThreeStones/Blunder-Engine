@@ -17,6 +17,14 @@
 
 namespace Blunder {
 
+enum class DockSplitterDrag : uint8_t {
+  none = 0,
+  leftVertical,
+  rightVertical,
+  hierarchyHorizontal,
+  browserTreeHorizontal,
+};
+
 class MaterialAsset;
 
 struct ViewportLogicalRect {
@@ -59,13 +67,20 @@ class SlintSystem final {
     return m_window_resize_active || m_resize_cooldown_frames > 0;
   }
 
-  /// Skip Vulkan readback and deferred Slint commits (window resize + dock splitters).
-  bool isDockLayoutDragActive() const;
-
-  bool shouldDeferHeavyFrameWork() const {
-    return m_win32_size_modal || isWindowResizeActive() ||
-           m_layout_cooldown_frames > 0 || isDockLayoutDragActive();
+  /// Skip Vulkan readback and defer expensive layout/sync (window resize + dock splitters).
+  bool isDockLayoutDragActive() const {
+    return m_dock_layout_drag_active || m_dock_splitter_drag != DockSplitterDrag::none ||
+           m_splitter_resize_active || m_pending_dock_pane_apply ||
+           m_deferred_apply_kind != DockSplitterDrag::none;
   }
+
+  /// True while the user is dragging or about to drag a dock splitter (C++ path).
+  bool isSplitterResizeInteractionActive() const;
+
+  bool shouldDeferHeavyFrameWork() const;
+
+  /// False during dock-splitter drags so editor camera / layers do not see mouse events.
+  bool shouldRouteMouseToInputLayers(const SDL_Event& event) const;
 
   /// True only for Win32 border sizing — skip Skia present (OS stretch).
   bool shouldSkipSkiaPresentDuringDefer() const;
@@ -218,11 +233,30 @@ class SlintSystem final {
  private:
   void cacheLayoutRects();
   void cacheViewportLogicalRectOnly();
+  void refreshDockSplitterHitCache();
+  void refreshDockSplitterGeometryFromUi();
+  DockSplitterDrag queryDockSplitterAtFast(float window_x, float window_y) const;
   void runEditorPanelSync();
   void refreshBrowserRectCache();
   /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
   /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
   void syncWindowChromeSize(int override_logical_w = 0, int override_logical_h = 0);
+  /// Applies one coalesced pointer move (dock splitter drags flood SDL_AppEvent).
+  void flushPendingPointerMove();
+  void processCoalescedSdlMouseMotion();
+  void setDockLayoutDragActive(bool active);
+  DockSplitterDrag queryDockSplitterAt(float window_x, float window_y);
+  bool isPointerNearDockSplitter(float window_x, float window_y) const;
+  bool tryBeginCppDockSplitterDrag(float window_x, float window_y);
+  bool beginCppDockSplitterDragFromKind(DockSplitterDrag kind);
+  void updateCppDockSplitterDrag(float window_x, float window_y);
+  void queueCppDockSplitterMotion(float window_x, float window_y);
+  void flushPendingCppDockSplitterMotion();
+  /// Win32 cursor poll so splitter drag/release work when SDL_AppEvent is starved.
+  void pollWin32DockSplitterPointerState();
+  void endCppDockSplitterDrag();
+  void applyDockPaneResize(DockSplitterDrag kind);
+  void applyPendingDockPaneResize();
 
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
@@ -248,12 +282,39 @@ class SlintSystem final {
   uint32_t m_last_viewport_h{0};
   bool m_win32_size_modal{false};
   bool m_dock_layout_drag_active{false};
+  bool m_dock_hit_cache_valid{false};
+  bool m_splitter_resize_active{false};
+  float m_cached_tree_split_y{0.0f};
+  DockSplitterDrag m_dock_splitter_drag{DockSplitterDrag::none};
+  DockSplitterDrag m_deferred_apply_kind{DockSplitterDrag::none};
+  float m_splitter_drag_mouse_start{0.0f};
+  float m_splitter_drag_pane_start{0.0f};
+  float m_pending_dock_pane_size{0.0f};
+  float m_last_applied_dock_pane_size{-1.0f};
+  bool m_pending_dock_pane_apply{false};
+  bool m_pending_dock_layout_present{false};
+  bool m_pending_composite_after_dock_apply{false};
+  bool m_viewport_image_dirty{false};
+  bool shouldPresentSkiaFrame() const;
+  bool m_pending_pointer_move{false};
+  float m_pending_pointer_x{0.0f};
+  float m_pending_pointer_y{0.0f};
+  uint32_t m_coalesced_pointer_moves{0};
+  bool m_pending_cpp_drag_motion{false};
+  float m_pending_cpp_drag_x{0.0f};
+  float m_pending_cpp_drag_y{0.0f};
   uint32_t m_layout_resync_frames{0};
   bool m_pending_win32_chrome_sync{false};
+  bool m_pending_content_browser_sync{false};
+  float m_last_mouse_window_x{-1.0f};
+  float m_last_mouse_window_y{-1.0f};
+  bool m_pending_sdl_mouse_motion{false};
+  uint32_t m_sdl_motion_events_coalesced{0};
   uint32_t m_maximize_layout_frames{0};
   static constexpr uint32_t k_resize_cooldown_frames = 4;
   static constexpr uint32_t k_maximize_layout_frames = 12;
   static constexpr uint32_t k_layout_cooldown_frames = 6;
   static constexpr uint32_t k_layout_resync_frames = 16;
 };
+
 }  // namespace Blunder

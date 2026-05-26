@@ -411,7 +411,15 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
   // even if Slint's UI itself isn't dirty, the central Image control needs
   // to repaint with the latest 3D texture.
 #if defined(_WIN32)
-  SDL_PumpEvents();
+  // H19: Pumping here during dock-splitter drag re-enters SDL_AppEvent (motion
+  // flood) before Skia render returns — stalls the UI. Events arrive via SDL_AppEvent.
+  const bool skip_pump =
+      g_runtime_global_context.m_slint_system &&
+      (g_runtime_global_context.m_slint_system->isDockLayoutDragActive() ||
+       g_runtime_global_context.m_slint_system->isSplitterResizeInteractionActive());
+  if (!skip_pump) {
+    SDL_PumpEvents();
+  }
 #endif
   try {
     m_renderer->render();
@@ -571,13 +579,9 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       }
     });
 
-    component->on_dock_layout_drag_changed([this](bool active) {
-      m_dock_layout_drag_active = active;
-      if (!active) {
-        m_layout_cooldown_frames = k_layout_cooldown_frames;
-      }
-      LOG_DEBUG("[SlintSystem] dock layout drag active={}", active);
-    });
+    // Slint splitters are visual-only; C++ owns drag (see tryBeginCppDockSplitterDrag).
+    // Ignoring this callback prevents Slint from hiding the Content Browser mid-drag.
+    component->on_dock_layout_drag_changed([](bool) {});
 
     component->on_hierarchy_entity_selected([this](int entity_id) {
       m_hierarchy_handled_by_slint = true;
@@ -770,6 +774,10 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
         width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
     slint::Image image(buffer);
     m_window_component->operator->()->set_viewport_image(image);
+    m_viewport_image_dirty = true;
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
     if (!s_logged_first_viewport_upload) {
       LOG_INFO("[SlintSystem] first viewport image upload: {}x{}", width, height);
       s_logged_first_viewport_upload = true;
@@ -918,27 +926,38 @@ SlintPointerCoords mapWindowPointerToSlint(WindowSystem* window_system, float x,
   if (!window_system) {
     return out;
   }
-  const eastl::array<int, 2> sdl_win = window_system->getWindowSize();
   const eastl::array<int, 2> logical = window_system->getLogicalWindowSize();
   const eastl::array<int, 2> drawable = window_system->getDrawableSize();
 
-  // Slint layout uses logical client size. Map SDL mouse coords into that space.
+  // Slint layout uses logical client size. Map SDL/Win32 client coords into that space.
 #if defined(_WIN32)
-  // Win32 high-DPI: mouse coords usually track drawable pixels when logical < drawable.
-  if (drawable[0] > logical[0] + 2 && logical[0] > 0 && drawable[0] > 0) {
-    out.x = x * static_cast<float>(logical[0]) / static_cast<float>(drawable[0]);
-    out.y = y * static_cast<float>(logical[1]) / static_cast<float>(drawable[1]);
-    out.scale_x = static_cast<float>(drawable[0]) / static_cast<float>(logical[0]);
-    out.scale_y = static_cast<float>(drawable[1]) / static_cast<float>(logical[1]);
-    return out;
+  // SDL3 README-highdpi: on Windows, mouse events are always physical client pixels.
+  if (logical[0] > 0 && logical[1] > 0) {
+    if (drawable[0] > logical[0] + 1 || drawable[1] > logical[1] + 1) {
+      out.x = x * static_cast<float>(logical[0]) / static_cast<float>(drawable[0]);
+      out.y = y * static_cast<float>(logical[1]) / static_cast<float>(drawable[1]);
+      out.scale_x = static_cast<float>(drawable[0]) / static_cast<float>(logical[0]);
+      out.scale_y = static_cast<float>(drawable[1]) / static_cast<float>(logical[1]);
+      return out;
+    }
+    const float display_scale = window_system->getDisplayScale();
+    if (display_scale > 1.01f) {
+      out.x = x / display_scale;
+      out.y = y / display_scale;
+      out.scale_x = display_scale;
+      out.scale_y = display_scale;
+    }
   }
-#endif
+  return out;
+#else
+  const eastl::array<int, 2> sdl_win = window_system->getWindowSize();
   if (sdl_win[0] > 0 && sdl_win[1] > 0 && logical[0] > 0 && logical[1] > 0 &&
       (logical[0] != sdl_win[0] || logical[1] != sdl_win[1])) {
     out.x = x * static_cast<float>(logical[0]) / static_cast<float>(sdl_win[0]);
     out.y = y * static_cast<float>(logical[1]) / static_cast<float>(sdl_win[1]);
   }
   return out;
+#endif
 }
 
 struct WindowClientMouseState {
@@ -1259,13 +1278,15 @@ void SlintSystem::tickContentBrowserTreePointerPoll() {
 
   const WindowClientMouseState mouse =
       queryWindowClientMouseState(m_window_system);
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(m_window_system, mouse.x, mouse.y);
 
   if (mouse.left_down && !m_left_mouse_down_prev) {
     if (!m_hierarchy_handled_by_slint) {
-      trySelectHierarchyEntity(mouse.x, mouse.y);
+      trySelectHierarchyEntity(pointer.x, pointer.y);
     }
     if (!m_tree_folder_handled_by_slint) {
-      trySelectContentBrowserTreeFolder(mouse.x, mouse.y);
+      trySelectContentBrowserTreeFolder(pointer.x, pointer.y);
     }
   }
 
@@ -1486,7 +1507,7 @@ void SlintSystem::cacheLayoutRects() {
     const bool viewport_changed =
         m_last_viewport_w != 0 &&
         (vp_w != m_last_viewport_w || vp_h != m_last_viewport_h);
-    if (viewport_changed && !m_dock_layout_drag_active) {
+    if (viewport_changed) {
       m_layout_cooldown_frames = k_layout_cooldown_frames;
     }
     m_last_viewport_w = vp_w;
@@ -1520,7 +1541,7 @@ void SlintSystem::cacheViewportLogicalRectOnly() {
   const bool viewport_changed =
       m_last_viewport_w != 0 &&
       (vp_w != m_last_viewport_w || vp_h != m_last_viewport_h);
-  if (viewport_changed && !m_dock_layout_drag_active) {
+  if (viewport_changed) {
     m_layout_cooldown_frames = k_layout_cooldown_frames;
   }
   m_last_viewport_w = vp_w;
@@ -1554,8 +1575,6 @@ void SlintSystem::runEditorPanelSync() {
 void SlintSystem::notifyWindowResizeActivity() {
   m_resize_cooldown_frames = k_resize_cooldown_frames;
 }
-
-bool SlintSystem::isDockLayoutDragActive() const { return m_dock_layout_drag_active; }
 
 bool SlintSystem::shouldSkipSkiaPresentDuringDefer() const {
   // Only skip present during live Win32 border drag (OS stretches the last frame).
@@ -1642,6 +1661,692 @@ void SlintSystem::finishLiveResizeModal() {
   }
 }
 
+void SlintSystem::setDockLayoutDragActive(bool active) {
+  m_dock_layout_drag_active = active;
+  if (m_window_component) {
+    m_window_component->operator->()->set_dock_layout_drag_active(active);
+  }
+  if (!active) {
+    m_layout_cooldown_frames = k_layout_cooldown_frames;
+    m_pending_dock_layout_present = true;
+    m_pending_pointer_move = false;
+    m_coalesced_pointer_moves = 0;
+    m_dock_splitter_drag = DockSplitterDrag::none;
+    m_pending_dock_pane_apply = false;
+    m_last_applied_dock_pane_size = -1.0f;
+  } else {
+    m_coalesced_pointer_moves = 0;
+  }
+  LOG_INFO("[SlintSystem] dock layout drag active={}", active);
+}
+
+namespace {
+
+float roundDockPaneLength(float value) {
+  return std::round(value / 8.0f) * 8.0f;
+}
+
+float clampFloat(float value, float min_v, float max_v) {
+  return eastl::max(min_v, eastl::min(max_v, value));
+}
+
+#if defined(_WIN32)
+void setWin32DockSplitterCursor(DockSplitterDrag kind) {
+  LPCTSTR cursor_id = IDC_ARROW;
+  switch (kind) {
+    case DockSplitterDrag::leftVertical:
+    case DockSplitterDrag::rightVertical:
+      cursor_id = IDC_SIZEWE;
+      break;
+    case DockSplitterDrag::hierarchyHorizontal:
+    case DockSplitterDrag::browserTreeHorizontal:
+      cursor_id = IDC_SIZENS;
+      break;
+    default:
+      break;
+  }
+  SetCursor(LoadCursor(nullptr, cursor_id));
+}
+#endif
+
+DockSplitterDrag hitTestDockSplitterAt(const ViewportLogicalRect& vp,
+                                       const BrowserLogicalRect& hierarchy,
+                                       const BrowserLogicalRect& browser,
+                                       float tree_split_y, float grab_px, float x,
+                                       float y) {
+  DockSplitterDrag kind = DockSplitterDrag::none;
+  if (vp.width > 0 && vp.height > 0) {
+    const float vp_top = static_cast<float>(vp.y);
+    const float vp_bottom = vp_top + static_cast<float>(vp.height);
+    const float vp_left = static_cast<float>(vp.x);
+    const float vp_right = vp_left + static_cast<float>(vp.width);
+    if (y >= vp_top && y < vp_bottom) {
+      if (x >= vp_left - grab_px && x <= vp_left + 2.0f) {
+        kind = DockSplitterDrag::leftVertical;
+      } else if (x >= vp_right - 2.0f && x <= vp_right + grab_px) {
+        kind = DockSplitterDrag::rightVertical;
+      }
+    }
+  }
+
+  if (kind == DockSplitterDrag::none && hierarchy.width > 0 && hierarchy.height > 0) {
+    const float split_y =
+        static_cast<float>(hierarchy.y + static_cast<int32_t>(hierarchy.height));
+    if (x >= static_cast<float>(hierarchy.x) &&
+        x < static_cast<float>(hierarchy.x + static_cast<int32_t>(hierarchy.width)) &&
+        y >= split_y - 3.0f && y <= split_y + grab_px) {
+      kind = DockSplitterDrag::hierarchyHorizontal;
+    }
+  }
+
+  if (kind == DockSplitterDrag::none && browser.width > 0 && tree_split_y > 0.0f) {
+    if (x >= static_cast<float>(browser.x) &&
+        x < static_cast<float>(browser.x + static_cast<int32_t>(browser.width)) &&
+        y >= tree_split_y - 3.0f && y <= tree_split_y + grab_px) {
+      kind = DockSplitterDrag::browserTreeHorizontal;
+    }
+  }
+  return kind;
+}
+
+/// Fallback when viewport-origin properties lag: use pane widths from Slint state.
+DockSplitterDrag hitTestDockSplitterFromPaneWidths(const MainEditorWindow& ui,
+                                                   float editor_logical_w, float x,
+                                                   float y, float grab_px) {
+  if (editor_logical_w <= 0.0f) {
+    return DockSplitterDrag::none;
+  }
+  constexpr float k_menu_bar_h = 44.0f;
+  const float left_w = ui.get_left_dock_width();
+  const float right_w = ui.get_right_dock_width();
+  if (y >= k_menu_bar_h) {
+    if (x >= left_w - grab_px && x <= left_w + 24.0f) {
+      return DockSplitterDrag::leftVertical;
+    }
+    const float right_split_x = editor_logical_w - right_w;
+    if (x >= right_split_x - 24.0f && x <= right_split_x + grab_px) {
+      return DockSplitterDrag::rightVertical;
+    }
+  }
+
+  const float hierarchy_h = ui.get_hierarchy_pane_height();
+  const float hierarchy_w = ui.get_hierarchy_width();
+  if (hierarchy_w > 0.0f && hierarchy_h > 0.0f) {
+    const float hier_x = ui.get_hierarchy_origin_x();
+    const float hier_y = ui.get_hierarchy_origin_y();
+    const float split_y = hier_y + hierarchy_h;
+    if (x >= hier_x && x < hier_x + hierarchy_w && y >= split_y - grab_px &&
+        y <= split_y + 16.0f) {
+      return DockSplitterDrag::hierarchyHorizontal;
+    }
+  }
+
+  const float browser_w = ui.get_browser_width();
+  const float tree_panel_h = ui.get_browser_tree_panel_height();
+  if (browser_w > 0.0f && tree_panel_h > 0.0f) {
+    const float browser_x = ui.get_browser_origin_x();
+    const float tree_split_y =
+        static_cast<float>(resolveContentBrowserTreeOriginY(ui)) + tree_panel_h;
+    if (x >= browser_x && x < browser_x + browser_w && y >= tree_split_y - grab_px &&
+        y <= tree_split_y + 16.0f) {
+      return DockSplitterDrag::browserTreeHorizontal;
+    }
+  }
+  return DockSplitterDrag::none;
+}
+
+DockSplitterDrag hitTestDockSplitterFromLayoutProperties(const MainEditorWindow& ui,
+                                                         float slint_x, float slint_y,
+                                                         float grab_px) {
+  const float vp_x = ui.get_viewport_origin_x();
+  const float vp_y = ui.get_viewport_origin_y();
+  const float vp_w = ui.get_viewport_width();
+  const float vp_h = ui.get_viewport_height();
+  if (vp_w > 0.0f && vp_h > 0.0f) {
+    const float vp_bottom = vp_y + vp_h;
+    if (slint_y >= vp_y && slint_y < vp_bottom) {
+      if (slint_x >= vp_x - grab_px && slint_x <= vp_x + 6.0f) {
+        return DockSplitterDrag::leftVertical;
+      }
+      const float vp_right = vp_x + vp_w;
+      if (slint_x >= vp_right - 6.0f && slint_x <= vp_right + grab_px) {
+        return DockSplitterDrag::rightVertical;
+      }
+    }
+  }
+
+  const float hierarchy_w = ui.get_hierarchy_width();
+  const float hierarchy_h = ui.get_hierarchy_height();
+  if (hierarchy_w > 0.0f && hierarchy_h > 0.0f) {
+    const float hier_x = ui.get_hierarchy_origin_x();
+    const float hier_y = ui.get_hierarchy_origin_y();
+    const float split_y = hier_y + hierarchy_h;
+    if (slint_x >= hier_x && slint_x < hier_x + hierarchy_w && slint_y >= split_y - 4.0f &&
+        slint_y <= split_y + grab_px) {
+      return DockSplitterDrag::hierarchyHorizontal;
+    }
+  }
+
+  const float browser_w = ui.get_browser_width();
+  const float tree_panel_h = ui.get_browser_tree_panel_height();
+  if (browser_w > 0.0f && tree_panel_h > 0.0f) {
+    const float browser_x = ui.get_browser_origin_x();
+    const float tree_split_y =
+        static_cast<float>(resolveContentBrowserTreeOriginY(ui)) + tree_panel_h;
+    if (slint_x >= browser_x && slint_x < browser_x + browser_w &&
+        slint_y >= tree_split_y - 4.0f && slint_y <= tree_split_y + grab_px) {
+      return DockSplitterDrag::browserTreeHorizontal;
+    }
+  }
+  return DockSplitterDrag::none;
+}
+
+#if defined(_WIN32)
+void captureWin32MouseForCppSplitterDrag(WindowSystem* window_system) {
+  if (!window_system) {
+    return;
+  }
+  void* hwnd_opaque = window_system->getNativeWin32Hwnd();
+  if (hwnd_opaque != nullptr) {
+    SetCapture(static_cast<HWND>(hwnd_opaque));
+  }
+}
+
+void releaseWin32MouseCapture() {
+  ReleaseCapture();
+}
+#endif
+
+}  // namespace
+
+void SlintSystem::refreshDockSplitterGeometryFromUi() {
+  if (!m_window_component) {
+    return;
+  }
+  const MainEditorWindow& ui = *m_window_component->operator->();
+  const float vp_w = ui.get_viewport_width();
+  const float vp_h = ui.get_viewport_height();
+  m_cached_viewport_logical_rect.x = static_cast<int32_t>(ui.get_viewport_origin_x());
+  m_cached_viewport_logical_rect.y = static_cast<int32_t>(ui.get_viewport_origin_y());
+  m_cached_viewport_logical_rect.width = vp_w > 0.0f ? static_cast<uint32_t>(vp_w) : 0u;
+  m_cached_viewport_logical_rect.height = vp_h > 0.0f ? static_cast<uint32_t>(vp_h) : 0u;
+  m_cached_browser_logical_rect = readBrowserRectFromUi(ui);
+  m_cached_hierarchy_logical_rect.x =
+      static_cast<int32_t>(ui.get_hierarchy_origin_x());
+  m_cached_hierarchy_logical_rect.y =
+      static_cast<int32_t>(ui.get_hierarchy_origin_y());
+  const float hierarchy_w = ui.get_hierarchy_width();
+  const float hierarchy_h = ui.get_hierarchy_height();
+  m_cached_hierarchy_logical_rect.width =
+      hierarchy_w > 0.0f ? static_cast<uint32_t>(hierarchy_w) : 0u;
+  m_cached_hierarchy_logical_rect.height =
+      hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
+}
+
+void SlintSystem::refreshDockSplitterHitCache() {
+  if (!m_window_component) {
+    m_dock_hit_cache_valid = false;
+    return;
+  }
+  refreshDockSplitterGeometryFromUi();
+  const MainEditorWindow& ui = *m_window_component->operator->();
+  const float tree_panel_h = ui.get_browser_tree_panel_height();
+  m_cached_tree_split_y =
+      tree_panel_h > 0.0f
+          ? static_cast<float>(resolveContentBrowserTreeOriginY(ui)) + tree_panel_h
+          : 0.0f;
+  m_dock_hit_cache_valid = true;
+}
+
+DockSplitterDrag SlintSystem::queryDockSplitterAtFast(float window_x,
+                                                      float window_y) const {
+  if (!m_window_component || !m_dock_hit_cache_valid) {
+    return DockSplitterDrag::none;
+  }
+  const MainEditorWindow& ui = *m_window_component->operator->();
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(m_window_system, window_x, window_y);
+  constexpr float k_grab_px = 80.0f;
+  DockSplitterDrag kind =
+      hitTestDockSplitterFromLayoutProperties(ui, pointer.x, pointer.y, k_grab_px);
+  if (kind == DockSplitterDrag::none) {
+    kind = hitTestDockSplitterFromLayoutProperties(ui, window_x, window_y, k_grab_px);
+  }
+  if (kind == DockSplitterDrag::none) {
+    kind = hitTestDockSplitterAt(m_cached_viewport_logical_rect,
+                               m_cached_hierarchy_logical_rect,
+                               m_cached_browser_logical_rect, m_cached_tree_split_y,
+                               k_grab_px, pointer.x, pointer.y);
+  }
+  if (kind == DockSplitterDrag::none) {
+    kind = hitTestDockSplitterAt(m_cached_viewport_logical_rect,
+                               m_cached_hierarchy_logical_rect,
+                               m_cached_browser_logical_rect, m_cached_tree_split_y,
+                               k_grab_px, window_x, window_y);
+  }
+  if (kind == DockSplitterDrag::none && m_window_system) {
+    const eastl::array<int, 2> logical_win = m_window_system->getLogicalWindowSize();
+    const float editor_w = static_cast<float>(eastl::max(logical_win[0], 1));
+    kind = hitTestDockSplitterFromPaneWidths(ui, editor_w, pointer.x, pointer.y, k_grab_px);
+    if (kind == DockSplitterDrag::none) {
+      kind = hitTestDockSplitterFromPaneWidths(ui, editor_w, window_x, window_y, k_grab_px);
+    }
+  }
+  return kind;
+}
+
+bool SlintSystem::isSplitterResizeInteractionActive() const {
+  return m_dock_splitter_drag != DockSplitterDrag::none || m_splitter_resize_active ||
+         m_pending_dock_pane_apply || m_deferred_apply_kind != DockSplitterDrag::none;
+}
+
+bool SlintSystem::shouldDeferHeavyFrameWork() const {
+  if (m_win32_size_modal || isWindowResizeActive() || m_layout_cooldown_frames > 0 ||
+      isDockLayoutDragActive()) {
+    return true;
+  }
+#if defined(_WIN32)
+  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 && m_last_mouse_window_x >= 0.0f &&
+      isPointerNearDockSplitter(m_last_mouse_window_x, m_last_mouse_window_y)) {
+    return true;
+  }
+#endif
+  return false;
+}
+
+bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
+  if (m_dock_splitter_drag != DockSplitterDrag::none || m_splitter_resize_active) {
+    return false;
+  }
+  if (event.type == SDL_EVENT_MOUSE_MOTION) {
+#if defined(_WIN32)
+    if (m_last_mouse_window_x >= 0.0f &&
+        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 &&
+        queryDockSplitterAtFast(m_last_mouse_window_x, m_last_mouse_window_y) !=
+            DockSplitterDrag::none) {
+      return false;
+    }
+#endif
+    return true;
+  }
+  switch (event.type) {
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+      const float x = static_cast<float>(event.button.x);
+      const float y = static_cast<float>(event.button.y);
+      return queryDockSplitterAtFast(x, y) == DockSplitterDrag::none;
+    }
+    default:
+      return true;
+  }
+}
+
+DockSplitterDrag SlintSystem::queryDockSplitterAt(float window_x, float window_y) {
+  return queryDockSplitterAtFast(window_x, window_y);
+}
+
+bool SlintSystem::isPointerNearDockSplitter(float window_x, float window_y) const {
+  return queryDockSplitterAtFast(window_x, window_y) != DockSplitterDrag::none;
+}
+
+bool SlintSystem::beginCppDockSplitterDragFromKind(DockSplitterDrag kind) {
+  if (!m_window_component || kind == DockSplitterDrag::none) {
+    return false;
+  }
+  if (m_dock_splitter_drag != DockSplitterDrag::none) {
+    return true;
+  }
+
+  float window_x = m_last_mouse_window_x;
+  float window_y = m_last_mouse_window_y;
+#if defined(_WIN32)
+  bool left_down = false;
+  if (win32_mouse_query::sample(m_window_system, &window_x, &window_y, &left_down) &&
+      left_down) {
+    m_last_mouse_window_x = window_x;
+    m_last_mouse_window_y = window_y;
+  }
+#endif
+  if (window_x < 0.0f) {
+    window_x = 0.0f;
+    window_y = 0.0f;
+  }
+
+  const MainEditorWindow& ui = *m_window_component->operator->();
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(m_window_system, window_x, window_y);
+
+  m_dock_splitter_drag = kind;
+  m_splitter_resize_active = true;
+  // Hide Content Browser grid during drag (Slint only — no mid-drag set_* layout).
+  m_window_component->operator->()->set_dock_layout_drag_active(true);
+  switch (kind) {
+    case DockSplitterDrag::leftVertical:
+      m_splitter_drag_mouse_start = pointer.x;
+      m_splitter_drag_pane_start = ui.get_left_dock_width();
+      break;
+    case DockSplitterDrag::rightVertical:
+      m_splitter_drag_mouse_start = pointer.x;
+      m_splitter_drag_pane_start = ui.get_right_dock_width();
+      break;
+    case DockSplitterDrag::hierarchyHorizontal:
+      m_splitter_drag_mouse_start = pointer.y;
+      m_splitter_drag_pane_start = ui.get_hierarchy_pane_height();
+      break;
+    case DockSplitterDrag::browserTreeHorizontal:
+      m_splitter_drag_mouse_start = pointer.y;
+      m_splitter_drag_pane_start = ui.get_browser_tree_panel_height();
+      break;
+    default:
+      m_dock_splitter_drag = DockSplitterDrag::none;
+      m_splitter_resize_active = false;
+      return false;
+  }
+
+#if defined(_WIN32)
+  setWin32DockSplitterCursor(kind);
+  captureWin32MouseForCppSplitterDrag(m_window_system);
+#endif
+  LOG_INFO("[SlintSystem] C++ dock splitter drag began (kind={})",
+           static_cast<unsigned>(kind));
+  return true;
+}
+
+bool SlintSystem::tryBeginCppDockSplitterDrag(float window_x, float window_y) {
+  if (!m_window_component) {
+    return false;
+  }
+
+  const DockSplitterDrag kind = queryDockSplitterAt(window_x, window_y);
+  if (kind == DockSplitterDrag::none) {
+    return false;
+  }
+
+  m_last_mouse_window_x = window_x;
+  m_last_mouse_window_y = window_y;
+  return beginCppDockSplitterDragFromKind(kind);
+}
+
+void SlintSystem::updateCppDockSplitterDrag(float window_x, float window_y) {
+  if (m_dock_splitter_drag == DockSplitterDrag::none || !m_window_component) {
+    return;
+  }
+
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(m_window_system, window_x, window_y);
+  auto& ui = *m_window_component->operator->();
+  const eastl::array<int, 2> logical_win = m_window_system->getLogicalWindowSize();
+  const float editor_w = static_cast<float>(eastl::max(logical_win[0], 1));
+
+  float new_size = m_splitter_drag_pane_start;
+  switch (m_dock_splitter_drag) {
+    case DockSplitterDrag::leftVertical: {
+      const float max_pane =
+          eastl::max(180.0f, editor_w - ui.get_right_dock_width() - 360.0f);
+      new_size = clampFloat(m_splitter_drag_pane_start + (pointer.x - m_splitter_drag_mouse_start),
+                            180.0f, max_pane);
+      break;
+    }
+    case DockSplitterDrag::rightVertical: {
+      const float max_pane =
+          eastl::max(260.0f, editor_w - ui.get_left_dock_width() - 360.0f);
+      new_size = clampFloat(
+          m_splitter_drag_pane_start + (m_splitter_drag_mouse_start - pointer.x), 260.0f,
+          max_pane);
+      break;
+    }
+    case DockSplitterDrag::hierarchyHorizontal: {
+      const float max_pane =
+          eastl::max(120.0f, static_cast<float>(m_cached_hierarchy_logical_rect.height) > 0
+                                  ? static_cast<float>(logical_win[1]) - 200.0f
+                                  : 600.0f);
+      new_size =
+          clampFloat(m_splitter_drag_pane_start + (pointer.y - m_splitter_drag_mouse_start),
+                     120.0f, max_pane);
+      break;
+    }
+    case DockSplitterDrag::browserTreeHorizontal: {
+      const float browser_body_h =
+          m_cached_browser_logical_rect.height > 0
+              ? static_cast<float>(m_cached_browser_logical_rect.height)
+              : static_cast<float>(logical_win[1]);
+      const float max_pane = eastl::max(80.0f, browser_body_h - 120.0f);
+      new_size =
+          clampFloat(m_splitter_drag_pane_start + (pointer.y - m_splitter_drag_mouse_start),
+                     80.0f, max_pane);
+      break;
+    }
+    default:
+      break;
+  }
+
+  m_pending_dock_pane_size = roundDockPaneLength(new_size);
+  m_pending_dock_pane_apply = true;
+}
+
+void SlintSystem::queueCppDockSplitterMotion(float window_x, float window_y) {
+  m_pending_cpp_drag_x = window_x;
+  m_pending_cpp_drag_y = window_y;
+  m_pending_cpp_drag_motion = true;
+}
+
+void SlintSystem::flushPendingCppDockSplitterMotion() {
+  if (!m_pending_cpp_drag_motion) {
+    return;
+  }
+  m_pending_cpp_drag_motion = false;
+  updateCppDockSplitterDrag(m_pending_cpp_drag_x, m_pending_cpp_drag_y);
+}
+
+void SlintSystem::applyDockPaneResize(DockSplitterDrag kind) {
+  if (!m_pending_dock_pane_apply || !m_window_component || kind == DockSplitterDrag::none) {
+    return;
+  }
+
+  if (m_last_applied_dock_pane_size >= 0.0f &&
+      std::fabs(m_pending_dock_pane_size - m_last_applied_dock_pane_size) < 0.5f) {
+    m_pending_dock_pane_apply = false;
+    return;
+  }
+
+  m_pending_dock_pane_apply = false;
+  m_last_applied_dock_pane_size = m_pending_dock_pane_size;
+  const uint64_t apply_t0_ns = SDL_GetTicksNS();
+  MainEditorWindow& ui = *m_window_component->operator->();
+  switch (kind) {
+    case DockSplitterDrag::leftVertical:
+      ui.set_left_dock_width(m_pending_dock_pane_size);
+      break;
+    case DockSplitterDrag::rightVertical:
+      ui.set_right_dock_width(m_pending_dock_pane_size);
+      break;
+    case DockSplitterDrag::hierarchyHorizontal:
+      ui.set_hierarchy_pane_height(m_pending_dock_pane_size);
+      break;
+    case DockSplitterDrag::browserTreeHorizontal:
+      ui.set_browser_tree_panel_height(m_pending_dock_pane_size);
+      break;
+    default:
+      break;
+  }
+  const uint64_t apply_ms = (SDL_GetTicksNS() - apply_t0_ns) / 1'000'000u;
+  m_viewport_image_dirty = true;
+  if (m_window_adapter) {
+    m_window_adapter->request_redraw();
+  }
+  LOG_INFO("[SlintSystem] dock pane apply kind={} size={} took {} ms",
+           static_cast<unsigned>(kind), m_pending_dock_pane_size, apply_ms);
+}
+
+void SlintSystem::applyPendingDockPaneResize() {
+  applyDockPaneResize(m_dock_splitter_drag);
+}
+
+void SlintSystem::pollWin32DockSplitterPointerState() {
+#if defined(_WIN32)
+  if (!m_window_system || !m_window_component || m_win32_size_modal) {
+    return;
+  }
+  float x = 0.0f;
+  float y = 0.0f;
+  bool left_down = false;
+  if (!win32_mouse_query::sample(m_window_system, &x, &y, &left_down)) {
+    return;
+  }
+  m_last_mouse_window_x = x;
+  m_last_mouse_window_y = y;
+
+  if (left_down) {
+    if (m_dock_splitter_drag != DockSplitterDrag::none) {
+      updateCppDockSplitterDrag(x, y);
+      return;
+    }
+    const DockSplitterDrag near_kind = queryDockSplitterAtFast(x, y);
+    if (near_kind != DockSplitterDrag::none || isPointerNearDockSplitter(x, y)) {
+      m_splitter_resize_active = true;
+    }
+    if (!m_left_mouse_down_prev) {
+      refreshDockSplitterHitCache();
+      const DockSplitterDrag kind = queryDockSplitterAtFast(x, y);
+      if (kind != DockSplitterDrag::none || isPointerNearDockSplitter(x, y)) {
+        m_splitter_resize_active = true;
+        if (tryBeginCppDockSplitterDrag(x, y)) {
+          m_left_mouse_down_prev = true;
+        }
+      }
+    }
+    return;
+  }
+
+  if (m_dock_splitter_drag != DockSplitterDrag::none) {
+    updateCppDockSplitterDrag(x, y);
+    endCppDockSplitterDrag();
+    m_left_mouse_down_prev = false;
+    return;
+  }
+  if (m_splitter_resize_active) {
+    m_splitter_resize_active = false;
+  }
+#else
+  (void)0;
+#endif
+}
+
+void SlintSystem::endCppDockSplitterDrag() {
+  const DockSplitterDrag ended_kind = m_dock_splitter_drag;
+  if (ended_kind == DockSplitterDrag::none) {
+    return;
+  }
+  m_last_applied_dock_pane_size = -1.0f;
+  // H34: defer Slint layout apply out of SDL_AppEvent (mouse-up) into beginFrame.
+  m_deferred_apply_kind = ended_kind;
+  m_dock_splitter_drag = DockSplitterDrag::none;
+  m_splitter_resize_active = false;
+  m_layout_cooldown_frames = k_layout_cooldown_frames;
+  refreshDockSplitterHitCache();
+#if defined(_WIN32)
+  SetCursor(LoadCursor(nullptr, IDC_ARROW));
+  releaseWin32MouseCapture();
+#endif
+  LOG_INFO("[SlintSystem] C++ dock splitter drag ended (kind={})",
+           static_cast<unsigned>(ended_kind));
+}
+
+void SlintSystem::processCoalescedSdlMouseMotion() {
+  if (!m_pending_sdl_mouse_motion) {
+    return;
+  }
+  m_pending_sdl_mouse_motion = false;
+  m_sdl_motion_events_coalesced = 0;
+
+  if (m_window_resize_active || !m_window_adapter || !m_window_component) {
+    return;
+  }
+
+  const float window_x = m_last_mouse_window_x;
+  const float window_y = m_last_mouse_window_y;
+  const DockSplitterDrag splitter_under_cursor = queryDockSplitterAtFast(window_x, window_y);
+
+  if (m_dock_splitter_drag != DockSplitterDrag::none) {
+    updateCppDockSplitterDrag(window_x, window_y);
+    return;
+  }
+#if defined(_WIN32)
+  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 &&
+      splitter_under_cursor != DockSplitterDrag::none) {
+    if (m_dock_splitter_drag == DockSplitterDrag::none) {
+      tryBeginCppDockSplitterDrag(window_x, window_y);
+    }
+    if (m_dock_splitter_drag != DockSplitterDrag::none) {
+      updateCppDockSplitterDrag(window_x, window_y);
+    }
+    return;
+  }
+#endif
+  if (splitter_under_cursor != DockSplitterDrag::none) {
+    return;
+  }
+
+  if (!isDockLayoutDragActive() && g_runtime_global_context.m_content_browser &&
+      g_runtime_global_context.m_content_browser->dragController().isDragging()) {
+    ContentBrowserSystem& browser_system = *g_runtime_global_context.m_content_browser;
+    const int32_t tree_origin_y =
+        resolveContentBrowserTreeOriginY(*m_window_component->operator->());
+    const slint::LogicalPosition logical_pos =
+        slintPointerPosition(m_window_system, window_x, window_y);
+    const eastl::string new_highlight = browser_system.hitTestFolderAt(
+        logical_pos.x, logical_pos.y, tree_origin_y, 24.0f);
+    if (new_highlight != m_drop_highlight_path) {
+      m_drop_highlight_path = new_highlight;
+      m_pending_content_browser_sync = true;
+    }
+    return;
+  }
+
+  m_pending_pointer_x = window_x;
+  m_pending_pointer_y = window_y;
+  m_pending_pointer_move = true;
+  ++m_coalesced_pointer_moves;
+}
+
+void SlintSystem::flushPendingPointerMove() {
+  if (m_dock_splitter_drag != DockSplitterDrag::none || m_splitter_resize_active ||
+      !m_pending_pointer_move || !m_window_adapter || !m_window_system) {
+    return;
+  }
+#if defined(_WIN32)
+  // H53: LMB drag near a dock splitter must not flood Slint pointer-move relayout.
+  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 && m_last_mouse_window_x >= 0.0f &&
+      queryDockSplitterAtFast(m_last_mouse_window_x, m_last_mouse_window_y) !=
+          DockSplitterDrag::none) {
+    m_pending_pointer_move = false;
+    m_coalesced_pointer_moves = 0;
+    if (m_dock_splitter_drag == DockSplitterDrag::none) {
+      tryBeginCppDockSplitterDrag(m_last_mouse_window_x, m_last_mouse_window_y);
+    }
+    return;
+  }
+#endif
+  m_pending_pointer_move = false;
+  m_coalesced_pointer_moves = 0;
+  slint::Window& window = m_window_adapter->window();
+  window.dispatch_pointer_move_event(
+      slintPointerPosition(m_window_system, m_pending_pointer_x, m_pending_pointer_y));
+}
+
+bool SlintSystem::shouldPresentSkiaFrame() const {
+  if (!m_window_adapter) {
+    return false;
+  }
+  if (m_pending_composite_after_dock_apply || m_pending_dock_layout_present) {
+    return true;
+  }
+  if (m_viewport_image_dirty || m_window_adapter->needsRedraw()) {
+    return true;
+  }
+  return false;
+}
+
 void SlintSystem::compositeEditorFrame() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -1658,7 +2363,28 @@ void SlintSystem::compositeEditorFrame() {
 void SlintSystem::beginFrame() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    refreshDockSplitterHitCache();
+    pollWin32DockSplitterPointerState();
+    processCoalescedSdlMouseMotion();
+    flushPendingCppDockSplitterMotion();
+    if (m_deferred_apply_kind != DockSplitterDrag::none) {
+      const DockSplitterDrag deferred_kind = m_deferred_apply_kind;
+      m_deferred_apply_kind = DockSplitterDrag::none;
+      applyDockPaneResize(deferred_kind);
+      refreshDockSplitterHitCache();
+      if (m_window_component) {
+        m_window_component->operator->()->set_dock_layout_drag_active(false);
+      }
+      // H38: composite on the frame after Slint apply — not in the same frame as apply.
+      m_pending_composite_after_dock_apply = true;
+    }
+    flushPendingPointerMove();
+    if (m_pending_content_browser_sync) {
+      m_pending_content_browser_sync = false;
+      syncContentBrowser();
+    }
     const bool defer_heavy = shouldDeferHeavyFrameWork();
+    const bool splitter_interaction = isSplitterResizeInteractionActive();
     if (!defer_heavy) {
       slint::platform::update_timers_and_animations();
     }
@@ -1693,21 +2419,27 @@ void SlintSystem::beginFrame() {
           m_window_adapter->request_redraw();
         }
       }
-      // Always poll: defer must not leave stale logical size after maximize (H-A).
-      m_window_adapter->pollDrawableSize();
+      if (!splitter_interaction) {
+        // Always poll: defer must not leave stale logical size after maximize (H-A).
+        m_window_adapter->pollDrawableSize();
+      }
       if (m_layout_resync_frames > 0) {
         --m_layout_resync_frames;
       }
-      syncWindowChromeSize();
-      if (!defer_heavy || m_force_window_commit) {
-        m_window_adapter->commitWindowSize(m_force_window_commit);
+      if (!splitter_interaction) {
         syncWindowChromeSize();
-      } else if (m_layout_resync_frames > 0) {
-        syncWindowChromeSize();
+        if (!defer_heavy || m_force_window_commit) {
+          m_window_adapter->commitWindowSize(m_force_window_commit);
+          syncWindowChromeSize();
+        } else if (m_layout_resync_frames > 0) {
+          syncWindowChromeSize();
+        }
+      } else if (m_force_window_commit) {
+        m_window_adapter->commitWindowSize(true);
       }
       m_force_window_commit = false;
     }
-    if (shouldSkipSkiaPresentDuringDefer() || m_dock_layout_drag_active) {
+    if (shouldSkipSkiaPresentDuringDefer() || splitter_interaction) {
       cacheViewportLogicalRectOnly();
     } else {
       cacheLayoutRects();
@@ -1732,24 +2464,56 @@ void SlintSystem::endFrame() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     if (m_window_adapter) {
-      const bool defer_heavy = shouldDeferHeavyFrameWork();
-      if (defer_heavy) {
-        if (shouldSkipSkiaPresentDuringDefer()) {
-          m_window_adapter->request_redraw();
+      if (m_pending_composite_after_dock_apply) {
+        if (!shouldDeferHeavyFrameWork()) {
+          m_pending_composite_after_dock_apply = false;
+          m_window_adapter->compositeFrame();
+          m_viewport_image_dirty = false;
+          cacheViewportLogicalRectOnly();
         } else {
-          static uint64_t s_last_dock_present_ns = 0;
-          const uint64_t now_ns = SDL_GetTicksNS();
-          if (s_last_dock_present_ns == 0 ||
-              now_ns - s_last_dock_present_ns >= 50'000'000) {
-            s_last_dock_present_ns = now_ns;
-            m_window_adapter->compositeFrame();
-          } else {
+          m_window_adapter->request_redraw();
+        }
+      } else if (m_pending_dock_layout_present) {
+        m_pending_dock_layout_present = false;
+        m_window_adapter->compositeFrame();
+        m_viewport_image_dirty = false;
+        cacheViewportLogicalRectOnly();
+      } else {
+        const bool defer_heavy = shouldDeferHeavyFrameWork();
+        const bool splitter_interaction = isSplitterResizeInteractionActive();
+        if (defer_heavy) {
+          if (shouldSkipSkiaPresentDuringDefer()) {
             m_window_adapter->request_redraw();
+          } else if (splitter_interaction) {
+            // H21: Skia composite ~14ms/frame starves SDL_AppIterate during motion flood.
+            m_window_adapter->request_redraw();
+          } else if (isDockLayoutDragActive()) {
+            m_window_adapter->request_redraw();
+          } else {
+            static uint64_t s_last_defer_present_ns = 0;
+            const uint64_t now_ns = SDL_GetTicksNS();
+            if (s_last_defer_present_ns == 0 ||
+                now_ns - s_last_defer_present_ns >= 50'000'000) {
+              s_last_defer_present_ns = now_ns;
+              m_window_adapter->compositeFrame();
+              m_viewport_image_dirty = false;
+            } else {
+              m_window_adapter->request_redraw();
+            }
+          }
+        } else if (splitter_interaction) {
+          m_window_adapter->request_redraw();
+        } else if (shouldPresentSkiaFrame()) {
+          static uint64_t s_last_full_composite_ns = 0;
+          const uint64_t now_ns = SDL_GetTicksNS();
+          if (s_last_full_composite_ns == 0 ||
+              now_ns - s_last_full_composite_ns >= 33'000'000) {
+            s_last_full_composite_ns = now_ns;
+            m_window_adapter->compositeFrame();
+            m_viewport_image_dirty = false;
+            cacheLayoutRects();
           }
         }
-      } else {
-        m_window_adapter->compositeFrame();
-        cacheLayoutRects();
       }
     }
     m_window_resize_active = false;
@@ -1815,12 +2579,12 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               m_resize_cooldown_frames = 0;
             }
           }
-          syncWindowChromeSize();
+          m_pending_win32_chrome_sync = true;
           if (m_resize_cooldown_frames > 0) {
             m_window_adapter->clearPresentSuppress();
           }
-          m_window_adapter->compositeFrame();
-          cacheLayoutRects();
+          // H31: defer Skia composite — synchronous render per resize SDL event
+          // starves SDL_AppIterate during border drag.
           m_window_adapter->request_redraw();
         }
         break;
@@ -1850,12 +2614,10 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               m_resize_cooldown_frames = k_resize_cooldown_frames;
             }
           }
-          syncWindowChromeSize();
+          m_pending_win32_chrome_sync = true;
           if (m_resize_cooldown_frames > 0) {
             m_window_adapter->clearPresentSuppress();
           }
-          m_window_adapter->compositeFrame();
-          cacheLayoutRects();
           m_window_adapter->request_redraw();
         }
         break;
@@ -1911,35 +2673,39 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_MOTION:
         if (event.motion.windowID == window_id) {
-          if (m_window_resize_active || isDockLayoutDragActive()) {
-            break;
-          }
-          const float window_x = static_cast<float>(event.motion.x);
-          const float window_y = static_cast<float>(event.motion.y);
-          if (g_runtime_global_context.m_content_browser &&
-              g_runtime_global_context.m_content_browser->dragController()
-                  .isDragging()) {
-            ContentBrowserSystem& browser_system =
-                *g_runtime_global_context.m_content_browser;
-            const int32_t tree_origin_y =
-                resolveContentBrowserTreeOriginY(*m_window_component->operator->());
-            const slint::LogicalPosition logical_pos =
-                slintPointerPosition(m_window_system, window_x, window_y);
-            m_drop_highlight_path = browser_system.hitTestFolderAt(
-                logical_pos.x, logical_pos.y, tree_origin_y, 24.0f);
-            syncContentBrowser();
-          }
-          window.dispatch_pointer_move_event(
-              slintPointerPosition(m_window_system, window_x, window_y));
+          m_last_mouse_window_x = static_cast<float>(event.motion.x);
+          m_last_mouse_window_y = static_cast<float>(event.motion.y);
+          m_pending_sdl_mouse_motion = true;
+          ++m_sdl_motion_events_coalesced;
         }
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
         if (event.button.windowID == window_id) {
-          if (m_window_resize_active || isDockLayoutDragActive()) {
+          // Allow splitter mouse-down during dock drag cooldown; only block during
+          // live window-edge resize or an active C++ splitter capture.
+          if (m_window_resize_active && m_win32_size_modal) {
+            break;
+          }
+          if (m_dock_splitter_drag != DockSplitterDrag::none) {
             break;
           }
           const float window_x = static_cast<float>(event.button.x);
           const float window_y = static_cast<float>(event.button.y);
+          m_last_mouse_window_x = window_x;
+          m_last_mouse_window_y = window_y;
+          refreshDockSplitterHitCache();
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            const DockSplitterDrag splitter_kind =
+                queryDockSplitterAtFast(window_x, window_y);
+            if (splitter_kind != DockSplitterDrag::none ||
+                isPointerNearDockSplitter(window_x, window_y)) {
+              m_splitter_resize_active = true;
+              tryBeginCppDockSplitterDrag(window_x, window_y);
+              m_left_mouse_down_prev = true;
+              // H51: do not dispatch_pointer_press into Slint on splitter hits.
+              break;
+            }
+          }
           if (event.button.button == SDL_BUTTON_LEFT) {
             m_left_mouse_down_prev = true;
           }
@@ -1950,41 +2716,57 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_MOUSE_BUTTON_UP:
         if (event.button.windowID == window_id) {
-          if (m_window_resize_active || isDockLayoutDragActive()) {
+          // H35: do not drop mouse-up while m_window_resize_active — layout apply during
+          // splitter drag can set it and leave m_dock_splitter_drag / Win32 capture stuck.
+          if (m_win32_size_modal) {
             break;
           }
           const float window_x = static_cast<float>(event.button.x);
           const float window_y = static_cast<float>(event.button.y);
-          if (event.button.button == SDL_BUTTON_LEFT) {
-            m_left_mouse_down_prev = false;
+          if (m_dock_splitter_drag != DockSplitterDrag::none) {
+            m_last_mouse_window_x = window_x;
+            m_last_mouse_window_y = window_y;
+            updateCppDockSplitterDrag(window_x, window_y);
+            endCppDockSplitterDrag();
+            if (event.button.button == SDL_BUTTON_LEFT) {
+              m_left_mouse_down_prev = false;
+            }
+            break;
           }
-          if (event.button.button == SDL_BUTTON_LEFT &&
-              g_runtime_global_context.m_content_browser && m_window_component) {
-            ContentBrowserSystem& browser_system =
-                *g_runtime_global_context.m_content_browser;
-            ContentBrowserDragController& drag = browser_system.dragController();
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            m_splitter_resize_active = false;
+          }
+          flushPendingPointerMove();
+          if (!isDockLayoutDragActive()) {
+            if (event.button.button == SDL_BUTTON_LEFT) {
+              m_left_mouse_down_prev = false;
+            }
+            if (event.button.button == SDL_BUTTON_LEFT &&
+                g_runtime_global_context.m_content_browser && m_window_component) {
+              ContentBrowserSystem& browser_system =
+                  *g_runtime_global_context.m_content_browser;
+              ContentBrowserDragController& drag = browser_system.dragController();
 
-            if (drag.isDragging()) {
-              const eastl::string source = drag.sourcePath();
-              drag.endPress();
-              if (!source.empty() && !m_drop_highlight_path.empty()) {
-                browser_system.reparentEntry(source, m_drop_highlight_path);
+              if (drag.isDragging()) {
+                const eastl::string source = drag.sourcePath();
+                drag.endPress();
+                if (!source.empty() && !m_drop_highlight_path.empty()) {
+                  browser_system.reparentEntry(source, m_drop_highlight_path);
+                }
+                m_drop_highlight_path.clear();
+                drag.reset();
+                syncContentBrowser();
               }
-              m_drop_highlight_path.clear();
-              drag.reset();
-              syncContentBrowser();
             }
           }
           window.dispatch_pointer_release_event(
               slintPointerPosition(m_window_system, window_x, window_y),
               mapPointerButton(event.button.button));
-          if (event.button.button == SDL_BUTTON_LEFT &&
+          if (!isDockLayoutDragActive() && event.button.button == SDL_BUTTON_LEFT &&
               !m_tree_folder_handled_by_slint) {
-            {
-              const slint::LogicalPosition logical_pos =
-                  slintPointerPosition(m_window_system, window_x, window_y);
-              trySelectContentBrowserTreeFolder(logical_pos.x, logical_pos.y);
-            }
+            const slint::LogicalPosition logical_pos =
+                slintPointerPosition(m_window_system, window_x, window_y);
+            trySelectContentBrowserTreeFolder(logical_pos.x, logical_pos.y);
           }
         }
         break;

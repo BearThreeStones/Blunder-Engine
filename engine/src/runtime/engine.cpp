@@ -181,9 +181,14 @@ void BlunderEngine::finalizePendingWindowResize() {
 }
 
 void BlunderEngine::processSdlEvent(const SDL_Event& event) {
-  if (g_runtime_global_context.m_window_system) {
-    g_runtime_global_context.m_window_system->dispatchApplicationEvent(event);
+  WindowSystem* window_system = g_runtime_global_context.m_window_system.get();
+  SlintSystem* slint_system = g_runtime_global_context.m_slint_system.get();
+  if (!window_system) {
+    return;
   }
+  const bool route_to_layers =
+      slint_system == nullptr || slint_system->shouldRouteMouseToInputLayers(event);
+  window_system->dispatchApplicationEvent(event, route_to_layers);
 }
 
 void BlunderEngine::startEngine() {
@@ -361,6 +366,13 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   }
 
   SlintSystem* slint_system = g_runtime_global_context.m_slint_system.get();
+
+  // Layout/viewport cooldown is updated in beginFrame — evaluate defer after that
+  // so rendererTick does not run on the same frame the dock splitter resizes the viewport.
+  if (slint_system) {
+    slint_system->beginFrame();
+  }
+
   const bool defer_heavy =
       slint_system != nullptr && slint_system->shouldDeferHeavyFrameWork();
 
@@ -398,7 +410,6 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   calculateFPS(delta_time);
 
   if (slint_system) {
-    slint_system->beginFrame();
     if (!defer_heavy && !m_skip_renderer_after_defer) {
       rendererTick(delta_time);
     }
@@ -432,6 +443,9 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 //
 bool BlunderEngine::rendererTick(float delta_time) {
   SlintSystem* slint_system = g_runtime_global_context.m_slint_system.get();
+  if (slint_system && slint_system->shouldDeferHeavyFrameWork()) {
+    return true;
+  }
   static bool s_logged_viewport_ready = false;
   static uint32_t s_last_viewport_w = 0;
   static uint32_t s_last_viewport_h = 0;

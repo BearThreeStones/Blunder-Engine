@@ -89,7 +89,13 @@ export component MainEditorWindow inherits Window {
     in-out property <length> left-dock-width: 240px;
     in-out property <length> right-dock-width: 320px;
     in-out property <length> hierarchy-pane-height: 180px;
+    in-out property <bool> dock-layout-drag-active: false;
     callback dock-layout-drag-changed(bool);
+
+    function notify-dock-layout-drag(active: bool) {
+        root.dock-layout-drag-active = active;
+        root.dock-layout-drag-changed(active);
+    }
 
     out property <length> viewport-origin-x: viewport-rect.absolute-position.x;
     out property <length> viewport-origin-y: viewport-rect.absolute-position.y;
@@ -145,7 +151,7 @@ export component MainEditorWindow inherits Window {
     out property <length> browser-width: content_browser.browser-width;
     out property <length> browser-height: content_browser.browser-height;
     out property <length> browser-tree-origin-y: content_browser.tree-origin-y;
-    out property <length> browser-tree-panel-height: content_browser.tree-panel-height;
+    in-out property <length> browser-tree-panel-height <=> content_browser.tree-pane-height;
 
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
@@ -247,14 +253,15 @@ export component MainEditorWindow inherits Window {
                 }
 
                 hierarchy-splitter := HorizontalResizeHandle {
-                    pane-size <=> root.hierarchy-pane-height;
+                    pane-size: root.hierarchy-pane-height;
                     min-pane: 120px;
                     max-pane: Math.max(120px, left-dock.height - 200px);
-                    drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
                 }
 
                 content_browser := ContentBrowser {
+                    visible: !root.dock-layout-drag-active;
                     vertical-stretch: 1;
+                    layout-drag-active: root.dock-layout-drag-active;
                     tree-rows <=> root.browser-tree-rows;
                     grid-rows <=> root.browser-grid-rows;
                     drag-active: root.browser-drag-active;
@@ -269,15 +276,13 @@ export component MainEditorWindow inherits Window {
                     item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                     item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                     item-release(path, x, y) => { root.browser-item-release(path, x, y); }
-                    layout-drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
                 }
             }
 
             left-splitter := VerticalResizeHandle {
-                pane-size <=> root.left-dock-width;
+                pane-size: root.left-dock-width;
                 min-pane: 180px;
                 max-pane: Math.max(180px, editor-body.width - root.right-dock-width - 360px);
-                drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
             }
 
             viewport-rect := Rectangle {
@@ -297,11 +302,10 @@ export component MainEditorWindow inherits Window {
             }
 
             right-splitter := VerticalResizeHandle {
-                pane-size <=> root.right-dock-width;
+                pane-size: root.right-dock-width;
                 min-pane: 260px;
                 max-pane: Math.max(260px, editor-body.width - root.left-dock-width - 360px);
                 trailing-pane: true;
-                drag-active-changed(active) => { root.dock-layout-drag-changed(active); }
             }
 
             inspector-dock := Rectangle {
@@ -311,7 +315,6 @@ export component MainEditorWindow inherits Window {
                 width: root.right-dock-width;
                 vertical-stretch: 1;
                 clip: true;
-
                 VerticalLayout {
                     padding: 10px;
                     spacing: 8px;
@@ -325,9 +328,10 @@ export component MainEditorWindow inherits Window {
 
                     inspector-scroll := Flickable {
                         vertical-stretch: 1;
-                        interactive: true;
+                        interactive: !root.dock-layout-drag-active;
                         viewport-width: parent.width - 20px;
-                        viewport-height: inspector-panel.preferred-height;
+                        // Large fixed scroll extent avoids remeasuring every slider row each splitter frame.
+                        viewport-height: 2400px;
 
                         inspector-panel := VerticalBox {
                             width: parent.width;

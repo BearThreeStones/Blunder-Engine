@@ -98,11 +98,14 @@ void WindowSystem::pumpEvents() {
   }
 }
 
-void WindowSystem::dispatchApplicationEvent(const SDL_Event& event) {
+void WindowSystem::dispatchApplicationEvent(const SDL_Event& event,
+                                            bool route_to_input_layers) {
   if (m_native_event_callback) {
     m_native_event_callback(event);
   }
-  processEvent(event);
+  if (route_to_input_layers) {
+    processEvent(event);
+  }
   if (m_resize_notify_pending) {
     refreshWindowPixelSize();
     m_resize_notify_pending = false;

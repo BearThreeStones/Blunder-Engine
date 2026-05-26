@@ -71,7 +71,9 @@ class WindowSystem final {
   bool processEvent(const SDL_Event& event);
 
   /// Dispatches one SDL event (used with SDL_MAIN_USE_CALLBACKS / SDL_AppEvent).
-  void dispatchApplicationEvent(const SDL_Event& event);
+  /// When @p route_to_input_layers is false, only the native callback runs (e.g. Slint).
+  void dispatchApplicationEvent(const SDL_Event& event,
+                                bool route_to_input_layers = true);
 
  private:
   void refreshWindowPixelSize();
