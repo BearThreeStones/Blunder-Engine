@@ -144,7 +144,6 @@ export component MainEditorWindow inherits Window {
     in property <bool> browser-drag-active: false;
     in property <string> browser-drag-source-path: "";
     in property <string> browser-drop-highlight-path: "";
-    in property <bool> browser-show-assets-root: false;
 
     out property <length> browser-origin-x: content_browser.browser-origin-x;
     out property <length> browser-origin-y: content_browser.browser-origin-y;
@@ -156,8 +155,6 @@ export component MainEditorWindow inherits Window {
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
-    callback browser-root-assets-selected();
-    callback browser-root-resources-selected();
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
     callback browser-item-release(string, float, float);
@@ -267,12 +264,9 @@ export component MainEditorWindow inherits Window {
                     drag-active: root.browser-drag-active;
                     drag-source-path: root.browser-drag-source-path;
                     drop-highlight-path: root.browser-drop-highlight-path;
-                    show-assets-root: root.browser-show-assets-root;
                     folder-selected(path) => { root.browser-folder-selected(path); }
                     folder-toggle(path) => { root.browser-folder-toggle(path); }
                     refresh-requested => { root.browser-refresh-requested(); }
-                    root-assets-selected => { root.browser-root-assets-selected(); }
-                    root-resources-selected => { root.browser-root-resources-selected(); }
                     item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                     item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                     item-release(path, x, y) => { root.browser-item-release(path, x, y); }

@@ -28,7 +28,7 @@ class ContentBrowserSystem final {
   void initialize(const ContentBrowserInit& init);
   void shutdown();
 
-  /// Starts efsw watches on Assets/ and Resources/ (no-op if efsw unavailable).
+  /// Starts efsw watch on Assets/ (no-op if efsw unavailable).
   void startFileWatch();
   void stopFileWatch();
 
@@ -91,7 +91,7 @@ class ContentBrowserSystem final {
   AssetManager* m_asset_manager{nullptr};
   ThumbnailGenerator* m_thumbnail_generator{nullptr};
 
-  ContentRoot m_active_root{ContentRoot::Resources};
+  ContentRoot m_active_root{ContentRoot::Assets};
   eastl::string m_selected_folder;
   eastl::vector<ContentEntry> m_entries;
   eastl::hash_map<eastl::string, size_t> m_entry_index;

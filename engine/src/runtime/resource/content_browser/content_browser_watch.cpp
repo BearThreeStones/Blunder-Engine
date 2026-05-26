@@ -27,27 +27,15 @@ void ContentBrowserWatch::start() {
   }
 
   const std::string assets_path = m_file_system->getAssetRoot().generic_string();
-  const std::string resources_path =
-      m_file_system->getResourcesRoot().generic_string();
 
   m_assets_watch_id =
       m_watcher.addWatch(assets_path, this, true);
-  m_resources_watch_id =
-      m_watcher.addWatch(resources_path, this, true);
 
   if (m_assets_watch_id < 0) {
     LOG_WARN("[ContentBrowserWatch] failed to watch Assets: {}",
              assets_path.c_str());
   } else {
     LOG_INFO("[ContentBrowserWatch] watching Assets: {}", assets_path.c_str());
-  }
-
-  if (m_resources_watch_id < 0) {
-    LOG_WARN("[ContentBrowserWatch] failed to watch Resources: {}",
-             resources_path.c_str());
-  } else {
-    LOG_INFO("[ContentBrowserWatch] watching Resources: {}",
-             resources_path.c_str());
   }
 
   m_watcher.watch();
@@ -65,10 +53,6 @@ void ContentBrowserWatch::stop() {
   if (m_assets_watch_id >= 0) {
     m_watcher.removeWatch(m_assets_watch_id);
     m_assets_watch_id = 0;
-  }
-  if (m_resources_watch_id >= 0) {
-    m_watcher.removeWatch(m_resources_watch_id);
-    m_resources_watch_id = 0;
   }
 #endif
 }

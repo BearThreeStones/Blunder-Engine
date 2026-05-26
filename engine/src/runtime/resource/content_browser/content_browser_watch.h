@@ -13,7 +13,7 @@
 
 namespace Blunder {
 
-/// Watches Assets/ and Resources/ with efsw and requests a debounced content refresh.
+/// Watches Assets/ with efsw and requests a debounced content refresh.
 class ContentBrowserWatch final
 #if defined(BLUNDER_HAS_EFSW)
     : public efsw::FileWatchListener
@@ -45,7 +45,6 @@ class ContentBrowserWatch final
 
   efsw::FileWatcher m_watcher;
   efsw::WatchID m_assets_watch_id{0};
-  efsw::WatchID m_resources_watch_id{0};
 #endif
 
   FileSystem* m_file_system{nullptr};

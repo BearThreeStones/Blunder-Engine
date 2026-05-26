@@ -618,23 +618,6 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       g_runtime_global_context.m_content_browser->refresh();
       syncContentBrowser();
     });
-    component->on_browser_root_assets_selected([this]() {
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->setActiveRoot(ContentRoot::Assets);
-      g_runtime_global_context.m_content_browser->rebuildVisibleTree();
-      syncContentBrowser();
-    });
-    component->on_browser_root_resources_selected([this]() {
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->setActiveRoot(
-          ContentRoot::Resources);
-      g_runtime_global_context.m_content_browser->rebuildVisibleTree();
-      syncContentBrowser();
-    });
     component->on_browser_folder_selected(
         [this](const slint::SharedString& path) {
       m_tree_folder_handled_by_slint = true;
@@ -1233,8 +1216,6 @@ void SlintSystem::syncContentBrowser() {
         slint::SharedString(drag.sourcePath().c_str()));
     m_window_component->operator->()->set_browser_drop_highlight_path(
         slint::SharedString(m_drop_highlight_path.c_str()));
-    m_window_component->operator->()->set_browser_show_assets_root(
-        browser_system.activeRoot() == ContentRoot::Assets);
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncContentBrowser] {}", e.what());
   } catch (...) {

@@ -70,7 +70,6 @@ eastl::vector<ContentEntry> ContentIndex::scan(const FileSystem& file_system,
   };
 
   scan_root(ContentRoot::Assets, file_system.getAssetRoot());
-  scan_root(ContentRoot::Resources, file_system.getResourcesRoot());
   return entries;
 }
 

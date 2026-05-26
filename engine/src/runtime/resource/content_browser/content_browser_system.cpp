@@ -38,7 +38,7 @@ void ContentBrowserSystem::initialize(const ContentBrowserInit& init) {
   m_file_system = init.file_system;
   m_asset_manager = init.asset_manager;
   m_thumbnail_generator = init.thumbnail_generator;
-  m_active_root = ContentRoot::Resources;
+  m_active_root = ContentRoot::Assets;
   m_selected_folder = rootVirtualPath(m_active_root);
   m_is_initialized = m_file_system != nullptr && m_thumbnail_generator != nullptr;
   m_file_watch.initialize(m_file_system);
