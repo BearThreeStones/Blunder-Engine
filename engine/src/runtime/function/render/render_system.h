@@ -21,6 +21,7 @@ class Event;
 class AssetManager;
 class EditorCamera;
 class ForwardRenderPath;
+class OverlaySystem;
 class SsaOPass;
 class GpuMesh;
 class RenderDocCapture;
@@ -129,8 +130,8 @@ class RenderSystem final {
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_offscreen;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_mesh_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_transparent_pipeline;
-  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_grid_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_shadow_pipeline;
+  eastl::unique_ptr<OverlaySystem> m_overlay_system;
   eastl::unique_ptr<ShadowMapTarget> m_shadow_map;
   eastl::unique_ptr<EditorCamera> m_editor_camera;
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;

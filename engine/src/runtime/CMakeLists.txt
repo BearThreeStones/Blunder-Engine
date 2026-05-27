@@ -25,6 +25,8 @@ add_library(engine_runtime STATIC
     "core/math/math_types.h"
     "core/math/math_utils.h"
     "core/math/math_utils.cpp"
+    "core/math/coordinate_system.h"
+    "core/math/coordinate_system.cpp"
     "core/math/transform.h"
     "core/math/geometry.h"
     "core/math/interpolation.h"
@@ -41,6 +43,22 @@ add_library(engine_runtime STATIC
     "platform/file_system/file_system.h"
     "platform/file_system/file_system.cpp"
     "resource/asset/asset.h"
+    "resource/asset/guid.h"
+    "resource/asset/guid.cpp"
+    "resource/asset/asset_descriptor.h"
+    "resource/asset/asset_yaml.h"
+    "resource/asset/asset_yaml.cpp"
+    "resource/asset_registry/asset_registry.h"
+    "resource/asset_registry/asset_registry.cpp"
+    "resource/asset_cook/asset_cook_types.h"
+    "resource/asset_cook/mesh_cooker.h"
+    "resource/asset_cook/mesh_cooker.cpp"
+    "resource/asset_cook/texture_cooker.h"
+    "resource/asset_cook/texture_cooker.cpp"
+    "resource/asset_cook/asset_compiler_service.h"
+    "resource/asset_cook/asset_compiler_service.cpp"
+    "resource/asset_import/asset_import_service.h"
+    "resource/asset_import/asset_import_service.cpp"
     "resource/asset/material_asset.h"
     "resource/asset/shader_asset.h"
     "resource/asset/mesh_asset.h"
@@ -97,6 +115,7 @@ add_subdirectory(function/render)
 
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
+    "function/slint/import_mesh_dialog.slint"
     "function/slint/hierarchy.slint"
     "function/slint/editor_window.slint"
 )
@@ -153,6 +172,7 @@ target_link_libraries(engine_runtime
         SDL3::SDL3
         vma
         slang::slang
+        yaml-cpp
 )
 
 if(TARGET efsw)

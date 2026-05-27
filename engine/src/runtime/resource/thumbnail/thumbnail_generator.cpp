@@ -4,6 +4,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
@@ -103,6 +104,23 @@ bool ThumbnailGenerator::generateMeshThumbnail(const eastl::string& virtual_path
   return generatePlaceholder(ThumbnailPlaceholderKind::Mesh, out_rgba);
 }
 
+bool ThumbnailGenerator::resolveDescriptorSource(
+    const eastl::string& descriptor_virtual_path,
+    eastl::string& out_source_path) const {
+  eastl::string relative = descriptor_virtual_path;
+  if (relative.compare(0, 7, "assets/") == 0) {
+    relative.erase(0, 7);
+  }
+  const std::filesystem::path absolute =
+      m_file_system->resolveAsset(std::filesystem::path(relative.c_str()));
+
+  eastl::string yaml_text;
+  if (!m_file_system->readText(absolute, yaml_text)) {
+    return false;
+  }
+  return AssetYaml::parseSourceField(yaml_text, out_source_path);
+}
+
 bool ThumbnailGenerator::generateRgbaForEntry(const ContentEntry& entry,
                                               eastl::vector<uint8_t>& out_rgba) {
   if (entry.is_directory) {
@@ -110,6 +128,21 @@ bool ThumbnailGenerator::generateRgbaForEntry(const ContentEntry& entry,
   }
 
   const eastl::string ext = extensionLower(entry.virtual_path);
+  if (endsWithSuffix(entry.virtual_path, ".mesh.yaml")) {
+    eastl::string source_path;
+    if (resolveDescriptorSource(entry.virtual_path, source_path)) {
+      return generateMeshThumbnail(source_path, out_rgba);
+    }
+    return generatePlaceholder(ThumbnailPlaceholderKind::Mesh, out_rgba);
+  }
+  if (endsWithSuffix(entry.virtual_path, ".texture.yaml")) {
+    eastl::string source_path;
+    if (resolveDescriptorSource(entry.virtual_path, source_path)) {
+      return generateImageThumbnail(source_path, out_rgba);
+    }
+    return generatePlaceholder(ThumbnailPlaceholderKind::File, out_rgba);
+  }
+
   if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" ||
       ext == ".tga" || ext == ".ppm") {
     return generateImageThumbnail(entry.virtual_path, out_rgba);

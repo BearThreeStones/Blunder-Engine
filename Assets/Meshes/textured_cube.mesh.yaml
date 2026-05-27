@@ -1,0 +1,7 @@
+type: Mesh
+guid: "7c4e9a12-3b56-4f8a-9d21-8e5f2c1a0b34"
+source: resources/Models/textured_cube/textured_cube.gltf
+import:
+  materials: true
+  animations: true
+  scale: 1.0

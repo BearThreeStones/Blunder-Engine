@@ -36,6 +36,8 @@ struct ForwardFrameState {
   glm::mat4 light_view_projection{1.0f};
   float shadow_bias{0.002f};
   bool shadows_enabled{true};
+  uint32_t viewport_width{1};
+  uint32_t viewport_height{1};
 };
 
 }  // namespace Blunder

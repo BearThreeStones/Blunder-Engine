@@ -9,6 +9,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/coordinate_system.h"
 
 namespace Blunder {
 
@@ -79,9 +80,9 @@ const char* findArrayAfterKey(const char* text, const char* key, const char** ou
 Quat rotationFromEulerDegreesImpl(const Vec3& euler_degrees) {
   const Vec3 radians(glm::radians(euler_degrees.x), glm::radians(euler_degrees.y),
                      glm::radians(euler_degrees.z));
-  const Quat qx = glm::angleAxis(radians.x, Vec3(1.0f, 0.0f, 0.0f));
-  const Quat qy = glm::angleAxis(radians.y, Vec3(0.0f, 1.0f, 0.0f));
-  const Quat qz = glm::angleAxis(radians.z, Vec3(0.0f, 0.0f, 1.0f));
+  const Quat qx = glm::angleAxis(radians.x, kWorldRight);
+  const Quat qy = glm::angleAxis(radians.y, kWorldForward);
+  const Quat qz = glm::angleAxis(radians.z, kWorldUp);
   return qz * qy * qx;
 }
 

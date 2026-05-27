@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/core/math/geometry.h"
 
 #include <glm/ext/matrix_clip_space.hpp>
@@ -35,9 +36,9 @@ void computeDirectionalLightMatrices(
       light_dir_length > 0.0001f ? light_dir / light_dir_length
                                  : k_default_light_direction;
 
-  glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f);
+  glm::vec3 up = kWorldUp;
   if (std::abs(glm::dot(normalized_light_dir, up)) > 0.95f) {
-    up = glm::vec3(0.0f, 1.0f, 0.0f);
+    up = kWorldForward;
   }
 
   const glm::vec3 light_position =
@@ -115,9 +116,9 @@ float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
           ? glm::normalize(light_direction)
           : k_default_light_direction;
 
-  glm::vec3 tangent = glm::cross(light_dir, glm::vec3(0.0f, 0.0f, 1.0f));
+  glm::vec3 tangent = glm::cross(light_dir, kWorldUp);
   if (glm::dot(tangent, tangent) < 0.0001f) {
-    tangent = glm::cross(light_dir, glm::vec3(0.0f, 1.0f, 0.0f));
+    tangent = glm::cross(light_dir, kWorldForward);
   }
   tangent = glm::normalize(tangent);
   const glm::vec3 bitangent = glm::normalize(glm::cross(light_dir, tangent));

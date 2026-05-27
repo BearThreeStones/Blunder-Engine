@@ -22,6 +22,8 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -618,6 +620,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       g_runtime_global_context.m_content_browser->refresh();
       syncContentBrowser();
     });
+    component->on_browser_import_requested([this]() { openImportFileDialog(); });
+    component->on_import_mesh_confirmed([this]() { completePendingMeshImport(); });
+    component->on_import_mesh_cancelled([this]() {
+      m_pending_mesh_import_paths.clear();
+      if (m_window_component) {
+        m_window_component->operator->()->set_import_mesh_dialog_visible(false);
+      }
+    });
     component->on_browser_folder_selected(
         [this](const slint::SharedString& path) {
       m_tree_folder_handled_by_slint = true;
@@ -668,32 +678,32 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
               *g_runtime_global_context.m_content_browser;
           ContentBrowserDragController& drag = browser_system.dragController();
           const bool was_dragging = drag.isDragging();
-          const eastl::string source = drag.sourcePath();
-          drag.endPress();
 
-          if (was_dragging && !source.empty() &&
-              !m_drop_highlight_path.empty()) {
-            browser_system.reparentEntry(source, m_drop_highlight_path);
-          }
-          m_drop_highlight_path.clear();
-          drag.reset();
-          syncContentBrowser();
+          if (was_dragging) {
+            finishContentBrowserDragAtCursor();
+          } else {
+            drag.endPress();
+            drag.reset();
+            m_drop_highlight_path.clear();
+            m_viewport_drop_active = false;
+            syncContentBrowser();
 
-          const eastl::string path_str(path.data());
-          constexpr const char* k_scene_suffix = ".scene.asset";
-          const size_t suffix_len = 14u;
-          if (!was_dragging && path_str.size() >= suffix_len &&
-              path_str.compare(path_str.size() - suffix_len, suffix_len,
-                               k_scene_suffix) == 0 &&
-              g_runtime_global_context.m_editor_scene_edit) {
-            if (g_runtime_global_context.m_editor_scene_edit->openScene(path_str)) {
-              if (g_runtime_global_context.m_render_system &&
-                  g_runtime_global_context.m_scene_system) {
-                syncSceneToRender(
-                    g_runtime_global_context.m_render_system.get(),
-                    g_runtime_global_context.m_scene_system->getActiveInstance());
+            const eastl::string path_str(path.data());
+            constexpr const char* k_scene_suffix = ".scene.asset";
+            const size_t suffix_len = 14u;
+            if (path_str.size() >= suffix_len &&
+                path_str.compare(path_str.size() - suffix_len, suffix_len,
+                                 k_scene_suffix) == 0 &&
+                g_runtime_global_context.m_editor_scene_edit) {
+              if (g_runtime_global_context.m_editor_scene_edit->openScene(path_str)) {
+                if (g_runtime_global_context.m_render_system &&
+                    g_runtime_global_context.m_scene_system) {
+                  syncSceneToRender(
+                      g_runtime_global_context.m_render_system.get(),
+                      g_runtime_global_context.m_scene_system->getActiveInstance());
+                }
+                refreshEditorScenePanels();
               }
-              refreshEditorScenePanels();
             }
           }
         });
@@ -1178,6 +1188,146 @@ void SlintSystem::refreshEditorScenePanels() {
   syncInspectorFromSelection();
 }
 
+namespace {
+
+void onImportFileDialogCallback(void* userdata, const char* const* filelist,
+                                int filter) {
+  (void)filter;
+  auto* slint_system = static_cast<SlintSystem*>(userdata);
+  if (slint_system == nullptr || filelist == nullptr) {
+    return;
+  }
+  eastl::vector<eastl::string> paths;
+  for (int index = 0; filelist[index] != nullptr; ++index) {
+    paths.push_back(eastl::string(filelist[index]));
+  }
+  slint_system->queueFileDialogImports(paths);
+}
+
+eastl::string extensionLowerFromPath(const eastl::string& absolute_path) {
+  const size_t dot = absolute_path.find_last_of('.');
+  if (dot == eastl::string::npos) {
+    return eastl::string();
+  }
+  eastl::string ext(absolute_path.c_str() + dot);
+  for (char& c : ext) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return ext;
+}
+
+}  // namespace
+
+void SlintSystem::queueFileDialogImports(
+    const eastl::vector<eastl::string>& paths) {
+  m_pending_file_dialog_paths.insert(m_pending_file_dialog_paths.end(),
+                                     paths.begin(), paths.end());
+}
+
+void SlintSystem::finalizeAssetImport(
+    const eastl::vector<ImportResult>& results) {
+  if (results.empty()) {
+    return;
+  }
+  if (g_runtime_global_context.m_asset_compiler) {
+    g_runtime_global_context.m_asset_compiler->cookIfStale();
+  }
+  syncContentBrowser();
+  LOG_INFO("[SlintSystem] imported {} asset descriptor(s)", results.size());
+}
+
+void SlintSystem::showImportMeshDialogForPendingPaths() {
+  if (!m_window_component || m_pending_mesh_import_paths.empty()) {
+    return;
+  }
+  m_window_component->operator->()->set_import_mesh_dialog_visible(true);
+  m_window_component->operator->()->set_import_mesh_materials(true);
+  m_window_component->operator->()->set_import_mesh_animations(true);
+  m_window_component->operator->()->set_import_mesh_scale(1.0f);
+}
+
+void SlintSystem::completePendingMeshImport() {
+  if (!m_window_component || !g_runtime_global_context.m_asset_import ||
+      !g_runtime_global_context.m_content_browser ||
+      m_pending_mesh_import_paths.empty()) {
+    return;
+  }
+
+  MeshImportSettings settings{};
+  settings.materials = m_window_component->operator->()->get_import_mesh_materials();
+  settings.animations =
+      m_window_component->operator->()->get_import_mesh_animations();
+  settings.scale = m_window_component->operator->()->get_import_mesh_scale();
+
+  const eastl::string target_folder =
+      g_runtime_global_context.m_content_browser->selectedFolder();
+  const eastl::vector<ImportResult> results =
+      g_runtime_global_context.m_asset_import->importExternalFiles(
+          m_pending_mesh_import_paths, target_folder, settings);
+
+  m_pending_mesh_import_paths.clear();
+  m_window_component->operator->()->set_import_mesh_dialog_visible(false);
+  finalizeAssetImport(results);
+}
+
+void SlintSystem::processPendingAssetImports() {
+  if (m_pending_file_dialog_paths.empty()) {
+    return;
+  }
+
+  if (!g_runtime_global_context.m_asset_import ||
+      !g_runtime_global_context.m_content_browser) {
+    m_pending_file_dialog_paths.clear();
+    return;
+  }
+
+  eastl::vector<eastl::string> paths = m_pending_file_dialog_paths;
+  m_pending_file_dialog_paths.clear();
+
+  eastl::vector<eastl::string> mesh_paths;
+  eastl::vector<eastl::string> direct_paths;
+  for (const eastl::string& path : paths) {
+    const eastl::string ext = extensionLowerFromPath(path);
+    if (AssetImportService::isMeshSourceExtension(ext)) {
+      mesh_paths.push_back(path);
+    } else if (AssetImportService::isTextureSourceExtension(ext)) {
+      direct_paths.push_back(path);
+    }
+  }
+
+  const eastl::string target_folder =
+      g_runtime_global_context.m_content_browser->selectedFolder();
+
+  if (!direct_paths.empty()) {
+    finalizeAssetImport(
+        g_runtime_global_context.m_asset_import->importExternalFiles(
+            direct_paths, target_folder));
+  }
+
+  if (!mesh_paths.empty()) {
+    m_pending_mesh_import_paths.insert(m_pending_mesh_import_paths.end(),
+                                       mesh_paths.begin(), mesh_paths.end());
+    showImportMeshDialogForPendingPaths();
+  }
+}
+
+void SlintSystem::openImportFileDialog() {
+  if (!m_window_system) {
+    return;
+  }
+
+  static const SDL_DialogFileFilter filters[] = {
+      {"Models and Images", "gltf;glb;png;jpg;jpeg;bmp;tga"},
+      {"All Files", "*"},
+  };
+
+  SDL_ShowOpenFileDialog(onImportFileDialogCallback, this,
+                         m_window_system->getNativeWindow(), filters, 2,
+                         nullptr, true);
+}
+
 void SlintSystem::syncContentBrowser() {
   if (!m_window_component || !g_runtime_global_context.m_content_browser) {
     return;
@@ -1216,6 +1366,8 @@ void SlintSystem::syncContentBrowser() {
         slint::SharedString(drag.sourcePath().c_str()));
     m_window_component->operator->()->set_browser_drop_highlight_path(
         slint::SharedString(m_drop_highlight_path.c_str()));
+    m_window_component->operator->()->set_browser_viewport_drop_active(
+        m_viewport_drop_active);
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncContentBrowser] {}", e.what());
   } catch (...) {
@@ -1225,6 +1377,55 @@ void SlintSystem::syncContentBrowser() {
 
 BrowserLogicalRect SlintSystem::getBrowserLogicalRect() const {
   return m_cached_browser_logical_rect;
+}
+
+bool SlintSystem::isPointerOverViewport(float logical_x, float logical_y) const {
+  return pointInRect(logical_x, logical_y, m_cached_viewport_logical_rect);
+}
+
+void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
+  if (!g_runtime_global_context.m_content_browser) {
+    return;
+  }
+
+  ContentBrowserSystem& browser_system = *g_runtime_global_context.m_content_browser;
+  ContentBrowserDragController& drag = browser_system.dragController();
+  if (!drag.isDragging()) {
+    return;
+  }
+
+  const eastl::string source = drag.sourcePath();
+  drag.endPress();
+
+  if (!source.empty()) {
+    if (isPointerOverViewport(logical_x, logical_y) &&
+        g_runtime_global_context.m_editor_scene_edit) {
+      const SpawnAssetResult spawn_result =
+          g_runtime_global_context.m_editor_scene_edit->spawnAssetAtWindowPosition(
+              source, logical_x, logical_y);
+      if (spawn_result.success && g_runtime_global_context.m_render_system &&
+          g_runtime_global_context.m_scene_system) {
+        syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                          g_runtime_global_context.m_scene_system->getActiveInstance());
+        refreshEditorScenePanels();
+      }
+    } else if (!m_drop_highlight_path.empty()) {
+      browser_system.reparentEntry(source, m_drop_highlight_path);
+    }
+  }
+
+  m_drop_highlight_path.clear();
+  m_viewport_drop_active = false;
+  drag.reset();
+  syncContentBrowser();
+}
+
+void SlintSystem::finishContentBrowserDragAtCursor() {
+  const WindowClientMouseState mouse =
+      queryWindowClientMouseState(m_window_system);
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(m_window_system, mouse.x, mouse.y);
+  finishContentBrowserDrag(pointer.x, pointer.y);
 }
 
 BrowserLogicalRect SlintSystem::getHierarchyLogicalRect() const {
@@ -2271,15 +2472,28 @@ void SlintSystem::processCoalescedSdlMouseMotion() {
   if (!isDockLayoutDragActive() && g_runtime_global_context.m_content_browser &&
       g_runtime_global_context.m_content_browser->dragController().isDragging()) {
     ContentBrowserSystem& browser_system = *g_runtime_global_context.m_content_browser;
-    const int32_t tree_origin_y =
-        resolveContentBrowserTreeOriginY(*m_window_component->operator->());
     const slint::LogicalPosition logical_pos =
         slintPointerPosition(m_window_system, window_x, window_y);
-    const eastl::string new_highlight = browser_system.hitTestFolderAt(
-        logical_pos.x, logical_pos.y, tree_origin_y, 24.0f);
-    if (new_highlight != m_drop_highlight_path) {
-      m_drop_highlight_path = new_highlight;
-      m_pending_content_browser_sync = true;
+
+    if (isPointerOverViewport(logical_pos.x, logical_pos.y)) {
+      if (!m_drop_highlight_path.empty() || !m_viewport_drop_active) {
+        m_drop_highlight_path.clear();
+        m_viewport_drop_active = true;
+        m_pending_content_browser_sync = true;
+      }
+    } else {
+      if (m_viewport_drop_active) {
+        m_viewport_drop_active = false;
+        m_pending_content_browser_sync = true;
+      }
+      const int32_t tree_origin_y =
+          resolveContentBrowserTreeOriginY(*m_window_component->operator->());
+      const eastl::string new_highlight = browser_system.hitTestFolderAt(
+          logical_pos.x, logical_pos.y, tree_origin_y, 24.0f);
+      if (new_highlight != m_drop_highlight_path) {
+        m_drop_highlight_path = new_highlight;
+        m_pending_content_browser_sync = true;
+      }
     }
     return;
   }
@@ -2344,6 +2558,7 @@ void SlintSystem::compositeEditorFrame() {
 void SlintSystem::beginFrame() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    processPendingAssetImports();
     refreshDockSplitterHitCache();
     pollWin32DockSplitterPointerState();
     processCoalescedSdlMouseMotion();
@@ -2724,20 +2939,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
             }
             if (event.button.button == SDL_BUTTON_LEFT &&
                 g_runtime_global_context.m_content_browser && m_window_component) {
-              ContentBrowserSystem& browser_system =
-                  *g_runtime_global_context.m_content_browser;
-              ContentBrowserDragController& drag = browser_system.dragController();
-
-              if (drag.isDragging()) {
-                const eastl::string source = drag.sourcePath();
-                drag.endPress();
-                if (!source.empty() && !m_drop_highlight_path.empty()) {
-                  browser_system.reparentEntry(source, m_drop_highlight_path);
-                }
-                m_drop_highlight_path.clear();
-                drag.reset();
-                syncContentBrowser();
-              }
+              const slint::LogicalPosition logical_pos =
+                  slintPointerPosition(m_window_system, window_x, window_y);
+              finishContentBrowserDrag(logical_pos.x, logical_pos.y);
             }
           }
           window.dispatch_pointer_release_event(
@@ -2815,15 +3019,34 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_DROP_COMPLETE:
         if (event.drop.windowID == window_id && m_os_drop_targets_browser &&
-            g_runtime_global_context.m_content_browser &&
             !m_pending_os_drop_files.empty()) {
-          const uint32_t imported =
-              g_runtime_global_context.m_content_browser->importExternalFiles(
-                  m_pending_os_drop_files,
-                  g_runtime_global_context.m_content_browser->selectedFolder());
-          LOG_INFO("[SlintSystem] imported {} file(s) into content browser",
-                   imported);
-          syncContentBrowser();
+          eastl::vector<eastl::string> mesh_paths;
+          eastl::vector<eastl::string> direct_paths;
+          for (const eastl::string& path : m_pending_os_drop_files) {
+            const eastl::string ext = extensionLowerFromPath(path);
+            if (AssetImportService::isMeshSourceExtension(ext)) {
+              mesh_paths.push_back(path);
+            } else if (AssetImportService::isTextureSourceExtension(ext)) {
+              direct_paths.push_back(path);
+            }
+          }
+
+          if (g_runtime_global_context.m_asset_import &&
+              g_runtime_global_context.m_content_browser) {
+            const eastl::string target_folder =
+                g_runtime_global_context.m_content_browser->selectedFolder();
+            if (!direct_paths.empty()) {
+              finalizeAssetImport(
+                  g_runtime_global_context.m_asset_import->importExternalFiles(
+                      direct_paths, target_folder));
+            }
+            if (!mesh_paths.empty()) {
+              m_pending_mesh_import_paths.insert(m_pending_mesh_import_paths.end(),
+                                                 mesh_paths.begin(),
+                                                 mesh_paths.end());
+              showImportMeshDialogForPendingPaths();
+            }
+          }
         }
         m_pending_os_drop_files.clear();
         m_os_drop_targets_browser = false;

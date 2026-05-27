@@ -8,6 +8,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -22,7 +23,7 @@ glm::mat4 matrixFromCgltfNode(const cgltf_node* node) {
   cgltf_node_transform_world(const_cast<cgltf_node*>(node), world_matrix_cgltf);
   glm::mat4 result(1.0f);
   std::memcpy(glm::value_ptr(result), world_matrix_cgltf, sizeof(cgltf_float) * 16);
-  return result;
+  return similarityGltfToEngine(result);
 }
 
 void expandBoundsWithMesh(AABB& bounds, bool& has_bounds, const MeshAsset& mesh,

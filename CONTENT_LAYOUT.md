@@ -1,94 +1,95 @@
 # Content layout (Assets / Resources)
 
 Blunder separates **authoring configuration** from **raw source files**, similar in spirit to
-Unity/Unreal workflows but with explicit on-disk roots.
+Unity/Unreal/Stride workflows but with explicit on-disk roots.
 
 ## Roots
 
 | Folder | Role | Virtual path prefix |
 |--------|------|---------------------|
-| [`Assets/`](Assets/) | Engine asset descriptors (materials, mesh wrappers, prefabs, scenes, project shaders) | `assets/` |
+| [`Assets/`](Assets/) | Engine asset descriptors (YAML metadata, scenes) | `assets/` |
 | [`Resources/`](Resources/) | Raw importer input (.gltf, .png, .wav, …) | `resources/` |
 | [`engine/shaders/`](engine/shaders/) | Built-in engine Slang shaders (not project content) | *(none — `FileSystem::resolveShader`)* |
 
 `FileSystem` resolves:
 
-- `assets/Meshes/foo.mesh.asset` → `<project>/Assets/Meshes/foo.mesh.asset`
+- `assets/Meshes/foo.mesh.yaml` → `<project>/Assets/Meshes/foo.mesh.yaml`
 - `resources/Models/foo.gltf` → `<project>/Resources/Models/foo.gltf`
 - `Models/foo.gltf` (no prefix) → Resources root (same as above)
 
-## Mesh descriptor (`.mesh.asset`)
+## Mesh descriptor (`.mesh.yaml`)
 
-Minimal JSON wrapper that points at a Resources glTF:
+YAML metadata pointing at a Resources glTF source:
 
-```json
-{
-  "type": "Mesh",
-  "source": "resources/Models/textured_cube/textured_cube.gltf"
-}
+```yaml
+type: Mesh
+guid: "7c4e9a12-3b56-4f8a-9d21-8e5f2c1a0b34"
+source: resources/Models/textured_cube/textured_cube.gltf
+import:
+  materials: true
+  animations: true
+  scale: 1.0
 ```
 
-`AssetManager::loadMesh("assets/Meshes/textured_cube.mesh.asset")` reads the descriptor and loads the `source` path.
+`AssetManager::loadMesh("assets/Meshes/textured_cube.mesh.yaml")` reads the descriptor, prefers
+cooked data under `.blunder/cooked/{guid}.meshbin`, and falls back to runtime cgltf import.
+
+Legacy JSON `.mesh.asset` files are still accepted with a migration warning.
+
+## Texture descriptor (`.texture.yaml`)
+
+```yaml
+type: Texture2D
+guid: "..."
+source: resources/Textures/foo.png
+import:
+  srgb: true
+  generate_mips: false
+```
+
+`AssetManager::loadTexture2D("assets/.../foo.texture.yaml")` prefers `.blunder/cooked/{guid}.texbin`.
 
 ## Scene descriptor (`.scene.asset`)
 
-Static scene data (entity templates and nested child scene references). Runtime instantiation is handled by `SceneSystem::loadScene` (Stride-style `Scene` vs `SceneInstance` split).
+Static scene data remains JSON for now (see existing scene docs).
 
-```json
-{
-  "type": "Scene",
-  "entities": [
-    {
-      "name": "Sun",
-      "position": [0, 10, 0],
-      "rotation": [0, 0, 0],
-      "rotationMode": "euler_degrees"
-    },
-    {
-      "name": "CameraRig",
-      "parent": "Sun",
-      "position": [0, 0, 5],
-      "rotation": [0, 0, 0],
-      "rotationMode": "euler_degrees"
-    }
-  ],
-  "childScenes": [
-    {
-      "scene": "assets/Scenes/sub.scene.asset",
-      "name": "SubLevel",
-      "position": [0, 0, 0],
-      "rotation": [0, 0, 0],
-      "rotationMode": "euler_degrees",
-      "scale": [1, 1, 1]
-    }
-  ]
-}
+Positions and `rotation` / `euler_degrees` use **engine world space** (right-handed
+Z-up: +X right, +Y forward, +Z up). glTF mesh sources under `resources/` stay
+Y-up on disk; `AssetManager` converts them at import (see `coordinate_system.h` in
+AGENTS.md). After changing import axes, force-recook affected `.meshbin` files.
+
+## GUID registry
+
+`.blunder/asset_registry.yaml` maps `guid → assets/.../descriptor.yaml`. Maintained by
+`AssetRegistry` on import and by `asset_compiler` during cook.
+
+## Import (Content Browser)
+
+| Action | Behavior |
+|--------|----------|
+| **Import Asset** button | Opens a file dialog; images import immediately; glTF shows an import settings dialog |
+| **OS drag & drop** | Drop onto the Content Browser panel; same rules as the menu |
+| **Copy flow** | Source → `Resources/Models/{name}/` or `Resources/Textures/{name}/`; descriptor → selected `Assets/` folder |
+
+## Asset compiler
+
+CLI: `asset_compiler --project-root <path> [--force]`
+
+CMake target: `cook-assets`
+
+Output cache:
+
+```
+.blunder/
+  asset_registry.yaml
+  cooked/
+    {guid}.meshbin
+    {guid}.meshbin.meta
+    {guid}.texbin
+    {guid}.texbin.meta
 ```
 
-- `AssetManager::loadScene("assets/Scenes/root.scene.asset")` deserializes CPU-side `SceneAsset` data.
-- `SceneSystem::loadScene` creates a `SceneInstance`, recursively loads `childScenes`, and sets `child.Parent` on the child instance (parent does not track children).
-- Example startup scene: [`Assets/Scenes/root.scene.asset`](Assets/Scenes/root.scene.asset) with nested [`Assets/Scenes/sub.scene.asset`](Assets/Scenes/sub.scene.asset).
-
-## glTF scene import (Sponza)
-
-Large glTF scenes can be imported directly without a `.scene.asset` wrapper:
-
-- Place Khronos [Sponza](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Sponza) under [`Resources/Models/Sponza/`](Resources/Models/Sponza/) (`Sponza.gltf` + external textures, no Draco).
-- `SceneSystem::loadGltfScene("resources/Models/Sponza/Sponza.gltf")` parses the default scene, creates one entity per mesh primitive, and stores `MeshRendererComponent` data on the `SceneInstance`.
-- `syncSceneToRender(RenderSystem*, SceneInstance*)` uploads meshes/textures and registers opaque/transparent draws (up to 256).
-- `AssetManager::loadMeshPrimitive` caches each primitive as `{gltf_key}#mesh{m}#prim{p}`.
-
-Editor startup loads Sponza when the files are present; see [`Resources/Models/Sponza/README.md`](Resources/Models/Sponza/README.md).
-
-## Content browser data
-
-`ContentIndex::scan(FileSystem)` recursively lists files under `Assets/` and `Resources/`
-and returns [`ContentEntry`](engine/src/runtime/resource/content/content_entry.h) records
-(virtual path, root, size, modified time). Slint UI will consume this later.
-
-## Art source files
-
-`Resources/Source/` is for non-runtime files (e.g. `.psd`). They are not scanned for loading.
+The editor runs an incremental cook at startup (`AssetCompilerService::cookIfStale()`).
 
 ## Thumbnail cache
 
@@ -96,27 +97,18 @@ Editor thumbnails are generated at startup by `ThumbnailGenerator` and stored un
 
 `<project>/.blunder/cache/thumbnails/`
 
-| Item | Rule |
-|------|------|
-| Filename | `{sanitized_virtual_path}__{source_mtime_hex}.png` |
-| Sidecar | Same stem with `.meta` JSON (`source_mtime`, `width`, `height`) |
-| Invalidation | Regenerate when `ContentEntry::modified_time` differs from meta |
-| Default size | 128×128 RGBA PNG |
+Supported sources include `.mesh.yaml`, `.texture.yaml`, images, glTF, and legacy `.mesh.asset`.
 
-Supported sources:
-
-- **Images** (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tga`, `.ppm`): downscaled via `AssetManager::loadTexture2D`
-- **Meshes** (`.gltf`, `.glb`, `.mesh.asset`): baseColor texture preview when available, otherwise a mesh placeholder icon
-- **Directories**: folder placeholder icon
-- **Other files**: generic file placeholder
-
-The editor **Content Browser** (left dock, replaces Outliner) uses `ContentBrowserSystem` to scan content, show a folder tree + thumbnail grid, and drive `ThumbnailGenerator` cache paths.
+The editor **Content Browser** (left dock) uses `ContentBrowserSystem` to scan **Assets only**,
+show a folder tree + thumbnail grid, and drive `ThumbnailGenerator` cache paths.
 
 | Interaction | Behavior |
 |-------------|----------|
-| **Refresh** | Rescans `Assets/` + `Resources/` and regenerates missing thumbnails |
-| **Auto refresh** | efsw watches both roots; debounced re-scan (~300 ms) on external file changes (ignores `.blunder/`) |
-| **Drag item → folder** | Moves a file within the same root (`assets/` or `resources/` only) |
-| **OS file drop** | Drops onto the browser panel copy files into the selected folder |
+| **Refresh** | Rescans `Assets/` and regenerates missing thumbnails |
+| **Auto refresh** | efsw watches `Assets/`; debounced re-scan (~300 ms) |
+| **Drag item → folder** | Moves a file within `assets/` |
+| **OS file drop** | Imports via `AssetImportService` (Resources + YAML descriptor) |
 
-Use `buildContentIndexWithThumbnails()` or `ContentBrowserSystem::refresh()` to populate `ContentEntry::thumbnail_cache_path`.
+## Art source files
+
+`Resources/Source/` is for non-runtime files (e.g. `.psd`). They are not scanned for loading.

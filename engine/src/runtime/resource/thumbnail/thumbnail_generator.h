@@ -39,6 +39,8 @@ class ThumbnailGenerator final {
                               eastl::vector<uint8_t>& out_rgba);
   bool generatePlaceholder(ThumbnailPlaceholderKind kind,
                            eastl::vector<uint8_t>& out_rgba);
+  bool resolveDescriptorSource(const eastl::string& descriptor_virtual_path,
+                               eastl::string& out_source_path) const;
 
   static bool shouldSkipEntry(const ContentEntry& entry);
   static bool endsWithSuffix(const eastl::string& value, const char* suffix);

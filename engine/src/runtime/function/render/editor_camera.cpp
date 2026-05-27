@@ -6,6 +6,7 @@
 #include <SDL3/SDL_scancode.h>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/core/event/application_event.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/core/event/key_event.h"
@@ -357,7 +358,7 @@ void EditorCamera::applyFreeLookRotation(const Vec2& mouse_delta) {
 }
 
 void EditorCamera::updateDirectionVectors() {
-  const Vec3 world_up(0.0f, 0.0f, 1.0f);
+  const Vec3 world_up = kWorldUp;
   m_forward_direction.x = cos(m_pitch) * cos(m_yaw);
   m_forward_direction.y = cos(m_pitch) * sin(m_yaw);
   m_forward_direction.z = sin(m_pitch);
@@ -373,7 +374,7 @@ void EditorCamera::applyKeyboardFlyMovement(float delta_time,
     return;
   }
 
-  const Vec3 world_up(0.0f, 0.0f, 1.0f);
+  const Vec3 world_up = kWorldUp;
   float move_speed = k_free_look_move_speed;
   if (keyboard_state[SDL_SCANCODE_LSHIFT] ||
       keyboard_state[SDL_SCANCODE_RSHIFT]) {
@@ -483,37 +484,16 @@ void EditorCamera::placeInsideAABB(const AABB& bounds) {
   constexpr float k_eye_height = 1.7f;
   constexpr float k_look_ahead = 6.0f;
 
-  const Vec3 size = bounds.size();
   const Vec3 center = bounds.center();
+  const float eye_z = bounds.min.z + k_eye_height;
+  const Vec3 position(center.x, center.y, eye_z);
 
-  Vec3 position = center;
   Vec3 look_target = center;
-
-  // Crytek Sponza (Khronos glTF) is Y-up; pick the tallest axis as vertical.
-  if (size.y >= size.x && size.y >= size.z) {
-    const float eye_y = bounds.min.y + k_eye_height;
-    position = Vec3(center.x, eye_y, center.z);
-    if (size.x >= size.z) {
-      look_target = Vec3(center.x + k_look_ahead, eye_y, center.z);
-    } else {
-      look_target = Vec3(center.x, eye_y, center.z + k_look_ahead);
-    }
-  } else if (size.z >= size.x && size.z >= size.y) {
-    const float eye_z = bounds.min.z + k_eye_height;
-    position = Vec3(center.x, center.y, eye_z);
-    if (size.x >= size.y) {
-      look_target = Vec3(center.x + k_look_ahead, center.y, eye_z);
-    } else {
-      look_target = Vec3(center.x, center.y + k_look_ahead, eye_z);
-    }
+  const Vec3 size = bounds.size();
+  if (size.x >= size.y) {
+    look_target = Vec3(center.x + k_look_ahead, center.y, eye_z);
   } else {
-    const float eye_x = bounds.min.x + k_eye_height;
-    position = Vec3(eye_x, center.y, center.z);
-    if (size.y >= size.z) {
-      look_target = Vec3(eye_x, center.y + k_look_ahead, center.z);
-    } else {
-      look_target = Vec3(eye_x, center.y, center.z + k_look_ahead);
-    }
+    look_target = Vec3(center.x, center.y + k_look_ahead, eye_z);
   }
 
   setLookAt(position, look_target);

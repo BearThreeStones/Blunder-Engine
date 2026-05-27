@@ -1,5 +1,6 @@
 #include "runtime/function/render/render_system.h"
 
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
@@ -7,6 +8,7 @@
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/post/ssao_pass.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 
@@ -271,20 +273,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_shadow_pipeline->initializeWithRenderPass(m_shadow_map->getRenderPass(),
                                               shadow_pipeline_desc);
 
-  rhi::GraphicsPipelineDesc grid_pipeline_desc{};
-  grid_pipeline_desc.shader_path = "engine/shaders/grid.slang";
-  grid_pipeline_desc.enable_vertex_input = false;
-  grid_pipeline_desc.topology = rhi::PrimitiveTopology::LineList;
-  grid_pipeline_desc.cull_mode = rhi::CullMode::None;
-  grid_pipeline_desc.enable_blend = true;
-  grid_pipeline_desc.enable_depth_test = true;
-  grid_pipeline_desc.enable_depth_write = false;
-  grid_pipeline_desc.enable_depth_bias = true;
-  grid_pipeline_desc.depth_bias_constant_factor = -1.2f;
-  grid_pipeline_desc.depth_bias_slope_factor = -1.2f;
-  m_grid_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
-  m_grid_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
-  m_grid_pipeline->initialize(*m_offscreen, grid_pipeline_desc);
+  m_overlay_system = eastl::make_unique<OverlaySystem>();
+  m_overlay_system->initialize(vkCtx(this), vkAlloc(this),
+                               m_offscreen.get(),
+                               vkBackend(this)->nativeSlangCompiler());
 
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
 
@@ -308,7 +300,7 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   forward_init.vk_context = vkCtx(this);
   forward_init.vk_allocator = vkAlloc(this);
   forward_init.offscreen = m_offscreen.get();
-  forward_init.grid_pipeline = m_grid_pipeline.get();
+  forward_init.overlay_system = m_overlay_system.get();
   forward_init.opaque_pipeline = m_mesh_pipeline.get();
   forward_init.transparent_pipeline = m_transparent_pipeline.get();
   forward_init.shadow_pipeline = m_shadow_pipeline.get();
@@ -638,9 +630,9 @@ void RenderSystem::shutdown() {
     m_offscreen.reset();
   }
 
-  if (m_grid_pipeline) {
-    m_grid_pipeline->shutdown();
-    m_grid_pipeline.reset();
+  if (m_overlay_system) {
+    m_overlay_system->shutdown();
+    m_overlay_system.reset();
   }
 
   if (m_mesh_pipeline) {
@@ -755,7 +747,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     ortho_size = m_editor_camera->getOrthoSize();
   } else {
     view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
-                       glm::vec3(0.0f, 0.0f, 1.0f));
+                       kWorldUp);
     const float aspect = static_cast<float>(offscreen_extent.width) /
                          static_cast<float>(offscreen_extent.height);
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 10.0f);
@@ -787,6 +779,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   frame_state.ortho_size = ortho_size;
   frame_state.projection_mode = projection_mode;
   frame_state.grid_plane = m_grid_plane;
+  frame_state.viewport_width = offscreen_extent.width;
+  frame_state.viewport_height = offscreen_extent.height;
   if (m_viewport_layout_source != nullptr) {
     frame_state.shading =
         static_cast<SlintSystem*>(m_viewport_layout_source)
@@ -874,12 +868,16 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vkResetFences(device, 1, &in_flight_fence);
 
   VkCommandBuffer command_buffer =
-      m_grid_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
+      m_mesh_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
   vkResetCommandBuffer(command_buffer, 0);
 
   VkCommandBufferBeginInfo begin_info{};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   vkBeginCommandBuffer(command_buffer, &begin_info);
+
+  if (m_overlay_system) {
+    m_overlay_system->begin_sync(frame_state, m_current_frame);
+  }
 
   if (m_forward_path) {
     m_forward_path->renderFrame(

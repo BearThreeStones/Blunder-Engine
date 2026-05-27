@@ -14,6 +14,7 @@
 
 #include "runtime/platform/window/window_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
 
 namespace Blunder {
 
@@ -160,6 +161,8 @@ class SlintSystem final {
 
   void clearHierarchySlintClickFlag();
 
+  void queueFileDialogImports(const eastl::vector<eastl::string>& paths);
+
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
     explicit SlintWindowAdapter(WindowSystem* window_system);
@@ -238,6 +241,11 @@ class SlintSystem final {
   DockSplitterDrag queryDockSplitterAtFast(float window_x, float window_y) const;
   void runEditorPanelSync();
   void refreshBrowserRectCache();
+  void processPendingAssetImports();
+  void showImportMeshDialogForPendingPaths();
+  void completePendingMeshImport();
+  void openImportFileDialog();
+  void finalizeAssetImport(const eastl::vector<ImportResult>& results);
   /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
   /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
   void syncWindowChromeSize(int override_logical_w = 0, int override_logical_h = 0);
@@ -257,6 +265,9 @@ class SlintSystem final {
   void endCppDockSplitterDrag();
   void applyDockPaneResize(DockSplitterDrag kind);
   void applyPendingDockPaneResize();
+  void finishContentBrowserDrag(float logical_x, float logical_y);
+  void finishContentBrowserDragAtCursor();
+  bool isPointerOverViewport(float logical_x, float logical_y) const;
 
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
@@ -267,8 +278,12 @@ class SlintSystem final {
   int m_slint_dispatch_depth{0};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
   eastl::string m_drop_highlight_path;
+  bool m_viewport_drop_active{false};
   eastl::vector<eastl::string> m_pending_os_drop_files;
   bool m_os_drop_targets_browser{false};
+  eastl::vector<eastl::string> m_pending_mesh_import_paths;
+  eastl::vector<eastl::string> m_pending_file_dialog_paths;
+  bool m_pending_file_dialog_is_import{false};
   bool m_tree_folder_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};
   bool m_left_mouse_down_prev{false};

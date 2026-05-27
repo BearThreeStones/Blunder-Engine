@@ -16,6 +16,9 @@
 // #include "runtime/function/render/render_debug_config.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
@@ -39,10 +42,20 @@ void RuntimeGlobalContext::startSystems() {
   m_file_system = eastl::make_shared<FileSystem>();
   m_file_system->initialize();
 
+  m_asset_registry = eastl::make_shared<AssetRegistry>();
+  m_asset_registry->initialize(m_file_system.get());
+
   m_asset_manager = eastl::make_shared<AssetManager>();
   AssetManagerInitInfo asset_init_info;
   asset_init_info.file_system = m_file_system.get();
   m_asset_manager->initialize(asset_init_info);
+
+  m_asset_compiler = eastl::make_shared<AssetCompilerService>();
+  m_asset_compiler->initialize(m_file_system.get(), m_asset_manager.get(),
+                                 m_asset_registry.get());
+  m_asset_compiler->cookIfStale();
+
+  m_asset_import = eastl::make_shared<AssetImportService>();
 
   m_scene_system = eastl::make_shared<SceneSystem>();
   SceneSystemInitInfo scene_init_info{};
@@ -67,6 +80,11 @@ void RuntimeGlobalContext::startSystems() {
   browser_init.asset_manager = m_asset_manager.get();
   browser_init.thumbnail_generator = m_thumbnail_generator.get();
   m_content_browser->initialize(browser_init);
+  AssetImportServiceInit import_init{};
+  import_init.file_system = m_file_system.get();
+  import_init.asset_registry = m_asset_registry.get();
+  import_init.content_browser = m_content_browser.get();
+  m_asset_import->initialize(import_init);
   m_content_browser->startFileWatch();
 
   // m_physics_manager = eastl::make_shared<PhysicsManager>();
@@ -152,6 +170,16 @@ void RuntimeGlobalContext::shutdownSystems() {
     m_content_browser.reset();
   }
 
+  if (m_asset_import) {
+    m_asset_import->shutdown();
+    m_asset_import.reset();
+  }
+
+  if (m_asset_compiler) {
+    m_asset_compiler->shutdown();
+    m_asset_compiler.reset();
+  }
+
   if (m_thumbnail_generator) {
     m_thumbnail_generator->shutdown();
     m_thumbnail_generator.reset();
@@ -169,6 +197,11 @@ void RuntimeGlobalContext::shutdownSystems() {
   if (m_asset_manager) {
     m_asset_manager->shutdown();
     m_asset_manager.reset();
+  }
+
+  if (m_asset_registry) {
+    m_asset_registry->shutdown();
+    m_asset_registry.reset();
   }
 
   if (m_file_system) {

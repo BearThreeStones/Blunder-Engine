@@ -12,6 +12,7 @@
 #include <glm/glm.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/platform/file_system/file_system.h"
 
 namespace Blunder {
@@ -322,13 +323,18 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMeshPrimitive(
     if (!cgltf_accessor_read_float(position_accessor, vertex_index, position, 3)) {
       return nullptr;
     }
-    vertices[vertex_index].position =
-        glm::vec3(position[0], position[1], position[2]);
+    vertices[vertex_index].position = transformPointGltfToEngine(
+        glm::vec3(position[0], position[1], position[2]));
 
     if (normal_accessor != nullptr) {
-      float normal[3] = {0.0f, 0.0f, 1.0f};
+      float normal[3] = {0.0f, 1.0f, 0.0f};
       if (cgltf_accessor_read_float(normal_accessor, vertex_index, normal, 3)) {
-        vertices[vertex_index].normal = glm::vec3(normal[0], normal[1], normal[2]);
+        const Vec3 transformed_normal = transformDirectionGltfToEngine(
+            glm::vec3(normal[0], normal[1], normal[2]));
+        const float normal_length = glm::length(transformed_normal);
+        if (normal_length > 1e-6f) {
+          vertices[vertex_index].normal = transformed_normal / normal_length;
+        }
       }
     }
 
@@ -342,8 +348,10 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMeshPrimitive(
     if (tangent_accessor != nullptr) {
       float tangent[4] = {1.0f, 0.0f, 0.0f, 1.0f};
       if (cgltf_accessor_read_float(tangent_accessor, vertex_index, tangent, 4)) {
+        const Vec3 tangent_xyz = transformDirectionGltfToEngine(
+            glm::vec3(tangent[0], tangent[1], tangent[2]));
         vertices[vertex_index].tangent =
-            glm::vec4(tangent[0], tangent[1], tangent[2], tangent[3]);
+            glm::vec4(glm::normalize(tangent_xyz), tangent[3]);
       }
     }
   }

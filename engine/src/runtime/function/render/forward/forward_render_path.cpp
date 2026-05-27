@@ -1,6 +1,5 @@
 #include "runtime/function/render/forward/forward_render_path.h"
 
-
 #include <cmath>
 #include <vulkan/vulkan.h>
 
@@ -13,6 +12,7 @@
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/rhi_types.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
@@ -34,31 +34,6 @@ struct ShadowUniformData {
   glm::mat4 light_view;
   glm::mat4 light_projection;
 };
-
-struct GridUniformData {
-  glm::mat4 view;
-  glm::mat4 projection;
-  glm::vec4 camera_position_and_proj_type;
-  glm::vec4 camera_forward_and_far_clip;
-  glm::vec4 plane_origin;
-  glm::vec4 plane_axis_u;
-  glm::vec4 plane_axis_v;
-  glm::vec4 params0;
-  glm::vec4 params1;
-  glm::vec4 params2;
-};
-
-constexpr float k_grid_major_scale = 10.0f;
-constexpr float k_grid_half_extent = 120.0f;
-constexpr float k_grid_base_alpha = 0.22f;
-constexpr float k_grid_minor_alpha = 0.12f;
-constexpr float k_grid_edge_fade = 1.45f;
-constexpr float k_grid_angle_fade = 1.65f;
-constexpr float k_grid_far_fade = 1.0f;
-constexpr float k_grid_stipple_scale = 1.5f;
-constexpr float k_grid_stipple_duty = 0.6f;
-constexpr uint32_t k_grid_iterations = 3;
-constexpr uint32_t k_grid_lines_per_axis = 96;
 
 uint32_t opaqueDescriptorIndex(uint32_t slot_index, uint32_t frame_index) {
   return slot_index * VulkanSync::k_max_frames_in_flight + frame_index;
@@ -155,43 +130,26 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   ASSERT(init.vk_context);
   ASSERT(init.vk_allocator);
   ASSERT(init.offscreen);
-  ASSERT(init.grid_pipeline);
   ASSERT(init.opaque_pipeline);
 
   m_vk_context = init.vk_context;
   m_vk_allocator = init.vk_allocator;
   m_offscreen = init.offscreen;
-  m_grid_pipeline = init.grid_pipeline;
   m_opaque_pipeline = init.opaque_pipeline;
   m_shadow_pipeline = init.shadow_pipeline;
   m_transparent_pipeline = init.transparent_pipeline;
   m_shadow_map = init.shadow_map;
   m_fallback_texture = init.fallback_texture;
+  m_overlay_system = init.overlay_system;
 
   const uint32_t frames = VulkanSync::k_max_frames_in_flight;
   const uint32_t opaque_slots = k_max_opaque_draws;
   const uint32_t total_opaque_sets = opaque_slots * frames;
 
-  m_grid_uniform_buffers.resize(frames);
-  for (uint32_t i = 0; i < frames; ++i) {
-    m_grid_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
-    m_grid_uniform_buffers[i]->create(m_vk_allocator, sizeof(GridUniformData),
-                                     VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                     VMA_MEMORY_USAGE_CPU_TO_GPU);
-  }
-
   m_opaque_uniform_buffers.resize(total_opaque_sets);
   for (uint32_t i = 0; i < total_opaque_sets; ++i) {
     m_opaque_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
     m_opaque_uniform_buffers[i]->create(m_vk_allocator, sizeof(ForwardMeshUniformData),
-                                        VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                        VMA_MEMORY_USAGE_CPU_TO_GPU);
-  }
-
-  m_shadow_uniform_buffers.resize(total_opaque_sets);
-  for (uint32_t i = 0; i < total_opaque_sets; ++i) {
-    m_shadow_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
-    m_shadow_uniform_buffers[i]->create(m_vk_allocator, sizeof(ShadowUniformData),
                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                         VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
@@ -268,6 +226,14 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   }
 
   if (m_shadow_pipeline != nullptr) {
+    m_shadow_uniform_buffers.resize(total_opaque_sets);
+    for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+      m_shadow_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
+      m_shadow_uniform_buffers[i]->create(m_vk_allocator, sizeof(ShadowUniformData),
+                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                          VMA_MEMORY_USAGE_CPU_TO_GPU);
+    }
+
     VkDescriptorPoolSize shadow_pool_size{};
     shadow_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     shadow_pool_size.descriptorCount = total_opaque_sets;
@@ -323,59 +289,6 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
       vkUpdateDescriptorSets(device, 1, &ubo_write, 0, nullptr);
     }
   }
-
-  VkDescriptorPoolSize grid_pool_size{};
-  grid_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  grid_pool_size.descriptorCount = frames;
-
-  VkDescriptorPoolCreateInfo grid_pool_info{};
-  grid_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  grid_pool_info.poolSizeCount = 1;
-  grid_pool_info.pPoolSizes = &grid_pool_size;
-  grid_pool_info.maxSets = frames;
-  VkDescriptorPool grid_pool = VK_NULL_HANDLE;
-  const VkResult grid_pool_result =
-      vkCreateDescriptorPool(device, &grid_pool_info, nullptr, &grid_pool);
-  if (grid_pool_result != VK_SUCCESS) {
-    LOG_FATAL("[ForwardRenderPath] grid vkCreateDescriptorPool failed: {}",
-              static_cast<int>(grid_pool_result));
-  }
-  m_grid_descriptor_pool = reinterpret_cast<uintptr_t>(grid_pool);
-
-  const VkDescriptorSetLayout grid_layout =
-      m_grid_pipeline->nativePipeline()->getDescriptorSetLayout();
-  eastl::vector<VkDescriptorSetLayout> grid_layouts(frames, grid_layout);
-  VkDescriptorSetAllocateInfo grid_alloc_info{};
-  grid_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  grid_alloc_info.descriptorPool = grid_pool;
-  grid_alloc_info.descriptorSetCount = frames;
-  grid_alloc_info.pSetLayouts = grid_layouts.data();
-
-  eastl::vector<VkDescriptorSet> grid_sets(frames);
-  const VkResult grid_set_result =
-      vkAllocateDescriptorSets(device, &grid_alloc_info, grid_sets.data());
-  if (grid_set_result != VK_SUCCESS) {
-    LOG_FATAL("[ForwardRenderPath] grid vkAllocateDescriptorSets failed: {}",
-              static_cast<int>(grid_set_result));
-  }
-  m_grid_descriptor_sets.resize(frames);
-  for (uint32_t i = 0; i < frames; ++i) {
-    m_grid_descriptor_sets[i] = reinterpret_cast<uintptr_t>(grid_sets[i]);
-
-    VkDescriptorBufferInfo grid_buffer_info{};
-    grid_buffer_info.buffer = m_grid_uniform_buffers[i]->getBuffer();
-    grid_buffer_info.offset = 0;
-    grid_buffer_info.range = sizeof(GridUniformData);
-
-    VkWriteDescriptorSet grid_write{};
-    grid_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    grid_write.dstSet = grid_sets[i];
-    grid_write.dstBinding = 0;
-    grid_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    grid_write.descriptorCount = 1;
-    grid_write.pBufferInfo = &grid_buffer_info;
-    vkUpdateDescriptorSets(device, 1, &grid_write, 0, nullptr);
-  }
 }
 
 void ForwardRenderPath::shutdown() {
@@ -401,14 +314,6 @@ void ForwardRenderPath::shutdown() {
   }
   m_shadow_uniform_buffers.clear();
 
-  for (eastl::unique_ptr<VulkanBuffer>& buf : m_grid_uniform_buffers) {
-    if (buf) {
-      buf->destroy();
-      buf.reset();
-    }
-  }
-  m_grid_uniform_buffers.clear();
-
   m_opaque_descriptor_sets.clear();
   if (m_opaque_descriptor_pool != 0) {
     vkDestroyDescriptorPool(
@@ -425,20 +330,12 @@ void ForwardRenderPath::shutdown() {
     m_shadow_descriptor_pool = 0;
   }
 
-  m_grid_descriptor_sets.clear();
-  if (m_grid_descriptor_pool != 0) {
-    vkDestroyDescriptorPool(
-        device, reinterpret_cast<VkDescriptorPool>(m_grid_descriptor_pool),
-        nullptr);
-    m_grid_descriptor_pool = 0;
-  }
-
+  m_overlay_system = nullptr;
   m_fallback_texture = nullptr;
   m_shadow_map = nullptr;
   m_shadow_pipeline = nullptr;
   m_transparent_pipeline = nullptr;
   m_opaque_pipeline = nullptr;
-  m_grid_pipeline = nullptr;
   m_offscreen = nullptr;
   m_vk_allocator = nullptr;
   m_vk_context = nullptr;
@@ -455,94 +352,6 @@ void ForwardRenderPath::bindViewportScissor(VkCommandBuffer cmd, uint32_t width,
   VkRect2D scissor{};
   scissor.extent = {width, height};
   vkCmdSetScissor(cmd, 0, 1, &scissor);
-}
-
-void ForwardRenderPath::drawGrid(VkCommandBuffer cmd,
-                                 const ForwardFrameState& frame_state,
-                                 uint32_t frame_index) {
-  GridUniformData grid_ubo{};
-  grid_ubo.view = frame_state.view;
-  grid_ubo.projection = frame_state.projection;
-  grid_ubo.camera_position_and_proj_type = glm::vec4(
-      frame_state.camera_position,
-      frame_state.projection_mode == EditorCamera::ProjectionMode::orthographic
-          ? 1.0f
-          : 0.0f);
-  grid_ubo.camera_forward_and_far_clip =
-      glm::vec4(frame_state.camera_forward, frame_state.far_clip);
-
-  switch (frame_state.grid_plane) {
-    case ForwardGridPlane::xy:
-      grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-      grid_ubo.plane_axis_v = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
-      grid_ubo.plane_origin =
-          glm::vec4(0.0f, 0.0f, frame_state.camera_position.z, 1.0f);
-      break;
-    case ForwardGridPlane::yz:
-      grid_ubo.plane_axis_u = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
-      grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-      grid_ubo.plane_origin =
-          glm::vec4(frame_state.camera_position.x, 0.0f, 0.0f, 1.0f);
-      break;
-    case ForwardGridPlane::xz:
-    default:
-      grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
-      grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-      grid_ubo.plane_origin =
-          glm::vec4(0.0f, frame_state.camera_position.y, 0.0f, 1.0f);
-      break;
-  }
-
-  const float base_metric =
-      frame_state.projection_mode == EditorCamera::ProjectionMode::orthographic
-          ? frame_state.ortho_size
-          : 2.0f * std::tan(frame_state.vertical_fov * 0.5f) *
-                std::max(frame_state.camera_distance, frame_state.near_clip);
-  const float step_power =
-      std::floor(std::log10(std::max(base_metric * 0.1f, 0.0001f)));
-  const float base_step = std::pow(10.0f, step_power);
-  const float snapped_u =
-      std::floor(glm::dot(glm::vec3(grid_ubo.plane_origin),
-                          glm::vec3(grid_ubo.plane_axis_u)) /
-                 base_step) *
-      base_step;
-  const float snapped_v =
-      std::floor(glm::dot(glm::vec3(grid_ubo.plane_origin),
-                          glm::vec3(grid_ubo.plane_axis_v)) /
-                 base_step) *
-      base_step;
-  grid_ubo.plane_origin =
-      snapped_u * grid_ubo.plane_axis_u + snapped_v * grid_ubo.plane_axis_v;
-  grid_ubo.plane_origin.w = 1.0f;
-
-  grid_ubo.params1 = glm::vec4(k_grid_edge_fade, k_grid_angle_fade, k_grid_far_fade,
-                               k_grid_stipple_scale);
-  const uint32_t vertex_count = k_grid_lines_per_axis * 4u;
-
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_grid_pipeline->nativePipeline()->getGraphicsPipeline());
-  const VkDescriptorSet grid_descriptor_set = reinterpret_cast<VkDescriptorSet>(
-      m_grid_descriptor_sets[frame_index]);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_grid_pipeline->nativePipeline()->getPipelineLayout(), 0,
-                          1, &grid_descriptor_set, 0, nullptr);
-
-  for (uint32_t iteration = 0; iteration < k_grid_iterations; ++iteration) {
-    const float scale =
-        std::pow(k_grid_major_scale, static_cast<float>(iteration));
-    const float step = base_step * scale;
-    const float alpha_scale =
-        iteration == 0 ? k_grid_base_alpha : k_grid_minor_alpha / scale;
-    grid_ubo.params0 =
-        glm::vec4(step, k_grid_major_scale, k_grid_half_extent * scale,
-                  static_cast<float>(k_grid_lines_per_axis));
-    grid_ubo.params2 = glm::vec4(k_grid_stipple_duty, alpha_scale,
-                                 static_cast<float>(iteration), 0.0f);
-    m_grid_uniform_buffers[frame_index]->upload(&grid_ubo, sizeof(grid_ubo));
-    const float bias_scale = 1.0f + static_cast<float>(iteration) * 0.75f;
-    vkCmdSetDepthBias(cmd, -1.2f * bias_scale, 0.0f, -1.2f * bias_scale);
-    vkCmdDraw(cmd, vertex_count, 1, 0, 0);
-  }
 }
 
 namespace {
@@ -718,11 +527,19 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
 
   m_offscreen->beginRenderPass(command_list, clears, 2);
   bindViewportScissor(command_buffer, extent.width, extent.height);
-  drawGrid(command_buffer, frame_state, frame_index);
+
+  // Scene passes: opaque (depth write ON), then transparent (depth write OFF).
   drawOpaqueList(command_buffer, frame_state, opaque_draws, opaque_draw_count,
                  frame_index);
   drawTransparentList(command_buffer, frame_state, transparent_draws,
                       transparent_draw_count, frame_index);
+
+  // Overlay pass: draws grid, axes, wireframes, etc. after scene geometry.
+  // Overlays read the scene depth but do not write to it.
+  if (m_overlay_system != nullptr) {
+    m_overlay_system->draw(command_buffer);
+  }
+
   m_offscreen->endRenderPass(command_list);
   m_offscreen->markPostRenderPassShaderRead();
 }

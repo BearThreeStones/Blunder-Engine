@@ -2,12 +2,19 @@
 
 #include "EASTL/string.h"
 
+#include "runtime/function/scene/entity_id.h"
+
 namespace Blunder {
 
 class AssetManager;
 class FileSystem;
 class SceneInstance;
 class SceneSystem;
+
+struct SpawnAssetResult {
+  bool success{false};
+  EntityId spawned_entity{k_invalid_entity_id};
+};
 
 /// Tracks editable scene path, dirty state, and save to .scene.asset.
 class EditorSceneEditSystem final {
@@ -28,7 +35,14 @@ class EditorSceneEditSystem final {
   /// Loads a scene asset, sets it active, and resets editor selection.
   bool openScene(const eastl::string& virtual_path);
 
+  /// Spawns a mesh entity or opens a scene asset at the window position.
+  SpawnAssetResult spawnAssetAtWindowPosition(
+      const eastl::string& asset_virtual_path, float window_x, float window_y);
+
  private:
+  SpawnAssetResult spawnMeshAsset(const eastl::string& asset_virtual_path,
+                                  float window_x, float window_y);
+
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};
   SceneSystem* m_scene_system{nullptr};

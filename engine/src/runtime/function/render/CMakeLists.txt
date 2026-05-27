@@ -73,6 +73,21 @@ set(RENDER_SOURCES
     "function/render/vulkan/vulkan_texture.h"
     "function/render/debug/renderdoc_capture.cpp"
     "function/render/debug/renderdoc_capture.h"
+    "function/render/overlay/overlay_base.h"
+    "function/render/overlay/overlay_state.h"
+    "function/render/overlay/overlay_resources.h"
+    "function/render/overlay/overlay_system.cpp"
+    "function/render/overlay/overlay_system.h"
+    "function/render/overlay/grid_overlay.cpp"
+    "function/render/overlay/grid_overlay.h"
+    "function/render/overlay/axes_overlay.cpp"
+    "function/render/overlay/axes_overlay.h"
+    "function/render/overlay/wireframe_overlay.cpp"
+    "function/render/overlay/wireframe_overlay.h"
+    "function/render/overlay/origins_overlay.cpp"
+    "function/render/overlay/origins_overlay.h"
+    "function/render/overlay/overlay_anti_aliasing.cpp"
+    "function/render/overlay/overlay_anti_aliasing.h"
 )
 
 if(WIN32)

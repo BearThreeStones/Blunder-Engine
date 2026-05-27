@@ -2,6 +2,9 @@
 
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/scene_asset.h"
+#include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset_cook/mesh_cooker.h"
+#include "runtime/resource/asset_cook/texture_cooker.h"
 
 #include <cgltf.h>
 #include <spdlog/fmt/fmt.h>
@@ -186,6 +189,75 @@ bool parseMeshAssetSource(const eastl::string& json_text,
   return !out_source.empty();
 }
 
+bool endsWithSuffix(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  return value.compare(value.size() - suffix_length, suffix_length, suffix) ==
+         0;
+}
+
+bool isCookedAssetFresh(FileSystem* file_system, const std::filesystem::path& cooked_path,
+                        const std::filesystem::path& meta_path,
+                        const std::filesystem::path& source_path,
+                        const std::filesystem::path& descriptor_path) {
+  if (!file_system->exists(cooked_path) || !file_system->exists(meta_path)) {
+    return false;
+  }
+
+  CookedAssetMeta meta{};
+  if (!readCookMetaFile(meta_path, meta)) {
+    return false;
+  }
+
+  const uint64_t source_mtime = file_system->lastWriteTime(source_path);
+  const uint64_t descriptor_mtime = file_system->lastWriteTime(descriptor_path);
+  return meta.source_mtime == source_mtime &&
+         meta.descriptor_mtime == descriptor_mtime;
+}
+
+eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
+    FileSystem* file_system, const eastl::string& descriptor_key,
+    const std::filesystem::path& descriptor_absolute, const eastl::string& guid) {
+  const std::filesystem::path cooked_path = cookedMeshPath(*file_system, guid);
+  const std::filesystem::path meta_path = cookedMeshMetaPath(*file_system, guid);
+
+  eastl::string yaml_text;
+  if (!file_system->readText(descriptor_absolute, yaml_text)) {
+    return nullptr;
+  }
+
+  MeshAssetDescriptor descriptor{};
+  if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+    return nullptr;
+  }
+
+  const ResolvedContentPath source_resolved =
+      resolveContentPath(file_system, descriptor.source, true);
+  if (!isCookedAssetFresh(file_system, cooked_path, meta_path,
+                          source_resolved.absolute, descriptor_absolute)) {
+    return nullptr;
+  }
+
+  eastl::vector<MeshVertex> vertices;
+  eastl::vector<uint32_t> indices;
+  if (!readMeshCookFile(cooked_path, vertices, indices)) {
+    return nullptr;
+  }
+
+  Asset::Meta meta;
+  meta.virtual_path = descriptor_key;
+  meta.absolute_path = descriptor_absolute;
+  meta.source_timestamp = querySourceTimestamp(descriptor_absolute);
+
+  auto asset = eastl::make_shared<MeshAsset>(
+      eastl::move(meta), eastl::move(vertices), eastl::move(indices));
+  LOG_INFO("[AssetManager] loaded cooked Mesh {} ({})", descriptor_key.c_str(),
+           cooked_path.generic_string());
+  return asset;
+}
+
 bool isDataUri(const char* uri) {
   return uri != nullptr && std::strncmp(uri, "data:", 5) == 0;
 }
@@ -238,6 +310,64 @@ eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
   if (virtual_path.empty()) {
     LOG_ERROR("[AssetManager] loadTexture2D: empty path");
     return nullptr;
+  }
+
+  const eastl::string request_key = canonicalKey(virtual_path);
+  if (endsWithSuffix(request_key, ".texture.yaml")) {
+    const ResolvedContentPath descriptor_path =
+        resolveContentPath(m_file_system, virtual_path, false);
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_path.absolute, yaml_text)) {
+      LOG_ERROR("[AssetManager] loadTexture2D: cannot read texture descriptor {}",
+                descriptor_path.absolute.generic_string());
+      return nullptr;
+    }
+
+    TextureAssetDescriptor descriptor{};
+    if (!AssetYaml::parseTextureDescriptor(yaml_text, descriptor)) {
+      LOG_ERROR("[AssetManager] loadTexture2D: invalid texture descriptor {}",
+                descriptor_path.absolute.generic_string());
+      return nullptr;
+    }
+
+    const eastl::string& key = descriptor_path.canonical_key;
+    if (auto it = m_texture_cache.find(key); it != m_texture_cache.end()) {
+      if (auto cached = it->second.lock()) {
+        return cached;
+      }
+      m_texture_cache.erase(it);
+    }
+
+    const std::filesystem::path cooked_path =
+        cookedTexturePath(*m_file_system, descriptor.guid);
+    const std::filesystem::path meta_path =
+        cookedTextureMetaPath(*m_file_system, descriptor.guid);
+    const ResolvedContentPath source_resolved =
+        resolveContentPath(m_file_system, descriptor.source, true);
+
+    if (isCookedAssetFresh(m_file_system, cooked_path, meta_path,
+                           source_resolved.absolute, descriptor_path.absolute)) {
+      uint32_t width = 0;
+      uint32_t height = 0;
+      eastl::vector<uint8_t> pixels;
+      if (readTextureCookFile(cooked_path, width, height, pixels)) {
+        Asset::Meta meta;
+        meta.virtual_path = key;
+        meta.absolute_path = descriptor_path.absolute;
+        meta.source_timestamp = querySourceTimestamp(descriptor_path.absolute);
+        auto asset = eastl::make_shared<Texture2DAsset>(
+            eastl::move(meta), width, height, 4u, eastl::move(pixels));
+        m_texture_cache[key] = asset;
+        LOG_INFO("[AssetManager] loaded cooked Texture2D {} ({})", key.c_str(),
+                 cooked_path.generic_string());
+        return asset;
+      }
+    }
+
+    LOG_WARN(
+        "[AssetManager] cooked texture missing/stale for {}, falling back to source",
+        key.c_str());
+    return loadTexture2D(descriptor.source);
   }
 
   const ResolvedContentPath resolved =
@@ -478,14 +608,44 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
   }
 
   const eastl::string request_key = canonicalKey(virtual_path);
-  const auto endsWithSuffix = [](const eastl::string& value, const char* suffix) {
-    const size_t suffix_length = std::strlen(suffix);
-    if (value.size() < suffix_length) {
-      return false;
+  if (endsWithSuffix(request_key, ".mesh.yaml")) {
+    const ResolvedContentPath descriptor_path =
+        resolveContentPath(m_file_system, virtual_path, false);
+    const eastl::string& key = descriptor_path.canonical_key;
+    if (auto it = m_mesh_cache.find(key); it != m_mesh_cache.end()) {
+      if (auto cached = it->second.lock()) {
+        return cached;
+      }
+      m_mesh_cache.erase(it);
     }
-    return value.compare(value.size() - suffix_length, suffix_length, suffix) ==
-           0;
-  };
+
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_path.absolute, yaml_text)) {
+      LOG_ERROR("[AssetManager] loadMesh: cannot read mesh descriptor {}",
+                descriptor_path.absolute.generic_string());
+      return nullptr;
+    }
+
+    MeshAssetDescriptor descriptor{};
+    if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+      LOG_ERROR("[AssetManager] loadMesh: invalid mesh descriptor {}",
+                descriptor_path.absolute.generic_string());
+      return nullptr;
+    }
+
+    if (auto cooked = loadCookedMeshAsset(m_file_system, key,
+                                          descriptor_path.absolute,
+                                          descriptor.guid)) {
+      m_mesh_cache[key] = cooked;
+      return cooked;
+    }
+
+    LOG_WARN(
+        "[AssetManager] cooked mesh missing/stale for {}, falling back to source",
+        key.c_str());
+    (void)descriptor.import;
+    return loadMesh(descriptor.source);
+  }
   if (endsWithSuffix(request_key, ".mesh.asset")) {
     const ResolvedContentPath descriptor_path =
         resolveContentPath(m_file_system, virtual_path, false);
@@ -502,6 +662,9 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
                 descriptor_path.absolute.generic_string());
       return nullptr;
     }
+    LOG_WARN(
+        "[AssetManager] legacy .mesh.asset descriptor {} — migrate to .mesh.yaml",
+        descriptor_path.absolute.generic_string());
     return loadMesh(source_path);
   }
 
