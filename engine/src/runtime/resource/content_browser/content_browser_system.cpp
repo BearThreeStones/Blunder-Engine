@@ -167,6 +167,7 @@ void ContentBrowserSystem::setActiveRoot(ContentRoot root) {
   m_expanded_folders[m_selected_folder] = true;
   rebuildVisibleTree();
   rebuildGrid();
+  rebuildPathSegments();
 }
 
 void ContentBrowserSystem::setSelectedFolder(const eastl::string& virtual_path) {
@@ -180,6 +181,7 @@ void ContentBrowserSystem::setSelectedFolder(const eastl::string& virtual_path) 
   m_expanded_folders[m_selected_folder] = true;
   rebuildVisibleTree();
   rebuildGrid();
+  rebuildPathSegments();
 }
 
 void ContentBrowserSystem::toggleFolderExpanded(
@@ -191,6 +193,11 @@ void ContentBrowserSystem::toggleFolderExpanded(
   const bool expanded_before = isFolderExpanded(folder);
   m_expanded_folders[folder] = !expanded_before;
   rebuildVisibleTree();
+}
+
+void ContentBrowserSystem::setSearchFilter(const eastl::string& filter) {
+  m_search_filter = filter;
+  rebuildGrid();
 }
 
 bool ContentBrowserSystem::isFolderExpanded(
@@ -268,29 +275,57 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
   m_expanded_folders[m_selected_folder] = true;
   rebuildVisibleTree();
   rebuildGrid();
+  rebuildPathSegments();
   return stats;
 }
 
 void ContentBrowserSystem::rebuildGrid() {
   m_grid_items.clear();
-  if (m_selected_folder.empty()) {
+  if (m_selected_folder.empty() && m_search_filter.empty()) {
     return;
   }
 
-  for (const ContentEntry& entry : m_entries) {
-    if (entry.is_directory) {
-      continue;
+  const bool searching = !m_search_filter.empty();
+
+  eastl::string filter_lower;
+  if (searching) {
+    filter_lower = m_search_filter;
+    for (char& c : filter_lower) {
+      if (c >= 'A' && c <= 'Z') {
+        c = static_cast<char>(c - 'A' + 'a');
+      }
     }
+  }
+
+  eastl::vector<ContentBrowserGridItem> dir_items;
+  eastl::vector<ContentBrowserGridItem> file_items;
+
+  for (const ContentEntry& entry : m_entries) {
     if (rootFromVirtualPath(entry.virtual_path) != m_active_root) {
       continue;
     }
-    const eastl::string parent = parentVirtualPath(entry.virtual_path);
-  eastl::string normalized_parent = parent;
-    if (!normalized_parent.empty() && !endsWith(normalized_parent, "/")) {
-      normalized_parent.push_back('/');
-    }
-    if (normalized_parent != m_selected_folder) {
-      continue;
+
+    if (searching) {
+      // Global search: case-insensitive substring match on display name.
+      eastl::string name_lower = displayNameFromPath(entry.virtual_path);
+      for (char& c : name_lower) {
+        if (c >= 'A' && c <= 'Z') {
+          c = static_cast<char>(c - 'A' + 'a');
+        }
+      }
+      if (name_lower.find(filter_lower.c_str()) == eastl::string::npos) {
+        continue;
+      }
+    } else {
+      // Show direct children of the selected folder.
+      const eastl::string parent = parentVirtualPath(entry.virtual_path);
+      eastl::string normalized_parent = parent;
+      if (!normalized_parent.empty() && !endsWith(normalized_parent, "/")) {
+        normalized_parent.push_back('/');
+      }
+      if (normalized_parent != m_selected_folder) {
+        continue;
+      }
     }
 
     ContentBrowserGridItem item{};
@@ -298,13 +333,67 @@ void ContentBrowserSystem::rebuildGrid() {
     item.display_name = displayNameFromPath(entry.virtual_path);
     item.thumbnail_cache_path = entry.thumbnail_cache_path;
     item.thumbnail_status = entry.thumbnail_status;
-    m_grid_items.push_back(item);
+    item.is_directory = entry.is_directory;
+
+    if (entry.is_directory) {
+      dir_items.push_back(item);
+    } else {
+      file_items.push_back(item);
+    }
   }
 
-  std::sort(m_grid_items.begin(), m_grid_items.end(),
+  // Sort: directories first (alphabetical), then files (alphabetical).
+  std::sort(dir_items.begin(), dir_items.end(),
             [](const ContentBrowserGridItem& a, const ContentBrowserGridItem& b) {
               return a.display_name < b.display_name;
             });
+  std::sort(file_items.begin(), file_items.end(),
+            [](const ContentBrowserGridItem& a, const ContentBrowserGridItem& b) {
+              return a.display_name < b.display_name;
+            });
+
+  m_grid_items.reserve(dir_items.size() + file_items.size());
+  m_grid_items.insert(m_grid_items.end(), dir_items.begin(), dir_items.end());
+  m_grid_items.insert(m_grid_items.end(), file_items.begin(), file_items.end());
+}
+
+void ContentBrowserSystem::rebuildPathSegments() {
+  m_path_segments.clear();
+  if (m_selected_folder.empty()) {
+    return;
+  }
+  size_t pos = 0;
+  while (pos < m_selected_folder.size()) {
+    size_t slash = m_selected_folder.find('/', pos);
+    if (slash == eastl::string::npos) {
+      ContentBrowserPathSegment seg;
+      seg.virtual_path = m_selected_folder;
+      seg.display_name = m_selected_folder.substr(pos);
+      if (!seg.display_name.empty()) {
+        m_path_segments.push_back(seg);
+      }
+      break;
+    }
+    ContentBrowserPathSegment seg;
+    seg.virtual_path = m_selected_folder.substr(0, slash + 1);
+    seg.display_name = m_selected_folder.substr(pos, slash - pos);
+    if (!seg.display_name.empty()) {
+      m_path_segments.push_back(seg);
+    }
+    pos = slash + 1;
+  }
+}
+
+eastl::string ContentBrowserSystem::statusText() const {
+  char buf[64];
+  const size_t count = m_grid_items.size();
+  if (!m_search_filter.empty()) {
+    std::snprintf(buf, sizeof(buf), "%zu items (filtered)",
+                  count);
+  } else {
+    std::snprintf(buf, sizeof(buf), "%zu items", count);
+  }
+  return eastl::string(buf);
 }
 
 void ContentBrowserSystem::rebuildVisibleTree() {

@@ -12,8 +12,6 @@
 #include "runtime/platform/input/input_system.h"
 // #include "runtime/function/particle/particle_manager.h"
 // #include "runtime/function/physics/physics_manager.h"
-// #include "runtime/function/render/debugdraw/debug_draw_manager.h"
-// #include "runtime/function/render/render_debug_config.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -126,18 +124,9 @@ void RuntimeGlobalContext::startSystems() {
 
   // m_particle_manager = eastl::make_shared<ParticleManager>();
   // m_particle_manager->initialize();
-
-  // m_debugdraw_manager = eastl::make_shared<DebugDrawManager>();
-  // m_debugdraw_manager->initialize();
-
-  // m_render_debug_config = eastl::make_shared<RenderDebugConfig>();
 }
 
 void RuntimeGlobalContext::shutdownSystems() {
-  // m_render_debug_config.reset();
-
-  // m_debugdraw_manager.reset();
-
   m_layer_stack.reset();
 
   m_viewport_presenter.reset();

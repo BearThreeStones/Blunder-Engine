@@ -6,13 +6,9 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/core/layer/layer.h"
 #include "runtime/core/layer/layer_stack.h"
-// #include "runtime/function/framework/world/world_manager.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/input/input_system.h"
-// #include "runtime/function/particle/particle_manager.h"
-// #include "runtime/function/physics/physics_manager.h"
-// #include "runtime/function/render/debugdraw/debug_draw_manager.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
@@ -22,7 +18,6 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/core/event/mouse_event.h"
-#include "runtime/function/slint/slint_system.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 
@@ -151,7 +146,6 @@ void BlunderEngine::onWin32ModalResizeBegin() {
   if (g_runtime_global_context.m_slint_system) {
     g_runtime_global_context.m_slint_system->notifyWindowResizeActivity();
   }
-  LOG_DEBUG("[BlunderEngine] Win32 modal resize begin");
 }
 
 void BlunderEngine::onWin32ModalResizeEnd() {
@@ -162,7 +156,6 @@ void BlunderEngine::onWin32ModalResizeEnd() {
     g_runtime_global_context.m_slint_system->setWin32SizeModalActive(false);
   }
   m_pending_finalize_window_resize = true;
-  LOG_DEBUG("[BlunderEngine] Win32 modal resize end queued");
 }
 
 void BlunderEngine::finalizePendingWindowResize() {
@@ -177,7 +170,6 @@ void BlunderEngine::finalizePendingWindowResize() {
     // deferred for subsequent frames (avoids one mega-stall frame on release).
     slint->finishLiveResizeModal();
   }
-  LOG_DEBUG("[BlunderEngine] resize layout committed");
 }
 
 void BlunderEngine::processSdlEvent(const SDL_Event& event) {
@@ -194,7 +186,6 @@ void BlunderEngine::processSdlEvent(const SDL_Event& event) {
 void BlunderEngine::startEngine() {
   g_runtime_global_context.startSystems();
 
-  // Register event callback for testing
   g_runtime_global_context.m_window_system->setEventCallback(
       [](Event& e) { onEvent(e); });
 
@@ -219,12 +210,6 @@ void BlunderEngine::onEvent(Event& e) {
     g_runtime_global_context.m_render_system->onEvent(e);
   }
 
-  // Log events for debugging (skip high-frequency or noisy types)
-  if (e.getEventType() != EventType::MouseMoved &&
-      e.getEventType() != EventType::KeyTyped && !e.handled) {
-    LOG_DEBUG("[Event] {}", e.toString().c_str());
-  }
-
   // Engine-level event handling
   EventDispatcher dispatcher(e);
 
@@ -233,41 +218,13 @@ void BlunderEngine::onEvent(Event& e) {
     return true;
   });
 
-  dispatcher.dispatch<WindowResizeEvent>([](WindowResizeEvent& event) {
-    LOG_DEBUG("[Event] Window resized to {}x{}", event.getWidth(),
-              event.getHeight());
-    return true;
-  });
-
   dispatcher.dispatch<KeyPressedEvent>([](KeyPressedEvent& event) {
-    if (!event.isRepeat()) {
-      LOG_DEBUG(
-          "[Event] Key pressed: key={} scancode={} ctrl={} shift={} alt={}",
-          event.getKeyCode(), event.getScanCode(), event.isCtrlDown(),
-          event.isShiftDown(), event.isAltDown());
-    }
     if (!event.isRepeat() && event.isCtrlDown() &&
         event.getKeyCode() == SDLK_S &&
         g_runtime_global_context.m_editor_scene_edit) {
       g_runtime_global_context.m_editor_scene_edit->saveActiveScene();
       return true;
     }
-    return false;
-  });
-
-  dispatcher.dispatch<KeyReleasedEvent>([](KeyReleasedEvent& event) {
-    LOG_DEBUG("[Event] Key released: key={} scancode={}", event.getKeyCode(),
-              event.getScanCode());
-    return false;
-  });
-
-  dispatcher.dispatch<KeyTypedEvent>([](KeyTypedEvent& event) {
-    LOG_DEBUG("[Event] Text input (UTF-8): {}", event.getUtf8().c_str());
-    return false;
-  });
-
-  dispatcher.dispatch<MouseMovedEvent>([](MouseMovedEvent& event) {
-    // LOG_DEBUG("[Event] Mouse moved: x={}, y={}", event.getX(), event.getY());
     return false;
   });
 

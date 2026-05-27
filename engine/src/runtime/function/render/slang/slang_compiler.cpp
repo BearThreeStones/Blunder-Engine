@@ -45,8 +45,6 @@ eastl::string readFileToString(const char* path) {
       file.seekg(0);
       file.read(content.data(), file_size);
       if (file) {
-        LOG_DEBUG("[SlangCompiler] loaded shader source: {}",
-                  candidate.string());
         return content;
       }
     }

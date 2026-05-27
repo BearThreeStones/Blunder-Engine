@@ -689,6 +689,15 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
             syncContentBrowser();
 
             const eastl::string path_str(path.data());
+
+            // If the clicked item is a directory, navigate into it.
+            const ContentEntry* entry = browser_system.findEntry(path_str);
+            if (entry && entry->is_directory) {
+              browser_system.setSelectedFolder(path_str);
+              syncContentBrowser();
+              return;
+            }
+
             constexpr const char* k_scene_suffix = ".scene.asset";
             const size_t suffix_len = 14u;
             if (path_str.size() >= suffix_len &&
@@ -707,6 +716,26 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
             }
           }
         });
+
+    component->on_browser_search_changed(
+        [this](const slint::SharedString& text) {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->setSearchFilter(
+          eastl::string(text.data()));
+      syncContentBrowser();
+    });
+
+    component->on_browser_path_segment_clicked(
+        [this](const slint::SharedString& path) {
+      if (!g_runtime_global_context.m_content_browser) {
+        return;
+      }
+      g_runtime_global_context.m_content_browser->setSelectedFolder(
+          eastl::string(path.data()));
+      syncContentBrowser();
+    });
 
     component->show();
     m_window_component = component;
@@ -1356,9 +1385,28 @@ void SlintSystem::syncContentBrowser() {
       slint_row.path = slint::SharedString(item.virtual_path.c_str());
       slint_row.name = slint::SharedString(item.display_name.c_str());
       slint_row.thumb = loadThumbnailImage(item.thumbnail_cache_path);
+      slint_row.is_dir = item.is_directory;
       grid_model->push_back(slint_row);
     }
     m_window_component->operator->()->set_browser_grid_rows(grid_model);
+
+    // Path segments (breadcrumb).
+    auto path_model =
+        std::make_shared<slint::VectorModel<BrowserPathSegment>>();
+    for (const ContentBrowserPathSegment& seg :
+         browser_system.pathSegments()) {
+      BrowserPathSegment slint_seg{};
+      slint_seg.path = slint::SharedString(seg.virtual_path.c_str());
+      slint_seg.name = slint::SharedString(seg.display_name.c_str());
+      path_model->push_back(slint_seg);
+    }
+    m_window_component->operator->()->set_browser_path_segments(path_model);
+
+    // Status text and selected folder.
+    m_window_component->operator->()->set_browser_status_text(
+        slint::SharedString(browser_system.statusText().c_str()));
+    m_window_component->operator->()->set_browser_selected_folder_path(
+        slint::SharedString(browser_system.selectedFolder().c_str()));
 
     const ContentBrowserDragController& drag = browser_system.dragController();
     m_window_component->operator->()->set_browser_drag_active(drag.isDragging());
@@ -1556,14 +1604,15 @@ bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
   constexpr float k_tree_row_pitch_px = 24.0f;
   const float tree_panel_height =
       static_cast<float>(ui.get_browser_tree_panel_height());
-  if (tree_panel_height <= 0.0f) {
+  const float tree_panel_width =
+      static_cast<float>(ui.get_browser_tree_panel_width());
+  if (tree_panel_height <= 0.0f || tree_panel_width <= 0.0f) {
     return false;
   }
   const bool in_browser_x =
       window_x >= static_cast<float>(browser_origin_x) &&
       window_x <
-          static_cast<float>(browser_origin_x +
-                             static_cast<int32_t>(browser_rect.width));
+          static_cast<float>(browser_origin_x) + tree_panel_width;
   const bool in_tree_band =
       in_browser_x && window_y >= static_cast<float>(tree_origin_y) &&
       window_y < static_cast<float>(tree_origin_y) + tree_panel_height;
@@ -1878,10 +1927,11 @@ void setWin32DockSplitterCursor(DockSplitterDrag kind) {
   switch (kind) {
     case DockSplitterDrag::leftVertical:
     case DockSplitterDrag::rightVertical:
+    case DockSplitterDrag::browserTreeVertical:
       cursor_id = IDC_SIZEWE;
       break;
     case DockSplitterDrag::hierarchyHorizontal:
-    case DockSplitterDrag::browserTreeHorizontal:
+    case DockSplitterDrag::bottomHorizontal:
       cursor_id = IDC_SIZENS;
       break;
     default:
@@ -1921,11 +1971,22 @@ DockSplitterDrag hitTestDockSplitterAt(const ViewportLogicalRect& vp,
     }
   }
 
-  if (kind == DockSplitterDrag::none && browser.width > 0 && tree_split_y > 0.0f) {
-    if (x >= static_cast<float>(browser.x) &&
-        x < static_cast<float>(browser.x + static_cast<int32_t>(browser.width)) &&
-        y >= tree_split_y - 3.0f && y <= tree_split_y + grab_px) {
-      kind = DockSplitterDrag::browserTreeHorizontal;
+  if (kind == DockSplitterDrag::none && browser.width > 0 && browser.height > 0) {
+    // Browser tree vertical splitter: test X position at left edge of grid area.
+    const float browser_x = static_cast<float>(browser.x);
+    const float browser_y = static_cast<float>(browser.y);
+    const float browser_h = static_cast<float>(browser.height);
+    const float tree_split_x = browser_x + tree_split_y;  // tree_split_y repurposed as tree-pane-width
+    if (y >= browser_y && y < browser_y + browser_h &&
+        x >= tree_split_x - 3.0f && x <= tree_split_x + grab_px) {
+      kind = DockSplitterDrag::browserTreeVertical;
+    }
+
+    // Bottom dock horizontal splitter: test Y position at top edge of browser.
+    if (kind == DockSplitterDrag::none &&
+        x >= browser_x && x < browser_x + static_cast<float>(browser.width) &&
+        y >= browser_y - grab_px && y <= browser_y + 3.0f) {
+      kind = DockSplitterDrag::bottomHorizontal;
     }
   }
   return kind;
@@ -1964,14 +2025,20 @@ DockSplitterDrag hitTestDockSplitterFromPaneWidths(const MainEditorWindow& ui,
   }
 
   const float browser_w = ui.get_browser_width();
-  const float tree_panel_h = ui.get_browser_tree_panel_height();
-  if (browser_w > 0.0f && tree_panel_h > 0.0f) {
+  const float tree_panel_w = ui.get_browser_tree_panel_width();
+  if (browser_w > 0.0f && tree_panel_w > 0.0f) {
     const float browser_x = ui.get_browser_origin_x();
-    const float tree_split_y =
-        static_cast<float>(resolveContentBrowserTreeOriginY(ui)) + tree_panel_h;
-    if (x >= browser_x && x < browser_x + browser_w && y >= tree_split_y - grab_px &&
-        y <= tree_split_y + 16.0f) {
-      return DockSplitterDrag::browserTreeHorizontal;
+    const float browser_y = ui.get_browser_origin_y();
+    const float browser_h = ui.get_browser_height();
+    const float tree_split_x = browser_x + tree_panel_w;
+    if (y >= browser_y && y < browser_y + browser_h &&
+        x >= tree_split_x - grab_px && x <= tree_split_x + 16.0f) {
+      return DockSplitterDrag::browserTreeVertical;
+    }
+    // Bottom horizontal splitter.
+    if (x >= browser_x && x < browser_x + browser_w &&
+        y >= browser_y - 16.0f && y <= browser_y + grab_px) {
+      return DockSplitterDrag::bottomHorizontal;
     }
   }
   return DockSplitterDrag::none;
@@ -2009,15 +2076,21 @@ DockSplitterDrag hitTestDockSplitterFromLayoutProperties(const MainEditorWindow&
     }
   }
 
-  const float browser_w = ui.get_browser_width();
-  const float tree_panel_h = ui.get_browser_tree_panel_height();
-  if (browser_w > 0.0f && tree_panel_h > 0.0f) {
-    const float browser_x = ui.get_browser_origin_x();
-    const float tree_split_y =
-        static_cast<float>(resolveContentBrowserTreeOriginY(ui)) + tree_panel_h;
-    if (slint_x >= browser_x && slint_x < browser_x + browser_w &&
-        slint_y >= tree_split_y - 4.0f && slint_y <= tree_split_y + grab_px) {
-      return DockSplitterDrag::browserTreeHorizontal;
+  const float browser_w2 = ui.get_browser_width();
+  const float tree_panel_w2 = ui.get_browser_tree_panel_width();
+  if (browser_w2 > 0.0f && tree_panel_w2 > 0.0f) {
+    const float browser_x2 = ui.get_browser_origin_x();
+    const float browser_y2 = ui.get_browser_origin_y();
+    const float browser_h2 = ui.get_browser_height();
+    const float tree_split_x = browser_x2 + tree_panel_w2;
+    if (slint_y >= browser_y2 && slint_y < browser_y2 + browser_h2 &&
+        slint_x >= tree_split_x - 4.0f && slint_x <= tree_split_x + grab_px) {
+      return DockSplitterDrag::browserTreeVertical;
+    }
+    // Bottom horizontal splitter.
+    if (slint_x >= browser_x2 && slint_x < browser_x2 + browser_w2 &&
+        slint_y >= browser_y2 - grab_px && slint_y <= browser_y2 + 4.0f) {
+      return DockSplitterDrag::bottomHorizontal;
     }
   }
   return DockSplitterDrag::none;
@@ -2072,10 +2145,10 @@ void SlintSystem::refreshDockSplitterHitCache() {
   }
   refreshDockSplitterGeometryFromUi();
   const MainEditorWindow& ui = *m_window_component->operator->();
-  const float tree_panel_h = ui.get_browser_tree_panel_height();
+  const float tree_panel_w = ui.get_browser_tree_panel_width();
   m_cached_tree_split_y =
-      tree_panel_h > 0.0f
-          ? static_cast<float>(resolveContentBrowserTreeOriginY(ui)) + tree_panel_h
+      tree_panel_w > 0.0f
+          ? tree_panel_w
           : 0.0f;
   m_dock_hit_cache_valid = true;
 }
@@ -2215,9 +2288,13 @@ bool SlintSystem::beginCppDockSplitterDragFromKind(DockSplitterDrag kind) {
       m_splitter_drag_mouse_start = pointer.y;
       m_splitter_drag_pane_start = ui.get_hierarchy_pane_height();
       break;
-    case DockSplitterDrag::browserTreeHorizontal:
+    case DockSplitterDrag::browserTreeVertical:
+      m_splitter_drag_mouse_start = pointer.x;
+      m_splitter_drag_pane_start = ui.get_browser_tree_panel_width();
+      break;
+    case DockSplitterDrag::bottomHorizontal:
       m_splitter_drag_mouse_start = pointer.y;
-      m_splitter_drag_pane_start = ui.get_browser_tree_panel_height();
+      m_splitter_drag_pane_start = ui.get_bottom_dock_height();
       break;
     default:
       m_dock_splitter_drag = DockSplitterDrag::none;
@@ -2287,15 +2364,24 @@ void SlintSystem::updateCppDockSplitterDrag(float window_x, float window_y) {
                      120.0f, max_pane);
       break;
     }
-    case DockSplitterDrag::browserTreeHorizontal: {
-      const float browser_body_h =
-          m_cached_browser_logical_rect.height > 0
-              ? static_cast<float>(m_cached_browser_logical_rect.height)
-              : static_cast<float>(logical_win[1]);
-      const float max_pane = eastl::max(80.0f, browser_body_h - 120.0f);
+    case DockSplitterDrag::browserTreeVertical: {
+      const float browser_body_w =
+          m_cached_browser_logical_rect.width > 0
+              ? static_cast<float>(m_cached_browser_logical_rect.width)
+              : editor_w;
+      const float max_pane = eastl::max(100.0f, browser_body_w - 200.0f);
       new_size =
-          clampFloat(m_splitter_drag_pane_start + (pointer.y - m_splitter_drag_mouse_start),
-                     80.0f, max_pane);
+          clampFloat(m_splitter_drag_pane_start + (pointer.x - m_splitter_drag_mouse_start),
+                     100.0f, max_pane);
+      break;
+    }
+    case DockSplitterDrag::bottomHorizontal: {
+      const float editor_h = static_cast<float>(eastl::max(logical_win[1], 1));
+      const float max_pane = eastl::max(120.0f, editor_h - 300.0f);
+      // Dragging up increases bottom dock height.
+      new_size =
+          clampFloat(m_splitter_drag_pane_start + (m_splitter_drag_mouse_start - pointer.y),
+                     120.0f, max_pane);
       break;
     }
     default:
@@ -2345,8 +2431,11 @@ void SlintSystem::applyDockPaneResize(DockSplitterDrag kind) {
     case DockSplitterDrag::hierarchyHorizontal:
       ui.set_hierarchy_pane_height(m_pending_dock_pane_size);
       break;
-    case DockSplitterDrag::browserTreeHorizontal:
-      ui.set_browser_tree_panel_height(m_pending_dock_pane_size);
+    case DockSplitterDrag::browserTreeVertical:
+      ui.set_browser_tree_panel_width(m_pending_dock_pane_size);
+      break;
+    case DockSplitterDrag::bottomHorizontal:
+      ui.set_bottom_dock_height(m_pending_dock_pane_size);
       break;
     default:
       break;
@@ -2592,11 +2681,6 @@ void SlintSystem::beginFrame() {
         m_resize_cooldown_frames = k_resize_cooldown_frames;
       } else if (m_resize_cooldown_frames > 0) {
         --m_resize_cooldown_frames;
-      }
-
-      if (resize_events_this_frame > 8u) {
-        LOG_DEBUG("[SlintSystem] coalesced {} resize SDL events this frame",
-                  resize_events_this_frame);
       }
 
       if (m_pending_win32_chrome_sync) {

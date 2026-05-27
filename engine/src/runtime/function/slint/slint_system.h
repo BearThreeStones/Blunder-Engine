@@ -23,7 +23,8 @@ enum class DockSplitterDrag : uint8_t {
   leftVertical,
   rightVertical,
   hierarchyHorizontal,
-  browserTreeHorizontal,
+  browserTreeVertical,
+  bottomHorizontal,
 };
 
 class MaterialAsset;

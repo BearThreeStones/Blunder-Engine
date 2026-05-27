@@ -415,8 +415,6 @@ void EditorCamera::pan() {
   const float pan_y = m_mouse_delta_accumulator.y * pan_scale;
   m_focal_point += m_right_direction * pan_x;
   m_focal_point += m_up_direction * pan_y;
-  LOG_DEBUG("[EditorCamera] pan focal=({}, {}, {})", m_focal_point.x,
-            m_focal_point.y, m_focal_point.z);
   m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
 }
 
@@ -426,8 +424,6 @@ void EditorCamera::zoom() {
   }
 
   m_focal_point += m_forward_direction * (m_scroll_delta_accumulator * k_dolly_speed);
-  LOG_DEBUG("[EditorCamera] dolly focal=({}, {}, {})", m_focal_point.x,
-            m_focal_point.y, m_focal_point.z);
   m_scroll_delta_accumulator = 0.0f;
 }
 

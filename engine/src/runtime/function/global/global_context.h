@@ -31,8 +31,6 @@ class SceneSystem;
 class WindowSystem;
 class LayerStack;
 // class ParticleManager;
-// class DebugDrawManager;
-// class RenderDebugConfig;
 
 struct EngineInitParams;
 
@@ -68,8 +66,6 @@ class RuntimeGlobalContext {
   eastl::unique_ptr<presenter::CpuRgba8ViewportPresenter> m_viewport_presenter;
   eastl::shared_ptr<LayerStack> m_layer_stack;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
-  // eastl::shared_ptr<DebugDrawManager> m_debugdraw_manager;
-  // eastl::shared_ptr<RenderDebugConfig> m_render_debug_config;
 };
 
 extern RuntimeGlobalContext g_runtime_global_context;

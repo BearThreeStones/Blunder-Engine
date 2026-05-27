@@ -1,5 +1,5 @@
 import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
-import { ContentBrowser, BrowserTreeRow, BrowserGridRow } from "content_browser.slint";
+import { ContentBrowser, BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { VerticalResizeHandle, HorizontalResizeHandle } from "resize_splitter.slint";
@@ -90,6 +90,7 @@ export component MainEditorWindow inherits Window {
     in-out property <length> left-dock-width: 240px;
     in-out property <length> right-dock-width: 320px;
     in-out property <length> hierarchy-pane-height: 180px;
+    in-out property <length> bottom-dock-height: 250px;
     in-out property <bool> dock-layout-drag-active: false;
     callback dock-layout-drag-changed(bool);
 
@@ -142,17 +143,22 @@ export component MainEditorWindow inherits Window {
 
     in-out property <[BrowserTreeRow]> browser-tree-rows: [];
     in-out property <[BrowserGridRow]> browser-grid-rows: [];
+    in-out property <[BrowserPathSegment]> browser-path-segments: [];
     in property <bool> browser-drag-active: false;
     in property <string> browser-drag-source-path: "";
     in property <string> browser-drop-highlight-path: "";
     in property <bool> browser-viewport-drop-active: false;
+    in property <string> browser-status-text: "0 items";
+    in property <string> browser-selected-folder-path: "";
 
     out property <length> browser-origin-x: content_browser.browser-origin-x;
     out property <length> browser-origin-y: content_browser.browser-origin-y;
     out property <length> browser-width: content_browser.browser-width;
     out property <length> browser-height: content_browser.browser-height;
     out property <length> browser-tree-origin-y: content_browser.tree-origin-y;
-    in-out property <length> browser-tree-panel-height <=> content_browser.tree-pane-height;
+    out property <length> browser-tree-panel-height: content_browser.tree-panel-height;
+    in-out property <length> browser-tree-panel-width <=> content_browser.tree-pane-width;
+    in-out property <length> browser-thumb-size <=> content_browser.thumb-size;
 
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
@@ -161,6 +167,8 @@ export component MainEditorWindow inherits Window {
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
     callback browser-item-release(string, float, float);
+    callback browser-search-changed(string);
+    callback browser-path-segment-clicked(string);
 
     in property <string> inspector-entity-name: "";
     in property <bool> inspector-has-selection: false;
@@ -246,47 +254,26 @@ export component MainEditorWindow inherits Window {
             }
         }
 
-        editor-body := HorizontalLayout {
+        main-split := VerticalLayout {
             vertical-stretch: 1;
+            spacing: 0px;
 
-            left-dock := VerticalLayout {
-                width: root.left-dock-width;
-                spacing: 0px;
+            editor-body := HorizontalLayout {
                 vertical-stretch: 1;
 
-                hierarchy_panel := HierarchyPanel {
-                    height: root.hierarchy-pane-height;
-                    tree-rows <=> root.hierarchy-tree-rows;
-                    selected-entity-id: root.hierarchy-selected-entity-id;
-                    entity-selected(id) => { root.hierarchy-entity-selected(id); }
-                    entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
-                }
-
-                hierarchy-splitter := HorizontalResizeHandle {
-                    pane-size: root.hierarchy-pane-height;
-                    min-pane: 120px;
-                    max-pane: Math.max(120px, left-dock.height - 200px);
-                }
-
-                content_browser := ContentBrowser {
-                    visible: !root.dock-layout-drag-active;
+                left-dock := VerticalLayout {
+                    width: root.left-dock-width;
+                    spacing: 0px;
                     vertical-stretch: 1;
-                    layout-drag-active: root.dock-layout-drag-active;
-                    tree-rows <=> root.browser-tree-rows;
-                    grid-rows <=> root.browser-grid-rows;
-                    drag-active: root.browser-drag-active;
-                    drag-source-path: root.browser-drag-source-path;
-                    drop-highlight-path: root.browser-drop-highlight-path;
-                    viewport-drop-active: root.browser-viewport-drop-active;
-                    folder-selected(path) => { root.browser-folder-selected(path); }
-                    folder-toggle(path) => { root.browser-folder-toggle(path); }
-                    refresh-requested => { root.browser-refresh-requested(); }
-                    import-requested => { root.browser-import-requested(); }
-                    item-press(path, x, y) => { root.browser-item-press(path, x, y); }
-                    item-move(path, x, y) => { root.browser-item-move(path, x, y); }
-                    item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+
+                    hierarchy_panel := HierarchyPanel {
+                        vertical-stretch: 1;
+                        tree-rows <=> root.hierarchy-tree-rows;
+                        selected-entity-id: root.hierarchy-selected-entity-id;
+                        entity-selected(id) => { root.hierarchy-entity-selected(id); }
+                        entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
+                    }
                 }
-            }
 
             left-splitter := VerticalResizeHandle {
                 pane-size: root.left-dock-width;
@@ -314,6 +301,7 @@ export component MainEditorWindow inherits Window {
                 pane-size: root.right-dock-width;
                 min-pane: 260px;
                 max-pane: Math.max(260px, editor-body.width - root.left-dock-width - 360px);
+
                 trailing-pane: true;
             }
 
@@ -516,7 +504,48 @@ export component MainEditorWindow inherits Window {
                     }
                 }
             }
-        }
+
+            } // end editor-body
+
+            // Bottom splitter between editor body and content browser
+            bottom-splitter := HorizontalResizeHandle {
+                pane-size: root.bottom-dock-height;
+                min-pane: 120px;
+                max-pane: Math.max(120px, main-split.height - 300px);
+                trailing-pane: true;
+            }
+
+            // Bottom dock: Content Browser (full width)
+            bottom-dock := Rectangle {
+                height: root.bottom-dock-height;
+                horizontal-stretch: 1;
+
+                content_browser := ContentBrowser {
+                    width: parent.width;
+                    height: parent.height;
+                    layout-drag-active: root.dock-layout-drag-active;
+                    tree-rows <=> root.browser-tree-rows;
+                    grid-rows <=> root.browser-grid-rows;
+                    path-segments <=> root.browser-path-segments;
+                    drag-active: root.browser-drag-active;
+                    drag-source-path: root.browser-drag-source-path;
+                    drop-highlight-path: root.browser-drop-highlight-path;
+                    viewport-drop-active: root.browser-viewport-drop-active;
+                    status-text: root.browser-status-text;
+                    selected-folder-path: root.browser-selected-folder-path;
+                    folder-selected(path) => { root.browser-folder-selected(path); }
+                    folder-toggle(path) => { root.browser-folder-toggle(path); }
+                    refresh-requested => { root.browser-refresh-requested(); }
+                    import-requested => { root.browser-import-requested(); }
+                    item-press(path, x, y) => { root.browser-item-press(path, x, y); }
+                    item-move(path, x, y) => { root.browser-item-move(path, x, y); }
+                    item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                    search-changed(text) => { root.browser-search-changed(text); }
+                    path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+                }
+            }
+
+        } // end main-split
 
         Rectangle {
             background: #1f1f1f;

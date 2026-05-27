@@ -23,6 +23,12 @@ struct ContentBrowserGridItem {
   eastl::string display_name;
   eastl::string thumbnail_cache_path;
   ThumbnailStatus thumbnail_status{ThumbnailStatus::None};
+  bool is_directory{false};
+};
+
+struct ContentBrowserPathSegment {
+  eastl::string virtual_path;
+  eastl::string display_name;
 };
 
 struct ContentBrowserRefreshStats {

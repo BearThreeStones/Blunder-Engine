@@ -50,6 +50,15 @@ class ContentBrowserSystem final {
     return m_grid_items;
   }
 
+  const eastl::vector<ContentBrowserPathSegment>& pathSegments() const {
+    return m_path_segments;
+  }
+
+  void setSearchFilter(const eastl::string& filter);
+  const eastl::string& searchFilter() const { return m_search_filter; }
+
+  eastl::string statusText() const;
+
   void toggleFolderExpanded(const eastl::string& virtual_path);
   void rebuildVisibleTree();
 
@@ -84,6 +93,7 @@ class ContentBrowserSystem final {
                                           const eastl::string& file_name) const;
 
   void rebuildGrid();
+  void rebuildPathSegments();
   void indexEntries();
   bool isFolderExpanded(const eastl::string& virtual_path) const;
 
@@ -98,6 +108,8 @@ class ContentBrowserSystem final {
   eastl::hash_map<eastl::string, bool> m_expanded_folders;
   eastl::vector<ContentBrowserTreeRow> m_tree_rows;
   eastl::vector<ContentBrowserGridItem> m_grid_items;
+  eastl::vector<ContentBrowserPathSegment> m_path_segments;
+  eastl::string m_search_filter;
   ContentBrowserDragController m_drag;
   ContentBrowserWatch m_file_watch;
   bool m_is_initialized{false};
