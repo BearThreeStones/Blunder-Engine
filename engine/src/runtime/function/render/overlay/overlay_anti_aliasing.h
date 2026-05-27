@@ -2,35 +2,24 @@
 
 #include <cstdint>
 
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
-
-#include "EASTL/unique_ptr.h"
 
 #include "runtime/function/render/overlay/overlay_base.h"
 
 namespace Blunder {
 
+class OffscreenRenderTarget;
+class OverlayLineTargets;
 class SlangCompiler;
 class VulkanAllocator;
-class VulkanBuffer;
 class VulkanContext;
 
 namespace rhi {
 class IOffscreenRenderTarget;
 }  // namespace rhi
 
-namespace vulkan_backend {
-class VulkanGraphicsPipeline;
-}  // namespace vulkan_backend
-
-/// Post-process anti-aliasing pass for overlay line rendering.
-///
-/// Similar to Blender's overlay AntiAliasing:
-/// - Reads a line direction/distance texture (line_tx)
-/// - Reads the overlay color texture (overlay_tx)
-/// - Composites AA-smoothed lines onto the final output
-///
-/// TODO: Implement fullscreen AA pass with line_tx MRT.
+/// Fullscreen composite of MRT overlay lines onto the main offscreen color.
 class OverlayAntiAliasing final : public Overlay {
  public:
   OverlayAntiAliasing() = default;
@@ -38,20 +27,48 @@ class OverlayAntiAliasing final : public Overlay {
 
   void initialize(VulkanContext* ctx, VulkanAllocator* alloc,
                   rhi::IOffscreenRenderTarget* offscreen,
-                  SlangCompiler* compiler);
+                  SlangCompiler* compiler,
+                  OverlayLineTargets* line_targets);
   void shutdown();
+  void resize(uint32_t width, uint32_t height);
 
   void begin_sync(OverlayResources& res, const OverlayState& state) override;
-
-  /// The AA pass draws during the output phase (after all overlays).
-  void draw_output(VkCommandBuffer cmd, const OverlayState& state);
+  void apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
+             const OverlayState& state);
 
  private:
-  VulkanContext* m_vk_context{nullptr};
-  VulkanAllocator* m_vk_allocator{nullptr};
+  void createRenderPass();
+  void destroyRenderPass();
+  void createPipeline();
+  void destroyPipeline();
+  void createDescriptorResources();
+  void destroyDescriptorResources();
+  void createSceneSnapshotResources();
+  void destroySceneSnapshotResources();
+  void copySceneSnapshot(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen);
+  void writeDescriptors();
 
-  // TODO: AA pipeline, line_tx texture, overlay_tx texture, descriptors
-  // eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_pipeline;
+  VulkanContext* m_context{nullptr};
+  VulkanAllocator* m_allocator{nullptr};
+  SlangCompiler* m_compiler{nullptr};
+  OverlayLineTargets* m_line_targets{nullptr};
+
+  uint32_t m_width{0};
+  uint32_t m_height{0};
+
+  VkRenderPass m_render_pass{VK_NULL_HANDLE};
+  VkSampler m_linear_sampler{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_descriptor_layout{VK_NULL_HANDLE};
+  VkPipelineLayout m_pipeline_layout{VK_NULL_HANDLE};
+  VkPipeline m_pipeline{VK_NULL_HANDLE};
+  VkDescriptorPool m_descriptor_pool{VK_NULL_HANDLE};
+  VkDescriptorSet m_descriptor_set{VK_NULL_HANDLE};
+  eastl::unique_ptr<class VulkanBuffer> m_uniform_buffer;
+
+  VkImage m_scene_snapshot_image{VK_NULL_HANDLE};
+  VmaAllocation m_scene_snapshot_allocation{VK_NULL_HANDLE};
+  VkImageView m_scene_snapshot_view{VK_NULL_HANDLE};
+  VkImageLayout m_scene_snapshot_layout{VK_IMAGE_LAYOUT_UNDEFINED};
 };
 
 }  // namespace Blunder

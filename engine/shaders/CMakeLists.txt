@@ -9,9 +9,12 @@ set(SHADER_CANDIDATES
     basic.slang
     pbr.slang
     grid.slang
+    grid_line.slang
     shadow_depth.slang
     ssao_generate.slang
     ssao_apply.slang
+    overlay_aa.slang
+    navigate_gizmo.slang
     ui_overlay.slang
 )
 

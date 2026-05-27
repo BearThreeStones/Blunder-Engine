@@ -136,12 +136,17 @@ SlangCompiler::ShaderResult SlangCompiler::compileShader(
                                           source_code.c_str(),
                                           diagnostics_blob.writeRef()));
 
+  eastl::string load_diag;
   if (diagnostics_blob && diagnostics_blob->getBufferSize() > 0) {
-    eastl::string diag = diagnosticsToString(diagnostics_blob.get());
-    LOG_WARN("[SlangCompiler] compilation diagnostics:\n{}", diag);
+    load_diag = diagnosticsToString(diagnostics_blob.get());
+    LOG_WARN("[SlangCompiler] compilation diagnostics:\n{}", load_diag);
   }
 
   if (!shader_module) {
+    if (!load_diag.empty()) {
+      LOG_ERROR("[SlangCompiler::compileShader] module load failed for {}:\n{}",
+                source_path, load_diag);
+    }
     LOG_FATAL("[SlangCompiler::compileShader] failed to load module from: {}",
               source_path);
   }

@@ -211,11 +211,16 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    ├─ assemble ForwardFrameState + opaque draw list (N mesh sources)
    └─► ForwardRenderPath::renderFrame
          ├─ RHI beginRenderPass (color + depth clear) on offscreen RT
-         ├─ grid (grid.slang, depth bias iterations)
          ├─ opaque draw list [0..N) (basic.slang, per-slot descriptors)
+         ├─ transparent meshes
+         ├─ scene overlays (axes, wireframe solids — depth-aware, main color)
          ├─ RHI endRenderPass → SHADER_READ_ONLY
-         ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
-         └─ RHI transitionToShaderRead
+   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT: grid lines → line_tx)
+   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang → main color)
+   ├─ SsaOPass::apply (composite AO onto main color)
+   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD: navigate gizmo)
+   ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
+   └─ RHI transitionToShaderRead
    ├─ submit + wait fence (single-frame stall)
    └─ map staging → memcpy → viewport presenter → Slint viewport Image
 
@@ -237,6 +242,16 @@ Key integration points:
 | UI composite + Present | `SlintSystem` + `SkiaRenderer` |
 | 3D viewport size     | Slint `viewport-width/height` ► `RenderSystem` |
 | 3D pixels into UI    | `SlintSystem::setViewportImage`  |
+
+**Overlay phases** (`OverlaySystem` — screen HUD must not run in the forward
+CLEAR pass; SSAO composite clears and rewrites main color):
+
+| Phase | API | When |
+|-------|-----|------|
+| Scene | `draw_scene_overlays` | Inside forward render pass |
+| Lines | `draw_overlay_lines` | After forward; MRT to `OverlayLineTargets` |
+| Line AA | `draw_overlay_aa` | Before SSAO; composites onto main color |
+| Screen | `draw_screen_overlays` | After SSAO; LOAD pass (`ScreenOverlayPass`) |
 
 Notes / known limitations:
 

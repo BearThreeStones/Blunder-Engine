@@ -40,6 +40,8 @@ class GridOverlay final : public Overlay {
   void initialize(VulkanContext* ctx, VulkanAllocator* alloc,
                   rhi::IOffscreenRenderTarget* offscreen,
                   SlangCompiler* compiler);
+  void initializeLinePipeline(VkRenderPass line_render_pass,
+                              SlangCompiler* compiler);
   void shutdown();
 
   void begin_sync(OverlayResources& res, const OverlayState& state) override;
@@ -50,6 +52,9 @@ class GridOverlay final : public Overlay {
   VulkanAllocator* m_vk_allocator{nullptr};
 
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_pipeline;
+  VkPipeline m_line_pipeline{VK_NULL_HANDLE};
+  VkPipelineLayout m_line_pipeline_layout{VK_NULL_HANDLE};
+  SlangCompiler* m_slang_compiler{nullptr};
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_uniform_buffers;
   uintptr_t m_descriptor_pool{0};
   eastl::vector<uintptr_t> m_descriptor_sets;

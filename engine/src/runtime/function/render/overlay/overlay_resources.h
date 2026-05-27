@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vulkan/vulkan.h>
+
 namespace Blunder {
 
 class VulkanContext;
@@ -16,6 +18,7 @@ struct OverlayResources {
   VulkanAllocator* vk_allocator{nullptr};
   SlangCompiler* slang_compiler{nullptr};
   rhi::IOffscreenRenderTarget* offscreen{nullptr};
+  VkRenderPass screen_render_pass{VK_NULL_HANDLE};
 };
 
 }  // namespace Blunder

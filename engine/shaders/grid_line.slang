@@ -265,7 +265,10 @@ VertexOutput vertexMain(uint vertexId: SV_VertexID)
 
 
 [shader("fragment")]
-float4 fragmentMain(VertexOutput input) : SV_Target
+void fragmentLineMrt(
+    VertexOutput input,
+    out float4 overlayColor : SV_Target0,
+    out float4 lineData : SV_Target1)
 {
     float3 cameraPos = ubo.cameraPositionAndProjType.xyz;
     bool isOrtho = ubo.cameraPositionAndProjType.w > 0.5;
@@ -328,78 +331,6 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     }
 
     // ---- Low-alpha stipple discard ----
-    {
-        const float dashWidth = 4.0;
-        const float fadeStart = 0.1;
-        const float fadeRcp = 1.0 / fadeStart;
-        float screenDist = length(input.sv_position.xy);
-        if (alpha < fadeStart && fadeRcp * alpha < frac(screenDist / dashWidth))
-        {
-            discard;
-        }
-    }
-
-    return float4(color, alpha);
-}
-
-// Legacy entry for binaries that still compile line MRT from grid.slang.
-// New builds use engine/shaders/grid_line.slang (same implementation).
-[shader("fragment")]
-void fragmentLineMrt(
-    VertexOutput input,
-    out float4 overlayColor : SV_Target0,
-    out float4 lineData : SV_Target1)
-{
-    float3 cameraPos = ubo.cameraPositionAndProjType.xyz;
-    bool isOrtho = ubo.cameraPositionAndProjType.w > 0.5;
-    float3 cameraForward = normalize(ubo.cameraForwardAndFarClip.xyz);
-    float farClip = max(ubo.cameraForwardAndFarClip.w, 0.001);
-    float alphaScale = ubo.params.z;
-
-    float3 toPixel = input.worldPos - cameraPos;
-    float dist = length(toPixel);
-
-    float alpha;
-    if (!isOrtho)
-    {
-        float lengthFade = 1.0 - min(1.0, length(input.coord));
-        alpha = lengthFade;
-        float3 V = normalize(toPixel);
-        float3 planeNormal = normalize(cross(ubo.planeAxisU.xyz, ubo.planeAxisV.xyz));
-        float viewDot = abs(dot(V, planeNormal));
-        alpha *= 1.0 - pow3f(1.0 - viewDot);
-        alpha *= 1.0 - smoothstep(0.0, 0.5 * farClip, dist - 0.5 * farClip);
-    }
-    else
-    {
-        float lengthFade = 1.0 - min(1.0, dot(input.coord, input.coord));
-        alpha = pow2f(lengthFade);
-    }
-
-    alpha *= input.alphaWeight;
-    alpha *= alphaScale;
-    alpha = saturate(alpha);
-
-    float3 gridColorMinor = float3(0.55, 0.60, 0.68);
-    float3 gridColorMajor = float3(0.68, 0.73, 0.80);
-    float3 color = lerp(gridColorMinor, gridColorMajor, input.emphasis);
-
-    if (input.axisHighlight == 1u)
-    {
-        color = ubo.axisColorX.xyz;
-        alpha = max(alpha, ubo.axisColorX.w);
-    }
-    else if (input.axisHighlight == 2u)
-    {
-        color = ubo.axisColorY.xyz;
-        alpha = max(alpha, ubo.axisColorY.w);
-    }
-    else if (input.axisHighlight == 3u)
-    {
-        color = ubo.axisColorZ.xyz;
-        alpha = max(alpha, ubo.axisColorZ.w);
-    }
-
     {
         const float dashWidth = 4.0;
         const float fadeStart = 0.1;

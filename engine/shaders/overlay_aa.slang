@@ -1,38 +1,57 @@
-// Overlay anti-aliasing post-process shader.
-// TODO: Implement Blender-style line AA compositing.
-//
-// This shader will read:
-//   - depth_tx: scene depth for edge-aware blending
-//   - color_tx: overlay color rendered by all overlay passes
-//   - line_tx:  per-pixel line direction + signed distance (MRT output)
-//
-// And output a smooth, anti-aliased composite of all overlay lines.
-//
-// References:
-//   Blender: source/blender/draw/engines/overlay/shaders/overlay_antialiasing_frag.glsl
-//   line_tx layout: RG = line direction (normalized), BA = signed distance + thickness
-
-struct VSOutput {
-  float4 position : SV_Position;
-  float2 uv       : TEXCOORD0;
+struct OverlayAaUniformData
+{
+    float4 screenParams; // xy = 1/size, zw unused
 };
 
-// Fullscreen triangle: 3 vertices procedurally generated.
+[[vk::binding(0, 0)]]
+ConstantBuffer<OverlayAaUniformData> ubo;
+
+[[vk::binding(1, 0)]]
+Texture2D<float4> sceneColorTexture;
+
+[[vk::binding(2, 0)]]
+SamplerState sceneColorSampler;
+
+[[vk::binding(3, 0)]]
+Texture2D<float4> overlayColorTexture;
+
+[[vk::binding(4, 0)]]
+SamplerState overlayColorSampler;
+
+[[vk::binding(5, 0)]]
+Texture2D<float4> lineDataTexture;
+
+[[vk::binding(6, 0)]]
+SamplerState lineDataSampler;
+
+struct VertexOutput
+{
+    float4 sv_position : SV_Position;
+    [[vk::location(0)]]
+    float2 uv;
+};
+
 [shader("vertex")]
-VSOutput vertexMain(uint vertexId : SV_VertexID) {
-  VSOutput output;
-  // Generate fullscreen triangle covering [-1,1] clip space.
-  float2 pos = float2((vertexId << 1) & 2, vertexId & 2);
-  output.position = float4(pos * 2.0 - 1.0, 0.0, 1.0);
-  output.uv = float2(pos.x, 1.0 - pos.y);
-  return output;
+VertexOutput vertexMain(uint vertexId : SV_VertexID)
+{
+    VertexOutput output;
+    float2 uv = float2((vertexId << 1) & 2, vertexId & 2);
+    output.sv_position = float4(uv * 2.0 - 1.0, 0.0, 1.0);
+    output.uv = uv * 0.5;
+    return output;
 }
 
-// TODO: bind color_tx, depth_tx, line_tx as Texture2D uniforms
-// TODO: implement AA blending logic
+float4 sampleOverlayAA(float2 uv)
+{
+    return overlayColorTexture.Sample(overlayColorSampler, uv);
+}
 
 [shader("fragment")]
-float4 fragmentMain(VSOutput input) : SV_Target {
-  // Passthrough placeholder — just output transparent.
-  return float4(0.0, 0.0, 0.0, 0.0);
+float4 fragmentMain(VertexOutput input) : SV_Target
+{
+    float2 uv = input.uv;
+    float4 scene = sceneColorTexture.Sample(sceneColorSampler, uv);
+    float4 overlay = sampleOverlayAA(uv);
+    float3 rgb = lerp(scene.rgb, overlay.rgb, overlay.a);
+    return float4(rgb, scene.a);
 }

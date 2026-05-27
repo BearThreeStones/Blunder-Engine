@@ -19,10 +19,8 @@
 
 #include <algorithm>
 
-#include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -573,6 +571,9 @@ void RenderSystem::applyDeferredOffscreenResize() {
   if (isVulkanBackend() && m_ssao_pass) {
     m_ssao_pass->resize(width, height);
   }
+  if (m_overlay_system) {
+    m_overlay_system->resize(width, height);
+  }
 }
 
 void RenderSystem::shutdown() {
@@ -886,9 +887,18 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
   }
 
+  if (m_overlay_system) {
+    m_overlay_system->draw_overlay_lines(command_buffer);
+    m_overlay_system->draw_overlay_aa(command_buffer);
+  }
+
   if (m_ssao_pass) {
     m_ssao_pass->apply(command_buffer, vkOffscreenRt(this), frame_state.shading,
                        projection, near_clip, far_clip);
+  }
+
+  if (m_overlay_system) {
+    m_overlay_system->draw_screen_overlays(command_buffer);
   }
 
   vulkan_backend::VulkanCommandList command_list;

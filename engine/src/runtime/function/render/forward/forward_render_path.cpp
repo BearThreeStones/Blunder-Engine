@@ -537,7 +537,7 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
   // Overlay pass: draws grid, axes, wireframes, etc. after scene geometry.
   // Overlays read the scene depth but do not write to it.
   if (m_overlay_system != nullptr) {
-    m_overlay_system->draw(command_buffer);
+    m_overlay_system->draw_scene_overlays(command_buffer);
   }
 
   m_offscreen->endRenderPass(command_list);

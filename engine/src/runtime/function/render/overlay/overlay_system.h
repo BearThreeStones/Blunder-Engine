@@ -6,14 +6,19 @@
 
 #include "runtime/function/render/overlay/axes_overlay.h"
 #include "runtime/function/render/overlay/grid_overlay.h"
+#include "runtime/function/render/overlay/navigate_gizmo_overlay.h"
 #include "runtime/function/render/overlay/origins_overlay.h"
 #include "runtime/function/render/overlay/overlay_anti_aliasing.h"
+#include "runtime/function/render/overlay/overlay_line_pass.h"
+#include "runtime/function/render/overlay/overlay_line_targets.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
 #include "runtime/function/render/overlay/overlay_state.h"
+#include "runtime/function/render/overlay/screen_overlay_pass.h"
 #include "runtime/function/render/overlay/wireframe_overlay.h"
 
 namespace Blunder {
 
+class OffscreenRenderTarget;
 class SlangCompiler;
 class VulkanAllocator;
 class VulkanContext;
@@ -24,14 +29,11 @@ class IOffscreenRenderTarget;
 
 struct ForwardFrameState;
 
-/// Orchestrates all overlay types. Inspired by Blender's overlay::Instance.
-///
-/// Lifecycle per frame:
-///   1. begin_sync() — populates OverlayState, calls begin_sync on all overlays
-///   2. draw()       — records Vulkan draw commands for all enabled overlays
-///
-/// The overlay system draws within the same render pass as the scene, after
-/// opaque and transparent passes.
+/// Orchestrates overlay rendering in ordered phases:
+///   1. draw_scene_overlays — inside forward pass (depth-aware solids)
+///   2. draw_overlay_lines — MRT line capture (OverlayLinePass)
+///   3. draw_overlay_aa — composite AA lines onto main color
+///   4. draw_screen_overlays — after post (ScreenOverlayPass, e.g. navigate gizmo)
 class OverlaySystem final {
  public:
   OverlaySystem() = default;
@@ -41,29 +43,37 @@ class OverlaySystem final {
                   rhi::IOffscreenRenderTarget* offscreen,
                   SlangCompiler* compiler);
   void shutdown();
+  void resize(uint32_t width, uint32_t height);
 
-  /// Sync all overlays with current frame state.
   void begin_sync(const ForwardFrameState& frame_state,
                   uint32_t current_frame);
 
-  /// Draw all enabled overlays. Called within an active render pass.
-  void draw(VkCommandBuffer cmd);
+  void draw_scene_overlays(VkCommandBuffer cmd);
+  void draw_overlay_lines(VkCommandBuffer cmd);
+  void draw_overlay_aa(VkCommandBuffer cmd);
+  void draw_screen_overlays(VkCommandBuffer cmd);
 
-  /// Access individual overlays for configuration.
   GridOverlay& grid() { return m_grid; }
   AxesOverlay& axes() { return m_axes; }
   WireframeOverlay& wireframe() { return m_wireframe; }
   OriginsOverlay& origins() { return m_origins; }
+  NavigateGizmoOverlay& navigate_gizmo() { return m_navigate_gizmo; }
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
 
  private:
   OverlayState m_state;
   OverlayResources m_resources;
+  OffscreenRenderTarget* m_native_offscreen{nullptr};
+
+  ScreenOverlayPass m_screen_pass;
+  OverlayLineTargets m_line_targets;
+  OverlayLinePass m_line_pass;
 
   GridOverlay m_grid;
   AxesOverlay m_axes;
   WireframeOverlay m_wireframe;
   OriginsOverlay m_origins;
+  NavigateGizmoOverlay m_navigate_gizmo;
   OverlayAntiAliasing m_anti_aliasing;
 };
 

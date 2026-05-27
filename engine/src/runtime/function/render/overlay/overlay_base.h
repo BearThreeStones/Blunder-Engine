@@ -25,6 +25,9 @@ struct Overlay {
 
   /// Draw without depth test (origins, motion paths, etc.).
   virtual void draw_color_only(VkCommandBuffer cmd, const OverlayState& state) {}
+
+  /// Draw screen-space overlays (active ScreenOverlayPass required).
+  virtual void draw_screen(VkCommandBuffer cmd, const OverlayState& state) {}
 };
 
 }  // namespace Blunder

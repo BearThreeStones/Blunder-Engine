@@ -17,13 +17,116 @@
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
+#include "runtime/function/render/vulkan/vulkan_shader.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
 
+#include <slang.h>
+
 namespace Blunder {
 
 namespace {
+
+VkPipeline createGridLineMrtPipeline(
+    VkDevice device, VkRenderPass render_pass,
+    VkPipelineLayout pipeline_layout,
+    const eastl::vector<VulkanShader::ShaderStage>& stages) {
+  eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
+  for (const VulkanShader::ShaderStage& stage : stages) {
+    VkPipelineShaderStageCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    info.stage = stage.stage_flags;
+    info.module = stage.module;
+    info.pName = stage.entry_point.c_str();
+    stage_infos.push_back(info);
+  }
+
+  VkPipelineVertexInputStateCreateInfo vertex_input{};
+  vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+  VkPipelineInputAssemblyStateCreateInfo input_assembly{};
+  input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+
+  VkPipelineViewportStateCreateInfo viewport_state{};
+  viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewport_state.viewportCount = 1;
+  viewport_state.scissorCount = 1;
+
+  VkPipelineRasterizationStateCreateInfo rasterizer{};
+  rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+  rasterizer.cullMode = VK_CULL_MODE_NONE;
+  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizer.lineWidth = 1.0f;
+  rasterizer.depthBiasEnable = VK_TRUE;
+  rasterizer.depthBiasConstantFactor = -1.2f;
+  rasterizer.depthBiasSlopeFactor = -1.2f;
+
+  VkPipelineMultisampleStateCreateInfo multisampling{};
+  multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+  VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+  depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depth_stencil.depthTestEnable = VK_TRUE;
+  depth_stencil.depthWriteEnable = VK_FALSE;
+  depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+  VkPipelineColorBlendAttachmentState blend_attachments[2]{};
+  for (uint32_t i = 0; i < 2; ++i) {
+    blend_attachments[i].blendEnable = VK_TRUE;
+    blend_attachments[i].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blend_attachments[i].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blend_attachments[i].colorBlendOp = VK_BLEND_OP_ADD;
+    blend_attachments[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blend_attachments[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blend_attachments[i].alphaBlendOp = VK_BLEND_OP_ADD;
+    blend_attachments[i].colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  }
+
+  VkPipelineColorBlendStateCreateInfo color_blending{};
+  color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  color_blending.attachmentCount = 2;
+  color_blending.pAttachments = blend_attachments;
+
+  VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                     VK_DYNAMIC_STATE_SCISSOR,
+                                     VK_DYNAMIC_STATE_DEPTH_BIAS};
+  VkPipelineDynamicStateCreateInfo dynamic_state{};
+  dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dynamic_state.dynamicStateCount = 3;
+  dynamic_state.pDynamicStates = dynamic_states;
+
+  VkGraphicsPipelineCreateInfo pipeline_info{};
+  pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  pipeline_info.stageCount = static_cast<uint32_t>(stage_infos.size());
+  pipeline_info.pStages = stage_infos.data();
+  pipeline_info.pVertexInputState = &vertex_input;
+  pipeline_info.pInputAssemblyState = &input_assembly;
+  pipeline_info.pViewportState = &viewport_state;
+  pipeline_info.pRasterizationState = &rasterizer;
+  pipeline_info.pMultisampleState = &multisampling;
+  pipeline_info.pDepthStencilState = &depth_stencil;
+  pipeline_info.pColorBlendState = &color_blending;
+  pipeline_info.pDynamicState = &dynamic_state;
+  pipeline_info.layout = pipeline_layout;
+  pipeline_info.renderPass = render_pass;
+  pipeline_info.subpass = 0;
+
+  VkPipeline pipeline = VK_NULL_HANDLE;
+  const VkResult result = vkCreateGraphicsPipelines(
+      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+  if (result != VK_SUCCESS) {
+    LOG_FATAL("[GridOverlay] line MRT vkCreateGraphicsPipelines failed: {}",
+              static_cast<int>(result));
+  }
+  return pipeline;
+}
+
 
 // Must match the shader constants.
 constexpr uint32_t k_grid_steps_len = 8;
@@ -109,6 +212,7 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
 
   m_vk_context = ctx;
   m_vk_allocator = alloc;
+  m_slang_compiler = compiler;
 
   // Create the grid pipeline (self-owned).
   rhi::GraphicsPipelineDesc grid_pipeline_desc{};
@@ -193,12 +297,48 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   }
 }
 
+void GridOverlay::initializeLinePipeline(VkRenderPass line_render_pass,
+                                         SlangCompiler* compiler) {
+  ASSERT(m_vk_context);
+  ASSERT(line_render_pass != VK_NULL_HANDLE);
+  ASSERT(compiler);
+  ASSERT(m_pipeline);
+
+  if (m_line_pipeline != VK_NULL_HANDLE) {
+    return;
+  }
+
+  m_line_pipeline_layout = m_pipeline->nativePipeline()->getPipelineLayout();
+
+  eastl::vector<VulkanShader::EntryPointSpec> entries;
+  entries.push_back(
+      {"vertexMain", VK_SHADER_STAGE_VERTEX_BIT, SLANG_STAGE_VERTEX});
+  entries.push_back({"fragmentLineMrt", VK_SHADER_STAGE_FRAGMENT_BIT,
+                     SLANG_STAGE_FRAGMENT});
+
+  auto stages = VulkanShader::loadFromSlang(
+      m_vk_context->getDevice(), compiler, "engine/shaders/grid_line.slang",
+      entries);
+  m_line_pipeline = createGridLineMrtPipeline(
+      m_vk_context->getDevice(), line_render_pass, m_line_pipeline_layout,
+      stages);
+  for (auto& stage : stages) {
+    VulkanShader::destroyShaderModule(m_vk_context->getDevice(), &stage.module);
+  }
+}
+
 void GridOverlay::shutdown() {
   if (m_vk_context == nullptr) {
     return;
   }
 
   VkDevice device = m_vk_context->getDevice();
+
+  if (m_line_pipeline != VK_NULL_HANDLE) {
+    vkDestroyPipeline(device, m_line_pipeline, nullptr);
+    m_line_pipeline = VK_NULL_HANDLE;
+  }
+  m_line_pipeline_layout = VK_NULL_HANDLE;
 
   for (auto& buf : m_uniform_buffers) {
     if (buf) {
@@ -221,6 +361,7 @@ void GridOverlay::shutdown() {
     m_pipeline.reset();
   }
 
+  m_slang_compiler = nullptr;
   m_vk_allocator = nullptr;
   m_vk_context = nullptr;
 }
@@ -313,9 +454,11 @@ void GridOverlay::draw_line(VkCommandBuffer cmd,
   // Upload uniform data.
   m_uniform_buffers[frame_index]->upload(&grid_ubo, sizeof(grid_ubo));
 
-  // Bind pipeline and descriptors.
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_pipeline->nativePipeline()->getGraphicsPipeline());
+  const VkPipeline pipeline =
+      m_line_pipeline != VK_NULL_HANDLE
+          ? m_line_pipeline
+          : m_pipeline->nativePipeline()->getGraphicsPipeline();
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
   const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
       m_descriptor_sets[frame_index]);
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,

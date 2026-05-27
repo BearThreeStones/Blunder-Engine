@@ -200,11 +200,10 @@ void BlunderEngine::startEngine() {
 
 #if defined(_WIN32)
   SDL_SetWindowsMessageHook(win32ModalResizeMessageHook, this);
-  LOG_INFO(
-      "[BlunderEngine] Win32 modal resize message hook installed (post-fix24)");
+  LOG_INFO("[BlunderEngine] Win32 modal resize message hook installed");
 #endif
 
-  LOG_INFO("engine start (SDL main callbacks, post-fix24)");
+  LOG_INFO("engine start");
 }
 
 void BlunderEngine::onEvent(Event& e) {
