@@ -3,6 +3,7 @@ import { ContentBrowser, BrowserTreeRow, BrowserGridRow, BrowserPathSegment } fr
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { VerticalResizeHandle, HorizontalResizeHandle } from "resize_splitter.slint";
+import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 
 component ShadingSlider inherits VerticalBox {
     spacing: 2px;
@@ -87,10 +88,10 @@ export component MainEditorWindow inherits Window {
 
     in property <image> viewport-image;
 
-    in-out property <length> left-dock-width: 240px;
-    in-out property <length> right-dock-width: 320px;
+    in-out property <length> left-dock-width: 200px;
+    in-out property <length> right-dock-width: 260px;
     in-out property <length> hierarchy-pane-height: 180px;
-    in-out property <length> bottom-dock-height: 250px;
+    in-out property <length> bottom-dock-height: 160px;
     in-out property <bool> dock-layout-drag-active: false;
     callback dock-layout-drag-changed(bool);
 
@@ -184,6 +185,10 @@ export component MainEditorWindow inherits Window {
 
     callback inspector-transform-edited();
     callback save-scene-requested();
+
+    in-out property <bool> viewport-is-perspective: true;
+    in property <bool> viewport-image-ready: false;
+    callback viewport-projection-toggled();
 
     in-out property <bool> import-mesh-dialog-visible: false;
     in-out property <bool> import-mesh-materials: true;
@@ -287,20 +292,21 @@ export component MainEditorWindow inherits Window {
                 border-width: 1px;
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
-                min-width: 320px;
+                min-width: 120px;
 
                 Image {
                     width: parent.width;
                     height: parent.height;
                     source: root.viewport-image;
                     image-fit: fill;
+                    visible: root.viewport-image-ready;
                 }
             }
 
             right-splitter := VerticalResizeHandle {
                 pane-size: root.right-dock-width;
-                min-pane: 260px;
-                max-pane: Math.max(260px, editor-body.width - root.left-dock-width - 360px);
+                min-pane: 200px;
+                max-pane: Math.max(200px, editor-body.width - root.left-dock-width - 360px);
 
                 trailing-pane: true;
             }
@@ -511,7 +517,8 @@ export component MainEditorWindow inherits Window {
             bottom-splitter := HorizontalResizeHandle {
                 pane-size: root.bottom-dock-height;
                 min-pane: 120px;
-                max-pane: Math.max(120px, main-split.height - 300px);
+                // Keep at least ~400px for the central viewport + side docks.
+                max-pane: Math.max(120px, main-split.height - 400px);
                 trailing-pane: true;
             }
 
@@ -560,6 +567,20 @@ export component MainEditorWindow inherits Window {
                 color: #808080;
                 font-size: 12px;
             }
+        }
+    }
+
+    // Window-level overlay so the viewport Image does not steal pointer hits.
+    ViewportProjectionToggle {
+        z: 2000;
+        layout-drag-active: root.dock-layout-drag-active;
+        viewport-origin-x: root.viewport-origin-x;
+        viewport-origin-y: root.viewport-origin-y;
+        viewport-width: root.viewport-width;
+        viewport-height: root.viewport-height;
+        is-perspective <=> root.viewport-is-perspective;
+        projection-toggled => {
+            root.viewport-projection-toggled();
         }
     }
 

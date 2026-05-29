@@ -117,6 +117,7 @@ slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
     "function/slint/import_mesh_dialog.slint"
     "function/slint/hierarchy.slint"
+    "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
 )
 

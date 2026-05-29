@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
@@ -30,9 +31,12 @@
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/geometry.h"
+#include "runtime/core/math/math_types.h"
 #include "runtime/core/event/event.h"
+#include "runtime/core/event/mouse_event.h"
 #include "runtime/core/event/key_event.h"
 #include "runtime/function/render/debug/renderdoc_capture.h"
+#include "runtime/function/slint/slint_system.h"
 #include "runtime/function/render/editor_camera.h"
 #include <vulkan/vulkan.h>
 
@@ -575,6 +579,26 @@ void RenderSystem::applyDeferredOffscreenResize() {
   }
 }
 
+void RenderSystem::flushOffscreenResizeToTarget(uint32_t target_width,
+                                                uint32_t target_height) {
+  if (!m_offscreen || target_width == 0 || target_height == 0) {
+    return;
+  }
+  const rhi::Extent2D current = m_offscreen->extent();
+  if (current.width == target_width && current.height == target_height) {
+    return;
+  }
+  if (m_viewport_layout_source != nullptr &&
+      static_cast<SlintSystem*>(m_viewport_layout_source)
+          ->shouldDeferHeavyFrameWork()) {
+    return;
+  }
+  m_deferred_rt_width = target_width;
+  m_deferred_rt_height = target_height;
+  m_deferred_rt_stable_frames = 1u;
+  applyDeferredOffscreenResize();
+}
+
 void RenderSystem::shutdown() {
   if (!m_backend) {
     return;
@@ -681,6 +705,7 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
                                      uint32_t target_height) {
   (void)delta_time;
   resizeOffscreenIfNeeded(target_width, target_height);
+  flushOffscreenResizeToTarget(target_width, target_height);
   applyDeferredOffscreenResize();
   const rhi::Extent2D extent = m_offscreen->extent();
   if (extent.width == 0 || extent.height == 0) {
@@ -697,12 +722,18 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
 void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                 uint32_t target_height) {
   resizeOffscreenIfNeeded(target_width, target_height);
+  flushOffscreenResizeToTarget(target_width, target_height);
   applyDeferredOffscreenResize();
 
   const rhi::Extent2D offscreen_extent_rhi = m_offscreen->extent();
   const VkExtent2D offscreen_extent{offscreen_extent_rhi.width,
                                     offscreen_extent_rhi.height};
   if (offscreen_extent.width == 0 || offscreen_extent.height == 0) {
+    return;
+  }
+  if (target_width > 0 && target_height > 0 &&
+      (offscreen_extent.width != target_width ||
+       offscreen_extent.height != target_height)) {
     return;
   }
 
@@ -778,13 +809,15 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   frame_state.vertical_fov = vertical_fov;
   frame_state.ortho_size = ortho_size;
   frame_state.projection_mode = projection_mode;
+  frame_state.projection_transition_t = m_editor_camera ? m_editor_camera->getProjectionTransitionT() : 0.0f;
   frame_state.grid_plane = m_grid_plane;
   frame_state.viewport_width = offscreen_extent.width;
   frame_state.viewport_height = offscreen_extent.height;
   if (m_viewport_layout_source != nullptr) {
-    frame_state.shading =
-        static_cast<SlintSystem*>(m_viewport_layout_source)
-            ->getBlinnPhongEditorSettings();
+    auto* slint_layout = static_cast<SlintSystem*>(m_viewport_layout_source);
+    slint_layout->syncViewportProjectionMode(
+        projection_mode == EditorCamera::ProjectionMode::perspective);
+    frame_state.shading = slint_layout->getBlinnPhongEditorSettings();
   }
 
   glm::vec3 shadow_focus(0.0f);
@@ -955,6 +988,11 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     }
   }
 
+  if (m_viewport_layout_source != nullptr) {
+    static_cast<SlintSystem*>(m_viewport_layout_source)->syncViewportProjectionMode(
+        projection_mode == EditorCamera::ProjectionMode::perspective);
+  }
+
   if (m_renderdoc_capture) {
     m_renderdoc_capture->endFrame(instance);
   }
@@ -968,6 +1006,19 @@ void RenderSystem::onEvent(Event& event) {
     auto& key_event = static_cast<KeyPressedEvent&>(event);
     if (!key_event.isRepeat() && key_event.getKeyCode() == SDLK_F11) {
       m_renderdoc_capture->triggerCapture();
+    }
+  }
+
+  if (m_overlay_system && m_editor_camera &&
+      event.getEventType() == EventType::MouseButtonPressed) {
+    auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
+    if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
+        mouse_event.hasMousePosition()) {
+      if (m_overlay_system->navigate_gizmo().tryHandleMouseClick(
+              Vec2(mouse_event.getX(), mouse_event.getY()), *m_editor_camera)) {
+        event.handled = true;
+        return;
+      }
     }
   }
 

@@ -115,6 +115,15 @@ class SlintSystem final {
   void setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
                         uint32_t height);
 
+  void setViewportImageInternal(const uint8_t* pixels_rgba, uint32_t width,
+                                uint32_t height, bool allow_during_dispatch);
+
+  /// Updates the Persp/Iso label on the viewport overlay (Slint, not GPU).
+  void syncViewportProjectionMode(bool is_perspective);
+
+  /// Clears a stale 3D readback (e.g. after viewport resize) before the next render upload.
+  void applyPendingViewportInvalidate();
+
   /// Returns the logical pixel rect of the central 3D viewport rectangle in
   /// the Slint UI. All values are zero until the window has performed its
   /// first layout.
@@ -123,6 +132,9 @@ class SlintSystem final {
   /// Returns the logical pixel size of the central 3D viewport rectangle in
   /// the Slint UI. {0, 0} until the window has performed its first layout.
   eastl::array<uint32_t, 2> getViewportLogicalSize() const;
+
+  /// Logical viewport size scaled for offscreen render target pixels (HiDPI).
+  eastl::array<uint32_t, 2> getViewportRenderTargetSize() const;
 
   /// Reads the inspector Blinn-Phong properties. Returns defaults if the window
   /// is not ready.
@@ -157,12 +169,21 @@ class SlintSystem final {
   /// Detects tree-folder clicks via cursor poll (Win32/SDL); call after pumpEvents.
   void tickContentBrowserTreePointerPoll();
 
+  /// Persp/Iso via Win32/SDL cursor poll when SDL button events are starved.
+  void tickProjectionTogglePointerPoll();
+
   bool trySelectHierarchyEntity(float window_x, float window_y);
   void tickHierarchyPointerPoll();
 
   void clearHierarchySlintClickFlag();
 
   void queueFileDialogImports(const eastl::vector<eastl::string>& paths);
+
+  /// Hit-tests the Persp/Iso strip and toggles projection (engine mouse path).
+  bool tryToggleProjectionAtWindow(float window_x, float window_y);
+
+  /// Toggles Persp/Iso (keyboard / poll / SDL fallback when Slint did not apply).
+  void requestViewportProjectionToggle(const char* source);
 
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
@@ -270,6 +291,11 @@ class SlintSystem final {
   void finishContentBrowserDragAtCursor();
   bool isPointerOverViewport(float logical_x, float logical_y) const;
 
+  bool probeProjectionButtonAtLogical(float logical_x, float logical_y) const;
+  bool probeProjectionButtonAtWindow(float window_x, float window_y) const;
+  /// Applies camera + label to match Slint `viewport-is-perspective` (no toggle).
+  bool applyViewportProjection(bool is_perspective, const char* source);
+
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
@@ -311,6 +337,18 @@ class SlintSystem final {
   bool m_pending_dock_layout_present{false};
   bool m_pending_composite_after_dock_apply{false};
   bool m_viewport_image_dirty{false};
+  bool m_viewport_image_stale{true};
+  bool m_pending_viewport_invalidate{false};
+  uint32_t m_viewport_upload_width{0};
+  uint32_t m_viewport_upload_height{0};
+  bool m_cached_viewport_is_perspective{true};
+  /// Monotonic frame counter, incremented at the start of each beginFrame().
+  uint64_t m_frame_counter{0};
+  /// Frame number when SDL MOUSE_BUTTON_DOWN last toggled projection.
+  /// tickProjectionTogglePointerPoll skips if m_projection_toggle_sdl_frame == m_frame_counter.
+  uint64_t m_projection_toggle_sdl_frame{0};
+  /// Cleared at beginFrame; blocks double-toggle when SDL + poll fire same frame.
+  bool m_projection_toggle_consumed_this_frame{false};
   bool shouldPresentSkiaFrame() const;
   bool m_pending_pointer_move{false};
   float m_pending_pointer_x{0.0f};

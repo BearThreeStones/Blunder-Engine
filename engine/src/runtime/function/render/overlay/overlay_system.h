@@ -33,7 +33,7 @@ struct ForwardFrameState;
 ///   1. draw_scene_overlays — inside forward pass (depth-aware solids)
 ///   2. draw_overlay_lines — MRT line capture (OverlayLinePass)
 ///   3. draw_overlay_aa — composite AA lines onto main color
-///   4. draw_screen_overlays — after post (ScreenOverlayPass, e.g. navigate gizmo)
+///   4. draw_screen_overlays — after SSAO (ScreenOverlayPass: grid + navigate gizmo)
 class OverlaySystem final {
  public:
   OverlaySystem() = default;

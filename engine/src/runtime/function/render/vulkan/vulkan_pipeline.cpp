@@ -215,8 +215,7 @@ void VulkanPipeline::createGraphicsPipeline() {
   pipeline_info.pColorBlendState =
       m_create_info.depth_only_subpass ? nullptr : &color_blending;
   pipeline_info.pDynamicState = &dynamic_state;
-  pipeline_info.pDepthStencilState =
-      m_create_info.enable_depth_test ? &depth_stencil : nullptr;
+  pipeline_info.pDepthStencilState = &depth_stencil;
   pipeline_info.layout = m_pipeline_layout;
   pipeline_info.renderPass = m_render_pass;
   pipeline_info.subpass = 0;

@@ -22,6 +22,7 @@ struct OverlayState {
   float vertical_fov{0.785398f};
   float ortho_size{10.0f};
   bool is_perspective{true};
+  float projection_transition_t{0.0f};
   ForwardGridPlane grid_plane{ForwardGridPlane::xy};
   uint32_t viewport_width{1};
   uint32_t viewport_height{1};
@@ -42,6 +43,7 @@ struct OverlayState {
     s.ortho_size = fs.ortho_size;
     s.is_perspective =
         (fs.projection_mode != EditorCamera::ProjectionMode::orthographic);
+    s.projection_transition_t = fs.projection_transition_t;
     s.grid_plane = fs.grid_plane;
     s.viewport_width = fs.viewport_width;
     s.viewport_height = fs.viewport_height;

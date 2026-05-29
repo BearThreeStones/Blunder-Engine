@@ -186,34 +186,65 @@ void OverlayAntiAliasing::createRenderPass() {
   color.samples = VK_SAMPLE_COUNT_1_BIT;
   color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   color.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   color.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+  VkAttachmentDescription depth{};
+  depth.format = VK_FORMAT_D32_SFLOAT;
+  depth.samples = VK_SAMPLE_COUNT_1_BIT;
+  depth.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+  depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depth.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
   VkAttachmentReference color_ref{};
   color_ref.attachment = 0;
   color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+  VkAttachmentReference depth_ref{};
+  depth_ref.attachment = 1;
+  depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
   VkSubpassDescription subpass{};
   subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
   subpass.colorAttachmentCount = 1;
   subpass.pColorAttachments = &color_ref;
+  subpass.pDepthStencilAttachment = &depth_ref;
 
-  VkSubpassDependency dep{};
-  dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-  dep.dstSubpass = 0;
-  dep.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-  dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-  dep.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-  dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  VkSubpassDependency dependencies[2]{};
+  dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+  dependencies[0].dstSubpass = 0;
+  dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
+  dependencies[1].srcSubpass = 0;
+  dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+  dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+  dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT;
+  dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  dependencies[1].dstAccessMask =
+      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+  dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+  VkAttachmentDescription attachments[] = {color, depth};
   VkRenderPassCreateInfo rp_info{};
   rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-  rp_info.attachmentCount = 1;
-  rp_info.pAttachments = &color;
+  rp_info.attachmentCount = 2;
+  rp_info.pAttachments = attachments;
   rp_info.subpassCount = 1;
   rp_info.pSubpasses = &subpass;
-  rp_info.dependencyCount = 1;
-  rp_info.pDependencies = &dep;
+  rp_info.dependencyCount = 2;
+  rp_info.pDependencies = dependencies;
 
   vkCreateRenderPass(m_context->getDevice(), &rp_info, nullptr, &m_render_pass);
 }
@@ -530,15 +561,16 @@ void OverlayAntiAliasing::apply(VkCommandBuffer cmd,
   VkRect2D scissor{{0, 0},
                    {state.viewport_width, state.viewport_height}};
 
-  VkClearValue clear{};
-  clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  VkClearValue clears[2]{};
+  clears[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  clears[1].depthStencil = {1.0f, 0};
   VkRenderPassBeginInfo begin{};
   begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   begin.renderPass = m_render_pass;
   begin.framebuffer = offscreen->getFramebuffer();
   begin.renderArea.extent = {m_width, m_height};
-  begin.clearValueCount = 1;
-  begin.pClearValues = &clear;
+  begin.clearValueCount = 2;
+  begin.pClearValues = clears;
   vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 

@@ -1,6 +1,8 @@
 #include "runtime/function/render/overlay/grid_overlay.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vulkan/vulkan.h>
 
 #include <glm/ext/matrix_float4x4.hpp>
@@ -17,150 +19,47 @@
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
-#include "runtime/function/render/vulkan/vulkan_shader.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
-
-#include <slang.h>
 
 namespace Blunder {
 
 namespace {
 
-VkPipeline createGridLineMrtPipeline(
-    VkDevice device, VkRenderPass render_pass,
-    VkPipelineLayout pipeline_layout,
-    const eastl::vector<VulkanShader::ShaderStage>& stages) {
-  eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
-  for (const VulkanShader::ShaderStage& stage : stages) {
-    VkPipelineShaderStageCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    info.stage = stage.stage_flags;
-    info.module = stage.module;
-    info.pName = stage.entry_point.c_str();
-    stage_infos.push_back(info);
-  }
-
-  VkPipelineVertexInputStateCreateInfo vertex_input{};
-  vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-  VkPipelineInputAssemblyStateCreateInfo input_assembly{};
-  input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-  input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-
-  VkPipelineViewportStateCreateInfo viewport_state{};
-  viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-  viewport_state.viewportCount = 1;
-  viewport_state.scissorCount = 1;
-
-  VkPipelineRasterizationStateCreateInfo rasterizer{};
-  rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-  rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-  rasterizer.cullMode = VK_CULL_MODE_NONE;
-  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-  rasterizer.lineWidth = 1.0f;
-  rasterizer.depthBiasEnable = VK_TRUE;
-  rasterizer.depthBiasConstantFactor = -1.2f;
-  rasterizer.depthBiasSlopeFactor = -1.2f;
-
-  VkPipelineMultisampleStateCreateInfo multisampling{};
-  multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-  VkPipelineDepthStencilStateCreateInfo depth_stencil{};
-  depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-  depth_stencil.depthTestEnable = VK_TRUE;
-  depth_stencil.depthWriteEnable = VK_FALSE;
-  depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-
-  VkPipelineColorBlendAttachmentState blend_attachments[2]{};
-  for (uint32_t i = 0; i < 2; ++i) {
-    blend_attachments[i].blendEnable = VK_TRUE;
-    blend_attachments[i].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blend_attachments[i].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blend_attachments[i].colorBlendOp = VK_BLEND_OP_ADD;
-    blend_attachments[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blend_attachments[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    blend_attachments[i].alphaBlendOp = VK_BLEND_OP_ADD;
-    blend_attachments[i].colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-  }
-
-  VkPipelineColorBlendStateCreateInfo color_blending{};
-  color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-  color_blending.attachmentCount = 2;
-  color_blending.pAttachments = blend_attachments;
-
-  VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                     VK_DYNAMIC_STATE_SCISSOR,
-                                     VK_DYNAMIC_STATE_DEPTH_BIAS};
-  VkPipelineDynamicStateCreateInfo dynamic_state{};
-  dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-  dynamic_state.dynamicStateCount = 3;
-  dynamic_state.pDynamicStates = dynamic_states;
-
-  VkGraphicsPipelineCreateInfo pipeline_info{};
-  pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-  pipeline_info.stageCount = static_cast<uint32_t>(stage_infos.size());
-  pipeline_info.pStages = stage_infos.data();
-  pipeline_info.pVertexInputState = &vertex_input;
-  pipeline_info.pInputAssemblyState = &input_assembly;
-  pipeline_info.pViewportState = &viewport_state;
-  pipeline_info.pRasterizationState = &rasterizer;
-  pipeline_info.pMultisampleState = &multisampling;
-  pipeline_info.pDepthStencilState = &depth_stencil;
-  pipeline_info.pColorBlendState = &color_blending;
-  pipeline_info.pDynamicState = &dynamic_state;
-  pipeline_info.layout = pipeline_layout;
-  pipeline_info.renderPass = render_pass;
-  pipeline_info.subpass = 0;
-
-  VkPipeline pipeline = VK_NULL_HANDLE;
-  const VkResult result = vkCreateGraphicsPipelines(
-      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
-  if (result != VK_SUCCESS) {
-    LOG_FATAL("[GridOverlay] line MRT vkCreateGraphicsPipelines failed: {}",
-              static_cast<int>(result));
-  }
-  return pipeline;
-}
-
-
 // Must match the shader constants.
 constexpr uint32_t k_grid_steps_len = 8;
 constexpr uint32_t k_grid_steps_draw = 3;
 
+/// Must match GridUniformData in grid.slang.
 struct GridUniformData {
   glm::mat4 view;
   glm::mat4 projection;
   glm::vec4 camera_position_and_proj_type;
   glm::vec4 camera_forward_and_far_clip;
-  glm::vec4 plane_origin;
+  glm::vec4 quad_center;
   glm::vec4 plane_axis_u;
   glm::vec4 plane_axis_v;
-  glm::vec4 steps[k_grid_steps_len];  // per-level step sizes: [i].xy = stepU, stepV
-  // params: x=level(float), y=numLinesPerLevel, z=alphaScale, w=pixelFac
+  glm::vec4 steps[k_grid_steps_len];
+  // params: x=level, y=quadHalfExtent, z=alphaScale, w=pixelFac
   glm::vec4 params;
-  glm::vec4 axis_color_x;
-  glm::vec4 axis_color_y;
-  glm::vec4 axis_color_z;
+  glm::vec4 axis_color_u;
+  glm::vec4 axis_color_v;
 };
 
 // Default step sizes (powers of 10, scene units).
-// steps[0] = 0.01, steps[1] = 0.1, steps[2] = 1.0, ...
 constexpr float k_grid_default_steps[k_grid_steps_len] = {
     0.01f, 0.1f, 1.0f, 10.0f, 100.0f, 1000.0f, 10000.0f, 100000.0f};
 
-constexpr float k_grid_base_alpha = 0.28f;
-constexpr uint32_t k_grid_lines_per_axis = 96;
-constexpr uint32_t k_grid_axis_line_vertices = 6u;
-constexpr float k_grid_axis_alpha = 0.95f;
+constexpr float k_grid_base_alpha = 0.65f;
+constexpr float k_grid_axis_alpha = 1.0f;
 
-/// Compute the float `level` by iterating through the steps array to find
-/// where `dist` falls between two adjacent step sizes.  The integer part
-/// is the level index and the fractional part drives smooth cross-fade.
+/// 6 vertices for a fullscreen quad (TriangleList).
+constexpr uint32_t k_grid_vertex_count = 6u;
+
+/// Compute the float `level` by finding where `dist` falls between
+/// two adjacent step sizes.  Integer part = level index, fractional
+/// part = smooth cross-fade progress.
 float computeGridLevel(const float* steps, float dist) {
   for (int i = 0; i < static_cast<int>(k_grid_steps_len); ++i) {
     const float curr = steps[i];
@@ -177,23 +76,92 @@ float computeGridLevel(const float* steps, float dist) {
   return 0.0f;
 }
 
-/// Compute a reference distance metric for the current camera.
-/// Blender: interpolates between "directly below" and "looking at" distances
-/// for perspective; uses pixel-derived scale for ortho.
-float computeDistMetric(const OverlayState& state, const glm::vec3& plane_normal) {
-  if (state.is_perspective) {
-    // Distance from camera to the grid plane along the view direction.
-    const float height = std::abs(glm::dot(state.camera_position, plane_normal));
-    const float cos_angle = std::abs(glm::dot(state.camera_forward, plane_normal));
-    // Interpolate between looking straight down (height) and along view dir
-    // (height / cos), weighted by cos to avoid division by zero at grazing.
-    const float view_dist =
-        (cos_angle > 1e-4f) ? height / cos_angle : height * 1000.0f;
-    // Blend: at steep angles use direct height, at shallow use view distance.
-    return view_dist * (1.0f - cos_angle) + height * cos_angle;
+/// World point where the camera looks (orbit focal), projected onto the grid plane.
+glm::vec3 gridFocalPointOnPlane(const OverlayState& state,
+                                const glm::vec3& plane_normal) {
+  const glm::vec3 focal =
+      state.camera_position + state.camera_forward * state.camera_distance;
+  return focal - glm::dot(focal, plane_normal) * plane_normal;
+}
+
+/// Unproject NDC (x,y,z) to world space.
+glm::vec3 unprojectNdc(const glm::mat4& inv_vp, float ndc_x, float ndc_y,
+                       float ndc_z) {
+  glm::vec4 h = inv_vp * glm::vec4(ndc_x, ndc_y, ndc_z, 1.0f);
+  if (std::abs(h.w) < 1e-8f) {
+    return glm::vec3(0.0f);
   }
-  // Orthographic: scale from ortho size.
-  return state.ortho_size;
+  return glm::vec3(h / h.w);
+}
+
+/// Cover the visible frustum intersection on the grid plane (centered on plane_center).
+float computeGridHalfExtentOnPlane(const OverlayState& state,
+                                   const glm::vec3& plane_normal,
+                                   const glm::vec3& plane_center) {
+  const bool is_ortho = std::abs(state.projection[3][3]) > 0.5f;
+  const float aspect =
+      static_cast<float>(state.viewport_width) /
+      std::max(static_cast<float>(state.viewport_height), 1.0f);
+  const float view_half_height =
+      is_ortho ? state.ortho_size * 0.5f
+               : std::tan(state.vertical_fov * 0.5f) * state.camera_distance;
+  const float view_half_width = view_half_height * aspect;
+
+  // Ortho: window diagonal on the plane; scale up when viewing the plane obliquely (Iso).
+  if (is_ortho) {
+    const float elev =
+        std::abs(glm::dot(glm::normalize(state.camera_forward), plane_normal));
+    const float oblique_scale = 1.0f / std::clamp(elev, 0.2f, 1.0f);
+    const float from_window =
+        std::hypot(view_half_width, view_half_height) * 2.5f * oblique_scale;
+    const float extent_floor = state.ortho_size * 8.0f;
+    // Iso logs: 61 world units was invisible; floor must dominate oblique window fit.
+    return std::max(from_window, extent_floor);
+  }
+
+  const glm::mat4 inv_vp = glm::inverse(state.projection * state.view);
+  const glm::vec3 cam = state.camera_position;
+  float max_radius = 0.0f;
+  constexpr float k_ndc_corners[4][2] = {{-1.0f, -1.0f}, {1.0f, -1.0f},
+                                         {1.0f, 1.0f}, {-1.0f, 1.0f}};
+  for (const auto& corner : k_ndc_corners) {
+    const glm::vec3 near_pt = unprojectNdc(inv_vp, corner[0], corner[1], 0.0f);
+    const glm::vec3 far_pt = unprojectNdc(inv_vp, corner[0], corner[1], 1.0f);
+    glm::vec3 dir = far_pt - near_pt;
+    const float len = glm::length(dir);
+    if (len < 1e-6f) {
+      continue;
+    }
+    dir /= len;
+    const float denom = glm::dot(dir, plane_normal);
+    if (std::abs(denom) < 1e-6f) {
+      continue;
+    }
+    const float t = glm::dot(plane_center - cam, plane_normal) / denom;
+    if (t <= 0.0f) {
+      continue;
+    }
+    const glm::vec3 hit = cam + dir * t;
+    max_radius = std::max(max_radius, glm::length(hit - plane_center));
+  }
+
+  const float fallback = std::max(view_half_width, view_half_height) * 8.0f;
+  return std::max(max_radius * 1.25f, fallback);
+}
+
+/// Compute a reference distance metric for the current camera.
+float computeDistMetric(const OverlayState& state,
+                        const glm::vec3& plane_normal) {
+  (void)plane_normal;
+  const bool is_ortho = std::abs(state.projection[3][3]) > 0.5f;
+  const float vp_h =
+      std::max(static_cast<float>(state.viewport_height), 1.0f);
+  const float world_per_pixel =
+      is_ortho ? (state.ortho_size * 2.0f / vp_h)
+               : (2.0f * std::tan(state.vertical_fov * 0.5f) *
+                  state.camera_distance / vp_h);
+  // Target ~40 pixels per cell so grid lines are clearly spaced and visible.
+  return std::max(world_per_pixel * 40.0f, 0.004f);
 }
 
 }  // namespace
@@ -203,34 +171,30 @@ GridOverlay::~GridOverlay() {
 }
 
 void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
-                             rhi::IOffscreenRenderTarget* offscreen,
+                             const OverlayResources& res,
                              SlangCompiler* compiler) {
   ASSERT(ctx);
   ASSERT(alloc);
-  ASSERT(offscreen);
   ASSERT(compiler);
+  ASSERT(res.screen_render_pass != VK_NULL_HANDLE);
 
   m_vk_context = ctx;
   m_vk_allocator = alloc;
-  m_slang_compiler = compiler;
 
-  // Create the grid pipeline (self-owned).
-  rhi::GraphicsPipelineDesc grid_pipeline_desc{};
-  grid_pipeline_desc.shader_path = "engine/shaders/grid.slang";
-  grid_pipeline_desc.enable_vertex_input = false;
-  grid_pipeline_desc.topology = rhi::PrimitiveTopology::LineList;
-  grid_pipeline_desc.cull_mode = rhi::CullMode::None;
-  grid_pipeline_desc.enable_blend = true;
-  grid_pipeline_desc.enable_depth_test = true;
-  grid_pipeline_desc.enable_depth_write = false;
-  grid_pipeline_desc.enable_depth_bias = true;
-  grid_pipeline_desc.depth_bias_constant_factor = -1.2f;
-  grid_pipeline_desc.depth_bias_slope_factor = -1.2f;
+  rhi::GraphicsPipelineDesc desc{};
+  desc.shader_path = "engine/shaders/grid.slang";
+  desc.enable_vertex_input = false;
+  desc.topology = rhi::PrimitiveTopology::TriangleList;
+  desc.cull_mode = rhi::CullMode::None;
+  desc.enable_blend = true;
+  desc.enable_depth_test = false;
+  desc.enable_depth_write = false;
   m_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_pipeline->bind(ctx, compiler);
-  m_pipeline->initialize(*offscreen, grid_pipeline_desc);
+  m_pipeline->initializeWithRenderPass(
+      reinterpret_cast<VkRenderPass>(res.screen_render_pass), desc);
 
-  // Allocate per-frame uniform buffers.
+  // Per-frame uniform buffers.
   const uint32_t frames = VulkanSync::k_max_frames_in_flight;
   m_uniform_buffers.resize(frames);
   for (uint32_t i = 0; i < frames; ++i) {
@@ -240,7 +204,7 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
                                  VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 
-  // Create descriptor pool and sets.
+  // Descriptor pool and sets.
   VkDevice device = m_vk_context->getDevice();
 
   VkDescriptorPoolSize pool_size{};
@@ -297,48 +261,12 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   }
 }
 
-void GridOverlay::initializeLinePipeline(VkRenderPass line_render_pass,
-                                         SlangCompiler* compiler) {
-  ASSERT(m_vk_context);
-  ASSERT(line_render_pass != VK_NULL_HANDLE);
-  ASSERT(compiler);
-  ASSERT(m_pipeline);
-
-  if (m_line_pipeline != VK_NULL_HANDLE) {
-    return;
-  }
-
-  m_line_pipeline_layout = m_pipeline->nativePipeline()->getPipelineLayout();
-
-  eastl::vector<VulkanShader::EntryPointSpec> entries;
-  entries.push_back(
-      {"vertexMain", VK_SHADER_STAGE_VERTEX_BIT, SLANG_STAGE_VERTEX});
-  entries.push_back({"fragmentLineMrt", VK_SHADER_STAGE_FRAGMENT_BIT,
-                     SLANG_STAGE_FRAGMENT});
-
-  auto stages = VulkanShader::loadFromSlang(
-      m_vk_context->getDevice(), compiler, "engine/shaders/grid_line.slang",
-      entries);
-  m_line_pipeline = createGridLineMrtPipeline(
-      m_vk_context->getDevice(), line_render_pass, m_line_pipeline_layout,
-      stages);
-  for (auto& stage : stages) {
-    VulkanShader::destroyShaderModule(m_vk_context->getDevice(), &stage.module);
-  }
-}
-
 void GridOverlay::shutdown() {
   if (m_vk_context == nullptr) {
     return;
   }
 
   VkDevice device = m_vk_context->getDevice();
-
-  if (m_line_pipeline != VK_NULL_HANDLE) {
-    vkDestroyPipeline(device, m_line_pipeline, nullptr);
-    m_line_pipeline = VK_NULL_HANDLE;
-  }
-  m_line_pipeline_layout = VK_NULL_HANDLE;
 
   for (auto& buf : m_uniform_buffers) {
     if (buf) {
@@ -361,7 +289,6 @@ void GridOverlay::shutdown() {
     m_pipeline.reset();
   }
 
-  m_slang_compiler = nullptr;
   m_vk_allocator = nullptr;
   m_vk_context = nullptr;
 }
@@ -371,11 +298,19 @@ void GridOverlay::begin_sync(OverlayResources& /*res*/,
   enabled_ = true;
 }
 
-void GridOverlay::draw_line(VkCommandBuffer cmd,
-                            const OverlayState& state) {
+void GridOverlay::draw_screen(VkCommandBuffer cmd, const OverlayState& state) {
   if (!enabled_ || m_pipeline == nullptr) {
     return;
   }
+
+  VkViewport viewport{};
+  viewport.width = static_cast<float>(state.viewport_width);
+  viewport.height = static_cast<float>(state.viewport_height);
+  viewport.maxDepth = 1.0f;
+  VkRect2D scissor{{0, 0},
+                   {state.viewport_width, state.viewport_height}};
+  vkCmdSetViewport(cmd, 0, 1, &viewport);
+  vkCmdSetScissor(cmd, 0, 1, &scissor);
 
   const uint32_t frame_index = state.frame_index;
 
@@ -383,35 +318,52 @@ void GridOverlay::draw_line(VkCommandBuffer cmd,
   grid_ubo.view = state.view;
   grid_ubo.projection = state.projection;
 
-  const bool is_ortho = !state.is_perspective;
+  // Match grid.slang: ortho iff projection[3][3] ~= 1 (see glm::ortho vs perspective).
+  const bool is_ortho = std::abs(state.projection[3][3]) > 0.5f;
   grid_ubo.camera_position_and_proj_type =
       glm::vec4(state.camera_position, is_ortho ? 1.0f : 0.0f);
   grid_ubo.camera_forward_and_far_clip =
       glm::vec4(state.camera_forward, state.far_clip);
 
-  // Set up grid plane.
+  // Set up grid plane axes and determine axis colors.
   glm::vec3 plane_normal;
+  glm::vec4 axis_color_u;
+  glm::vec4 axis_color_v;
+
   switch (state.grid_plane) {
     case ForwardGridPlane::xy:
       grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
       grid_ubo.plane_axis_v = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
-      grid_ubo.plane_origin = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
       plane_normal = glm::vec3(0.0f, 0.0f, 1.0f);
+      axis_color_u = glm::vec4(kAxisColorPositiveX, k_grid_axis_alpha);
+      axis_color_v = glm::vec4(kAxisColorPositiveY, k_grid_axis_alpha);
       break;
     case ForwardGridPlane::yz:
       grid_ubo.plane_axis_u = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
       grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-      grid_ubo.plane_origin = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
       plane_normal = glm::vec3(1.0f, 0.0f, 0.0f);
+      axis_color_u = glm::vec4(kAxisColorPositiveY, k_grid_axis_alpha);
+      axis_color_v = glm::vec4(kAxisColorPositiveZ, k_grid_axis_alpha);
       break;
     case ForwardGridPlane::xz:
     default:
       grid_ubo.plane_axis_u = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
       grid_ubo.plane_axis_v = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
-      grid_ubo.plane_origin = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
       plane_normal = glm::vec3(0.0f, 1.0f, 0.0f);
+      axis_color_u = glm::vec4(kAxisColorPositiveX, k_grid_axis_alpha);
+      axis_color_v = glm::vec4(kAxisColorPositiveZ, k_grid_axis_alpha);
       break;
   }
+
+  grid_ubo.axis_color_u = axis_color_u;
+  grid_ubo.axis_color_v = axis_color_v;
+
+  const float vp_h = std::max(static_cast<float>(state.viewport_height), 1.0f);
+  const float world_per_pixel =
+      is_ortho ? (state.ortho_size * 2.0f / vp_h)
+               : (2.0f * std::tan(state.vertical_fov * 0.5f) *
+                  state.camera_distance / vp_h);
+  grid_ubo.plane_axis_u.w = world_per_pixel;
 
   // Fill steps array.
   for (uint32_t i = 0; i < k_grid_steps_len; ++i) {
@@ -423,51 +375,31 @@ void GridOverlay::draw_line(VkCommandBuffer cmd,
   const float dist = computeDistMetric(state, plane_normal);
   const float level = computeGridLevel(k_grid_default_steps, dist);
 
-  // Store camera offset on plane_origin so the shader can snap per-level.
-  const glm::vec3 axis_u = glm::vec3(grid_ubo.plane_axis_u);
-  const glm::vec3 axis_v = glm::vec3(grid_ubo.plane_axis_v);
-  const float cam_u = glm::dot(state.camera_position, axis_u);
-  const float cam_v = glm::dot(state.camera_position, axis_v);
-  grid_ubo.plane_origin =
-      glm::vec4(cam_u * axis_u + cam_v * axis_v, 1.0f);
+  // Center on look-at focal (orbit target), not camera ground footprint — Iso was missing
+  // the grid at the origin because the quad followed the camera projection (G112).
+  const glm::vec3 plane_center = gridFocalPointOnPlane(state, plane_normal);
+  grid_ubo.quad_center = glm::vec4(plane_center, 1.0f);
 
-  // Pixel size factor for orthographic fade.
-  const float pixel_fac =
-      is_ortho
-          ? (state.ortho_size * 2.0f /
-             std::max(static_cast<float>(state.viewport_height), 1.0f))
-          : 0.0f;
+  const float half_extent =
+      computeGridHalfExtentOnPlane(state, plane_normal, plane_center);
 
-  // Vertices per level: linesPerAxis lines × 2 axes × 2 vertices/line.
-  const uint32_t num_lines_per_level = k_grid_lines_per_axis * 4u;
-  const uint32_t total_grid_vertices = k_grid_steps_draw * num_lines_per_level;
-
-  grid_ubo.params = glm::vec4(
-      level,
-      static_cast<float>(num_lines_per_level),
-      k_grid_base_alpha,
-      pixel_fac);
-  grid_ubo.axis_color_x = glm::vec4(kAxisColorPositiveX, k_grid_axis_alpha);
-  grid_ubo.axis_color_y = glm::vec4(kAxisColorPositiveY, k_grid_axis_alpha);
-  grid_ubo.axis_color_z = glm::vec4(kAxisColorPositiveZ, k_grid_axis_alpha);
+  const float grid_alpha =
+      is_ortho ? std::max(k_grid_base_alpha, 0.82f) : k_grid_base_alpha;
+  grid_ubo.params =
+      glm::vec4(level, half_extent, grid_alpha, state.camera_distance);
 
   // Upload uniform data.
   m_uniform_buffers[frame_index]->upload(&grid_ubo, sizeof(grid_ubo));
 
-  const VkPipeline pipeline =
-      m_line_pipeline != VK_NULL_HANDLE
-          ? m_line_pipeline
-          : m_pipeline->nativePipeline()->getGraphicsPipeline();
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-  const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
-      m_descriptor_sets[frame_index]);
+  // Bind pipeline and draw.
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_pipeline->nativePipeline()->getGraphicsPipeline());
+  const VkDescriptorSet descriptor_set =
+      reinterpret_cast<VkDescriptorSet>(m_descriptor_sets[frame_index]);
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_pipeline->nativePipeline()->getPipelineLayout(),
                           0, 1, &descriptor_set, 0, nullptr);
-
-  // Single draw call: 3 levels of grid + 3 axis lines.
-  vkCmdSetDepthBias(cmd, -1.2f, 0.0f, -1.2f);
-  vkCmdDraw(cmd, total_grid_vertices + k_grid_axis_line_vertices, 1, 0, 0);
+  vkCmdDraw(cmd, k_grid_vertex_count, 1, 0, 0);
 }
 
 }  // namespace Blunder

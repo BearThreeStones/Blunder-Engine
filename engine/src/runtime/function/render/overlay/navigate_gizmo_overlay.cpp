@@ -11,6 +11,12 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/render/editor_camera.h"
+#include "runtime/function/slint/slint_system.h"
+#include "runtime/function/render/overlay/navigate_gizmo_hit_test.h"
+#include "runtime/function/render/overlay/navigate_gizmo_layout.h"
+#include "runtime/function/render/overlay/navigate_gizmo_shared.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/rhi_desc.h"
@@ -40,18 +46,8 @@ struct GizmoUniformData {
   glm::vec4 sort_order_1;
 };
 
-constexpr float k_arm_length = 0.68f;
-constexpr float k_ball_radius = 0.24f;
-constexpr float k_neg_ball_radius = 0.12f;
-constexpr float k_center_radius = 0.22f;
-constexpr float k_arm_half_width = 0.04f;
 constexpr float k_neg_alpha_scale = 0.50f;
-constexpr float k_bg_radius = 1.0f;
 constexpr float k_letter_threshold = 0.14f;
-
-constexpr float k_gizmo_base_size = 110.0f;
-constexpr float k_gizmo_margin = 10.0f;
-constexpr float k_gizmo_min_size = 30.0f;
 
 constexpr uint32_t k_gizmo_vertex_count = 84u;
 
@@ -196,28 +192,70 @@ void NavigateGizmoOverlay::draw_screen(VkCommandBuffer cmd,
   if (!enabled_ || m_pipeline == nullptr) {
     return;
   }
-  record_gizmo_draw(cmd, state);
-}
 
-void NavigateGizmoOverlay::record_gizmo_draw(VkCommandBuffer cmd,
-                                             const OverlayState& state) {
-  const float vw = static_cast<float>(state.viewport_width);
-  const float vh = static_cast<float>(state.viewport_height);
-  float gizmo_size = k_gizmo_base_size;
-  const float max_size = std::min(vw, vh) * 0.35f;
-  gizmo_size = std::min(gizmo_size, max_size);
-  if (gizmo_size < k_gizmo_min_size) {
+  const NavigateGizmoLayout layout =
+      computeNavigateGizmoLayout(state.viewport_width, state.viewport_height);
+  if (!layout.visible) {
     return;
   }
 
-  const float gizmo_x = vw - gizmo_size - k_gizmo_margin;
-  const float gizmo_y = k_gizmo_margin;
+  record_gizmo_draw(cmd, state, layout.gizmo_rect.x, layout.gizmo_rect.y,
+                    layout.gizmo_size);
+}
+
+bool NavigateGizmoOverlay::tryHandleMouseClick(const Vec2& window_position,
+                                               EditorCamera& camera) {
+  if (!camera.isWindowPositionInViewport(window_position)) {
+    return false;
+  }
+
+  const Vec2 viewport_local = camera.windowToViewportLocal(window_position);
+  const uint32_t vp_w = static_cast<uint32_t>(camera.getViewportWidth());
+  const uint32_t vp_h = static_cast<uint32_t>(camera.getViewportHeight());
+  if (hitTestProjectionButtonViewportLocal(viewport_local.x, viewport_local.y,
+                                           vp_w, vp_h)) {
+    return true;
+  }
+
+  const NavigateGizmoLayout layout =
+      computeNavigateGizmoLayout(vp_w, vp_h);
+  if (!layout.visible) {
+    return false;
+  }
+
+  const float proj_t = camera.getProjectionTransitionT();
+  const float smooth_proj_t = proj_t * proj_t * (3.0f - 2.0f * proj_t);
+  const float perspective_factor = 1.0f - smooth_proj_t;
+  const std::optional<NavigateGizmoAxisHit> axis_hit =
+      hitTestNavigateGizmoAxis(viewport_local.x, viewport_local.y, layout,
+                               camera.getViewMatrix(), perspective_factor);
+  if (!axis_hit.has_value()) {
+    return false;
+  }
+
+  const int endpoint = axis_hit->endpoint_index;
+  camera.alignToAxisView(static_cast<uint32_t>(endpoint / 2),
+                         (endpoint % 2) == 0);
+  return true;
+}
+
+void NavigateGizmoOverlay::record_gizmo_draw(VkCommandBuffer cmd,
+                                             const OverlayState& state,
+                                             float gizmo_x, float gizmo_y,
+                                             float gizmo_size) {
+  const float vw = static_cast<float>(state.viewport_width);
+  const float vh = static_cast<float>(state.viewport_height);
 
   GizmoUniformData gizmo_ubo{};
   gizmo_ubo.view_rotation = state.view;
   gizmo_ubo.view_rotation[3] = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-  gizmo_ubo.projection =
-      glm::ortho(-1.1f, 1.1f, -1.1f, 1.1f, -10.0f, 10.0f);
+  constexpr float k_D = 2.6556443f;
+  const float t = state.projection_transition_t;
+  const float smooth_t = t * t * (3.0f - 2.0f * t);
+
+  glm::mat4 persp = glm::perspectiveZO(glm::radians(45.0f), 1.0f, 0.1f, 10.0f);
+  glm::mat4 ortho = glm::orthoZO(-1.1f, 1.1f, -1.1f, 1.1f, -10.0f, 10.0f);
+  gizmo_ubo.projection = (1.0f - smooth_t) * persp + smooth_t * ortho;
   gizmo_ubo.projection[1][1] *= -1.0f;
 
   gizmo_ubo.axis_color_x = glm::vec4(kAxisColorPositiveX, 0.95f);
@@ -226,9 +264,11 @@ void NavigateGizmoOverlay::record_gizmo_draw(VkCommandBuffer cmd,
   gizmo_ubo.center_color = glm::vec4(0.45f, 0.45f, 0.50f, 0.85f);
   gizmo_ubo.bg_color = glm::vec4(0.12f, 0.12f, 0.14f, 0.55f);
   gizmo_ubo.params = glm::vec4(
-      k_arm_length, k_ball_radius, k_center_radius, k_neg_ball_radius);
-  gizmo_ubo.params2 = glm::vec4(
-      k_arm_half_width, k_neg_alpha_scale, k_bg_radius, k_letter_threshold);
+      NavigateGizmoMetrics::kArmLength, NavigateGizmoMetrics::kBallRadius,
+      NavigateGizmoMetrics::kCenterRadius, NavigateGizmoMetrics::kNegBallRadius);
+  gizmo_ubo.params2 =
+      glm::vec4(NavigateGizmoMetrics::kArmHalfWidth, k_neg_alpha_scale,
+                NavigateGizmoMetrics::kBgRadius, k_letter_threshold);
 
   AxisSortEntry entries[6];
   for (int i = 0; i < 3; ++i) {
@@ -246,9 +286,12 @@ void NavigateGizmoOverlay::record_gizmo_draw(VkCommandBuffer cmd,
       static_cast<float>(entries[1].index),
       static_cast<float>(entries[2].index),
       static_cast<float>(entries[3].index));
+  const float perspective_factor = 1.0f - smooth_t;
   gizmo_ubo.sort_order_1 = glm::vec4(
       static_cast<float>(entries[4].index),
-      static_cast<float>(entries[5].index), 0.0f, 0.0f);
+      static_cast<float>(entries[5].index),
+      k_D,
+      perspective_factor);
 
   const uint32_t frame_index = state.frame_index;
   m_uniform_buffers[frame_index]->upload(&gizmo_ubo, sizeof(gizmo_ubo));

@@ -2,6 +2,7 @@
 
 #include <slint.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -16,6 +17,8 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_timer.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
 
 #include "runtime/core/base/macro.h"
@@ -33,6 +36,10 @@
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
 #include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/core/math/math_types.h"
+#include "runtime/function/render/editor_camera.h"
+#include "runtime/function/slint/window_pointer_map.h"
+#include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/platform/file_system/file_system.h"
 
@@ -581,6 +588,12 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       }
     });
 
+    component->on_viewport_projection_toggled([this]() {
+      // Slint TouchArea callback intentionally ignored.
+      // C++ handles the toggle via SDL MOUSE_BUTTON_DOWN or Win32 pointer poll.
+      (void)this;
+    });
+
     // Slint splitters are visual-only; C++ owns drag (see tryBeginCppDockSplitterDrag).
     // Ignoring this callback prevents Slint from hiding the Content Browser mid-drag.
     component->on_dock_layout_drag_changed([](bool) {});
@@ -737,6 +750,9 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       syncContentBrowser();
     });
 
+    component->set_bottom_dock_height(160.0f);
+    component->set_left_dock_width(200.0f);
+    component->set_right_dock_width(260.0f);
     component->show();
     m_window_component = component;
 
@@ -747,6 +763,17 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         [this](const SDL_Event& event) { processEvent(event); });
 
     syncWindowChromeSize();
+    m_force_window_commit = true;
+    m_window_adapter->pollDrawableSize();
+    m_window_adapter->commitWindowSize(true);
+    cacheLayoutRects();
+    if (g_runtime_global_context.m_render_system) {
+      if (EditorCamera* camera =
+              g_runtime_global_context.m_render_system->getEditorCamera()) {
+        syncViewportProjectionMode(
+            camera->getProjectionMode() == EditorCamera::ProjectionMode::perspective);
+      }
+    }
     LOG_INFO("[SlintSystem] editor initialized");
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::initialize] {}", e.what());
@@ -779,45 +806,75 @@ void SlintSystem::shutdown() {
   m_window_system = nullptr;
 }
 
+void SlintSystem::applyPendingViewportInvalidate() {
+  if (!m_pending_viewport_invalidate || !m_window_component) {
+    return;
+  }
+  m_pending_viewport_invalidate = false;
+  m_viewport_image_stale = true;
+  static const uint8_t k_clear_pixel[4] = {10u, 10u, 10u, 255u};
+  setViewportImageInternal(k_clear_pixel, 1u, 1u, true);
+  LOG_INFO(
+      "[SlintSystem] viewport invalidate: hide 3D image until next render ({}x{} "
+      "logical)",
+      m_cached_viewport_logical_rect.width, m_cached_viewport_logical_rect.height);
+}
+
 void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
                                    uint32_t height) {
+  setViewportImageInternal(pixels_rgba, width, height, false);
+}
+
+void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
+                                           uint32_t width, uint32_t height,
+                                           bool allow_during_dispatch) {
   if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
     return;
   }
-  if (m_slint_dispatch_depth > 0) {
+  if (!allow_during_dispatch && m_slint_dispatch_depth > 0) {
     return;
   }
   static bool s_logged_first_viewport_upload = false;
   static uint32_t s_last_upload_w = 0;
   static uint32_t s_last_upload_h = 0;
+  const bool image_ready = width > 1u && height > 1u;
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    MainEditorWindow& ui = *m_window_component->operator->();
     slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
         width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
-    slint::Image image(buffer);
-    m_window_component->operator->()->set_viewport_image(image);
+    ui.set_viewport_image(slint::Image(buffer));
+    ui.set_viewport_image_ready(image_ready);
     m_viewport_image_dirty = true;
+    m_viewport_image_stale = !image_ready;
+    m_viewport_upload_width = width;
+    m_viewport_upload_height = height;
     if (m_window_adapter) {
       m_window_adapter->request_redraw();
     }
-    if (!s_logged_first_viewport_upload) {
-      LOG_INFO("[SlintSystem] first viewport image upload: {}x{}", width, height);
-      s_logged_first_viewport_upload = true;
-      s_last_upload_w = width;
-      s_last_upload_h = height;
-    } else if (width != s_last_upload_w || height != s_last_upload_h) {
-      LOG_INFO("[SlintSystem] viewport image upload resized: {}x{} -> {}x{}",
-               s_last_upload_w, s_last_upload_h, width, height);
-      s_last_upload_w = width;
-      s_last_upload_h = height;
+    if (image_ready) {
+      if (!s_logged_first_viewport_upload) {
+        LOG_INFO(
+            "[SlintSystem] viewport Persp/Iso uses Slint overlay; first 3D upload "
+            "{}x{}",
+            width, height);
+        s_logged_first_viewport_upload = true;
+        s_last_upload_w = width;
+        s_last_upload_h = height;
+      } else if (width != s_last_upload_w || height != s_last_upload_h) {
+        LOG_INFO("[SlintSystem] viewport image upload resized: {}x{} -> {}x{}",
+                 s_last_upload_w, s_last_upload_h, width, height);
+        s_last_upload_w = width;
+        s_last_upload_h = height;
+      }
     }
   } catch (const std::exception& e) {
-    LOG_ERROR("[SlintSystem::setViewportImage] {}", e.what());
+    LOG_ERROR("[SlintSystem::setViewportImageInternal] {}", e.what());
     if (m_window_system) {
       m_window_system->requestClose();
     }
   } catch (...) {
-    LOG_ERROR("[SlintSystem::setViewportImage] unknown exception");
+    LOG_ERROR("[SlintSystem::setViewportImageInternal] unknown exception");
     if (m_window_system) {
       m_window_system->requestClose();
     }
@@ -831,6 +888,35 @@ ViewportLogicalRect SlintSystem::getViewportLogicalRect() const {
 eastl::array<uint32_t, 2> SlintSystem::getViewportLogicalSize() const {
   return {m_cached_viewport_logical_rect.width,
           m_cached_viewport_logical_rect.height};
+}
+
+eastl::array<uint32_t, 2> SlintSystem::getViewportRenderTargetSize() const {
+  uint32_t vp_w = m_cached_viewport_logical_rect.width;
+  uint32_t vp_h = m_cached_viewport_logical_rect.height;
+  float scale = 1.0f;
+  if (m_window_system) {
+    scale = eastl::max(m_window_system->getDisplayScale(), 1.0f);
+  }
+  return {static_cast<uint32_t>(static_cast<float>(vp_w) * scale + 0.5f),
+          static_cast<uint32_t>(static_cast<float>(vp_h) * scale + 0.5f)};
+}
+
+void SlintSystem::syncViewportProjectionMode(bool is_perspective) {
+  if (!m_window_component) {
+    return;
+  }
+  if (m_cached_viewport_is_perspective == is_perspective) {
+    return;
+  }
+  m_cached_viewport_is_perspective = is_perspective;
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_window_component->operator->()->set_viewport_is_perspective(is_perspective);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncViewportProjectionMode] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncViewportProjectionMode] unknown exception");
+  }
 }
 
 BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
@@ -938,48 +1024,13 @@ BrowserLogicalRect readBrowserRectFromUi(const MainEditorWindow& ui) {
 struct SlintPointerCoords {
   float x{0.0f};
   float y{0.0f};
-  float scale_x{1.0f};
-  float scale_y{1.0f};
 };
 
 SlintPointerCoords mapWindowPointerToSlint(WindowSystem* window_system, float x,
                                            float y) {
-  SlintPointerCoords out{x, y, 1.0f, 1.0f};
-  if (!window_system) {
-    return out;
-  }
-  const eastl::array<int, 2> logical = window_system->getLogicalWindowSize();
-  const eastl::array<int, 2> drawable = window_system->getDrawableSize();
-
-  // Slint layout uses logical client size. Map SDL/Win32 client coords into that space.
-#if defined(_WIN32)
-  // SDL3 README-highdpi: on Windows, mouse events are always physical client pixels.
-  if (logical[0] > 0 && logical[1] > 0) {
-    if (drawable[0] > logical[0] + 1 || drawable[1] > logical[1] + 1) {
-      out.x = x * static_cast<float>(logical[0]) / static_cast<float>(drawable[0]);
-      out.y = y * static_cast<float>(logical[1]) / static_cast<float>(drawable[1]);
-      out.scale_x = static_cast<float>(drawable[0]) / static_cast<float>(logical[0]);
-      out.scale_y = static_cast<float>(drawable[1]) / static_cast<float>(logical[1]);
-      return out;
-    }
-    const float display_scale = window_system->getDisplayScale();
-    if (display_scale > 1.01f) {
-      out.x = x / display_scale;
-      out.y = y / display_scale;
-      out.scale_x = display_scale;
-      out.scale_y = display_scale;
-    }
-  }
-  return out;
-#else
-  const eastl::array<int, 2> sdl_win = window_system->getWindowSize();
-  if (sdl_win[0] > 0 && sdl_win[1] > 0 && logical[0] > 0 && logical[1] > 0 &&
-      (logical[0] != sdl_win[0] || logical[1] != sdl_win[1])) {
-    out.x = x * static_cast<float>(logical[0]) / static_cast<float>(sdl_win[0]);
-    out.y = y * static_cast<float>(logical[1]) / static_cast<float>(sdl_win[1]);
-  }
-  return out;
-#endif
+  const eastl::array<float, 2> logical =
+      mapWindowPointerToLogical(window_system, x, y);
+  return {logical[0], logical[1]};
 }
 
 struct WindowClientMouseState {
@@ -1431,6 +1482,123 @@ bool SlintSystem::isPointerOverViewport(float logical_x, float logical_y) const 
   return pointInRect(logical_x, logical_y, m_cached_viewport_logical_rect);
 }
 
+bool SlintSystem::probeProjectionButtonAtLogical(float logical_x,
+                                                float logical_y) const {
+  // Hit-test must match ViewportProjectionToggle.slint (Slint layout), not the
+  // chrome-expanded cache used for Vulkan render target sizing (G79).
+  float vp_x = 0.0f;
+  float vp_y = 0.0f;
+  float vp_w = 0.0f;
+  float vp_h = 0.0f;
+  if (m_window_component) {
+    const auto& ui = *m_window_component;
+    vp_w = ui->get_viewport_width();
+    vp_h = ui->get_viewport_height();
+    if (vp_w > 0.0f && vp_h > 0.0f) {
+      vp_x = ui->get_viewport_origin_x();
+      vp_y = ui->get_viewport_origin_y();
+    }
+  }
+  if (vp_w <= 0.0f || vp_h <= 0.0f) {
+    vp_x = static_cast<float>(m_cached_viewport_logical_rect.x);
+    vp_y = static_cast<float>(m_cached_viewport_logical_rect.y);
+    vp_w = static_cast<float>(m_cached_viewport_logical_rect.width);
+    vp_h = static_cast<float>(m_cached_viewport_logical_rect.height);
+  }
+  if (vp_w <= 0.0f || vp_h <= 0.0f) {
+    return false;
+  }
+
+  if (hitProjectionToggleAtWindowLogical(logical_x, logical_y, vp_x, vp_y, vp_w, vp_h)) {
+    return true;
+  }
+
+  const uint32_t vp_w_u = static_cast<uint32_t>(vp_w);
+  const uint32_t vp_h_u = static_cast<uint32_t>(vp_h);
+  if (logical_x >= vp_x && logical_y >= vp_y && logical_x < vp_x + vp_w &&
+      logical_y < vp_y + vp_h) {
+    const float local_x = logical_x - vp_x;
+    const float local_y = logical_y - vp_y;
+    if (hitTestProjectionButtonViewportLocal(local_x, local_y, vp_w_u, vp_h_u)) {
+      return true;
+    }
+    if (hitViewportTopRightChromeLocal(local_x, local_y, vp_w, vp_h)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool SlintSystem::probeProjectionButtonAtWindow(float window_x,
+                                                 float window_y) const {
+  if (!m_window_system) {
+    return false;
+  }
+  const SlintPointerCoords ptr =
+      mapWindowPointerToSlint(m_window_system, window_x, window_y);
+  return probeProjectionButtonAtLogical(ptr.x, ptr.y);
+}
+
+bool SlintSystem::applyViewportProjection(bool is_perspective, const char* source) {
+  if (!g_runtime_global_context.m_render_system) {
+    return false;
+  }
+  EditorCamera* camera =
+      g_runtime_global_context.m_render_system->getEditorCamera();
+  if (camera == nullptr) {
+    return false;
+  }
+
+  const EditorCamera::ProjectionMode mode =
+      is_perspective ? EditorCamera::ProjectionMode::perspective
+                     : EditorCamera::ProjectionMode::orthographic;
+  if (camera->getProjectionMode() != mode) {
+    camera->setProjectionMode(mode);
+  }
+  syncViewportProjectionMode(is_perspective);
+
+  LOG_INFO("[SlintSystem] viewport projection -> {} ({})",
+           is_perspective ? "perspective" : "orthographic",
+           source != nullptr ? source : "unknown");
+
+  return true;
+}
+
+void SlintSystem::requestViewportProjectionToggle(const char* source) {
+  if (m_projection_toggle_consumed_this_frame) {
+    return;
+  }
+  if (!g_runtime_global_context.m_render_system || !m_window_component) {
+    return;
+  }
+  EditorCamera* camera =
+      g_runtime_global_context.m_render_system->getEditorCamera();
+  if (camera == nullptr) {
+    return;
+  }
+  const bool is_perspective =
+      camera->getProjectionMode() == EditorCamera::ProjectionMode::perspective;
+  const bool next_perspective = !is_perspective;
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_window_component->operator->()->set_viewport_is_perspective(next_perspective);
+  } catch (...) {
+    // Slint property update failed; still apply the camera change.
+  }
+  applyViewportProjection(next_perspective, source != nullptr ? source : "engine");
+  m_projection_toggle_consumed_this_frame = true;
+}
+
+bool SlintSystem::tryToggleProjectionAtWindow(float window_x, float window_y) {
+  cacheViewportLogicalRectOnly();
+  if (probeProjectionButtonAtWindow(window_x, window_y)) {
+    requestViewportProjectionToggle("render_mouse_press");
+    return true;
+  }
+
+  return false;
+}
+
 void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
   if (!g_runtime_global_context.m_content_browser) {
     return;
@@ -1500,9 +1668,47 @@ void SlintSystem::clearHierarchySlintClickFlag() {
   m_hierarchy_handled_by_slint = false;
 }
 
+void SlintSystem::tickProjectionTogglePointerPoll() {
+  if (!m_window_system || !m_window_component) {
+    return;
+  }
+  if (m_dock_splitter_drag != DockSplitterDrag::none || m_splitter_resize_active) {
+    return;
+  }
+
+  const WindowClientMouseState mouse =
+      queryWindowClientMouseState(m_window_system);
+  cacheViewportLogicalRectOnly();
+  const SlintPointerCoords ptr =
+      mapWindowPointerToSlint(m_window_system, mouse.x, mouse.y);
+  // Use only the precise hit-test that matches the Slint TouchArea bounds.
+  // No generous viewport-quadrant fallback.
+  const bool chrome_hit = probeProjectionButtonAtLogical(ptr.x, ptr.y);
+
+  const bool was_down = m_left_mouse_down_prev;
+  const bool pressed_edge = mouse.left_down && !was_down;
+
+  if (pressed_edge) {
+    if (chrome_hit && m_projection_toggle_sdl_frame != m_frame_counter &&
+        (m_frame_counter == 0 || m_projection_toggle_sdl_frame != m_frame_counter - 1)) {
+      // SDL did NOT already handle this press — fire as fallback.
+      requestViewportProjectionToggle("chrome_win32_poll_press");
+    }
+  }
+
+  // Win32 poll must track button state even when Skia never delivers SDL mouse-up.
+  m_left_mouse_down_prev = mouse.left_down;
+}
+
 void SlintSystem::tickContentBrowserTreePointerPoll() {
-  if (!m_window_system || !m_window_component ||
-      !g_runtime_global_context.m_content_browser) {
+  if (!m_window_system || !m_window_component) {
+    return;
+  }
+
+  if (!g_runtime_global_context.m_content_browser) {
+    const WindowClientMouseState mouse =
+        queryWindowClientMouseState(m_window_system);
+    m_left_mouse_down_prev = mouse.left_down;
     return;
   }
 
@@ -1702,14 +1908,51 @@ void SlintSystem::cacheLayoutRects() {
     const auto& component = *m_window_component;
     const float x = component->get_viewport_origin_x();
     const float y = component->get_viewport_origin_y();
-    const float w = component->get_viewport_width();
-    const float h = component->get_viewport_height();
+    float w = component->get_viewport_width();
+    float h = component->get_viewport_height();
+    uint32_t vp_w = w > 0.0f ? static_cast<uint32_t>(w) : 0u;
+    uint32_t vp_h = h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+
+    // Slint can report min-width (320) and a squashed height while the window
+    // chrome is larger (G60). Estimate from window minus docks/toolbars.
+    if (m_window_system) {
+      const eastl::array<int, 2> win = m_window_system->getLogicalWindowSize();
+      const float left_w = component->get_left_dock_width();
+      const float right_w = component->get_right_dock_width();
+      const float bottom_h = component->get_bottom_dock_height();
+      constexpr int k_toolbar_status = 44 + 24 + 8;
+      constexpr int k_min_viewport_w = 120;
+      constexpr int k_min_viewport_h = 80;
+      const int avail_w =
+          win[0] - static_cast<int>(left_w + right_w + 16.0f);
+      const int avail_h =
+          win[1] - k_toolbar_status - static_cast<int>(bottom_h + 8.0f);
+      const int est_w = eastl::max(k_min_viewport_w, avail_w);
+      const int est_h = eastl::max(k_min_viewport_h, avail_h);
+      // Expand when Slint under-reports (min-width squash) or reports stale size.
+      const bool expand_w =
+          win[0] > 480 && (vp_w + 24u < static_cast<uint32_t>(est_w) ||
+                           vp_w > static_cast<uint32_t>(est_w + 48));
+      const bool expand_h =
+          win[1] > 300 && vp_h + 16u < static_cast<uint32_t>(est_h);
+      if (expand_w || expand_h) {
+        const uint32_t prev_w = vp_w;
+        const uint32_t prev_h = vp_h;
+        if (expand_w) {
+          vp_w = static_cast<uint32_t>(eastl::min(est_w, avail_w));
+          w = static_cast<float>(vp_w);
+        }
+        if (expand_h) {
+          vp_h = static_cast<uint32_t>(est_h);
+          h = static_cast<float>(vp_h);
+        }
+      }
+    }
+
     m_cached_viewport_logical_rect.x = static_cast<int32_t>(x);
     m_cached_viewport_logical_rect.y = static_cast<int32_t>(y);
-    m_cached_viewport_logical_rect.width =
-        w > 0.0f ? static_cast<uint32_t>(w) : 0u;
-    m_cached_viewport_logical_rect.height =
-        h > 0.0f ? static_cast<uint32_t>(h) : 0u;
+    m_cached_viewport_logical_rect.width = vp_w;
+    m_cached_viewport_logical_rect.height = vp_h;
 
     m_cached_browser_logical_rect.x =
         static_cast<int32_t>(component->get_browser_origin_x());
@@ -1733,13 +1976,12 @@ void SlintSystem::cacheLayoutRects() {
     m_cached_hierarchy_logical_rect.height =
         hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
 
-    const uint32_t vp_w = m_cached_viewport_logical_rect.width;
-    const uint32_t vp_h = m_cached_viewport_logical_rect.height;
     const bool viewport_changed =
         m_last_viewport_w != 0 &&
         (vp_w != m_last_viewport_w || vp_h != m_last_viewport_h);
     if (viewport_changed) {
       m_layout_cooldown_frames = k_layout_cooldown_frames;
+      m_pending_viewport_invalidate = true;
     }
     m_last_viewport_w = vp_w;
     m_last_viewport_h = vp_h;
@@ -1754,32 +1996,8 @@ void SlintSystem::cacheLayoutRects() {
 }
 
 void SlintSystem::cacheViewportLogicalRectOnly() {
-  if (!m_window_component) {
-    return;
-  }
-  const auto& component = *m_window_component;
-  const float x = component->get_viewport_origin_x();
-  const float y = component->get_viewport_origin_y();
-  const float w = component->get_viewport_width();
-  const float h = component->get_viewport_height();
-  m_cached_viewport_logical_rect.x = static_cast<int32_t>(x);
-  m_cached_viewport_logical_rect.y = static_cast<int32_t>(y);
-  m_cached_viewport_logical_rect.width = w > 0.0f ? static_cast<uint32_t>(w) : 0u;
-  m_cached_viewport_logical_rect.height = h > 0.0f ? static_cast<uint32_t>(h) : 0u;
-
-  const uint32_t vp_w = m_cached_viewport_logical_rect.width;
-  const uint32_t vp_h = m_cached_viewport_logical_rect.height;
-  const bool viewport_changed =
-      m_last_viewport_w != 0 &&
-      (vp_w != m_last_viewport_w || vp_h != m_last_viewport_h);
-  if (viewport_changed) {
-    m_layout_cooldown_frames = k_layout_cooldown_frames;
-  }
-  m_last_viewport_w = vp_w;
-  m_last_viewport_h = vp_h;
-  if (!viewport_changed && m_layout_cooldown_frames > 0) {
-    --m_layout_cooldown_frames;
-  }
+  // Keep chrome expansion in sync during defer_heavy (splitter drag) frames too.
+  cacheLayoutRects();
 }
 
 void SlintSystem::refreshBrowserRectCache() {
@@ -1853,6 +2071,7 @@ void SlintSystem::notifyWin32ClientAreaChanged(uintptr_t wm_size_param, int clie
   } catch (...) {
     LOG_ERROR("[SlintSystem::notifyWin32ClientAreaChanged] unknown exception");
   }
+  applyPendingViewportInvalidate();
 }
 
 void SlintSystem::noteWin32SizingTick() {
@@ -1890,6 +2109,7 @@ void SlintSystem::finishLiveResizeModal() {
   } catch (...) {
     LOG_ERROR("[SlintSystem::finishLiveResizeModal] unknown exception");
   }
+  applyPendingViewportInvalidate();
 }
 
 void SlintSystem::setDockLayoutDragActive(bool active) {
@@ -1956,7 +2176,13 @@ DockSplitterDrag hitTestDockSplitterAt(const ViewportLogicalRect& vp,
       if (x >= vp_left - grab_px && x <= vp_left + 2.0f) {
         kind = DockSplitterDrag::leftVertical;
       } else if (x >= vp_right - 2.0f && x <= vp_right + grab_px) {
-        kind = DockSplitterDrag::rightVertical;
+        // Match hitTestDockSplitterFromLayoutProperties — do not grab nav/Persp/Iso chrome.
+        constexpr float k_viewport_chrome_top_px = 130.0f;
+        const bool in_viewport_chrome_y =
+            y >= vp_top && y < vp_top + k_viewport_chrome_top_px;
+        if (!in_viewport_chrome_y) {
+          kind = DockSplitterDrag::rightVertical;
+        }
       }
     }
   }
@@ -2008,7 +2234,14 @@ DockSplitterDrag hitTestDockSplitterFromPaneWidths(const MainEditorWindow& ui,
     }
     const float right_split_x = editor_logical_w - right_w;
     if (x >= right_split_x - 24.0f && x <= right_split_x + grab_px) {
-      return DockSplitterDrag::rightVertical;
+      const float vp_y = ui.get_viewport_origin_y();
+      const float vp_h = ui.get_viewport_height();
+      constexpr float k_viewport_chrome_top_px = 130.0f;
+      const bool in_viewport_chrome_y =
+          vp_h > 0.0f && y >= vp_y && y < vp_y + k_viewport_chrome_top_px;
+      if (!in_viewport_chrome_y) {
+        return DockSplitterDrag::rightVertical;
+      }
     }
   }
 
@@ -2058,7 +2291,13 @@ DockSplitterDrag hitTestDockSplitterFromLayoutProperties(const MainEditorWindow&
         return DockSplitterDrag::leftVertical;
       }
       const float vp_right = vp_x + vp_w;
-      if (slint_x >= vp_right - 6.0f && slint_x <= vp_right + grab_px) {
+      // Exclude top-right viewport chrome (nav gizmo + Persp/Iso) from splitter grab.
+      constexpr float k_viewport_chrome_top_px = 130.0f;
+      const bool in_right_splitter_x =
+          slint_x >= vp_right - 6.0f && slint_x <= vp_right + grab_px;
+      const bool in_viewport_chrome_y =
+          slint_y >= vp_y && slint_y < vp_y + k_viewport_chrome_top_px;
+      if (in_right_splitter_x && !in_viewport_chrome_y) {
         return DockSplitterDrag::rightVertical;
       }
     }
@@ -2119,12 +2358,8 @@ void SlintSystem::refreshDockSplitterGeometryFromUi() {
     return;
   }
   const MainEditorWindow& ui = *m_window_component->operator->();
-  const float vp_w = ui.get_viewport_width();
-  const float vp_h = ui.get_viewport_height();
-  m_cached_viewport_logical_rect.x = static_cast<int32_t>(ui.get_viewport_origin_x());
-  m_cached_viewport_logical_rect.y = static_cast<int32_t>(ui.get_viewport_origin_y());
-  m_cached_viewport_logical_rect.width = vp_w > 0.0f ? static_cast<uint32_t>(vp_w) : 0u;
-  m_cached_viewport_logical_rect.height = vp_h > 0.0f ? static_cast<uint32_t>(vp_h) : 0u;
+  // Do not overwrite m_cached_viewport_logical_rect — cacheLayoutRects() keeps the
+  // chrome-expanded rect used for projection hit-test and render viewport size.
   m_cached_browser_logical_rect = readBrowserRectFromUi(ui);
   m_cached_hierarchy_logical_rect.x =
       static_cast<int32_t>(ui.get_hierarchy_origin_x());
@@ -2196,8 +2431,11 @@ bool SlintSystem::isSplitterResizeInteractionActive() const {
 }
 
 bool SlintSystem::shouldDeferHeavyFrameWork() const {
-  if (m_win32_size_modal || isWindowResizeActive() || m_layout_cooldown_frames > 0 ||
-      isDockLayoutDragActive()) {
+  // Defer on border-drag resize cooldown only — not on maximize/fullscreen
+  // (those clear m_resize_cooldown_frames; m_window_resize_active alone must not
+  // skip rendererTick or stale GPU readback stays stretched in the viewport).
+  if (m_win32_size_modal || m_resize_cooldown_frames > 0 ||
+      m_layout_cooldown_frames > 0 || isDockLayoutDragActive()) {
     return true;
   }
 #if defined(_WIN32)
@@ -2647,6 +2885,8 @@ void SlintSystem::compositeEditorFrame() {
 void SlintSystem::beginFrame() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_projection_toggle_consumed_this_frame = false;
+    ++m_frame_counter;
     processPendingAssetImports();
     refreshDockSplitterHitCache();
     pollWin32DockSplitterPointerState();
@@ -2724,6 +2964,7 @@ void SlintSystem::beginFrame() {
     } else {
       cacheLayoutRects();
     }
+    tickProjectionTogglePointerPoll();
     if (!defer_heavy) {
       runEditorPanelSync();
     }
@@ -2866,6 +3107,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
           // H31: defer Skia composite — synchronous render per resize SDL event
           // starves SDL_AppIterate during border drag.
           m_window_adapter->request_redraw();
+          cacheLayoutRects();
         }
         break;
       case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -2899,6 +3141,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
             m_window_adapter->clearPresentSuppress();
           }
           m_window_adapter->request_redraw();
+          cacheLayoutRects();
         }
         break;
       case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
@@ -2969,28 +3212,42 @@ void SlintSystem::processEvent(const SDL_Event& event) {
           if (m_dock_splitter_drag != DockSplitterDrag::none) {
             break;
           }
-          const float window_x = static_cast<float>(event.button.x);
-          const float window_y = static_cast<float>(event.button.y);
-          m_last_mouse_window_x = window_x;
-          m_last_mouse_window_y = window_y;
+          const float raw_x = static_cast<float>(event.button.x);
+          const float raw_y = static_cast<float>(event.button.y);
+          const SlintPointerCoords logical_ptr =
+              mapWindowPointerToSlint(m_window_system, raw_x, raw_y);
+          m_last_mouse_window_x = raw_x;
+          m_last_mouse_window_y = raw_y;
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            // Before dock splitter (right splitter grab is 80px wide and overlaps
+            // the viewport top-right nav gizmo / Persp/Iso strip).
+            cacheViewportLogicalRectOnly();
+          }
           refreshDockSplitterHitCache();
           if (event.button.button == SDL_BUTTON_LEFT) {
+            const bool proj_hit =
+                probeProjectionButtonAtLogical(logical_ptr.x, logical_ptr.y);
+            bool chrome_click = proj_hit;
+            if (chrome_click) {
+              requestViewportProjectionToggle("chrome_sdl_press");
+              m_projection_toggle_sdl_frame = m_frame_counter;
+              m_left_mouse_down_prev = true;
+              break;
+            }
+
             const DockSplitterDrag splitter_kind =
-                queryDockSplitterAtFast(window_x, window_y);
+                queryDockSplitterAtFast(raw_x, raw_y);
             if (splitter_kind != DockSplitterDrag::none ||
-                isPointerNearDockSplitter(window_x, window_y)) {
+                isPointerNearDockSplitter(raw_x, raw_y)) {
               m_splitter_resize_active = true;
-              tryBeginCppDockSplitterDrag(window_x, window_y);
+              tryBeginCppDockSplitterDrag(raw_x, raw_y);
               m_left_mouse_down_prev = true;
               // H51: do not dispatch_pointer_press into Slint on splitter hits.
               break;
             }
           }
-          if (event.button.button == SDL_BUTTON_LEFT) {
-            m_left_mouse_down_prev = true;
-          }
           window.dispatch_pointer_press_event(
-              slintPointerPosition(m_window_system, window_x, window_y),
+              slintPointerPosition(m_window_system, raw_x, raw_y),
               mapPointerButton(event.button.button));
         }
         break;
@@ -3019,6 +3276,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
           flushPendingPointerMove();
           if (!isDockLayoutDragActive()) {
             if (event.button.button == SDL_BUTTON_LEFT) {
+              cacheViewportLogicalRectOnly();
               m_left_mouse_down_prev = false;
             }
             if (event.button.button == SDL_BUTTON_LEFT &&
@@ -3031,6 +3289,7 @@ void SlintSystem::processEvent(const SDL_Event& event) {
           window.dispatch_pointer_release_event(
               slintPointerPosition(m_window_system, window_x, window_y),
               mapPointerButton(event.button.button));
+          // (Projection toggle state flags cleaned up — no per-gesture state to clear.)
           if (!isDockLayoutDragActive() && event.button.button == SDL_BUTTON_LEFT &&
               !m_tree_folder_handled_by_slint) {
             const slint::LogicalPosition logical_pos =
@@ -3059,6 +3318,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_KEY_DOWN:
         if (event.key.windowID == window_id) {
+          if (!event.key.repeat && event.key.key == SDLK_P) {
+            requestViewportProjectionToggle("keyboard_p");
+          }
           const slint::SharedString key_text = mapKeycode(event.key.key);
           if (!key_text.empty() && isSpecialKey(event.key.key)) {
             if (event.key.repeat) {
@@ -3149,5 +3411,6 @@ void SlintSystem::processEvent(const SDL_Event& event) {
       m_window_system->requestClose();
     }
   }
+  applyPendingViewportInvalidate();
 }
 }  // namespace Blunder

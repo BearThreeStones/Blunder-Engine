@@ -29,6 +29,7 @@ struct ForwardFrameState {
   float ortho_size{10.0f};
   EditorCamera::ProjectionMode projection_mode{
       EditorCamera::ProjectionMode::perspective};
+  float projection_transition_t{0.0f};
   ForwardGridPlane grid_plane{ForwardGridPlane::xy};
   BlinnPhongEditorSettings shading;
   glm::mat4 light_view{1.0f};

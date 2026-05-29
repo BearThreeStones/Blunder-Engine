@@ -7,10 +7,13 @@
 #include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
+#include "runtime/core/math/math_types.h"
+#include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/overlay/overlay_base.h"
 
 namespace Blunder {
 
+class EditorCamera;
 class SlangCompiler;
 class VulkanAllocator;
 class VulkanBuffer;
@@ -38,8 +41,12 @@ class NavigateGizmoOverlay final : public Overlay {
   void begin_sync(OverlayResources& res, const OverlayState& state) override;
   void draw_screen(VkCommandBuffer cmd, const OverlayState& state) override;
 
+  /// Returns true when the click hit a nav gizmo axis (view snap).
+  bool tryHandleMouseClick(const Vec2& window_position, EditorCamera& camera);
+
  private:
-  void record_gizmo_draw(VkCommandBuffer cmd, const OverlayState& state);
+  void record_gizmo_draw(VkCommandBuffer cmd, const OverlayState& state,
+                         float gizmo_x, float gizmo_y, float gizmo_size);
 
   VulkanContext* m_vk_context{nullptr};
   VulkanAllocator* m_vk_allocator{nullptr};

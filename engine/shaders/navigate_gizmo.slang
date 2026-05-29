@@ -91,9 +91,9 @@ float4 getAxisColor(uint axisIdx)
     return ubo.axisColorZ;
 }
 
-float4 projectPos(float2 pos2D)
+float4 projectPos3D(float3 pos3D)
 {
-    return mul(ubo.projection, float4(pos2D, 0.0, 1.0));
+    return mul(ubo.projection, float4(pos3D, 1.0));
 }
 
 // ---------- Letter SDF ----------
@@ -155,6 +155,10 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
     float negAlpha    = ubo.params2.y;
     float bgRadius    = ubo.params2.z;
 
+    float D = ubo.sortOrder1.z;
+    float perspectiveFactor = ubo.sortOrder1.w;
+    float3 viewPosCenter = float3(0.0, 0.0, -D);
+
     // ---- Background disc ----
     if (vertexId < VERT_BG_END)
     {
@@ -162,7 +166,8 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
         float2 uv = getQuadUV(vertexId);
         output.uv = uv;
         output.color = ubo.bgColor;
-        output.sv_position = projectPos(uv * bgRadius);
+        float3 pos3D = viewPosCenter + float3(uv * bgRadius, -0.01);
+        output.sv_position = projectPos3D(pos3D);
         return output;
     }
 
@@ -173,7 +178,8 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
         float2 uv = getQuadUV(vertexId - VERT_BG_END);
         output.uv = uv;
         output.color = ubo.centerColor;
-        output.sv_position = projectPos(uv * centerRad);
+        float3 pos3D = viewPosCenter + float3(uv * centerRad, 0.0);
+        output.sv_position = projectPos3D(pos3D);
         return output;
     }
 
@@ -191,17 +197,19 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
     if (!isPositive) worldDir = -worldDir;
 
     // Rotate world axis by view rotation (translation stripped on CPU).
-    float2 viewDir2D = mul(ubo.viewRotation, float4(worldDir, 0.0)).xy;
-    float2 endPos = viewDir2D * armLength;
+    float3 viewDir3D = mul(ubo.viewRotation, float4(worldDir, 0.0)).xyz;
+    float3 endPos = viewPosCenter + viewDir3D * armLength;
     float4 axisColor = getAxisColor(axisIdx);
+
+    float visualScale = lerp(1.0, D / -endPos.z, perspectiveFactor);
 
     if (slotLocal < 6u)
     {
         // ---- Arm quad ----
         output.primType = 2u;
 
-        float2 startPos = viewDir2D * (centerRad * 0.5);
-        float2 armDelta = endPos - startPos;
+        float3 startPos = viewPosCenter + viewDir3D * (centerRad * 0.5);
+        float3 armDelta = endPos - startPos;
         float armScreenLen = length(armDelta);
 
         if (armScreenLen < 0.001)
@@ -212,14 +220,21 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
             return output;
         }
 
-        float2 armDir2D = armDelta / armScreenLen;
-        float2 armPerp = float2(-armDir2D.y, armDir2D.x) * armHalfW;
+        float3 armDir3D = armDelta / armScreenLen;
+        float3 perp = cross(armDir3D, float3(0.0, 0.0, 1.0));
+        float perpLen = length(perp);
+        float3 armPerp = (perpLen > 0.001) ? (perp / perpLen * armHalfW) : float3(armHalfW, 0.0, 0.0);
+
+        // Scale the perp vector by the average visual scale of start/end points:
+        float startScale = lerp(1.0, D / -startPos.z, perspectiveFactor);
+        float scale = (startScale + visualScale) * 0.5;
+        armPerp *= scale;
 
         float2 ap = getArmParams(slotLocal);
-        float2 basePos = lerp(startPos, endPos, ap.x);
-        float2 cornerPos = basePos + armPerp * ap.y;
+        float3 basePos = lerp(startPos, endPos, ap.x);
+        float3 cornerPos = basePos + armPerp * ap.y;
 
-        output.sv_position = projectPos(cornerPos);
+        output.sv_position = projectPos3D(cornerPos);
         float armAlpha = isPositive ? 0.85 : (0.85 * negAlpha);
         output.color = float4(axisColor.xyz, armAlpha);
         output.uv = float2(0, 0);
@@ -235,8 +250,9 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
         float rad = isPositive ? ballRadius : negBallRad;
         output.primType = isPositive ? 3u : 4u;
 
-        float2 ballPos = endPos + uv * rad;
-        output.sv_position = projectPos(ballPos);
+        // Billboard offset in view-space XY plane, scaled by perspective:
+        float3 ballPos = endPos + float3(uv * rad * visualScale, 0.0);
+        output.sv_position = projectPos3D(ballPos);
 
         float alpha = isPositive ? axisColor.w : (axisColor.w * negAlpha);
         output.color = float4(axisColor.xyz, alpha);

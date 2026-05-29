@@ -118,6 +118,8 @@ class RenderSystem final {
 
   void resizeOffscreenIfNeeded(uint32_t width, uint32_t height);
   void applyDeferredOffscreenResize();
+  /// Applies pending offscreen resize immediately when Slint target size is stable.
+  void flushOffscreenResizeToTarget(uint32_t target_width, uint32_t target_height);
   void recreateReadbackStaging(uint32_t width, uint32_t height);
   void clearGpuMeshes();
 

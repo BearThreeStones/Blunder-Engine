@@ -169,6 +169,7 @@ void BlunderEngine::finalizePendingWindowResize() {
     // Layout commit only; keep resize cooldown so rendererTick/composite stay
     // deferred for subsequent frames (avoids one mega-stall frame on release).
     slint->finishLiveResizeModal();
+    slint->applyPendingViewportInvalidate();
   }
 }
 
@@ -327,14 +328,15 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   // so rendererTick does not run on the same frame the dock splitter resizes the viewport.
   if (slint_system) {
     slint_system->beginFrame();
+    slint_system->applyPendingViewportInvalidate();
   }
 
   const bool defer_heavy =
       slint_system != nullptr && slint_system->shouldDeferHeavyFrameWork();
 
   static bool s_was_defer_heavy = false;
-  if (s_was_defer_heavy && !defer_heavy) {
-    m_skip_renderer_after_defer = true;
+  if (s_was_defer_heavy && !defer_heavy && slint_system) {
+    slint_system->applyPendingViewportInvalidate();
   }
   s_was_defer_heavy = defer_heavy;
 
@@ -412,19 +414,24 @@ bool BlunderEngine::rendererTick(float delta_time) {
   uint32_t target_w = 0;
   uint32_t target_h = 0;
   if (slint_system) {
-    eastl::array<uint32_t, 2> vp = slint_system->getViewportLogicalSize();
-    target_w = vp[0];
-    target_h = vp[1];
-    if (target_w > 0 && target_h > 0) {
+    const eastl::array<uint32_t, 2> logical_vp = slint_system->getViewportLogicalSize();
+    const eastl::array<uint32_t, 2> render_vp =
+        slint_system->getViewportRenderTargetSize();
+    target_w = render_vp[0];
+    target_h = render_vp[1];
+    if (logical_vp[0] > 0 && logical_vp[1] > 0) {
       if (!s_logged_viewport_ready) {
-        LOG_INFO("[BlunderEngine] Slint viewport ready: {}x{}", target_w, target_h);
+        LOG_INFO("[BlunderEngine] Slint viewport ready: {}x{} (render {}x{})",
+                 logical_vp[0], logical_vp[1], target_w, target_h);
         s_logged_viewport_ready = true;
-      } else if (target_w != s_last_viewport_w || target_h != s_last_viewport_h) {
-        LOG_INFO("[BlunderEngine] Slint viewport changed: {}x{} -> {}x{}",
-                 s_last_viewport_w, s_last_viewport_h, target_w, target_h);
+      } else if (logical_vp[0] != s_last_viewport_w ||
+                 logical_vp[1] != s_last_viewport_h) {
+        LOG_INFO("[BlunderEngine] Slint viewport changed: {}x{} -> {}x{} (render {}x{})",
+                 s_last_viewport_w, s_last_viewport_h, logical_vp[0], logical_vp[1],
+                 target_w, target_h);
       }
-      s_last_viewport_w = target_w;
-      s_last_viewport_h = target_h;
+      s_last_viewport_w = logical_vp[0];
+      s_last_viewport_h = logical_vp[1];
     }
   }
   if (target_w == 0 || target_h == 0) {

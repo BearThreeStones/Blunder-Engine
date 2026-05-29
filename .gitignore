@@ -55,6 +55,7 @@ Thumbs.db
 
 .sisyphus
 .github
+.understand-anything
 
 # Auto-downloaded SDK caches (managed by cmake/slint.cmake and cmake/slang.cmake)
 .cmake_deps/

@@ -1,8 +1,10 @@
 #include "runtime/function/render/editor_camera.h"
 
 #include <algorithm>
+#include <cstdio>
 
 #include <SDL3/SDL.h>
+#include "runtime/function/slint/window_pointer_map.h"
 #include <SDL3/SDL_scancode.h>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -38,13 +40,6 @@ EditorCamera::EditorCamera(WindowSystem* window_system)
 
 void EditorCamera::onUpdate(float delta_time) {
   const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
-  if (keyboard_state) {
-    if (keyboard_state[SDL_SCANCODE_P]) {
-      setProjectionMode(ProjectionMode::perspective);
-    } else if (keyboard_state[SDL_SCANCODE_O]) {
-      setProjectionMode(ProjectionMode::orthographic);
-    }
-  }
 
   if (m_window_system) {
     const bool right_mouse_down =
@@ -84,16 +79,87 @@ void EditorCamera::onUpdate(float delta_time) {
     }
 
     if (m_interaction_mode == InteractionMode::pan) {
+      m_is_animating_params = false; // Interrupted by pan
       pan();
     } else if (keyboard_state &&
                (m_interaction_mode == InteractionMode::free_look ||
                 isCursorInViewport())) {
+      bool user_active = (m_interaction_mode == InteractionMode::free_look);
+      if (keyboard_state[SDL_SCANCODE_W] || keyboard_state[SDL_SCANCODE_S] ||
+          keyboard_state[SDL_SCANCODE_A] || keyboard_state[SDL_SCANCODE_D] ||
+          keyboard_state[SDL_SCANCODE_Q] || keyboard_state[SDL_SCANCODE_E]) {
+        user_active = true;
+      }
+      if (user_active) {
+        m_is_animating_params = false; // Interrupted by movement
+      }
       applyKeyboardFlyMovement(delta_time, keyboard_state);
     }
   }
 
+  // Update projection transition progress
+  const float proj_duration = 0.4f;
+  bool proj_dirty = false;
+  if (m_target_projection_mode == ProjectionMode::orthographic) {
+    if (m_projection_transition_t < 1.0f) {
+      m_projection_transition_t += delta_time / proj_duration;
+      if (m_projection_transition_t >= 1.0f) {
+        m_projection_transition_t = 1.0f;
+        m_projection_mode = ProjectionMode::orthographic;
+      }
+      proj_dirty = true;
+    }
+  } else {
+    if (m_projection_transition_t > 0.0f) {
+      m_projection_transition_t -= delta_time / proj_duration;
+      if (m_projection_transition_t <= 0.0f) {
+        m_projection_transition_t = 0.0f;
+        m_projection_mode = ProjectionMode::perspective;
+      }
+      proj_dirty = true;
+    }
+  }
+
+  // Update parameter transitions
+  bool view_dirty = false;
+  if (m_is_animating_params) {
+    m_param_transition_time += delta_time;
+    float t = m_param_transition_time / m_param_transition_duration;
+    if (t >= 1.0f) {
+      t = 1.0f;
+      m_is_animating_params = false;
+    }
+
+    const float smooth_t = t * t * (3.0f - 2.0f * t); // Cubic ease-in-out
+
+    m_focal_point = glm::mix(m_start_focal_point, m_target_focal_point, smooth_t);
+    m_distance = glm::mix(m_start_distance, m_target_distance, smooth_t);
+
+    float pitch_diff = m_target_pitch - m_start_pitch;
+    m_pitch = m_start_pitch + pitch_diff * smooth_t;
+
+    float yaw_diff = m_target_yaw - m_start_yaw;
+    while (yaw_diff < -glm::pi<float>()) yaw_diff += glm::two_pi<float>();
+    while (yaw_diff > glm::pi<float>()) yaw_diff -= glm::two_pi<float>();
+    m_yaw = m_start_yaw + yaw_diff * smooth_t;
+
+    if (m_projection_mode == ProjectionMode::orthographic || m_target_projection_mode == ProjectionMode::orthographic) {
+      const float half_fov_tan = std::tan(m_vertical_fov * 0.5f);
+      m_ortho_size = 2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
+      m_ortho_size = std::clamp(m_ortho_size, 0.1f, 2000.0f);
+      proj_dirty = true;
+    }
+
+    view_dirty = true;
+  }
+
   zoom();
+
   updateViewMatrix();
+
+  if (proj_dirty) {
+    updateProjectionMatrix();
+  }
 }
 
 void EditorCamera::onEvent(Event& event) {
@@ -232,12 +298,14 @@ bool EditorCamera::isWindowPositionInViewport(
     return true;
   }
 
+  const eastl::array<float, 2> logical =
+      mapWindowPointerToLogical(m_window_system, window_position.x, window_position.y);
   const float min_x = static_cast<float>(m_viewport_origin_x);
   const float min_y = static_cast<float>(m_viewport_origin_y);
   const float max_x = min_x + m_viewport_width;
   const float max_y = min_y + m_viewport_height;
-  return window_position.x >= min_x && window_position.x <= max_x &&
-         window_position.y >= min_y && window_position.y <= max_y;
+  return logical[0] >= min_x && logical[0] <= max_x && logical[1] >= min_y &&
+         logical[1] <= max_y;
 }
 
 Vec2 EditorCamera::windowToViewportLocal(const Vec2& window_position) const {
@@ -245,8 +313,10 @@ Vec2 EditorCamera::windowToViewportLocal(const Vec2& window_position) const {
     return window_position;
   }
 
-  return Vec2(window_position.x - static_cast<float>(m_viewport_origin_x),
-              window_position.y - static_cast<float>(m_viewport_origin_y));
+  const eastl::array<float, 2> logical =
+      mapWindowPointerToLogical(m_window_system, window_position.x, window_position.y);
+  return Vec2(logical[0] - static_cast<float>(m_viewport_origin_x),
+              logical[1] - static_cast<float>(m_viewport_origin_y));
 }
 
 Vec2 EditorCamera::viewportLocalToNdc(const Vec2& viewport_position) const {
@@ -299,14 +369,96 @@ void EditorCamera::setViewportSize(float width, float height) {
 }
 
 void EditorCamera::setProjectionMode(ProjectionMode mode) {
-  if (m_projection_mode == mode) {
+  if (m_target_projection_mode == mode) {
     return;
   }
-  m_projection_mode = mode;
+
+  const float half_fov_tan = std::tan(m_vertical_fov * 0.5f);
+  if (mode == ProjectionMode::orthographic) {
+    // Match the visible world height from the current perspective orbit.
+    const float visible_height =
+        2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
+    m_ortho_size = std::clamp(visible_height, 0.5f, 2000.0f);
+  }
+
+  m_target_projection_mode = mode;
   updateProjectionMatrix();
-  LOG_INFO("[EditorCamera] projection mode switched to {}",
-           m_projection_mode == ProjectionMode::perspective ? "perspective"
-                                                            : "orthographic");
+
+  LOG_INFO("[EditorCamera] projection mode transition started to {} (distance={:.2f}, ortho_size={:.2f})",
+           m_target_projection_mode == ProjectionMode::perspective ? "perspective"
+                                                                   : "orthographic",
+           m_distance, m_ortho_size);
+}
+
+void EditorCamera::toggleProjectionMode() {
+  setProjectionMode(m_target_projection_mode == ProjectionMode::perspective
+                        ? ProjectionMode::orthographic
+                        : ProjectionMode::perspective);
+}
+
+void EditorCamera::startParamAnimation(const Vec3& target_focal_point,
+                                       float target_distance,
+                                       float target_pitch,
+                                       float target_yaw) {
+  m_is_animating_params = true;
+  m_param_transition_time = 0.0f;
+  m_param_transition_duration = 0.4f;
+
+  m_start_focal_point = m_focal_point;
+  m_target_focal_point = target_focal_point;
+
+  m_start_distance = m_distance;
+  m_target_distance = target_distance;
+
+  m_start_pitch = m_pitch;
+  m_target_pitch = target_pitch;
+
+  m_start_yaw = m_yaw;
+  m_target_yaw = target_yaw;
+}
+
+void EditorCamera::alignToAxisView(uint32_t axis_index, bool positive) {
+  if (axis_index > 2) {
+    return;
+  }
+
+  Vec3 world_axis(0.0f);
+  world_axis[static_cast<int>(axis_index)] = 1.0f;
+  const Vec3 view_forward = positive ? -world_axis : world_axis;
+
+  float target_pitch = std::asin(std::clamp(view_forward.z, -1.0f, 1.0f));
+  float target_yaw = std::atan2(view_forward.y, view_forward.x);
+  target_pitch = std::clamp(target_pitch, k_min_pitch, k_max_pitch);
+
+  startParamAnimation(m_focal_point, m_distance, target_pitch, target_yaw);
+  setProjectionMode(ProjectionMode::orthographic); // Switch smoothly to ortho view
+
+  static constexpr const char* k_axis_names[3] = {"X", "Y", "Z"};
+  LOG_INFO("[EditorCamera] aligned smoothly to {}{} axis view",
+           positive ? "+" : "-", k_axis_names[axis_index]);
+}
+
+void EditorCamera::alignToIsometricView() {
+  // Classic dimetric elevation on Z-up XY ground (Unity scene-view Iso).
+  constexpr float k_iso_elevation = 0.615479709686432f;  // atan(sqrt(2)) ≈ 35.264°
+  float target_yaw = glm::radians(45.0f);
+  float target_pitch = -k_iso_elevation;
+  target_pitch = std::clamp(target_pitch, k_min_pitch, k_max_pitch);
+
+  startParamAnimation(m_focal_point, m_distance, target_pitch, target_yaw);
+  LOG_INFO("[EditorCamera] aligned smoothly to isometric view (yaw=45°, pitch={:.1f}°)",
+           glm::degrees(target_pitch));
+}
+
+void EditorCamera::alignToDefaultPerspectiveView() {
+  // Keep yaw; reset elevation to editor default (+30°) so Persp ≠ Iso oblique.
+  constexpr float k_default_pitch = glm::radians(30.0f);
+  float target_pitch = k_default_pitch;
+  target_pitch = std::clamp(target_pitch, k_min_pitch, k_max_pitch);
+
+  startParamAnimation(m_focal_point, m_distance, target_pitch, m_yaw);
+  LOG_INFO("[EditorCamera] aligned smoothly to default perspective view (pitch={:.1f}°)",
+           glm::degrees(target_pitch));
 }
 
 void EditorCamera::beginFreeLook() {
@@ -351,6 +503,7 @@ void EditorCamera::applyFreeLookRotation(const Vec2& mouse_delta) {
     return;
   }
 
+  m_is_animating_params = false; // Interrupted by free look mouse movement
   m_yaw -= mouse_delta.x * k_free_look_rotate_speed;
   m_pitch -= mouse_delta.y * k_free_look_rotate_speed;
   m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
@@ -409,7 +562,11 @@ void EditorCamera::applyKeyboardFlyMovement(float delta_time,
 }
 
 void EditorCamera::pan() {
-  const float distance_factor = std::max(m_distance, 1.0f);
+  m_is_animating_params = false; // Interrupted by pan
+  const float distance_factor =
+      m_projection_mode == ProjectionMode::orthographic
+          ? std::max(m_ortho_size, 1.0f)
+          : std::max(m_distance, 1.0f);
   const float pan_scale = k_pan_speed * distance_factor;
   const float pan_x = -m_mouse_delta_accumulator.x * pan_scale;
   const float pan_y = m_mouse_delta_accumulator.y * pan_scale;
@@ -423,7 +580,17 @@ void EditorCamera::zoom() {
     return;
   }
 
-  m_focal_point += m_forward_direction * (m_scroll_delta_accumulator * k_dolly_speed);
+  m_is_animating_params = false; // Interrupted by zoom
+  const float zoom_factor = 1.0f - m_scroll_delta_accumulator * 0.1f;
+  m_distance *= std::max(zoom_factor, 0.01f);
+  m_distance = std::clamp(m_distance, 0.05f, 2000.0f);
+
+  if (m_projection_mode == ProjectionMode::orthographic) {
+    const float half_fov_tan = std::tan(m_vertical_fov * 0.5f);
+    m_ortho_size = 2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
+    m_ortho_size = std::clamp(m_ortho_size, 0.1f, 2000.0f);
+    updateProjectionMatrix();
+  }
   m_scroll_delta_accumulator = 0.0f;
 }
 
@@ -435,45 +602,52 @@ void EditorCamera::updateViewMatrix() {
 
 void EditorCamera::updateProjectionMatrix() {
   const float aspect = m_viewport_width / m_viewport_height;
-  if (m_projection_mode == ProjectionMode::perspective) {
-    m_projection_matrix =
-        glm::perspective(m_vertical_fov, aspect, m_near_clip, m_far_clip);
-  } else {
-    const float ortho_half_h = m_ortho_size * 0.5f;
-    const float ortho_half_w = ortho_half_h * aspect;
-    m_projection_matrix =
-        glm::ortho(-ortho_half_w, ortho_half_w, -ortho_half_h, ortho_half_h,
-                   m_near_clip, m_far_clip);
-  }
-  // Vulkan NDC has inverted Y and Z range [0, 1].
-  m_projection_matrix[1][1] *= -1.0f;
+
+  // Calculate perspective projection matrix
+  Mat4 persp = glm::perspectiveZO(m_vertical_fov, aspect, m_near_clip, m_far_clip);
+  persp[1][1] *= -1.0f;
+
+  // Calculate matching orthographic projection matrix
+  const float half_fov_tan = std::tan(m_vertical_fov * 0.5f);
+  const float target_ortho_size = 2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
+  const float ortho_half_h = target_ortho_size * 0.5f;
+  const float ortho_half_w = ortho_half_h * aspect;
+  Mat4 ortho = glm::orthoZO(-ortho_half_w, ortho_half_w, -ortho_half_h, ortho_half_h,
+                            m_near_clip, m_far_clip);
+  ortho[1][1] *= -1.0f;
+
+  // Cubic ease-in-out easing for projection transition
+  float t = m_projection_transition_t;
+  float smooth_t = t * t * (3.0f - 2.0f * t);
+
+  m_projection_matrix = (1.0f - smooth_t) * persp + smooth_t * ortho;
 }
 
 void EditorCamera::focusOnAABB(const AABB& bounds) {
-  m_focal_point = bounds.center();
   const glm::vec3 extents = bounds.extents();
   const float radius = glm::length(extents);
-  m_distance = std::max(radius * 2.5f, 1.0f);
-  updateViewMatrix();
-  LOG_INFO("[EditorCamera] focused on AABB center=({}, {}, {}) distance={}",
-           m_focal_point.x, m_focal_point.y, m_focal_point.z, m_distance);
+  float target_distance = std::max(radius * 2.5f, 1.0f);
+  Vec3 target_focal_point = bounds.center();
+
+  startParamAnimation(target_focal_point, target_distance, m_pitch, m_yaw);
+  LOG_INFO("[EditorCamera] focusing smoothly on AABB center=({}, {}, {}) distance={}",
+           target_focal_point.x, target_focal_point.y, target_focal_point.z, target_distance);
 }
 
 void EditorCamera::setLookAt(const Vec3& position, const Vec3& target) {
   Vec3 forward = target - position;
-  const float distance = glm::length(forward);
+  const float distance = glm::distance(position, target);
   if (distance < 1e-4f) {
     return;
   }
 
   forward /= distance;
-  m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
-  m_yaw = std::atan2(forward.y, forward.x);
-  m_focal_point = target;
-  m_distance = distance;
-  updateViewMatrix();
-  LOG_INFO("[EditorCamera] look-at position=({}, {}, {}) target=({}, {}, {})",
-           position.x, position.y, position.z, target.x, target.y, target.z);
+  float target_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+  float target_yaw = std::atan2(forward.y, forward.x);
+
+  startParamAnimation(target, distance, target_pitch, target_yaw);
+  LOG_INFO("[EditorCamera] look-at position smoothly transition to Target=({}, {}, {}) Position=({}, {}, {})",
+           target.x, target.y, target.z, position.x, position.y, position.z);
 }
 
 void EditorCamera::placeInsideAABB(const AABB& bounds) {
