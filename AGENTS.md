@@ -257,17 +257,29 @@ Notes / known limitations:
 
 - Slint is source-built from the **fork** submodule (`blunder/v1.16.1` on
   `BearThreeStones/slint`, based on upstream `v1.16.1`). See
-  `engine/3rdparty/slint/BLUNDER_PATCHES.md`. `RENDERER_SKIA_VULKAN` stays enabled
-  for the build, but the C++ custom platform uses **D3D12** for window composition
-  on Windows (engine Vulkan remains headless + CPU readback for the 3D viewport).
+  `engine/3rdparty/slint/BLUNDER_PATCHES.md`. The C++ custom platform now defaults
+  to **Vulkan** window composition on Windows (`SkiaRenderer::default_vulkan`),
+  sharing the engine's headless Vulkan device when possible. Set
+  `BLUNDER_SLINT_RENDERER=d3d12` to fall back to the D3D12 backend.
 - Rebuild target `slint_cpp` whenever the Slint submodule commit changes.
-- Zero-copy GPU texture sharing is still not implemented. The public C++ API
-  surface currently only exposes `BorrowedOpenGLTexture` and
-  `set_rendering_notifier`, so the data flow above remains structured around
-  readback until a separate Vulkan texture import path is available.
-- The readback uses a synchronous fence wait per frame. Pingponging across
-  `VulkanSync::k_max_frames_in_flight` staging buffers (already provisioned)
-  is the next optimisation if this becomes a bottleneck.
+- **Zero-copy 3D viewport (shared Vulkan device):** when the Slint Skia renderer
+  composites on the engine's `VkDevice` (`SkiaRenderer::new_vulkan_shared`), the
+  off-screen color `VkImage` is sampled directly by Skia via
+  `BorrowedVulkanTexture` / `Image::create_from_borrowed_vulkan_texture` — no CPU
+  readback, no staging copy. `RenderSystem::tickVulkan` chooses the path per frame
+  via `SlintSystem::viewportUsesSharedDevice()`.
+- **Validation-layer caveat:** Skia's `make_vulkan()` cannot build a context on
+  an externally-created device while the Vulkan validation layer is loaded, so
+  the shared-device/zero-copy path is unavailable when validation is on. The
+  renderer then falls back to a self-owned device + the CPU readback path below.
+  Release builds (validation off) get zero-copy automatically; in debug set
+  `BLUNDER_VK_VALIDATION=0` to enable it.
+- The CPU readback path uses staging buffers and a per-frame fence wait;
+  `VulkanSync::k_max_frames_in_flight` staging buffers are provisioned for
+  pingponging. The zero-copy path uses a per-frame fence wait for read-after-write
+  sync; a shared timeline semaphore (and double-buffering the off-screen image to
+  remove the write-after-read reliance on the render-pass subpass dependency) is
+  the next optimisation.
 - `EditorCamera` still receives input in window coordinates; for delta-based
   motion (drag/orbit) this is fine, but absolute-position interactions should
   later be remapped to the central viewport rect.

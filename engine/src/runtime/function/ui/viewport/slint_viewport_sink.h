@@ -11,6 +11,7 @@ class SlintViewportSink final : public IViewportSink {
   explicit SlintViewportSink(SlintSystem* slint_system);
 
   void presentViewportCpuFrame(const ViewportCpuFrame& frame) override;
+  void presentViewportVulkanImage(const ViewportVulkanImage& image) override;
   void invalidateViewportPlaceholder() override;
 
  private:

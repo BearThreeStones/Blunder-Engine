@@ -1,5 +1,7 @@
 #include "runtime/function/global/global_context.h"
 
+#include <cstdlib>
+
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/engine.h"
@@ -100,15 +102,13 @@ void RuntimeGlobalContext::startSystems() {
   WindowCreateInfo window_create_info;
   m_window_system->initialize(window_create_info);
 
-  // Slint UI (D3D12 on Windows) before the engine's headless Vulkan device.
   m_ui_host = eastl::make_shared<UiHost>();
 
+  // Vulkan-unified UI: the engine creates its Vulkan device first and shares it
+  // with Slint's Skia renderer (instead of Slint creating a separate device).
+  // Construct the Slint system now so the render system can reference it, but
+  // initialize it only after the shared device exists.
   m_slint_system = eastl::make_shared<SlintSystem>();
-  SlintSystemInitInfo slint_init_info;
-  slint_init_info.window_system = m_window_system.get();
-  slint_init_info.ui_host = m_ui_host;
-  m_slint_system->initialize(slint_init_info);
-  m_ui_host->setPresentation(m_slint_system.get());
 
   m_viewport_sink =
       eastl::make_unique<SlintViewportSink>(m_slint_system.get());
@@ -127,6 +127,42 @@ void RuntimeGlobalContext::startSystems() {
 #else
   render_init_info.enable_validation = true;
 #endif
+  // The shared-device (zero-copy) UI path is incompatible with the Vulkan
+  // validation layer: Skia's make_vulkan() fails to build a context on an
+  // externally-created device while the layer is loaded, so the Slint renderer
+  // silently falls back to a self-owned device (CPU viewport readback). Release
+  // builds disable validation and therefore get the shared device automatically.
+  // In debug, set BLUNDER_VK_VALIDATION=0 to disable validation and exercise the
+  // shared device / zero-copy viewport.
+  if (const char* validation_env = std::getenv("BLUNDER_VK_VALIDATION")) {
+    if (validation_env[0] == '0' || validation_env[0] == 'f' ||
+        validation_env[0] == 'F') {
+      render_init_info.enable_validation = false;
+    } else if (validation_env[0] == '1' || validation_env[0] == 't' ||
+               validation_env[0] == 'T') {
+      render_init_info.enable_validation = true;
+    }
+  }
+
+  // 1) Create the engine Vulkan device/allocator/sync up front.
+  m_render_system->initializeBackend(render_init_info);
+
+  // 2) Initialize Slint with the engine's Vulkan handles so its Skia renderer
+  //    composites on the shared device (enables a zero-copy 3D viewport).
+  SlintSystemInitInfo slint_init_info;
+  slint_init_info.window_system = m_window_system.get();
+  slint_init_info.ui_host = m_ui_host;
+  const SharedVulkanHandles shared_vk = m_render_system->getSharedVulkanHandles();
+  if (shared_vk.valid) {
+    slint_init_info.shared_vk_instance = shared_vk.instance;
+    slint_init_info.shared_vk_physical_device = shared_vk.physical_device;
+    slint_init_info.shared_vk_device = shared_vk.device;
+    slint_init_info.shared_vk_queue_family = shared_vk.graphics_queue_family;
+  }
+  m_slint_system->initialize(slint_init_info);
+  m_ui_host->setPresentation(m_slint_system.get());
+
+  // 3) Finish render system init (offscreen target, pipelines, overlays, ...).
   m_render_system->initialize(render_init_info);
 
   EditorServiceHandles ui_handles{};

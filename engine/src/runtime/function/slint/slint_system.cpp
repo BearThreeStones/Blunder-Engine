@@ -153,8 +153,14 @@ float queryWindowScaleFactor(WindowSystem* window_system) {
          static_cast<float>(logical_size[0]);
 }
 
-SlintSystem::SlintWindowAdapter::SlintWindowAdapter(WindowSystem* window_system)
-    : m_window_system(window_system) {}
+SlintSystem::SlintWindowAdapter::SlintWindowAdapter(
+    WindowSystem* window_system, uint64_t vk_instance,
+    uint64_t vk_physical_device, uint64_t vk_device, uint32_t vk_queue_family)
+    : m_window_system(window_system),
+      m_vk_instance(vk_instance),
+      m_vk_physical_device(vk_physical_device),
+      m_vk_device(vk_device),
+      m_vk_queue_family(vk_queue_family) {}
 
 SlintSystem::~SlintSystem() { shutdown(); }
 
@@ -191,8 +197,28 @@ void SlintSystem::SlintWindowAdapter::ensureRenderer() {
   m_target_size = phys;
   m_committed_size = phys;
   m_renderer_size = phys;
-  m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
-      handle, m_committed_size);
+  if (m_vk_device != 0) {
+    // Shared-device path: composite on the engine's Vulkan device so the 3D
+    // viewport image can be sampled zero-copy. Falls back internally to a
+    // self-owned device if the shared handles cannot be adopted.
+    LOG_INFO(
+        "[SlintSystem] creating Skia renderer on shared engine Vulkan device");
+    m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
+        handle, m_committed_size, m_vk_instance, m_vk_physical_device,
+        m_vk_device, m_vk_queue_family);
+  } else {
+    m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
+        handle, m_committed_size);
+  }
+  // Records whether the shared-device path actually succeeded (the C++ ctor
+  // falls back to a self-owned device on failure). Drives the engine's choice
+  // between the zero-copy and CPU-readback viewport paths.
+  m_uses_shared_device = m_renderer && m_renderer->uses_shared_vulkan();
+  if (m_vk_device != 0 && !m_uses_shared_device) {
+    LOG_WARN(
+        "[SlintSystem] shared Vulkan device unavailable; using self-owned "
+        "device (CPU viewport readback)");
+  }
 #else
 #  error "Slint SkiaRenderer integration is currently implemented for Win32 only"
 #endif
@@ -445,12 +471,20 @@ void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
   compositeFrame();
 }
 
-SlintSystem::SlintPlatform::SlintPlatform(WindowSystem* window_system)
-    : m_window_system(window_system) {}
+SlintSystem::SlintPlatform::SlintPlatform(
+    WindowSystem* window_system, uint64_t vk_instance,
+    uint64_t vk_physical_device, uint64_t vk_device, uint32_t vk_queue_family)
+    : m_window_system(window_system),
+      m_vk_instance(vk_instance),
+      m_vk_physical_device(vk_physical_device),
+      m_vk_device(vk_device),
+      m_vk_queue_family(vk_queue_family) {}
 
 std::unique_ptr<slint::platform::WindowAdapter>
 SlintSystem::SlintPlatform::create_window_adapter() {
-  auto adapter = std::make_unique<SlintWindowAdapter>(m_window_system);
+  auto adapter = std::make_unique<SlintWindowAdapter>(
+      m_window_system, m_vk_instance, m_vk_physical_device, m_vk_device,
+      m_vk_queue_family);
   m_window_adapter = adapter.get();
   return adapter;
 }
@@ -532,7 +566,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
   try {
     if (!g_slint_platform_instance) {
-      auto platform = std::make_unique<SlintPlatform>(m_window_system);
+      auto platform = std::make_unique<SlintPlatform>(
+          m_window_system, init_info.shared_vk_instance,
+          init_info.shared_vk_physical_device, init_info.shared_vk_device,
+          init_info.shared_vk_queue_family);
       g_slint_platform_instance = platform.get();
       slint::platform::set_platform(std::move(platform));
     }
@@ -790,6 +827,46 @@ void SlintSystem::applyPendingViewportInvalidate() {
 void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
                                    uint32_t height) {
   setViewportImageInternal(pixels_rgba, width, height, false);
+}
+
+void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
+                                             uint32_t layout, uint32_t width,
+                                             uint32_t height) {
+  if (!m_window_component || image == 0 || width == 0 || height == 0) {
+    return;
+  }
+  if (m_slint_dispatch_depth > 0) {
+    return;
+  }
+  static bool s_logged_first_zero_copy = false;
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    MainEditorWindow& ui = *m_window_component->operator->();
+    slint::Image viewport_image =
+        slint::Image::create_from_borrowed_vulkan_texture(
+            image, format, layout, slint::Size<uint32_t>{width, height});
+    ui.set_viewport_image(viewport_image);
+    ui.set_viewport_image_ready(true);
+    m_viewport_image_dirty = true;
+    m_viewport_image_stale = false;
+    m_viewport_upload_width = width;
+    m_viewport_upload_height = height;
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+    if (!s_logged_first_zero_copy) {
+      LOG_INFO(
+          "[SlintSystem] zero-copy viewport: first shared VkImage present {}x{}",
+          width, height);
+      s_logged_first_zero_copy = true;
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::setViewportExternalTexture] {}", e.what());
+  }
+}
+
+bool SlintSystem::viewportUsesSharedDevice() const {
+  return m_window_adapter && m_window_adapter->usesSharedDevice();
 }
 
 void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,

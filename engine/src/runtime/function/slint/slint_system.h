@@ -45,6 +45,14 @@ using BrowserLogicalRect = ViewportLogicalRect;
 struct SlintSystemInitInfo {
   WindowSystem* window_system{nullptr};
   eastl::weak_ptr<UiHost> ui_host;
+  // Blunder shared-device path: when non-zero, the Slint Skia renderer adopts
+  // the engine's Vulkan device (raw VkInstance/VkPhysicalDevice/VkDevice +
+  // graphics queue family) instead of creating its own, enabling a zero-copy
+  // 3D viewport. Zero means "use the self-owned Vulkan device".
+  uint64_t shared_vk_instance{0};
+  uint64_t shared_vk_physical_device{0};
+  uint64_t shared_vk_device{0};
+  uint32_t shared_vk_queue_family{0};
 };
 
 class SlintSystem final : public IEditorUiPresentation {
@@ -124,6 +132,17 @@ class SlintSystem final : public IEditorUiPresentation {
   void setViewportImageInternal(const uint8_t* pixels_rgba, uint32_t width,
                                 uint32_t height, bool allow_during_dispatch);
 
+  /// Zero-copy path: binds a borrowed engine `VkImage` directly to the viewport
+  /// `Image` property (no CPU copy). Only valid when the Slint renderer runs on
+  /// the engine's shared Vulkan device (see `viewportUsesSharedDevice()`).
+  void setViewportExternalTexture(uint64_t image, uint32_t format,
+                                  uint32_t layout, uint32_t width,
+                                  uint32_t height);
+
+  /// True when the Slint Skia renderer composites on the engine's shared Vulkan
+  /// device, making zero-copy viewport presentation valid.
+  bool viewportUsesSharedDevice() const;
+
   /// Updates the Persp/Iso label on the viewport overlay (Slint, not GPU).
   void syncViewportProjectionMode(bool is_perspective);
 
@@ -190,7 +209,9 @@ class SlintSystem final : public IEditorUiPresentation {
 
   class SlintWindowAdapter final : public slint::platform::WindowAdapter {
    public:
-    explicit SlintWindowAdapter(WindowSystem* window_system);
+    SlintWindowAdapter(WindowSystem* window_system, uint64_t vk_instance = 0,
+                       uint64_t vk_physical_device = 0, uint64_t vk_device = 0,
+                       uint32_t vk_queue_family = 0);
     ~SlintWindowAdapter() override = default;
 
     slint::platform::AbstractRenderer& renderer() override;
@@ -224,6 +245,10 @@ class SlintSystem final : public IEditorUiPresentation {
 
     bool needsRedraw() const { return m_needs_redraw; }
 
+    /// True once the SkiaRenderer was created on the engine's shared Vulkan
+    /// device (zero-copy viewport eligible).
+    bool usesSharedDevice() const { return m_uses_shared_device; }
+
     /// Owning SlintSystem (set after construction) for self drag-state queries.
     void setOwner(SlintSystem* owner) { m_owner = owner; }
 
@@ -232,6 +257,12 @@ class SlintSystem final : public IEditorUiPresentation {
 
     SlintSystem* m_owner{nullptr};
     WindowSystem* m_window_system{nullptr};
+    // Engine-owned Vulkan handles for the shared-device renderer (0 = self-owned).
+    uint64_t m_vk_instance{0};
+    uint64_t m_vk_physical_device{0};
+    uint64_t m_vk_device{0};
+    uint32_t m_vk_queue_family{0};
+    bool m_uses_shared_device{false};
     std::unique_ptr<slint::platform::SkiaRenderer> m_renderer;
     bool m_visible{false};
     bool m_needs_redraw{true};
@@ -247,7 +278,9 @@ class SlintSystem final : public IEditorUiPresentation {
 
   class SlintPlatform final : public slint::platform::Platform {
    public:
-    explicit SlintPlatform(WindowSystem* window_system);
+    SlintPlatform(WindowSystem* window_system, uint64_t vk_instance = 0,
+                  uint64_t vk_physical_device = 0, uint64_t vk_device = 0,
+                  uint32_t vk_queue_family = 0);
     std::unique_ptr<slint::platform::WindowAdapter> create_window_adapter()
         override;
 
@@ -256,6 +289,10 @@ class SlintSystem final : public IEditorUiPresentation {
    private:
     WindowSystem* m_window_system{nullptr};
     SlintWindowAdapter* m_window_adapter{nullptr};
+    uint64_t m_vk_instance{0};
+    uint64_t m_vk_physical_device{0};
+    uint64_t m_vk_device{0};
+    uint32_t m_vk_queue_family{0};
   };
 
   static slint::SharedString mapKeycode(SDL_Keycode keycode);

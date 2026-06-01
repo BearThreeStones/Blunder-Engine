@@ -195,7 +195,10 @@ bool RenderSystem::isVulkanBackend() const {
   return m_backend && m_backend->type() == rhi::RenderBackendType::Vulkan;
 }
 
-void RenderSystem::initialize(const RenderSystemInitInfo& info) {
+void RenderSystem::initializeBackend(const RenderSystemInitInfo& info) {
+  if (m_backend) {
+    return;  // Backend already created (e.g. early, to share device with Slint).
+  }
   ASSERT(info.window_system);
 
   m_asset_manager = info.asset_manager;
@@ -209,12 +212,35 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   backend_init.device_desc.window_system = info.window_system;
   backend_init.device_desc.enable_validation = info.enable_validation;
   m_backend = rhi::RenderBackendFactory::createFromSettings(backend_init);
+}
+
+void RenderSystem::initialize(const RenderSystemInitInfo& info) {
+  ASSERT(info.window_system);
+  initializeBackend(info);
 
   if (m_backend->type() == rhi::RenderBackendType::D3D12) {
     initializeD3D12SkeletonPath(info);
     return;
   }
   initializeVulkanPath(info);
+}
+
+SharedVulkanHandles RenderSystem::getSharedVulkanHandles() const {
+  SharedVulkanHandles handles{};
+  if (!isVulkanBackend()) {
+    return handles;
+  }
+  VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+  if (!ctx) {
+    return handles;
+  }
+  handles.instance = reinterpret_cast<uint64_t>(ctx->getInstance());
+  handles.physical_device = reinterpret_cast<uint64_t>(ctx->getPhysicalDevice());
+  handles.device = reinterpret_cast<uint64_t>(ctx->getDevice());
+  handles.graphics_queue_family = ctx->getGraphicsQueueFamily();
+  handles.valid = handles.instance != 0 && handles.physical_device != 0 &&
+                  handles.device != 0;
+  return handles;
 }
 
 void RenderSystem::initializeD3D12SkeletonPath(
@@ -915,24 +941,37 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
-  m_offscreen->transitionToCopySource(command_list);
 
-  VkBufferImageCopy copy_region{};
-  copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  copy_region.imageSubresource.mipLevel = 0;
-  copy_region.imageSubresource.baseArrayLayer = 0;
-  copy_region.imageSubresource.layerCount = 1;
-  copy_region.imageExtent = {offscreen_extent.width, offscreen_extent.height, 1};
+  // Zero-copy when the Slint UI composites on our shared Vulkan device: leave
+  // the color image in SHADER_READ_ONLY for Skia to sample directly and skip
+  // the host-visible staging copy. Otherwise use the CPU readback path.
+  const bool zero_copy_viewport =
+      m_viewport_layout_source != nullptr &&
+      m_viewport_layout_source->viewportUsesSharedDevice();
 
   VulkanBuffer* readback_staging =
-      m_viewport_bridge ? m_viewport_bridge->stagingBuffer(m_current_frame) : nullptr;
-  if (readback_staging) {
-    vkCmdCopyImageToBuffer(command_buffer, vkOffscreenRt(this)->getImage(),
-                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                           readback_staging->getBuffer(), 1, &copy_region);
-  }
+      (!zero_copy_viewport && m_viewport_bridge)
+          ? m_viewport_bridge->stagingBuffer(m_current_frame)
+          : nullptr;
 
-  m_offscreen->transitionToShaderRead(command_list);
+  if (zero_copy_viewport) {
+    m_offscreen->transitionToShaderRead(command_list);
+  } else {
+    m_offscreen->transitionToCopySource(command_list);
+    if (readback_staging) {
+      VkBufferImageCopy copy_region{};
+      copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      copy_region.imageSubresource.mipLevel = 0;
+      copy_region.imageSubresource.baseArrayLayer = 0;
+      copy_region.imageSubresource.layerCount = 1;
+      copy_region.imageExtent = {offscreen_extent.width, offscreen_extent.height,
+                                 1};
+      vkCmdCopyImageToBuffer(command_buffer, vkOffscreenRt(this)->getImage(),
+                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             readback_staging->getBuffer(), 1, &copy_region);
+    }
+    m_offscreen->transitionToShaderRead(command_list);
+  }
 
   vkEndCommandBuffer(command_buffer);
 
@@ -943,7 +982,27 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vkQueueSubmit(vkCtx(this)->getGraphicsQueue(), 1, &submit_info,
                 in_flight_fence);
 
-  if (m_viewport_bridge) {
+  if (zero_copy_viewport) {
+    // Read-after-write: make sure this frame's off-screen render completed
+    // before Slint samples the image (same device/queue). A per-frame fence
+    // wait is the simplest correct sync; a shared timeline semaphore is a
+    // future optimization. The write-after-read against Slint's previous-frame
+    // sample is covered by the off-screen render pass' EXTERNAL subpass
+    // dependency (FRAGMENT_SHADER read -> COLOR_ATTACHMENT write).
+    vkWaitForFences(vkCtx(this)->getDevice(), 1, &in_flight_fence, VK_TRUE,
+                    UINT64_MAX);
+    if (m_viewport_sink) {
+      ViewportVulkanImage vk_image{};
+      vk_image.image =
+          reinterpret_cast<uint64_t>(vkOffscreenRt(this)->getImage());
+      vk_image.format = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
+      vk_image.layout =
+          static_cast<uint32_t>(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+      vk_image.width = offscreen_extent.width;
+      vk_image.height = offscreen_extent.height;
+      m_viewport_sink->presentViewportVulkanImage(vk_image);
+    }
+  } else if (m_viewport_bridge) {
     m_viewport_bridge->notifyGpuSubmitted(m_current_frame, offscreen_extent.width,
                                           offscreen_extent.height);
     m_viewport_bridge->pollAndPresent(m_viewport_sink);

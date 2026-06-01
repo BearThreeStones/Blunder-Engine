@@ -285,8 +285,36 @@ void VulkanContext::createInstance() {
                       ? VK_API_VERSION_1_3
                       : VK_API_VERSION_1_1;
 
-  // Headless: no window surface extensions required.
+  // Surface + Win32 surface so the Slint UI's Skia renderer can share this
+  // VkInstance and present its swapchain on the editor HWND (Vulkan-unified UI
+  // path; the engine itself still renders off-screen). Enabled only when the
+  // loader reports them so a pure-headless environment keeps working.
   eastl::vector<const char*> instance_extensions;
+
+  // String literals avoid requiring VK_USE_PLATFORM_WIN32_KHR in this TU.
+  constexpr const char* k_surface_extension = "VK_KHR_surface";
+  constexpr const char* k_win32_surface_extension = "VK_KHR_win32_surface";
+  // Skia's GrVkGpu setup resolves the KHR-suffixed physical-device query entry
+  // points (vkGetPhysicalDeviceProperties2KHR, ...) which are only non-null when
+  // these instance extensions are enabled. The Slint Vulkan renderer enables
+  // them on its self-owned instance, so the shared instance must match or
+  // Skia's make_vulkan() fails.
+  constexpr const char* k_phys_props2_extension =
+      "VK_KHR_get_physical_device_properties2";
+  constexpr const char* k_surface_caps2_extension =
+      "VK_KHR_get_surface_capabilities2";
+  if (hasInstanceExtension(k_surface_extension)) {
+    instance_extensions.push_back(k_surface_extension);
+  }
+  if (hasInstanceExtension(k_win32_surface_extension)) {
+    instance_extensions.push_back(k_win32_surface_extension);
+  }
+  if (hasInstanceExtension(k_phys_props2_extension)) {
+    instance_extensions.push_back(k_phys_props2_extension);
+  }
+  if (hasInstanceExtension(k_surface_caps2_extension)) {
+    instance_extensions.push_back(k_surface_caps2_extension);
+  }
 
   if (m_enable_validation &&
       hasInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
@@ -473,7 +501,9 @@ void VulkanContext::selectPhysicalDevice() {
 void VulkanContext::createLogicalDevice() {
   ASSERT(m_physical_device != VK_NULL_HANDLE);
 
-  // Headless: only the graphics queue is required; no swapchain extension.
+  // The engine renders off-screen; the graphics queue is the only one created.
+  // The Slint UI borrows this same queue to present its swapchain (the queue
+  // family supports present on desktop GPUs; the UI side verifies it).
   const float queue_priority = 1.0f;
 
   VkPhysicalDeviceVulkan11Features supported_vulkan11_features{};
@@ -515,8 +545,17 @@ void VulkanContext::createLogicalDevice() {
   create_info.queueCreateInfoCount = 1;
   create_info.pQueueCreateInfos = &queue_create_info;
   create_info.pEnabledFeatures = &enabled_features;
-  create_info.enabledExtensionCount = 0;
-  create_info.ppEnabledExtensionNames = nullptr;
+  // VK_KHR_swapchain so the shared logical device can drive the Slint UI
+  // swapchain (the engine renders off-screen and never presents itself).
+  eastl::vector<const char*> device_extensions;
+  constexpr const char* k_swapchain_extension = "VK_KHR_swapchain";
+  if (hasDeviceExtension(m_physical_device, k_swapchain_extension)) {
+    device_extensions.push_back(k_swapchain_extension);
+  }
+  create_info.enabledExtensionCount =
+      static_cast<uint32_t>(device_extensions.size());
+  create_info.ppEnabledExtensionNames =
+      device_extensions.empty() ? nullptr : device_extensions.data();
   // Validation layers are instance-only (Vulkan 1.0+); device layer fields must stay zero.
   create_info.enabledLayerCount = 0;
   create_info.ppEnabledLayerNames = nullptr;

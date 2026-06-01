@@ -62,6 +62,17 @@ struct RenderSystemInitInfo {
   IViewportSink* viewport_sink{nullptr};
 };
 
+/// Raw engine Vulkan handles for the Slint shared-device renderer. Handles are
+/// reinterpret_cast'd to uint64_t so the UI layer (and the Slint C FFI) need not
+/// depend on Vulkan headers. `valid` is false on the D3D12 skeleton backend.
+struct SharedVulkanHandles {
+  uint64_t instance{0};
+  uint64_t physical_device{0};
+  uint64_t device{0};
+  uint32_t graphics_queue_family{0};
+  bool valid{false};
+};
+
 /// Runtime renderer.
 ///
 /// The engine no longer owns a window swapchain. Slint's Skia renderer is in
@@ -80,6 +91,16 @@ class RenderSystem final {
 
   void initialize(const RenderSystemInitInfo& info);
   void shutdown();
+
+  /// Creates only the GPU backend (Vulkan device/allocator/sync). Lets the
+  /// engine's Vulkan device exist before the Slint renderer is created, so the
+  /// UI can adopt it (shared-device / zero-copy viewport). Idempotent; a later
+  /// initialize() reuses the backend created here.
+  void initializeBackend(const RenderSystemInitInfo& info);
+
+  /// Engine Vulkan handles for the Slint shared-device renderer. Valid only
+  /// after initializeBackend()/initialize() on the Vulkan backend.
+  SharedVulkanHandles getSharedVulkanHandles() const;
 
   void tick(float delta_time, uint32_t target_width, uint32_t target_height);
   void onEvent(Event& event);
