@@ -5,9 +5,14 @@
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
 #include "runtime/function/scene/scene_system.h"
-#include "runtime/function/render/presenter/cpu_rgba8_viewport_presenter.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/slint/slint_system.h"
+#include "runtime/function/ui/editor_service_handles.h"
+#include "runtime/function/ui/ui_host.h"
+#include "runtime/function/ui/viewport/slint_viewport_sink.h"
+#include "runtime/function/ui/viewport/ui_viewport_bridge.h"
+#include "runtime/core/layer/layer.h"
+#include "runtime/function/ui/viewport/viewport_input_layer.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/platform/input/input_system.h"
 // #include "runtime/function/particle/particle_manager.h"
@@ -96,20 +101,27 @@ void RuntimeGlobalContext::startSystems() {
   m_window_system->initialize(window_create_info);
 
   // Slint UI (D3D12 on Windows) before the engine's headless Vulkan device.
+  m_ui_host = eastl::make_shared<UiHost>();
+
   m_slint_system = eastl::make_shared<SlintSystem>();
   SlintSystemInitInfo slint_init_info;
   slint_init_info.window_system = m_window_system.get();
+  slint_init_info.ui_host = m_ui_host;
   m_slint_system->initialize(slint_init_info);
+  m_ui_host->setPresentation(m_slint_system.get());
 
-  m_viewport_presenter =
-      eastl::make_unique<presenter::CpuRgba8ViewportPresenter>(m_slint_system.get());
+  m_viewport_sink =
+      eastl::make_unique<SlintViewportSink>(m_slint_system.get());
+  m_viewport_bridge = eastl::make_unique<UIViewportBridge>();
 
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
   render_init_info.asset_manager = m_asset_manager.get();
   render_init_info.window_system = m_window_system.get();
-  render_init_info.viewport_presenter = m_viewport_presenter.get();
   render_init_info.viewport_layout_source = m_slint_system.get();
+  render_init_info.preview_settings_source = m_ui_host.get();
+  render_init_info.viewport_bridge = m_viewport_bridge.get();
+  render_init_info.viewport_sink = m_viewport_sink.get();
 #ifdef NDEBUG
   render_init_info.enable_validation = false;
 #else
@@ -117,10 +129,25 @@ void RuntimeGlobalContext::startSystems() {
 #endif
   m_render_system->initialize(render_init_info);
 
+  EditorServiceHandles ui_handles{};
+  ui_handles.selection = m_editor_selection;
+  ui_handles.hierarchy = m_hierarchy;
+  ui_handles.scene = m_scene_system;
+  ui_handles.content_browser = m_content_browser;
+  ui_handles.editor_scene_edit = m_editor_scene_edit;
+  ui_handles.render_system = m_render_system;
+  ui_handles.asset_compiler = m_asset_compiler;
+  ui_handles.asset_import = m_asset_import;
+  m_ui_host->bindEditorServices(ui_handles);
+
   m_input_system = eastl::make_shared<InputSystem>();
   m_input_system->initialize();
 
   m_layer_stack = eastl::make_shared<LayerStack>();
+  if (Layer* viewport_input = new ViewportInputLayer(m_render_system)) {
+    m_layer_stack->pushOverlay(viewport_input);
+    viewport_input->onAttach();
+  }
 
   // m_particle_manager = eastl::make_shared<ParticleManager>();
   // m_particle_manager->initialize();
@@ -129,11 +156,24 @@ void RuntimeGlobalContext::startSystems() {
 void RuntimeGlobalContext::shutdownSystems() {
   m_layer_stack.reset();
 
-  m_viewport_presenter.reset();
+  if (m_viewport_bridge) {
+    m_viewport_bridge->shutdown();
+    m_viewport_bridge.reset();
+  }
+
+  m_viewport_sink.reset();
+
+  if (m_ui_host) {
+    m_ui_host->shutdown();
+  }
 
   if (m_slint_system) {
     m_slint_system->shutdown();
     m_slint_system.reset();
+  }
+
+  if (m_ui_host) {
+    m_ui_host.reset();
   }
 
   if (m_render_system) {

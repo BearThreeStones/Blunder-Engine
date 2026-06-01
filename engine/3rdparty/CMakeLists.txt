@@ -36,8 +36,9 @@ file(WRITE "${CGLTF_IMPL_FILE}" "#define CGLTF_IMPLEMENTATION\n#include \"cgltf.
 add_library(cgltf STATIC "${CGLTF_IMPL_FILE}")
 target_include_directories(cgltf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cgltf)
 
-# SDL3 - active windowing and event backend
+# SDL3 - active windowing and event backend (dialogs required for Import file picker)
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_DIALOG ON CACHE BOOL "Build SDL3 file/folder dialogs" FORCE)
 add_subdirectory(SDL)
 
 if(MSVC)

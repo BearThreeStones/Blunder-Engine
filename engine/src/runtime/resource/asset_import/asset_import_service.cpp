@@ -36,6 +36,39 @@ eastl::string joinVirtualPath(const eastl::string& folder,
   return result;
 }
 
+eastl::string resolveAssetsFolder(const eastl::string& selected_folder) {
+  eastl::string folder = selected_folder;
+  if (folder.compare(0, 10, "resources/") == 0) {
+    folder.replace(0, 10, "assets/");
+  }
+  if (folder.empty()) {
+    folder = "assets/";
+  }
+  return folder;
+}
+
+bool relativePathEscapesRoot(const std::filesystem::path& relative_path) {
+  for (const auto& part : relative_path.lexically_normal()) {
+    if (part == ".") {
+      continue;
+    }
+    return part == "..";
+  }
+  return false;
+}
+
+eastl::string resolveSourceVirtualPath(FileSystem* file_system, const fs::path& source_absolute) {
+  std::error_code ec;
+  const fs::path resources_root = file_system->getResourcesRoot();
+  const fs::path relative = fs::relative(source_absolute, resources_root, ec);
+  if (!ec && !relative.empty() && !relativePathEscapesRoot(relative)) {
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
+  }
+  return eastl::string(source_absolute.generic_string().c_str());
+}
+
 }  // namespace
 
 void AssetImportService::initialize(const AssetImportServiceInit& init) {
@@ -97,53 +130,6 @@ eastl::string AssetImportService::makeUniqueDescriptorName(
   return eastl::string();
 }
 
-bool AssetImportService::copyGltfWithSidecars(
-    const fs::path& source_absolute, const fs::path& dest_directory,
-    eastl::string& out_resource_virtual_path) {
-  std::error_code ec;
-  if (!fs::is_regular_file(source_absolute, ec)) {
-    return false;
-  }
-
-  m_file_system->ensureParentDirectory(dest_directory / "placeholder");
-
-  const fs::path source_dir = source_absolute.parent_path();
-  const eastl::string stem(source_absolute.stem().generic_string().c_str());
-
-  const fs::path dest_file = dest_directory / source_absolute.filename();
-  if (!m_file_system->copyFile(source_absolute, dest_file, true)) {
-    return false;
-  }
-
-  if (fs::is_directory(source_dir, ec)) {
-    for (const fs::directory_entry& entry :
-         fs::directory_iterator(source_dir, ec)) {
-      if (!entry.is_regular_file(ec)) {
-        continue;
-      }
-      const eastl::string entry_stem(
-          entry.path().stem().generic_string().c_str());
-      if (entry_stem != stem) {
-        continue;
-      }
-      if (entry.path() == source_absolute) {
-        continue;
-      }
-      m_file_system->copyFile(entry.path(), dest_directory / entry.path().filename(),
-                              true);
-    }
-  }
-
-  const fs::path resources_root = m_file_system->getResourcesRoot();
-  fs::path relative = fs::relative(dest_file, resources_root, ec);
-  if (ec) {
-    relative = dest_file.filename();
-  }
-  out_resource_virtual_path = eastl::string("resources/");
-  out_resource_virtual_path.append(relative.generic_string().c_str());
-  return true;
-}
-
 ImportResult AssetImportService::importMesh(
     const fs::path& source_absolute, const eastl::string& assets_folder_virtual,
     const MeshImportSettings& settings) {
@@ -158,19 +144,12 @@ ImportResult AssetImportService::importMesh(
     return result;
   }
 
+  const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
+  const eastl::string resource_virtual_path = resolveSourceVirtualPath(m_file_system, source_absolute);
+
   const eastl::string stem(source_absolute.stem().generic_string().c_str());
-  const fs::path resource_dir =
-      m_file_system->getResourcesRoot() / "Models" / stem.c_str();
-
-  eastl::string resource_virtual_path;
-  if (!copyGltfWithSidecars(source_absolute, resource_dir, resource_virtual_path)) {
-    LOG_ERROR("[AssetImport] failed to copy mesh source {}",
-              source_absolute.generic_string());
-    return result;
-  }
-
   const eastl::string descriptor_name =
-      makeUniqueDescriptorName(assets_folder_virtual, stem, ".mesh.yaml");
+      makeUniqueDescriptorName(assets_folder, stem, ".mesh.yaml");
   if (descriptor_name.empty()) {
     LOG_WARN("[AssetImport] descriptor already exists for mesh {}", stem.c_str());
     return result;
@@ -182,7 +161,7 @@ ImportResult AssetImportService::importMesh(
   descriptor.import = settings;
 
   const eastl::string descriptor_virtual =
-      joinVirtualPath(assets_folder_virtual, descriptor_name);
+      joinVirtualPath(assets_folder, descriptor_name);
   eastl::string relative = descriptor_virtual;
   relative.erase(0, 7);
   const fs::path descriptor_absolute =
@@ -221,25 +200,12 @@ ImportResult AssetImportService::importTexture(
     return result;
   }
 
+  const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
+  const eastl::string resource_virtual_path = resolveSourceVirtualPath(m_file_system, source_absolute);
+
   const eastl::string stem(source_absolute.stem().generic_string().c_str());
-  const fs::path resource_dir =
-      m_file_system->getResourcesRoot() / "Textures" / stem.c_str();
-  m_file_system->ensureParentDirectory(resource_dir / "placeholder");
-
-  const fs::path dest_file = resource_dir / source_absolute.filename();
-  if (!m_file_system->copyFile(source_absolute, dest_file, true)) {
-    LOG_ERROR("[AssetImport] failed to copy texture source {}",
-              source_absolute.generic_string());
-    return result;
-  }
-
-  eastl::string resource_virtual_path = eastl::string("resources/Textures/");
-  resource_virtual_path.append(stem);
-  resource_virtual_path.push_back('/');
-  resource_virtual_path.append(source_absolute.filename().generic_string().c_str());
-
   const eastl::string descriptor_name =
-      makeUniqueDescriptorName(assets_folder_virtual, stem, ".texture.yaml");
+      makeUniqueDescriptorName(assets_folder, stem, ".texture.yaml");
   if (descriptor_name.empty()) {
     return result;
   }
@@ -250,7 +216,7 @@ ImportResult AssetImportService::importTexture(
   descriptor.import = settings;
 
   const eastl::string descriptor_virtual =
-      joinVirtualPath(assets_folder_virtual, descriptor_name);
+      joinVirtualPath(assets_folder, descriptor_name);
   eastl::string relative = descriptor_virtual;
   relative.erase(0, 7);
   const fs::path descriptor_absolute =

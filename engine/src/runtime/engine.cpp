@@ -207,9 +207,7 @@ void BlunderEngine::onEvent(Event& e) {
     (*it)->onEvent(e);
   }
 
-  if (!e.handled && g_runtime_global_context.m_render_system) {
-    g_runtime_global_context.m_render_system->onEvent(e);
-  }
+  // ViewportInputLayer on the LayerStack forwards to RenderSystem.
 
   // Engine-level event handling
   EventDispatcher dispatcher(e);

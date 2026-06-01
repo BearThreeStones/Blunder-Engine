@@ -34,12 +34,14 @@ class VulkanPipeline;
 class VulkanTexture;
 class WindowSystem;
 class SlintSystem;
+class UiHost;
+class UIViewportBridge;
+class IViewportSink;
 
 namespace rhi {
 class IGraphicsPipeline;
 class IOffscreenRenderTarget;
 class IRenderBackend;
-class IViewportPresenter;
 }  // namespace rhi
 
 namespace vulkan_backend {
@@ -52,9 +54,12 @@ struct RenderSystemInitInfo {
   AssetManager* asset_manager{nullptr};
   WindowSystem* window_system{nullptr};
   bool enable_validation{true};
-  rhi::IViewportPresenter* viewport_presenter{nullptr};
   /// Used for editor-camera viewport rect queries (layout from Slint).
   SlintSystem* viewport_layout_source{nullptr};
+  /// Live Blinn-Phong / SSAO preview parameters (C++ SSOT via UiHost).
+  UiHost* preview_settings_source{nullptr};
+  UIViewportBridge* viewport_bridge{nullptr};
+  IViewportSink* viewport_sink{nullptr};
 };
 
 /// Runtime renderer.
@@ -120,13 +125,15 @@ class RenderSystem final {
   void applyDeferredOffscreenResize();
   /// Applies pending offscreen resize immediately when Slint target size is stable.
   void flushOffscreenResizeToTarget(uint32_t target_width, uint32_t target_height);
-  void recreateReadbackStaging(uint32_t width, uint32_t height);
+  void resizeViewportReadback(uint32_t width, uint32_t height);
   void clearGpuMeshes();
 
   AssetManager* m_asset_manager{nullptr};
   WindowSystem* m_window_system{nullptr};
-  rhi::IViewportPresenter* m_viewport_presenter{nullptr};
   SlintSystem* m_viewport_layout_source{nullptr};
+  UiHost* m_preview_settings_source{nullptr};
+  UIViewportBridge* m_viewport_bridge{nullptr};
+  IViewportSink* m_viewport_sink{nullptr};
   eastl::unique_ptr<rhi::IRenderBackend> m_backend;
 
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_offscreen;
@@ -149,11 +156,6 @@ class RenderSystem final {
   eastl::shared_ptr<MaterialAsset> m_inspector_material;
   uint32_t m_current_frame{0};
   ForwardGridPlane m_grid_plane{ForwardGridPlane::xy};
-
-  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_readback_staging;
-  uint32_t m_readback_width{0};
-  uint32_t m_readback_height{0};
-  eastl::vector<uint8_t> m_readback_pixels;
 
   uint32_t m_deferred_rt_width{0};
   uint32_t m_deferred_rt_height{0};

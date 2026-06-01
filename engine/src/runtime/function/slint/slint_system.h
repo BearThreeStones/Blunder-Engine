@@ -14,9 +14,13 @@
 
 #include "runtime/platform/window/window_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/function/ui/editor_ui_presentation.h"
+#include "runtime/function/ui/ui_context.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 
 namespace Blunder {
+
+class UiHost;
 
 enum class DockSplitterDrag : uint8_t {
   none = 0,
@@ -40,15 +44,17 @@ using BrowserLogicalRect = ViewportLogicalRect;
 
 struct SlintSystemInitInfo {
   WindowSystem* window_system{nullptr};
+  eastl::weak_ptr<UiHost> ui_host;
 };
 
-class SlintSystem final {
+class SlintSystem final : public IEditorUiPresentation {
  public:
   SlintSystem() = default;
   ~SlintSystem();
 
   void initialize(const SlintSystemInitInfo& init_info);
   void shutdown();
+  WindowSystem* getWindowSystem() const { return m_window_system; }
 
   /// Drives Slint's per-frame work: timers/animations + window present.
   /// With the SkiaRenderer backend, this also performs the GPU composite
@@ -140,18 +146,17 @@ class SlintSystem final {
   /// is not ready.
   BlinnPhongEditorSettings getBlinnPhongEditorSettings() const;
 
-  /// Source mesh material used by "Sync Asset" and initial inspector sync.
-  void setBlinnPhongMaterialSource(const MaterialAsset* material);
-  void syncBlinnPhongFromMaterialSource();
-
-  /// Pushes ContentBrowserSystem tree/grid rows into the Slint panel.
-  void syncContentBrowser();
-
-  void syncHierarchy();
-  void syncInspectorFromSelection();
-  void applyInspectorTransform();
-
-  void refreshEditorScenePanels();
+  // IEditorUiPresentation
+  BlinnPhongEditorSettings pullPreviewSettingsFromSlint() const override;
+  void pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) override;
+  void syncHierarchy() override;
+  void syncInspectorFromSelection() override;
+  void syncContentBrowser() override;
+  void applyInspectorTransform() override;
+  void refreshEditorScenePanels() override;
+  void setBlinnPhongMaterialSource(const MaterialAsset* material) override;
+  void syncBlinnPhongFromMaterialSource() override;
+  void tickContentBrowserTreePointerPoll() override;
 
   BrowserLogicalRect getBrowserLogicalRect() const;
   BrowserLogicalRect getHierarchyLogicalRect() const;
@@ -166,8 +171,6 @@ class SlintSystem final {
   /// Clears per-frame content-browser input state; call once before pumpEvents.
   void beginContentBrowserInputFrame();
 
-  /// Detects tree-folder clicks via cursor poll (Win32/SDL); call after pumpEvents.
-  void tickContentBrowserTreePointerPoll();
 
   /// Persp/Iso via Win32/SDL cursor poll when SDL button events are starved.
   void tickProjectionTogglePointerPoll();
@@ -221,9 +224,13 @@ class SlintSystem final {
 
     bool needsRedraw() const { return m_needs_redraw; }
 
+    /// Owning SlintSystem (set after construction) for self drag-state queries.
+    void setOwner(SlintSystem* owner) { m_owner = owner; }
+
    private:
     void ensureRenderer();
 
+    SlintSystem* m_owner{nullptr};
     WindowSystem* m_window_system{nullptr};
     std::unique_ptr<slint::platform::SkiaRenderer> m_renderer;
     bool m_visible{false};
@@ -256,17 +263,22 @@ class SlintSystem final {
   static bool isSpecialKey(SDL_Keycode keycode);
 
  private:
+  /// Resolves editor services through the UiHost weak_ptr (UiContext-guarded).
+  /// Returns nullopt while the engine is shutting down or UiHost is gone.
+  std::optional<UiContext::LockedServices> lockServices() const;
+
   void cacheLayoutRects();
   void cacheViewportLogicalRectOnly();
   void refreshDockSplitterHitCache();
   void refreshDockSplitterGeometryFromUi();
   DockSplitterDrag queryDockSplitterAtFast(float window_x, float window_y) const;
-  void runEditorPanelSync();
   void refreshBrowserRectCache();
   void processPendingAssetImports();
   void showImportMeshDialogForPendingPaths();
   void completePendingMeshImport();
   void openImportFileDialog();
+  /// Schedules SDL_ShowOpenFileDialog on the main thread (outside Slint dispatch).
+  void queueOpenImportFileDialog();
   void finalizeAssetImport(const eastl::vector<ImportResult>& results);
   /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
   /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
@@ -282,8 +294,8 @@ class SlintSystem final {
   void updateCppDockSplitterDrag(float window_x, float window_y);
   void queueCppDockSplitterMotion(float window_x, float window_y);
   void flushPendingCppDockSplitterMotion();
-  /// Win32 cursor poll so splitter drag/release work when SDL_AppEvent is starved.
-  void pollWin32DockSplitterPointerState();
+  /// SDL mouse poll so splitter drag/release work when SDL_AppEvent is starved.
+  void pollDockSplitterPointerState();
   void endCppDockSplitterDrag();
   void applyDockPaneResize(DockSplitterDrag kind);
   void applyPendingDockPaneResize();
@@ -296,6 +308,7 @@ class SlintSystem final {
   /// Applies camera + label to match Slint `viewport-is-perspective` (no toggle).
   bool applyViewportProjection(bool is_perspective, const char* source);
 
+  eastl::weak_ptr<UiHost> m_ui_host;
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
@@ -311,6 +324,7 @@ class SlintSystem final {
   eastl::vector<eastl::string> m_pending_mesh_import_paths;
   eastl::vector<eastl::string> m_pending_file_dialog_paths;
   bool m_pending_file_dialog_is_import{false};
+  Uint32 m_open_import_dialog_event{0};
   bool m_tree_folder_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};
   bool m_left_mouse_down_prev{false};

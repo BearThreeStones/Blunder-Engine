@@ -6,11 +6,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <exception>
 #include <string>
-#if defined(_WIN32)
-#include <windows.h>
-#endif
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -22,7 +20,6 @@
 #include <glm/vec3.hpp>
 
 #include "runtime/core/base/macro.h"
-#include "runtime/function/global/global_context.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
@@ -41,10 +38,14 @@
 #include "runtime/function/slint/window_pointer_map.h"
 #include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/ui/ui_callback_binder.h"
+#include "runtime/function/ui/ui_events.h"
+#include "runtime/function/ui/ui_host.h"
 #include "runtime/platform/file_system/file_system.h"
 
 namespace Blunder {
 namespace {
+
 slint::SharedString makeSpecialKeyString(std::u8string_view value) {
   std::string utf8(value.begin(), value.end());
   return slint::SharedString(utf8.c_str());
@@ -317,12 +318,7 @@ void SlintSystem::SlintWindowAdapter::applyWindowLayoutNow(int override_logical_
   if (physical_size_changed) {
     if (m_renderer) {
       m_renderer->resize(m_target_size);
-#if defined(_WIN32)
-      if (void* hwnd_opaque = m_window_system->getNativeWin32Hwnd()) {
-        InvalidateRect(static_cast<HWND>(hwnd_opaque), nullptr, FALSE);
-      }
-      SDL_PumpEvents();
-#endif
+      request_redraw();
       m_present_suppress_frames = eastl::max(m_present_suppress_frames, 1u);
     }
   }
@@ -423,9 +419,8 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
   // H19: Pumping here during dock-splitter drag re-enters SDL_AppEvent (motion
   // flood) before Skia render returns — stalls the UI. Events arrive via SDL_AppEvent.
   const bool skip_pump =
-      g_runtime_global_context.m_slint_system &&
-      (g_runtime_global_context.m_slint_system->isDockLayoutDragActive() ||
-       g_runtime_global_context.m_slint_system->isSplitterResizeInteractionActive());
+      m_owner != nullptr && (m_owner->isDockLayoutDragActive() ||
+                             m_owner->isSplitterResizeInteractionActive());
   if (!skip_pump) {
     SDL_PumpEvents();
   }
@@ -533,6 +528,7 @@ bool SlintSystem::isSpecialKey(SDL_Keycode keycode) {
 void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
   ASSERT(init_info.window_system);
   m_window_system = init_info.window_system;
+  m_ui_host = init_info.ui_host;
 
   try {
     if (!g_slint_platform_instance) {
@@ -579,14 +575,11 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         "notifier: {}",
         static_cast<int>(*notifier_error));
     }
-    component->on_sync_shading_from_asset(
-        [this]() { syncBlinnPhongFromMaterialSource(); });
+    component->on_sync_shading_from_asset(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::syncShadingFromAsset)); }));
 
-    component->on_save_scene_requested([this]() {
-      if (g_runtime_global_context.m_editor_scene_edit) {
-        g_runtime_global_context.m_editor_scene_edit->saveActiveScene();
-      }
-    });
+    component->on_save_scene_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::saveScene)); }));
 
     component->on_viewport_projection_toggled([this]() {
       // Slint TouchArea callback intentionally ignored.
@@ -598,42 +591,25 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     // Ignoring this callback prevents Slint from hiding the Content Browser mid-drag.
     component->on_dock_layout_drag_changed([](bool) {});
 
-    component->on_hierarchy_entity_selected([this](int entity_id) {
-      m_hierarchy_handled_by_slint = true;
-      if (!g_runtime_global_context.m_editor_selection) {
-        return;
-      }
-      g_runtime_global_context.m_editor_selection->setSelection(
-          static_cast<EntityId>(entity_id));
-      syncInspectorFromSelection();
-      syncHierarchy();
-    });
+    component->on_hierarchy_entity_selected(UiCallbackBinder::bind(
+        m_ui_host, [this](UiHost& host, int entity_id) {
+          m_hierarchy_handled_by_slint = true;
+          host.enqueue(UiEvent::selectEntity(static_cast<EntityId>(entity_id)));
+        }));
 
-    component->on_hierarchy_entity_toggle([this](int entity_id) {
-      m_hierarchy_handled_by_slint = true;
-      if (!g_runtime_global_context.m_hierarchy) {
-        return;
-      }
-      g_runtime_global_context.m_hierarchy->toggleExpanded(
-          static_cast<EntityId>(entity_id));
-      if (g_runtime_global_context.m_scene_system &&
-          g_runtime_global_context.m_scene_system->getActiveInstance()) {
-        g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
-            g_runtime_global_context.m_scene_system->getActiveInstance());
-      }
-      syncHierarchy();
-    });
+    component->on_hierarchy_entity_toggle(UiCallbackBinder::bind(
+        m_ui_host, [this](UiHost& host, int entity_id) {
+          m_hierarchy_handled_by_slint = true;
+          host.enqueue(UiEvent::toggleHierarchyNode(static_cast<EntityId>(entity_id)));
+        }));
 
-    component->on_inspector_transform_edited([this]() { applyInspectorTransform(); });
+    component->on_inspector_transform_edited(UiCallbackBinder::bind(
+        m_ui_host,
+        [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited)); }));
 
-    component->on_browser_refresh_requested([this]() {
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->refresh();
-      syncContentBrowser();
-    });
-    component->on_browser_import_requested([this]() { openImportFileDialog(); });
+    component->on_browser_refresh_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); }));
+    component->on_browser_import_requested([this]() { queueOpenImportFileDialog(); });
     component->on_import_mesh_confirmed([this]() { completePendingMeshImport(); });
     component->on_import_mesh_cancelled([this]() {
       m_pending_mesh_import_paths.clear();
@@ -641,32 +617,25 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_window_component->operator->()->set_import_mesh_dialog_visible(false);
       }
     });
-    component->on_browser_folder_selected(
-        [this](const slint::SharedString& path) {
-      m_tree_folder_handled_by_slint = true;
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->setSelectedFolder(
-          eastl::string(path.data()));
-      syncContentBrowser();
-    });
-    component->on_browser_folder_toggle(
-        [this](const slint::SharedString& path) {
-      m_tree_folder_handled_by_slint = true;
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->toggleFolderExpanded(
-          eastl::string(path.data()));
-      syncContentBrowser();
-    });
+    component->on_browser_folder_selected(UiCallbackBinder::bind(
+        m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+          m_tree_folder_handled_by_slint = true;
+          host.enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
+                                       eastl::string(path.data())));
+        }));
+    component->on_browser_folder_toggle(UiCallbackBinder::bind(
+        m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+          m_tree_folder_handled_by_slint = true;
+          host.enqueue(UiEvent::withPath(UiEventKind::browserFolderToggle,
+                                       eastl::string(path.data())));
+        }));
     component->on_browser_item_press(
         [this](const slint::SharedString& path, float x, float y) {
-          if (!g_runtime_global_context.m_content_browser) {
+          const auto services = lockServices();
+          if (!services || !services->content_browser) {
             return;
           }
-          g_runtime_global_context.m_content_browser->dragController().beginPress(
+          services->content_browser->dragController().beginPress(
               eastl::string(path.data()), x, y);
           m_drop_highlight_path.clear();
           syncContentBrowser();
@@ -674,81 +643,71 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_browser_item_move(
         [this](const slint::SharedString& path, float x, float y) {
           (void)path;
-          if (!g_runtime_global_context.m_content_browser) {
+          const auto services = lockServices();
+          if (!services || !services->content_browser) {
             return;
           }
-          g_runtime_global_context.m_content_browser->dragController().updateMove(
-              x, y);
+          services->content_browser->dragController().updateMove(x, y);
         });
     component->on_browser_item_release(
         [this](const slint::SharedString& path, float x, float y) {
           (void)x;
           (void)y;
-          if (!g_runtime_global_context.m_content_browser) {
+          const auto services = lockServices();
+          if (!services || !services->content_browser) {
             return;
           }
-          ContentBrowserSystem& browser_system =
-              *g_runtime_global_context.m_content_browser;
+          ContentBrowserSystem& browser_system = *services->content_browser;
           ContentBrowserDragController& drag = browser_system.dragController();
           const bool was_dragging = drag.isDragging();
 
           if (was_dragging) {
             finishContentBrowserDragAtCursor();
-          } else {
-            drag.endPress();
-            drag.reset();
-            m_drop_highlight_path.clear();
-            m_viewport_drop_active = false;
-            syncContentBrowser();
+            return;
+          }
 
-            const eastl::string path_str(path.data());
+          drag.endPress();
+          drag.reset();
+          m_drop_highlight_path.clear();
+          m_viewport_drop_active = false;
+          syncContentBrowser();
 
-            // If the clicked item is a directory, navigate into it.
-            const ContentEntry* entry = browser_system.findEntry(path_str);
-            if (entry && entry->is_directory) {
-              browser_system.setSelectedFolder(path_str);
-              syncContentBrowser();
-              return;
+          const eastl::string path_str(path.data());
+
+          // Discrete navigation/open actions are routed through the UiEventQueue
+          // so they run on the main thread outside Slint dispatch.
+          const ContentEntry* entry = browser_system.findEntry(path_str);
+          if (entry && entry->is_directory) {
+            if (const auto host = m_ui_host.lock()) {
+              host->enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
+                                              path_str));
             }
+            return;
+          }
 
-            constexpr const char* k_scene_suffix = ".scene.asset";
-            const size_t suffix_len = 14u;
-            if (path_str.size() >= suffix_len &&
-                path_str.compare(path_str.size() - suffix_len, suffix_len,
-                                 k_scene_suffix) == 0 &&
-                g_runtime_global_context.m_editor_scene_edit) {
-              if (g_runtime_global_context.m_editor_scene_edit->openScene(path_str)) {
-                if (g_runtime_global_context.m_render_system &&
-                    g_runtime_global_context.m_scene_system) {
-                  syncSceneToRender(
-                      g_runtime_global_context.m_render_system.get(),
-                      g_runtime_global_context.m_scene_system->getActiveInstance());
-                }
-                refreshEditorScenePanels();
-              }
+          constexpr const char* k_scene_suffix = ".scene.asset";
+          const size_t suffix_len = 14u;
+          if (path_str.size() >= suffix_len &&
+              path_str.compare(path_str.size() - suffix_len, suffix_len,
+                               k_scene_suffix) == 0) {
+            if (const auto host = m_ui_host.lock()) {
+              host->enqueue(
+                  UiEvent::withPath(UiEventKind::openSceneAsset, path_str));
             }
           }
         });
 
-    component->on_browser_search_changed(
-        [this](const slint::SharedString& text) {
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->setSearchFilter(
-          eastl::string(text.data()));
-      syncContentBrowser();
-    });
+    component->on_browser_search_changed(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host, const slint::SharedString& text) {
+          host.enqueue(UiEvent::withPath(UiEventKind::browserSearchChanged,
+                                       eastl::string(text.data())));
+        }));
 
-    component->on_browser_path_segment_clicked(
-        [this](const slint::SharedString& path) {
-      if (!g_runtime_global_context.m_content_browser) {
-        return;
-      }
-      g_runtime_global_context.m_content_browser->setSelectedFolder(
-          eastl::string(path.data()));
-      syncContentBrowser();
-    });
+    component->on_browser_path_segment_clicked(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+          host.enqueue(UiEvent::withPath(UiEventKind::browserPathSegmentClicked,
+                                       eastl::string(path.data())));
+        }));
 
     component->set_bottom_dock_height(160.0f);
     component->set_left_dock_width(200.0f);
@@ -758,6 +717,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
     m_window_adapter = g_slint_platform_instance->getWindowAdapter();
     ASSERT(m_window_adapter);
+    m_window_adapter->setOwner(this);
 
     m_window_system->setNativeEventCallback(
         [this](const SDL_Event& event) { processEvent(event); });
@@ -767,13 +727,20 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     m_window_adapter->pollDrawableSize();
     m_window_adapter->commitWindowSize(true);
     cacheLayoutRects();
-    if (g_runtime_global_context.m_render_system) {
-      if (EditorCamera* camera =
-              g_runtime_global_context.m_render_system->getEditorCamera()) {
-        syncViewportProjectionMode(
-            camera->getProjectionMode() == EditorCamera::ProjectionMode::perspective);
+    if (const auto services = lockServices()) {
+      if (services->render_system) {
+        if (EditorCamera* camera = services->render_system->getEditorCamera()) {
+          syncViewportProjectionMode(camera->getProjectionMode() ==
+                                     EditorCamera::ProjectionMode::perspective);
+        }
       }
     }
+    m_open_import_dialog_event = SDL_RegisterEvents(1);
+    if (m_open_import_dialog_event == 0) {
+      LOG_WARN("[SlintSystem] SDL_RegisterEvents failed for import dialog: {}",
+               SDL_GetError());
+    }
+
     LOG_INFO("[SlintSystem] editor initialized");
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::initialize] {}", e.what());
@@ -952,6 +919,46 @@ BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
   return settings;
 }
 
+BlinnPhongEditorSettings SlintSystem::pullPreviewSettingsFromSlint() const {
+  return getBlinnPhongEditorSettings();
+}
+
+void SlintSystem::pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) {
+  if (!m_window_component) {
+    return;
+  }
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_light_dir_x(settings.light_direction.x);
+    ui->set_light_dir_y(settings.light_direction.y);
+    ui->set_light_dir_z(settings.light_direction.z);
+    ui->set_light_color_r(settings.light_color.r);
+    ui->set_light_color_g(settings.light_color.g);
+    ui->set_light_color_b(settings.light_color.b);
+    ui->set_ambient_r(settings.ambient_color.r);
+    ui->set_ambient_g(settings.ambient_color.g);
+    ui->set_ambient_b(settings.ambient_color.b);
+    ui->set_diffuse_r(settings.diffuse_color.r);
+    ui->set_diffuse_g(settings.diffuse_color.g);
+    ui->set_diffuse_b(settings.diffuse_color.b);
+    ui->set_specular_r(settings.specular_color.r);
+    ui->set_specular_g(settings.specular_color.g);
+    ui->set_specular_b(settings.specular_color.b);
+    ui->set_shininess(settings.shininess);
+    ui->set_shading_unlit(settings.unlit);
+    ui->set_ssao_enabled(settings.ssao_enabled);
+    ui->set_ssao_radius(settings.ssao_radius);
+    ui->set_ssao_bias(settings.ssao_bias);
+    ui->set_ssao_strength(settings.ssao_strength);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::pushPreviewSettingsToSlint] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::pushPreviewSettingsToSlint] unknown exception");
+  }
+}
+
 void SlintSystem::setBlinnPhongMaterialSource(const MaterialAsset* material) {
   m_blinn_phong_material_source = material;
 }
@@ -1040,42 +1047,70 @@ struct WindowClientMouseState {
   const char* source{"none"};
 };
 
-#if defined(_WIN32)
-#  ifndef WIN32_LEAN_AND_MEAN
-#    define WIN32_LEAN_AND_MEAN
-#  endif
-#  include <Windows.h>
-namespace win32_mouse_query {
-bool sample(WindowSystem* window_system, float* out_x, float* out_y,
-            bool* out_left_down) {
-  if (!window_system || !out_x || !out_y || !out_left_down) {
-    return false;
-  }
-  void* hwnd_opaque = window_system->getNativeWin32Hwnd();
-  if (!hwnd_opaque) {
-    return false;
-  }
-  HWND hwnd = static_cast<HWND>(hwnd_opaque);
-  POINT cursor{};
-  if (GetCursorPos(&cursor) == 0 || ScreenToClient(hwnd, &cursor) == 0) {
-    return false;
-  }
-  *out_x = static_cast<float>(cursor.x);
-  *out_y = static_cast<float>(cursor.y);
-  *out_left_down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-  return true;
+bool querySdlLeftMouseDown() {
+  return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
 }
-}  // namespace win32_mouse_query
-#endif
+
+SDL_Cursor* g_active_splitter_cursor = nullptr;
+
+void setDockSplitterCursor(DockSplitterDrag kind) {
+  SDL_SystemCursor sys = SDL_SYSTEM_CURSOR_DEFAULT;
+  switch (kind) {
+    case DockSplitterDrag::leftVertical:
+    case DockSplitterDrag::rightVertical:
+    case DockSplitterDrag::browserTreeVertical:
+      sys = SDL_SYSTEM_CURSOR_EW_RESIZE;
+      break;
+    case DockSplitterDrag::hierarchyHorizontal:
+    case DockSplitterDrag::bottomHorizontal:
+      sys = SDL_SYSTEM_CURSOR_NS_RESIZE;
+      break;
+    default:
+      break;
+  }
+  if (g_active_splitter_cursor != nullptr) {
+    SDL_DestroyCursor(g_active_splitter_cursor);
+    g_active_splitter_cursor = nullptr;
+  }
+  g_active_splitter_cursor = SDL_CreateSystemCursor(sys);
+  if (g_active_splitter_cursor != nullptr) {
+    SDL_SetCursor(g_active_splitter_cursor);
+  }
+}
+
+void restoreDefaultCursor() {
+  if (g_active_splitter_cursor != nullptr) {
+    SDL_DestroyCursor(g_active_splitter_cursor);
+    g_active_splitter_cursor = nullptr;
+  }
+  if (SDL_Cursor* default_cursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT)) {
+    SDL_SetCursor(default_cursor);
+    SDL_DestroyCursor(default_cursor);
+  }
+}
+
+void captureMouseForSplitterDrag(WindowSystem* window_system) {
+  SDL_CaptureMouse(true);
+  if (window_system == nullptr) {
+    return;
+  }
+  if (SDL_Window* window = window_system->getNativeWindow()) {
+    SDL_SetWindowMouseGrab(window, true);
+  }
+}
+
+void releaseMouseCapture(WindowSystem* window_system) {
+  SDL_CaptureMouse(false);
+  if (window_system != nullptr) {
+    if (SDL_Window* window = window_system->getNativeWindow()) {
+      SDL_SetWindowMouseGrab(window, false);
+    }
+  }
+  restoreDefaultCursor();
+}
 
 WindowClientMouseState queryWindowClientMouseState(WindowSystem* window_system) {
   WindowClientMouseState state{};
-#if defined(_WIN32)
-  if (win32_mouse_query::sample(window_system, &state.x, &state.y, &state.left_down)) {
-    state.source = "win32";
-    return state;
-  }
-#endif
   if (window_system) {
     SDL_MouseButtonFlags buttons = SDL_GetMouseState(&state.x, &state.y);
     state.left_down = (buttons & SDL_BUTTON_LMASK) != 0;
@@ -1123,16 +1158,23 @@ int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
 
 }  // namespace
 
+std::optional<UiContext::LockedServices> SlintSystem::lockServices() const {
+  if (const auto host = m_ui_host.lock()) {
+    return host->lockEditorServices();
+  }
+  return std::nullopt;
+}
+
 void SlintSystem::syncHierarchy() {
-  if (!m_window_component || !g_runtime_global_context.m_hierarchy) {
+  const auto services = lockServices();
+  if (!m_window_component || !services || !services->hierarchy) {
     return;
   }
 
-  HierarchySystem& hierarchy = *g_runtime_global_context.m_hierarchy;
-  const EntityId selected =
-      g_runtime_global_context.m_editor_selection
-          ? g_runtime_global_context.m_editor_selection->getSelection()
-          : k_invalid_entity_id;
+  HierarchySystem& hierarchy = *services->hierarchy;
+  const EntityId selected = services->selection
+                                ? services->selection->getSelection()
+                                : k_invalid_entity_id;
 
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -1163,11 +1205,13 @@ void SlintSystem::syncInspectorFromSelection() {
     return;
   }
 
-  EditorSelectionSystem* selection = g_runtime_global_context.m_editor_selection.get();
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
   SceneInstance* scene =
-      g_runtime_global_context.m_scene_system
-          ? g_runtime_global_context.m_scene_system->getActiveInstance()
-          : nullptr;
+      services->scene ? services->scene->getActiveInstance() : nullptr;
 
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -1222,11 +1266,13 @@ void SlintSystem::applyInspectorTransform() {
     return;
   }
 
-  EditorSelectionSystem* selection = g_runtime_global_context.m_editor_selection.get();
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
   SceneInstance* scene =
-      g_runtime_global_context.m_scene_system
-          ? g_runtime_global_context.m_scene_system->getActiveInstance()
-          : nullptr;
+      services->scene ? services->scene->getActiveInstance() : nullptr;
   if (!selection || !scene || !selection->hasSelection()) {
     return;
   }
@@ -1247,8 +1293,8 @@ void SlintSystem::applyInspectorTransform() {
     entity->setScale(Vec3(ui->get_inspector_scale_x(), ui->get_inspector_scale_y(),
                           ui->get_inspector_scale_z()));
     scene->markTransformsDirty();
-    if (g_runtime_global_context.m_editor_scene_edit) {
-      g_runtime_global_context.m_editor_scene_edit->markDirty();
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorTransform] {}", e.what());
@@ -1258,11 +1304,11 @@ void SlintSystem::applyInspectorTransform() {
 }
 
 void SlintSystem::refreshEditorScenePanels() {
-  if (g_runtime_global_context.m_scene_system &&
-      g_runtime_global_context.m_hierarchy) {
-    g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
-        g_runtime_global_context.m_scene_system->getActiveInstance());
-    g_runtime_global_context.m_hierarchy->markDirty();
+  if (const auto services = lockServices()) {
+    if (services->scene && services->hierarchy) {
+      services->hierarchy->rebuildVisibleTree(services->scene->getActiveInstance());
+      services->hierarchy->markDirty();
+    }
   }
   syncHierarchy();
   syncInspectorFromSelection();
@@ -1274,7 +1320,19 @@ void onImportFileDialogCallback(void* userdata, const char* const* filelist,
                                 int filter) {
   (void)filter;
   auto* slint_system = static_cast<SlintSystem*>(userdata);
-  if (slint_system == nullptr || filelist == nullptr) {
+  if (slint_system == nullptr) {
+    return;
+  }
+  if (filelist == nullptr) {
+    const char* err = SDL_GetError();
+    LOG_ERROR("[SDL_Dialog] file dialog callback error: {}", err ? err : "unknown error");
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Import Error",
+                             err ? err : "Unknown file dialog error",
+                             slint_system->getWindowSystem() ? slint_system->getWindowSystem()->getNativeWindow() : nullptr);
+    return;
+  }
+  if (*filelist == nullptr) {
+    LOG_INFO("[SDL_Dialog] file dialog cancelled by user");
     return;
   }
   eastl::vector<eastl::string> paths;
@@ -1311,8 +1369,8 @@ void SlintSystem::finalizeAssetImport(
   if (results.empty()) {
     return;
   }
-  if (g_runtime_global_context.m_asset_compiler) {
-    g_runtime_global_context.m_asset_compiler->cookIfStale();
+  if (const auto services = lockServices(); services && services->asset_compiler) {
+    services->asset_compiler->cookIfStale();
   }
   syncContentBrowser();
   LOG_INFO("[SlintSystem] imported {} asset descriptor(s)", results.size());
@@ -1329,9 +1387,9 @@ void SlintSystem::showImportMeshDialogForPendingPaths() {
 }
 
 void SlintSystem::completePendingMeshImport() {
-  if (!m_window_component || !g_runtime_global_context.m_asset_import ||
-      !g_runtime_global_context.m_content_browser ||
-      m_pending_mesh_import_paths.empty()) {
+  const auto services = lockServices();
+  if (!m_window_component || !services || !services->asset_import ||
+      !services->content_browser || m_pending_mesh_import_paths.empty()) {
     return;
   }
 
@@ -1341,10 +1399,9 @@ void SlintSystem::completePendingMeshImport() {
       m_window_component->operator->()->get_import_mesh_animations();
   settings.scale = m_window_component->operator->()->get_import_mesh_scale();
 
-  const eastl::string target_folder =
-      g_runtime_global_context.m_content_browser->selectedFolder();
+  const eastl::string target_folder = services->content_browser->selectedFolder();
   const eastl::vector<ImportResult> results =
-      g_runtime_global_context.m_asset_import->importExternalFiles(
+      services->asset_import->importExternalFiles(
           m_pending_mesh_import_paths, target_folder, settings);
 
   m_pending_mesh_import_paths.clear();
@@ -1357,8 +1414,8 @@ void SlintSystem::processPendingAssetImports() {
     return;
   }
 
-  if (!g_runtime_global_context.m_asset_import ||
-      !g_runtime_global_context.m_content_browser) {
+  const auto services = lockServices();
+  if (!services || !services->asset_import || !services->content_browser) {
     m_pending_file_dialog_paths.clear();
     return;
   }
@@ -1377,13 +1434,11 @@ void SlintSystem::processPendingAssetImports() {
     }
   }
 
-  const eastl::string target_folder =
-      g_runtime_global_context.m_content_browser->selectedFolder();
+  const eastl::string target_folder = services->content_browser->selectedFolder();
 
   if (!direct_paths.empty()) {
-    finalizeAssetImport(
-        g_runtime_global_context.m_asset_import->importExternalFiles(
-            direct_paths, target_folder));
+    finalizeAssetImport(services->asset_import->importExternalFiles(
+        direct_paths, target_folder));
   }
 
   if (!mesh_paths.empty()) {
@@ -1393,27 +1448,65 @@ void SlintSystem::processPendingAssetImports() {
   }
 }
 
+void SlintSystem::queueOpenImportFileDialog() {
+  if (m_open_import_dialog_event != 0) {
+    SDL_Event user_event{};
+    user_event.type = m_open_import_dialog_event;
+    user_event.user.code = 1;
+    user_event.user.data1 = this;
+    if (!SDL_PushEvent(&user_event)) {
+      LOG_WARN("[SlintSystem] SDL_PushEvent(import dialog) failed: {}",
+               SDL_GetError());
+      m_pending_file_dialog_is_import = true;
+    }
+    return;
+  }
+  m_pending_file_dialog_is_import = true;
+}
+
 void SlintSystem::openImportFileDialog() {
   if (!m_window_system) {
     return;
   }
+
+  SDL_ClearError();
 
   static const SDL_DialogFileFilter filters[] = {
       {"Models and Images", "gltf;glb;png;jpg;jpeg;bmp;tga"},
       {"All Files", "*"},
   };
 
-  SDL_ShowOpenFileDialog(onImportFileDialogCallback, this,
-                         m_window_system->getNativeWindow(), filters, 2,
-                         nullptr, true);
+  SDL_Window* parent_window = m_window_system->getNativeWindow();
+  if (parent_window != nullptr) {
+    SDL_RaiseWindow(parent_window);
+  }
+
+  SDL_ShowOpenFileDialog(onImportFileDialogCallback, this, parent_window, filters,
+                         2, nullptr, true);
+  SDL_PumpEvents();
+
+  const char* err = SDL_GetError();
+  if (err && *err) {
+    SDL_ClearError();
+    SDL_ShowOpenFileDialog(onImportFileDialogCallback, this, nullptr, filters, 2,
+                           nullptr, true);
+    SDL_PumpEvents();
+    err = SDL_GetError();
+  }
+  if (err && *err) {
+    LOG_ERROR("[SDL_Dialog] SDL_ShowOpenFileDialog failed to start: {}", err);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Import Dialog Error", err, m_window_system->getNativeWindow());
+  } else {
+    LOG_INFO("[SDL_Dialog] SDL_ShowOpenFileDialog successfully called");
+  }
 }
 
 void SlintSystem::syncContentBrowser() {
-  if (!m_window_component || !g_runtime_global_context.m_content_browser) {
+  const auto services = lockServices();
+  if (!m_window_component || !services || !services->content_browser) {
     return;
   }
-  ContentBrowserSystem& browser_system =
-      *g_runtime_global_context.m_content_browser;
+  ContentBrowserSystem& browser_system = *services->content_browser;
 
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -1540,11 +1633,11 @@ bool SlintSystem::probeProjectionButtonAtWindow(float window_x,
 }
 
 bool SlintSystem::applyViewportProjection(bool is_perspective, const char* source) {
-  if (!g_runtime_global_context.m_render_system) {
+  const auto services = lockServices();
+  if (!services || !services->render_system) {
     return false;
   }
-  EditorCamera* camera =
-      g_runtime_global_context.m_render_system->getEditorCamera();
+  EditorCamera* camera = services->render_system->getEditorCamera();
   if (camera == nullptr) {
     return false;
   }
@@ -1568,11 +1661,11 @@ void SlintSystem::requestViewportProjectionToggle(const char* source) {
   if (m_projection_toggle_consumed_this_frame) {
     return;
   }
-  if (!g_runtime_global_context.m_render_system || !m_window_component) {
+  const auto services = lockServices();
+  if (!services || !services->render_system || !m_window_component) {
     return;
   }
-  EditorCamera* camera =
-      g_runtime_global_context.m_render_system->getEditorCamera();
+  EditorCamera* camera = services->render_system->getEditorCamera();
   if (camera == nullptr) {
     return;
   }
@@ -1600,11 +1693,12 @@ bool SlintSystem::tryToggleProjectionAtWindow(float window_x, float window_y) {
 }
 
 void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
-  if (!g_runtime_global_context.m_content_browser) {
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
     return;
   }
 
-  ContentBrowserSystem& browser_system = *g_runtime_global_context.m_content_browser;
+  ContentBrowserSystem& browser_system = *services->content_browser;
   ContentBrowserDragController& drag = browser_system.dragController();
   if (!drag.isDragging()) {
     return;
@@ -1615,14 +1709,13 @@ void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
 
   if (!source.empty()) {
     if (isPointerOverViewport(logical_x, logical_y) &&
-        g_runtime_global_context.m_editor_scene_edit) {
+        services->editor_scene_edit) {
       const SpawnAssetResult spawn_result =
-          g_runtime_global_context.m_editor_scene_edit->spawnAssetAtWindowPosition(
+          services->editor_scene_edit->spawnAssetAtWindowPosition(
               source, logical_x, logical_y);
-      if (spawn_result.success && g_runtime_global_context.m_render_system &&
-          g_runtime_global_context.m_scene_system) {
-        syncSceneToRender(g_runtime_global_context.m_render_system.get(),
-                          g_runtime_global_context.m_scene_system->getActiveInstance());
+      if (spawn_result.success && services->render_system && services->scene) {
+        syncSceneToRender(services->render_system.get(),
+                          services->scene->getActiveInstance());
         refreshEditorScenePanels();
       }
     } else if (!m_drop_highlight_path.empty()) {
@@ -1649,10 +1742,11 @@ BrowserLogicalRect SlintSystem::getHierarchyLogicalRect() const {
 }
 
 bool SlintSystem::isContentBrowserDragActive() const {
-  if (!g_runtime_global_context.m_content_browser) {
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
     return false;
   }
-  return g_runtime_global_context.m_content_browser->dragController().isDragging();
+  return services->content_browser->dragController().isDragging();
 }
 
 void SlintSystem::clearContentBrowserSlintClickFlag() {
@@ -1705,7 +1799,8 @@ void SlintSystem::tickContentBrowserTreePointerPoll() {
     return;
   }
 
-  if (!g_runtime_global_context.m_content_browser) {
+  if (const auto services = lockServices();
+      !services || !services->content_browser) {
     const WindowClientMouseState mouse =
         queryWindowClientMouseState(m_window_system);
     m_left_mouse_down_prev = mouse.left_down;
@@ -1718,6 +1813,7 @@ void SlintSystem::tickContentBrowserTreePointerPoll() {
       mapWindowPointerToSlint(m_window_system, mouse.x, mouse.y);
 
   if (mouse.left_down && !m_left_mouse_down_prev) {
+    cacheLayoutRects();
     if (!m_hierarchy_handled_by_slint) {
       trySelectHierarchyEntity(pointer.x, pointer.y);
     }
@@ -1734,9 +1830,9 @@ void SlintSystem::tickHierarchyPointerPoll() {
 }
 
 bool SlintSystem::trySelectHierarchyEntity(float window_x, float window_y) {
-  if (!m_window_system || !m_window_component ||
-      !g_runtime_global_context.m_hierarchy ||
-      !g_runtime_global_context.m_editor_selection) {
+  const auto services = lockServices();
+  if (!m_window_system || !m_window_component || !services ||
+      !services->hierarchy || !services->selection) {
     return false;
   }
 
@@ -1758,8 +1854,8 @@ bool SlintSystem::trySelectHierarchyEntity(float window_x, float window_y) {
         hierarchy_h > 0.0f ? static_cast<uint32_t>(hierarchy_h) : 0u;
   }
 
-  HierarchySystem& hierarchy = *g_runtime_global_context.m_hierarchy;
-  EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
+  HierarchySystem& hierarchy = *services->hierarchy;
+  EditorSelectionSystem& selection = *services->selection;
 
   const int32_t hierarchy_origin_x = m_cached_hierarchy_logical_rect.x;
   const int32_t tree_origin_y =
@@ -1783,8 +1879,9 @@ bool SlintSystem::trySelectHierarchyEntity(float window_x, float window_y) {
 
 bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
                                                     float window_y) {
-  if (!m_window_system || !m_window_component ||
-      !g_runtime_global_context.m_content_browser) {
+  const auto services = lockServices();
+  if (!m_window_system || !m_window_component || !services ||
+      !services->content_browser) {
     return false;
   }
 
@@ -1792,8 +1889,7 @@ bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
     return false;
   }
 
-  ContentBrowserSystem& browser_system =
-      *g_runtime_global_context.m_content_browser;
+  ContentBrowserSystem& browser_system = *services->content_browser;
   if (browser_system.dragController().isDragging()) {
     return false;
   }
@@ -2008,19 +2104,6 @@ void SlintSystem::refreshBrowserRectCache() {
       readBrowserRectFromUi(*m_window_component->operator->());
 }
 
-void SlintSystem::runEditorPanelSync() {
-  if (g_runtime_global_context.m_editor_selection &&
-      g_runtime_global_context.m_editor_selection->isDirty()) {
-    syncInspectorFromSelection();
-  }
-  if (g_runtime_global_context.m_hierarchy &&
-      g_runtime_global_context.m_hierarchy->isDirty()) {
-    syncHierarchy();
-  }
-
-  tickContentBrowserTreePointerPoll();
-}
-
 void SlintSystem::notifyWindowResizeActivity() {
   m_resize_cooldown_frames = k_resize_cooldown_frames;
 }
@@ -2041,7 +2124,8 @@ void SlintSystem::notifyWin32ClientAreaChanged(uintptr_t wm_size_param, int clie
   // defers Skia present and leaves the UI drawn at the old size in a larger HWND.
   m_resize_cooldown_frames = 0;
 #if defined(_WIN32)
-  if (wm_size_param == SIZE_MAXIMIZED) {
+  // WM_SIZE wParam == SIZE_MAXIMIZED (2) — avoid including windows.h in this TU.
+  if (wm_size_param == 2u) {
     m_maximize_layout_frames = k_maximize_layout_frames;
   }
 #endif
@@ -2140,26 +2224,6 @@ float roundDockPaneLength(float value) {
 float clampFloat(float value, float min_v, float max_v) {
   return eastl::max(min_v, eastl::min(max_v, value));
 }
-
-#if defined(_WIN32)
-void setWin32DockSplitterCursor(DockSplitterDrag kind) {
-  LPCTSTR cursor_id = IDC_ARROW;
-  switch (kind) {
-    case DockSplitterDrag::leftVertical:
-    case DockSplitterDrag::rightVertical:
-    case DockSplitterDrag::browserTreeVertical:
-      cursor_id = IDC_SIZEWE;
-      break;
-    case DockSplitterDrag::hierarchyHorizontal:
-    case DockSplitterDrag::bottomHorizontal:
-      cursor_id = IDC_SIZENS;
-      break;
-    default:
-      break;
-  }
-  SetCursor(LoadCursor(nullptr, cursor_id));
-}
-#endif
 
 DockSplitterDrag hitTestDockSplitterAt(const ViewportLogicalRect& vp,
                                        const BrowserLogicalRect& hierarchy,
@@ -2268,9 +2332,9 @@ DockSplitterDrag hitTestDockSplitterFromPaneWidths(const MainEditorWindow& ui,
         x >= tree_split_x - grab_px && x <= tree_split_x + 16.0f) {
       return DockSplitterDrag::browserTreeVertical;
     }
-    // Bottom horizontal splitter.
+    // Bottom horizontal splitter (narrow band at top edge of browser — not the toolbar).
     if (x >= browser_x && x < browser_x + browser_w &&
-        y >= browser_y - 16.0f && y <= browser_y + grab_px) {
+        y >= browser_y - grab_px && y <= browser_y + 4.0f) {
       return DockSplitterDrag::bottomHorizontal;
     }
   }
@@ -2334,22 +2398,6 @@ DockSplitterDrag hitTestDockSplitterFromLayoutProperties(const MainEditorWindow&
   }
   return DockSplitterDrag::none;
 }
-
-#if defined(_WIN32)
-void captureWin32MouseForCppSplitterDrag(WindowSystem* window_system) {
-  if (!window_system) {
-    return;
-  }
-  void* hwnd_opaque = window_system->getNativeWin32Hwnd();
-  if (hwnd_opaque != nullptr) {
-    SetCapture(static_cast<HWND>(hwnd_opaque));
-  }
-}
-
-void releaseWin32MouseCapture() {
-  ReleaseCapture();
-}
-#endif
 
 }  // namespace
 
@@ -2438,28 +2486,28 @@ bool SlintSystem::shouldDeferHeavyFrameWork() const {
       m_layout_cooldown_frames > 0 || isDockLayoutDragActive()) {
     return true;
   }
-#if defined(_WIN32)
-  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 && m_last_mouse_window_x >= 0.0f &&
+  if (querySdlLeftMouseDown() && m_last_mouse_window_x >= 0.0f &&
       isPointerNearDockSplitter(m_last_mouse_window_x, m_last_mouse_window_y)) {
     return true;
   }
-#endif
   return false;
 }
 
 bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
+  // Block input layers (camera orbit etc.) while a modal dialog is open.
+  if (m_window_component &&
+      m_window_component->operator->()->get_import_mesh_dialog_visible()) {
+    return false;
+  }
   if (m_dock_splitter_drag != DockSplitterDrag::none || m_splitter_resize_active) {
     return false;
   }
   if (event.type == SDL_EVENT_MOUSE_MOTION) {
-#if defined(_WIN32)
-    if (m_last_mouse_window_x >= 0.0f &&
-        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 &&
+    if (m_last_mouse_window_x >= 0.0f && querySdlLeftMouseDown() &&
         queryDockSplitterAtFast(m_last_mouse_window_x, m_last_mouse_window_y) !=
             DockSplitterDrag::none) {
       return false;
     }
-#endif
     return true;
   }
   switch (event.type) {
@@ -2492,14 +2540,14 @@ bool SlintSystem::beginCppDockSplitterDragFromKind(DockSplitterDrag kind) {
 
   float window_x = m_last_mouse_window_x;
   float window_y = m_last_mouse_window_y;
-#if defined(_WIN32)
-  bool left_down = false;
-  if (win32_mouse_query::sample(m_window_system, &window_x, &window_y, &left_down) &&
-      left_down) {
+  const WindowClientMouseState mouse =
+      queryWindowClientMouseState(m_window_system);
+  if (mouse.left_down) {
+    window_x = mouse.x;
+    window_y = mouse.y;
     m_last_mouse_window_x = window_x;
     m_last_mouse_window_y = window_y;
   }
-#endif
   if (window_x < 0.0f) {
     window_x = 0.0f;
     window_y = 0.0f;
@@ -2540,10 +2588,8 @@ bool SlintSystem::beginCppDockSplitterDragFromKind(DockSplitterDrag kind) {
       return false;
   }
 
-#if defined(_WIN32)
-  setWin32DockSplitterCursor(kind);
-  captureWin32MouseForCppSplitterDrag(m_window_system);
-#endif
+  setDockSplitterCursor(kind);
+  captureMouseForSplitterDrag(m_window_system);
   LOG_INFO("[SlintSystem] C++ dock splitter drag began (kind={})",
            static_cast<unsigned>(kind));
   return true;
@@ -2691,17 +2737,15 @@ void SlintSystem::applyPendingDockPaneResize() {
   applyDockPaneResize(m_dock_splitter_drag);
 }
 
-void SlintSystem::pollWin32DockSplitterPointerState() {
-#if defined(_WIN32)
+void SlintSystem::pollDockSplitterPointerState() {
   if (!m_window_system || !m_window_component || m_win32_size_modal) {
     return;
   }
-  float x = 0.0f;
-  float y = 0.0f;
-  bool left_down = false;
-  if (!win32_mouse_query::sample(m_window_system, &x, &y, &left_down)) {
-    return;
-  }
+  const WindowClientMouseState mouse =
+      queryWindowClientMouseState(m_window_system);
+  const float x = mouse.x;
+  const float y = mouse.y;
+  const bool left_down = mouse.left_down;
   m_last_mouse_window_x = x;
   m_last_mouse_window_y = y;
 
@@ -2736,9 +2780,6 @@ void SlintSystem::pollWin32DockSplitterPointerState() {
   if (m_splitter_resize_active) {
     m_splitter_resize_active = false;
   }
-#else
-  (void)0;
-#endif
 }
 
 void SlintSystem::endCppDockSplitterDrag() {
@@ -2753,10 +2794,7 @@ void SlintSystem::endCppDockSplitterDrag() {
   m_splitter_resize_active = false;
   m_layout_cooldown_frames = k_layout_cooldown_frames;
   refreshDockSplitterHitCache();
-#if defined(_WIN32)
-  SetCursor(LoadCursor(nullptr, IDC_ARROW));
-  releaseWin32MouseCapture();
-#endif
+  releaseMouseCapture(m_window_system);
   LOG_INFO("[SlintSystem] C++ dock splitter drag ended (kind={})",
            static_cast<unsigned>(ended_kind));
 }
@@ -2780,9 +2818,7 @@ void SlintSystem::processCoalescedSdlMouseMotion() {
     updateCppDockSplitterDrag(window_x, window_y);
     return;
   }
-#if defined(_WIN32)
-  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 &&
-      splitter_under_cursor != DockSplitterDrag::none) {
+  if (querySdlLeftMouseDown() && splitter_under_cursor != DockSplitterDrag::none) {
     if (m_dock_splitter_drag == DockSplitterDrag::none) {
       tryBeginCppDockSplitterDrag(window_x, window_y);
     }
@@ -2791,14 +2827,14 @@ void SlintSystem::processCoalescedSdlMouseMotion() {
     }
     return;
   }
-#endif
   if (splitter_under_cursor != DockSplitterDrag::none) {
     return;
   }
 
-  if (!isDockLayoutDragActive() && g_runtime_global_context.m_content_browser &&
-      g_runtime_global_context.m_content_browser->dragController().isDragging()) {
-    ContentBrowserSystem& browser_system = *g_runtime_global_context.m_content_browser;
+  const auto drag_services = lockServices();
+  if (!isDockLayoutDragActive() && drag_services && drag_services->content_browser &&
+      drag_services->content_browser->dragController().isDragging()) {
+    ContentBrowserSystem& browser_system = *drag_services->content_browser;
     const slint::LogicalPosition logical_pos =
         slintPointerPosition(m_window_system, window_x, window_y);
 
@@ -2836,9 +2872,8 @@ void SlintSystem::flushPendingPointerMove() {
       !m_pending_pointer_move || !m_window_adapter || !m_window_system) {
     return;
   }
-#if defined(_WIN32)
-  // H53: LMB drag near a dock splitter must not flood Slint pointer-move relayout.
-  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0 && m_last_mouse_window_x >= 0.0f &&
+  // LMB drag near a dock splitter must not flood Slint pointer-move relayout.
+  if (querySdlLeftMouseDown() && m_last_mouse_window_x >= 0.0f &&
       queryDockSplitterAtFast(m_last_mouse_window_x, m_last_mouse_window_y) !=
           DockSplitterDrag::none) {
     m_pending_pointer_move = false;
@@ -2848,7 +2883,6 @@ void SlintSystem::flushPendingPointerMove() {
     }
     return;
   }
-#endif
   m_pending_pointer_move = false;
   m_coalesced_pointer_moves = 0;
   slint::Window& window = m_window_adapter->window();
@@ -2883,13 +2917,22 @@ void SlintSystem::compositeEditorFrame() {
 }
 
 void SlintSystem::beginFrame() {
+  if (const auto ui_host = m_ui_host.lock()) {
+    ui_host->drainEventQueue();
+  }
+
+  if (m_pending_file_dialog_is_import) {
+    m_pending_file_dialog_is_import = false;
+    openImportFileDialog();
+  }
+
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     m_projection_toggle_consumed_this_frame = false;
     ++m_frame_counter;
     processPendingAssetImports();
     refreshDockSplitterHitCache();
-    pollWin32DockSplitterPointerState();
+    pollDockSplitterPointerState();
     processCoalescedSdlMouseMotion();
     flushPendingCppDockSplitterMotion();
     if (m_deferred_apply_kind != DockSplitterDrag::none) {
@@ -2966,7 +3009,10 @@ void SlintSystem::beginFrame() {
     }
     tickProjectionTogglePointerPoll();
     if (!defer_heavy) {
-      runEditorPanelSync();
+      if (const auto ui_host = m_ui_host.lock()) {
+        ui_host->tickEditorPanels();
+        ui_host->syncPreviewSettingsFromPresentation();
+      }
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::beginFrame] {}", e.what());
@@ -3049,6 +3095,7 @@ void SlintSystem::endFrame() {
       m_window_system->requestClose();
     }
   }
+
 }
 
 void SlintSystem::update() {
@@ -3057,6 +3104,12 @@ void SlintSystem::update() {
 }
 
 void SlintSystem::processEvent(const SDL_Event& event) {
+  if (m_open_import_dialog_event != 0 &&
+      event.type == m_open_import_dialog_event) {
+    openImportFileDialog();
+    return;
+  }
+
   if (!m_window_adapter || !m_window_component) {
     return;
   }
@@ -3222,9 +3275,14 @@ void SlintSystem::processEvent(const SDL_Event& event) {
             // Before dock splitter (right splitter grab is 80px wide and overlaps
             // the viewport top-right nav gizmo / Persp/Iso strip).
             cacheViewportLogicalRectOnly();
+            cacheLayoutRects();
           }
           refreshDockSplitterHitCache();
-          if (event.button.button == SDL_BUTTON_LEFT) {
+          // When a modal dialog (Import Mesh) is visible, skip all C++ hit-test
+          // intercepts so Slint can route clicks to the dialog's buttons.
+          const bool modal_dialog_open = m_window_component &&
+              m_window_component->operator->()->get_import_mesh_dialog_visible();
+          if (event.button.button == SDL_BUTTON_LEFT && !modal_dialog_open) {
             const bool proj_hit =
                 probeProjectionButtonAtLogical(logical_ptr.x, logical_ptr.y);
             bool chrome_click = proj_hit;
@@ -3279,8 +3337,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               cacheViewportLogicalRectOnly();
               m_left_mouse_down_prev = false;
             }
-            if (event.button.button == SDL_BUTTON_LEFT &&
-                g_runtime_global_context.m_content_browser && m_window_component) {
+            if (const auto release_services = lockServices();
+                event.button.button == SDL_BUTTON_LEFT && release_services &&
+                release_services->content_browser && m_window_component) {
               const slint::LogicalPosition logical_pos =
                   slintPointerPosition(m_window_system, window_x, window_y);
               finishContentBrowserDrag(logical_pos.x, logical_pos.y);
@@ -3377,14 +3436,14 @@ void SlintSystem::processEvent(const SDL_Event& event) {
             }
           }
 
-          if (g_runtime_global_context.m_asset_import &&
-              g_runtime_global_context.m_content_browser) {
+          if (const auto drop_services = lockServices();
+              drop_services && drop_services->asset_import &&
+              drop_services->content_browser) {
             const eastl::string target_folder =
-                g_runtime_global_context.m_content_browser->selectedFolder();
+                drop_services->content_browser->selectedFolder();
             if (!direct_paths.empty()) {
-              finalizeAssetImport(
-                  g_runtime_global_context.m_asset_import->importExternalFiles(
-                      direct_paths, target_folder));
+              finalizeAssetImport(drop_services->asset_import->importExternalFiles(
+                  direct_paths, target_folder));
             }
             if (!mesh_paths.empty()) {
               m_pending_mesh_import_paths.insert(m_pending_mesh_import_paths.end(),

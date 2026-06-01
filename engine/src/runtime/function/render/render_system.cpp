@@ -37,11 +37,14 @@
 #include "runtime/core/event/key_event.h"
 #include "runtime/function/render/debug/renderdoc_capture.h"
 #include "runtime/function/slint/slint_system.h"
+#include "runtime/function/ui/ui_host.h"
+#include "runtime/function/ui/viewport/i_viewport_sink.h"
+#include "runtime/function/ui/viewport/ui_viewport_bridge.h"
+#include "runtime/function/ui/viewport/viewport_cpu_frame.h"
 #include "runtime/function/render/editor_camera.h"
 #include <vulkan/vulkan.h>
 
 #include "runtime/function/render/offscreen_render_target.h"
-#include "runtime/function/render/presenter/i_viewport_presenter.h"
 #include "runtime/function/render/rhi/i_render_backend.h"
 #include "runtime/function/render/rhi/render_backend_factory.h"
 #include "runtime/function/render/rhi/rhi_desc.h"
@@ -197,8 +200,10 @@ void RenderSystem::initialize(const RenderSystemInitInfo& info) {
 
   m_asset_manager = info.asset_manager;
   m_window_system = info.window_system;
-  m_viewport_presenter = info.viewport_presenter;
   m_viewport_layout_source = info.viewport_layout_source;
+  m_preview_settings_source = info.preview_settings_source;
+  m_viewport_bridge = info.viewport_bridge;
+  m_viewport_sink = info.viewport_sink;
 
   rhi::RenderBackendInitInfo backend_init{};
   backend_init.device_desc.window_system = info.window_system;
@@ -289,11 +294,9 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
                                                           k_smoke_texture_size));
   m_fallback_texture = ensureTextureUploaded(&smoke_asset);
 
-  if (m_viewport_layout_source != nullptr) {
-    SlintSystem* slint_system =
-        static_cast<SlintSystem*>(m_viewport_layout_source);
-    slint_system->setBlinnPhongMaterialSource(m_inspector_material.get());
-    slint_system->syncBlinnPhongFromMaterialSource();
+  if (m_preview_settings_source != nullptr) {
+    m_preview_settings_source->setBlinnPhongMaterialSource(m_inspector_material.get());
+    m_preview_settings_source->syncBlinnPhongFromMaterialSource();
   }
 
   m_forward_path = eastl::make_unique<ForwardRenderPath>();
@@ -320,7 +323,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
       reinterpret_cast<void*>(m_mesh_pipeline->nativePipeline()->getDescriptorSetLayout()),
       reinterpret_cast<void*>(m_transparent_pipeline->nativePipeline()->getDescriptorSetLayout()));
 
-  recreateReadbackStaging(k_default_viewport_w, k_default_viewport_h);
+  if (m_viewport_bridge) {
+    m_viewport_bridge->initialize(vkCtx(this), vkAlloc(this), vkSync(this));
+    resizeViewportReadback(k_default_viewport_w, k_default_viewport_h);
+  }
 
   // Best-effort RenderDoc hookup. If the engine wasn't launched from
   // RenderDoc, this is a silent no-op; otherwise F11 will capture one frame.
@@ -462,34 +468,10 @@ void RenderSystem::clearGpuMeshes() {
   m_gpu_meshes.clear();
 }
 
-void RenderSystem::recreateReadbackStaging(uint32_t width, uint32_t height) {
-  if (!isVulkanBackend()) {
-    return;
+void RenderSystem::resizeViewportReadback(uint32_t width, uint32_t height) {
+  if (m_viewport_bridge) {
+    m_viewport_bridge->resizeReadback(width, height);
   }
-  ASSERT(vkAlloc(this));
-  if (width == 0 || height == 0) {
-    return;
-  }
-
-  for (eastl::unique_ptr<VulkanBuffer>& buf : m_readback_staging) {
-    if (buf) {
-      buf->destroy();
-      buf.reset();
-    }
-  }
-  m_readback_staging.clear();
-
-  const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
-  m_readback_staging.resize(VulkanSync::k_max_frames_in_flight);
-  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
-    m_readback_staging[i] = eastl::make_unique<VulkanBuffer>();
-    m_readback_staging[i]->create(vkAlloc(this), bytes,
-                                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                  VMA_MEMORY_USAGE_GPU_TO_CPU);
-  }
-  m_readback_width = width;
-  m_readback_height = height;
-  m_readback_pixels.resize(static_cast<size_t>(bytes));
 }
 
 VulkanTexture* RenderSystem::ensureTextureUploaded(
@@ -568,7 +550,7 @@ void RenderSystem::applyDeferredOffscreenResize() {
 
   if (isVulkanBackend()) {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
-    recreateReadbackStaging(width, height);
+    resizeViewportReadback(width, height);
   }
   m_offscreen->resize(width, height);
   if (isVulkanBackend() && m_ssao_pass) {
@@ -612,15 +594,6 @@ void RenderSystem::shutdown() {
     m_renderdoc_capture->shutdown();
     m_renderdoc_capture.reset();
   }
-
-  for (eastl::unique_ptr<VulkanBuffer>& buf : m_readback_staging) {
-    if (buf) {
-      buf->destroy();
-      buf.reset();
-    }
-  }
-  m_readback_staging.clear();
-  m_readback_pixels.clear();
 
   for (auto& [key, texture] : m_uploaded_textures) {
     if (texture) {
@@ -682,7 +655,8 @@ void RenderSystem::shutdown() {
   m_editor_camera.reset();
 
   m_backend.reset();
-  m_viewport_presenter = nullptr;
+  m_viewport_bridge = nullptr;
+  m_viewport_sink = nullptr;
 
   m_window_system = nullptr;
   m_asset_manager = nullptr;
@@ -711,11 +685,15 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
   if (extent.width == 0 || extent.height == 0) {
     return;
   }
-  if (m_viewport_presenter) {
-    m_readback_pixels.assign(static_cast<size_t>(extent.width) * extent.height * 4u,
-                             0u);
-    m_viewport_presenter->presentCpuRgba8(m_readback_pixels.data(), extent.width,
-                                          extent.height, extent.width * 4u);
+  if (m_viewport_sink) {
+    eastl::vector<uint8_t> black_pixels(
+        static_cast<size_t>(extent.width) * extent.height * 4u, 0u);
+    ViewportCpuFrame frame{};
+    frame.pixels_rgba = black_pixels.data();
+    frame.width = extent.width;
+    frame.height = extent.height;
+    frame.stride_bytes = extent.width * 4u;
+    m_viewport_sink->presentViewportCpuFrame(frame);
   }
 }
 
@@ -817,7 +795,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     auto* slint_layout = static_cast<SlintSystem*>(m_viewport_layout_source);
     slint_layout->syncViewportProjectionMode(
         projection_mode == EditorCamera::ProjectionMode::perspective);
-    frame_state.shading = slint_layout->getBlinnPhongEditorSettings();
+  }
+  if (m_preview_settings_source != nullptr) {
+    frame_state.shading = m_preview_settings_source->previewSettings().get();
   }
 
   glm::vec3 shadow_focus(0.0f);
@@ -894,11 +874,11 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     append_forward_draw(mesh_draw, transparent_draws);
   }
 
-  VkDevice device = vkCtx(this)->getDevice();
+  if (m_viewport_bridge) {
+    m_viewport_bridge->waitForRecordingSlot(m_current_frame);
+  }
+
   VkFence in_flight_fence = vkSync(this)->getInFlightFence(m_current_frame);
-  vkWaitForFences(device, 1, &in_flight_fence, VK_TRUE,
-                  k_fence_wait_timeout_ns);
-  vkResetFences(device, 1, &in_flight_fence);
 
   VkCommandBuffer command_buffer =
       m_mesh_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
@@ -944,10 +924,13 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   copy_region.imageSubresource.layerCount = 1;
   copy_region.imageExtent = {offscreen_extent.width, offscreen_extent.height, 1};
 
-  vkCmdCopyImageToBuffer(command_buffer, vkOffscreenRt(this)->getImage(),
-                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                         m_readback_staging[m_current_frame]->getBuffer(), 1,
-                         &copy_region);
+  VulkanBuffer* readback_staging =
+      m_viewport_bridge ? m_viewport_bridge->stagingBuffer(m_current_frame) : nullptr;
+  if (readback_staging) {
+    vkCmdCopyImageToBuffer(command_buffer, vkOffscreenRt(this)->getImage(),
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           readback_staging->getBuffer(), 1, &copy_region);
+  }
 
   m_offscreen->transitionToShaderRead(command_list);
 
@@ -960,32 +943,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vkQueueSubmit(vkCtx(this)->getGraphicsQueue(), 1, &submit_info,
                 in_flight_fence);
 
-  // 同步等待，以便我们可以立即映射（Map）暂存缓冲区（Staging Buffer）
-  // 这种方式虽然简单，但会导致流水线停顿（Stall）；
-  // 如果性能分析（Profiling）显示此处存在瓶颈，清理阶段可以在
-  // k_max_frames_in_flight 个缓冲区之间采用乒乓缓冲（Ping-ponging）机制
-  vkWaitForFences(device, 1, &in_flight_fence, VK_TRUE,
-                  k_fence_wait_timeout_ns);
-  // 映射缓冲区并将像素转发给 Slint
-  if (m_viewport_presenter) {
-    void* mapped = nullptr;
-    const VkResult mr = vmaMapMemory(
-        vkAlloc(this)->getAllocator(),
-        m_readback_staging[m_current_frame]->getAllocation(), &mapped);
-    if (mr == VK_SUCCESS && mapped) {
-      const size_t bytes = static_cast<size_t>(offscreen_extent.width) *
-                           offscreen_extent.height * 4u;
-      if (m_readback_pixels.size() < bytes) {
-        m_readback_pixels.resize(bytes);
-      }
-      std::memcpy(m_readback_pixels.data(), mapped, bytes);
-      vmaUnmapMemory(vkAlloc(this)->getAllocator(),
-                     m_readback_staging[m_current_frame]->getAllocation());
-
-      m_viewport_presenter->presentCpuRgba8(
-          m_readback_pixels.data(), offscreen_extent.width,
-          offscreen_extent.height, offscreen_extent.width * 4u);
-    }
+  if (m_viewport_bridge) {
+    m_viewport_bridge->notifyGpuSubmitted(m_current_frame, offscreen_extent.width,
+                                          offscreen_extent.height);
+    m_viewport_bridge->pollAndPresent(m_viewport_sink);
   }
 
   if (m_viewport_layout_source != nullptr) {

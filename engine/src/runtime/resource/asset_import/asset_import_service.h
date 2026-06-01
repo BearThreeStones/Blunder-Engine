@@ -49,10 +49,6 @@ class AssetImportService final {
   eastl::string makeUniqueDescriptorName(const eastl::string& folder,
                                          const eastl::string& stem,
                                          const char* suffix) const;
-  bool copyGltfWithSidecars(const std::filesystem::path& source_absolute,
-                            const std::filesystem::path& dest_directory,
-                            eastl::string& out_resource_virtual_path);
-
   FileSystem* m_file_system{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
   ContentBrowserSystem* m_content_browser{nullptr};
