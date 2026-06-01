@@ -24,13 +24,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {
     std::cerr << "SDL_AppInit failed: " << e.what() << std::endl;
-    delete g_engine;
-    g_engine = nullptr;
+    // Do NOT delete g_engine here.  SDL always calls SDL_AppQuit after
+    // SDL_AppInit returns (even on failure).  SDL_AppQuit performs orderly
+    // shutdown (shutdownEngine → shutdownSystems) and then deletes the
+    // engine.  Deleting here would skip shutdownSystems(), leaving the
+    // global context with live shared_ptrs that crash during static
+    // destruction.
     return SDL_APP_FAILURE;
   } catch (...) {
     std::cerr << "SDL_AppInit failed: unknown exception" << std::endl;
-    delete g_engine;
-    g_engine = nullptr;
     return SDL_APP_FAILURE;
   }
 }

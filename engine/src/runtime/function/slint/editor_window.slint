@@ -4,6 +4,8 @@ import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { VerticalResizeHandle, HorizontalResizeHandle } from "resize_splitter.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
+import { TransformToolbar } from "transform_toolbar.slint";
+import { DockTabsLayer, DockSplittersLayer, DockGuidesLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockPreview, DockFloating } from "docking_panel.slint";
 
 component ShadingSlider inherits VerticalBox {
     spacing: 2px;
@@ -78,6 +80,143 @@ component TransformSlider inherits VerticalBox {
         maximum: root.maximum;
         value <=> root.value;
         changed => { root.edited(); }
+    }
+}
+
+component InspectorPanel inherits Rectangle {
+    in property <bool> has-selection: false;
+    in property <string> entity-name: "";
+    in-out property <float> pos-x;
+    in-out property <float> pos-y;
+    in-out property <float> pos-z;
+    in-out property <float> rot-x;
+    in-out property <float> rot-y;
+    in-out property <float> rot-z;
+    in-out property <float> scale-x;
+    in-out property <float> scale-y;
+    in-out property <float> scale-z;
+    in-out property <float> light-dir-x;
+    in-out property <float> light-dir-y;
+    in-out property <float> light-dir-z;
+    in-out property <float> light-color-r;
+    in-out property <float> light-color-g;
+    in-out property <float> light-color-b;
+    in-out property <float> ambient-r;
+    in-out property <float> ambient-g;
+    in-out property <float> ambient-b;
+    in-out property <float> diffuse-r;
+    in-out property <float> diffuse-g;
+    in-out property <float> diffuse-b;
+    in-out property <float> specular-r;
+    in-out property <float> specular-g;
+    in-out property <float> specular-b;
+    in-out property <float> shininess;
+    in-out property <bool> shading-unlit: false;
+    in-out property <bool> ssao-enabled: true;
+    in-out property <float> ssao-radius;
+    in-out property <float> ssao-bias;
+    in-out property <float> ssao-strength;
+    in property <bool> layout-drag-active: false;
+
+    callback transform-edited();
+    callback sync-requested();
+    callback reset-requested();
+
+    background: #1c1c1c;
+    border-color: #2a2a2a;
+    border-width: 1px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        Text { text: "Inspector"; color: #d0d0d0; font-size: 14px; }
+        Rectangle { background: #2a2a2a; height: 1px; }
+
+        Flickable {
+            vertical-stretch: 1;
+            interactive: !root.layout-drag-active;
+            viewport-width: parent.width - 20px;
+            viewport-height: 2400px;
+
+            VerticalBox {
+                width: parent.width;
+                spacing: 6px;
+                padding-right: 4px;
+
+                Text { text: "Transform"; color: #f0f0f0; font-size: 13px; }
+                Text {
+                    text: root.has-selection ? root.entity-name : "No selection";
+                    color: #a8a8a8;
+                    font-size: 12px;
+                }
+
+                Text { text: "Position"; color: #a8a8a8; font-size: 12px; }
+                TransformSlider { label: "X"; minimum: -200; maximum: 200; value <=> root.pos-x; edited => { root.transform-edited(); } }
+                TransformSlider { label: "Y"; minimum: -200; maximum: 200; value <=> root.pos-y; edited => { root.transform-edited(); } }
+                TransformSlider { label: "Z"; minimum: -200; maximum: 200; value <=> root.pos-z; edited => { root.transform-edited(); } }
+
+                Text { text: "Rotation (deg)"; color: #a8a8a8; font-size: 12px; }
+                TransformSlider { label: "X"; minimum: -180; maximum: 180; value <=> root.rot-x; edited => { root.transform-edited(); } }
+                TransformSlider { label: "Y"; minimum: -180; maximum: 180; value <=> root.rot-y; edited => { root.transform-edited(); } }
+                TransformSlider { label: "Z"; minimum: -180; maximum: 180; value <=> root.rot-z; edited => { root.transform-edited(); } }
+
+                Text { text: "Scale"; color: #a8a8a8; font-size: 12px; }
+                TransformSlider { label: "X"; minimum: 0.01; maximum: 10; value <=> root.scale-x; edited => { root.transform-edited(); } }
+                TransformSlider { label: "Y"; minimum: 0.01; maximum: 10; value <=> root.scale-y; edited => { root.transform-edited(); } }
+                TransformSlider { label: "Z"; minimum: 0.01; maximum: 10; value <=> root.scale-z; edited => { root.transform-edited(); } }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                Text { text: "Blinn-Phong Shading"; color: #f0f0f0; font-size: 13px; }
+
+                HorizontalBox {
+                    spacing: 6px;
+                    Button { text: "Sync Asset"; clicked => { root.sync-requested(); } }
+                    Button { text: "Reset"; clicked => { root.reset-requested(); } }
+                }
+
+                CheckBox {
+                    text: "Unlit (albedo only)";
+                    checked: root.shading-unlit;
+                    toggled => { root.shading-unlit = self.checked; }
+                }
+
+                Text { text: "Light direction"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "Dir X"; minimum: -1; maximum: 1; value <=> root.light-dir-x; }
+                ShadingSlider { label: "Dir Y"; minimum: -1; maximum: 1; value <=> root.light-dir-y; }
+                ShadingSlider { label: "Dir Z"; minimum: -1; maximum: 1; value <=> root.light-dir-z; }
+
+                Text { text: "Light color"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.light-color-r; }
+                ShadingSlider { label: "G"; value <=> root.light-color-g; }
+                ShadingSlider { label: "B"; value <=> root.light-color-b; }
+
+                Text { text: "Ambient (ka)"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.ambient-r; }
+                ShadingSlider { label: "G"; value <=> root.ambient-g; }
+                ShadingSlider { label: "B"; value <=> root.ambient-b; }
+
+                Text { text: "Diffuse (kd)"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.diffuse-r; }
+                ShadingSlider { label: "G"; value <=> root.diffuse-g; }
+                ShadingSlider { label: "B"; value <=> root.diffuse-b; }
+
+                Text { text: "Specular (ks)"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.specular-r; }
+                ShadingSlider { label: "G"; value <=> root.specular-g; }
+                ShadingSlider { label: "B"; value <=> root.specular-b; }
+
+                ShadingSlider { label: "Shininess"; minimum: 8; maximum: 256; value <=> root.shininess; }
+
+                Text { text: "SSAO"; color: #a8a8a8; font-size: 12px; }
+                CheckBox { text: "Enabled"; checked: root.ssao-enabled; toggled => { root.ssao-enabled = self.checked; } }
+                ShadingSlider { label: "Radius"; minimum: 0.05; maximum: 1.0; value <=> root.ssao-radius; }
+                ShadingSlider { label: "Bias"; minimum: 0.0; maximum: 0.1; value <=> root.ssao-bias; }
+                ShadingSlider { label: "Strength"; minimum: 0.0; maximum: 1.0; value <=> root.ssao-strength; }
+            }
+        }
     }
 }
 
@@ -190,12 +329,45 @@ export component MainEditorWindow inherits Window {
     in property <bool> viewport-image-ready: false;
     callback viewport-projection-toggled();
 
+    in-out property <int> transform-gizmo-mode: 0;
+    in-out property <bool> transform-gizmo-space-global: true;
+    callback transform-mode-selected(int);
+    callback gizmo-space-toggled();
+
     in-out property <bool> import-mesh-dialog-visible: false;
     in-out property <bool> import-mesh-materials: true;
     in-out property <bool> import-mesh-animations: true;
     in-out property <float> import-mesh-scale: 1.0;
     callback import-mesh-confirmed();
     callback import-mesh-cancelled();
+
+    in property <bool> docking-visible: false;
+    in property <[DockTile]> docking-tiles: [];
+    in property <[DockTab]> docking-tabs: [];
+    in property <[DockSplitterHandle]> docking-splitters: [];
+    in property <[DockGuide]> docking-guides: [];
+    in property <[DockFloating]> docking-floatings: [];
+    in property <DockPreview> docking-preview;
+    in property <bool> docking-drag-active: false;
+
+    out property <length> docking-width: docking_host.width;
+    out property <length> docking-height: docking_host.height;
+    out property <length> docking-origin-x: docking_host.absolute-position.x;
+    out property <length> docking-origin-y: docking_host.absolute-position.y;
+
+    callback docking-toggle();
+    callback docking-tab-pressed(int, length, length);
+    callback docking-tab-moved(length, length);
+    callback docking-tab-released(length, length);
+    callback docking-tab-activated(int);
+    callback docking-widget-closed(int);
+    callback docking-splitter-pressed(int, length, length);
+    callback docking-splitter-moved(int, length, length);
+    callback docking-splitter-released();
+    callback docking-floating-move-pressed(int, length, length);
+    callback docking-floating-resize-pressed(int, length, length);
+    callback docking-floating-moved(length, length);
+    callback docking-floating-released();
 
     function reset-shading-defaults() {
         root.light-dir-x = 0.45;
@@ -255,6 +427,10 @@ export component MainEditorWindow inherits Window {
                 }
                 Button { text: "Edit"; }
                 Button { text: "View"; }
+                Button {
+                    text: root.docking-visible ? "Docking ✓" : "Docking";
+                    clicked => { root.docking-toggle(); }
+                }
                 Button { text: "Play"; }
             }
         }
@@ -301,6 +477,19 @@ export component MainEditorWindow inherits Window {
                     image-fit: fill;
                     visible: root.viewport-image-ready;
                 }
+
+                transform_toolbar := TransformToolbar {
+                    x: 8px;
+                    y: 8px;
+                    transform-mode: root.transform-gizmo-mode;
+                    gizmo-space-global: root.transform-gizmo-space-global;
+                    transform-mode-selected(mode) => {
+                        root.transform-mode-selected(mode);
+                    }
+                    gizmo-space-toggled => {
+                        root.gizmo-space-toggled();
+                    }
+                }
             }
 
             right-splitter := VerticalResizeHandle {
@@ -311,204 +500,45 @@ export component MainEditorWindow inherits Window {
                 trailing-pane: true;
             }
 
-            inspector-dock := Rectangle {
-                background: #1c1c1c;
-                border-color: #2a2a2a;
-                border-width: 1px;
+            inspector-dock := InspectorPanel {
                 width: root.right-dock-width;
                 vertical-stretch: 1;
-                clip: true;
-                VerticalLayout {
-                    padding: 10px;
-                    spacing: 8px;
-
-                    Text {
-                        text: "Inspector";
-                        color: #d0d0d0;
-                        font-size: 14px;
-                    }
-                    Rectangle { background: #2a2a2a; height: 1px; }
-
-                    inspector-scroll := Flickable {
-                        vertical-stretch: 1;
-                        interactive: !root.dock-layout-drag-active;
-                        viewport-width: parent.width - 20px;
-                        // Large fixed scroll extent avoids remeasuring every slider row each splitter frame.
-                        viewport-height: 2400px;
-
-                        inspector-panel := VerticalBox {
-                            width: parent.width;
-                            spacing: 6px;
-                            padding-right: 4px;
-
-                            Text {
-                                text: "Transform";
-                                color: #f0f0f0;
-                                font-size: 13px;
-                            }
-
-                            Text {
-                                text: root.inspector-has-selection
-                                    ? root.inspector-entity-name
-                                    : "No selection";
-                                color: #a8a8a8;
-                                font-size: 12px;
-                            }
-
-                            Text { text: "Position"; color: #a8a8a8; font-size: 12px; }
-                            TransformSlider {
-                                label: "X";
-                                minimum: -200;
-                                maximum: 200;
-                                value <=> root.inspector-pos-x;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-                            TransformSlider {
-                                label: "Y";
-                                minimum: -200;
-                                maximum: 200;
-                                value <=> root.inspector-pos-y;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-                            TransformSlider {
-                                label: "Z";
-                                minimum: -200;
-                                maximum: 200;
-                                value <=> root.inspector-pos-z;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-
-                            Text { text: "Rotation (deg)"; color: #a8a8a8; font-size: 12px; }
-                            TransformSlider {
-                                label: "X";
-                                minimum: -180;
-                                maximum: 180;
-                                value <=> root.inspector-rot-x;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-                            TransformSlider {
-                                label: "Y";
-                                minimum: -180;
-                                maximum: 180;
-                                value <=> root.inspector-rot-y;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-                            TransformSlider {
-                                label: "Z";
-                                minimum: -180;
-                                maximum: 180;
-                                value <=> root.inspector-rot-z;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-
-                            Text { text: "Scale"; color: #a8a8a8; font-size: 12px; }
-                            TransformSlider {
-                                label: "X";
-                                minimum: 0.01;
-                                maximum: 10;
-                                value <=> root.inspector-scale-x;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-                            TransformSlider {
-                                label: "Y";
-                                minimum: 0.01;
-                                maximum: 10;
-                                value <=> root.inspector-scale-y;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-                            TransformSlider {
-                                label: "Z";
-                                minimum: 0.01;
-                                maximum: 10;
-                                value <=> root.inspector-scale-z;
-                                edited => { root.inspector-transform-edited(); }
-                            }
-
-                            Rectangle { background: #2a2a2a; height: 1px; }
-
-                            Text {
-                                text: "Blinn-Phong Shading";
-                                color: #f0f0f0;
-                                font-size: 13px;
-                            }
-
-                            HorizontalBox {
-                                spacing: 6px;
-                                Button {
-                                    text: "Sync Asset";
-                                    clicked => { root.sync-shading-from-asset(); }
-                                }
-                                Button {
-                                    text: "Reset";
-                                    clicked => { root.reset-shading-defaults(); }
-                                }
-                            }
-
-                            CheckBox {
-                                text: "Unlit (albedo only)";
-                                checked: root.shading-unlit;
-                                toggled => { root.shading-unlit = self.checked; }
-                            }
-
-                            Text { text: "Light direction"; color: #a8a8a8; font-size: 12px; }
-                            ShadingSlider { label: "Dir X"; minimum: -1; maximum: 1; value <=> root.light-dir-x; }
-                            ShadingSlider { label: "Dir Y"; minimum: -1; maximum: 1; value <=> root.light-dir-y; }
-                            ShadingSlider { label: "Dir Z"; minimum: -1; maximum: 1; value <=> root.light-dir-z; }
-
-                            Text { text: "Light color"; color: #a8a8a8; font-size: 12px; }
-                            ShadingSlider { label: "R"; value <=> root.light-color-r; }
-                            ShadingSlider { label: "G"; value <=> root.light-color-g; }
-                            ShadingSlider { label: "B"; value <=> root.light-color-b; }
-
-                            Text { text: "Ambient (ka)"; color: #a8a8a8; font-size: 12px; }
-                            ShadingSlider { label: "R"; value <=> root.ambient-r; }
-                            ShadingSlider { label: "G"; value <=> root.ambient-g; }
-                            ShadingSlider { label: "B"; value <=> root.ambient-b; }
-
-                            Text { text: "Diffuse (kd)"; color: #a8a8a8; font-size: 12px; }
-                            ShadingSlider { label: "R"; value <=> root.diffuse-r; }
-                            ShadingSlider { label: "G"; value <=> root.diffuse-g; }
-                            ShadingSlider { label: "B"; value <=> root.diffuse-b; }
-
-                            Text { text: "Specular (ks)"; color: #a8a8a8; font-size: 12px; }
-                            ShadingSlider { label: "R"; value <=> root.specular-r; }
-                            ShadingSlider { label: "G"; value <=> root.specular-g; }
-                            ShadingSlider { label: "B"; value <=> root.specular-b; }
-
-                            ShadingSlider {
-                                label: "Shininess";
-                                minimum: 8;
-                                maximum: 256;
-                                value <=> root.shininess;
-                            }
-
-                            Text { text: "SSAO"; color: #a8a8a8; font-size: 12px; }
-                            CheckBox {
-                                text: "Enabled";
-                                checked: root.ssao-enabled;
-                                toggled => { root.ssao-enabled = self.checked; }
-                            }
-                            ShadingSlider {
-                                label: "Radius";
-                                minimum: 0.05;
-                                maximum: 1.0;
-                                value <=> root.ssao-radius;
-                            }
-                            ShadingSlider {
-                                label: "Bias";
-                                minimum: 0.0;
-                                maximum: 0.1;
-                                value <=> root.ssao-bias;
-                            }
-                            ShadingSlider {
-                                label: "Strength";
-                                minimum: 0.0;
-                                maximum: 1.0;
-                                value <=> root.ssao-strength;
-                            }
-                        }
-                    }
-                }
+                has-selection: root.inspector-has-selection;
+                entity-name: root.inspector-entity-name;
+                pos-x <=> root.inspector-pos-x;
+                pos-y <=> root.inspector-pos-y;
+                pos-z <=> root.inspector-pos-z;
+                rot-x <=> root.inspector-rot-x;
+                rot-y <=> root.inspector-rot-y;
+                rot-z <=> root.inspector-rot-z;
+                scale-x <=> root.inspector-scale-x;
+                scale-y <=> root.inspector-scale-y;
+                scale-z <=> root.inspector-scale-z;
+                light-dir-x <=> root.light-dir-x;
+                light-dir-y <=> root.light-dir-y;
+                light-dir-z <=> root.light-dir-z;
+                light-color-r <=> root.light-color-r;
+                light-color-g <=> root.light-color-g;
+                light-color-b <=> root.light-color-b;
+                ambient-r <=> root.ambient-r;
+                ambient-g <=> root.ambient-g;
+                ambient-b <=> root.ambient-b;
+                diffuse-r <=> root.diffuse-r;
+                diffuse-g <=> root.diffuse-g;
+                diffuse-b <=> root.diffuse-b;
+                specular-r <=> root.specular-r;
+                specular-g <=> root.specular-g;
+                specular-b <=> root.specular-b;
+                shininess <=> root.shininess;
+                shading-unlit <=> root.shading-unlit;
+                ssao-enabled <=> root.ssao-enabled;
+                ssao-radius <=> root.ssao-radius;
+                ssao-bias <=> root.ssao-bias;
+                ssao-strength <=> root.ssao-strength;
+                layout-drag-active: root.dock-layout-drag-active;
+                transform-edited => { root.inspector-transform-edited(); }
+                sync-requested => { root.sync-shading-from-asset(); }
+                reset-requested => { root.reset-shading-defaults(); }
             }
 
             } // end editor-body
@@ -595,6 +625,235 @@ export component MainEditorWindow inherits Window {
         import-scale <=> root.import-mesh-scale;
         confirmed => { root.import-mesh-confirmed(); }
         cancelled => { root.import-mesh-cancelled(); }
+    }
+
+    docking_host := Rectangle {
+        z: 2500;
+        x: 0;
+        y: 44px;
+        width: parent.width;
+        height: parent.height - 68px;
+        visible: root.docking-visible;
+        background: #161616;
+
+        TouchArea {
+            width: 100%;
+            height: 100%;
+        }
+
+        for tile in root.docking-tiles: Rectangle {
+            x: tile.content-x;
+            y: tile.content-y;
+            width: tile.content-width;
+            height: tile.content-height;
+            background: tile.floating ? #232323 : #1c1c1c;
+            border-color: #2a2a2a;
+            border-width: 1px;
+            clip: true;
+
+            if tile.active-panel-kind == 1: Image {
+                width: 100%;
+                height: 100%;
+                source: root.viewport-image;
+                image-fit: fill;
+                visible: root.viewport-image-ready;
+            }
+
+            if tile.active-panel-kind == 2: HierarchyPanel {
+                width: 100%;
+                height: 100%;
+                tree-rows <=> root.hierarchy-tree-rows;
+                selected-entity-id: root.hierarchy-selected-entity-id;
+                entity-selected(id) => { root.hierarchy-entity-selected(id); }
+                entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
+            }
+
+            if tile.active-panel-kind == 4: ContentBrowser {
+                width: 100%;
+                height: 100%;
+                layout-drag-active: root.dock-layout-drag-active;
+                tree-rows <=> root.browser-tree-rows;
+                grid-rows <=> root.browser-grid-rows;
+                path-segments <=> root.browser-path-segments;
+                drag-active: root.browser-drag-active;
+                drag-source-path: root.browser-drag-source-path;
+                drop-highlight-path: root.browser-drop-highlight-path;
+                viewport-drop-active: root.browser-viewport-drop-active;
+                status-text: root.browser-status-text;
+                selected-folder-path: root.browser-selected-folder-path;
+                folder-selected(path) => { root.browser-folder-selected(path); }
+                folder-toggle(path) => { root.browser-folder-toggle(path); }
+                refresh-requested => { root.browser-refresh-requested(); }
+                import-requested => { root.browser-import-requested(); }
+                item-press(path, x, y) => { root.browser-item-press(path, x, y); }
+                item-move(path, x, y) => { root.browser-item-move(path, x, y); }
+                item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                search-changed(text) => { root.browser-search-changed(text); }
+                path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+            }
+
+            if tile.active-panel-kind == 3: InspectorPanel {
+                width: 100%;
+                height: 100%;
+                has-selection: root.inspector-has-selection;
+                entity-name: root.inspector-entity-name;
+                pos-x <=> root.inspector-pos-x;
+                pos-y <=> root.inspector-pos-y;
+                pos-z <=> root.inspector-pos-z;
+                rot-x <=> root.inspector-rot-x;
+                rot-y <=> root.inspector-rot-y;
+                rot-z <=> root.inspector-rot-z;
+                scale-x <=> root.inspector-scale-x;
+                scale-y <=> root.inspector-scale-y;
+                scale-z <=> root.inspector-scale-z;
+                light-dir-x <=> root.light-dir-x;
+                light-dir-y <=> root.light-dir-y;
+                light-dir-z <=> root.light-dir-z;
+                light-color-r <=> root.light-color-r;
+                light-color-g <=> root.light-color-g;
+                light-color-b <=> root.light-color-b;
+                ambient-r <=> root.ambient-r;
+                ambient-g <=> root.ambient-g;
+                ambient-b <=> root.ambient-b;
+                diffuse-r <=> root.diffuse-r;
+                diffuse-g <=> root.diffuse-g;
+                diffuse-b <=> root.diffuse-b;
+                specular-r <=> root.specular-r;
+                specular-g <=> root.specular-g;
+                specular-b <=> root.specular-b;
+                shininess <=> root.shininess;
+                shading-unlit <=> root.shading-unlit;
+                ssao-enabled <=> root.ssao-enabled;
+                ssao-radius <=> root.ssao-radius;
+                ssao-bias <=> root.ssao-bias;
+                ssao-strength <=> root.ssao-strength;
+                layout-drag-active: root.dock-layout-drag-active;
+                transform-edited => { root.inspector-transform-edited(); }
+                sync-requested => { root.sync-shading-from-asset(); }
+                reset-requested => { root.reset-shading-defaults(); }
+            }
+
+            if tile.active-panel-kind == 0: Text {
+                x: 10px;
+                y: 8px;
+                text: "Panel";
+                color: #c8c8c8;
+                font-size: 13px;
+            }
+        }
+
+        for ff in root.docking-floatings: Rectangle {
+            x: ff.x;
+            y: ff.y;
+            width: ff.width;
+            height: ff.height;
+            background: transparent;
+            border-color: #4a4a4a;
+            border-width: 1px;
+
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: ff.title-height;
+                background: #2b2b2b;
+                border-color: #4a4a4a;
+                border-width: 1px;
+
+                Text {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    text: ff.title;
+                    color: #d0d0d0;
+                    font-size: 12px;
+                }
+
+                title-drag := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.move;
+                    moved => {
+                        root.docking-floating-moved(
+                            self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                            self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left
+                            && event.kind == PointerEventKind.down) {
+                            root.docking-floating-move-pressed(ff.node-id,
+                                self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                                self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                        }
+                        if (event.button == PointerEventButton.left
+                            && event.kind == PointerEventKind.up) {
+                            root.docking-floating-released();
+                        }
+                    }
+                }
+            }
+
+            grip := Rectangle {
+                x: parent.width - ff.grip-size;
+                y: parent.height - ff.grip-size;
+                width: ff.grip-size;
+                height: ff.grip-size;
+                background: grip-drag.has-hover ? #3a6ea5 : #3a3a3a;
+
+                grip-drag := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.nwse-resize;
+                    moved => {
+                        root.docking-floating-moved(
+                            self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                            self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left
+                            && event.kind == PointerEventKind.down) {
+                            root.docking-floating-resize-pressed(ff.node-id,
+                                self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                                self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                        }
+                        if (event.button == PointerEventButton.left
+                            && event.kind == PointerEventKind.up) {
+                            root.docking-floating-released();
+                        }
+                    }
+                }
+            }
+        }
+
+        DockTabsLayer {
+            width: 100%;
+            height: 100%;
+            tabs: root.docking-tabs;
+            tab-pressed(id, px, py) => { root.docking-tab-pressed(id, px, py); }
+            tab-moved(px, py) => { root.docking-tab-moved(px, py); }
+            tab-released(px, py) => { root.docking-tab-released(px, py); }
+            tab-activated(id) => { root.docking-tab-activated(id); }
+            widget-closed(id) => { root.docking-widget-closed(id); }
+        }
+
+        DockSplittersLayer {
+            width: 100%;
+            height: 100%;
+            splitters: root.docking-splitters;
+            splitter-pressed(id, px, py) => { root.docking-splitter-pressed(id, px, py); }
+            splitter-moved(id, px, py) => { root.docking-splitter-moved(id, px, py); }
+            splitter-released() => { root.docking-splitter-released(); }
+        }
+
+        DockGuidesLayer {
+            width: 100%;
+            height: 100%;
+            guides: root.docking-guides;
+            preview: root.docking-preview;
+            drag-active: root.docking-drag-active;
+        }
     }
     }
 }

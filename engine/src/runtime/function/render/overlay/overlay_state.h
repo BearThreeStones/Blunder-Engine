@@ -7,6 +7,7 @@
 
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/gizmo/transform_gizmo_types.h"
 
 namespace Blunder {
 
@@ -27,6 +28,11 @@ struct OverlayState {
   uint32_t viewport_width{1};
   uint32_t viewport_height{1};
   uint32_t frame_index{0};
+
+  bool has_selection{false};
+  glm::mat4 selection_world{1.0f};
+  TransformGizmoMode gizmo_mode{TransformGizmoMode::none};
+  GizmoSpace gizmo_space{GizmoSpace::global};
 
   /// Populate from a ForwardFrameState.
   static OverlayState fromFrameState(const ForwardFrameState& fs,

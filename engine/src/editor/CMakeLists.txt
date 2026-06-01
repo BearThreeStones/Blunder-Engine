@@ -7,6 +7,14 @@ target_link_libraries(engine_editor
 )
 
 # ============================================================================
+# Visual Studio debugger: launch from the project root so relative paths
+# (engine/shaders/, Assets/, Resources/) resolve correctly.
+# ============================================================================
+set_target_properties(engine_editor PROPERTIES
+    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+# ============================================================================
 # Reuse PCH from engine_runtime (avoids duplicate PCH compilation)
 # Note: Compiler options must match for REUSE_FROM to work correctly
 # ============================================================================

@@ -13,6 +13,7 @@
 #include <cgltf.h>
 
 #include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/gizmo/transform_gizmo_types.h"
 #include "runtime/function/render/opaque_mesh_draw.h"
 
 namespace Blunder {
@@ -128,6 +129,11 @@ class RenderSystem final {
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
 
   EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }
+
+  void setTransformGizmoMode(TransformGizmoMode mode);
+  TransformGizmoMode getTransformGizmoMode() const;
+  void toggleTransformGizmoSpace();
+  bool isTransformGizmoSpaceGlobal() const;
   rhi::IRenderBackend* getRenderBackend() const { return m_backend.get(); }
   rhi::IOffscreenRenderTarget* getOffscreenTarget() const {
     return m_offscreen.get();

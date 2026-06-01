@@ -28,6 +28,16 @@ add_library(engine_runtime STATIC
     "function/ui/viewport/ui_viewport_bridge.h"
     "function/ui/viewport/viewport_input_layer.cpp"
     "function/ui/viewport/viewport_input_layer.h"
+    "function/ui/docking/dock_types.h"
+    "function/ui/docking/dock_widget.h"
+    "function/ui/docking/dock_widget.cpp"
+    "function/ui/docking/dock_node.h"
+    "function/ui/docking/dock_node.cpp"
+    "function/ui/docking/dock_layout_model.h"
+    "function/ui/docking/dock_drag_controller.h"
+    "function/ui/docking/dock_drag_controller.cpp"
+    "function/ui/docking/dock_manager.h"
+    "function/ui/docking/dock_manager.cpp"
     "function/slint/slint_system.h"
     "function/slint/slint_system.cpp"
     "core/log/log_access.h"
@@ -140,6 +150,7 @@ slint_target_sources(engine_runtime
     "function/slint/hierarchy.slint"
     "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
+    "function/slint/transform_toolbar.slint"
 )
 
 target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})

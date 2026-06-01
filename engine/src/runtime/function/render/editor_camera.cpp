@@ -39,6 +39,12 @@ EditorCamera::EditorCamera(WindowSystem* window_system)
 }
 
 void EditorCamera::onUpdate(float delta_time) {
+  if (m_interaction_locked) {
+    m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
+    m_scroll_delta_accumulator = 0.0f;
+    return;
+  }
+
   const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
 
   if (m_window_system) {
@@ -163,6 +169,9 @@ void EditorCamera::onUpdate(float delta_time) {
 }
 
 void EditorCamera::onEvent(Event& event) {
+  if (m_interaction_locked) {
+    return;
+  }
   EventDispatcher dispatcher(event);
   dispatcher.dispatch<MouseButtonPressedEvent>(
     [this](MouseButtonPressedEvent& e) { return onMouseButtonPressed(e); });

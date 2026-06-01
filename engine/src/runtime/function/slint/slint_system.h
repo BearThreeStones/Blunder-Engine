@@ -14,6 +14,7 @@
 
 #include "runtime/platform/window/window_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/function/ui/docking/dock_manager.h"
 #include "runtime/function/ui/editor_ui_presentation.h"
 #include "runtime/function/ui/ui_context.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
@@ -173,6 +174,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncContentBrowser() override;
   void applyInspectorTransform() override;
   void refreshEditorScenePanels() override;
+  void syncTransformToolbarFromEngine();
   void setBlinnPhongMaterialSource(const MaterialAsset* material) override;
   void syncBlinnPhongFromMaterialSource() override;
   void tickContentBrowserTreePointerPoll() override;
@@ -306,6 +308,8 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void cacheLayoutRects();
   void cacheViewportLogicalRectOnly();
+  void seedDockingWorkspace();
+  void syncDockingWorkspace();
   void refreshDockSplitterHitCache();
   void refreshDockSplitterGeometryFromUi();
   DockSplitterDrag queryDockSplitterAtFast(float window_x, float window_y) const;
@@ -354,6 +358,13 @@ class SlintSystem final : public IEditorUiPresentation {
   BrowserLogicalRect m_cached_hierarchy_logical_rect{};
   int m_slint_dispatch_depth{0};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
+  DockManager m_dock_manager;
+  bool m_docking_visible{true};
+  bool m_docking_model_dirty{true};
+  float m_docking_host_w{0.0f};
+  float m_docking_host_h{0.0f};
+  bool m_docking_has_viewport{false};
+  DockRect m_docking_viewport_local_rect{};
   eastl::string m_drop_highlight_path;
   bool m_viewport_drop_active{false};
   eastl::vector<eastl::string> m_pending_os_drop_files;

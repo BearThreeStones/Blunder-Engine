@@ -64,6 +64,9 @@ class EditorCamera final {
   void setLookAt(const Vec3& position, const Vec3& target);
   void placeInsideAABB(const AABB& bounds);
 
+  void setInteractionLocked(bool locked) { m_interaction_locked = locked; }
+  bool isInteractionLocked() const { return m_interaction_locked; }
+
  private:
   enum class InteractionMode : uint32_t {
     none = 0,
@@ -124,6 +127,7 @@ class EditorCamera final {
   InteractionMode m_interaction_mode{InteractionMode::none};
   bool m_right_drag_started_in_viewport{false};
   bool m_middle_drag_started_in_viewport{false};
+  bool m_interaction_locked{false};
 
   Vec2 m_mouse_delta_accumulator{0.0f, 0.0f};
   float m_scroll_delta_accumulator{0.0f};

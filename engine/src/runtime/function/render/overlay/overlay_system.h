@@ -6,6 +6,7 @@
 
 #include "runtime/function/render/overlay/axes_overlay.h"
 #include "runtime/function/render/overlay/grid_overlay.h"
+#include "runtime/function/render/gizmo/transform_gizmo_overlay.h"
 #include "runtime/function/render/overlay/navigate_gizmo_overlay.h"
 #include "runtime/function/render/overlay/origins_overlay.h"
 #include "runtime/function/render/overlay/overlay_anti_aliasing.h"
@@ -58,6 +59,7 @@ class OverlaySystem final {
   WireframeOverlay& wireframe() { return m_wireframe; }
   OriginsOverlay& origins() { return m_origins; }
   NavigateGizmoOverlay& navigate_gizmo() { return m_navigate_gizmo; }
+  TransformGizmoOverlay& transform_gizmo() { return m_transform_gizmo; }
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
 
  private:
@@ -74,6 +76,7 @@ class OverlaySystem final {
   WireframeOverlay m_wireframe;
   OriginsOverlay m_origins;
   NavigateGizmoOverlay m_navigate_gizmo;
+  TransformGizmoOverlay m_transform_gizmo;
   OverlayAntiAliasing m_anti_aliasing;
 };
 

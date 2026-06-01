@@ -1029,6 +1029,14 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
+  if (m_overlay_system && m_editor_camera) {
+    m_overlay_system->transform_gizmo().controller().onEvent(event,
+                                                             *m_editor_camera);
+    if (event.handled) {
+      return;
+    }
+  }
+
   if (m_overlay_system && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
@@ -1045,6 +1053,33 @@ void RenderSystem::onEvent(Event& event) {
   if (m_editor_camera) {
     m_editor_camera->onEvent(event);
   }
+}
+
+void RenderSystem::setTransformGizmoMode(const TransformGizmoMode mode) {
+  if (m_overlay_system) {
+    m_overlay_system->transform_gizmo().controller().setMode(mode);
+  }
+}
+
+TransformGizmoMode RenderSystem::getTransformGizmoMode() const {
+  if (m_overlay_system) {
+    return m_overlay_system->transform_gizmo().controller().getMode();
+  }
+  return TransformGizmoMode::none;
+}
+
+void RenderSystem::toggleTransformGizmoSpace() {
+  if (m_overlay_system) {
+    m_overlay_system->transform_gizmo().controller().toggleSpace();
+  }
+}
+
+bool RenderSystem::isTransformGizmoSpaceGlobal() const {
+  if (m_overlay_system) {
+    return m_overlay_system->transform_gizmo().controller().getSpace() ==
+           GizmoSpace::global;
+  }
+  return true;
 }
 
 }  // namespace Blunder
