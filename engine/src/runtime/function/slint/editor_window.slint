@@ -2,7 +2,6 @@ import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widget
 import { ContentBrowser, BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
-import { VerticalResizeHandle, HorizontalResizeHandle } from "resize_splitter.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
 import { DockTabsLayer, DockSplittersLayer, DockGuidesLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockPreview, DockFloating } from "docking_panel.slint";
@@ -227,22 +226,10 @@ export component MainEditorWindow inherits Window {
 
     in property <image> viewport-image;
 
-    in-out property <length> left-dock-width: 200px;
-    in-out property <length> right-dock-width: 260px;
-    in-out property <length> hierarchy-pane-height: 180px;
-    in-out property <length> bottom-dock-height: 160px;
-    in-out property <bool> dock-layout-drag-active: false;
-    callback dock-layout-drag-changed(bool);
-
-    function notify-dock-layout-drag(active: bool) {
-        root.dock-layout-drag-active = active;
-        root.dock-layout-drag-changed(active);
-    }
-
-    out property <length> viewport-origin-x: viewport-rect.absolute-position.x;
-    out property <length> viewport-origin-y: viewport-rect.absolute-position.y;
-    out property <length> viewport-width: viewport-rect.width;
-    out property <length> viewport-height: viewport-rect.height;
+    in-out property <length> viewport-origin-x: 0px;
+    in-out property <length> viewport-origin-y: 0px;
+    in-out property <length> viewport-width: 0px;
+    in-out property <length> viewport-height: 0px;
 
     in-out property <float> light-dir-x: 0.45;
     in-out property <float> light-dir-y: 0.7;
@@ -272,11 +259,11 @@ export component MainEditorWindow inherits Window {
     in-out property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
     in property <int> hierarchy-selected-entity-id: 0;
 
-    out property <length> hierarchy-origin-x: hierarchy_panel.hierarchy-origin-x;
-    out property <length> hierarchy-origin-y: hierarchy_panel.hierarchy-origin-y;
-    out property <length> hierarchy-width: hierarchy_panel.hierarchy-width;
-    out property <length> hierarchy-height: hierarchy_panel.hierarchy-height;
-    out property <length> hierarchy-tree-origin-y: hierarchy_panel.tree-origin-y;
+    in-out property <length> hierarchy-origin-x: 0px;
+    in-out property <length> hierarchy-origin-y: 0px;
+    in-out property <length> hierarchy-width: 0px;
+    in-out property <length> hierarchy-height: 0px;
+    in-out property <length> hierarchy-tree-origin-y: 0px;
 
     callback hierarchy-entity-selected(int);
     callback hierarchy-entity-toggle(int);
@@ -291,14 +278,14 @@ export component MainEditorWindow inherits Window {
     in property <string> browser-status-text: "0 items";
     in property <string> browser-selected-folder-path: "";
 
-    out property <length> browser-origin-x: content_browser.browser-origin-x;
-    out property <length> browser-origin-y: content_browser.browser-origin-y;
-    out property <length> browser-width: content_browser.browser-width;
-    out property <length> browser-height: content_browser.browser-height;
-    out property <length> browser-tree-origin-y: content_browser.tree-origin-y;
-    out property <length> browser-tree-panel-height: content_browser.tree-panel-height;
-    in-out property <length> browser-tree-panel-width <=> content_browser.tree-pane-width;
-    in-out property <length> browser-thumb-size <=> content_browser.thumb-size;
+    in-out property <length> browser-origin-x: 0px;
+    in-out property <length> browser-origin-y: 0px;
+    in-out property <length> browser-width: 0px;
+    in-out property <length> browser-height: 0px;
+    in-out property <length> browser-tree-origin-y: 0px;
+    in-out property <length> browser-tree-panel-height: 0px;
+    in-out property <length> browser-tree-panel-width: 150px;
+    in-out property <length> browser-thumb-size: 64px;
 
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
@@ -341,7 +328,7 @@ export component MainEditorWindow inherits Window {
     callback import-mesh-confirmed();
     callback import-mesh-cancelled();
 
-    in property <bool> docking-visible: false;
+    in property <bool> docking-visible: true;
     in property <[DockTile]> docking-tiles: [];
     in property <[DockTab]> docking-tabs: [];
     in property <[DockSplitterHandle]> docking-splitters: [];
@@ -355,7 +342,6 @@ export component MainEditorWindow inherits Window {
     out property <length> docking-origin-x: docking_host.absolute-position.x;
     out property <length> docking-origin-y: docking_host.absolute-position.y;
 
-    callback docking-toggle();
     callback docking-tab-pressed(int, length, length);
     callback docking-tab-moved(length, length);
     callback docking-tab-released(length, length);
@@ -396,464 +382,328 @@ export component MainEditorWindow inherits Window {
     root-layer := Rectangle {
         vertical-stretch: 1;
 
-    VerticalLayout {
-        width: 100%;
-        height: 100%;
+        VerticalLayout {
+            width: 100%;
+            height: 100%;
 
-        Rectangle {
-            background: #1f1f1f;
-            border-color: #2a2a2a;
-            border-width: 1px;
-            height: 44px;
+            Rectangle {
+                background: #1f1f1f;
+                border-color: #2a2a2a;
+                border-width: 1px;
+                height: 44px;
 
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 8px;
-                alignment: start;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    alignment: start;
 
-                Text {
-                    text: "Blunder Editor";
-                    color: #f5f5f5;
-                    font-size: 16px;
-                    vertical-alignment: center;
+                    Text {
+                        text: "Blunder Editor";
+                        color: #f5f5f5;
+                        font-size: 16px;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { width: 16px; }
+
+                    Button {
+                        text: "Save";
+                        clicked => { root.save-scene-requested(); }
+                    }
+                    Button { text: "Edit"; }
+                    Button { text: "View"; }
+                    Button { text: "Play"; }
                 }
-
-                Rectangle { width: 16px; }
-
-                Button {
-                    text: "Save";
-                    clicked => { root.save-scene-requested(); }
-                }
-                Button { text: "Edit"; }
-                Button { text: "View"; }
-                Button {
-                    text: root.docking-visible ? "Docking ✓" : "Docking";
-                    clicked => { root.docking-toggle(); }
-                }
-                Button { text: "Play"; }
             }
-        }
 
-        main-split := VerticalLayout {
-            vertical-stretch: 1;
-            spacing: 0px;
-
-            editor-body := HorizontalLayout {
+            docking_host := Rectangle {
                 vertical-stretch: 1;
+                background: #161616;
 
-                left-dock := VerticalLayout {
-                    width: root.left-dock-width;
-                    spacing: 0px;
-                    vertical-stretch: 1;
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                }
 
-                    hierarchy_panel := HierarchyPanel {
-                        vertical-stretch: 1;
+                for tile in root.docking-tiles: Rectangle {
+                    x: tile.content-x;
+                    y: tile.content-y;
+                    width: tile.content-width;
+                    height: tile.content-height;
+                    background: tile.floating ? #232323 : #1c1c1c;
+                    border-color: #2a2a2a;
+                    border-width: 1px;
+                    clip: true;
+
+                    if tile.active-panel-kind == 1: Rectangle {
+                        width: 100%;
+                        height: 100%;
+
+                        Image {
+                            width: 100%;
+                            height: 100%;
+                            source: root.viewport-image;
+                            image-fit: fill;
+                            visible: root.viewport-image-ready;
+                        }
+
+                        TransformToolbar {
+                            x: 8px;
+                            y: 8px;
+                            transform-mode: root.transform-gizmo-mode;
+                            gizmo-space-global: root.transform-gizmo-space-global;
+                            transform-mode-selected(mode) => {
+                                root.transform-mode-selected(mode);
+                            }
+                            gizmo-space-toggled => {
+                                root.gizmo-space-toggled();
+                            }
+                        }
+                    }
+
+                    if tile.active-panel-kind == 2: HierarchyPanel {
+                        width: 100%;
+                        height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
+                        tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
                     }
-                }
 
-            left-splitter := VerticalResizeHandle {
-                pane-size: root.left-dock-width;
-                min-pane: 180px;
-                max-pane: Math.max(180px, editor-body.width - root.right-dock-width - 360px);
-            }
-
-            viewport-rect := Rectangle {
-                background: #0a0a0a;
-                border-color: #2a2a2a;
-                border-width: 1px;
-                horizontal-stretch: 1;
-                vertical-stretch: 1;
-                min-width: 120px;
-
-                Image {
-                    width: parent.width;
-                    height: parent.height;
-                    source: root.viewport-image;
-                    image-fit: fill;
-                    visible: root.viewport-image-ready;
-                }
-
-                transform_toolbar := TransformToolbar {
-                    x: 8px;
-                    y: 8px;
-                    transform-mode: root.transform-gizmo-mode;
-                    gizmo-space-global: root.transform-gizmo-space-global;
-                    transform-mode-selected(mode) => {
-                        root.transform-mode-selected(mode);
+                    if tile.active-panel-kind == 4: ContentBrowser {
+                        width: 100%;
+                        height: 100%;
+                        layout-drag-active: root.docking-drag-active;
+                        tree-rows <=> root.browser-tree-rows;
+                        grid-rows <=> root.browser-grid-rows;
+                        path-segments <=> root.browser-path-segments;
+                        drag-active: root.browser-drag-active;
+                        drag-source-path: root.browser-drag-source-path;
+                        drop-highlight-path: root.browser-drop-highlight-path;
+                        viewport-drop-active: root.browser-viewport-drop-active;
+                        status-text: root.browser-status-text;
+                        selected-folder-path: root.browser-selected-folder-path;
+                        tree-origin-y <=> root.browser-tree-origin-y;
+                        tree-panel-height <=> root.browser-tree-panel-height;
+                        tree-pane-width <=> root.browser-tree-panel-width;
+                        thumb-size <=> root.browser-thumb-size;
+                        folder-selected(path) => { root.browser-folder-selected(path); }
+                        folder-toggle(path) => { root.browser-folder-toggle(path); }
+                        refresh-requested => { root.browser-refresh-requested(); }
+                        import-requested => { root.browser-import-requested(); }
+                        item-press(path, x, y) => { root.browser-item-press(path, x, y); }
+                        item-move(path, x, y) => { root.browser-item-move(path, x, y); }
+                        item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                        search-changed(text) => { root.browser-search-changed(text); }
+                        path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
                     }
-                    gizmo-space-toggled => {
-                        root.gizmo-space-toggled();
+
+                    if tile.active-panel-kind == 3: InspectorPanel {
+                        width: 100%;
+                        height: 100%;
+                        has-selection: root.inspector-has-selection;
+                        entity-name: root.inspector-entity-name;
+                        pos-x <=> root.inspector-pos-x;
+                        pos-y <=> root.inspector-pos-y;
+                        pos-z <=> root.inspector-pos-z;
+                        rot-x <=> root.inspector-rot-x;
+                        rot-y <=> root.inspector-rot-y;
+                        rot-z <=> root.inspector-rot-z;
+                        scale-x <=> root.inspector-scale-x;
+                        scale-y <=> root.inspector-scale-y;
+                        scale-z <=> root.inspector-scale-z;
+                        light-dir-x <=> root.light-dir-x;
+                        light-dir-y <=> root.light-dir-y;
+                        light-dir-z <=> root.light-dir-z;
+                        light-color-r <=> root.light-color-r;
+                        light-color-g <=> root.light-color-g;
+                        light-color-b <=> root.light-color-b;
+                        ambient-r <=> root.ambient-r;
+                        ambient-g <=> root.ambient-g;
+                        ambient-b <=> root.ambient-b;
+                        diffuse-r <=> root.diffuse-r;
+                        diffuse-g <=> root.diffuse-g;
+                        diffuse-b <=> root.diffuse-b;
+                        specular-r <=> root.specular-r;
+                        specular-g <=> root.specular-g;
+                        specular-b <=> root.specular-b;
+                        shininess <=> root.shininess;
+                        shading-unlit <=> root.shading-unlit;
+                        ssao-enabled <=> root.ssao-enabled;
+                        ssao-radius <=> root.ssao-radius;
+                        ssao-bias <=> root.ssao-bias;
+                        ssao-strength <=> root.ssao-strength;
+                        layout-drag-active: root.docking-drag-active;
+                        transform-edited => { root.inspector-transform-edited(); }
+                        sync-requested => { root.sync-shading-from-asset(); }
+                        reset-requested => { root.reset-shading-defaults(); }
+                    }
+
+                    if tile.active-panel-kind == 0: Text {
+                        x: 10px;
+                        y: 8px;
+                        text: "Panel";
+                        color: #c8c8c8;
+                        font-size: 13px;
                     }
                 }
-            }
 
-            right-splitter := VerticalResizeHandle {
-                pane-size: root.right-dock-width;
-                min-pane: 200px;
-                max-pane: Math.max(200px, editor-body.width - root.left-dock-width - 360px);
+                for ff in root.docking-floatings: Rectangle {
+                    x: ff.x;
+                    y: ff.y;
+                    width: ff.width;
+                    height: ff.height;
+                    background: transparent;
+                    border-color: #4a4a4a;
+                    border-width: 1px;
 
-                trailing-pane: true;
-            }
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: ff.title-height;
+                        background: #2b2b2b;
+                        border-color: #4a4a4a;
+                        border-width: 1px;
 
-            inspector-dock := InspectorPanel {
-                width: root.right-dock-width;
-                vertical-stretch: 1;
-                has-selection: root.inspector-has-selection;
-                entity-name: root.inspector-entity-name;
-                pos-x <=> root.inspector-pos-x;
-                pos-y <=> root.inspector-pos-y;
-                pos-z <=> root.inspector-pos-z;
-                rot-x <=> root.inspector-rot-x;
-                rot-y <=> root.inspector-rot-y;
-                rot-z <=> root.inspector-rot-z;
-                scale-x <=> root.inspector-scale-x;
-                scale-y <=> root.inspector-scale-y;
-                scale-z <=> root.inspector-scale-z;
-                light-dir-x <=> root.light-dir-x;
-                light-dir-y <=> root.light-dir-y;
-                light-dir-z <=> root.light-dir-z;
-                light-color-r <=> root.light-color-r;
-                light-color-g <=> root.light-color-g;
-                light-color-b <=> root.light-color-b;
-                ambient-r <=> root.ambient-r;
-                ambient-g <=> root.ambient-g;
-                ambient-b <=> root.ambient-b;
-                diffuse-r <=> root.diffuse-r;
-                diffuse-g <=> root.diffuse-g;
-                diffuse-b <=> root.diffuse-b;
-                specular-r <=> root.specular-r;
-                specular-g <=> root.specular-g;
-                specular-b <=> root.specular-b;
-                shininess <=> root.shininess;
-                shading-unlit <=> root.shading-unlit;
-                ssao-enabled <=> root.ssao-enabled;
-                ssao-radius <=> root.ssao-radius;
-                ssao-bias <=> root.ssao-bias;
-                ssao-strength <=> root.ssao-strength;
-                layout-drag-active: root.dock-layout-drag-active;
-                transform-edited => { root.inspector-transform-edited(); }
-                sync-requested => { root.sync-shading-from-asset(); }
-                reset-requested => { root.reset-shading-defaults(); }
-            }
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: ff.title;
+                            color: #d0d0d0;
+                            font-size: 12px;
+                        }
 
-            } // end editor-body
+                        title-drag := TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                            mouse-cursor: MouseCursor.move;
+                            moved => {
+                                root.docking-floating-moved(
+                                    self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                                    self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                            }
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.docking-floating-move-pressed(ff.node-id,
+                                        self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                                        self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                                }
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.up) {
+                                    root.docking-floating-released();
+                                }
+                            }
+                        }
+                    }
 
-            // Bottom splitter between editor body and content browser
-            bottom-splitter := HorizontalResizeHandle {
-                pane-size: root.bottom-dock-height;
-                min-pane: 120px;
-                // Keep at least ~400px for the central viewport + side docks.
-                max-pane: Math.max(120px, main-split.height - 400px);
-                trailing-pane: true;
-            }
+                    grip := Rectangle {
+                        x: parent.width - ff.grip-size;
+                        y: parent.height - ff.grip-size;
+                        width: ff.grip-size;
+                        height: ff.grip-size;
+                        background: grip-drag.has-hover ? #3a6ea5 : #3a3a3a;
 
-            // Bottom dock: Content Browser (full width)
-            bottom-dock := Rectangle {
-                height: root.bottom-dock-height;
-                horizontal-stretch: 1;
+                        grip-drag := TouchArea {
+                            width: parent.width;
+                            height: parent.height;
+                            mouse-cursor: MouseCursor.nwse-resize;
+                            moved => {
+                                root.docking-floating-moved(
+                                    self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                                    self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                            }
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.docking-floating-resize-pressed(ff.node-id,
+                                        self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
+                                        self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
+                                }
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.up) {
+                                    root.docking-floating-released();
+                                }
+                            }
+                        }
+                    }
+                }
 
-                content_browser := ContentBrowser {
-                    width: parent.width;
-                    height: parent.height;
-                    layout-drag-active: root.dock-layout-drag-active;
-                    tree-rows <=> root.browser-tree-rows;
-                    grid-rows <=> root.browser-grid-rows;
-                    path-segments <=> root.browser-path-segments;
-                    drag-active: root.browser-drag-active;
-                    drag-source-path: root.browser-drag-source-path;
-                    drop-highlight-path: root.browser-drop-highlight-path;
-                    viewport-drop-active: root.browser-viewport-drop-active;
-                    status-text: root.browser-status-text;
-                    selected-folder-path: root.browser-selected-folder-path;
-                    folder-selected(path) => { root.browser-folder-selected(path); }
-                    folder-toggle(path) => { root.browser-folder-toggle(path); }
-                    refresh-requested => { root.browser-refresh-requested(); }
-                    import-requested => { root.browser-import-requested(); }
-                    item-press(path, x, y) => { root.browser-item-press(path, x, y); }
-                    item-move(path, x, y) => { root.browser-item-move(path, x, y); }
-                    item-release(path, x, y) => { root.browser-item-release(path, x, y); }
-                    search-changed(text) => { root.browser-search-changed(text); }
-                    path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+                DockTabsLayer {
+                    width: 100%;
+                    height: 100%;
+                    tabs: root.docking-tabs;
+                    tab-pressed(id, px, py) => { root.docking-tab-pressed(id, px, py); }
+                    tab-moved(px, py) => { root.docking-tab-moved(px, py); }
+                    tab-released(px, py) => { root.docking-tab-released(px, py); }
+                    tab-activated(id) => { root.docking-tab-activated(id); }
+                    widget-closed(id) => { root.docking-widget-closed(id); }
+                }
+
+                DockSplittersLayer {
+                    width: 100%;
+                    height: 100%;
+                    splitters: root.docking-splitters;
+                    splitter-pressed(id, px, py) => { root.docking-splitter-pressed(id, px, py); }
+                    splitter-moved(id, px, py) => { root.docking-splitter-moved(id, px, py); }
+                    splitter-released() => { root.docking-splitter-released(); }
+                }
+
+                DockGuidesLayer {
+                    width: 100%;
+                    height: 100%;
+                    guides: root.docking-guides;
+                    preview: root.docking-preview;
+                    drag-active: root.docking-drag-active;
                 }
             }
-
-        } // end main-split
-
-        Rectangle {
-            background: #1f1f1f;
-            border-color: #2a2a2a;
-            border-width: 1px;
-            height: 24px;
-
-            Text {
-                x: 10px;
-                vertical-alignment: center;
-                text: "Hierarchy — Content Browser — Inspector";
-                color: #808080;
-                font-size: 12px;
-            }
-        }
-    }
-
-    // Window-level overlay so the viewport Image does not steal pointer hits.
-    ViewportProjectionToggle {
-        z: 2000;
-        layout-drag-active: root.dock-layout-drag-active;
-        dialog-active: root.import-mesh-dialog-visible;
-        viewport-origin-x: root.viewport-origin-x;
-        viewport-origin-y: root.viewport-origin-y;
-        viewport-width: root.viewport-width;
-        viewport-height: root.viewport-height;
-        is-perspective <=> root.viewport-is-perspective;
-        projection-toggled => {
-            root.viewport-projection-toggled();
-        }
-    }
-
-    import_mesh_dialog := ImportMeshDialog {
-        z: 3000;
-        width: parent.width;
-        height: parent.height;
-        show-dialog: root.import-mesh-dialog-visible;
-        import-materials <=> root.import-mesh-materials;
-        import-animations <=> root.import-mesh-animations;
-        import-scale <=> root.import-mesh-scale;
-        confirmed => { root.import-mesh-confirmed(); }
-        cancelled => { root.import-mesh-cancelled(); }
-    }
-
-    docking_host := Rectangle {
-        z: 2500;
-        x: 0;
-        y: 44px;
-        width: parent.width;
-        height: parent.height - 68px;
-        visible: root.docking-visible;
-        background: #161616;
-
-        TouchArea {
-            width: 100%;
-            height: 100%;
-        }
-
-        for tile in root.docking-tiles: Rectangle {
-            x: tile.content-x;
-            y: tile.content-y;
-            width: tile.content-width;
-            height: tile.content-height;
-            background: tile.floating ? #232323 : #1c1c1c;
-            border-color: #2a2a2a;
-            border-width: 1px;
-            clip: true;
-
-            if tile.active-panel-kind == 1: Image {
-                width: 100%;
-                height: 100%;
-                source: root.viewport-image;
-                image-fit: fill;
-                visible: root.viewport-image-ready;
-            }
-
-            if tile.active-panel-kind == 2: HierarchyPanel {
-                width: 100%;
-                height: 100%;
-                tree-rows <=> root.hierarchy-tree-rows;
-                selected-entity-id: root.hierarchy-selected-entity-id;
-                entity-selected(id) => { root.hierarchy-entity-selected(id); }
-                entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
-            }
-
-            if tile.active-panel-kind == 4: ContentBrowser {
-                width: 100%;
-                height: 100%;
-                layout-drag-active: root.dock-layout-drag-active;
-                tree-rows <=> root.browser-tree-rows;
-                grid-rows <=> root.browser-grid-rows;
-                path-segments <=> root.browser-path-segments;
-                drag-active: root.browser-drag-active;
-                drag-source-path: root.browser-drag-source-path;
-                drop-highlight-path: root.browser-drop-highlight-path;
-                viewport-drop-active: root.browser-viewport-drop-active;
-                status-text: root.browser-status-text;
-                selected-folder-path: root.browser-selected-folder-path;
-                folder-selected(path) => { root.browser-folder-selected(path); }
-                folder-toggle(path) => { root.browser-folder-toggle(path); }
-                refresh-requested => { root.browser-refresh-requested(); }
-                import-requested => { root.browser-import-requested(); }
-                item-press(path, x, y) => { root.browser-item-press(path, x, y); }
-                item-move(path, x, y) => { root.browser-item-move(path, x, y); }
-                item-release(path, x, y) => { root.browser-item-release(path, x, y); }
-                search-changed(text) => { root.browser-search-changed(text); }
-                path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
-            }
-
-            if tile.active-panel-kind == 3: InspectorPanel {
-                width: 100%;
-                height: 100%;
-                has-selection: root.inspector-has-selection;
-                entity-name: root.inspector-entity-name;
-                pos-x <=> root.inspector-pos-x;
-                pos-y <=> root.inspector-pos-y;
-                pos-z <=> root.inspector-pos-z;
-                rot-x <=> root.inspector-rot-x;
-                rot-y <=> root.inspector-rot-y;
-                rot-z <=> root.inspector-rot-z;
-                scale-x <=> root.inspector-scale-x;
-                scale-y <=> root.inspector-scale-y;
-                scale-z <=> root.inspector-scale-z;
-                light-dir-x <=> root.light-dir-x;
-                light-dir-y <=> root.light-dir-y;
-                light-dir-z <=> root.light-dir-z;
-                light-color-r <=> root.light-color-r;
-                light-color-g <=> root.light-color-g;
-                light-color-b <=> root.light-color-b;
-                ambient-r <=> root.ambient-r;
-                ambient-g <=> root.ambient-g;
-                ambient-b <=> root.ambient-b;
-                diffuse-r <=> root.diffuse-r;
-                diffuse-g <=> root.diffuse-g;
-                diffuse-b <=> root.diffuse-b;
-                specular-r <=> root.specular-r;
-                specular-g <=> root.specular-g;
-                specular-b <=> root.specular-b;
-                shininess <=> root.shininess;
-                shading-unlit <=> root.shading-unlit;
-                ssao-enabled <=> root.ssao-enabled;
-                ssao-radius <=> root.ssao-radius;
-                ssao-bias <=> root.ssao-bias;
-                ssao-strength <=> root.ssao-strength;
-                layout-drag-active: root.dock-layout-drag-active;
-                transform-edited => { root.inspector-transform-edited(); }
-                sync-requested => { root.sync-shading-from-asset(); }
-                reset-requested => { root.reset-shading-defaults(); }
-            }
-
-            if tile.active-panel-kind == 0: Text {
-                x: 10px;
-                y: 8px;
-                text: "Panel";
-                color: #c8c8c8;
-                font-size: 13px;
-            }
-        }
-
-        for ff in root.docking-floatings: Rectangle {
-            x: ff.x;
-            y: ff.y;
-            width: ff.width;
-            height: ff.height;
-            background: transparent;
-            border-color: #4a4a4a;
-            border-width: 1px;
 
             Rectangle {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: ff.title-height;
-                background: #2b2b2b;
-                border-color: #4a4a4a;
+                background: #1f1f1f;
+                border-color: #2a2a2a;
                 border-width: 1px;
+                height: 24px;
 
                 Text {
-                    x: 8px;
-                    width: parent.width - 16px;
-                    height: parent.height;
+                    x: 10px;
                     vertical-alignment: center;
-                    overflow: elide;
-                    text: ff.title;
-                    color: #d0d0d0;
+                    text: "Hierarchy — Content Browser — Inspector";
+                    color: #808080;
                     font-size: 12px;
                 }
-
-                title-drag := TouchArea {
-                    width: parent.width;
-                    height: parent.height;
-                    mouse-cursor: MouseCursor.move;
-                    moved => {
-                        root.docking-floating-moved(
-                            self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
-                            self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
-                    }
-                    pointer-event(event) => {
-                        if (event.button == PointerEventButton.left
-                            && event.kind == PointerEventKind.down) {
-                            root.docking-floating-move-pressed(ff.node-id,
-                                self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
-                                self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
-                        }
-                        if (event.button == PointerEventButton.left
-                            && event.kind == PointerEventKind.up) {
-                            root.docking-floating-released();
-                        }
-                    }
-                }
-            }
-
-            grip := Rectangle {
-                x: parent.width - ff.grip-size;
-                y: parent.height - ff.grip-size;
-                width: ff.grip-size;
-                height: ff.grip-size;
-                background: grip-drag.has-hover ? #3a6ea5 : #3a3a3a;
-
-                grip-drag := TouchArea {
-                    width: parent.width;
-                    height: parent.height;
-                    mouse-cursor: MouseCursor.nwse-resize;
-                    moved => {
-                        root.docking-floating-moved(
-                            self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
-                            self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
-                    }
-                    pointer-event(event) => {
-                        if (event.button == PointerEventButton.left
-                            && event.kind == PointerEventKind.down) {
-                            root.docking-floating-resize-pressed(ff.node-id,
-                                self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
-                                self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
-                        }
-                        if (event.button == PointerEventButton.left
-                            && event.kind == PointerEventKind.up) {
-                            root.docking-floating-released();
-                        }
-                    }
-                }
             }
         }
 
-        DockTabsLayer {
-            width: 100%;
-            height: 100%;
-            tabs: root.docking-tabs;
-            tab-pressed(id, px, py) => { root.docking-tab-pressed(id, px, py); }
-            tab-moved(px, py) => { root.docking-tab-moved(px, py); }
-            tab-released(px, py) => { root.docking-tab-released(px, py); }
-            tab-activated(id) => { root.docking-tab-activated(id); }
-            widget-closed(id) => { root.docking-widget-closed(id); }
+        ViewportProjectionToggle {
+            z: 2000;
+            layout-drag-active: root.docking-drag-active;
+            dialog-active: root.import-mesh-dialog-visible;
+            viewport-origin-x: root.viewport-origin-x;
+            viewport-origin-y: root.viewport-origin-y;
+            viewport-width: root.viewport-width;
+            viewport-height: root.viewport-height;
+            is-perspective <=> root.viewport-is-perspective;
+            projection-toggled => {
+                root.viewport-projection-toggled();
+            }
         }
 
-        DockSplittersLayer {
-            width: 100%;
-            height: 100%;
-            splitters: root.docking-splitters;
-            splitter-pressed(id, px, py) => { root.docking-splitter-pressed(id, px, py); }
-            splitter-moved(id, px, py) => { root.docking-splitter-moved(id, px, py); }
-            splitter-released() => { root.docking-splitter-released(); }
+        import_mesh_dialog := ImportMeshDialog {
+            z: 3000;
+            width: parent.width;
+            height: parent.height;
+            show-dialog: root.import-mesh-dialog-visible;
+            import-materials <=> root.import-mesh-materials;
+            import-animations <=> root.import-mesh-animations;
+            import-scale <=> root.import-mesh-scale;
+            confirmed => { root.import-mesh-confirmed(); }
+            cancelled => { root.import-mesh-cancelled(); }
         }
-
-        DockGuidesLayer {
-            width: 100%;
-            height: 100%;
-            guides: root.docking-guides;
-            preview: root.docking-preview;
-            drag-active: root.docking-drag-active;
-        }
-    }
     }
 }

@@ -23,14 +23,7 @@ namespace Blunder {
 
 class UiHost;
 
-enum class DockSplitterDrag : uint8_t {
-  none = 0,
-  leftVertical,
-  rightVertical,
-  hierarchyHorizontal,
-  browserTreeVertical,
-  bottomHorizontal,
-};
+
 
 class MaterialAsset;
 
@@ -86,13 +79,13 @@ class SlintSystem final : public IEditorUiPresentation {
 
   /// Skip Vulkan readback and defer expensive layout/sync (window resize + dock splitters).
   bool isDockLayoutDragActive() const {
-    return m_dock_layout_drag_active || m_dock_splitter_drag != DockSplitterDrag::none ||
-           m_splitter_resize_active || m_pending_dock_pane_apply ||
-           m_deferred_apply_kind != DockSplitterDrag::none;
+    return false;
   }
 
   /// True while the user is dragging or about to drag a dock splitter (C++ path).
-  bool isSplitterResizeInteractionActive() const;
+  bool isSplitterResizeInteractionActive() const {
+    return false;
+  }
 
   bool shouldDeferHeavyFrameWork() const;
 
@@ -310,9 +303,6 @@ class SlintSystem final : public IEditorUiPresentation {
   void cacheViewportLogicalRectOnly();
   void seedDockingWorkspace();
   void syncDockingWorkspace();
-  void refreshDockSplitterHitCache();
-  void refreshDockSplitterGeometryFromUi();
-  DockSplitterDrag queryDockSplitterAtFast(float window_x, float window_y) const;
   void refreshBrowserRectCache();
   void processPendingAssetImports();
   void showImportMeshDialogForPendingPaths();
@@ -327,19 +317,6 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Applies one coalesced pointer move (dock splitter drags flood SDL_AppEvent).
   void flushPendingPointerMove();
   void processCoalescedSdlMouseMotion();
-  void setDockLayoutDragActive(bool active);
-  DockSplitterDrag queryDockSplitterAt(float window_x, float window_y);
-  bool isPointerNearDockSplitter(float window_x, float window_y) const;
-  bool tryBeginCppDockSplitterDrag(float window_x, float window_y);
-  bool beginCppDockSplitterDragFromKind(DockSplitterDrag kind);
-  void updateCppDockSplitterDrag(float window_x, float window_y);
-  void queueCppDockSplitterMotion(float window_x, float window_y);
-  void flushPendingCppDockSplitterMotion();
-  /// SDL mouse poll so splitter drag/release work when SDL_AppEvent is starved.
-  void pollDockSplitterPointerState();
-  void endCppDockSplitterDrag();
-  void applyDockPaneResize(DockSplitterDrag kind);
-  void applyPendingDockPaneResize();
   void finishContentBrowserDrag(float logical_x, float logical_y);
   void finishContentBrowserDragAtCursor();
   bool isPointerOverViewport(float logical_x, float logical_y) const;
@@ -385,19 +362,7 @@ class SlintSystem final : public IEditorUiPresentation {
   uint32_t m_last_viewport_w{0};
   uint32_t m_last_viewport_h{0};
   bool m_win32_size_modal{false};
-  bool m_dock_layout_drag_active{false};
-  bool m_dock_hit_cache_valid{false};
-  bool m_splitter_resize_active{false};
-  float m_cached_tree_split_y{0.0f};
-  DockSplitterDrag m_dock_splitter_drag{DockSplitterDrag::none};
-  DockSplitterDrag m_deferred_apply_kind{DockSplitterDrag::none};
-  float m_splitter_drag_mouse_start{0.0f};
-  float m_splitter_drag_pane_start{0.0f};
-  float m_pending_dock_pane_size{0.0f};
-  float m_last_applied_dock_pane_size{-1.0f};
-  bool m_pending_dock_pane_apply{false};
   bool m_pending_dock_layout_present{false};
-  bool m_pending_composite_after_dock_apply{false};
   bool m_viewport_image_dirty{false};
   bool m_viewport_image_stale{true};
   bool m_pending_viewport_invalidate{false};
