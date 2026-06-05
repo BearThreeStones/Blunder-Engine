@@ -121,17 +121,19 @@ class SlintSystem final : public IEditorUiPresentation {
   /// copied into a Slint SharedPixelBuffer; the caller does not need to
   /// keep the source buffer alive after the call returns.
   void setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
-                        uint32_t height);
+                        uint32_t height, bool request_composite = true);
 
   void setViewportImageInternal(const uint8_t* pixels_rgba, uint32_t width,
-                                uint32_t height, bool allow_during_dispatch);
+                                uint32_t height, bool allow_during_dispatch,
+                                bool request_composite = true);
 
   /// Zero-copy path: binds a borrowed engine `VkImage` directly to the viewport
   /// `Image` property (no CPU copy). Only valid when the Slint renderer runs on
   /// the engine's shared Vulkan device (see `viewportUsesSharedDevice()`).
   void setViewportExternalTexture(uint64_t image, uint32_t format,
                                   uint32_t layout, uint32_t width,
-                                  uint32_t height);
+                                  uint32_t height,
+                                  bool request_composite = true);
 
   /// True when the Slint Skia renderer composites on the engine's shared Vulkan
   /// device, making zero-copy viewport presentation valid.
@@ -142,6 +144,13 @@ class SlintSystem final : public IEditorUiPresentation {
 
   /// Clears a stale 3D readback (e.g. after viewport resize) before the next render upload.
   void applyPendingViewportInvalidate();
+
+  /// Marks the central viewport logical rect dirty for partial Skia composite.
+  void markViewportDirtyRegion();
+  /// Forces the next Skia composite to repaint the full window.
+  void markFullSkiaRefresh();
+  bool consumePendingFullSkiaRefresh();
+  bool slintPartialCompositeEnabled() const;
 
   /// Returns the logical pixel rect of the central 3D viewport rectangle in
   /// the Slint UI. All values are zero until the window has performed its
@@ -234,6 +243,9 @@ class SlintSystem final : public IEditorUiPresentation {
 
     /// Skia composite/present only (assumes commitWindowSize ran in beginFrame).
     void compositeFrame();
+
+    void markSkiaDirtyRegion(float x, float y, float width, float height);
+    void forceSkiaFullRefresh();
 
     void suppressPresentFrames(uint32_t frame_count);
     void clearPresentSuppress() { m_present_suppress_frames = 0; }
@@ -371,7 +383,21 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Zero-copy: avoid re-binding Slint Image when only VkImage contents changed.
   bool m_borrowed_viewport_image_bound{false};
   uint64_t m_borrowed_viewport_vk_image{0};
+  struct BorrowedViewportImageCacheEntry {
+    uint64_t vk_image{0};
+    uint32_t width{0};
+    uint32_t height{0};
+    slint::Image image;
+  };
+  /// Cache Slint images for the two in-flight offscreen VkImages (double buffer).
+  eastl::array<BorrowedViewportImageCacheEntry, 2> m_borrowed_viewport_cache{};
+  slint::Image borrowedViewportImageForHandle(uint64_t image, uint32_t format,
+                                              uint32_t layout, uint32_t width,
+                                              uint32_t height);
+  void clearBorrowedViewportImageCache();
+  void logViewportPresentPathOnce(bool zero_copy_present) const;
   bool m_viewport_frame_ready{false};
+  bool m_pending_full_skia_refresh{false};
   bool m_cached_viewport_is_perspective{true};
   /// Monotonic frame counter, incremented at the start of each beginFrame().
   uint64_t m_frame_counter{0};

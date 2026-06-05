@@ -16,6 +16,8 @@
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 #include "runtime/function/render/opaque_mesh_draw.h"
 
+#include "runtime/function/render/vulkan/vulkan_sync.h"
+
 namespace Blunder {
 
 class Event;
@@ -33,6 +35,7 @@ class Texture2DAsset;
 class VulkanBuffer;
 class VulkanPipeline;
 class VulkanTexture;
+class VulkanSync;
 class WindowSystem;
 class SlintSystem;
 class UiHost;
@@ -200,6 +203,24 @@ class RenderSystem final {
   uint32_t m_viewport_render_generation{0};
   uint32_t m_last_rendered_viewport_generation{0};
   bool m_force_viewport_render{true};
+
+  struct ZeroCopyPresentSlot {
+    uint32_t width{0};
+    uint32_t height{0};
+    bool pending_gpu{false};
+    uint64_t completed_generation{0};
+  };
+  eastl::array<ZeroCopyPresentSlot, VulkanSync::k_max_frames_in_flight>
+      m_zero_copy_slots{};
+  uint64_t m_zero_copy_last_presented_generation{0};
+  uint64_t m_zero_copy_next_generation{1};
+
+  bool usesZeroCopyViewport() const;
+  void resetZeroCopyPresentState();
+  void notifyZeroCopySubmitted(uint32_t slot, uint32_t width, uint32_t height);
+  void pollZeroCopyAndPresent();
+  bool tryBeginRecordingSlot(uint32_t slot);
+  void pollViewportPresent();
 
   void markViewportRenderDirty();
 };

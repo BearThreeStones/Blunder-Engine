@@ -24,6 +24,8 @@ class VulkanOffscreenTarget final : public rhi::IOffscreenRenderTarget {
 
   OffscreenRenderTarget* nativeTarget() const { return m_target.get(); }
 
+  void setActiveBufferIndex(uint32_t index);
+
   void resize(uint32_t width, uint32_t height) override;
   rhi::Extent2D extent() const override;
   rhi::PixelFormat colorFormat() const override;

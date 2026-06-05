@@ -83,10 +83,31 @@ SlintSystem::update()
   provisioned for double-buffering. The GPU copy runs on frame N; on frame
   N+1, `tryMapSlot` polls `vkGetFenceStatus` and, if signaled, hands the
   already-mapped pointer directly to Slint (no intermediate memcpy). The
-  viewport displays ~1 frame behind the GPU. The zero-copy path uses a
-  per-frame fence wait for read-after-write sync; a shared timeline semaphore
-  (and double-buffering the off-screen image to remove the write-after-read
-  reliance on the render-pass subpass dependency) is the next optimisation.
+  viewport displays ~1 frame behind the GPU.
+- **Zero-copy double-buffering:** `OffscreenRenderTarget` owns
+  `k_buffer_count` (= `VulkanSync::k_max_frames_in_flight`, 2) independent
+  color + depth + framebuffer sets. Each frame, `RenderSystem` sets
+  `setActiveBufferIndex(m_current_frame)` before recording; the GPU writes
+  buffer[slot] while `pollZeroCopyAndPresent()` presents
+  `getImage(completed_slot)` to Slint after the matching fence signals.
+  Slint rebinds automatically when the presented `VkImage` handle changes
+  (slot alternation or resize). This removes same-image write-after-read
+  pressure that previously relied on the render-pass EXTERNAL subpass
+  dependency. Viewport latency is ~1–2 frames. **Not in v1:** timeline
+  semaphore / Skia wait sync.
+- **Partial Skia composite (viewport-only repaint):** when the Slint fork's
+  Vulkan partial-rendering path is enabled (default), orbit/interaction marks
+  only the central viewport logical rect dirty via
+  `SkiaRenderer::mark_dirty_region`; dock resize, window resize, and viewport
+  invalidate call `force_full_refresh()` for a safe full-window composite.
+  Disable with `BLUNDER_SLINT_PARTIAL=0`. **Zero-copy:** partial composite is
+  automatically off when the shared Vulkan device path is active (re-presenting
+  the same borrowed `VkImage` caused screen-aligned stale texels). Debug dirty
+  coverage with `SLINT_SKIA_PARTIAL_RENDERING=log` (or `visualize`).
+- **Editor performance toggles (default off in editor):**
+  - `BLUNDER_EDITOR_SHADOWS=1` — shadow pass (doubles opaque draws for large scenes).
+  - `BLUNDER_EDITOR_OVERLAY_AA=1` — full-scene overlay anti-aliasing pass.
+  - `BLUNDER_VIEWPORT_ZERO_COPY=0` — force CPU readback even when shared device works.
 - `EditorCamera` still receives input in window coordinates; for delta-based
   motion (drag/orbit) this is fine, but absolute-position interactions should
   later be remapped to the central viewport rect.

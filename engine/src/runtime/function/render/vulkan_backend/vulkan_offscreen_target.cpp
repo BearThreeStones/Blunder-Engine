@@ -29,6 +29,12 @@ void VulkanOffscreenTarget::shutdown() {
   }
 }
 
+void VulkanOffscreenTarget::setActiveBufferIndex(const uint32_t index) {
+  if (m_target) {
+    m_target->setActiveBufferIndex(index);
+  }
+}
+
 void VulkanOffscreenTarget::resize(uint32_t width, uint32_t height) {
   if (m_target) {
     m_target->resize(width, height);

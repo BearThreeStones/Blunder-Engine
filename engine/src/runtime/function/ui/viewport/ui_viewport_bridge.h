@@ -34,6 +34,10 @@ class UIViewportBridge final {
   /// Waits for the slot fence and resets it (call before recording the slot CB).
   void waitForRecordingSlot(uint32_t slot);
 
+  /// Non-blocking variant: returns false when the slot's previous submit is still
+  /// in flight so the caller can poll readback and skip recording this frame.
+  bool tryBeginRecordingSlot(uint32_t slot);
+
   VulkanBuffer* stagingBuffer(uint32_t slot);
 
   /// Call after `vkQueueSubmit` for this slot's in-flight fence.
@@ -52,6 +56,7 @@ class UIViewportBridge final {
     uint32_t height{0};
     bool pending_gpu{false};
     bool has_cpu_frame{false};
+    uint64_t completed_generation{0};
   };
 
   void tryMapSlot(uint32_t slot);
@@ -60,6 +65,8 @@ class UIViewportBridge final {
   VulkanAllocator* m_allocator{nullptr};
   VulkanSync* m_sync{nullptr};
   eastl::array<ReadbackSlot, k_frames_in_flight> m_slots{};
+  uint64_t m_last_presented_to_sink_generation{0};
+  uint64_t m_next_completed_generation{1};
   uint32_t m_display_slot{0};
   bool m_has_display_frame{false};
 };

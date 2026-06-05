@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "EASTL/array.h"
+
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -14,12 +16,12 @@ class VulkanContext;
 /// sampled by another pass (e.g. UI overlay) or read back to CPU and uploaded
 /// to a Slint Image control.
 ///
-/// The render pass owned by this target outputs the color attachment in the
-/// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL layout, ready for sampling.
-/// Use cmdBarrierToTransferSrc() to transition it for vkCmdCopyImageToBuffer
-/// when reading back to CPU.
+/// Color and depth attachments are double-buffered (one set per in-flight frame)
+/// so the GPU can write buffer[slot] while Slint samples a completed buffer.
 class OffscreenRenderTarget final {
  public:
+  static constexpr uint32_t k_buffer_count = 2;
+
   OffscreenRenderTarget() = default;
   ~OffscreenRenderTarget() = default;
 
@@ -29,51 +31,58 @@ class OffscreenRenderTarget final {
   void shutdown();
   void resize(uint32_t width, uint32_t height);
 
+  void setActiveBufferIndex(uint32_t index);
+  uint32_t getActiveBufferIndex() const { return m_active_buffer_index; }
+
   VkRenderPass getRenderPass() const { return m_render_pass; }
-  VkImage getImage() const { return m_image; }
-  VkImageView getImageView() const { return m_image_view; }
-  VkImage getDepthImage() const { return m_depth_image; }
-  VkImageView getDepthImageView() const { return m_depth_image_view; }
-  VkFramebuffer getFramebuffer() const { return m_framebuffer; }
+  VkImage getImage() const;
+  VkImage getImage(uint32_t buffer_index) const;
+  VkImageView getImageView() const;
+  VkImage getDepthImage() const;
+  VkImageView getDepthImageView() const;
+  VkFramebuffer getFramebuffer() const;
   VkExtent2D getExtent() const { return {m_width, m_height}; }
   VkFormat getFormat() const { return m_format; }
 
-  /// Layout right after the offscreen render pass finishes:
-  /// VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL.
-  VkImageLayout getCurrentLayout() const { return m_current_layout; }
-  void setCurrentLayout(VkImageLayout layout) { m_current_layout = layout; }
-  VkImageLayout getDepthLayout() const { return m_depth_layout; }
-  void setDepthLayout(VkImageLayout layout) { m_depth_layout = layout; }
+  VkImageLayout getCurrentLayout() const;
+  void setCurrentLayout(VkImageLayout layout);
+  VkImageLayout getDepthLayout() const;
+  void setDepthLayout(VkImageLayout layout);
 
-  /// Transition the color image from SHADER_READ_ONLY_OPTIMAL to
-  /// TRANSFER_SRC_OPTIMAL so it can be copied with vkCmdCopyImageToBuffer.
   void cmdBarrierToTransferSrc(VkCommandBuffer cmd);
-  /// Transition back to SHADER_READ_ONLY_OPTIMAL after the copy completes,
-  /// so subsequent passes can sample the image again.
   void cmdBarrierToShaderRead(VkCommandBuffer cmd);
-  /// Transition depth to DEPTH_STENCIL_READ_ONLY_OPTIMAL for SSAO sampling.
   void cmdBarrierDepthToShaderRead(VkCommandBuffer cmd);
 
  private:
+  struct BufferSlot {
+    VkImage color_image{VK_NULL_HANDLE};
+    VmaAllocation color_allocation{VK_NULL_HANDLE};
+    VkImageView color_view{VK_NULL_HANDLE};
+    VkImage depth_image{VK_NULL_HANDLE};
+    VmaAllocation depth_allocation{VK_NULL_HANDLE};
+    VkImageView depth_view{VK_NULL_HANDLE};
+    VkFramebuffer framebuffer{VK_NULL_HANDLE};
+    VkImageLayout color_layout{VK_IMAGE_LAYOUT_UNDEFINED};
+    VkImageLayout depth_layout{VK_IMAGE_LAYOUT_UNDEFINED};
+  };
+
   void createRenderPass();
   void createImageAndFramebuffer();
   void destroyImageAndFramebuffer();
+  void createBufferSlot(uint32_t slot_index);
+  void destroyBufferSlot(uint32_t slot_index);
+
+  const BufferSlot& activeSlot() const;
+  BufferSlot& activeSlot();
 
   VulkanContext* m_context{nullptr};
   VulkanAllocator* m_allocator{nullptr};
   VkRenderPass m_render_pass{VK_NULL_HANDLE};
-  VkImage m_image{VK_NULL_HANDLE};
-  VmaAllocation m_image_allocation{VK_NULL_HANDLE};
-  VkImageView m_image_view{VK_NULL_HANDLE};
-  VkImage m_depth_image{VK_NULL_HANDLE};
-  VmaAllocation m_depth_image_allocation{VK_NULL_HANDLE};
-  VkImageView m_depth_image_view{VK_NULL_HANDLE};
-  VkFramebuffer m_framebuffer{VK_NULL_HANDLE};
+  eastl::array<BufferSlot, k_buffer_count> m_buffers{};
+  uint32_t m_active_buffer_index{0};
   uint32_t m_width{0};
   uint32_t m_height{0};
   VkFormat m_format{VK_FORMAT_R8G8B8A8_UNORM};
-  VkImageLayout m_current_layout{VK_IMAGE_LAYOUT_UNDEFINED};
-  VkImageLayout m_depth_layout{VK_IMAGE_LAYOUT_UNDEFINED};
 };
 
 }  // namespace Blunder

@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <cstdint>
+
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
@@ -48,8 +50,11 @@ void UIViewportBridge::shutdown() {
     }
     slot.pending_gpu = false;
     slot.has_cpu_frame = false;
+    slot.completed_generation = 0;
   }
   m_has_display_frame = false;
+  m_last_presented_to_sink_generation = 0;
+  m_next_completed_generation = 1;
   m_context = nullptr;
   m_allocator = nullptr;
   m_sync = nullptr;
@@ -72,8 +77,11 @@ void UIViewportBridge::resizeReadback(uint32_t width, uint32_t height) {
     }
     slot.pending_gpu = false;
     slot.has_cpu_frame = false;
+    slot.completed_generation = 0;
   }
   m_has_display_frame = false;
+  m_last_presented_to_sink_generation = 0;
+  m_next_completed_generation = 1;
 
   const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
   for (ReadbackSlot& slot : m_slots) {
@@ -97,13 +105,32 @@ void UIViewportBridge::resizeReadback(uint32_t width, uint32_t height) {
 }
 
 void UIViewportBridge::waitForRecordingSlot(const uint32_t slot) {
+  if (!tryBeginRecordingSlot(slot)) {
+    if (!m_context || !m_sync || slot >= k_frames_in_flight) {
+      return;
+    }
+    VkDevice device = m_context->getDevice();
+    VkFence fence = m_sync->getInFlightFence(slot);
+    vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
+    vkResetFences(device, 1, &fence);
+  }
+}
+
+bool UIViewportBridge::tryBeginRecordingSlot(const uint32_t slot) {
   if (!m_context || !m_sync || slot >= k_frames_in_flight) {
-    return;
+    return false;
   }
   VkDevice device = m_context->getDevice();
   VkFence fence = m_sync->getInFlightFence(slot);
-  vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
+  const VkResult fence_status = vkGetFenceStatus(device, fence);
+  if (fence_status == VK_NOT_READY) {
+    return false;
+  }
+  if (fence_status != VK_SUCCESS) {
+    vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
+  }
   vkResetFences(device, 1, &fence);
+  return true;
 }
 
 VulkanBuffer* UIViewportBridge::stagingBuffer(const uint32_t slot) {
@@ -140,12 +167,9 @@ void UIViewportBridge::tryMapSlot(const uint32_t slot) {
     return;
   }
 
-  // With persistent mapping the data is already accessible — no memcpy needed.
-  // For the rare case where persistent mapping failed at resize time, fall back
-  // to a one-shot map+memcpy into a temporary (handled in pollAndPresent).
   readback_slot.pending_gpu = false;
   readback_slot.has_cpu_frame = true;
-  m_display_slot = slot;
+  readback_slot.completed_generation = m_next_completed_generation++;
   m_has_display_frame = true;
 }
 
@@ -158,10 +182,29 @@ void UIViewportBridge::pollAndPresent(IViewportSink* sink) {
     return;
   }
 
-  const ReadbackSlot& display = m_slots[m_display_slot];
-  if (!display.has_cpu_frame || display.width == 0 || display.height == 0) {
+  uint32_t best_slot = UINT32_MAX;
+  uint64_t best_generation = 0;
+  for (uint32_t slot = 0; slot < k_frames_in_flight; ++slot) {
+    const ReadbackSlot& readback_slot = m_slots[slot];
+    if (!readback_slot.has_cpu_frame || readback_slot.width == 0 ||
+        readback_slot.height == 0) {
+      continue;
+    }
+    if (readback_slot.completed_generation <= m_last_presented_to_sink_generation) {
+      continue;
+    }
+    if (readback_slot.completed_generation > best_generation) {
+      best_generation = readback_slot.completed_generation;
+      best_slot = slot;
+    }
+  }
+
+  if (best_slot == UINT32_MAX) {
     return;
   }
+
+  const ReadbackSlot& display = m_slots[best_slot];
+  m_display_slot = best_slot;
 
   const uint8_t* pixels = nullptr;
   if (display.persistent_map) {
@@ -187,6 +230,7 @@ void UIViewportBridge::pollAndPresent(IViewportSink* sink) {
   frame.height = display.height;
   frame.stride_bytes = display.width * 4u;
   sink->presentViewportCpuFrame(frame);
+  m_last_presented_to_sink_generation = best_generation;
 
   // Unmap only if we used the one-shot fallback path.
   if (!display.persistent_map && m_allocator && display.staging) {

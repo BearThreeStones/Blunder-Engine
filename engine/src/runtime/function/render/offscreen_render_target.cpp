@@ -6,6 +6,70 @@
 
 namespace Blunder {
 
+namespace {
+
+void checkBufferIndex(uint32_t index) {
+  ASSERT(index < OffscreenRenderTarget::k_buffer_count);
+}
+
+}  // namespace
+
+const OffscreenRenderTarget::BufferSlot& OffscreenRenderTarget::activeSlot() const {
+  checkBufferIndex(m_active_buffer_index);
+  return m_buffers[m_active_buffer_index];
+}
+
+OffscreenRenderTarget::BufferSlot& OffscreenRenderTarget::activeSlot() {
+  checkBufferIndex(m_active_buffer_index);
+  return m_buffers[m_active_buffer_index];
+}
+
+void OffscreenRenderTarget::setActiveBufferIndex(const uint32_t index) {
+  checkBufferIndex(index);
+  m_active_buffer_index = index;
+}
+
+VkImage OffscreenRenderTarget::getImage() const {
+  return activeSlot().color_image;
+}
+
+VkImage OffscreenRenderTarget::getImage(const uint32_t buffer_index) const {
+  checkBufferIndex(buffer_index);
+  return m_buffers[buffer_index].color_image;
+}
+
+VkImageView OffscreenRenderTarget::getImageView() const {
+  return activeSlot().color_view;
+}
+
+VkImage OffscreenRenderTarget::getDepthImage() const {
+  return activeSlot().depth_image;
+}
+
+VkImageView OffscreenRenderTarget::getDepthImageView() const {
+  return activeSlot().depth_view;
+}
+
+VkFramebuffer OffscreenRenderTarget::getFramebuffer() const {
+  return activeSlot().framebuffer;
+}
+
+VkImageLayout OffscreenRenderTarget::getCurrentLayout() const {
+  return activeSlot().color_layout;
+}
+
+void OffscreenRenderTarget::setCurrentLayout(const VkImageLayout layout) {
+  activeSlot().color_layout = layout;
+}
+
+VkImageLayout OffscreenRenderTarget::getDepthLayout() const {
+  return activeSlot().depth_layout;
+}
+
+void OffscreenRenderTarget::setDepthLayout(const VkImageLayout layout) {
+  activeSlot().depth_layout = layout;
+}
+
 void OffscreenRenderTarget::initialize(VulkanContext* context,
                                        VulkanAllocator* allocator,
                                        uint32_t width, uint32_t height,
@@ -19,6 +83,7 @@ void OffscreenRenderTarget::initialize(VulkanContext* context,
   m_format = format;
   m_width = width;
   m_height = height;
+  m_active_buffer_index = 0;
 
   createRenderPass();
   createImageAndFramebuffer();
@@ -91,8 +156,6 @@ void OffscreenRenderTarget::createRenderPass() {
   subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
   VkSubpassDependency dependencies[2]{};
-  // External -> 0: ensure previous fragment shader read finishes before we
-  // start writing the color attachment again.
   dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
   dependencies[0].dstSubpass = 0;
   dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -100,8 +163,6 @@ void OffscreenRenderTarget::createRenderPass() {
   dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
   dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
   dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-  // 0 -> External: make color writes available to subsequent fragment shader
-  // reads (UI overlay) or transfer reads (CPU readback).
   dependencies[1].srcSubpass = 0;
   dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
   dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
@@ -134,110 +195,101 @@ void OffscreenRenderTarget::createRenderPass() {
   }
 }
 
-void OffscreenRenderTarget::createImageAndFramebuffer() {
+void OffscreenRenderTarget::createBufferSlot(const uint32_t slot_index) {
+  checkBufferIndex(slot_index);
   ASSERT(m_render_pass != VK_NULL_HANDLE);
   ASSERT(m_width > 0 && m_height > 0);
 
+  BufferSlot& slot = m_buffers[slot_index];
   VkDevice device = m_context->getDevice();
 
-  VkImageCreateInfo image_info{};
-  image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  image_info.imageType = VK_IMAGE_TYPE_2D;
-  image_info.format = m_format;
-  image_info.extent.width = m_width;
-  image_info.extent.height = m_height;
-  image_info.extent.depth = 1;
-  image_info.mipLevels = 1;
-  image_info.arrayLayers = 1;
-  image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-  image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-  image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+  VkImageCreateInfo color_info{};
+  color_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  color_info.imageType = VK_IMAGE_TYPE_2D;
+  color_info.format = m_format;
+  color_info.extent = {m_width, m_height, 1};
+  color_info.mipLevels = 1;
+  color_info.arrayLayers = 1;
+  color_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  color_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  color_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                      VK_IMAGE_USAGE_SAMPLED_BIT |
                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-  image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  color_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  color_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   VmaAllocationCreateInfo alloc_create{};
   alloc_create.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-  const VkResult img_result = vmaCreateImage(
-      m_allocator->getAllocator(), &image_info, &alloc_create, &m_image,
-      &m_image_allocation, nullptr);
-  if (img_result != VK_SUCCESS) {
+  VkResult result = vmaCreateImage(m_allocator->getAllocator(), &color_info,
+                                   &alloc_create, &slot.color_image,
+                                   &slot.color_allocation, nullptr);
+  if (result != VK_SUCCESS) {
     LOG_FATAL(
-        "[OffscreenRenderTarget::createImageAndFramebuffer] vmaCreateImage "
-        "failed: {}",
-        static_cast<int>(img_result));
+        "[OffscreenRenderTarget::createBufferSlot] color vmaCreateImage "
+        "failed (slot {}): {}",
+        slot_index, static_cast<int>(result));
   }
 
-  VkImageViewCreateInfo view_info{};
-  view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  view_info.image = m_image;
-  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  view_info.format = m_format;
-  view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  view_info.subresourceRange.baseMipLevel = 0;
-  view_info.subresourceRange.levelCount = 1;
-  view_info.subresourceRange.baseArrayLayer = 0;
-  view_info.subresourceRange.layerCount = 1;
+  VkImageViewCreateInfo color_view_info{};
+  color_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  color_view_info.image = slot.color_image;
+  color_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  color_view_info.format = m_format;
+  color_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  color_view_info.subresourceRange.levelCount = 1;
+  color_view_info.subresourceRange.layerCount = 1;
 
-  const VkResult view_result =
-      vkCreateImageView(device, &view_info, nullptr, &m_image_view);
-  if (view_result != VK_SUCCESS) {
+  result = vkCreateImageView(device, &color_view_info, nullptr,
+                             &slot.color_view);
+  if (result != VK_SUCCESS) {
     LOG_FATAL(
-        "[OffscreenRenderTarget::createImageAndFramebuffer] vkCreateImageView "
-        "failed: {}",
-        static_cast<int>(view_result));
+        "[OffscreenRenderTarget::createBufferSlot] color vkCreateImageView "
+        "failed (slot {}): {}",
+        slot_index, static_cast<int>(result));
   }
 
-  VkImageCreateInfo depth_image_info{};
-  depth_image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  depth_image_info.imageType = VK_IMAGE_TYPE_2D;
-  depth_image_info.format = VK_FORMAT_D32_SFLOAT;
-  depth_image_info.extent.width = m_width;
-  depth_image_info.extent.height = m_height;
-  depth_image_info.extent.depth = 1;
-  depth_image_info.mipLevels = 1;
-  depth_image_info.arrayLayers = 1;
-  depth_image_info.samples = VK_SAMPLE_COUNT_1_BIT;
-  depth_image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-  depth_image_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_SAMPLED_BIT;
-  depth_image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  depth_image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  VkImageCreateInfo depth_info{};
+  depth_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  depth_info.imageType = VK_IMAGE_TYPE_2D;
+  depth_info.format = VK_FORMAT_D32_SFLOAT;
+  depth_info.extent = {m_width, m_height, 1};
+  depth_info.mipLevels = 1;
+  depth_info.arrayLayers = 1;
+  depth_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  depth_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  depth_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                     VK_IMAGE_USAGE_SAMPLED_BIT;
+  depth_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  depth_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-  const VkResult depth_img_result =
-      vmaCreateImage(m_allocator->getAllocator(), &depth_image_info,
-                     &alloc_create, &m_depth_image, &m_depth_image_allocation,
-                     nullptr);
-  if (depth_img_result != VK_SUCCESS) {
+  result = vmaCreateImage(m_allocator->getAllocator(), &depth_info, &alloc_create,
+                          &slot.depth_image, &slot.depth_allocation, nullptr);
+  if (result != VK_SUCCESS) {
     LOG_FATAL(
-        "[OffscreenRenderTarget::createImageAndFramebuffer] depth "
-        "vmaCreateImage failed: {}",
-        static_cast<int>(depth_img_result));
+        "[OffscreenRenderTarget::createBufferSlot] depth vmaCreateImage "
+        "failed (slot {}): {}",
+        slot_index, static_cast<int>(result));
   }
 
   VkImageViewCreateInfo depth_view_info{};
   depth_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  depth_view_info.image = m_depth_image;
+  depth_view_info.image = slot.depth_image;
   depth_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
   depth_view_info.format = VK_FORMAT_D32_SFLOAT;
   depth_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-  depth_view_info.subresourceRange.baseMipLevel = 0;
   depth_view_info.subresourceRange.levelCount = 1;
-  depth_view_info.subresourceRange.baseArrayLayer = 0;
   depth_view_info.subresourceRange.layerCount = 1;
 
-  const VkResult depth_view_result =
-      vkCreateImageView(device, &depth_view_info, nullptr, &m_depth_image_view);
-  if (depth_view_result != VK_SUCCESS) {
+  result = vkCreateImageView(device, &depth_view_info, nullptr, &slot.depth_view);
+  if (result != VK_SUCCESS) {
     LOG_FATAL(
-        "[OffscreenRenderTarget::createImageAndFramebuffer] depth "
-        "vkCreateImageView failed: {}",
-        static_cast<int>(depth_view_result));
+        "[OffscreenRenderTarget::createBufferSlot] depth vkCreateImageView "
+        "failed (slot {}): {}",
+        slot_index, static_cast<int>(result));
   }
 
-  VkImageView attachments[2] = {m_image_view, m_depth_image_view};
+  VkImageView attachments[2] = {slot.color_view, slot.depth_view};
   VkFramebufferCreateInfo fb_info{};
   fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
   fb_info.renderPass = m_render_pass;
@@ -247,136 +299,154 @@ void OffscreenRenderTarget::createImageAndFramebuffer() {
   fb_info.height = m_height;
   fb_info.layers = 1;
 
-  const VkResult fb_result =
-      vkCreateFramebuffer(device, &fb_info, nullptr, &m_framebuffer);
-  if (fb_result != VK_SUCCESS) {
+  result = vkCreateFramebuffer(device, &fb_info, nullptr, &slot.framebuffer);
+  if (result != VK_SUCCESS) {
     LOG_FATAL(
-        "[OffscreenRenderTarget::createImageAndFramebuffer] "
-        "vkCreateFramebuffer failed: {}",
-        static_cast<int>(fb_result));
+        "[OffscreenRenderTarget::createBufferSlot] vkCreateFramebuffer failed "
+        "(slot {}): {}",
+        slot_index, static_cast<int>(result));
   }
 
-  m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-  m_depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  slot.color_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  slot.depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
-void OffscreenRenderTarget::destroyImageAndFramebuffer() {
+void OffscreenRenderTarget::destroyBufferSlot(const uint32_t slot_index) {
   if (!m_context) {
     return;
   }
+  checkBufferIndex(slot_index);
 
+  BufferSlot& slot = m_buffers[slot_index];
   VkDevice device = m_context->getDevice();
-  if (m_framebuffer != VK_NULL_HANDLE) {
-    vkDestroyFramebuffer(device, m_framebuffer, nullptr);
-    m_framebuffer = VK_NULL_HANDLE;
+
+  if (slot.framebuffer != VK_NULL_HANDLE) {
+    vkDestroyFramebuffer(device, slot.framebuffer, nullptr);
+    slot.framebuffer = VK_NULL_HANDLE;
   }
-  if (m_image_view != VK_NULL_HANDLE) {
-    vkDestroyImageView(device, m_image_view, nullptr);
-    m_image_view = VK_NULL_HANDLE;
+  if (slot.color_view != VK_NULL_HANDLE) {
+    vkDestroyImageView(device, slot.color_view, nullptr);
+    slot.color_view = VK_NULL_HANDLE;
   }
-  if (m_depth_image_view != VK_NULL_HANDLE) {
-    vkDestroyImageView(device, m_depth_image_view, nullptr);
-    m_depth_image_view = VK_NULL_HANDLE;
+  if (slot.depth_view != VK_NULL_HANDLE) {
+    vkDestroyImageView(device, slot.depth_view, nullptr);
+    slot.depth_view = VK_NULL_HANDLE;
   }
-  if (m_image != VK_NULL_HANDLE) {
-    vmaDestroyImage(m_allocator->getAllocator(), m_image, m_image_allocation);
-    m_image = VK_NULL_HANDLE;
-    m_image_allocation = VK_NULL_HANDLE;
+  if (slot.color_image != VK_NULL_HANDLE) {
+    vmaDestroyImage(m_allocator->getAllocator(), slot.color_image,
+                    slot.color_allocation);
+    slot.color_image = VK_NULL_HANDLE;
+    slot.color_allocation = VK_NULL_HANDLE;
   }
-  if (m_depth_image != VK_NULL_HANDLE) {
-    vmaDestroyImage(m_allocator->getAllocator(), m_depth_image,
-                    m_depth_image_allocation);
-    m_depth_image = VK_NULL_HANDLE;
-    m_depth_image_allocation = VK_NULL_HANDLE;
+  if (slot.depth_image != VK_NULL_HANDLE) {
+    vmaDestroyImage(m_allocator->getAllocator(), slot.depth_image,
+                    slot.depth_allocation);
+    slot.depth_image = VK_NULL_HANDLE;
+    slot.depth_allocation = VK_NULL_HANDLE;
   }
-  m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
-  m_depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  slot.color_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  slot.depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+void OffscreenRenderTarget::createImageAndFramebuffer() {
+  for (uint32_t slot = 0; slot < k_buffer_count; ++slot) {
+    createBufferSlot(slot);
+  }
+}
+
+void OffscreenRenderTarget::destroyImageAndFramebuffer() {
+  for (uint32_t slot = 0; slot < k_buffer_count; ++slot) {
+    destroyBufferSlot(slot);
+  }
 }
 
 void OffscreenRenderTarget::cmdBarrierToTransferSrc(VkCommandBuffer cmd) {
-  if (m_image == VK_NULL_HANDLE) {
+  BufferSlot& slot = activeSlot();
+  if (slot.color_image == VK_NULL_HANDLE) {
     return;
   }
 
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  barrier.oldLayout = m_current_layout;
+  barrier.oldLayout = slot.color_layout;
   barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
   barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.image = m_image;
+  barrier.image = slot.color_image;
   barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   barrier.subresourceRange.baseMipLevel = 0;
   barrier.subresourceRange.levelCount = 1;
   barrier.subresourceRange.baseArrayLayer = 0;
   barrier.subresourceRange.layerCount = 1;
   barrier.srcAccessMask =
-      m_current_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+      slot.color_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
           ? VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
           : VK_ACCESS_SHADER_READ_BIT;
   barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
   const VkPipelineStageFlags src_stage =
-      m_current_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+      slot.color_layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
           ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
           : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
   vkCmdPipelineBarrier(cmd, src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
                        nullptr, 0, nullptr, 1, &barrier);
 
-  m_current_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+  slot.color_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 }
 
 void OffscreenRenderTarget::cmdBarrierToShaderRead(VkCommandBuffer cmd) {
-  if (m_image == VK_NULL_HANDLE) {
+  BufferSlot& slot = activeSlot();
+  if (slot.color_image == VK_NULL_HANDLE) {
     return;
   }
-  if (m_current_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+  if (slot.color_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
     return;
   }
 
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  barrier.oldLayout = m_current_layout;
+  barrier.oldLayout = slot.color_layout;
   barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.image = m_image;
+  barrier.image = slot.color_image;
   barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   barrier.subresourceRange.baseMipLevel = 0;
   barrier.subresourceRange.levelCount = 1;
   barrier.subresourceRange.baseArrayLayer = 0;
   barrier.subresourceRange.layerCount = 1;
   barrier.srcAccessMask =
-      m_current_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+      slot.color_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
           ? VK_ACCESS_TRANSFER_READ_BIT
           : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
   const VkPipelineStageFlags src_stage =
-      m_current_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+      slot.color_layout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
           ? VK_PIPELINE_STAGE_TRANSFER_BIT
           : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   vkCmdPipelineBarrier(cmd, src_stage, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
                        0, nullptr, 0, nullptr, 1, &barrier);
 
-  m_current_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  slot.color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 }
 
 void OffscreenRenderTarget::cmdBarrierDepthToShaderRead(VkCommandBuffer cmd) {
-  if (m_depth_image == VK_NULL_HANDLE) {
+  BufferSlot& slot = activeSlot();
+  if (slot.depth_image == VK_NULL_HANDLE) {
     return;
   }
-  if (m_depth_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+  if (slot.depth_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
     return;
   }
 
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  barrier.oldLayout = m_depth_layout;
+  barrier.oldLayout = slot.depth_layout;
   barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
   barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
   barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.image = m_depth_image;
+  barrier.image = slot.depth_image;
   barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
   barrier.subresourceRange.baseMipLevel = 0;
   barrier.subresourceRange.levelCount = 1;
@@ -389,7 +459,7 @@ void OffscreenRenderTarget::cmdBarrierDepthToShaderRead(VkCommandBuffer cmd) {
                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
                        nullptr, 1, &barrier);
 
-  m_depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  slot.depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 }
 
 }  // namespace Blunder

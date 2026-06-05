@@ -8,6 +8,7 @@
 #include <glm/vec4.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/debug/agent_debug_log.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
@@ -124,6 +125,52 @@ void writeOpaqueShadowBinding(VkDevice device, VkDescriptorSet descriptor_set,
 
 }  // namespace
 
+void ForwardRenderPath::updateOpaqueTextureBindingsIfNeeded(
+    const uint32_t descriptor_index, VkDevice device,
+    const VkDescriptorSet descriptor_set, VulkanTexture* base_color,
+    VulkanTexture* metallic_roughness, VulkanTexture* normal_map,
+    VulkanTexture* occlusion) {
+  if (m_fallback_texture == nullptr ||
+      descriptor_index >= m_opaque_texture_binding_cache.size()) {
+    return;
+  }
+
+  VulkanTexture* const resolved_base =
+      base_color != nullptr ? base_color : m_fallback_texture;
+  VulkanTexture* const resolved_mr = metallic_roughness != nullptr
+                                         ? metallic_roughness
+                                         : m_fallback_texture;
+  VulkanTexture* const resolved_normal =
+      normal_map != nullptr ? normal_map : m_fallback_texture;
+  VulkanTexture* const resolved_occlusion =
+      occlusion != nullptr ? occlusion : m_fallback_texture;
+
+  OpaqueTextureBindingCache& cache =
+      m_opaque_texture_binding_cache[descriptor_index];
+  if (cache.valid && cache.base_color == resolved_base &&
+      cache.metallic_roughness == resolved_mr && cache.normal == resolved_normal &&
+      cache.occlusion == resolved_occlusion) {
+    // #region agent log
+    static uint32_t s_tex_skip = 0;
+    ++s_tex_skip;
+    // #endregion
+    return;
+  }
+
+  // #region agent log
+  static uint32_t s_tex_write = 0;
+  ++s_tex_write;
+  // #endregion
+
+  writeOpaqueTextureBindings(device, descriptor_set, resolved_base, resolved_mr,
+                             resolved_normal, resolved_occlusion, m_fallback_texture);
+  cache.base_color = resolved_base;
+  cache.metallic_roughness = resolved_mr;
+  cache.normal = resolved_normal;
+  cache.occlusion = resolved_occlusion;
+  cache.valid = true;
+}
+
 ForwardRenderPath::~ForwardRenderPath() { shutdown(); }
 
 void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
@@ -198,6 +245,7 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
         static_cast<int>(opaque_set_result));
   }
   m_opaque_descriptor_sets.resize(total_opaque_sets);
+  m_opaque_texture_binding_cache.resize(total_opaque_sets);
   for (uint32_t i = 0; i < total_opaque_sets; ++i) {
     m_opaque_descriptor_sets[i] = reinterpret_cast<uintptr_t>(opaque_sets[i]);
 
@@ -315,6 +363,7 @@ void ForwardRenderPath::shutdown() {
   m_shadow_uniform_buffers.clear();
 
   m_opaque_descriptor_sets.clear();
+  m_opaque_texture_binding_cache.clear();
   if (m_opaque_descriptor_pool != 0) {
     vkDestroyDescriptorPool(
         device, reinterpret_cast<VkDescriptorPool>(m_opaque_descriptor_pool),
@@ -362,7 +411,8 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
                   const ForwardOpaqueDraw* draws, uint32_t draw_count,
                   uint32_t frame_index, VulkanTexture* fallback_texture,
                   const eastl::vector<uintptr_t>& descriptor_sets,
-                  const eastl::vector<eastl::unique_ptr<VulkanBuffer>>& uniform_buffers) {
+                  const eastl::vector<eastl::unique_ptr<VulkanBuffer>>& uniform_buffers,
+                  ForwardRenderPath* render_path) {
   if (pipeline == nullptr || draws == nullptr || draw_count == 0) {
     return;
   }
@@ -419,8 +469,15 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
 
     const VkDescriptorSet descriptor_set =
         reinterpret_cast<VkDescriptorSet>(descriptor_sets[descriptor_index]);
-    writeOpaqueTextureBindings(device, descriptor_set, base_color, metallic_roughness,
-                               normal_map, occlusion, fallback_texture);
+    if (render_path != nullptr) {
+      render_path->updateOpaqueTextureBindingsIfNeeded(
+          descriptor_index, device, descriptor_set, base_color, metallic_roughness,
+          normal_map, occlusion);
+    } else {
+      writeOpaqueTextureBindings(device, descriptor_set, base_color,
+                                 metallic_roughness, normal_map, occlusion,
+                                 fallback_texture);
+    }
 
     uniform_buffers[descriptor_index]->upload(&mesh_ubo, sizeof(mesh_ubo));
 
@@ -444,7 +501,7 @@ void ForwardRenderPath::drawOpaqueList(
     uint32_t frame_index) {
   drawMeshList(cmd, m_vk_context->getDevice(), m_opaque_pipeline, frame_state,
                opaque_draws, opaque_draw_count, frame_index, m_fallback_texture,
-               m_opaque_descriptor_sets, m_opaque_uniform_buffers);
+               m_opaque_descriptor_sets, m_opaque_uniform_buffers, this);
 }
 
 void ForwardRenderPath::drawTransparentList(
@@ -456,7 +513,8 @@ void ForwardRenderPath::drawTransparentList(
   }
   drawMeshList(cmd, m_vk_context->getDevice(), m_transparent_pipeline, frame_state,
                transparent_draws, transparent_draw_count, frame_index,
-               m_fallback_texture, m_opaque_descriptor_sets, m_opaque_uniform_buffers);
+               m_fallback_texture, m_opaque_descriptor_sets, m_opaque_uniform_buffers,
+               this);
 }
 
 void ForwardRenderPath::drawShadowOpaqueList(

@@ -1,5 +1,9 @@
 #include "runtime/function/render/render_system.h"
 
+#include <chrono>
+#include <cstdio>
+#include <limits>
+
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
@@ -31,6 +35,8 @@
 
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/core/debug/agent_debug_log.h"
+#include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/event/event.h"
@@ -42,6 +48,7 @@
 #include "runtime/function/ui/viewport/i_viewport_sink.h"
 #include "runtime/function/ui/viewport/ui_viewport_bridge.h"
 #include "runtime/function/ui/viewport/viewport_cpu_frame.h"
+#include "runtime/function/ui/viewport/viewport_vulkan_image.h"
 #include "runtime/function/render/editor_camera.h"
 #include <vulkan/vulkan.h>
 
@@ -86,6 +93,16 @@ constexpr float k_shadow_far_plane = 60.0f;
 bool viewportZeroCopyDisabled() {
   const char* env = std::getenv("BLUNDER_VIEWPORT_ZERO_COPY");
   return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
+}
+
+bool editorShadowsEnabled() {
+  const char* env = std::getenv("BLUNDER_EDITOR_SHADOWS");
+  return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
+}
+
+bool editorOverlayAaEnabled() {
+  const char* env = std::getenv("BLUNDER_EDITOR_OVERLAY_AA");
+  return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
 }
 
 bool matricesNearlyEqual(const glm::mat4& a, const glm::mat4& b) {
@@ -365,6 +382,7 @@ GpuMesh* RenderSystem::getOrUploadGpuMeshByKey(const eastl::string& cache_key,
   m_gpu_meshes[cache_key] = eastl::move(uploaded_mesh);
   LOG_INFO("[RenderSystem] GpuMesh uploaded {} (indices={})", cache_key.c_str(),
            index_count);
+
   return uploaded_mesh_ptr;
 }
 
@@ -439,6 +457,124 @@ bool RenderSystem::addTransparentMeshDraw(
 
 void RenderSystem::markViewportRenderDirty() { ++m_viewport_render_generation; }
 
+bool RenderSystem::usesZeroCopyViewport() const {
+  return !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
+         m_viewport_layout_source->viewportUsesSharedDevice();
+}
+
+void RenderSystem::resetZeroCopyPresentState() {
+  for (ZeroCopyPresentSlot& slot : m_zero_copy_slots) {
+    slot = {};
+  }
+  m_zero_copy_last_presented_generation = 0;
+  m_zero_copy_next_generation = 1;
+}
+
+void RenderSystem::notifyZeroCopySubmitted(const uint32_t slot,
+                                           const uint32_t width,
+                                           const uint32_t height) {
+  if (slot >= VulkanSync::k_max_frames_in_flight) {
+    return;
+  }
+  ZeroCopyPresentSlot& present_slot = m_zero_copy_slots[slot];
+  present_slot.width = width;
+  present_slot.height = height;
+  present_slot.pending_gpu = true;
+  present_slot.completed_generation = m_zero_copy_next_generation++;
+}
+
+void RenderSystem::pollZeroCopyAndPresent() {
+  if (!usesZeroCopyViewport() || !m_viewport_sink || !isVulkanBackend()) {
+    return;
+  }
+
+  OffscreenRenderTarget* offscreen = vkOffscreenRt(this);
+  if (offscreen == nullptr) {
+    return;
+  }
+
+  VkDevice device = vkCtx(this)->getDevice();
+  uint32_t best_slot = UINT32_MAX;
+  uint64_t best_generation = 0;
+  uint32_t best_width = 0;
+  uint32_t best_height = 0;
+
+  for (uint32_t slot = 0; slot < VulkanSync::k_max_frames_in_flight; ++slot) {
+    ZeroCopyPresentSlot& present_slot = m_zero_copy_slots[slot];
+    if (!present_slot.pending_gpu || present_slot.width == 0 ||
+        present_slot.height == 0) {
+      continue;
+    }
+
+    VkFence fence = vkSync(this)->getInFlightFence(slot);
+    if (vkGetFenceStatus(device, fence) != VK_SUCCESS) {
+      continue;
+    }
+
+    if (present_slot.completed_generation <=
+        m_zero_copy_last_presented_generation) {
+      present_slot.pending_gpu = false;
+      continue;
+    }
+
+    if (present_slot.completed_generation > best_generation) {
+      best_generation = present_slot.completed_generation;
+      best_slot = slot;
+      best_width = present_slot.width;
+      best_height = present_slot.height;
+    }
+  }
+
+  if (best_slot == UINT32_MAX) {
+    return;
+  }
+
+  ViewportVulkanImage vk_image{};
+  vk_image.image = reinterpret_cast<uint64_t>(offscreen->getImage(best_slot));
+  vk_image.format = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
+  vk_image.layout =
+      static_cast<uint32_t>(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  vk_image.width = best_width;
+  vk_image.height = best_height;
+  m_viewport_sink->presentViewportVulkanImage(vk_image);
+
+  m_zero_copy_last_presented_generation = best_generation;
+  for (ZeroCopyPresentSlot& present_slot : m_zero_copy_slots) {
+    if (present_slot.pending_gpu &&
+        present_slot.completed_generation <= best_generation) {
+      present_slot.pending_gpu = false;
+    }
+  }
+}
+
+bool RenderSystem::tryBeginRecordingSlot(const uint32_t slot) {
+  if (!isVulkanBackend() || slot >= VulkanSync::k_max_frames_in_flight) {
+    return false;
+  }
+  VkDevice device = vkCtx(this)->getDevice();
+  VkFence fence = vkSync(this)->getInFlightFence(slot);
+  const VkResult fence_status = vkGetFenceStatus(device, fence);
+  if (fence_status == VK_NOT_READY) {
+    return false;
+  }
+  if (fence_status != VK_SUCCESS) {
+    vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
+  }
+  vkResetFences(device, 1, &fence);
+  return true;
+}
+
+void RenderSystem::pollViewportPresent() {
+  if (!m_viewport_sink) {
+    return;
+  }
+  if (usesZeroCopyViewport()) {
+    pollZeroCopyAndPresent();
+  } else if (m_viewport_bridge) {
+    m_viewport_bridge->pollAndPresent(m_viewport_sink);
+  }
+}
+
 void RenderSystem::clearOpaqueMeshDraws() {
   m_opaque_mesh_draws.clear();
   markViewportRenderDirty();
@@ -463,6 +599,7 @@ void RenderSystem::resizeViewportReadback(uint32_t width, uint32_t height) {
   if (m_viewport_bridge) {
     m_viewport_bridge->resizeReadback(width, height);
   }
+  resetZeroCopyPresentState();
 }
 
 VulkanTexture* RenderSystem::ensureTextureUploaded(
@@ -544,8 +681,14 @@ void RenderSystem::applyDeferredOffscreenResize() {
     resizeViewportReadback(width, height);
   }
   m_offscreen->resize(width, height);
-  if (isVulkanBackend() && m_ssao_pass) {
-    m_ssao_pass->resize(width, height);
+  if (isVulkanBackend()) {
+    if (auto* vk_target =
+            static_cast<vulkan_backend::VulkanOffscreenTarget*>(m_offscreen.get())) {
+      vk_target->setActiveBufferIndex(0);
+    }
+    if (m_ssao_pass) {
+      m_ssao_pass->resize(width, height);
+    }
   }
   if (m_overlay_system) {
     m_overlay_system->resize(width, height);
@@ -581,6 +724,7 @@ void RenderSystem::shutdown() {
 
   if (isVulkanBackend()) {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
+    resetZeroCopyPresentState();
   }
 
   if (m_renderdoc_capture) {
@@ -816,6 +960,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   }
   // Slint UI defaults SSAO on; disable until AO generate is stable for large scenes.
   frame_state.shading.ssao_enabled = false;
+  // Editor viewport: shadow pass duplicates every opaque draw (expensive on Sponza).
+  // Opt in with BLUNDER_EDITOR_SHADOWS=1.
+  frame_state.shadows_enabled = editorShadowsEnabled();
   if (!m_opaque_mesh_draws.empty() || !m_transparent_mesh_draws.empty()) {
     frame_state.shading.ambient_color =
         glm::max(frame_state.shading.ambient_color, glm::vec3(0.35f));
@@ -851,12 +998,17 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       m_viewport_render_generation != m_last_rendered_viewport_generation;
   if (!m_force_viewport_render && !viewport_target_changed && !camera_changed &&
       !scene_changed) {
-    // Async readback: even when skipping render, poll for completed GPU
-    // readbacks from previous frames that haven't been presented yet.
-    if (m_viewport_bridge && m_viewport_sink) {
-      m_viewport_bridge->pollAndPresent(m_viewport_sink);
-    }
+    pollViewportPresent();
     return;
+  }
+
+  if (!tryBeginRecordingSlot(m_current_frame)) {
+    pollViewportPresent();
+    return;
+  }
+
+  if (OffscreenRenderTarget* offscreen = vkOffscreenRt(this)) {
+    offscreen->setActiveBufferIndex(m_current_frame);
   }
 
   const auto append_forward_draw =
@@ -915,10 +1067,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     append_forward_draw(mesh_draw, transparent_draws);
   }
 
-  if (m_viewport_bridge) {
-    m_viewport_bridge->waitForRecordingSlot(m_current_frame);
-  }
-
   VkFence in_flight_fence = vkSync(this)->getInFlightFence(m_current_frame);
 
   VkCommandBuffer command_buffer =
@@ -933,19 +1081,28 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     m_overlay_system->begin_sync(frame_state, m_current_frame);
   }
 
+  const auto forward_record_start = std::chrono::steady_clock::now();
   if (m_forward_path) {
     m_forward_path->renderFrame(
         command_buffer, frame_state, opaque_draws.data(),
         static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
         static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
   }
+  const double forward_record_ms =
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - forward_record_start)
+          .count();
 
   if (m_overlay_system) {
-    m_overlay_system->draw_overlay_lines(command_buffer);
-    m_overlay_system->draw_overlay_aa(command_buffer);
+    if (m_overlay_system->hasActiveLineOverlays()) {
+      m_overlay_system->draw_overlay_lines(command_buffer);
+      if (editorOverlayAaEnabled()) {
+        m_overlay_system->draw_overlay_aa(command_buffer);
+      }
+    }
   }
 
-  if (m_ssao_pass) {
+  if (m_ssao_pass && frame_state.shading.ssao_enabled) {
     m_ssao_pass->apply(command_buffer, vkOffscreenRt(this), frame_state.shading,
                        projection, near_clip, far_clip);
   }
@@ -957,12 +1114,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
 
-  // Zero-copy samples the off-screen VkImage from Slint/Skia on the shared device.
-  // Default on when the Slint renderer adopted the engine device; set
-  // BLUNDER_VIEWPORT_ZERO_COPY=0 to force CPU readback.
-  const bool zero_copy_viewport =
-      !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
-      m_viewport_layout_source->viewportUsesSharedDevice();
+  // Zero-copy path uses the same async fence polling as CPU readback: submit
+  // without blocking, present the newest completed frame via pollZeroCopyAndPresent().
+  const bool zero_copy_viewport = usesZeroCopyViewport();
 
   VulkanBuffer* readback_staging =
       (!zero_copy_viewport && m_viewport_bridge)
@@ -998,19 +1152,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                 in_flight_fence);
 
   if (zero_copy_viewport) {
-    vkWaitForFences(vkCtx(this)->getDevice(), 1, &in_flight_fence, VK_TRUE,
-                    k_fence_wait_timeout_ns);
-    if (m_viewport_sink) {
-      ViewportVulkanImage vk_image{};
-      vk_image.image =
-          reinterpret_cast<uint64_t>(vkOffscreenRt(this)->getImage());
-      vk_image.format = static_cast<uint32_t>(VK_FORMAT_R8G8B8A8_UNORM);
-      vk_image.layout =
-          static_cast<uint32_t>(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-      vk_image.width = offscreen_extent.width;
-      vk_image.height = offscreen_extent.height;
-      m_viewport_sink->presentViewportVulkanImage(vk_image);
-    }
+    notifyZeroCopySubmitted(m_current_frame, offscreen_extent.width,
+                            offscreen_extent.height);
+    pollViewportPresent();
   } else if (m_viewport_bridge) {
     m_viewport_bridge->notifyGpuSubmitted(m_current_frame, offscreen_extent.width,
                                           offscreen_extent.height);
@@ -1018,7 +1162,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     // vkGetFenceStatus (non-blocking) to check if any previous frame's staging
     // copy has completed. The viewport displays ~1 frame behind the GPU, which
     // eliminates the per-frame CPU stall and pipelines GPU/CPU work.
-    m_viewport_bridge->pollAndPresent(m_viewport_sink);
+    pollViewportPresent();
   }
 
   if (m_viewport_layout_source != nullptr) {
@@ -1036,6 +1180,28 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   m_last_viewport_target_h = target_height;
   m_last_rendered_viewport_generation = m_viewport_render_generation;
   m_force_viewport_render = false;
+
+  // #region agent log
+  {
+    static uint32_t s_perf_log_count = 0;
+    static auto s_tick_start = std::chrono::steady_clock::now();
+    const auto tick_end = std::chrono::steady_clock::now();
+    const double tick_ms =
+        std::chrono::duration<double, std::milli>(tick_end - s_tick_start).count();
+    s_tick_start = tick_end;
+    if (s_perf_log_count < 10u) {
+      ++s_perf_log_count;
+      char data[384];
+      std::snprintf(
+          data, sizeof(data),
+          "{\"frame\":%u,\"tickMs\":%.2f,\"forwardRecordMs\":%.2f,"
+          "\"opaqueDraws\":%zu,\"zeroCopy\":%s,\"runId\":\"post-fix-v6\"}",
+          s_perf_log_count, tick_ms, forward_record_ms, opaque_draws.size(),
+          zero_copy_viewport ? "true" : "false");
+      agent_debug::log("K", "render_system.cpp:tick", "perf_frame", data);
+    }
+  }
+  // #endregion
 
   m_current_frame = (m_current_frame + 1) % VulkanSync::k_max_frames_in_flight;
 }

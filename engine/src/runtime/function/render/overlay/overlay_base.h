@@ -12,6 +12,8 @@ struct OverlayResources;
 struct Overlay {
   bool enabled_ = false;
 
+  bool isEnabled() const { return enabled_; }
+
   virtual ~Overlay() = default;
 
   /// Create/reset internal state. Called once per frame before drawing.

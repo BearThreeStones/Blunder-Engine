@@ -49,6 +49,8 @@ class OverlaySystem final {
   void begin_sync(const ForwardFrameState& frame_state,
                   uint32_t current_frame);
 
+  bool hasActiveLineOverlays() const;
+
   void draw_scene_overlays(VkCommandBuffer cmd);
   void draw_overlay_lines(VkCommandBuffer cmd);
   void draw_overlay_aa(VkCommandBuffer cmd);

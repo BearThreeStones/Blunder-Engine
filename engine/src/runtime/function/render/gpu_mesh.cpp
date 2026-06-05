@@ -1,5 +1,7 @@
 #include "runtime/function/render/gpu_mesh.h"
 
+#include <cstddef>
+
 #include "runtime/core/base/macro.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
@@ -9,6 +11,14 @@ namespace Blunder {
 
 static_assert(sizeof(MeshVertex) == sizeof(Vertex),
               "MeshVertex must match render Vertex layout");
+static_assert(offsetof(MeshVertex, position) == offsetof(Vertex, position),
+              "MeshVertex/Vertex position offset mismatch");
+static_assert(offsetof(MeshVertex, normal) == offsetof(Vertex, normal),
+              "MeshVertex/Vertex normal offset mismatch");
+static_assert(offsetof(MeshVertex, uv) == offsetof(Vertex, uv),
+              "MeshVertex/Vertex uv offset mismatch");
+static_assert(offsetof(MeshVertex, tangent) == offsetof(Vertex, tangent),
+              "MeshVertex/Vertex tangent offset mismatch");
 
 eastl::unique_ptr<GpuMesh> GpuMesh::createInternal(
     VulkanAllocator* allocator, const void* vertex_bytes,

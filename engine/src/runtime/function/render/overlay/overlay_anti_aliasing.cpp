@@ -1,5 +1,7 @@
 #include "runtime/function/render/overlay/overlay_anti_aliasing.h"
 
+#include <cstdlib>
+
 #include <slang.h>
 
 #include <glm/vec4.hpp>
@@ -183,7 +185,9 @@ void OverlayAntiAliasing::resize(uint32_t width, uint32_t height) {
 
 void OverlayAntiAliasing::begin_sync(OverlayResources& /*res*/,
                                      const OverlayState& /*state*/) {
-  enabled_ = true;
+  const char* env = std::getenv("BLUNDER_EDITOR_OVERLAY_AA");
+  enabled_ =
+      env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
 }
 
 void OverlayAntiAliasing::createRenderPass() {

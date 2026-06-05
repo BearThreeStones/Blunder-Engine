@@ -817,7 +817,8 @@ void SsaOPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
                      const BlinnPhongEditorSettings& settings,
                      const glm::mat4& projection, float near_clip,
                      float far_clip) {
-  if (!offscreen || !m_generate_pipeline || m_width == 0 || m_height == 0) {
+  if (!offscreen || !settings.ssao_enabled || !m_generate_pipeline ||
+      m_width == 0 || m_height == 0) {
     return;
   }
 
@@ -848,10 +849,6 @@ void SsaOPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
   writeApplyDescriptors();
 
   offscreen->cmdBarrierDepthToShaderRead(cmd);
-
-  if (!settings.ssao_enabled) {
-    return;
-  }
 
   VkViewport viewport{};
   viewport.width = static_cast<float>(m_width);

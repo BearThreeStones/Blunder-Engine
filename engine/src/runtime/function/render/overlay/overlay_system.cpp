@@ -94,6 +94,10 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
   m_anti_aliasing.begin_sync(m_resources, m_state);
 }
 
+bool OverlaySystem::hasActiveLineOverlays() const {
+  return m_axes.isEnabled() || m_wireframe.isEnabled();
+}
+
 void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
   m_axes.draw(cmd, m_state);
   m_wireframe.draw(cmd, m_state);

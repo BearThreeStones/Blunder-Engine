@@ -3,6 +3,7 @@
 #include <slint.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -109,7 +110,16 @@ class ScopedDispatchGuard final {
  private:
   int& m_depth;
 };
+
+bool slintPartialCompositeEnabledEnv() {
+  const char* env = std::getenv("BLUNDER_SLINT_PARTIAL");
+  if (env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F')) {
+    return false;
+  }
+  return true;
 }
+
+}  // namespace
 
 slint::PhysicalSize queryLogicalWindowSize(WindowSystem* window_system) {
   if (!window_system) {
@@ -348,6 +358,9 @@ void SlintSystem::SlintWindowAdapter::applyWindowLayoutNow(int override_logical_
   if (physical_size_changed) {
     if (m_renderer) {
       m_renderer->resize(m_target_size);
+      if (m_owner) {
+        m_owner->markFullSkiaRefresh();
+      }
       request_redraw();
       m_present_suppress_frames = eastl::max(m_present_suppress_frames, 1u);
     }
@@ -412,6 +425,22 @@ void SlintSystem::SlintWindowAdapter::suppressPresentFrames(uint32_t frame_count
   m_present_suppress_frames = eastl::max(m_present_suppress_frames, frame_count);
 }
 
+void SlintSystem::SlintWindowAdapter::markSkiaDirtyRegion(const float x, const float y,
+                                                            const float width,
+                                                            const float height) {
+  if (!m_renderer || width <= 0.0f || height <= 0.0f ||
+      m_owner == nullptr || !m_owner->slintPartialCompositeEnabled()) {
+    return;
+  }
+  m_renderer->mark_dirty_region(x, y, width, height);
+}
+
+void SlintSystem::SlintWindowAdapter::forceSkiaFullRefresh() {
+  if (m_renderer) {
+    m_renderer->force_full_refresh();
+  }
+}
+
 void SlintSystem::SlintWindowAdapter::compositeFrame() {
   if (!m_visible || !m_renderer) {
     return;
@@ -442,8 +471,10 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     }
   }
 
-  // Always re-render when requested: the engine updates the shared viewport
-  // VkImage in place; Slint samples it during composite without re-binding each frame.
+  if (m_owner && m_owner->consumePendingFullSkiaRefresh()) {
+    m_renderer->force_full_refresh();
+  }
+
   try {
     m_renderer->render();
   } catch (const std::exception& e) {
@@ -875,30 +906,116 @@ void SlintSystem::shutdown() {
   m_window_system = nullptr;
 }
 
+void SlintSystem::clearBorrowedViewportImageCache() {
+  for (BorrowedViewportImageCacheEntry& entry : m_borrowed_viewport_cache) {
+    entry = {};
+  }
+}
+
+slint::Image SlintSystem::borrowedViewportImageForHandle(const uint64_t image,
+                                                         const uint32_t format,
+                                                         const uint32_t layout,
+                                                         const uint32_t width,
+                                                         const uint32_t height) {
+  for (BorrowedViewportImageCacheEntry& entry : m_borrowed_viewport_cache) {
+    if (entry.vk_image == image && entry.width == width && entry.height == height) {
+      return entry.image;
+    }
+  }
+
+  uint32_t replace_slot = 0;
+  for (uint32_t slot = 0; slot < m_borrowed_viewport_cache.size(); ++slot) {
+    if (m_borrowed_viewport_cache[slot].vk_image == 0) {
+      replace_slot = slot;
+      break;
+    }
+  }
+
+  BorrowedViewportImageCacheEntry& entry = m_borrowed_viewport_cache[replace_slot];
+  entry.vk_image = image;
+  entry.width = width;
+  entry.height = height;
+  entry.image = slint::Image::create_from_borrowed_vulkan_texture(
+      image, format, layout, slint::Size<uint32_t>{width, height});
+  return entry.image;
+}
+
+void SlintSystem::logViewportPresentPathOnce(const bool zero_copy_present) const {
+  static bool s_logged = false;
+  if (s_logged) {
+    return;
+  }
+  s_logged = true;
+  LOG_INFO(
+      "[SlintSystem] viewport present path: zero_copy={} shared_device={} "
+      "partial_slint={}",
+      zero_copy_present, viewportUsesSharedDevice(),
+      slintPartialCompositeEnabled());
+}
+
 void SlintSystem::applyPendingViewportInvalidate() {
   if (!m_pending_viewport_invalidate || !m_window_component) {
     return;
   }
   m_pending_viewport_invalidate = false;
+  markFullSkiaRefresh();
   m_viewport_image_stale = true;
   m_borrowed_viewport_image_bound = false;
   m_borrowed_viewport_vk_image = 0;
+  clearBorrowedViewportImageCache();
   static const uint8_t k_clear_pixel[4] = {10u, 10u, 10u, 255u};
   setViewportImageInternal(k_clear_pixel, 1u, 1u, true);
   LOG_INFO(
       "[SlintSystem] viewport invalidate: hide 3D image until next render ({}x{} "
       "logical)",
-      m_cached_viewport_logical_rect.width, m_cached_viewport_logical_rect.height);
+      m_cached_viewport_logical_rect.width,       m_cached_viewport_logical_rect.height);
+}
+
+bool SlintSystem::slintPartialCompositeEnabled() const {
+  if (!slintPartialCompositeEnabledEnv()) {
+    return false;
+  }
+  // Partial swapchain reuse leaves screen-aligned stale texels when the zero-copy
+  // path re-presents the same borrowed VkImage after the GPU overwrites it.
+  if (viewportUsesSharedDevice()) {
+    return false;
+  }
+  return true;
+}
+
+void SlintSystem::markViewportDirtyRegion() {
+  if (!slintPartialCompositeEnabled() || !m_window_adapter) {
+    return;
+  }
+  const ViewportLogicalRect& viewport = m_cached_viewport_logical_rect;
+  if (viewport.width == 0 || viewport.height == 0) {
+    return;
+  }
+  m_window_adapter->markSkiaDirtyRegion(static_cast<float>(viewport.x),
+                                       static_cast<float>(viewport.y),
+                                       static_cast<float>(viewport.width),
+                                       static_cast<float>(viewport.height));
+}
+
+void SlintSystem::markFullSkiaRefresh() { m_pending_full_skia_refresh = true; }
+
+bool SlintSystem::consumePendingFullSkiaRefresh() {
+  if (!m_pending_full_skia_refresh) {
+    return false;
+  }
+  m_pending_full_skia_refresh = false;
+  return true;
 }
 
 void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
-                                   uint32_t height) {
-  setViewportImageInternal(pixels_rgba, width, height, false);
+                                   uint32_t height, bool request_composite) {
+  setViewportImageInternal(pixels_rgba, width, height, false, request_composite);
 }
 
 void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
                                              uint32_t layout, uint32_t width,
-                                             uint32_t height) {
+                                             uint32_t height,
+                                             bool request_composite) {
   if (!m_window_component || image == 0 || width == 0 || height == 0) {
     return;
   }
@@ -909,13 +1026,14 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     MainEditorWindow& ui = *m_window_component->operator->();
-    const bool rebind =
-        !m_borrowed_viewport_image_bound || image != m_borrowed_viewport_vk_image ||
+    const bool size_changed =
         width != m_viewport_upload_width || height != m_viewport_upload_height;
+    logViewportPresentPathOnce(true);
+    const bool rebind = !m_borrowed_viewport_image_bound ||
+                        image != m_borrowed_viewport_vk_image || size_changed;
     if (rebind) {
-      slint::Image viewport_image =
-          slint::Image::create_from_borrowed_vulkan_texture(
-              image, format, layout, slint::Size<uint32_t>{width, height});
+      const slint::Image viewport_image =
+          borrowedViewportImageForHandle(image, format, layout, width, height);
       ui.set_viewport_image(viewport_image);
       ui.set_viewport_image_ready(true);
       m_borrowed_viewport_image_bound = true;
@@ -931,8 +1049,18 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
     m_viewport_image_stale = false;
     m_viewport_upload_width = width;
     m_viewport_upload_height = height;
-    m_viewport_frame_ready = true;
-    if (rebind && m_window_adapter) {
+    if (request_composite) {
+      m_viewport_frame_ready = true;
+      // Partial swapchain reuse caused screen-aligned stale texels; with partial
+      // disabled (shared device) each Skia composite is already full-frame. Only
+      // request force_full_refresh when partial is still enabled (CPU readback path).
+      if (slintPartialCompositeEnabled()) {
+        markFullSkiaRefresh();
+      } else if (!rebind) {
+        markFullSkiaRefresh();
+      }
+    }
+    if (request_composite && m_window_adapter) {
       m_window_adapter->request_redraw();
     }
   } catch (const std::exception& e) {
@@ -946,7 +1074,8 @@ bool SlintSystem::viewportUsesSharedDevice() const {
 
 void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
                                            uint32_t width, uint32_t height,
-                                           bool allow_during_dispatch) {
+                                           bool allow_during_dispatch,
+                                           bool request_composite) {
   if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
     return;
   }
@@ -970,8 +1099,20 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     m_viewport_image_stale = !image_ready;
     m_viewport_upload_width = width;
     m_viewport_upload_height = height;
-    m_viewport_frame_ready = image_ready;
-    if (size_changed && m_window_adapter) {
+    if (request_composite && image_ready) {
+      m_viewport_frame_ready = true;
+      logViewportPresentPathOnce(false);
+      if (size_changed) {
+        markFullSkiaRefresh();
+      } else if (slintPartialCompositeEnabled()) {
+        markViewportDirtyRegion();
+      } else {
+        markFullSkiaRefresh();
+      }
+    }
+    if (request_composite && image_ready && m_window_adapter) {
+      m_window_adapter->request_redraw();
+    } else if (size_changed && m_window_adapter) {
       m_window_adapter->request_redraw();
     }
     if (image_ready) {
@@ -2418,12 +2559,16 @@ void SlintSystem::syncDockingWorkspace() {
   const float host_w = component->get_docking_width();
   const float host_h = component->get_docking_height();
   const bool size_changed = host_w != m_docking_host_w || host_h != m_docking_host_h;
-  if (!m_docking_model_dirty && !size_changed) {
+  const bool docking_changed = m_docking_model_dirty;
+  if (!docking_changed && !size_changed) {
     return;
   }
   m_docking_host_w = host_w;
   m_docking_host_h = host_h;
   m_docking_model_dirty = false;
+  if (docking_changed || size_changed) {
+    markFullSkiaRefresh();
+  }
 
   m_dock_manager.setHostRect(makeDockRect(0.0f, 0.0f, host_w, host_h));
   const DockLayoutModel model = m_dock_manager.buildLayoutModel();
@@ -2798,9 +2943,12 @@ void SlintSystem::endFrame() {
           const uint64_t now_ns = SDL_GetTicksNS();
           const bool ui_animating =
               m_window_adapter->needsRedraw() && !m_viewport_image_dirty;
+          const bool viewport_updating = m_viewport_frame_ready;
           const uint64_t min_interval_ns =
-              ui_animating ? 16'000'000ull : 33'000'000ull;
-          if (s_last_full_composite_ns == 0 ||
+              viewport_updating ? 0ull
+              : ui_animating ? 16'000'000ull
+                             : 33'000'000ull;
+          if (viewport_updating || s_last_full_composite_ns == 0 ||
               now_ns - s_last_full_composite_ns >= min_interval_ns) {
             s_last_full_composite_ns = now_ns;
             m_window_adapter->compositeFrame();
