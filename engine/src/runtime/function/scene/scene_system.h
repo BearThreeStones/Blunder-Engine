@@ -37,6 +37,9 @@ class SceneSystem final {
 
   void tick(float delta_time);
 
+  /// True when a scene file references meshes but the instance has no renderers yet.
+  bool needsMeshAttach(const SceneInstance& instance, const Scene& scene) const;
+
  private:
   eastl::shared_ptr<SceneInstance> instantiateScene(
       const eastl::shared_ptr<SceneAsset>& scene_asset,
@@ -44,6 +47,8 @@ class SceneSystem final {
       const SceneChildReference* child_reference);
 
   void unloadSceneInstanceRecursive(SceneInstance* instance);
+
+  void attachSceneEntityMeshes(SceneInstance& instance, const Scene& scene);
 
   AssetManager* m_asset_manager{nullptr};
   eastl::vector<eastl::shared_ptr<SceneInstance>> m_loaded_instances;

@@ -68,6 +68,11 @@ VkPipeline createAaPipeline(VkDevice device, VkRenderPass render_pass,
   color_blending.attachmentCount = 1;
   color_blending.pAttachments = &blend;
 
+  VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+  depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depth_stencil.depthTestEnable = VK_FALSE;
+  depth_stencil.depthWriteEnable = VK_FALSE;
+
   VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT,
                                      VK_DYNAMIC_STATE_SCISSOR};
   VkPipelineDynamicStateCreateInfo dynamic_state{};
@@ -84,6 +89,7 @@ VkPipeline createAaPipeline(VkDevice device, VkRenderPass render_pass,
   pipeline_info.pViewportState = &viewport_state;
   pipeline_info.pRasterizationState = &rasterizer;
   pipeline_info.pMultisampleState = &multisampling;
+  pipeline_info.pDepthStencilState = &depth_stencil;
   pipeline_info.pColorBlendState = &color_blending;
   pipeline_info.pDynamicState = &dynamic_state;
   pipeline_info.layout = pipeline_layout;

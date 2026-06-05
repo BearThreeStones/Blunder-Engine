@@ -1,7 +1,5 @@
 #include "runtime/function/ui/viewport/ui_viewport_bridge.h"
 
-#include <cstring>
-
 #include <vulkan/vulkan.h>
 
 #include "runtime/core/base/macro.h"
@@ -39,11 +37,15 @@ void UIViewportBridge::shutdown() {
     vkDeviceWaitIdle(m_context->getDevice());
   }
   for (ReadbackSlot& slot : m_slots) {
+    if (slot.persistent_map && slot.staging && m_allocator) {
+      vmaUnmapMemory(m_allocator->getAllocator(),
+                     slot.staging->getAllocation());
+      slot.persistent_map = nullptr;
+    }
     if (slot.staging) {
       slot.staging->destroy();
       slot.staging.reset();
     }
-    slot.cpu_pixels.clear();
     slot.pending_gpu = false;
     slot.has_cpu_frame = false;
   }
@@ -59,6 +61,11 @@ void UIViewportBridge::resizeReadback(uint32_t width, uint32_t height) {
   }
 
   for (ReadbackSlot& slot : m_slots) {
+    if (slot.persistent_map && slot.staging) {
+      vmaUnmapMemory(m_allocator->getAllocator(),
+                     slot.staging->getAllocation());
+      slot.persistent_map = nullptr;
+    }
     if (slot.staging) {
       slot.staging->destroy();
       slot.staging.reset();
@@ -73,7 +80,17 @@ void UIViewportBridge::resizeReadback(uint32_t width, uint32_t height) {
     slot.staging = eastl::make_unique<VulkanBuffer>();
     slot.staging->create(m_allocator, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                          VMA_MEMORY_USAGE_GPU_TO_CPU);
-    slot.cpu_pixels.resize(static_cast<size_t>(bytes));
+    // Persistently map the staging buffer to avoid per-frame map/unmap overhead.
+    const VkResult map_result = vmaMapMemory(
+        m_allocator->getAllocator(), slot.staging->getAllocation(),
+        &slot.persistent_map);
+    if (map_result != VK_SUCCESS) {
+      LOG_WARN(
+          "[UIViewportBridge] persistent vmaMapMemory failed ({}); "
+          "falling back to per-frame mapping",
+          static_cast<int>(map_result));
+      slot.persistent_map = nullptr;
+    }
     slot.width = width;
     slot.height = height;
   }
@@ -105,15 +122,10 @@ void UIViewportBridge::notifyGpuSubmitted(const uint32_t slot, const uint32_t wi
   readback_slot.width = width;
   readback_slot.height = height;
   readback_slot.pending_gpu = true;
-
-  const size_t bytes = static_cast<size_t>(width) * height * 4u;
-  if (readback_slot.cpu_pixels.size() < bytes) {
-    readback_slot.cpu_pixels.resize(bytes);
-  }
 }
 
 void UIViewportBridge::tryMapSlot(const uint32_t slot) {
-  if (!m_context || !m_allocator || !m_sync || slot >= k_frames_in_flight) {
+  if (!m_context || !m_sync || slot >= k_frames_in_flight) {
     return;
   }
 
@@ -128,21 +140,9 @@ void UIViewportBridge::tryMapSlot(const uint32_t slot) {
     return;
   }
 
-  void* mapped = nullptr;
-  const VkResult map_result = vmaMapMemory(
-      m_allocator->getAllocator(), readback_slot.staging->getAllocation(), &mapped);
-  if (map_result != VK_SUCCESS || mapped == nullptr) {
-    return;
-  }
-
-  const size_t bytes =
-      static_cast<size_t>(readback_slot.width) * readback_slot.height * 4u;
-  if (readback_slot.cpu_pixels.size() < bytes) {
-    readback_slot.cpu_pixels.resize(bytes);
-  }
-  std::memcpy(readback_slot.cpu_pixels.data(), mapped, bytes);
-  vmaUnmapMemory(m_allocator->getAllocator(), readback_slot.staging->getAllocation());
-
+  // With persistent mapping the data is already accessible — no memcpy needed.
+  // For the rare case where persistent mapping failed at resize time, fall back
+  // to a one-shot map+memcpy into a temporary (handled in pollAndPresent).
   readback_slot.pending_gpu = false;
   readback_slot.has_cpu_frame = true;
   m_display_slot = slot;
@@ -163,12 +163,36 @@ void UIViewportBridge::pollAndPresent(IViewportSink* sink) {
     return;
   }
 
+  const uint8_t* pixels = nullptr;
+  if (display.persistent_map) {
+    // Fast path: read directly from the persistently mapped staging buffer.
+    pixels = static_cast<const uint8_t*>(display.persistent_map);
+  } else if (m_allocator && display.staging) {
+    // Fallback: one-shot map when persistent mapping was unavailable.
+    void* mapped = nullptr;
+    const VkResult map_result = vmaMapMemory(
+        m_allocator->getAllocator(), display.staging->getAllocation(), &mapped);
+    if (map_result != VK_SUCCESS || mapped == nullptr) {
+      return;
+    }
+    pixels = static_cast<const uint8_t*>(mapped);
+  }
+  if (!pixels) {
+    return;
+  }
+
   ViewportCpuFrame frame{};
-  frame.pixels_rgba = display.cpu_pixels.data();
+  frame.pixels_rgba = pixels;
   frame.width = display.width;
   frame.height = display.height;
   frame.stride_bytes = display.width * 4u;
   sink->presentViewportCpuFrame(frame);
+
+  // Unmap only if we used the one-shot fallback path.
+  if (!display.persistent_map && m_allocator && display.staging) {
+    vmaUnmapMemory(m_allocator->getAllocator(),
+                   display.staging->getAllocation());
+  }
 }
 
 }  // namespace Blunder

@@ -368,6 +368,10 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_pending_viewport_invalidate{false};
   uint32_t m_viewport_upload_width{0};
   uint32_t m_viewport_upload_height{0};
+  /// Zero-copy: avoid re-binding Slint Image when only VkImage contents changed.
+  bool m_borrowed_viewport_image_bound{false};
+  uint64_t m_borrowed_viewport_vk_image{0};
+  bool m_viewport_frame_ready{false};
   bool m_cached_viewport_is_perspective{true};
   /// Monotonic frame counter, incremented at the start of each beginFrame().
   uint64_t m_frame_counter{0};

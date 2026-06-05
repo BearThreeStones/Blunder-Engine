@@ -19,6 +19,8 @@ cmake --preset vs2026-release
 cmake --build build/vs2026-release --config Release
 ```
 
+**AI agents:** see [AGENTS.md](AGENTS.md) for the documentation map and task routing.
+
 The editor's Slint integration is source-built during CMake configure so the
 Skia Vulkan renderer can be enabled. The current viewport path still uses the
 engine's off-screen Vulkan render + CPU readback flow; this change only affects

@@ -182,6 +182,11 @@ bool parseEntityObject(const char* object_start, const char* object_end,
     out_entity.parent_name = eastl::move(parent_name);
   }
 
+  eastl::string mesh_path;
+  if (parseStringField(object_start, object_end, "\"mesh\"", mesh_path)) {
+    out_entity.mesh_virtual_path = eastl::move(mesh_path);
+  }
+
   return true;
 }
 
@@ -318,6 +323,12 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
   if (!entity.parent_name.empty()) {
     out.append(",\n      \"parent\": \"");
     out.append(entity.parent_name);
+    out.append("\"");
+  }
+
+  if (!entity.mesh_virtual_path.empty()) {
+    out.append(",\n      \"mesh\": \"");
+    out.append(entity.mesh_virtual_path);
     out.append("\"");
   }
 

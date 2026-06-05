@@ -1,376 +1,69 @@
-# AGENTS.md - Blunder Engine
+# AGENTS.md — Blunder Engine
 
-> AI agent reference for the Blunder Engine codebase (a.k.a. ToyEngine).
+> Map for AI agents. Detailed guides live under [`docs/`](docs/). Read links, not everything at once.
 
-## Project Overview
+## Start here
 
-C++20 game engine using CMake, targeting Windows with Visual Studio 2026.
+1. [docs/agents/overview.md](docs/agents/overview.md) — stack, invariants, validation
+2. [docs/agents/common-tasks.md](docs/agents/common-tasks.md) — pick docs by task
+3. [docs/golden-principles.md](docs/golden-principles.md) — must-follow rules
 
-**Tech Stack:** C++20 | CMake 4.0+ | Vulkan | VS 2026 (v145)
+## Getting started
 
-**Dependencies (git submodules):** glm, spdlog, EASTL, SDL, Slint (**fork**), efsw, …
+| Topic | Document |
+|-------|----------|
+| Project overview | [docs/agents/overview.md](docs/agents/overview.md) |
+| Task routing | [docs/agents/common-tasks.md](docs/agents/common-tasks.md) |
+| Build commands | [docs/agents/build.md](docs/agents/build.md) |
+| Directory structure | [docs/agents/structure.md](docs/agents/structure.md) |
+| Testing | [docs/agents/testing.md](docs/agents/testing.md) |
 
----
+## Development
 
-## Build Commands
+| Topic | Document |
+|-------|----------|
+| Code style | [docs/agents/code-style.md](docs/agents/code-style.md) |
+| CMake & new systems | [docs/agents/cmake.md](docs/agents/cmake.md) |
+| MSVC compiler defines | [docs/agents/msvc-defines.md](docs/agents/msvc-defines.md) |
 
-```bash
-# Configure (use Developer PowerShell for VS 2026 for bundled CMake 4.x)
-cmake --preset vs2026-debug
-cmake --preset vs2026-release
+## Engine
 
-# Build Debug / Release
-cmake --build build/vs2026-debug --config Debug
-cmake --build build/vs2026-release --config Release
+| Topic | Document |
+|-------|----------|
+| Coordinate system (Z-up, glTF) | [docs/agents/coordinate-system.md](docs/agents/coordinate-system.md) |
+| Render data flow & viewport | [docs/agents/render-pipeline.md](docs/agents/render-pipeline.md) |
+| Slint fork submodule | [docs/agents/slint-fork.md](docs/agents/slint-fork.md) |
 
-# Or use build presets
-cmake --build --preset vs2026-debug
-cmake --build --preset vs2026-release
+## Design & architecture
 
-# Build specific target
-cmake --build build/vs2026-debug --config Debug --target engine_editor
+| Topic | Document |
+|-------|----------|
+| Design docs index | [docs/design-docs/index.md](docs/design-docs/index.md) |
+| Layers ↔ repository | [docs/design-docs/architecture.md](docs/design-docs/architecture.md) |
+| Golden principles | [docs/golden-principles.md](docs/golden-principles.md) |
 
-# After changing engine/3rdparty/slint (fork branch), rebuild Slint before the editor:
-cmake --build build/vs2026-debug --config Debug --target slint_cpp
-cmake --build build/vs2026-debug --config Debug --target engine_editor
+## Active work
 
-# Open in Visual Studio
-start build/vs2026-debug/BlunderEngine.sln
+| Topic | Document |
+|-------|----------|
+| Exec plan template & usage | [docs/exec-plans/README.md](docs/exec-plans/README.md) |
+| In-progress plans | [docs/exec-plans/active/](docs/exec-plans/active/) |
+| Completed plans | [docs/exec-plans/completed/](docs/exec-plans/completed/) |
 
-# Run editor
-./build/vs2026-debug/engine/src/editor/Debug/engine_editor.exe
-```
+## Environments
 
----
+| Topic | Document |
+|-------|----------|
+| Cursor Cloud / Linux build | [docs/agents/cursor-cloud.md](docs/agents/cursor-cloud.md) |
 
-## Testing
+## References & maintenance
 
-> **Note:** No test infrastructure yet. When adding tests, use CTest and create `engine/src/tests/`.
+| Topic | Document |
+|-------|----------|
+| External tool index | [docs/references/index.md](docs/references/index.md) |
+| Doc maintenance | [docs/MAINTENANCE.md](docs/MAINTENANCE.md) |
 
----
+## Related project docs
 
-## Directory Structure
-
-```
-project/
-├── Assets/                # Engine asset config (virtual paths: assets/...)
-├── Resources/             # Raw source files (virtual paths: resources/...)
-├── engine/
-│   ├── src/
-│   │   ├── runtime/       # Core library (engine_runtime)
-│   │   └── editor/        # Editor executable (engine_editor)
-│   └── shaders/           # Built-in Slang (not under Assets/)
-└── engine/3rdparty/       # Git submodules (under engine/)
-```
-
-See [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md) for virtual paths, `.mesh.asset` descriptors,
-`ContentIndex`, the `.blunder/cache/thumbnails/` thumbnail cache (`ThumbnailGenerator`), and the Slint **Content Browser** (`ContentBrowserSystem` in `resource/content_browser/`).
-
-**efsw** ([SpartanJ/efsw](https://github.com/SpartanJ/efsw)) is vendored at `engine/3rdparty/efsw`
-for cross-platform directory/file change notifications. `ContentBrowserWatch` uses it to
-auto-refresh the Content Browser when `Assets/` or `Resources/` change on disk (debounced;
-skips `.blunder/`). Init submodule: `git submodule update --init engine/3rdparty/efsw`.
-Defines `BLUNDER_HAS_EFSW` and links `efsw` when the target exists.
-
----
-
-## Code Style
-
-### Naming Conventions
-
-| Element | Convention | Example |
-|---------|------------|---------|
-| Classes | PascalCase | `LogSystem`, `InputSystem` |
-| Methods | camelCase/PascalCase | `initialize()`, `Tick()` |
-| Member vars | m_prefix | `m_logger`, `m_game_command` |
-| Local vars | snake_case | `console_sink` |
-| Constants | k_prefix | `k_complement_control_command` |
-| Enums | PascalCase class, lowercase values | `LogLevel::debug` |
-| Macros | SCREAMING_CASE | `LOG_DEBUG`, `ASSERT` |
-| Template params | ALL_CAPS | `TARGS` |
-| Namespace | `Blunder` | All engine code |
-
-### Header Files
-
-- Use `#pragma once`
-- Include order: corresponding header → project → third-party → standard
-- Use full paths from `runtime/` root: `#include "runtime/core/log/log_system.h"`
-
-### Formatting
-
-- 2-space indentation (no tabs)
-- Opening brace on same line
-- Use `final` for non-inheritable classes
-- Close namespaces with comment: `}  // namespace Blunder`
-
-```cpp
-class LogSystem final {
- public:
-  LogSystem();
-  
- private:
-  std::shared_ptr<spdlog::logger> m_logger;
-};
-```
-
-### Logging
-
-```cpp
-LOG_DEBUG("Debug: {}", value);
-LOG_INFO("Info message");
-LOG_WARN("Warning: {}", warning);
-LOG_ERROR("Error: {}", error);
-LOG_FATAL("Fatal - throws: {}", msg);
-```
-
-### Memory Management
-
-- `std::shared_ptr` for system singletons
-- Global context: `g_runtime_global_context`
-- Reset in reverse order during shutdown
-
-### Error Handling
-
-- `LOG_FATAL` throws `std::runtime_error`
-- `ASSERT()` for debug-only checks (disabled in NDEBUG)
-
----
-
-## CMake Conventions
-
-### Adding Source Files
-
-```cmake
-add_library(engine_runtime
-    engine.cpp
-    "function/input/input_system.cpp"
-)
-```
-
-### Linking
-
-- `PUBLIC`: Dependencies in public headers
-- `PRIVATE`: Internal implementation only
-
-```cmake
-target_link_libraries(engine_runtime
-    PUBLIC glm spdlog
-    PRIVATE glfw
-)
-```
-
----
-
-## Adding a New System
-
-1. Create header/source in `engine/src/runtime/function/<system>/`
-2. Add `std::shared_ptr<YourSystem>` to `RuntimeGlobalContext`
-3. Initialize in `startSystems()`, cleanup in `shutdownSystems()`
-4. Add files to `engine/src/runtime/CMakeLists.txt`
-
----
-
-## Coordinate System
-
-Blunder world space is **right-handed, Z-up**:
-
-| Axis | Direction |
-|------|-----------|
-| +X | Right |
-| +Y | Forward |
-| +Z | Up |
-
-Constants and glTF import helpers live in
-[`coordinate_system.h`](engine/src/runtime/core/math/coordinate_system.h).
-`Transform` local axes match world (+Y forward, +Z up). The editor ground grid
-uses the **XY** plane (`ForwardGridPlane::xy`).
-
-**glTF** sources are Y-up (Khronos default). Runtime import applies a fixed basis
-change `(x, y, z) → (x, z, -y)` to mesh vertices/normals/tangents and
-`similarityGltfToEngine()` on scene node matrices. Raw `.gltf` / `.glb` on disk
-are unchanged; re-cook meshes after changing this mapping
-(`asset_compiler --force` or delete `.blunder/cooked/`).
-
-**`.scene.asset`** positions and `euler_degrees` are authored in engine Z-up
-(fixed-axis ZYX: rotations about +X, +Y, +Z).
-
----
-
-## Render Data Flow
-
-The editor uses an off-screen render target + Slint composition pipeline. The
-engine itself never presents to the window: Slint's `SkiaRenderer` owns the
-HWND and is in charge of `Present`. Per frame:
-
-```
-SDL3 pumpEvents
-   └─► WindowSystem ─► layers ─► SlintSystem.processEvent (input forwarded)
-
-RenderSystem::tick(dt, viewport_w, viewport_h)
-   ├─ resize OffscreenRenderTarget if Slint reports a new central rect size
-   ├─ assemble ForwardFrameState + opaque draw list (N mesh sources)
-   └─► ForwardRenderPath::renderFrame
-         ├─ RHI beginRenderPass (color + depth clear) on offscreen RT
-         ├─ opaque draw list [0..N) (basic.slang, per-slot descriptors)
-         ├─ transparent meshes
-         ├─ scene overlays (axes, wireframe solids — depth-aware, main color)
-         ├─ RHI endRenderPass → SHADER_READ_ONLY
-   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT: grid lines → line_tx)
-   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang → main color)
-   ├─ SsaOPass::apply (composite AO onto main color)
-   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD: navigate gizmo)
-   ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
-   └─ RHI transitionToShaderRead
-   ├─ submit + wait fence (single-frame stall)
-   └─ map staging → memcpy → viewport presenter → Slint viewport Image
-
-SlintSystem::update()
-   ├─ slint::platform::update_timers_and_animations()
-   └─ SkiaRenderer.render()  // GPU composite + Present on HWND
-            └─ The central `Image` control samples the SharedPixelBuffer
-              created from the engine's readback pixels.
-```
-
-Key integration points:
-
-| Concern              | Owner                            |
-|----------------------|----------------------------------|
-| Window / HWND        | `WindowSystem` (SDL3, no `SDL_WINDOW_VULKAN`) |
-| Vulkan device        | `VulkanContext` (headless, no surface/swapchain) |
-| 3D scene pass        | `ForwardRenderPath` + `OffscreenRenderTarget` (RHI pass API) |
-| Per-frame readback   | `RenderSystem::tick` (submit/fence/map after forward path) |
-| UI composite + Present | `SlintSystem` + `SkiaRenderer` |
-| 3D viewport size     | Slint `viewport-width/height` ► `RenderSystem` |
-| 3D pixels into UI    | `SlintSystem::setViewportImage`  |
-
-**Overlay phases** (`OverlaySystem` — screen HUD must not run in the forward
-CLEAR pass; SSAO composite clears and rewrites main color):
-
-| Phase | API | When |
-|-------|-----|------|
-| Scene | `draw_scene_overlays` | Inside forward render pass |
-| Lines | `draw_overlay_lines` | After forward; MRT to `OverlayLineTargets` |
-| Line AA | `draw_overlay_aa` | Before SSAO; composites onto main color |
-| Screen | `draw_screen_overlays` | After SSAO; LOAD pass (`ScreenOverlayPass`) |
-
-Notes / known limitations:
-
-- Slint is source-built from the **fork** submodule (`blunder/v1.16.1` on
-  `BearThreeStones/slint`, based on upstream `v1.16.1`). See
-  `engine/3rdparty/slint/BLUNDER_PATCHES.md`. The C++ custom platform now defaults
-  to **Vulkan** window composition on Windows (`SkiaRenderer::default_vulkan`),
-  sharing the engine's headless Vulkan device when possible. Set
-  `BLUNDER_SLINT_RENDERER=d3d12` to fall back to the D3D12 backend.
-- Rebuild target `slint_cpp` whenever the Slint submodule commit changes.
-- **Zero-copy 3D viewport (shared Vulkan device):** when the Slint Skia renderer
-  composites on the engine's `VkDevice` (`SkiaRenderer::new_vulkan_shared`), the
-  off-screen color `VkImage` is sampled directly by Skia via
-  `BorrowedVulkanTexture` / `Image::create_from_borrowed_vulkan_texture` — no CPU
-  readback, no staging copy. `RenderSystem::tickVulkan` chooses the path per frame
-  via `SlintSystem::viewportUsesSharedDevice()`.
-- **Validation-layer caveat:** Skia's `make_vulkan()` cannot build a context on
-  an externally-created device while the Vulkan validation layer is loaded, so
-  the shared-device/zero-copy path is unavailable when validation is on. The
-  renderer then falls back to a self-owned device + the CPU readback path below.
-  Release builds (validation off) get zero-copy automatically; in debug set
-  `BLUNDER_VK_VALIDATION=0` to enable it.
-- The CPU readback path uses staging buffers and a per-frame fence wait;
-  `VulkanSync::k_max_frames_in_flight` staging buffers are provisioned for
-  pingponging. The zero-copy path uses a per-frame fence wait for read-after-write
-  sync; a shared timeline semaphore (and double-buffering the off-screen image to
-  remove the write-after-read reliance on the render-pass subpass dependency) is
-  the next optimisation.
-- `EditorCamera` still receives input in window coordinates; for delta-based
-  motion (drag/orbit) this is fine, but absolute-position interactions should
-  later be remapped to the central viewport rect.
-
----
-
-## Slint fork (`engine/3rdparty/slint`)
-
-Submodule URL: `https://github.com/BearThreeStones/slint.git`, branch **`blunder/v1.16.1`**
-(pinned by commit in the parent repo).
-
-| Remote | URL |
-|--------|-----|
-| `origin` | BearThreeStones/slint (fork, push patches here) |
-| `upstream` | slint-ui/slint (read-only, version bumps) |
-
-**First-time setup (maintainer):**
-
-```bash
-# On GitHub: fork slint-ui/slint -> BearThreeStones/slint (if not done yet)
-cd engine/3rdparty/slint
-git push -u origin blunder/v1.16.1
-cd ../../..
-git submodule update --init engine/3rdparty/slint
-```
-
-**Clone Blunder Engine:**
-
-```bash
-git clone --recurse-submodules https://github.com/BearThreeStones/Blunder-Engine.git
-# or after clone: git submodule update --init --recursive engine/3rdparty/slint
-```
-
-**Bump Slint version:** rebase `blunder/vX.Y.Z` onto upstream tag, update `SLINT_GIT_TAG` /
-`slint.cmake` branch name check, cherry-pick from previous `blunder/*` branch, rebuild `slint_cpp`.
-
----
-
-## Compiler Defines (MSVC)
-
-- `NOMINMAX` - Disables Windows min/max macros
-- `WIN32_LEAN_AND_MEAN` - Minimal Windows headers
-- `_CRT_SECURE_NO_WARNINGS` - Suppress CRT warnings
-- `/MP` - Multi-processor build
-- `/Z7` - Debug info (Debug config)
-
----
-
-## Cursor Cloud specific instructions
-
-### Linux Build (Cloud Agent Environment)
-
-The project targets Windows/MSVC but builds on Linux using GCC and Ninja for cloud agent development. Key differences:
-
-**CMake configuration (Linux):**
-```bash
-# The root file is CMakelists.txt (lowercase 'l'); a CMakeLists.txt symlink is needed
-ln -sf CMakeLists_linux.cmake CMakeLists.txt
-
-# Configure
-cmake -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_CXX_COMPILER=g++ \
-  -DCMAKE_C_COMPILER=gcc \
-  -DSDL_WAYLAND=OFF \
-  -DCMAKE_CXX_FLAGS="-DEASTL_USER_DEFINED_ALLOCATOR"
-
-# Build
-cmake --build build
-
-# Run (requires DISPLAY and library paths)
-export DISPLAY=:1
-export LD_LIBRARY_PATH="/workspace/.cmake_deps/slang_sdk-src/lib:/workspace/.cmake_deps/slint-sdk-1.16.1/install/lib:$LD_LIBRARY_PATH"
-./build/engine/src/editor/engine_editor
-```
-
-**Key gotchas:**
-- `EASTL_USER_DEFINED_ALLOCATOR` must be defined globally; without it, EASTL's inline allocator implementations conflict with the project's custom `eastl_allocator.cpp`.
-- `cmake/slint.cmake` and `cmake/slang.cmake` are Windows-only; the Linux build uses `cmake/slint_linux.cmake` and `cmake/slang_linux.cmake` (included by `CMakeLists_linux.cmake`).
-- `engine/3rdparty/cgltf/` is header-only with no upstream CMakeLists.txt; a minimal one must exist for `add_subdirectory()` to work.
-- SDL3 on Linux requires `-DSDL_WAYLAND=OFF` (no Wayland compositor in the VM).
-- Vulkan validation errors about semaphores are expected with Mesa's software Vulkan driver (lavapipe); they do not affect functionality.
-- The engine runs at DISPLAY=:1 which is the VM's pre-configured virtual display.
-
-**Lint:**
-```bash
-# Format check (no root .clang-format config exists; uses default style)
-clang-format --dry-run --Werror engine/src/runtime/**/*.cpp engine/src/runtime/**/*.h
-
-# Static analysis
-clang-tidy engine/src/runtime/engine.cpp -- -std=c++20 -Iengine/src -I...
-```
-
-**No tests exist** — the only validation is a successful build + run.
+- [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md) — virtual paths, assets, Content Browser
+- [Resources/README.md](Resources/README.md) — raw source files layout

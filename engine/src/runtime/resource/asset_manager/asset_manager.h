@@ -100,6 +100,10 @@ class AssetManager final {
                               GltfImportDocument& out_document);
   void closeGltfImportDocument(GltfImportDocument& document);
 
+  /// Resolves a `.mesh.yaml` / `.mesh.asset` descriptor or glTF path to a glTF source path.
+  bool resolveGltfSourcePath(const eastl::string& virtual_path,
+                             eastl::string& out_gltf_source) const;
+
   AssetHandle makeHandle(Asset::Type type, const eastl::string& virtual_path) const;
   eastl::shared_ptr<Asset> get(const AssetHandle& handle) const;
 

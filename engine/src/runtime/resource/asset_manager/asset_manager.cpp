@@ -529,6 +529,57 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   return asset;
 }
 
+bool AssetManager::resolveGltfSourcePath(const eastl::string& virtual_path,
+                                         eastl::string& out_gltf_source) const {
+  out_gltf_source.clear();
+  if (!m_is_initialized || virtual_path.empty()) {
+    return false;
+  }
+
+  const eastl::string request_key = canonicalKey(virtual_path);
+  if (endsWithSuffix(request_key, ".mesh.yaml")) {
+    const ResolvedContentPath descriptor_path =
+        resolveContentPath(m_file_system, virtual_path, false);
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_path.absolute, yaml_text)) {
+      LOG_ERROR("[AssetManager] resolveGltfSourcePath: cannot read {}",
+                descriptor_path.absolute.generic_string());
+      return false;
+    }
+    if (!AssetYaml::parseSourceField(yaml_text, out_gltf_source)) {
+      LOG_ERROR("[AssetManager] resolveGltfSourcePath: missing source in {}",
+                descriptor_path.absolute.generic_string());
+      return false;
+    }
+    return true;
+  }
+
+  if (endsWithSuffix(request_key, ".mesh.asset")) {
+    const ResolvedContentPath descriptor_path =
+        resolveContentPath(m_file_system, virtual_path, false);
+    eastl::string descriptor_text;
+    if (!m_file_system->readText(descriptor_path.absolute, descriptor_text)) {
+      LOG_ERROR("[AssetManager] resolveGltfSourcePath: cannot read {}",
+                descriptor_path.absolute.generic_string());
+      return false;
+    }
+    if (!parseMeshAssetSource(descriptor_text, out_gltf_source)) {
+      LOG_ERROR("[AssetManager] resolveGltfSourcePath: missing source in {}",
+                descriptor_path.absolute.generic_string());
+      return false;
+    }
+    return true;
+  }
+
+  if (endsWithSuffix(request_key, ".gltf") || endsWithSuffix(request_key, ".glb")) {
+    out_gltf_source = virtual_path;
+    return true;
+  }
+
+  LOG_ERROR("[AssetManager] resolveGltfSourcePath: unsupported path {}", virtual_path.c_str());
+  return false;
+}
+
 bool AssetManager::openGltfImportDocument(const eastl::string& virtual_path,
                                           GltfImportDocument& out_document) {
   out_document = {};

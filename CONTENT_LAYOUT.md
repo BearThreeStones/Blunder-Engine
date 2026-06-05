@@ -19,35 +19,18 @@ Unity/Unreal/Stride workflows but with explicit on-disk roots.
 
 ## Mesh descriptor (`.mesh.yaml`)
 
-YAML metadata pointing at a Resources glTF source:
+YAML metadata pointing at a Resources glTF source (`type`, `guid`, `source`, `import`).
 
-```yaml
-type: Mesh
-guid: "7c4e9a12-3b56-4f8a-9d21-8e5f2c1a0b34"
-source: resources/Models/textured_cube/textured_cube.gltf
-import:
-  materials: true
-  animations: true
-  scale: 1.0
-```
-
-`AssetManager::loadMesh("assets/Meshes/textured_cube.mesh.yaml")` reads the descriptor, prefers
-cooked data under `.blunder/cooked/{guid}.meshbin`, and falls back to runtime cgltf import.
+`AssetManager::loadMesh` reads the descriptor, prefers cooked data under
+`.blunder/cooked/{guid}.meshbin`, and falls back to runtime cgltf import.
 
 Legacy JSON `.mesh.asset` files are still accepted with a migration warning.
 
 ## Texture descriptor (`.texture.yaml`)
 
-```yaml
-type: Texture2D
-guid: "..."
-source: resources/Textures/foo.png
-import:
-  srgb: true
-  generate_mips: false
-```
+YAML metadata pointing at a Resources image (`type`, `guid`, `source`, `import`).
 
-`AssetManager::loadTexture2D("assets/.../foo.texture.yaml")` prefers `.blunder/cooked/{guid}.texbin`.
+`AssetManager::loadTexture2D` prefers `.blunder/cooked/{guid}.texbin`.
 
 ## Scene descriptor (`.scene.asset`)
 
@@ -56,7 +39,7 @@ Static scene data remains JSON for now (see existing scene docs).
 Positions and `rotation` / `euler_degrees` use **engine world space** (right-handed
 Z-up: +X right, +Y forward, +Z up). glTF mesh sources under `resources/` stay
 Y-up on disk; `AssetManager` converts them at import (see `coordinate_system.h` in
-AGENTS.md). After changing import axes, force-recook affected `.meshbin` files.
+[docs/agents/coordinate-system.md](docs/agents/coordinate-system.md)). After changing import axes, force-recook affected `.meshbin` files.
 
 ## GUID registry
 

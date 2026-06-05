@@ -187,8 +187,9 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   desc.topology = rhi::PrimitiveTopology::TriangleList;
   desc.cull_mode = rhi::CullMode::None;
   desc.enable_blend = true;
-  desc.enable_depth_test = false;
+  desc.enable_depth_test = true;
   desc.enable_depth_write = false;
+  desc.depth_compare_op = rhi::CompareOp::LessOrEqual;
   m_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_pipeline->bind(ctx, compiler);
   m_pipeline->initializeWithRenderPass(

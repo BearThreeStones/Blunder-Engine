@@ -21,7 +21,6 @@
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 
-
 #include <SDL3/SDL.h>
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -42,6 +41,12 @@ eastl::unordered_set<eastl::string> g_editor_tick_component_types{};
 namespace {
 
 constexpr const char* k_startup_scene_path = "assets/Scenes/root.scene.asset";
+
+void focusEditorCameraOnActiveScene() {
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->requestSceneCameraFocus();
+  }
+}
 
 void activateEditorScene(const eastl::string& virtual_path) {
   if (g_runtime_global_context.m_editor_scene_edit) {
@@ -68,6 +73,8 @@ void activateEditorScene(const eastl::string& virtual_path) {
   if (g_runtime_global_context.m_slint_system) {
     g_runtime_global_context.m_slint_system->refreshEditorScenePanels();
   }
+
+  focusEditorCameraOnActiveScene();
 }
 
 }  // namespace

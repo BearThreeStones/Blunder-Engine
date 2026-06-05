@@ -61,6 +61,9 @@ class EditorCamera final {
   /// Restore orbit pitch after Iso so perspective shows clear line convergence.
   void alignToDefaultPerspectiveView();
   void focusOnAABB(const AABB& bounds);
+  /// Frames the bounds immediately (no smooth transition).
+  void snapFocusOnAABB(const AABB& bounds);
+  void snapPlaceInsideAABB(const AABB& bounds);
   void setLookAt(const Vec3& position, const Vec3& target);
   void placeInsideAABB(const AABB& bounds);
 
@@ -81,8 +84,8 @@ class EditorCamera final {
   bool onKeyPressed(KeyPressedEvent& event);
   bool onWindowLostFocus(WindowLostFocusEvent& event);
 
-  void beginFreeLook();
-  void endFreeLook();
+  void beginMouseCapture();
+  void endMouseCapture();
   Vec2 getCurrentCursorWindowPosition() const;
   bool isViewportReady() const;
   bool isCursorInViewport() const;

@@ -14,6 +14,8 @@ struct SceneEntityDefinition final {
   Quat rotation{glm::identity<Quat>()};
   Vec3 scale{1.0f, 1.0f, 1.0f};
   eastl::string parent_name;
+  /// Virtual path to a `.mesh.yaml` descriptor or a `.gltf` / `.glb` source.
+  eastl::string mesh_virtual_path;
 };
 
 /// Reference to a nested child scene (loaded explicitly by SceneSystem).

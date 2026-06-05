@@ -4,7 +4,6 @@ Engine-side asset configuration: materials, mesh descriptors, prefabs, scenes, a
 project shaders. These files describe how `Resources/` entries are compiled or
 referenced at runtime.
 
-Virtual paths use the `assets/` prefix, for example
-`assets/Meshes/textured_cube.mesh.asset`.
+Virtual paths use the `assets/` prefix.
 
 Built-in engine Slang shaders remain under `engine/shaders/`.

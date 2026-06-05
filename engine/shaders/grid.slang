@@ -61,9 +61,6 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
                    + planeNormal * 0.02;
 
     output.sv_position = mul(ubo.projection, mul(ubo.view, float4(world, 1.0)));
-    // Force depth to a safe mid-value inside Vulkan clip space [0, w] to prevent
-    // near/far plane clipping, as depth testing is disabled for the grid overlay.
-    output.sv_position.z = output.sv_position.w * 0.5;
 
     output.worldPos = world;
     // Exact world-space UV (not relative to quad center, but to world origin).
@@ -126,20 +123,24 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         // Zoom-based alpha transition.
         float levelAlpha = saturate(float(i) + 1.0 - fracLevel);
 
+        // Color emphasis (fine → minor, coarse → major).
+        float emphasis = saturate(float(i) - fracLevel);
+        float3 levelColor = lerp(gridColorMinor, gridColorMajor, emphasis);
+
+        // Dynamic line width: minor lines are thinner (0.5 pixels), major lines are standard (1.0 pixel).
+        float lineWidth = lerp(0.5, 1.0, emphasis);
+        float halfWidth = lineWidth * 0.5;
+
         // Screen-space density-based fade to prevent Moire and aliasing when lines are too close.
         float densityFadeU = saturate((stepV / dv - 6.0) / 4.0);
         float densityFadeV = saturate((stepU / du - 6.0) / 4.0);
 
-        // Anti-aliased coverage: 1.0-pixel wide line, independently faded by screen-space density.
-        float lineU = (1.0 - smoothstep(dv * 0.5, dv * 1.5, dU)) * densityFadeU;
-        float lineV = (1.0 - smoothstep(du * 0.5, du * 1.5, dV)) * densityFadeV;
+        // Anti-aliased coverage: dynamically sized line, independently faded by screen-space density.
+        float lineU = (1.0 - smoothstep(dv * halfWidth, dv * (halfWidth + 1.0), dU)) * densityFadeU;
+        float lineV = (1.0 - smoothstep(du * halfWidth, du * (halfWidth + 1.0), dV)) * densityFadeV;
         float line = max(lineU, lineV);
 
         float contrib = line * levelAlpha;
-
-        // Color emphasis (fine → minor, coarse → major).
-        float emphasis = saturate(float(i) - fracLevel);
-        float3 levelColor = lerp(gridColorMinor, gridColorMajor, emphasis);
 
         // Coarser levels override finer levels (greater-or-equal test).
         if (contrib >= totalAlpha)

@@ -82,9 +82,9 @@ struct SharedVulkanHandles {
 ///      `ForwardRenderPath`,
 ///   2. transitions the off-screen color image and copies it into a host-visible
 ///      staging buffer,
-///   3. waits for the GPU to finish (single-frame stall, suitable for an
-///      editor preview), and
-///   4. pushes the resulting RGBA8 pixels into the viewport presenter.
+///   3. submits the command buffer with a fence and polls previous frames'
+///      fences asynchronously (no blocking stall), and
+///   4. pushes the latest completed RGBA8 pixels into the viewport presenter.
 class RenderSystem final {
  public:
   RenderSystem();
@@ -129,6 +129,9 @@ class RenderSystem final {
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
 
   EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }
+
+  /// Frames the active scene once the viewport has a valid size (see tick).
+  void requestSceneCameraFocus();
 
   void setTransformGizmoMode(TransformGizmoMode mode);
   TransformGizmoMode getTransformGizmoMode() const;
@@ -182,11 +185,23 @@ class RenderSystem final {
   eastl::vector<OpaqueMeshDraw> m_transparent_mesh_draws;
   eastl::shared_ptr<MaterialAsset> m_inspector_material;
   uint32_t m_current_frame{0};
+  bool m_pending_scene_camera_focus{false};
+  bool m_refocus_when_mesh_draws_ready{false};
   ForwardGridPlane m_grid_plane{ForwardGridPlane::xy};
 
   uint32_t m_deferred_rt_width{0};
   uint32_t m_deferred_rt_height{0};
   uint32_t m_deferred_rt_stable_frames{0};
+
+  glm::mat4 m_last_viewport_view{1.0f};
+  glm::mat4 m_last_viewport_projection{1.0f};
+  uint32_t m_last_viewport_target_w{0};
+  uint32_t m_last_viewport_target_h{0};
+  uint32_t m_viewport_render_generation{0};
+  uint32_t m_last_rendered_viewport_generation{0};
+  bool m_force_viewport_render{true};
+
+  void markViewportRenderDirty();
 };
 
 }  // namespace Blunder

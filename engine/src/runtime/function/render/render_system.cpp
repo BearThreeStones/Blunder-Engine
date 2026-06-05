@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
@@ -65,6 +66,7 @@
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -74,73 +76,28 @@ namespace {
 
 const uint64_t k_fence_wait_timeout_ns = 1000000000ULL;
 
-struct DemoMeshData {
-  eastl::vector<Vertex> vertices;
-  eastl::vector<uint32_t> indices;
-};
-
 constexpr uint32_t k_default_viewport_w = 1024;
 constexpr uint32_t k_default_viewport_h = 720;
 constexpr uint32_t k_smoke_texture_size = 64;
-constexpr glm::vec3 k_secondary_mesh_translation{-1.5f, 0.0f, 0.75f};
-constexpr glm::vec3 k_secondary_mesh_scale{0.55f};
-constexpr float k_demo_mesh_spin_rate = 0.85f;
-constexpr float k_demo_mesh_height = 0.75f;
-constexpr float k_demo_mesh_uniform_scale = 0.85f;
 constexpr float k_shadow_ortho_half_extent = 14.0f;
 constexpr float k_shadow_near_plane = 0.1f;
 constexpr float k_shadow_far_plane = 60.0f;
-constexpr const char* k_demo_mesh_asset_path =
-  "assets/Meshes/textured_cube.mesh.asset";
-constexpr const char* k_builtin_demo_cube_mesh_key =
-  "generated://render/builtin_demo_cube";
 
-DemoMeshData buildDemoCubeMesh() {
-  constexpr float half_extent = 0.5f;
+bool viewportZeroCopyDisabled() {
+  const char* env = std::getenv("BLUNDER_VIEWPORT_ZERO_COPY");
+  return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
+}
 
-  DemoMeshData mesh;
-  mesh.vertices = {
-      {{-half_extent, -half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f}},
-      {{ half_extent, -half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f}},
-      {{ half_extent,  half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f}},
-      {{-half_extent,  half_extent, -half_extent}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f}},
-
-      {{-half_extent,  half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}},
-      {{ half_extent,  half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}},
-      {{ half_extent, -half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-      {{-half_extent, -half_extent,  half_extent}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-
-      {{-half_extent,  half_extent, -half_extent}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-      {{ half_extent,  half_extent, -half_extent}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-      {{ half_extent,  half_extent,  half_extent}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f}},
-      {{-half_extent,  half_extent,  half_extent}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f}},
-
-      {{ half_extent, -half_extent, -half_extent}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f}},
-      {{-half_extent, -half_extent, -half_extent}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f}},
-      {{-half_extent, -half_extent,  half_extent}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f}},
-      {{ half_extent, -half_extent,  half_extent}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f}},
-
-      {{-half_extent, -half_extent, -half_extent}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-      {{-half_extent,  half_extent, -half_extent}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-      {{-half_extent,  half_extent,  half_extent}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-      {{-half_extent, -half_extent,  half_extent}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-
-      {{ half_extent,  half_extent, -half_extent}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-      {{ half_extent, -half_extent, -half_extent}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-      {{ half_extent, -half_extent,  half_extent}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f}},
-      {{ half_extent,  half_extent,  half_extent}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f}},
-  };
-
-  mesh.indices = {
-      0u, 1u, 2u, 0u, 2u, 3u,
-      4u, 5u, 6u, 4u, 6u, 7u,
-      8u, 9u, 10u, 8u, 10u, 11u,
-      12u, 13u, 14u, 12u, 14u, 15u,
-      16u, 17u, 18u, 16u, 18u, 19u,
-      20u, 21u, 22u, 20u, 22u, 23u,
-  };
-
-  return mesh;
+bool matricesNearlyEqual(const glm::mat4& a, const glm::mat4& b) {
+  const float* pa = &a[0][0];
+  const float* pb = &b[0][0];
+  for (int i = 0; i < 16; ++i) {
+    const float scale = std::max({1.0f, std::fabs(pa[i]), std::fabs(pb[i])});
+    if (std::fabs(pa[i] - pb[i]) > 1e-4f * scale) {
+      return false;
+    }
+  }
+  return true;
 }
 
 eastl::vector<uint8_t> buildSmokeCheckerboardPixels(uint32_t width,
@@ -480,9 +437,17 @@ bool RenderSystem::addTransparentMeshDraw(
   return true;
 }
 
-void RenderSystem::clearOpaqueMeshDraws() { m_opaque_mesh_draws.clear(); }
+void RenderSystem::markViewportRenderDirty() { ++m_viewport_render_generation; }
 
-void RenderSystem::clearTransparentMeshDraws() { m_transparent_mesh_draws.clear(); }
+void RenderSystem::clearOpaqueMeshDraws() {
+  m_opaque_mesh_draws.clear();
+  markViewportRenderDirty();
+}
+
+void RenderSystem::clearTransparentMeshDraws() {
+  m_transparent_mesh_draws.clear();
+  markViewportRenderDirty();
+}
 
 void RenderSystem::clearGpuMeshes() {
   for (auto& [key, mesh] : m_gpu_meshes) {
@@ -585,6 +550,8 @@ void RenderSystem::applyDeferredOffscreenResize() {
   if (m_overlay_system) {
     m_overlay_system->resize(width, height);
   }
+  markViewportRenderDirty();
+  m_force_viewport_render = true;
 }
 
 void RenderSystem::flushOffscreenResizeToTarget(uint32_t target_width,
@@ -689,6 +656,11 @@ void RenderSystem::shutdown() {
   m_current_frame = 0;
 }
 
+void RenderSystem::requestSceneCameraFocus() {
+  m_pending_scene_camera_focus = true;
+  m_refocus_when_mesh_draws_ready = true;
+}
+
 void RenderSystem::tick(float delta_time, uint32_t target_width,
                         uint32_t target_height) {
   if (!m_backend || !m_offscreen) {
@@ -770,6 +742,23 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         viewport_x, viewport_y, static_cast<float>(offscreen_extent.width),
         static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
+
+    const bool wants_scene_focus =
+        m_pending_scene_camera_focus || m_refocus_when_mesh_draws_ready;
+    if (wants_scene_focus && g_runtime_global_context.m_scene_system != nullptr) {
+      SceneInstance* active_scene =
+          g_runtime_global_context.m_scene_system->getActiveInstance();
+      const bool has_mesh_draws =
+          !m_opaque_mesh_draws.empty() || !m_transparent_mesh_draws.empty();
+      if (active_scene != nullptr && active_scene->hasWorldBounds() &&
+          has_mesh_draws) {
+        const AABB& bounds = active_scene->getWorldBounds();
+        m_editor_camera->snapFocusOnAABB(bounds);
+        m_pending_scene_camera_focus = false;
+        m_refocus_when_mesh_draws_ready = false;
+      }
+    }
+
     view = m_editor_camera->getViewMatrix();
     projection = m_editor_camera->getProjectionMatrix();
     projection_mode = m_editor_camera->getProjectionMode();
@@ -825,6 +814,14 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   if (m_preview_settings_source != nullptr) {
     frame_state.shading = m_preview_settings_source->previewSettings().get();
   }
+  // Slint UI defaults SSAO on; disable until AO generate is stable for large scenes.
+  frame_state.shading.ssao_enabled = false;
+  if (!m_opaque_mesh_draws.empty() || !m_transparent_mesh_draws.empty()) {
+    frame_state.shading.ambient_color =
+        glm::max(frame_state.shading.ambient_color, glm::vec3(0.35f));
+    frame_state.shading.diffuse_color =
+        glm::max(frame_state.shading.diffuse_color, glm::vec3(0.9f));
+  }
 
   glm::vec3 shadow_focus(0.0f);
   float shadow_ortho_half_extent = k_shadow_ortho_half_extent;
@@ -843,6 +840,24 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       frame_state.shading.light_direction, shadow_focus, shadow_ortho_half_extent,
       k_shadow_near_plane, k_shadow_far_plane, frame_state.light_view,
       frame_state.light_projection, frame_state.light_view_projection);
+
+  const bool viewport_target_changed =
+      target_width != m_last_viewport_target_w ||
+      target_height != m_last_viewport_target_h;
+  const bool camera_changed =
+      !matricesNearlyEqual(view, m_last_viewport_view) ||
+      !matricesNearlyEqual(projection, m_last_viewport_projection);
+  const bool scene_changed =
+      m_viewport_render_generation != m_last_rendered_viewport_generation;
+  if (!m_force_viewport_render && !viewport_target_changed && !camera_changed &&
+      !scene_changed) {
+    // Async readback: even when skipping render, poll for completed GPU
+    // readbacks from previous frames that haven't been presented yet.
+    if (m_viewport_bridge && m_viewport_sink) {
+      m_viewport_bridge->pollAndPresent(m_viewport_sink);
+    }
+    return;
+  }
 
   const auto append_forward_draw =
       [&](const OpaqueMeshDraw& mesh_draw, eastl::vector<ForwardOpaqueDraw>& out) {
@@ -942,11 +957,11 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
 
-  // Zero-copy when the Slint UI composites on our shared Vulkan device: leave
-  // the color image in SHADER_READ_ONLY for Skia to sample directly and skip
-  // the host-visible staging copy. Otherwise use the CPU readback path.
+  // Zero-copy samples the off-screen VkImage from Slint/Skia on the shared device.
+  // Default on when the Slint renderer adopted the engine device; set
+  // BLUNDER_VIEWPORT_ZERO_COPY=0 to force CPU readback.
   const bool zero_copy_viewport =
-      m_viewport_layout_source != nullptr &&
+      !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
       m_viewport_layout_source->viewportUsesSharedDevice();
 
   VulkanBuffer* readback_staging =
@@ -983,14 +998,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                 in_flight_fence);
 
   if (zero_copy_viewport) {
-    // Read-after-write: make sure this frame's off-screen render completed
-    // before Slint samples the image (same device/queue). A per-frame fence
-    // wait is the simplest correct sync; a shared timeline semaphore is a
-    // future optimization. The write-after-read against Slint's previous-frame
-    // sample is covered by the off-screen render pass' EXTERNAL subpass
-    // dependency (FRAGMENT_SHADER read -> COLOR_ATTACHMENT write).
     vkWaitForFences(vkCtx(this)->getDevice(), 1, &in_flight_fence, VK_TRUE,
-                    UINT64_MAX);
+                    k_fence_wait_timeout_ns);
     if (m_viewport_sink) {
       ViewportVulkanImage vk_image{};
       vk_image.image =
@@ -1005,6 +1014,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   } else if (m_viewport_bridge) {
     m_viewport_bridge->notifyGpuSubmitted(m_current_frame, offscreen_extent.width,
                                           offscreen_extent.height);
+    // Async readback: do NOT block on the fence here. pollAndPresent() uses
+    // vkGetFenceStatus (non-blocking) to check if any previous frame's staging
+    // copy has completed. The viewport displays ~1 frame behind the GPU, which
+    // eliminates the per-frame CPU stall and pipelines GPU/CPU work.
     m_viewport_bridge->pollAndPresent(m_viewport_sink);
   }
 
@@ -1016,6 +1029,13 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   if (m_renderdoc_capture) {
     m_renderdoc_capture->endFrame(instance);
   }
+
+  m_last_viewport_view = view;
+  m_last_viewport_projection = projection;
+  m_last_viewport_target_w = target_width;
+  m_last_viewport_target_h = target_height;
+  m_last_rendered_viewport_generation = m_viewport_render_generation;
+  m_force_viewport_render = false;
 
   m_current_frame = (m_current_frame + 1) % VulkanSync::k_max_frames_in_flight;
 }

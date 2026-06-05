@@ -131,7 +131,12 @@ float3 getNormalFromMap(VertexOutput input)
         return normalize(input.worldNormal);
     }
 
-    float3 tangent = normalize(input.worldTangent);
+    float3 tangent = input.worldTangent;
+    if (dot(tangent, tangent) < 1e-4)
+    {
+        return normalize(input.worldNormal);
+    }
+    tangent = normalize(tangent);
     float3 bitangent = normalize(cross(input.worldNormal, tangent)) * input.tangentSign;
     float3x3 tbn = float3x3(tangent, bitangent, normalize(input.worldNormal));
     float3 mapNormal = normalTexture.Sample(normalSampler, input.uv).xyz * 2.0 - 1.0;
@@ -197,6 +202,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
 
     float3 normal = getNormalFromMap(input);
     float3 viewDir = normalize(ubo.cameraPosition.xyz - input.worldPos);
+    if (dot(normal, viewDir) < 0.0)
+    {
+        normal = -normal;
+    }
     float3 lightDir = normalize(ubo.lightDirection.xyz);
     float3 halfDir = normalize(lightDir + viewDir);
 

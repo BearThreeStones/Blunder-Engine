@@ -109,6 +109,7 @@ void VulkanBuffer::upload(const void* data, VkDeviceSize size) {
   }
 
   std::memcpy(mapped_data, data, static_cast<size_t>(size));
+  vmaFlushAllocation(m_allocator->getAllocator(), m_allocation, 0, size);
   vmaUnmapMemory(m_allocator->getAllocator(), m_allocation);
 }
 

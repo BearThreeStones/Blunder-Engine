@@ -402,6 +402,21 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
     VulkanTexture* occlusion =
         draw.occlusion_texture != nullptr ? draw.occlusion_texture : fallback_texture;
 
+    // Only enable PBR texture paths when a real map is bound (not the fallback).
+    mesh_ubo.pbr_texture_flags.x =
+        (draw.metallic_roughness_texture != nullptr &&
+         draw.metallic_roughness_texture != fallback_texture)
+            ? 1.0f
+            : 0.0f;
+    mesh_ubo.pbr_texture_flags.y =
+        (draw.normal_texture != nullptr && draw.normal_texture != fallback_texture)
+            ? 1.0f
+            : 0.0f;
+    mesh_ubo.pbr_texture_flags.z =
+        (draw.occlusion_texture != nullptr && draw.occlusion_texture != fallback_texture)
+            ? 1.0f
+            : 0.0f;
+
     const VkDescriptorSet descriptor_set =
         reinterpret_cast<VkDescriptorSet>(descriptor_sets[descriptor_index]);
     writeOpaqueTextureBindings(device, descriptor_set, base_color, metallic_roughness,

@@ -68,7 +68,9 @@ void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
           : k_default_light_direction;
   mesh_ubo.light_direction = glm::vec4(light_dir, 0.0f);
   mesh_ubo.light_color = glm::vec4(editor.light_color, 0.0f);
-  mesh_ubo.ambient_color = glm::vec4(editor.ambient_color, 0.0f);
+  const glm::vec3 ambient =
+      glm::max(editor.ambient_color, glm::vec3(0.25f));
+  mesh_ubo.ambient_color = glm::vec4(ambient, 0.0f);
   mesh_ubo.diffuse_color = glm::vec4(editor.diffuse_color, 0.0f);
   mesh_ubo.specular_color_and_shininess =
       glm::vec4(editor.specular_color, editor.shininess);

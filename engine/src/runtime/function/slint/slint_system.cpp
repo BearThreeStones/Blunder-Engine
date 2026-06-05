@@ -442,19 +442,8 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     }
   }
 
-  // Always re-render: the engine pushes a new viewport image every frame, so
-  // even if Slint's UI itself isn't dirty, the central Image control needs
-  // to repaint with the latest 3D texture.
-#if defined(_WIN32)
-  // H19: Pumping here during dock-splitter drag re-enters SDL_AppEvent (motion
-  // flood) before Skia render returns — stalls the UI. Events arrive via SDL_AppEvent.
-  const bool skip_pump =
-      m_owner != nullptr && (m_owner->isDockLayoutDragActive() ||
-                             m_owner->isSplitterResizeInteractionActive());
-  if (!skip_pump) {
-    SDL_PumpEvents();
-  }
-#endif
+  // Always re-render when requested: the engine updates the shared viewport
+  // VkImage in place; Slint samples it during composite without re-binding each frame.
   try {
     m_renderer->render();
   } catch (const std::exception& e) {
@@ -466,7 +455,6 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     m_present_suppress_frames = 2u;
     return;
   }
-  m_needs_redraw = window().has_active_animations();
 }
 
 void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
@@ -893,6 +881,8 @@ void SlintSystem::applyPendingViewportInvalidate() {
   }
   m_pending_viewport_invalidate = false;
   m_viewport_image_stale = true;
+  m_borrowed_viewport_image_bound = false;
+  m_borrowed_viewport_vk_image = 0;
   static const uint8_t k_clear_pixel[4] = {10u, 10u, 10u, 255u};
   setViewportImageInternal(k_clear_pixel, 1u, 1u, true);
   LOG_INFO(
@@ -919,23 +909,31 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     MainEditorWindow& ui = *m_window_component->operator->();
-    slint::Image viewport_image =
-        slint::Image::create_from_borrowed_vulkan_texture(
-            image, format, layout, slint::Size<uint32_t>{width, height});
-    ui.set_viewport_image(viewport_image);
-    ui.set_viewport_image_ready(true);
-    m_viewport_image_dirty = true;
+    const bool rebind =
+        !m_borrowed_viewport_image_bound || image != m_borrowed_viewport_vk_image ||
+        width != m_viewport_upload_width || height != m_viewport_upload_height;
+    if (rebind) {
+      slint::Image viewport_image =
+          slint::Image::create_from_borrowed_vulkan_texture(
+              image, format, layout, slint::Size<uint32_t>{width, height});
+      ui.set_viewport_image(viewport_image);
+      ui.set_viewport_image_ready(true);
+      m_borrowed_viewport_image_bound = true;
+      m_borrowed_viewport_vk_image = image;
+      m_viewport_image_dirty = true;
+      if (!s_logged_first_zero_copy) {
+        LOG_INFO(
+            "[SlintSystem] zero-copy viewport: first shared VkImage present {}x{}",
+            width, height);
+        s_logged_first_zero_copy = true;
+      }
+    }
     m_viewport_image_stale = false;
     m_viewport_upload_width = width;
     m_viewport_upload_height = height;
-    if (m_window_adapter) {
+    m_viewport_frame_ready = true;
+    if (rebind && m_window_adapter) {
       m_window_adapter->request_redraw();
-    }
-    if (!s_logged_first_zero_copy) {
-      LOG_INFO(
-          "[SlintSystem] zero-copy viewport: first shared VkImage present {}x{}",
-          width, height);
-      s_logged_first_zero_copy = true;
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::setViewportExternalTexture] {}", e.what());
@@ -964,13 +962,16 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     MainEditorWindow& ui = *m_window_component->operator->();
     slint::SharedPixelBuffer<slint::Rgba8Pixel> buffer(
         width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba));
+    const bool size_changed =
+        width != m_viewport_upload_width || height != m_viewport_upload_height;
     ui.set_viewport_image(slint::Image(buffer));
     ui.set_viewport_image_ready(image_ready);
-    m_viewport_image_dirty = true;
+    m_viewport_image_dirty = size_changed;
     m_viewport_image_stale = !image_ready;
     m_viewport_upload_width = width;
     m_viewport_upload_height = height;
-    if (m_window_adapter) {
+    m_viewport_frame_ready = image_ready;
+    if (size_changed && m_window_adapter) {
       m_window_adapter->request_redraw();
     }
     if (image_ready) {
@@ -1722,6 +1723,11 @@ bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
   if (!m_docking_has_viewport) {
     return false;
   }
+  // Editor camera capture (relative mouse + grab): keep routing motion deltas even
+  // when the warped/hidden cursor is outside the viewport rect.
+  if (m_window_system && m_window_system->getFocusMode()) {
+    return true;
+  }
   float px = m_last_mouse_window_x;
   float py = m_last_mouse_window_y;
   if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
@@ -1729,11 +1735,13 @@ bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
     px = static_cast<float>(event.button.x);
     py = static_cast<float>(event.button.y);
   }
+  const eastl::array<float, 2> logical =
+      mapWindowPointerToLogical(m_window_system, px, py);
   const ViewportLogicalRect& vp = m_cached_viewport_logical_rect;
   const float vp_right = static_cast<float>(vp.x) + static_cast<float>(vp.width);
   const float vp_bottom = static_cast<float>(vp.y) + static_cast<float>(vp.height);
-  return px >= static_cast<float>(vp.x) && px < vp_right &&
-         py >= static_cast<float>(vp.y) && py < vp_bottom;
+  return logical[0] >= static_cast<float>(vp.x) && logical[0] < vp_right &&
+         logical[1] >= static_cast<float>(vp.y) && logical[1] < vp_bottom;
 }
 
 bool SlintSystem::probeProjectionButtonAtLogical(float logical_x,
@@ -2359,10 +2367,7 @@ bool SlintSystem::shouldPresentSkiaFrame() const {
   if (m_pending_dock_layout_present) {
     return true;
   }
-  if (m_viewport_image_dirty || m_window_adapter->needsRedraw()) {
-    return true;
-  }
-  return false;
+  return m_viewport_frame_ready || m_viewport_image_dirty;
 }
 
 void SlintSystem::compositeEditorFrame() {
@@ -2498,7 +2503,13 @@ void SlintSystem::syncDockingWorkspace() {
     component->set_browser_height(0.0f);
   }
 
-  auto tile_model = std::make_shared<slint::VectorModel<DockTile>>();
+  auto tile_existing = component->get_docking_tiles();
+  auto tile_model = std::dynamic_pointer_cast<slint::VectorModel<DockTile>>(tile_existing);
+  if (!tile_model) {
+    tile_model = std::make_shared<slint::VectorModel<DockTile>>();
+    component->set_docking_tiles(tile_model);
+  }
+  size_t tile_idx = 0;
   for (const DockTileView& view : model.tiles) {
     DockTile row{};
     row.node_id = static_cast<int>(view.node_id);
@@ -2513,11 +2524,25 @@ void SlintSystem::syncDockingWorkspace() {
     row.active_widget_id = static_cast<int>(view.active_widget_id);
     row.active_panel_kind = static_cast<int>(view.active_panel_kind);
     row.floating = view.floating;
-    tile_model->push_back(row);
-  }
-  component->set_docking_tiles(tile_model);
 
-  auto tab_model = std::make_shared<slint::VectorModel<DockTab>>();
+    if (tile_idx < tile_model->row_count()) {
+      tile_model->set_row_data(tile_idx, row);
+    } else {
+      tile_model->push_back(row);
+    }
+    tile_idx++;
+  }
+  while (tile_model->row_count() > model.tiles.size()) {
+    tile_model->erase(tile_model->row_count() - 1);
+  }
+
+  auto tab_existing = component->get_docking_tabs();
+  auto tab_model = std::dynamic_pointer_cast<slint::VectorModel<DockTab>>(tab_existing);
+  if (!tab_model) {
+    tab_model = std::make_shared<slint::VectorModel<DockTab>>();
+    component->set_docking_tabs(tab_model);
+  }
+  size_t tab_idx = 0;
   for (const DockTabView& view : model.tabs) {
     DockTab row{};
     row.widget_id = static_cast<int>(view.widget_id);
@@ -2529,11 +2554,25 @@ void SlintSystem::syncDockingWorkspace() {
     row.y = view.rect.y;
     row.width = view.rect.width;
     row.height = view.rect.height;
-    tab_model->push_back(row);
-  }
-  component->set_docking_tabs(tab_model);
 
-  auto splitter_model = std::make_shared<slint::VectorModel<DockSplitterHandle>>();
+    if (tab_idx < tab_model->row_count()) {
+      tab_model->set_row_data(tab_idx, row);
+    } else {
+      tab_model->push_back(row);
+    }
+    tab_idx++;
+  }
+  while (tab_model->row_count() > model.tabs.size()) {
+    tab_model->erase(tab_model->row_count() - 1);
+  }
+
+  auto splitter_existing = component->get_docking_splitters();
+  auto splitter_model = std::dynamic_pointer_cast<slint::VectorModel<DockSplitterHandle>>(splitter_existing);
+  if (!splitter_model) {
+    splitter_model = std::make_shared<slint::VectorModel<DockSplitterHandle>>();
+    component->set_docking_splitters(splitter_model);
+  }
+  size_t splitter_idx = 0;
   for (const DockSplitterView& view : model.splitters) {
     DockSplitterHandle row{};
     row.node_id = static_cast<int>(view.node_id);
@@ -2542,11 +2581,25 @@ void SlintSystem::syncDockingWorkspace() {
     row.width = view.rect.width;
     row.height = view.rect.height;
     row.vertical = view.vertical_handle;
-    splitter_model->push_back(row);
-  }
-  component->set_docking_splitters(splitter_model);
 
-  auto guide_model = std::make_shared<slint::VectorModel<DockGuide>>();
+    if (splitter_idx < splitter_model->row_count()) {
+      splitter_model->set_row_data(splitter_idx, row);
+    } else {
+      splitter_model->push_back(row);
+    }
+    splitter_idx++;
+  }
+  while (splitter_model->row_count() > model.splitters.size()) {
+    splitter_model->erase(splitter_model->row_count() - 1);
+  }
+
+  auto guide_existing = component->get_docking_guides();
+  auto guide_model = std::dynamic_pointer_cast<slint::VectorModel<DockGuide>>(guide_existing);
+  if (!guide_model) {
+    guide_model = std::make_shared<slint::VectorModel<DockGuide>>();
+    component->set_docking_guides(guide_model);
+  }
+  size_t guide_idx = 0;
   for (const DockGuideView& view : model.guides) {
     DockGuide row{};
     row.slot = static_cast<int>(view.slot);
@@ -2555,11 +2608,25 @@ void SlintSystem::syncDockingWorkspace() {
     row.width = view.rect.width;
     row.height = view.rect.height;
     row.highlighted = view.highlighted;
-    guide_model->push_back(row);
-  }
-  component->set_docking_guides(guide_model);
 
-  auto floating_model = std::make_shared<slint::VectorModel<DockFloating>>();
+    if (guide_idx < guide_model->row_count()) {
+      guide_model->set_row_data(guide_idx, row);
+    } else {
+      guide_model->push_back(row);
+    }
+    guide_idx++;
+  }
+  while (guide_model->row_count() > model.guides.size()) {
+    guide_model->erase(guide_model->row_count() - 1);
+  }
+
+  auto floating_existing = component->get_docking_floatings();
+  auto floating_model = std::dynamic_pointer_cast<slint::VectorModel<DockFloating>>(floating_existing);
+  if (!floating_model) {
+    floating_model = std::make_shared<slint::VectorModel<DockFloating>>();
+    component->set_docking_floatings(floating_model);
+  }
+  size_t floating_idx = 0;
   for (const DockFloatingView& view : model.floatings) {
     DockFloating row{};
     row.node_id = static_cast<int>(view.node_id);
@@ -2570,9 +2637,17 @@ void SlintSystem::syncDockingWorkspace() {
     row.title_height = view.title_rect.height;
     row.grip_size = view.grip_rect.width;
     row.title = slint::SharedString(view.title.c_str());
-    floating_model->push_back(row);
+
+    if (floating_idx < floating_model->row_count()) {
+      floating_model->set_row_data(floating_idx, row);
+    } else {
+      floating_model->push_back(row);
+    }
+    floating_idx++;
   }
-  component->set_docking_floatings(floating_model);
+  while (floating_model->row_count() > model.floatings.size()) {
+    floating_model->erase(floating_model->row_count() - 1);
+  }
 
   DockPreview preview{};
   preview.visible = model.preview.visible;
@@ -2690,6 +2765,7 @@ void SlintSystem::endFrame() {
         m_pending_dock_layout_present = false;
         m_window_adapter->compositeFrame();
         m_viewport_image_dirty = false;
+        m_viewport_frame_ready = false;
         cacheViewportLogicalRectOnly();
       } else {
         const bool defer_heavy = shouldDeferHeavyFrameWork();
@@ -2710,6 +2786,7 @@ void SlintSystem::endFrame() {
               s_last_defer_present_ns = now_ns;
               m_window_adapter->compositeFrame();
               m_viewport_image_dirty = false;
+              m_viewport_frame_ready = false;
             } else {
               m_window_adapter->request_redraw();
             }
@@ -2719,12 +2796,19 @@ void SlintSystem::endFrame() {
         } else if (shouldPresentSkiaFrame()) {
           static uint64_t s_last_full_composite_ns = 0;
           const uint64_t now_ns = SDL_GetTicksNS();
+          const bool ui_animating =
+              m_window_adapter->needsRedraw() && !m_viewport_image_dirty;
+          const uint64_t min_interval_ns =
+              ui_animating ? 16'000'000ull : 33'000'000ull;
           if (s_last_full_composite_ns == 0 ||
-              now_ns - s_last_full_composite_ns >= 33'000'000) {
+              now_ns - s_last_full_composite_ns >= min_interval_ns) {
             s_last_full_composite_ns = now_ns;
             m_window_adapter->compositeFrame();
             m_viewport_image_dirty = false;
+            m_viewport_frame_ready = false;
             cacheLayoutRects();
+          } else {
+            m_window_adapter->request_redraw();
           }
         }
       }

@@ -13,6 +13,7 @@ void SlintViewportSink::presentViewportCpuFrame(const ViewportCpuFrame& frame) {
     return;
   }
   (void)frame.stride_bytes;
+
   m_slint_system->setViewportImage(frame.pixels_rgba, frame.width, frame.height);
 }
 

@@ -128,8 +128,23 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
 
   SceneInstance* active = m_scene_system->getActiveInstance();
   if (active != nullptr && active->getSourcePath() == virtual_path) {
-    setActiveScenePath(virtual_path);
-    return true;
+    if (m_asset_manager) {
+      const eastl::shared_ptr<SceneAsset> scene_asset =
+          m_asset_manager->loadScene(virtual_path);
+      if (scene_asset &&
+          m_scene_system->needsMeshAttach(*active, scene_asset->getScene())) {
+        LOG_WARN(
+            "[EditorSceneEdit] reloading '{}' — scene file has mesh descriptors "
+            "but runtime instance has no mesh renderers",
+            virtual_path.c_str());
+        m_scene_system->unloadSceneInstance(active);
+        active = nullptr;
+      }
+    }
+    if (active != nullptr) {
+      setActiveScenePath(virtual_path);
+      return true;
+    }
   }
 
   const eastl::shared_ptr<SceneInstance> instance =

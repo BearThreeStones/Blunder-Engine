@@ -122,25 +122,17 @@ void RuntimeGlobalContext::startSystems() {
   render_init_info.preview_settings_source = m_ui_host.get();
   render_init_info.viewport_bridge = m_viewport_bridge.get();
   render_init_info.viewport_sink = m_viewport_sink.get();
-#ifdef NDEBUG
+  // Validation is off by default so the editor can use the shared Vulkan device
+  // and zero-copy viewport (Skia cannot adopt an external device with the
+  // validation layer loaded). Set BLUNDER_VK_VALIDATION=1 to enable it.
   render_init_info.enable_validation = false;
-#else
-  render_init_info.enable_validation = true;
-#endif
-  // The shared-device (zero-copy) UI path is incompatible with the Vulkan
-  // validation layer: Skia's make_vulkan() fails to build a context on an
-  // externally-created device while the layer is loaded, so the Slint renderer
-  // silently falls back to a self-owned device (CPU viewport readback). Release
-  // builds disable validation and therefore get the shared device automatically.
-  // In debug, set BLUNDER_VK_VALIDATION=0 to disable validation and exercise the
-  // shared device / zero-copy viewport.
   if (const char* validation_env = std::getenv("BLUNDER_VK_VALIDATION")) {
-    if (validation_env[0] == '0' || validation_env[0] == 'f' ||
-        validation_env[0] == 'F') {
-      render_init_info.enable_validation = false;
-    } else if (validation_env[0] == '1' || validation_env[0] == 't' ||
-               validation_env[0] == 'T') {
+    if (validation_env[0] == '1' || validation_env[0] == 't' ||
+        validation_env[0] == 'T') {
       render_init_info.enable_validation = true;
+    } else if (validation_env[0] == '0' || validation_env[0] == 'f' ||
+               validation_env[0] == 'F') {
+      render_init_info.enable_validation = false;
     }
   }
 

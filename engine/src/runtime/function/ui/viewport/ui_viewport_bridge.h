@@ -16,6 +16,10 @@ class VulkanContext;
 class VulkanSync;
 
 /// Schedules Vulkan offscreen readback with in-flight fences (no post-submit stall).
+///
+/// Staging buffers are persistently mapped (VMA GPU_TO_CPU); pollAndPresent()
+/// hands the mapped pointer directly to the sink, avoiding an intermediate
+/// cpu_pixels memcpy per frame.
 class UIViewportBridge final {
  public:
   UIViewportBridge();
@@ -43,7 +47,7 @@ class UIViewportBridge final {
  private:
   struct ReadbackSlot {
     eastl::unique_ptr<VulkanBuffer> staging;
-    eastl::vector<uint8_t> cpu_pixels;
+    void* persistent_map{nullptr};  ///< Persistently mapped staging pointer.
     uint32_t width{0};
     uint32_t height{0};
     bool pending_gpu{false};

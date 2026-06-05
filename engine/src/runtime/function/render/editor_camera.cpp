@@ -9,6 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/core/event/application_event.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/core/event/key_event.h"
@@ -29,6 +30,18 @@ constexpr float k_free_look_sprint_multiplier = 3.0f;
 constexpr float k_dolly_speed = 1.2f;
 constexpr float k_max_pitch = glm::radians(89.0f);
 constexpr float k_min_pitch = glm::radians(-89.0f);
+
+bool wantsMouseCapture(const WindowSystem* window_system,
+                       bool right_drag_started_in_viewport,
+                       bool middle_drag_started_in_viewport) {
+  if (!window_system) {
+    return false;
+  }
+  return (window_system->isMouseButtonDown(SDL_BUTTON_RIGHT) &&
+          right_drag_started_in_viewport) ||
+         (window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE) &&
+          middle_drag_started_in_viewport);
+}
 
 }  // namespace
 
@@ -70,17 +83,8 @@ void EditorCamera::onUpdate(float delta_time) {
     }
 
     if (desired_mode != m_interaction_mode) {
-      if (m_interaction_mode == InteractionMode::free_look) {
-        endFreeLook();
-      }
-
       m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
       m_has_last_mouse_position = false;
-
-      if (desired_mode == InteractionMode::free_look) {
-        beginFreeLook();
-      }
-
       m_interaction_mode = desired_mode;
     }
 
@@ -195,11 +199,20 @@ bool EditorCamera::onMouseButtonPressed(MouseButtonPressedEvent& event) {
 
   if (event.getMouseButton() == SDL_BUTTON_RIGHT) {
     m_right_drag_started_in_viewport = in_viewport;
+    if (in_viewport) {
+      m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
+      m_interaction_mode = InteractionMode::free_look;
+      beginMouseCapture();
+    }
   } else if (event.getMouseButton() == SDL_BUTTON_MIDDLE) {
     m_middle_drag_started_in_viewport = in_viewport;
     m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
     m_last_mouse_position = mouse_position;
     m_has_last_mouse_position = in_viewport;
+    if (in_viewport && m_interaction_mode != InteractionMode::free_look) {
+      m_interaction_mode = InteractionMode::pan;
+      beginMouseCapture();
+    }
   }
 
   return false;
@@ -214,11 +227,29 @@ bool EditorCamera::onMouseButtonReleased(MouseButtonReleasedEvent& event) {
     m_has_last_mouse_position = false;
   }
 
+  if (m_window_system) {
+    InteractionMode desired_mode = InteractionMode::none;
+    if (m_window_system->isMouseButtonDown(SDL_BUTTON_RIGHT) &&
+        m_right_drag_started_in_viewport) {
+      desired_mode = InteractionMode::free_look;
+    } else if (m_window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE) &&
+               m_middle_drag_started_in_viewport) {
+      desired_mode = InteractionMode::pan;
+    }
+    if (desired_mode != m_interaction_mode) {
+      m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
+      m_interaction_mode = desired_mode;
+    }
+    if (!wantsMouseCapture(m_window_system, m_right_drag_started_in_viewport,
+                           m_middle_drag_started_in_viewport)) {
+      endMouseCapture();
+    }
+  }
+
   return false;
 }
 
 bool EditorCamera::onMouseMoved(MouseMovedEvent& event) {
-  const Vec2 current_mouse_position(event.getX(), event.getY());
   const bool should_free_look =
       m_interaction_mode == InteractionMode::free_look ||
       (m_window_system != nullptr && m_right_drag_started_in_viewport &&
@@ -228,29 +259,23 @@ bool EditorCamera::onMouseMoved(MouseMovedEvent& event) {
     return false;
   }
 
-  const bool should_track_mouse =
+  const bool should_pan =
       m_interaction_mode == InteractionMode::pan ||
-      m_middle_drag_started_in_viewport ||
-      (m_interaction_mode == InteractionMode::none &&
-       isWindowPositionInViewport(current_mouse_position));
-  if (!should_track_mouse) {
-    m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
-    m_has_last_mouse_position = false;
+      (m_window_system != nullptr && m_middle_drag_started_in_viewport &&
+       m_window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE));
+  if (should_pan) {
+    m_mouse_delta_accumulator += Vec2(event.getDeltaX(), event.getDeltaY());
     return false;
   }
 
-  if (!m_has_last_mouse_position) {
+  const Vec2 current_mouse_position(event.getX(), event.getY());
+  if (isWindowPositionInViewport(current_mouse_position)) {
     m_last_mouse_position = current_mouse_position;
     m_has_last_mouse_position = true;
-    return false;
+  } else {
+    m_has_last_mouse_position = false;
   }
 
-  const Vec2 delta = current_mouse_position - m_last_mouse_position;
-  if (m_interaction_mode == InteractionMode::pan ||
-      m_middle_drag_started_in_viewport) {
-    m_mouse_delta_accumulator += delta;
-  }
-  m_last_mouse_position = current_mouse_position;
   return false;
 }
 
@@ -276,7 +301,7 @@ bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {
       SceneInstance* active_scene =
           g_runtime_global_context.m_scene_system->getActiveInstance();
       if (active_scene != nullptr && active_scene->hasWorldBounds()) {
-        focusOnAABB(active_scene->getWorldBounds());
+        snapFocusOnAABB(active_scene->getWorldBounds());
         return true;
       }
     }
@@ -288,9 +313,7 @@ bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {
 bool EditorCamera::onWindowLostFocus(WindowLostFocusEvent& event) {
   (void)event;
 
-  if (m_interaction_mode == InteractionMode::free_look) {
-    endFreeLook();
-  }
+  endMouseCapture();
 
   m_interaction_mode = InteractionMode::none;
   m_right_drag_started_in_viewport = false;
@@ -470,7 +493,7 @@ void EditorCamera::alignToDefaultPerspectiveView() {
            glm::degrees(target_pitch));
 }
 
-void EditorCamera::beginFreeLook() {
+void EditorCamera::beginMouseCapture() {
   if (!m_window_system) {
     return;
   }
@@ -481,7 +504,7 @@ void EditorCamera::beginFreeLook() {
   SDL_GetRelativeMouseState(&relative_x, &relative_y);
 }
 
-void EditorCamera::endFreeLook() {
+void EditorCamera::endMouseCapture() {
   if (!m_window_system) {
     return;
   }
@@ -641,6 +664,106 @@ void EditorCamera::focusOnAABB(const AABB& bounds) {
   startParamAnimation(target_focal_point, target_distance, m_pitch, m_yaw);
   LOG_INFO("[EditorCamera] focusing smoothly on AABB center=({}, {}, {}) distance={}",
            target_focal_point.x, target_focal_point.y, target_focal_point.z, target_distance);
+}
+
+void EditorCamera::snapPlaceInsideAABB(const AABB& bounds) {
+  constexpr float k_eye_height = 1.7f;
+  constexpr float k_look_ahead = 6.0f;
+
+  const Vec3 center = bounds.center();
+  const float eye_z = bounds.min.z + k_eye_height;
+  const Vec3 position(center.x, center.y, eye_z);
+
+  Vec3 look_target = center;
+  const Vec3 size = bounds.size();
+  if (size.x >= size.y) {
+    look_target = Vec3(center.x + k_look_ahead, center.y, eye_z);
+  } else {
+    look_target = Vec3(center.x, center.y + k_look_ahead, eye_z);
+  }
+
+  Vec3 forward = look_target - position;
+  const float distance = glm::length(forward);
+  if (distance < 1e-4f) {
+    return;
+  }
+  forward /= distance;
+
+  m_focal_point = look_target;
+  m_distance = distance;
+  m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+  m_yaw = std::atan2(forward.y, forward.x);
+  m_is_animating_params = false;
+  m_param_transition_time = 0.0f;
+  updateDirectionVectors();
+  updateViewMatrix();
+  LOG_INFO("[EditorCamera] snap place-inside AABB eye=({}, {}, {}) target=({}, {}, {})",
+           position.x, position.y, position.z, look_target.x, look_target.y,
+           look_target.z);
+}
+
+void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
+  const glm::vec3 extents = bounds.extents();
+  const Vec3 center = bounds.center();
+  const Vec3 size = bounds.size();
+  const float radius = glm::length(extents);
+
+  m_is_animating_params = false;
+  m_param_transition_time = 0.0f;
+
+  m_focal_point = center;
+  const bool large_scene = glm::max(size.x, size.y) > 8.0f;
+  m_distance = large_scene ? std::max(radius * 1.25f, 6.0f)
+                           : std::max(radius * 2.5f, 10.0f);
+  m_pitch = large_scene ? glm::radians(32.0f) : glm::radians(28.0f);
+  m_yaw = glm::radians(-48.0f);
+  updateDirectionVectors();
+  updateViewMatrix();
+  updateProjectionMatrix();
+
+  const float min_eye_z =
+      bounds.min.z + glm::max(size.z * 0.12f, 2.0f);
+
+  for (int attempt = 0; attempt < 8 && bounds.contains(m_position); ++attempt) {
+    m_distance *= 1.2f;
+    updateDirectionVectors();
+    updateViewMatrix();
+  }
+
+  if (m_position.z < min_eye_z) {
+    m_position.z = min_eye_z;
+    Vec3 to_focal = m_focal_point - m_position;
+    m_distance = glm::length(to_focal);
+    if (m_distance > 1e-4f) {
+      const Vec3 forward = to_focal / m_distance;
+      m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+      m_yaw = std::atan2(forward.y, forward.x);
+      updateDirectionVectors();
+      updateViewMatrix();
+    }
+  }
+
+  if (large_scene) {
+    // Sponza-like assets: AABB center sits in open courtyard air. Bias focal toward
+    // interior columns so the default view shows solid geometry, not sky through arches.
+    m_focal_point =
+        Vec3(center.x + extents.x * 0.12f, center.y,
+             bounds.min.z + glm::clamp(size.z * 0.38f, 2.0f, size.z - 1.0f));
+
+    Vec3 to_focal = m_focal_point - m_position;
+    m_distance = glm::length(to_focal);
+    if (m_distance > 1e-4f) {
+      const Vec3 forward = to_focal / m_distance;
+      m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+      m_yaw = std::atan2(forward.y, forward.x);
+      updateDirectionVectors();
+      updateViewMatrix();
+    }
+  }
+
+  LOG_INFO("[EditorCamera] snap focus on AABB center=({}, {}, {}) distance={} eye=({}, {}, {})",
+           m_focal_point.x, m_focal_point.y, m_focal_point.z, m_distance, m_position.x,
+           m_position.y, m_position.z);
 }
 
 void EditorCamera::setLookAt(const Vec3& position, const Vec3& target) {
