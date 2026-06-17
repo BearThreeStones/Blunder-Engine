@@ -52,6 +52,11 @@ EditorCamera::EditorCamera(WindowSystem* window_system)
 }
 
 void EditorCamera::onUpdate(float delta_time) {
+  if (m_clear_viewport_scroll_signal) {
+    m_viewport_scroll_signal = false;
+    m_clear_viewport_scroll_signal = false;
+  }
+
   if (m_interaction_locked) {
     m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
     m_scroll_delta_accumulator = 0.0f;
@@ -163,7 +168,12 @@ void EditorCamera::onUpdate(float delta_time) {
     view_dirty = true;
   }
 
+  const bool had_scroll = std::abs(m_scroll_delta_accumulator) > 0.0f;
   zoom();
+  if (had_scroll) {
+    m_viewport_scroll_signal = true;
+    m_clear_viewport_scroll_signal = true;
+  }
 
   updateViewMatrix();
 
@@ -288,7 +298,30 @@ bool EditorCamera::onMouseScrolled(MouseScrolledEvent& event) {
   }
 
   m_scroll_delta_accumulator += event.getYOffset();
+  m_viewport_scroll_signal = true;
   return false;
+}
+
+bool EditorCamera::isViewportInteracting() const {
+  if (m_interaction_locked) {
+    return false;
+  }
+  if (m_interaction_mode != InteractionMode::none) {
+    return true;
+  }
+  if (m_viewport_scroll_signal) {
+    return true;
+  }
+  if (!isCursorInViewport()) {
+    return false;
+  }
+  const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
+  if (!keyboard_state) {
+    return false;
+  }
+  return keyboard_state[SDL_SCANCODE_W] || keyboard_state[SDL_SCANCODE_S] ||
+         keyboard_state[SDL_SCANCODE_A] || keyboard_state[SDL_SCANCODE_D] ||
+         keyboard_state[SDL_SCANCODE_Q] || keyboard_state[SDL_SCANCODE_E];
 }
 
 bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {

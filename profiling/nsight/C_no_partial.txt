@@ -1,0 +1,2 @@
+--env-var=BLUNDER_SLINT_PARTIAL=0
+--output=profiling/nsight/reports/blunder_C_debug_no_partial

@@ -140,6 +140,9 @@ class RenderSystem final {
   TransformGizmoMode getTransformGizmoMode() const;
   void toggleTransformGizmoSpace();
   bool isTransformGizmoSpaceGlobal() const;
+  bool isTransformGizmoDragging() const;
+  /// Forces the next viewport offscreen pass (gizmo mode/space, overlays, etc.).
+  void requestViewportRedraw();
   rhi::IRenderBackend* getRenderBackend() const { return m_backend.get(); }
   rhi::IOffscreenRenderTarget* getOffscreenTarget() const {
     return m_offscreen.get();

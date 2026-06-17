@@ -14,7 +14,6 @@
 
 namespace Blunder {
 
-class OffscreenRenderTarget;
 class SlangCompiler;
 class VulkanAllocator;
 class VulkanBuffer;
@@ -32,26 +31,30 @@ class TransformGizmoOverlay final : public Overlay {
   TransformGizmoOverlay() = default;
   ~TransformGizmoOverlay();
 
-  void initialize(const OverlayResources& res, SlangCompiler* compiler,
-                  OffscreenRenderTarget* offscreen_target);
+  void initialize(const OverlayResources& res, SlangCompiler* compiler);
   void shutdown();
 
   void begin_sync(OverlayResources& res, const OverlayState& state) override;
-  void draw_color_only(VkCommandBuffer cmd, const OverlayState& state) override;
+  void draw_screen(VkCommandBuffer cmd, const OverlayState& state) override;
 
   TransformGizmoController& controller() { return m_controller; }
   const TransformGizmoController& controller() const { return m_controller; }
 
  private:
-  void drawTranslateHandle(VkCommandBuffer cmd, const OverlayState& state,
-                           ManipulatorAxis axis, const GizmoBasis& basis, float scale,
-                           bool highlight);
+  bool drawTranslateHandle(VkCommandBuffer cmd, const OverlayState& state,
+                           ManipulatorAxis axis, const GizmoBasis& basis, const float idot[3],
+                           float group_scale, bool highlight);
+  bool drawScaleHandle(VkCommandBuffer cmd, const OverlayState& state, ManipulatorAxis axis,
+                       const GizmoBasis& basis, const float idot[3], float group_scale,
+                       bool highlight);
   void drawRotationDial(VkCommandBuffer cmd, const OverlayState& state,
-                        ManipulatorAxis axis, const GizmoBasis& basis, float scale,
-                        bool highlight, bool ghost);
+                        ManipulatorAxis axis, const GizmoBasis& basis, const float idot[3],
+                        float group_scale, bool highlight, bool ghost);
+  void recordGizmoDraw(VkCommandBuffer cmd, const OverlayState& state);
   void recordDraw(VkCommandBuffer cmd, const OverlayState& state,
                   const glm::mat4& gizmo_world, const glm::vec4& color,
-                  GizmoDrawStyle style, float alpha, float arc_start = 0.0f,
+                  GizmoDrawStyle style, float alpha, const glm::vec4& quad_layout,
+                  float quad_z, float line_width_scale = 1.0f, float arc_start = 0.0f,
                   float arc_delta = 0.0f);
 
   TransformGizmoController m_controller;
@@ -61,6 +64,7 @@ class TransformGizmoOverlay final : public Overlay {
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_uniform_buffers;
   uintptr_t m_descriptor_pool{0};
   eastl::vector<uintptr_t> m_descriptor_sets;
+  uint32_t m_next_draw_slot{0};
 };
 
 }  // namespace Blunder

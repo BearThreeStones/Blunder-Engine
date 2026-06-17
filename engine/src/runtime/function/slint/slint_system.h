@@ -139,6 +139,12 @@ class SlintSystem final : public IEditorUiPresentation {
   /// device, making zero-copy viewport presentation valid.
   bool viewportUsesSharedDevice() const;
 
+  /// True when a viewport Skia composite (and matching GPU render) is due.
+  bool wouldScheduleViewportComposite() const;
+
+  /// True while interactive-tier viewport pacing applies (camera/gizmo input or hold).
+  bool isViewportPacingInteractive() const { return m_viewport_pacing_interactive; }
+
   /// Updates the Persp/Iso label on the viewport overlay (Slint, not GPU).
   void syncViewportProjectionMode(bool is_perspective);
 
@@ -380,6 +386,9 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_pending_viewport_invalidate{false};
   uint32_t m_viewport_upload_width{0};
   uint32_t m_viewport_upload_height{0};
+  /// CPU readback path: reuse one Slint pixel buffer instead of reallocating per frame.
+  std::optional<slint::SharedPixelBuffer<slint::Rgba8Pixel>> m_viewport_cpu_pixel_buffer;
+  bool m_cpu_viewport_slint_image_bound{false};
   /// Zero-copy: avoid re-binding Slint Image when only VkImage contents changed.
   bool m_borrowed_viewport_image_bound{false};
   uint64_t m_borrowed_viewport_vk_image{0};
@@ -407,6 +416,16 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Cleared at beginFrame; blocks double-toggle when SDL + poll fire same frame.
   bool m_projection_toggle_consumed_this_frame{false};
   bool shouldPresentSkiaFrame() const;
+  void updateViewportPacingTier();
+  uint64_t editorViewportInteractiveRequestNs() const;
+  uint64_t editorViewportIdleRequestNs() const;
+  uint64_t editorViewportInteractiveHoldNs() const;
+  uint64_t viewportCompositeMinGapNs() const;
+  bool wouldRequestViewportCompositePeek(bool request_composite) const;
+  bool shouldRequestViewportComposite(bool request_composite);
+  bool m_viewport_pacing_interactive{false};
+  uint64_t m_last_viewport_interaction_ns{0};
+  uint64_t m_last_viewport_composite_request_ns{0};
   bool m_pending_pointer_move{false};
   float m_pending_pointer_x{0.0f};
   float m_pending_pointer_y{0.0f};

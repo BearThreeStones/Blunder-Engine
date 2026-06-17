@@ -12,7 +12,7 @@
 | Content Browser / assets / cook | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) | [structure.md](structure.md) |
 | Add CMake target or runtime system | [cmake.md](cmake.md) | [structure.md](structure.md), [golden-principles.md](../golden-principles.md) |
 | Slint submodule / UI renderer | [slint-fork.md](slint-fork.md) | [render-pipeline.md](render-pipeline.md) |
-| New feature (multi-file) | [design-docs/architecture.md](../design-docs/architecture.md) | [exec-plans/README.md](../exec-plans/README.md), [golden-principles.md](../golden-principles.md) |
+| New feature (multi-file) | [design-docs/architecture.md](../design-docs/architecture.md) | [exec-plans/README.md](../exec-plans/README.md), [AGENTS.md workflow routing](../../AGENTS.md#workflow-routing-openspec--superpowers--gstack), [golden-principles.md](../golden-principles.md) |
 | Add tests (when introduced) | [testing.md](testing.md) | [cmake.md](cmake.md) |
 
 ## Default validation

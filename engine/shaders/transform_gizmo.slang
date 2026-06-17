@@ -1,23 +1,27 @@
 // transform_gizmo.slang — translate handles + rotate dials + ghost arc
+//
+// Plane quads (style 1) are the proven visible path; quad_layout + quad_z
+// parameterize position/size. Arrows use three cross billboards (style 0).
 
-static const uint kConeSides = 12u;
-static const uint kConeVertCount = kConeSides * 6u;
-static const uint kStemSides = 6u;
-static const uint kStemVertCount = kStemSides * 6u;
-static const uint kCenterSides = 20u;
+static const uint kArrowQuads = 3u;
+static const uint kArrowVertCount = kArrowQuads * 6u;
+static const uint kPlaneVertCount = 6u;
+static const uint kCenterSides = 12u;
 static const uint kCenterVertCount = kCenterSides * 6u;
-
 static const uint kDialSides = 48u;
-static const uint kDialTubeSides = 6u;
-static const uint kDialVertCount = kDialSides * kDialTubeSides * 6u;
+static const uint kDialVertCount = kDialSides * 6u;
+static const uint kScaleBoxVertCount = 36u;
 
 struct TransformGizmoUniform {
     float4x4 view;
     float4x4 proj;
     float4x4 gizmoWorld;
     float4 color;
-    // x=style, y=alpha, z=arc_start_rad, w=arc_delta_rad
+    // x=style, y=alpha, z=line_width_scale or arc_start_rad (dial ghost), w=arc_delta_rad or scale uniform flag
     float4 params;
+    // xy = center, zw = half extents (local XY plane)
+    float4 quad_layout;
+    float quad_z;
 };
 
 [[vk::binding(0, 0)]]
@@ -52,6 +56,20 @@ float3 normalFromLocal(float3 localNormal) {
     return normalize(mul(m, localNormal));
 }
 
+float lineWidthScale() {
+    uint style = uint(ubo.params.x + 0.5);
+    if (style == 4u) {
+        return 1.5;
+    }
+    if (style == 0u) {
+        return max(ubo.params.z, 1.0);
+    }
+    if (style == 3u || style == 5u) {
+        return max(ubo.params.z, 1.0);
+    }
+    return max(ubo.params.z, 0.5);
+}
+
 VertexOutput emitV(float3 p, float3 n) {
     VertexOutput o;
     o.sv_position = projectLocal(p);
@@ -60,50 +78,52 @@ VertexOutput emitV(float3 p, float3 n) {
     return o;
 }
 
-VertexOutput vsArrow(uint vid) {
-    const float stemLen = 0.7;
-    const float coneLen = 0.3;
-    const float stemR = 0.04;
-    const float coneR = 0.12;
-
-    if (vid < kStemVertCount) {
-        uint side = vid / 6u;
-        uint corner = vid % 6u;
-        float ang = float(side) / float(kStemSides) * 6.2831853;
-        float ang2 = float(side + 1u) / float(kStemSides) * 6.2831853;
-        float2 uv = quadUV(corner);
-        float useB = (corner >= 3u) ? 1.0 : 0.0;
-        float a = lerp(ang, ang2, useB);
-        float z = lerp(0.0, stemLen, uv.y);
-        float r = stemR;
-        float3 p = float3(cos(a) * r, sin(a) * r, z);
-        float3 n = normalize(float3(cos(a), sin(a), 0.0));
-        return emitV(p, n);
-    }
-
-    uint cv = vid - kStemVertCount;
-    uint side = cv / 6u;
-    uint corner = cv % 6u;
-    float ang = float(side) / float(kConeSides) * 6.2831853;
-    float ang2 = float(side + 1u) / float(kConeSides) * 6.2831853;
-    float tip = (corner == 2u || corner == 4u) ? 1.0 : 0.0;
-    float a = lerp(ang, ang2, tip);
-    float z = stemLen + coneLen * tip;
-    float r = lerp(coneR, 0.0, tip);
-    float3 p = float3(cos(a) * r, sin(a) * r, z);
-    float3 n = normalize(float3(cos(a), sin(a), 0.25));
-    return emitV(p, n);
+VertexOutput emitDiscarded() {
+    VertexOutput o;
+    o.sv_position = float4(0, 0, 2, 1);
+    o.worldNormal = float3(0, 0, 1);
+    o.color = float4(0, 0, 0, 0);
+    return o;
 }
 
+// Parameterized billboard quad in local XY (same path as visible plane handles).
 VertexOutput vsPlane(uint vid) {
-    const float h = 0.32;
+    float cx = ubo.quad_layout.x;
+    float cy = ubo.quad_layout.y;
+    float hx = ubo.quad_layout.z;
+    float hy = ubo.quad_layout.w;
     float2 uv = quadUV(vid);
-    float3 p = float3(lerp(-h, h, uv.x), lerp(-h, h, uv.y), 0.0);
+    float3 p = float3(lerp(cx - hx, cx + hx, uv.x), lerp(cy - hy, cy + hy, uv.y), ubo.quad_z);
     return emitV(p, float3(0, 0, 1));
 }
 
+// Three stem quads rotated 120° around +Z (width in XY, length along +Z).
+VertexOutput vsArrow(uint vid) {
+    const float width = lineWidthScale();
+    const float stemHalfW = 0.06 * width;
+    const float stemHalfLen = 0.42 * width;
+    const float stemCenterZ = 0.48;
+
+    uint quad = vid / 6u;
+    uint corner = vid % 6u;
+    if (quad >= kArrowQuads) {
+        return emitDiscarded();
+    }
+
+    float ang = float(quad) * 2.0943951; // 2*pi/3
+    float ca = cos(ang);
+    float sa = sin(ang);
+
+    float2 uv = quadUV(corner);
+    float lw = lerp(-stemHalfW, stemHalfW, uv.x);
+    float lz = lerp(stemCenterZ - stemHalfLen, stemCenterZ + stemHalfLen, uv.y);
+    float3 p = float3(lw * sa, lw * ca, lz);
+    float3 n = normalize(float3(sa, ca, 0.0));
+    return emitV(p, n);
+}
+
 VertexOutput vsCenter(uint vid) {
-    const float r = 0.2;
+    const float r = 0.22 * lineWidthScale();
     uint side = vid / 6u;
     uint corner = vid % 6u;
     float ang0 = float(side) / float(kCenterSides) * 6.2831853;
@@ -111,7 +131,7 @@ VertexOutput vsCenter(uint vid) {
     float tip = (corner == 2u || corner == 4u) ? 1.0 : 0.0;
     float a = lerp(ang0, ang1, tip);
     float rad = lerp(r, 0.0, tip);
-    float3 p = float3(cos(a) * rad, sin(a) * rad, 0.0);
+    float3 p = float3(cos(a) * rad, sin(a) * rad, ubo.quad_z);
     return emitV(p, float3(0, 0, 1));
 }
 
@@ -128,62 +148,104 @@ bool dialSegmentActive(float segAngle) {
     return segAngle >= a1 && segAngle <= a0;
 }
 
+float3 scaleBoxCenter() {
+    return ubo.params.w > 0.5 ? float3(0.0, 0.0, 0.0) : float3(0.0, 0.0, 0.8);
+}
+
+float scaleBoxHalfExtent() {
+    const float width = lineWidthScale();
+    const float base = ubo.params.w > 0.5 ? 0.16 : 0.12;
+    return base * width;
+}
+
+VertexOutput vsScaleBox(uint vid) {
+    const float3 c = scaleBoxCenter();
+    const float h = scaleBoxHalfExtent();
+    const uint face = vid / 6u;
+    const float2 uv = quadUV(vid % 6u);
+
+    float3 p = c;
+    float3 n = float3(0, 0, 1);
+    if (face == 0u) {
+        p += float3(lerp(-h, h, uv.x), lerp(-h, h, uv.y), -h);
+        n = float3(0, 0, -1);
+    } else if (face == 1u) {
+        p += float3(lerp(-h, h, uv.x), lerp(-h, h, uv.y), h);
+        n = float3(0, 0, 1);
+    } else if (face == 2u) {
+        p += float3(lerp(-h, h, uv.x), -h, lerp(-h, h, uv.y));
+        n = float3(0, -1, 0);
+    } else if (face == 3u) {
+        p += float3(lerp(-h, h, uv.x), h, lerp(-h, h, uv.y));
+        n = float3(0, 1, 0);
+    } else if (face == 4u) {
+        p += float3(-h, lerp(-h, h, uv.x), lerp(-h, h, uv.y));
+        n = float3(-1, 0, 0);
+    } else {
+        p += float3(h, lerp(-h, h, uv.x), lerp(-h, h, uv.y));
+        n = float3(1, 0, 0);
+    }
+    return emitV(p, n);
+}
+
 VertexOutput vsDial(uint vid) {
     const float majorR = 0.82;
-    const float tubeR = 0.045;
+    const float tubeW = 0.10 * lineWidthScale();
 
-    uint seg = vid / (kDialTubeSides * 6u);
-    uint rem = vid % (kDialTubeSides * 6u);
-    uint tube = rem / 6u;
-    uint corner = rem % 6u;
-
-    float segAng0 = float(seg) / float(kDialSides) * 6.2831853;
-    float segAng1 = float(seg + 1u) / float(kDialSides) * 6.2831853;
-    float midAng = (segAng0 + segAng1) * 0.5;
-
-    if (!dialSegmentActive(midAng)) {
-        VertexOutput o;
-        o.sv_position = float4(0, 0, 0, 1);
-        o.worldNormal = float3(0, 0, 1);
-        o.color = float4(0, 0, 0, 0);
-        return o;
+    uint seg = vid / 6u;
+    uint corner = vid % 6u;
+    if (seg >= kDialSides) {
+        return emitDiscarded();
     }
 
-    float tubeAng0 = float(tube) / float(kDialTubeSides) * 6.2831853;
-    float tubeAng1 = float(tube + 1u) / float(kDialTubeSides) * 6.2831853;
+    float ang0 = float(seg) / float(kDialSides) * 6.2831853;
+    float ang1 = float(seg + 1u) / float(kDialSides) * 6.2831853;
+    float midAng = (ang0 + ang1) * 0.5;
+    if (!dialSegmentActive(midAng)) {
+        return emitDiscarded();
+    }
+
     float2 uv = quadUV(corner);
-    float useB = (corner >= 3u) ? 1.0 : 0.0;
-
-    float sa = lerp(segAng0, segAng1, useB);
-    float ta = lerp(tubeAng0, tubeAng1, useB);
-
-    float3 ringCenter = float3(cos(sa) * majorR, sin(sa) * majorR, 0.0);
-    float3 radial = normalize(float3(cos(sa), sin(sa), 0.0));
-    float3 tangent = float3(-sin(sa), cos(sa), 0.0);
-    float3 p = ringCenter + radial * (cos(ta) * tubeR) + tangent * (sin(ta) * tubeR * 0.35);
-    float3 n = normalize(radial * cos(ta) + float3(0, 0, 1) * sin(ta));
-    return emitV(p, n);
+    float a = lerp(ang0, ang1, uv.x);
+    float r = lerp(majorR - tubeW, majorR + tubeW, uv.y);
+    float3 p = float3(cos(a) * r, sin(a) * r, ubo.quad_z);
+    return emitV(p, float3(0, 0, 1));
 }
 
 [shader("vertex")]
 VertexOutput vertexMain(uint vid : SV_VertexID) {
     uint style = uint(ubo.params.x + 0.5);
     if (style == 0u) {
+        if (vid >= kArrowVertCount) {
+            return emitDiscarded();
+        }
         return vsArrow(vid);
     }
     if (style == 1u) {
+        if (vid >= kPlaneVertCount) {
+            return emitDiscarded();
+        }
         return vsPlane(vid);
     }
     if (style == 2u) {
+        if (vid >= kCenterVertCount) {
+            return emitDiscarded();
+        }
         return vsCenter(vid);
     }
     if (style == 3u || style == 4u) {
         if (vid >= kDialVertCount) {
-            return emitV(float3(0, 0, 0), float3(0, 0, 1));
+            return emitDiscarded();
         }
         return vsDial(vid);
     }
-    return vsCenter(vid);
+    if (style == 5u) {
+        if (vid >= kScaleBoxVertCount) {
+            return emitDiscarded();
+        }
+        return vsScaleBox(vid);
+    }
+    return vsPlane(min(vid, kPlaneVertCount - 1u));
 }
 
 [shader("fragment")]
@@ -192,6 +254,6 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
         discard;
     }
     float3 lightDir = normalize(float3(0.3, 0.55, 0.9));
-    float ndl = saturate(dot(normalize(input.worldNormal), lightDir) * 0.6 + 0.4);
+    float ndl = saturate(dot(normalize(input.worldNormal), lightDir) * 0.25 + 0.75);
     return float4(input.color.rgb * ndl, input.color.a);
 }

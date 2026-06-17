@@ -12,6 +12,45 @@
 
 namespace Blunder {
 
+namespace {
+
+glm::vec3 pickPerpendicularReference(const glm::vec3& local_z, const GizmoBasis& basis) {
+  const float dx = std::abs(glm::dot(local_z, basis.axis_x));
+  const float dy = std::abs(glm::dot(local_z, basis.axis_y));
+  const float dz = std::abs(glm::dot(local_z, basis.axis_z));
+  if (dy <= dx && dy <= dz) {
+    return basis.axis_y;
+  }
+  if (dz <= dx && dz <= dy) {
+    return basis.axis_z;
+  }
+  return basis.axis_x;
+}
+
+glm::mat4 buildOrthonormalHandleMatrix(const GizmoBasis& basis, const glm::vec3& local_z,
+                                       const float uniform_scale) {
+  const glm::vec3 z = glm::normalize(local_z);
+  const glm::vec3 ref = pickPerpendicularReference(z, basis);
+  glm::vec3 x = glm::cross(ref, z);
+  if (glm::length(x) < 1e-4f) {
+    x = glm::cross(z, basis.axis_z);
+  }
+  if (glm::length(x) < 1e-4f) {
+    x = glm::cross(z, basis.axis_y);
+  }
+  x = glm::normalize(x);
+  const glm::vec3 y = glm::normalize(glm::cross(z, x));
+
+  glm::mat4 m(1.0f);
+  m[0] = glm::vec4(x * uniform_scale, 0.0f);
+  m[1] = glm::vec4(y * uniform_scale, 0.0f);
+  m[2] = glm::vec4(z * uniform_scale, 0.0f);
+  m[3] = glm::vec4(basis.origin, 1.0f);
+  return m;
+}
+
+}  // namespace
+
 GizmoBasis buildGizmoBasis(const glm::mat4& selection_world, const GizmoSpace space) {
   GizmoBasis basis;
   basis.origin = glm::vec3(selection_world[3]);
@@ -34,30 +73,56 @@ GizmoBasis buildGizmoBasis(const glm::mat4& selection_world, const GizmoSpace sp
   return basis;
 }
 
-float computeHandleUniformScale(const glm::vec3& camera_position,
-                                const glm::vec3& pivot, const float viewport_height,
-                                const float vertical_fov, const bool is_perspective,
-                                const float ortho_size) {
-  const float dist = std::max(glm::length(camera_position - pivot), 0.01f);
-  if (is_perspective) {
-  const float tan_half = std::tan(vertical_fov * 0.5f);
-    return dist * tan_half * TransformGizmoMetrics::k_axis_length_factor * 8.0f;
+float computeView3dPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx) {
+  const float vp = std::max(ctx.viewport_height, 1.0f);
+  const float pixsize = 2.0f / vp;
+  if (!ctx.is_perspective) {
+    return ctx.ortho_size / vp;
   }
-  const float vp = std::max(viewport_height, 1.0f);
-  return (ortho_size / vp) * 120.0f * TransformGizmoMetrics::k_axis_length_factor;
+  const glm::vec4 clip = ctx.view_projection * glm::vec4(ctx.pivot, 1.0f);
+  const float zfac = std::max(std::abs(clip.w), 1e-4f);
+  return zfac * pixsize;
 }
 
-float viewAlignedAxisAlpha(const glm::vec3& axis_dir_world,
-                           const glm::vec3& camera_forward,
-                           const glm::vec3& camera_position,
-                           const glm::vec3& pivot) {
+float computeGizmoGroupScale(const TransformGizmoScaleContext& ctx) {
+  const float pixel_size = computeView3dPixelSizeNoUiScale(ctx);
+  return ctx.ui_scale * ctx.gizmo_size * pixel_size;
+}
+
+float computeGizmoHandleScale(const float group_scale, const ManipulatorAxis axis) {
+  return group_scale * gizmoScaleBasisForAxis(axis);
+}
+
+float computeGizmoHandleScale(const TransformGizmoScaleContext& ctx,
+                              const ManipulatorAxis axis) {
+  return computeGizmoHandleScale(computeGizmoGroupScale(ctx), axis);
+}
+
+void computeGizmoIdot(const GizmoBasis& basis, const glm::vec3& camera_position,
+                      const glm::vec3& pivot, float out_idot[3]) {
   const glm::vec3 view_dir = glm::normalize(camera_position - pivot);
-  const float axis_dot = std::abs(glm::dot(axis_dir_world, view_dir));
-  const float fade =
-      (axis_dot - TransformGizmoMetrics::k_view_fade_dot_threshold) /
-      std::max(1.0f - TransformGizmoMetrics::k_view_fade_dot_threshold, 1e-4f);
-  const float alpha = 1.0f - std::clamp(fade, 0.0f, 1.0f);
-  return std::max(alpha, TransformGizmoMetrics::k_min_view_alpha);
+  const glm::vec3 axes[3] = {glm::normalize(basis.axis_x), glm::normalize(basis.axis_y),
+                               glm::normalize(basis.axis_z)};
+  for (int i = 0; i < 3; ++i) {
+    out_idot[i] = 1.0f - std::abs(glm::dot(view_dir, axes[i]));
+  }
+}
+
+glm::mat4 gizmoViewAlignedCenterMatrix(const GizmoBasis& basis, const float uniform_scale,
+                                       const glm::vec3& camera_position) {
+  glm::vec3 local_z = glm::normalize(camera_position - basis.origin);
+  glm::vec3 local_x = glm::normalize(glm::cross(basis.axis_y, local_z));
+  if (glm::length(local_x) < 1e-4f) {
+    local_x = glm::normalize(glm::cross(basis.axis_z, local_z));
+  }
+  const glm::vec3 local_y = glm::normalize(glm::cross(local_z, local_x));
+
+  glm::mat4 m(1.0f);
+  m[0] = glm::vec4(local_x * uniform_scale, 0.0f);
+  m[1] = glm::vec4(local_y * uniform_scale, 0.0f);
+  m[2] = glm::vec4(local_z * uniform_scale, 0.0f);
+  m[3] = glm::vec4(basis.origin, 1.0f);
+  return m;
 }
 
 glm::mat4 gizmoHandleMatrix(const GizmoBasis& basis, const ManipulatorAxis axis,
@@ -102,11 +167,7 @@ glm::mat4 gizmoHandleMatrix(const GizmoBasis& basis, const ManipulatorAxis axis,
 
   if (axis == ManipulatorAxis::trans_x || axis == ManipulatorAxis::trans_y ||
       axis == ManipulatorAxis::trans_z) {
-    local_x = glm::normalize(glm::cross(local_z, basis.axis_z));
-    if (glm::length(local_x) < 1e-4f) {
-      local_x = glm::normalize(glm::cross(local_z, basis.axis_y));
-    }
-    local_y = glm::normalize(glm::cross(local_z, local_x));
+    return buildOrthonormalHandleMatrix(basis, local_z, uniform_scale);
   }
 
   glm::mat4 m(1.0f);
@@ -115,6 +176,63 @@ glm::mat4 gizmoHandleMatrix(const GizmoBasis& basis, const ManipulatorAxis axis,
   m[2] = glm::vec4(glm::normalize(local_z) * uniform_scale, 0.0f);
   m[3] = glm::vec4(basis.origin, 1.0f);
   return m;
+}
+
+glm::mat4 gizmoScaleBoxMatrix(const GizmoBasis& basis, const ManipulatorAxis axis,
+                              const float uniform_scale) {
+  glm::vec3 local_z = basis.axis_z;
+  switch (axis) {
+    case ManipulatorAxis::trans_x:
+      local_z = basis.axis_x;
+      break;
+    case ManipulatorAxis::trans_y:
+      local_z = basis.axis_y;
+      break;
+    case ManipulatorAxis::trans_z:
+      local_z = basis.axis_z;
+      break;
+    case ManipulatorAxis::trans_c:
+      return gizmoHandleMatrix(basis, ManipulatorAxis::trans_c, uniform_scale);
+    default:
+      break;
+  }
+  return buildOrthonormalHandleMatrix(basis, local_z, uniform_scale);
+}
+
+glm::vec3 scaleHandleWorldCenter(const GizmoBasis& basis, const ManipulatorAxis axis,
+                                 const float handle_scale) {
+  const float offset =
+      handle_scale * TransformGizmoMetrics::k_mesh_scale_box_center_offset;
+  switch (axis) {
+    case ManipulatorAxis::trans_x:
+      return basis.origin + basis.axis_x * offset;
+    case ManipulatorAxis::trans_y:
+      return basis.origin + basis.axis_y * offset;
+    case ManipulatorAxis::trans_z:
+      return basis.origin + basis.axis_z * offset;
+  }
+  return basis.origin;
+}
+
+Vec3 applyScaleDrag(const Vec3& scale_at_drag_start, const ManipulatorAxis axis,
+                    const float factor) {
+  const float clamped_factor = std::max(factor, 0.01f);
+  Vec3 result = scale_at_drag_start;
+  if (axis == ManipulatorAxis::trans_c) {
+    return result * clamped_factor;
+  }
+  bool mask[3]{};
+  manipulatorTranslationMask(axis, mask);
+  if (mask[0]) {
+    result.x *= clamped_factor;
+  }
+  if (mask[1]) {
+    result.y *= clamped_factor;
+  }
+  if (mask[2]) {
+    result.z *= clamped_factor;
+  }
+  return result;
 }
 
 glm::vec3 closestPointOnLine(const glm::vec3& origin, const glm::vec3& direction,

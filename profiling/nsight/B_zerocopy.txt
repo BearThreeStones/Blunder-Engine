@@ -1,0 +1,2 @@
+--env-var=BLUNDER_VK_VALIDATION=0,BLUNDER_VIEWPORT_ZERO_COPY=1
+--output=profiling/nsight/reports/blunder_B_debug_zerocopy

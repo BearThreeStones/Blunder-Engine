@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/protect-paths.ps1",
+        "matcher": "Write|StrReplace|Delete",
+        "failClosed": false
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/remind-validate.ps1",
+        "matcher": "Write|StrReplace"
+      }
+    ]
+  }
+}

@@ -8,9 +8,9 @@ namespace Blunder {
 
 namespace {
 
-float pickThreshold(const float uniform_scale) {
-  return uniform_scale * TransformGizmoMetrics::k_axis_radius_factor *
-         TransformGizmoMetrics::k_pick_slop * 40.0f;
+float pickThreshold(const float handle_scale) {
+  return handle_scale * TransformGizmoMetrics::k_mesh_stem_radius *
+         TransformGizmoMetrics::k_pick_slop * 8.0f;
 }
 
 bool pickAxis(const Ray& ray, const glm::vec3& origin, const glm::vec3& direction,
@@ -86,14 +86,17 @@ ManipulatorAxis pickBest(eastl::vector<eastl::pair<ManipulatorAxis, float>>& hit
 
 std::optional<ManipulatorAxis> pickTranslationGizmoHandle(
     const TransformGizmoPickContext& ctx) {
-  const float scale = ctx.uniform_scale;
-  const float axis_len = scale;
-  const float threshold = pickThreshold(scale);
-  const float plane_half = scale * TransformGizmoMetrics::k_plane_half_extent_factor /
-                           TransformGizmoMetrics::k_axis_length_factor;
-  const float center_r =
-      scale * TransformGizmoMetrics::k_center_radius_factor /
-      TransformGizmoMetrics::k_axis_length_factor;
+  const float arrow_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_x);
+  const float plane_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_xy);
+  const float center_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_c);
+
+  const float axis_len = arrow_scale * TransformGizmoMetrics::k_mesh_arrow_length;
+  const float threshold = pickThreshold(arrow_scale);
+  const float plane_half = plane_scale * TransformGizmoMetrics::k_mesh_plane_half_extent;
+  const float center_r = center_scale * TransformGizmoMetrics::k_mesh_center_radius;
 
   eastl::vector<eastl::pair<ManipulatorAxis, float>> hits;
   hits.reserve(7);
@@ -109,9 +112,13 @@ std::optional<ManipulatorAxis> pickTranslationGizmoHandle(
   try_axis(ManipulatorAxis::trans_y, ctx.basis.axis_y);
   try_axis(ManipulatorAxis::trans_z, ctx.basis.axis_z);
 
+  const float plane_offset =
+      plane_scale * TransformGizmoMetrics::k_mesh_plane_center_offset;
   auto try_plane = [&](ManipulatorAxis axis, const glm::vec3& u, const glm::vec3& v) {
+    const glm::vec3 center = ctx.basis.origin + glm::normalize(u) * plane_offset +
+                             glm::normalize(v) * plane_offset;
     float dist = 0.0f;
-    if (pickPlaneHandle(ctx.ray, ctx.basis.origin, u, v, plane_half, threshold, dist)) {
+    if (pickPlaneHandle(ctx.ray, center, u, v, plane_half, threshold, dist)) {
       hits.push_back({axis, dist});
     }
   };
@@ -135,9 +142,10 @@ std::optional<ManipulatorAxis> pickTranslationGizmoHandle(
 
 std::optional<ManipulatorAxis> pickRotationGizmoHandle(
     const TransformGizmoPickContext& ctx) {
-  const float scale = ctx.uniform_scale;
-  const float major_r = scale * TransformGizmoMetrics::k_dial_major_radius_factor;
-  const float tube_r = scale * TransformGizmoMetrics::k_dial_tube_radius_factor;
+  const float dial_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::rot_x);
+  const float major_r = dial_scale * TransformGizmoMetrics::k_mesh_dial_major_radius;
+  const float tube_r = dial_scale * TransformGizmoMetrics::k_mesh_dial_tube_radius;
 
   eastl::vector<eastl::pair<ManipulatorAxis, float>> hits;
   hits.reserve(3);
@@ -152,6 +160,46 @@ std::optional<ManipulatorAxis> pickRotationGizmoHandle(
   try_dial(ManipulatorAxis::rot_x, ctx.basis.axis_x);
   try_dial(ManipulatorAxis::rot_y, ctx.basis.axis_y);
   try_dial(ManipulatorAxis::rot_z, ctx.basis.axis_z);
+
+  if (hits.empty()) {
+    return std::nullopt;
+  }
+  return pickBest(hits);
+}
+
+std::optional<ManipulatorAxis> pickScaleGizmoHandle(
+    const TransformGizmoPickContext& ctx) {
+  const float axis_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_x);
+  const float center_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_c);
+  const float axis_half =
+      axis_scale * TransformGizmoMetrics::k_mesh_scale_box_half_extent;
+  const float center_half =
+      center_scale * TransformGizmoMetrics::k_mesh_scale_center_half_extent;
+  const float threshold = pickThreshold(axis_scale);
+
+  eastl::vector<eastl::pair<ManipulatorAxis, float>> hits;
+  hits.reserve(4);
+
+  auto try_box = [&](const ManipulatorAxis axis, const glm::vec3& center,
+                     const float half_extent) {
+    float dist = 0.0f;
+    if (pickCenter(ctx.ray, center, half_extent * 1.2f, threshold, dist)) {
+      hits.push_back({axis, dist});
+    }
+  };
+
+  try_box(ManipulatorAxis::trans_x,
+          scaleHandleWorldCenter(ctx.basis, ManipulatorAxis::trans_x, axis_scale),
+          axis_half);
+  try_box(ManipulatorAxis::trans_y,
+          scaleHandleWorldCenter(ctx.basis, ManipulatorAxis::trans_y, axis_scale),
+          axis_half);
+  try_box(ManipulatorAxis::trans_z,
+          scaleHandleWorldCenter(ctx.basis, ManipulatorAxis::trans_z, axis_scale),
+          axis_half);
+  try_box(ManipulatorAxis::trans_c, ctx.basis.origin, center_half);
 
   if (hits.empty()) {
     return std::nullopt;

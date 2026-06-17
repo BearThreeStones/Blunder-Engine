@@ -1,0 +1,4 @@
+--trace=vulkan
+--sample=process-tree
+--inherit-environment=true
+--stop-on-exit=true

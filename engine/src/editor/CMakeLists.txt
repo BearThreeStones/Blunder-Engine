@@ -6,20 +6,23 @@ target_link_libraries(engine_editor
     PRIVATE engine_runtime
 )
 
-# ============================================================================
-# Visual Studio debugger: launch from the project root so relative paths
-# (engine/shaders/, Assets/, Resources/) resolve correctly.
-# ============================================================================
+# When ON, link to profile/engine_editor_profile.exe so a locked Debug/engine_editor.exe
+# does not block instrumented rebuilds (profiling/nsight/run-group.ps1 sets this).
+option(BLUNDER_EDITOR_PROFILE_EXE "Link editor to engine_editor_profile.exe in profile/" OFF)
+
 set_target_properties(engine_editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
 
-# ============================================================================
-# Reuse PCH from engine_runtime (avoids duplicate PCH compilation)
-# Note: Compiler options must match for REUSE_FROM to work correctly
-# ============================================================================
+if(BLUNDER_EDITOR_PROFILE_EXE)
+    set_target_properties(engine_editor PROPERTIES
+        OUTPUT_NAME "engine_editor_profile"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_BINARY_DIR}/profile"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_BINARY_DIR}/profile"
+    )
+endif()
+
 if(MSVC)
-    # Must match engine_runtime's /Zc:preprocessor for PCH compatibility
     target_compile_options(engine_editor PRIVATE /Zc:preprocessor)
 endif()
 
@@ -27,9 +30,6 @@ target_precompile_headers(engine_editor
     REUSE_FROM engine_runtime
 )
 
-# ============================================================================
-# Copy Slang runtime DLLs next to the executable
-# ============================================================================
 if(WIN32 AND SLANG_DLL_PATH)
     add_custom_command(TARGET engine_editor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different

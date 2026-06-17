@@ -25,18 +25,47 @@ struct GizmoBasis {
 
 GizmoBasis buildGizmoBasis(const glm::mat4& selection_world, GizmoSpace space);
 
-float computeHandleUniformScale(const glm::vec3& camera_position,
-                                const glm::vec3& pivot, float viewport_height,
-                                float vertical_fov, bool is_perspective,
-                                float ortho_size);
+/// Inputs for Blender wm_gizmo_calculate_scale / ED_view3d_pixel_size_no_ui_scale.
+struct TransformGizmoScaleContext {
+  glm::mat4 view_projection{1.0f};
+  glm::vec3 pivot{0.0f};
+  float viewport_height{1.0f};
+  bool is_perspective{true};
+  float ortho_size{10.0f};
+  float gizmo_size{TransformGizmoMetrics::k_default_gizmo_size};
+  float ui_scale{TransformGizmoMetrics::k_ui_scale_factor};
+};
 
-float viewAlignedAxisAlpha(const glm::vec3& axis_dir_world,
-                           const glm::vec3& camera_forward,
-                           const glm::vec3& camera_position,
-                           const glm::vec3& pivot);
+/// Blender ED_view3d_pixel_size_no_ui_scale: zfac(persmat, co) * pixsize.
+float computeView3dPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx);
+
+/// Blender wm_gizmo_calculate_scale group factor (before per-handle scale_basis).
+float computeGizmoGroupScale(const TransformGizmoScaleContext& ctx);
+
+/// scale_final = scale_basis * group_scale.
+float computeGizmoHandleScale(const TransformGizmoScaleContext& ctx,
+                              ManipulatorAxis axis);
+
+float computeGizmoHandleScale(float group_scale, ManipulatorAxis axis);
+
+/// Blender gizmo_get_idot: per-axis view alignment metric.
+void computeGizmoIdot(const GizmoBasis& basis, const glm::vec3& camera_position,
+                      const glm::vec3& pivot, float out_idot[3]);
 
 glm::mat4 gizmoHandleMatrix(const GizmoBasis& basis, ManipulatorAxis axis,
                             float uniform_scale);
+
+glm::mat4 gizmoScaleBoxMatrix(const GizmoBasis& basis, ManipulatorAxis axis,
+                              float uniform_scale);
+
+glm::vec3 scaleHandleWorldCenter(const GizmoBasis& basis, ManipulatorAxis axis,
+                                 float handle_scale);
+
+Vec3 applyScaleDrag(const Vec3& scale_at_drag_start, ManipulatorAxis axis, float factor);
+
+/// Blender draw_prepare view-aligned center (TH_GIZMO_VIEW_ALIGN circle).
+glm::mat4 gizmoViewAlignedCenterMatrix(const GizmoBasis& basis, float uniform_scale,
+                                       const glm::vec3& camera_position);
 
 /// Closest point on infinite line (origin + t * direction).
 glm::vec3 closestPointOnLine(const glm::vec3& origin, const glm::vec3& direction,

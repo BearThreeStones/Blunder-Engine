@@ -78,9 +78,9 @@ void NavigateGizmoOverlay::initialize(const OverlayResources& res,
   desc.topology = rhi::PrimitiveTopology::TriangleList;
   desc.cull_mode = rhi::CullMode::None;
   desc.enable_blend = true;
-  desc.enable_depth_test = true;
+  // Screen HUD: must not depth-test against scene geometry loaded by ScreenOverlayPass.
+  desc.enable_depth_test = false;
   desc.enable_depth_write = false;
-  desc.depth_compare_op = rhi::CompareOp::LessOrEqual;
 
   m_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_pipeline->bind(m_vk_context, compiler);

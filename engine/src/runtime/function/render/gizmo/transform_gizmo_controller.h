@@ -51,13 +51,15 @@ class TransformGizmoController final {
   glm::vec3 m_drag_start_world{0.0f};
   Vec3 m_entity_position_at_drag_start{0.0f};
   Quat m_entity_rotation_at_drag_start{glm::identity<Quat>()};
+  Vec3 m_entity_scale_at_drag_start{1.0f};
+  float m_scale_drag_start_param{1.0f};
   glm::vec3 m_rotation_drag_reference{1.0f, 0.0f, 0.0f};
   float m_drag_start_angle{0.0f};
   float m_drag_current_angle{0.0f};
   float m_rotation_arc_mesh_base{0.0f};
 
   GizmoBasis m_drag_basis{};
-  float m_handle_scale{1.0f};
+  float m_gizmo_group_scale{1.0f};
   glm::vec3 m_drag_view_normal{0.0f, 0.0f, 1.0f};
   EditorCamera* m_locked_camera{nullptr};
 };

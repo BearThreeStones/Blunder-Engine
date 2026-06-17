@@ -100,14 +100,31 @@ SlintSystem::update()
   only the central viewport logical rect dirty via
   `SkiaRenderer::mark_dirty_region`; dock resize, window resize, and viewport
   invalidate call `force_full_refresh()` for a safe full-window composite.
-  Disable with `BLUNDER_SLINT_PARTIAL=0`. **Zero-copy:** partial composite is
-  automatically off when the shared Vulkan device path is active (re-presenting
-  the same borrowed `VkImage` caused screen-aligned stale texels). Debug dirty
+  Disable with `BLUNDER_SLINT_PARTIAL=0`. **Zero-copy:** each present marks only
+  the viewport logical rect dirty (not a full-window composite); resize/rebind
+  still calls `force_full_refresh()`. Debug dirty
   coverage with `SLINT_SKIA_PARTIAL_RENDERING=log` (or `visualize`).
 - **Editor performance toggles (default off in editor):**
   - `BLUNDER_EDITOR_SHADOWS=1` — shadow pass (doubles opaque draws for large scenes).
   - `BLUNDER_EDITOR_OVERLAY_AA=1` — full-scene overlay anti-aliasing pass.
   - `BLUNDER_VIEWPORT_ZERO_COPY=0` — force CPU readback even when shared device works.
+  - `BLUNDER_EDITOR_RENDER_SCALE=0.75` — render 3D at reduced resolution (0.25–1.0,
+    default 1.0); Slint upscales the viewport image.
+  - `BLUNDER_EDITOR_VIEWPORT_PRESENT_MS=50` — minimum ms between Skia composites
+    while the 3D viewport is updating (default 50). Each composite can still cost
+    ~50–120ms on large windows; increase if FPS is still low.
+  - **Tiered viewport pacing** (interactive vs idle): composite **request** and Skia
+    present floors follow camera/gizmo input plus a short hold after release.
+    - `BLUNDER_EDITOR_VIEWPORT_INTERACTIVE_MS=33` — request/present floor while
+      interacting (~30 Hz target).
+    - `BLUNDER_EDITOR_VIEWPORT_IDLE_MS=100` — request/present floor when static
+      (~10 Hz target).
+    - `BLUNDER_EDITOR_VIEWPORT_INTERACTIVE_HOLD_MS=150` — remain interactive tier
+      after input stops (smooth release).
+    - Signals: `EditorCamera::isViewportInteracting()`, transform gizmo drag.
+    - Zero-copy path skips redundant Vulkan submits on camera-only moves only in
+      **idle** tier when no composite is scheduled.
+    - Nsight validation: orbit 15 s → `vkQueueSubmit` ≥ 18/s; static 15 s → ≤ 12/s.
 - `EditorCamera` still receives input in window coordinates; for delta-based
   motion (drag/orbit) this is fine, but absolute-position interactions should
   later be remapped to the central viewport rect.

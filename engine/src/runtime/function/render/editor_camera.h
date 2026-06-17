@@ -70,6 +70,10 @@ class EditorCamera final {
   void setInteractionLocked(bool locked) { m_interaction_locked = locked; }
   bool isInteractionLocked() const { return m_interaction_locked; }
 
+  /// True while the user is actively manipulating the viewport (orbit/pan/look,
+  /// scroll zoom, or WASD fly with the cursor in the viewport).
+  bool isViewportInteracting() const;
+
  private:
   enum class InteractionMode : uint32_t {
     none = 0,
@@ -131,6 +135,8 @@ class EditorCamera final {
   bool m_right_drag_started_in_viewport{false};
   bool m_middle_drag_started_in_viewport{false};
   bool m_interaction_locked{false};
+  bool m_viewport_scroll_signal{false};
+  bool m_clear_viewport_scroll_signal{false};
 
   Vec2 m_mouse_delta_accumulator{0.0f, 0.0f};
   float m_scroll_delta_accumulator{0.0f};

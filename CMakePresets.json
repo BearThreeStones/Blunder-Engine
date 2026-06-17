@@ -15,7 +15,8 @@
       "cacheVariables": {
         "Vulkan_ROOT": "$env{VULKAN_SDK}",
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
-        "CMAKE_POLICY_VERSION_MINIMUM": "3.21"
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.21",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {

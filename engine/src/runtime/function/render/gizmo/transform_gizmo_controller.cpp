@@ -9,6 +9,7 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/function/render/gizmo/transform_gizmo_pick.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
@@ -77,10 +78,16 @@ void TransformGizmoController::setMode(const TransformGizmoMode mode,
   }
   cancelInteraction(camera);
   m_mode = mode;
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
+  }
 }
 
 void TransformGizmoController::toggleSpace() {
   m_space = (m_space == GizmoSpace::global) ? GizmoSpace::local : GizmoSpace::global;
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
+  }
 }
 
 void TransformGizmoController::cancelInteraction(EditorCamera* camera) {
@@ -90,7 +97,8 @@ void TransformGizmoController::cancelInteraction(EditorCamera* camera) {
 
 bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) const {
   if (m_mode != TransformGizmoMode::translate &&
-      m_mode != TransformGizmoMode::rotate) {
+      m_mode != TransformGizmoMode::rotate &&
+      m_mode != TransformGizmoMode::scale) {
     return false;
   }
   if (!g_runtime_global_context.m_editor_selection ||
@@ -164,10 +172,15 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
     case SDLK_ESCAPE:
       if (isDragging()) {
         if (Entity* entity = selectedEntity()) {
-          if (isTranslationManipulator(*m_active_axis)) {
+          if (m_mode == TransformGizmoMode::translate &&
+              isTranslationManipulator(*m_active_axis)) {
             entity->setPosition(m_entity_position_at_drag_start);
-          } else if (isRotationManipulator(*m_active_axis)) {
+          } else if (m_mode == TransformGizmoMode::rotate &&
+                     isRotationManipulator(*m_active_axis)) {
             entity->setRotation(m_entity_rotation_at_drag_start);
+          } else if (m_mode == TransformGizmoMode::scale &&
+                     isScaleManipulator(*m_active_axis)) {
+            entity->setScale(m_entity_scale_at_drag_start);
           }
           markSceneDirty();
           syncInspectorLive();
@@ -193,7 +206,8 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
     return false;
   }
   if (m_mode != TransformGizmoMode::translate &&
-      m_mode != TransformGizmoMode::rotate) {
+      m_mode != TransformGizmoMode::rotate &&
+      m_mode != TransformGizmoMode::scale) {
     return false;
   }
 
@@ -208,27 +222,32 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   }
 
   const Ray ray = camera.makeRayFromWindowPosition(window_pos);
-  const float scale = computeHandleUniformScale(
-      camera.getPosition(), basis.origin, camera.getViewportHeight(),
-      camera.getVerticalFov(),
-      camera.getProjectionMode() == EditorCamera::ProjectionMode::perspective,
-      camera.getOrthoSize());
-  m_handle_scale = scale;
+  TransformGizmoScaleContext scale_ctx{};
+  scale_ctx.view_projection = camera.getProjectionMatrix() * camera.getViewMatrix();
+  scale_ctx.pivot = basis.origin;
+  scale_ctx.viewport_height = camera.getViewportHeight();
+  scale_ctx.is_perspective =
+      camera.getProjectionMode() == EditorCamera::ProjectionMode::perspective;
+  scale_ctx.ortho_size = camera.getOrthoSize();
+  const float group_scale = computeGizmoGroupScale(scale_ctx);
+  m_gizmo_group_scale = group_scale;
   m_drag_view_normal =
       glm::normalize(basis.origin - glm::vec3(camera.getPosition()));
 
   TransformGizmoPickContext pick_ctx{};
   pick_ctx.ray = ray;
   pick_ctx.basis = basis;
-  pick_ctx.uniform_scale = scale;
+  pick_ctx.group_scale = group_scale;
   pick_ctx.camera_forward = camera.getForwardDirection();
   pick_ctx.camera_position = camera.getPosition();
 
   std::optional<ManipulatorAxis> hit;
   if (m_mode == TransformGizmoMode::translate) {
     hit = pickTranslationGizmoHandle(pick_ctx);
-  } else {
+  } else if (m_mode == TransformGizmoMode::rotate) {
     hit = pickRotationGizmoHandle(pick_ctx);
+  } else {
+    hit = pickScaleGizmoHandle(pick_ctx);
   }
   if (!hit) {
     return false;
@@ -243,10 +262,41 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   m_drag_basis = basis;
   m_entity_position_at_drag_start = entity->getPosition();
   m_entity_rotation_at_drag_start = entity->getRotation();
+  m_entity_scale_at_drag_start = entity->getScale();
 
-  if (isTranslationManipulator(*hit)) {
+  if (m_mode == TransformGizmoMode::translate && isTranslationManipulator(*hit)) {
     const auto start_pt = dragWorldPoint(*hit, ray, basis);
     m_drag_start_world = start_pt.value_or(basis.origin);
+  } else if (m_mode == TransformGizmoMode::scale && isScaleManipulator(*hit)) {
+    if (*hit == ManipulatorAxis::trans_c) {
+      const Plane view_plane =
+          Plane::fromPointAndNormal(basis.origin, m_drag_view_normal);
+      const auto start_pt = intersectRayPlane(ray, view_plane);
+      m_drag_start_world = start_pt.value_or(basis.origin);
+      m_scale_drag_start_param =
+          glm::length(m_drag_start_world - basis.origin);
+    } else {
+      glm::vec3 axis_dir = basis.axis_x;
+      if (*hit == ManipulatorAxis::trans_y) {
+        axis_dir = basis.axis_y;
+      } else if (*hit == ManipulatorAxis::trans_z) {
+        axis_dir = basis.axis_z;
+      }
+      axis_dir = glm::normalize(axis_dir);
+      const auto t = rayLineParameter(ray, basis.origin, axis_dir);
+      const glm::vec3 start_pt =
+          t ? closestPointOnLine(basis.origin, axis_dir, ray.pointAt(*t))
+            : scaleHandleWorldCenter(
+                  basis, *hit,
+                  computeGizmoHandleScale(m_gizmo_group_scale, *hit));
+      m_drag_start_world = start_pt;
+      m_scale_drag_start_param = glm::dot(start_pt - basis.origin, axis_dir);
+      if (std::abs(m_scale_drag_start_param) < 1e-4f) {
+        m_scale_drag_start_param =
+            computeGizmoHandleScale(m_gizmo_group_scale, *hit) *
+            TransformGizmoMetrics::k_mesh_scale_box_center_offset;
+      }
+    }
   } else {
     const glm::vec3 rot_axis = rotationAxisFor(*hit, basis);
     const auto plane_hit = intersectRayWithAxisPlane(ray, basis.origin, rot_axis);
@@ -301,7 +351,8 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
 
   const Ray ray = camera.makeRayFromWindowPosition(window_pos);
 
-  if (isTranslationManipulator(*m_active_axis)) {
+  if (m_mode == TransformGizmoMode::translate &&
+      isTranslationManipulator(*m_active_axis)) {
     const auto current_pt = dragWorldPoint(*m_active_axis, ray, m_drag_basis);
     if (!current_pt) {
       return true;
@@ -309,7 +360,8 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
     const glm::vec3 delta = worldTranslationDelta(
         m_drag_basis, *m_active_axis, m_drag_start_world, *current_pt);
     entity->setPosition(m_entity_position_at_drag_start + Vec3(delta));
-  } else if (isRotationManipulator(*m_active_axis)) {
+  } else if (m_mode == TransformGizmoMode::rotate &&
+             isRotationManipulator(*m_active_axis)) {
     const glm::vec3 rot_axis = rotationAxisFor(*m_active_axis, m_drag_basis);
     const auto plane_hit = intersectRayWithAxisPlane(ray, m_drag_basis.origin, rot_axis);
     if (!plane_hit) {
@@ -322,6 +374,38 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
         *scene, g_runtime_global_context.m_editor_selection->getSelection());
     entity->setRotation(applyRotationDrag(m_entity_rotation_at_drag_start, *m_active_axis,
                                           rot_axis, angle_delta, m_space, parent_q));
+  } else if (m_mode == TransformGizmoMode::scale &&
+             isScaleManipulator(*m_active_axis)) {
+    float factor = 1.0f;
+    if (*m_active_axis == ManipulatorAxis::trans_c) {
+      const Plane view_plane =
+          Plane::fromPointAndNormal(m_drag_basis.origin, m_drag_view_normal);
+      const auto plane_hit = intersectRayPlane(ray, view_plane);
+      if (!plane_hit) {
+        return true;
+      }
+      const float r0 = std::max(m_scale_drag_start_param, 1e-4f);
+      const float r1 = glm::length(*plane_hit - m_drag_basis.origin);
+      factor = std::max(0.01f, r1 / r0);
+    } else {
+      glm::vec3 axis_dir = m_drag_basis.axis_x;
+      if (*m_active_axis == ManipulatorAxis::trans_y) {
+        axis_dir = m_drag_basis.axis_y;
+      } else if (*m_active_axis == ManipulatorAxis::trans_z) {
+        axis_dir = m_drag_basis.axis_z;
+      }
+      axis_dir = glm::normalize(axis_dir);
+      const auto t = rayLineParameter(ray, m_drag_basis.origin, axis_dir);
+      if (!t) {
+        return true;
+      }
+      const glm::vec3 current_pt =
+          closestPointOnLine(m_drag_basis.origin, axis_dir, ray.pointAt(*t));
+      const float current_param = glm::dot(current_pt - m_drag_basis.origin, axis_dir);
+      factor = std::max(0.01f, current_param / std::max(m_scale_drag_start_param, 1e-4f));
+    }
+    entity->setScale(
+        applyScaleDrag(m_entity_scale_at_drag_start, *m_active_axis, factor));
   }
 
   markSceneDirty();
@@ -332,8 +416,8 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
 std::optional<glm::vec3> TransformGizmoController::dragWorldPoint(
     const ManipulatorAxis axis, const Ray& ray, const GizmoBasis& basis) const {
   const float plane_half =
-      m_handle_scale * TransformGizmoMetrics::k_plane_half_extent_factor /
-      TransformGizmoMetrics::k_axis_length_factor;
+      computeGizmoHandleScale(m_gizmo_group_scale, ManipulatorAxis::trans_xy) *
+      TransformGizmoMetrics::k_mesh_plane_half_extent;
 
   if (axis == ManipulatorAxis::trans_x || axis == ManipulatorAxis::trans_y ||
       axis == ManipulatorAxis::trans_z) {

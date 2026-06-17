@@ -41,7 +41,7 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
 
   m_grid.initialize(ctx, alloc, m_resources, compiler);
   m_navigate_gizmo.initialize(m_resources, compiler);
-  m_transform_gizmo.initialize(m_resources, compiler, m_native_offscreen);
+  m_transform_gizmo.initialize(m_resources, compiler);
   m_anti_aliasing.initialize(ctx, alloc, offscreen, compiler, &m_line_targets);
 }
 
@@ -102,7 +102,6 @@ void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
   m_axes.draw(cmd, m_state);
   m_wireframe.draw(cmd, m_state);
   m_origins.draw_color_only(cmd, m_state);
-  m_transform_gizmo.draw_color_only(cmd, m_state);
 }
 
 void OverlaySystem::draw_overlay_lines(VkCommandBuffer cmd) {
@@ -119,6 +118,7 @@ void OverlaySystem::draw_overlay_aa(VkCommandBuffer cmd) {
 void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
   m_screen_pass.begin(cmd);
   m_grid.draw_screen(cmd, m_state);
+  m_transform_gizmo.draw_screen(cmd, m_state);
   m_navigate_gizmo.draw_screen(cmd, m_state);
   m_screen_pass.end(cmd);
 }

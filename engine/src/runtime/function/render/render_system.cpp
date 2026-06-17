@@ -1,7 +1,5 @@
 #include "runtime/function/render/render_system.h"
 
-#include <chrono>
-#include <cstdio>
 #include <limits>
 
 #include "runtime/core/math/coordinate_system.h"
@@ -25,7 +23,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -35,7 +32,6 @@
 
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
-#include "runtime/core/debug/agent_debug_log.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
@@ -103,6 +99,15 @@ bool editorShadowsEnabled() {
 bool editorOverlayAaEnabled() {
   const char* env = std::getenv("BLUNDER_EDITOR_OVERLAY_AA");
   return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
+}
+
+float editorRenderScale() {
+  const char* env = std::getenv("BLUNDER_EDITOR_RENDER_SCALE");
+  if (env == nullptr || env[0] == '\0') {
+    return 0.85f;
+  }
+  const float scale = static_cast<float>(std::atof(env));
+  return std::clamp(scale, 0.25f, 1.0f);
 }
 
 bool matricesNearlyEqual(const glm::mat4& a, const glm::mat4& b) {
@@ -575,14 +580,10 @@ void RenderSystem::pollViewportPresent() {
   }
 }
 
-void RenderSystem::clearOpaqueMeshDraws() {
-  m_opaque_mesh_draws.clear();
-  markViewportRenderDirty();
-}
+void RenderSystem::clearOpaqueMeshDraws() { m_opaque_mesh_draws.clear(); }
 
 void RenderSystem::clearTransparentMeshDraws() {
   m_transparent_mesh_draws.clear();
-  markViewportRenderDirty();
 }
 
 void RenderSystem::clearGpuMeshes() {
@@ -841,6 +842,14 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
 
 void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                 uint32_t target_height) {
+  const float render_scale = editorRenderScale();
+  if (render_scale < 0.999f) {
+    target_width = eastl::max(
+        16u, static_cast<uint32_t>(static_cast<float>(target_width) * render_scale));
+    target_height = eastl::max(
+        16u, static_cast<uint32_t>(static_cast<float>(target_height) * render_scale));
+  }
+
   resizeOffscreenIfNeeded(target_width, target_height);
   flushOffscreenResizeToTarget(target_width, target_height);
   applyDeferredOffscreenResize();
@@ -996,8 +1005,23 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       !matricesNearlyEqual(projection, m_last_viewport_projection);
   const bool scene_changed =
       m_viewport_render_generation != m_last_rendered_viewport_generation;
+  bool skip_camera_only_zero_copy = false;
+  if (usesZeroCopyViewport() && m_viewport_layout_source != nullptr &&
+      !m_force_viewport_render && !viewport_target_changed && !scene_changed &&
+      camera_changed) {
+    skip_camera_only_zero_copy =
+        !static_cast<SlintSystem*>(m_viewport_layout_source)
+             ->isViewportPacingInteractive() &&
+        !static_cast<SlintSystem*>(m_viewport_layout_source)
+             ->wouldScheduleViewportComposite();
+  }
   if (!m_force_viewport_render && !viewport_target_changed && !camera_changed &&
       !scene_changed) {
+    pollViewportPresent();
+    return;
+  }
+
+  if (skip_camera_only_zero_copy) {
     pollViewportPresent();
     return;
   }
@@ -1081,17 +1105,12 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     m_overlay_system->begin_sync(frame_state, m_current_frame);
   }
 
-  const auto forward_record_start = std::chrono::steady_clock::now();
   if (m_forward_path) {
     m_forward_path->renderFrame(
         command_buffer, frame_state, opaque_draws.data(),
         static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
         static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
   }
-  const double forward_record_ms =
-      std::chrono::duration<double, std::milli>(
-          std::chrono::steady_clock::now() - forward_record_start)
-          .count();
 
   if (m_overlay_system) {
     if (m_overlay_system->hasActiveLineOverlays()) {
@@ -1181,28 +1200,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   m_last_rendered_viewport_generation = m_viewport_render_generation;
   m_force_viewport_render = false;
 
-  // #region agent log
-  {
-    static uint32_t s_perf_log_count = 0;
-    static auto s_tick_start = std::chrono::steady_clock::now();
-    const auto tick_end = std::chrono::steady_clock::now();
-    const double tick_ms =
-        std::chrono::duration<double, std::milli>(tick_end - s_tick_start).count();
-    s_tick_start = tick_end;
-    if (s_perf_log_count < 10u) {
-      ++s_perf_log_count;
-      char data[384];
-      std::snprintf(
-          data, sizeof(data),
-          "{\"frame\":%u,\"tickMs\":%.2f,\"forwardRecordMs\":%.2f,"
-          "\"opaqueDraws\":%zu,\"zeroCopy\":%s,\"runId\":\"post-fix-v6\"}",
-          s_perf_log_count, tick_ms, forward_record_ms, opaque_draws.size(),
-          zero_copy_viewport ? "true" : "false");
-      agent_debug::log("K", "render_system.cpp:tick", "perf_frame", data);
-    }
-  }
-  // #endregion
-
   m_current_frame = (m_current_frame + 1) % VulkanSync::k_max_frames_in_flight;
 }
 
@@ -1241,9 +1238,18 @@ void RenderSystem::onEvent(Event& event) {
   }
 }
 
+void RenderSystem::requestViewportRedraw() {
+  markViewportRenderDirty();
+  m_force_viewport_render = true;
+}
+
 void RenderSystem::setTransformGizmoMode(const TransformGizmoMode mode) {
   if (m_overlay_system) {
     m_overlay_system->transform_gizmo().controller().setMode(mode);
+    requestViewportRedraw();
+    if (g_runtime_global_context.m_slint_system) {
+      g_runtime_global_context.m_slint_system->syncTransformToolbarFromEngine();
+    }
   }
 }
 
@@ -1257,6 +1263,7 @@ TransformGizmoMode RenderSystem::getTransformGizmoMode() const {
 void RenderSystem::toggleTransformGizmoSpace() {
   if (m_overlay_system) {
     m_overlay_system->transform_gizmo().controller().toggleSpace();
+    requestViewportRedraw();
   }
 }
 
@@ -1266,6 +1273,13 @@ bool RenderSystem::isTransformGizmoSpaceGlobal() const {
            GizmoSpace::global;
   }
   return true;
+}
+
+bool RenderSystem::isTransformGizmoDragging() const {
+  if (m_overlay_system) {
+    return m_overlay_system->transform_gizmo().controller().isDragging();
+  }
+  return false;
 }
 
 }  // namespace Blunder

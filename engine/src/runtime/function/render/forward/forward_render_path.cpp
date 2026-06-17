@@ -8,7 +8,6 @@
 #include <glm/vec4.hpp>
 
 #include "runtime/core/base/macro.h"
-#include "runtime/core/debug/agent_debug_log.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
@@ -150,17 +149,8 @@ void ForwardRenderPath::updateOpaqueTextureBindingsIfNeeded(
   if (cache.valid && cache.base_color == resolved_base &&
       cache.metallic_roughness == resolved_mr && cache.normal == resolved_normal &&
       cache.occlusion == resolved_occlusion) {
-    // #region agent log
-    static uint32_t s_tex_skip = 0;
-    ++s_tex_skip;
-    // #endregion
     return;
   }
-
-  // #region agent log
-  static uint32_t s_tex_write = 0;
-  ++s_tex_write;
-  // #endregion
 
   writeOpaqueTextureBindings(device, descriptor_set, resolved_base, resolved_mr,
                              resolved_normal, resolved_occlusion, m_fallback_texture);
