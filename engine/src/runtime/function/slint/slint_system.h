@@ -12,8 +12,10 @@
 
 #include "editor_window.h"
 
-#include "runtime/platform/window/window_system.h"
+#include "runtime/platform/window/child_window_registry.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/function/scene/entity_id.h"
+#include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_manager.h"
 #include "runtime/function/ui/editor_ui_presentation.h"
 #include "runtime/function/ui/ui_context.h"
@@ -57,6 +59,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void initialize(const SlintSystemInitInfo& init_info);
   void shutdown();
   WindowSystem* getWindowSystem() const { return m_window_system; }
+  ChildWindowRegistry& childWindowRegistry() { return m_child_window_registry; }
 
   /// Drives Slint's per-frame work: timers/animations + window present.
   /// With the SkiaRenderer backend, this also performs the GPU composite
@@ -77,15 +80,11 @@ class SlintSystem final : public IEditorUiPresentation {
     return m_window_resize_active || m_resize_cooldown_frames > 0;
   }
 
-  /// Skip Vulkan readback and defer expensive layout/sync (window resize + dock splitters).
-  bool isDockLayoutDragActive() const {
-    return false;
-  }
+  /// Skip Vulkan readback and defer expensive layout/sync (window resize / layout cooldown).
+  bool isDockLayoutDragActive() const;
 
   /// True while the user is dragging or about to drag a dock splitter (C++ path).
-  bool isSplitterResizeInteractionActive() const {
-    return false;
-  }
+  bool isSplitterResizeInteractionActive() const;
 
   bool shouldDeferHeavyFrameWork() const;
 
@@ -211,6 +210,15 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void queueFileDialogImports(const eastl::vector<eastl::string>& paths);
 
+  struct PiercingMenuItem {
+    EntityId entity_id{k_invalid_entity_id};
+    eastl::string name;
+  };
+
+  void showPiercingMenu(const eastl::vector<PiercingMenuItem>& items, float window_x,
+                        float window_y, bool add_mode);
+  void hidePiercingMenu();
+
   /// Hit-tests the Persp/Iso strip and toggles projection (engine mouse path).
   bool tryToggleProjectionAtWindow(float window_x, float window_y);
 
@@ -221,7 +229,7 @@ class SlintSystem final : public IEditorUiPresentation {
    public:
     SlintWindowAdapter(WindowSystem* window_system, uint64_t vk_instance = 0,
                        uint64_t vk_physical_device = 0, uint64_t vk_device = 0,
-                       uint32_t vk_queue_family = 0);
+                       uint32_t vk_queue_family = 0, SDL_Window* child_window = nullptr);
     ~SlintWindowAdapter() override = default;
 
     slint::platform::AbstractRenderer& renderer() override;
@@ -265,11 +273,16 @@ class SlintSystem final : public IEditorUiPresentation {
     /// Owning SlintSystem (set after construction) for self drag-state queries.
     void setOwner(SlintSystem* owner) { m_owner = owner; }
 
+    SDL_WindowID windowId() const;
+    SDL_Window* boundWindow() const;
+    bool isChildWindow() const { return m_child_window != nullptr; }
+
    private:
     void ensureRenderer();
 
     SlintSystem* m_owner{nullptr};
     WindowSystem* m_window_system{nullptr};
+    SDL_Window* m_child_window{nullptr};
     // Engine-owned Vulkan handles for the shared-device renderer (0 = self-owned).
     uint64_t m_vk_instance{0};
     uint64_t m_vk_physical_device{0};
@@ -289,6 +302,12 @@ class SlintSystem final : public IEditorUiPresentation {
     uint32_t m_present_suppress_frames{0};
   };
 
+  void setPendingSlintChildWindow(SDL_Window* window);
+  void unregisterSlintChildAdapter(SDL_Window* window);
+  SlintWindowAdapter* slintAdapterForWindow(SDL_WindowID window_id) const;
+  void renderSlintAdapter(SlintWindowAdapter* adapter);
+  bool processSlintAdapterEvent(SlintWindowAdapter* adapter, const SDL_Event& event);
+
   class SlintPlatform final : public slint::platform::Platform {
    public:
     SlintPlatform(WindowSystem* window_system, uint64_t vk_instance = 0,
@@ -297,11 +316,17 @@ class SlintSystem final : public IEditorUiPresentation {
     std::unique_ptr<slint::platform::WindowAdapter> create_window_adapter()
         override;
 
+    void setPendingChildWindow(SDL_Window* window) { m_pending_child_window = window; }
+    void unregisterChildAdapter(SDL_Window* window);
+    SlintWindowAdapter* adapterForWindowId(SDL_WindowID window_id) const;
+
     SlintWindowAdapter* getWindowAdapter() const { return m_window_adapter; }
 
    private:
     WindowSystem* m_window_system{nullptr};
     SlintWindowAdapter* m_window_adapter{nullptr};
+    SDL_Window* m_pending_child_window{nullptr};
+    eastl::vector<SlintWindowAdapter*> m_child_adapters;
     uint64_t m_vk_instance{0};
     uint64_t m_vk_physical_device{0};
     uint64_t m_vk_device{0};
@@ -321,6 +346,18 @@ class SlintSystem final : public IEditorUiPresentation {
   void cacheViewportLogicalRectOnly();
   void seedDockingWorkspace();
   void syncDockingWorkspace();
+  void syncNativeFloatingWindows(const DockLayoutModel& model);
+  void wireNativeFloatingCallbacks();
+  void tickAutoHideHover();
+  void tickGlobalDockPointerPoll();
+  void hideNativeFloatForActiveTabDrag();
+  void restoreHiddenNativeFloatAfterTabDrag();
+  void updateNativeFloatResizeCursor(SlintWindowAdapter* adapter, float logical_x,
+                                     float logical_y);
+  void clearNativeFloatResizeCursor();
+  void pollAutoHidePointerHover();
+  void handleAutoHideOutsideClick(float logical_x, float logical_y);
+  void cancelAutoHideHoverTimer();
   void refreshBrowserRectCache();
   void processPendingAssetImports();
   void showImportMeshDialogForPendingPaths();
@@ -329,6 +366,7 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Schedules SDL_ShowOpenFileDialog on the main thread (outside Slint dispatch).
   void queueOpenImportFileDialog();
   void finalizeAssetImport(const eastl::vector<ImportResult>& results);
+  void onPiercingMenuEntitySelected(EntityId entity_id);
   /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
   /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
   void syncWindowChromeSize(int override_logical_w = 0, int override_logical_h = 0);
@@ -354,6 +392,8 @@ class SlintSystem final : public IEditorUiPresentation {
   int m_slint_dispatch_depth{0};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
   DockManager m_dock_manager;
+  DockFloatingWindowHost m_floating_host;
+  ChildWindowRegistry m_child_window_registry;
   bool m_docking_visible{true};
   bool m_docking_model_dirty{true};
   float m_docking_host_w{0.0f};
@@ -370,6 +410,7 @@ class SlintSystem final : public IEditorUiPresentation {
   Uint32 m_open_import_dialog_event{0};
   bool m_tree_folder_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};
+  bool m_piercing_menu_add_mode{false};
   bool m_left_mouse_down_prev{false};
   bool m_applying_inspector_sync{false};
   bool m_force_window_commit{false};
@@ -381,6 +422,12 @@ class SlintSystem final : public IEditorUiPresentation {
   uint32_t m_last_viewport_h{0};
   bool m_win32_size_modal{false};
   bool m_pending_dock_layout_present{false};
+  bool m_splitter_resize_active{false};
+  DockId m_hidden_native_float_during_drag{k_invalid_dock_id};
+  DockId m_auto_hide_hover_widget_id{k_invalid_dock_id};
+  bool m_auto_hide_hover_expand{false};
+  uint64_t m_auto_hide_hover_deadline_ms{0};
+  static constexpr uint32_t k_auto_hide_hover_delay_ms = 300;
   bool m_viewport_image_dirty{false};
   bool m_viewport_image_stale{true};
   bool m_pending_viewport_invalidate{false};

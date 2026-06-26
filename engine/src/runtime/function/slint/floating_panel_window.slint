@@ -1,0 +1,424 @@
+import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
+import { InspectorPanel } from "inspector_panel.slint";
+import { ContentBrowser, BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
+import { DockChromeBar, DockChromeMetrics, DockTab } from "docking_panel.slint";
+
+export component FloatingPanelWindow inherits Window {
+    in property <int> node-id: 0;
+    in property <int> panel-kind: 0;
+    in property <string> title-text: "";
+    in property <[DockTab]> tabs: [];
+
+    in property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
+    in property <int> hierarchy-selected-entity-id: 0;
+
+    in property <bool> inspector-has-selection: false;
+    in property <string> inspector-entity-name: "";
+    in-out property <float> inspector-pos-x: 0.0;
+    in-out property <float> inspector-pos-y: 0.0;
+    in-out property <float> inspector-pos-z: 0.0;
+    in-out property <float> inspector-rot-x: 0.0;
+    in-out property <float> inspector-rot-y: 0.0;
+    in-out property <float> inspector-rot-z: 0.0;
+    in-out property <float> inspector-scale-x: 1.0;
+    in-out property <float> inspector-scale-y: 1.0;
+    in-out property <float> inspector-scale-z: 1.0;
+    in-out property <float> light-dir-x: 0.45;
+    in-out property <float> light-dir-y: 0.7;
+    in-out property <float> light-dir-z: 0.55;
+    in-out property <float> light-color-r: 1.0;
+    in-out property <float> light-color-g: 1.0;
+    in-out property <float> light-color-b: 1.0;
+    in-out property <float> ambient-r: 0.15;
+    in-out property <float> ambient-g: 0.15;
+    in-out property <float> ambient-b: 0.15;
+    in-out property <float> diffuse-r: 1.0;
+    in-out property <float> diffuse-g: 1.0;
+    in-out property <float> diffuse-b: 1.0;
+    in-out property <float> specular-r: 0.4;
+    in-out property <float> specular-g: 0.4;
+    in-out property <float> specular-b: 0.4;
+    in-out property <float> shininess: 32.0;
+    in-out property <bool> shading-unlit: false;
+    in-out property <bool> ssao-enabled: true;
+    in-out property <float> ssao-radius: 0.45;
+    in-out property <float> ssao-bias: 0.025;
+    in-out property <float> ssao-strength: 0.85;
+
+    in-out property <[BrowserTreeRow]> browser-tree-rows: [];
+    in-out property <[BrowserGridRow]> browser-grid-rows: [];
+    in-out property <[BrowserPathSegment]> browser-path-segments: [];
+    in property <bool> browser-drag-active: false;
+    in property <string> browser-drag-source-path: "";
+    in property <string> browser-drop-highlight-path: "";
+    in property <bool> browser-viewport-drop-active: false;
+    in property <string> browser-status-text: "0 items";
+    in property <string> browser-selected-folder-path: "";
+
+    callback close-pressed();
+    callback title-move-pressed(float, float);
+    callback title-move-moved(float, float);
+    callback title-move-released();
+    callback grip-resize-pressed(int, float, float);
+    callback grip-resize-moved(float, float);
+    callback grip-resize-released();
+    callback tab-pressed(int, float, float);
+    callback tab-moved(float, float);
+    callback tab-released(float, float);
+    callback widget-closed(int);
+    callback hierarchy-entity-selected(int);
+    callback hierarchy-entity-toggle(int);
+    callback inspector-transform-edited();
+    callback browser-folder-selected(string);
+    callback browser-folder-toggle(string);
+    callback browser-refresh-requested();
+    callback browser-import-requested();
+    callback browser-item-press(string, float, float);
+    callback browser-item-move(string, float, float);
+    callback browser-item-release(string, float, float);
+    callback browser-search-changed(string);
+    callback browser-path-segment-clicked(string);
+
+    preferred-width: 320px;
+    preferred-height: 240px;
+    background: #181818;
+
+    property <length> grip-size: 14px;
+    property <length> resize-edge: 5px;
+
+    VerticalLayout {
+        padding: 0;
+        spacing: 0;
+
+        chrome-bar := DockChromeBar {
+            height: DockChromeMetrics.bar-height;
+            embedded: true;
+            show-chrome-move: true;
+            show-window-close: true;
+            tabs: root.tabs;
+            chrome-move-pressed(x, y) => {
+                root.title-move-pressed(
+                    (chrome-bar.absolute-position.x - root.absolute-position.x + x) / 1px,
+                    (chrome-bar.absolute-position.y - root.absolute-position.y + y) / 1px);
+            }
+            chrome-move-moved(x, y) => {
+                root.title-move-moved(
+                    (chrome-bar.absolute-position.x - root.absolute-position.x + x) / 1px,
+                    (chrome-bar.absolute-position.y - root.absolute-position.y + y) / 1px);
+            }
+            chrome-move-released() => { root.title-move-released(); }
+            window-close-pressed() => { root.close-pressed(); }
+            tab-pressed(id, px, py) => {
+                root.tab-pressed(id,
+                    (chrome-bar.absolute-position.x - root.absolute-position.x + px) / 1px,
+                    (chrome-bar.absolute-position.y - root.absolute-position.y + py) / 1px);
+            }
+            tab-moved(px, py) => {
+                root.tab-moved(
+                    (chrome-bar.absolute-position.x - root.absolute-position.x + px) / 1px,
+                    (chrome-bar.absolute-position.y - root.absolute-position.y + py) / 1px);
+            }
+            tab-released(px, py) => {
+                root.tab-released(
+                    (chrome-bar.absolute-position.x - root.absolute-position.x + px) / 1px,
+                    (chrome-bar.absolute-position.y - root.absolute-position.y + py) / 1px);
+            }
+            tab-activated(_) => { }
+            widget-closed(id) => { root.widget-closed(id); }
+            tab-pin-pressed(_) => { }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+
+            if root.panel-kind == 2 : HierarchyPanel {
+                width: 100%;
+                height: 100%;
+                tree-rows: root.hierarchy-tree-rows;
+                selected-entity-id: root.hierarchy-selected-entity-id;
+                entity-selected(id) => { root.hierarchy-entity-selected(id); }
+                entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
+            }
+
+            if root.panel-kind == 3 : InspectorPanel {
+                width: 100%;
+                height: 100%;
+                has-selection: root.inspector-has-selection;
+                entity-name: root.inspector-entity-name;
+                pos-x <=> root.inspector-pos-x;
+                pos-y <=> root.inspector-pos-y;
+                pos-z <=> root.inspector-pos-z;
+                rot-x <=> root.inspector-rot-x;
+                rot-y <=> root.inspector-rot-y;
+                rot-z <=> root.inspector-rot-z;
+                scale-x <=> root.inspector-scale-x;
+                scale-y <=> root.inspector-scale-y;
+                scale-z <=> root.inspector-scale-z;
+                light-dir-x <=> root.light-dir-x;
+                light-dir-y <=> root.light-dir-y;
+                light-dir-z <=> root.light-dir-z;
+                light-color-r <=> root.light-color-r;
+                light-color-g <=> root.light-color-g;
+                light-color-b <=> root.light-color-b;
+                ambient-r <=> root.ambient-r;
+                ambient-g <=> root.ambient-g;
+                ambient-b <=> root.ambient-b;
+                diffuse-r <=> root.diffuse-r;
+                diffuse-g <=> root.diffuse-g;
+                diffuse-b <=> root.diffuse-b;
+                specular-r <=> root.specular-r;
+                specular-g <=> root.specular-g;
+                specular-b <=> root.specular-b;
+                shininess <=> root.shininess;
+                shading-unlit <=> root.shading-unlit;
+                ssao-enabled <=> root.ssao-enabled;
+                ssao-radius <=> root.ssao-radius;
+                ssao-bias <=> root.ssao-bias;
+                ssao-strength <=> root.ssao-strength;
+                transform-edited => { root.inspector-transform-edited(); }
+            }
+
+            if root.panel-kind == 4 : ContentBrowser {
+                width: 100%;
+                height: 100%;
+                tree-rows: root.browser-tree-rows;
+                grid-rows: root.browser-grid-rows;
+                path-segments: root.browser-path-segments;
+                drag-active: root.browser-drag-active;
+                drag-source-path: root.browser-drag-source-path;
+                drop-highlight-path: root.browser-drop-highlight-path;
+                viewport-drop-active: root.browser-viewport-drop-active;
+                status-text: root.browser-status-text;
+                selected-folder-path: root.browser-selected-folder-path;
+                folder-selected(path) => { root.browser-folder-selected(path); }
+                folder-toggle(path) => { root.browser-folder-toggle(path); }
+                refresh-requested => { root.browser-refresh-requested(); }
+                import-requested => { root.browser-import-requested(); }
+                item-press(path, x, y) => { root.browser-item-press(path, x, y); }
+                item-move(path, x, y) => { root.browser-item-move(path, x, y); }
+                item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                search-changed(text) => { root.browser-search-changed(text); }
+                path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+            }
+
+            grip := Rectangle {
+                x: parent.width - root.grip-size;
+                y: parent.height - root.grip-size;
+                width: root.grip-size;
+                height: root.grip-size;
+                background: grip-drag.has-hover ? #3a6ea5 : #3a3a3a;
+
+                grip-drag := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.nwse-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(3,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: root.resize-edge;
+                y: 0;
+                width: parent.width - 2 * root.resize-edge;
+                height: root.resize-edge;
+                north-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.ns-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(5,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: root.resize-edge;
+                y: parent.height - root.resize-edge;
+                width: parent.width - 2 * root.resize-edge;
+                height: root.resize-edge;
+                south-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.ns-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(2,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 0;
+                y: root.resize-edge;
+                width: root.resize-edge;
+                height: parent.height - 2 * root.resize-edge;
+                west-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.ew-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(4,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: parent.width - root.resize-edge;
+                y: root.resize-edge;
+                width: root.resize-edge;
+                height: parent.height - 2 * root.resize-edge;
+                east-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.ew-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(1,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: root.resize-edge;
+                height: root.resize-edge;
+                nw-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.nwse-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(7,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: parent.width - root.resize-edge;
+                y: 0;
+                width: root.resize-edge;
+                height: root.resize-edge;
+                ne-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.nesw-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(6,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: 0;
+                y: parent.height - root.resize-edge;
+                width: root.resize-edge;
+                height: root.resize-edge;
+                sw-edge := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    mouse-cursor: MouseCursor.nesw-resize;
+                    moved => {
+                        root.grip-resize-moved(
+                            (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                            (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                    }
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            root.grip-resize-pressed(8,
+                                (self.absolute-position.x - root.absolute-position.x + self.mouse-x) / 1px,
+                                (self.absolute-position.y - root.absolute-position.y + self.mouse-y) / 1px);
+                        }
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                            root.grip-resize-released();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

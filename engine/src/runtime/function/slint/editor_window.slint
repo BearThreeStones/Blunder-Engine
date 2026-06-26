@@ -1,223 +1,14 @@
 import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widgets.slint";
 import { ContentBrowser, BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
+import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
-import { DockTabsLayer, DockSplittersLayer, DockGuidesLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockPreview, DockFloating } from "docking_panel.slint";
-
-component ShadingSlider inherits VerticalBox {
-    spacing: 2px;
-    in property <string> label;
-    in-out property <float> value;
-    in property <float> minimum: 0.0;
-    in property <float> maximum: 1.0;
-
-    min-height: 36px;
-
-    HorizontalBox {
-        spacing: 4px;
-        Text {
-            text: root.label;
-            color: #c0c0c0;
-            font-size: 11px;
-            horizontal-stretch: 1;
-            vertical-alignment: center;
-        }
-        Text {
-            text: Math.round(root.value * 100) / 100;
-            color: #bde7ff;
-            font-size: 11px;
-            width: 44px;
-            horizontal-alignment: right;
-            vertical-alignment: center;
-        }
-    }
-
-    Slider {
-        width: 100%;
-        min-height: 22px;
-        minimum: root.minimum;
-        maximum: root.maximum;
-        value <=> root.value;
-    }
-}
-
-component TransformSlider inherits VerticalBox {
-    spacing: 2px;
-    in property <string> label;
-    in-out property <float> value;
-    in property <float> minimum: -100.0;
-    in property <float> maximum: 100.0;
-    callback edited();
-
-    min-height: 36px;
-
-    HorizontalBox {
-        spacing: 4px;
-        Text {
-            text: root.label;
-            color: #c0c0c0;
-            font-size: 11px;
-            horizontal-stretch: 1;
-            vertical-alignment: center;
-        }
-        Text {
-            text: Math.round(root.value * 100) / 100;
-            color: #bde7ff;
-            font-size: 11px;
-            width: 44px;
-            horizontal-alignment: right;
-            vertical-alignment: center;
-        }
-    }
-
-    Slider {
-        width: 100%;
-        min-height: 22px;
-        minimum: root.minimum;
-        maximum: root.maximum;
-        value <=> root.value;
-        changed => { root.edited(); }
-    }
-}
-
-component InspectorPanel inherits Rectangle {
-    in property <bool> has-selection: false;
-    in property <string> entity-name: "";
-    in-out property <float> pos-x;
-    in-out property <float> pos-y;
-    in-out property <float> pos-z;
-    in-out property <float> rot-x;
-    in-out property <float> rot-y;
-    in-out property <float> rot-z;
-    in-out property <float> scale-x;
-    in-out property <float> scale-y;
-    in-out property <float> scale-z;
-    in-out property <float> light-dir-x;
-    in-out property <float> light-dir-y;
-    in-out property <float> light-dir-z;
-    in-out property <float> light-color-r;
-    in-out property <float> light-color-g;
-    in-out property <float> light-color-b;
-    in-out property <float> ambient-r;
-    in-out property <float> ambient-g;
-    in-out property <float> ambient-b;
-    in-out property <float> diffuse-r;
-    in-out property <float> diffuse-g;
-    in-out property <float> diffuse-b;
-    in-out property <float> specular-r;
-    in-out property <float> specular-g;
-    in-out property <float> specular-b;
-    in-out property <float> shininess;
-    in-out property <bool> shading-unlit: false;
-    in-out property <bool> ssao-enabled: true;
-    in-out property <float> ssao-radius;
-    in-out property <float> ssao-bias;
-    in-out property <float> ssao-strength;
-    in property <bool> layout-drag-active: false;
-
-    callback transform-edited();
-    callback sync-requested();
-    callback reset-requested();
-
-    background: #1c1c1c;
-    border-color: #2a2a2a;
-    border-width: 1px;
-    clip: true;
-
-    VerticalLayout {
-        padding: 10px;
-        spacing: 8px;
-
-        Text { text: "Inspector"; color: #d0d0d0; font-size: 14px; }
-        Rectangle { background: #2a2a2a; height: 1px; }
-
-        Flickable {
-            vertical-stretch: 1;
-            interactive: !root.layout-drag-active;
-            viewport-width: parent.width - 20px;
-            viewport-height: 2400px;
-
-            VerticalBox {
-                width: parent.width;
-                spacing: 6px;
-                padding-right: 4px;
-
-                Text { text: "Transform"; color: #f0f0f0; font-size: 13px; }
-                Text {
-                    text: root.has-selection ? root.entity-name : "No selection";
-                    color: #a8a8a8;
-                    font-size: 12px;
-                }
-
-                Text { text: "Position"; color: #a8a8a8; font-size: 12px; }
-                TransformSlider { label: "X"; minimum: -200; maximum: 200; value <=> root.pos-x; edited => { root.transform-edited(); } }
-                TransformSlider { label: "Y"; minimum: -200; maximum: 200; value <=> root.pos-y; edited => { root.transform-edited(); } }
-                TransformSlider { label: "Z"; minimum: -200; maximum: 200; value <=> root.pos-z; edited => { root.transform-edited(); } }
-
-                Text { text: "Rotation (deg)"; color: #a8a8a8; font-size: 12px; }
-                TransformSlider { label: "X"; minimum: -180; maximum: 180; value <=> root.rot-x; edited => { root.transform-edited(); } }
-                TransformSlider { label: "Y"; minimum: -180; maximum: 180; value <=> root.rot-y; edited => { root.transform-edited(); } }
-                TransformSlider { label: "Z"; minimum: -180; maximum: 180; value <=> root.rot-z; edited => { root.transform-edited(); } }
-
-                Text { text: "Scale"; color: #a8a8a8; font-size: 12px; }
-                TransformSlider { label: "X"; minimum: 0.01; maximum: 10; value <=> root.scale-x; edited => { root.transform-edited(); } }
-                TransformSlider { label: "Y"; minimum: 0.01; maximum: 10; value <=> root.scale-y; edited => { root.transform-edited(); } }
-                TransformSlider { label: "Z"; minimum: 0.01; maximum: 10; value <=> root.scale-z; edited => { root.transform-edited(); } }
-
-                Rectangle { background: #2a2a2a; height: 1px; }
-
-                Text { text: "Blinn-Phong Shading"; color: #f0f0f0; font-size: 13px; }
-
-                HorizontalBox {
-                    spacing: 6px;
-                    Button { text: "Sync Asset"; clicked => { root.sync-requested(); } }
-                    Button { text: "Reset"; clicked => { root.reset-requested(); } }
-                }
-
-                CheckBox {
-                    text: "Unlit (albedo only)";
-                    checked: root.shading-unlit;
-                    toggled => { root.shading-unlit = self.checked; }
-                }
-
-                Text { text: "Light direction"; color: #a8a8a8; font-size: 12px; }
-                ShadingSlider { label: "Dir X"; minimum: -1; maximum: 1; value <=> root.light-dir-x; }
-                ShadingSlider { label: "Dir Y"; minimum: -1; maximum: 1; value <=> root.light-dir-y; }
-                ShadingSlider { label: "Dir Z"; minimum: -1; maximum: 1; value <=> root.light-dir-z; }
-
-                Text { text: "Light color"; color: #a8a8a8; font-size: 12px; }
-                ShadingSlider { label: "R"; value <=> root.light-color-r; }
-                ShadingSlider { label: "G"; value <=> root.light-color-g; }
-                ShadingSlider { label: "B"; value <=> root.light-color-b; }
-
-                Text { text: "Ambient (ka)"; color: #a8a8a8; font-size: 12px; }
-                ShadingSlider { label: "R"; value <=> root.ambient-r; }
-                ShadingSlider { label: "G"; value <=> root.ambient-g; }
-                ShadingSlider { label: "B"; value <=> root.ambient-b; }
-
-                Text { text: "Diffuse (kd)"; color: #a8a8a8; font-size: 12px; }
-                ShadingSlider { label: "R"; value <=> root.diffuse-r; }
-                ShadingSlider { label: "G"; value <=> root.diffuse-g; }
-                ShadingSlider { label: "B"; value <=> root.diffuse-b; }
-
-                Text { text: "Specular (ks)"; color: #a8a8a8; font-size: 12px; }
-                ShadingSlider { label: "R"; value <=> root.specular-r; }
-                ShadingSlider { label: "G"; value <=> root.specular-g; }
-                ShadingSlider { label: "B"; value <=> root.specular-b; }
-
-                ShadingSlider { label: "Shininess"; minimum: 8; maximum: 256; value <=> root.shininess; }
-
-                Text { text: "SSAO"; color: #a8a8a8; font-size: 12px; }
-                CheckBox { text: "Enabled"; checked: root.ssao-enabled; toggled => { root.ssao-enabled = self.checked; } }
-                ShadingSlider { label: "Radius"; minimum: 0.05; maximum: 1.0; value <=> root.ssao-radius; }
-                ShadingSlider { label: "Bias"; minimum: 0.0; maximum: 0.1; value <=> root.ssao-bias; }
-                ShadingSlider { label: "Strength"; minimum: 0.0; maximum: 1.0; value <=> root.ssao-strength; }
-            }
-        }
-    }
-}
+import { InspectorPanel } from "inspector_panel.slint";
+import { FloatingPanelWindow } from "floating_panel_window.slint";
+export { FloatingPanelWindow }
+import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, DockHostGuidesLayer, DockAutoHideDropPreviewLayer, DockAutoHideTabsLayer, DockAutoHideOverlaysLayer, DockFloatingDragPreviewLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockHostGuide, DockPreview, DockAutoHideDropPreview, DockDragPreview, DockFloating, DockAutoHideTab, DockAutoHideOverlay } from "docking_panel.slint";
 
 export component MainEditorWindow inherits Window {
     // Logical size comes only from C++ dispatch_resize_event (see SlintWindowAdapter).
@@ -328,13 +119,25 @@ export component MainEditorWindow inherits Window {
     callback import-mesh-confirmed();
     callback import-mesh-cancelled();
 
+    in-out property <bool> piercing-menu-visible: false;
+    in-out property <length> piercing-menu-anchor-x: 0px;
+    in-out property <length> piercing-menu-anchor-y: 0px;
+    in-out property <[PiercingMenuRow]> piercing-menu-rows: [];
+    callback piercing-entity-selected(int);
+    callback piercing-menu-dismissed();
+
     in property <bool> docking-visible: true;
     in property <[DockTile]> docking-tiles: [];
     in property <[DockTab]> docking-tabs: [];
     in property <[DockSplitterHandle]> docking-splitters: [];
     in property <[DockGuide]> docking-guides: [];
+    in property <[DockHostGuide]> docking-host-guides: [];
     in property <[DockFloating]> docking-floatings: [];
     in property <DockPreview> docking-preview;
+    in property <DockPreview> docking-host-dock-preview;
+    in property <DockAutoHideDropPreview> docking-auto-hide-drop-preview;
+    in property <bool> docking-cross-guides-visible: false;
+    in property <DockDragPreview> docking-drag-preview;
     in property <bool> docking-drag-active: false;
 
     out property <length> docking-width: docking_host.width;
@@ -354,6 +157,18 @@ export component MainEditorWindow inherits Window {
     callback docking-floating-resize-pressed(int, length, length);
     callback docking-floating-moved(length, length);
     callback docking-floating-released();
+    callback docking-floating-window-close(int);
+
+    in property <[DockAutoHideTab]> docking-auto-hide-tabs: [];
+    in property <[DockAutoHideOverlay]> docking-auto-hide-overlays: [];
+    callback docking-auto-hide-tab-pressed(int);
+    callback docking-auto-hide-tab-unpin(int);
+    callback docking-tab-pin-pressed(int);
+    callback docking-auto-hide-overlay-minimize(int);
+    callback docking-auto-hide-overlay-close(int);
+    callback docking-auto-hide-overlay-resize-pressed(int, length, length);
+    callback docking-auto-hide-overlay-resize-moved(int, length, length);
+    callback docking-auto-hide-overlay-resize-released();
 
     function reset-shading-defaults() {
         root.light-dir-x = 0.45;
@@ -559,48 +374,27 @@ export component MainEditorWindow inherits Window {
                     border-color: #4a4a4a;
                     border-width: 1px;
 
-                    Rectangle {
+                    float-chrome := DockChromeBar {
                         x: 0;
                         y: 0;
                         width: parent.width;
-                        height: ff.title-height;
-                        background: #2b2b2b;
-                        border-color: #4a4a4a;
-                        border-width: 1px;
-
-                        Text {
-                            x: 8px;
-                            width: parent.width - 16px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            overflow: elide;
-                            text: ff.title;
-                            color: #d0d0d0;
-                            font-size: 12px;
+                        height: DockChromeMetrics.bar-height;
+                        embedded: true;
+                        chrome-bar-only: true;
+                        show-chrome-move: true;
+                        show-window-close: true;
+                        chrome-move-pressed(px, py) => {
+                            root.docking-floating-move-pressed(ff.node-id,
+                                float-chrome.absolute-position.x - docking_host.absolute-position.x + px,
+                                float-chrome.absolute-position.y - docking_host.absolute-position.y + py);
                         }
-
-                        title-drag := TouchArea {
-                            width: parent.width;
-                            height: parent.height;
-                            mouse-cursor: MouseCursor.move;
-                            moved => {
-                                root.docking-floating-moved(
-                                    self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
-                                    self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
-                            }
-                            pointer-event(event) => {
-                                if (event.button == PointerEventButton.left
-                                    && event.kind == PointerEventKind.down) {
-                                    root.docking-floating-move-pressed(ff.node-id,
-                                        self.absolute-position.x - docking_host.absolute-position.x + self.mouse-x,
-                                        self.absolute-position.y - docking_host.absolute-position.y + self.mouse-y);
-                                }
-                                if (event.button == PointerEventButton.left
-                                    && event.kind == PointerEventKind.up) {
-                                    root.docking-floating-released();
-                                }
-                            }
+                        chrome-move-moved(px, py) => {
+                            root.docking-floating-moved(
+                                float-chrome.absolute-position.x - docking_host.absolute-position.x + px,
+                                float-chrome.absolute-position.y - docking_host.absolute-position.y + py);
                         }
+                        chrome-move-released() => { root.docking-floating-released(); }
+                        window-close-pressed() => { root.docking-floating-window-close(ff.node-id); }
                     }
 
                     grip := Rectangle {
@@ -635,7 +429,13 @@ export component MainEditorWindow inherits Window {
                     }
                 }
 
-                DockTabsLayer {
+                DockFloatingDragPreviewLayer {
+                    width: 100%;
+                    height: 100%;
+                    preview: root.docking-drag-preview;
+                }
+
+                DockChromeBar {
                     width: 100%;
                     height: 100%;
                     tabs: root.docking-tabs;
@@ -644,6 +444,7 @@ export component MainEditorWindow inherits Window {
                     tab-released(px, py) => { root.docking-tab-released(px, py); }
                     tab-activated(id) => { root.docking-tab-activated(id); }
                     widget-closed(id) => { root.docking-widget-closed(id); }
+                    tab-pin-pressed(id) => { root.docking-tab-pin-pressed(id); }
                 }
 
                 DockSplittersLayer {
@@ -655,12 +456,139 @@ export component MainEditorWindow inherits Window {
                     splitter-released() => { root.docking-splitter-released(); }
                 }
 
+                DockHostGuidesLayer {
+                    width: 100%;
+                    height: 100%;
+                    guides: root.docking-host-guides;
+                    preview: root.docking-host-dock-preview;
+                }
+
                 DockGuidesLayer {
                     width: 100%;
                     height: 100%;
                     guides: root.docking-guides;
                     preview: root.docking-preview;
                     drag-active: root.docking-drag-active;
+                    show-guides: root.docking-cross-guides-visible;
+                }
+
+                DockAutoHideDropPreviewLayer {
+                    width: 100%;
+                    height: 100%;
+                    preview: root.docking-auto-hide-drop-preview;
+                }
+
+                DockAutoHideTabsLayer {
+                    width: 100%;
+                    height: 100%;
+                    tabs: root.docking-auto-hide-tabs;
+                    tab-pressed(id) => { root.docking-auto-hide-tab-pressed(id); }
+                    tab-unpin-pressed(id) => { root.docking-auto-hide-tab-unpin(id); }
+                }
+
+                // Dock-local coords; only present while an overlay is expanded.
+                auto_hide_overlays := DockAutoHideOverlaysLayer {
+                    width: 100%;
+                    height: 100%;
+                    visible: root.docking-auto-hide-overlays.length > 0;
+                    overlays: root.docking-auto-hide-overlays;
+                    overlay-minimize-pressed(id) => { root.docking-auto-hide-overlay-minimize(id); }
+                    overlay-close-pressed(id) => { root.docking-auto-hide-overlay-close(id); }
+                    overlay-resize-pressed(id, px, py) => {
+                        root.docking-auto-hide-overlay-resize-pressed(id, px, py);
+                    }
+                    overlay-resize-moved(id, px, py) => {
+                        root.docking-auto-hide-overlay-resize-moved(id, px, py);
+                    }
+                    overlay-resize-released() => { root.docking-auto-hide-overlay-resize-released(); }
+                }
+
+                for overlay in root.docking-auto-hide-overlays: Rectangle {
+                    x: overlay.content-x;
+                    y: overlay.content-y;
+                    width: overlay.content-width;
+                    height: overlay.content-height;
+                    clip: true;
+                    background: transparent;
+
+                    if overlay.panel-kind == 2: HierarchyPanel {
+                        width: 100%;
+                        height: 100%;
+                        tree-rows <=> root.hierarchy-tree-rows;
+                        selected-entity-id: root.hierarchy-selected-entity-id;
+                        tree-origin-y <=> root.hierarchy-tree-origin-y;
+                        entity-selected(id) => { root.hierarchy-entity-selected(id); }
+                        entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
+                    }
+
+                    if overlay.panel-kind == 4: ContentBrowser {
+                        width: 100%;
+                        height: 100%;
+                        layout-drag-active: root.docking-drag-active;
+                        tree-rows <=> root.browser-tree-rows;
+                        grid-rows <=> root.browser-grid-rows;
+                        path-segments <=> root.browser-path-segments;
+                        drag-active: root.browser-drag-active;
+                        drag-source-path: root.browser-drag-source-path;
+                        drop-highlight-path: root.browser-drop-highlight-path;
+                        viewport-drop-active: root.browser-viewport-drop-active;
+                        status-text: root.browser-status-text;
+                        selected-folder-path: root.browser-selected-folder-path;
+                        tree-origin-y <=> root.browser-tree-origin-y;
+                        tree-panel-height <=> root.browser-tree-panel-height;
+                        tree-pane-width <=> root.browser-tree-panel-width;
+                        thumb-size <=> root.browser-thumb-size;
+                        folder-selected(path) => { root.browser-folder-selected(path); }
+                        folder-toggle(path) => { root.browser-folder-toggle(path); }
+                        refresh-requested => { root.browser-refresh-requested(); }
+                        import-requested => { root.browser-import-requested(); }
+                        item-press(path, x, y) => { root.browser-item-press(path, x, y); }
+                        item-move(path, x, y) => { root.browser-item-move(path, x, y); }
+                        item-release(path, x, y) => { root.browser-item-release(path, x, y); }
+                        search-changed(text) => { root.browser-search-changed(text); }
+                        path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+                    }
+
+                    if overlay.panel-kind == 3: InspectorPanel {
+                        width: 100%;
+                        height: 100%;
+                        has-selection: root.inspector-has-selection;
+                        entity-name: root.inspector-entity-name;
+                        pos-x <=> root.inspector-pos-x;
+                        pos-y <=> root.inspector-pos-y;
+                        pos-z <=> root.inspector-pos-z;
+                        rot-x <=> root.inspector-rot-x;
+                        rot-y <=> root.inspector-rot-y;
+                        rot-z <=> root.inspector-rot-z;
+                        scale-x <=> root.inspector-scale-x;
+                        scale-y <=> root.inspector-scale-y;
+                        scale-z <=> root.inspector-scale-z;
+                        light-dir-x <=> root.light-dir-x;
+                        light-dir-y <=> root.light-dir-y;
+                        light-dir-z <=> root.light-dir-z;
+                        light-color-r <=> root.light-color-r;
+                        light-color-g <=> root.light-color-g;
+                        light-color-b <=> root.light-color-b;
+                        ambient-r <=> root.ambient-r;
+                        ambient-g <=> root.ambient-g;
+                        ambient-b <=> root.ambient-b;
+                        diffuse-r <=> root.diffuse-r;
+                        diffuse-g <=> root.diffuse-g;
+                        diffuse-b <=> root.diffuse-b;
+                        specular-r <=> root.specular-r;
+                        specular-g <=> root.specular-g;
+                        specular-b <=> root.specular-b;
+                        shininess <=> root.shininess;
+                        shading-unlit <=> root.shading-unlit;
+                        ssao-enabled <=> root.ssao-enabled;
+                        ssao-radius <=> root.ssao-radius;
+                        ssao-bias <=> root.ssao-bias;
+                        ssao-strength <=> root.ssao-strength;
+                        layout-drag-active: root.docking-drag-active;
+                        transform-edited => { root.inspector-transform-edited(); }
+                        sync-requested => { root.sync-shading-from-asset(); }
+                        reset-requested => { root.reset-shading-defaults(); }
+                    }
                 }
             }
 
@@ -683,7 +611,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.piercing-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -704,6 +632,18 @@ export component MainEditorWindow inherits Window {
             import-scale <=> root.import-mesh-scale;
             confirmed => { root.import-mesh-confirmed(); }
             cancelled => { root.import-mesh-cancelled(); }
+        }
+
+        PiercingMenu {
+            z: 3500;
+            width: parent.width;
+            height: parent.height;
+            show-menu: root.piercing-menu-visible;
+            anchor-x: root.piercing-menu-anchor-x;
+            anchor-y: root.piercing-menu-anchor-y;
+            rows: root.piercing-menu-rows;
+            entity-selected(id) => { root.piercing-entity-selected(id); }
+            dismissed => { root.piercing-menu-dismissed(); }
         }
     }
 }

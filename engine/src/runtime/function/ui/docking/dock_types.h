@@ -46,6 +46,19 @@ enum class DockDragState : uint8_t {
   dropped,
 };
 
+/// Which edge/corner is being dragged during native/in-host float resize.
+enum class DockResizeEdge : uint8_t {
+  none = 0,
+  east = 1,
+  south = 2,
+  south_east = 3,
+  west = 4,
+  north = 5,
+  north_east = 6,
+  north_west = 7,
+  south_west = 8,
+};
+
 struct DockRect {
   float x{0.0f};
   float y{0.0f};

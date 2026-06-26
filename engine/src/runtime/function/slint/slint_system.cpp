@@ -2,6 +2,8 @@
 
 #include <slint.h>
 
+#include "editor_window.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -43,6 +45,9 @@
 #include "runtime/function/ui/ui_callback_binder.h"
 #include "runtime/function/ui/ui_events.h"
 #include "runtime/function/ui/ui_host.h"
+#include "runtime/function/ui/view_models/editor_panels_view_model.h"
+#include "runtime/function/ui/docking/dock_auto_hide.h"
+#include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_widget.h"
 #include "runtime/function/ui/docking/dock_node.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -194,12 +199,26 @@ float queryWindowScaleFactor(WindowSystem* window_system) {
 
 SlintSystem::SlintWindowAdapter::SlintWindowAdapter(
     WindowSystem* window_system, uint64_t vk_instance,
-    uint64_t vk_physical_device, uint64_t vk_device, uint32_t vk_queue_family)
+    uint64_t vk_physical_device, uint64_t vk_device, uint32_t vk_queue_family,
+    SDL_Window* child_window)
     : m_window_system(window_system),
+      m_child_window(child_window),
       m_vk_instance(vk_instance),
       m_vk_physical_device(vk_physical_device),
       m_vk_device(vk_device),
       m_vk_queue_family(vk_queue_family) {}
+
+SDL_Window* SlintSystem::SlintWindowAdapter::boundWindow() const {
+  if (m_child_window) {
+    return m_child_window;
+  }
+  return m_window_system ? m_window_system->getNativeWindow() : nullptr;
+}
+
+SDL_WindowID SlintSystem::SlintWindowAdapter::windowId() const {
+  SDL_Window* window = boundWindow();
+  return window ? SDL_GetWindowID(window) : 0;
+}
 
 SlintSystem::~SlintSystem() { shutdown(); }
 
@@ -209,23 +228,30 @@ slint::platform::AbstractRenderer& SlintSystem::SlintWindowAdapter::renderer() {
 }
 
 slint::PhysicalSize SlintSystem::SlintWindowAdapter::size() {
-  eastl::array<int, 2> drawable_size = m_window_system->getDrawableSize();
+  SDL_Window* window = boundWindow();
+  if (!window) {
+    return slint::PhysicalSize{{1u, 1u}};
+  }
+  int width = 1;
+  int height = 1;
+  SDL_GetWindowSizeInPixels(window, &width, &height);
   return slint::PhysicalSize(
-      {static_cast<uint32_t>(eastl::max(drawable_size[0], 1)),
-       static_cast<uint32_t>(eastl::max(drawable_size[1], 1))});
+      {static_cast<uint32_t>(eastl::max(width, 1)),
+       static_cast<uint32_t>(eastl::max(height, 1))});
 }
 
 void SlintSystem::SlintWindowAdapter::ensureRenderer() {
   if (m_renderer) {
     return;
   }
-  ASSERT(m_window_system);
-  if (!m_window_system) {
+  SDL_Window* window = boundWindow();
+  if (!window) {
     return;
   }
 #if defined(_WIN32) || defined(_WIN64)
-  void* hwnd = m_window_system->getNativeWin32Hwnd();
-  void* hinstance = m_window_system->getNativeWin32HInstance();
+  void* hwnd = SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                      SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+  void* hinstance = m_window_system ? m_window_system->getNativeWin32HInstance() : nullptr;
   const slint::PhysicalSize phys = size();
   if (!hwnd) {
     LOG_ERROR("[SlintSystem] native Win32 HWND is null");
@@ -267,8 +293,13 @@ void SlintSystem::SlintWindowAdapter::set_visible(bool visible) {
   m_visible = visible;
   if (visible) {
     ensureRenderer();
-    window().dispatch_scale_factor_change_event(
-        queryWindowScaleFactor(m_window_system));
+    float scale = 1.0f;
+    if (m_child_window) {
+      scale = SDL_GetWindowDisplayScale(m_child_window);
+    } else if (m_window_system) {
+      scale = queryWindowScaleFactor(m_window_system);
+    }
+    window().dispatch_scale_factor_change_event(scale);
     pollDrawableSize();
     commitWindowSize(true);
     request_redraw();
@@ -280,9 +311,18 @@ void SlintSystem::SlintWindowAdapter::request_redraw() { m_needs_redraw = true; 
 void SlintSystem::SlintWindowAdapter::update_window_properties(
     const WindowProperties& properties) {
   const slint::SharedString title = properties.title();
-  if (!title.empty()) {
-    const std::string_view title_view(title.data(), title.size());
-    std::string title_string(title_view.begin(), title_view.end());
+  if (title.empty()) {
+    return;
+  }
+  const std::string_view title_view(title.data(), title.size());
+  std::string title_string(title_view.begin(), title_view.end());
+  if (SDL_Window* window = boundWindow()) {
+    if (!SDL_SetWindowTitle(window, title_string.c_str())) {
+      LOG_WARN("[SlintSystem] failed to set child window title: {}", SDL_GetError());
+    }
+    return;
+  }
+  if (m_window_system) {
     m_window_system->setTitle(title_string.c_str());
   }
 }
@@ -293,9 +333,23 @@ void SlintSystem::SlintWindowAdapter::pollDrawableSize() {
   }
 
   const slint::PhysicalSize physical_size = size();
-  const slint::PhysicalSize reported_logical = queryLogicalWindowSize(m_window_system);
+  slint::PhysicalSize reported_logical{{physical_size.width, physical_size.height}};
+  if (m_child_window) {
+    int logical_w = 0;
+    int logical_h = 0;
+    SDL_GetWindowSize(m_child_window, &logical_w, &logical_h);
+    reported_logical = slint::PhysicalSize{
+        {static_cast<uint32_t>(eastl::max(logical_w, 1)),
+         static_cast<uint32_t>(eastl::max(logical_h, 1))}};
+  } else if (m_window_system) {
+    const eastl::array<int, 2> logical = m_window_system->getLogicalWindowSize();
+    reported_logical =
+        slint::PhysicalSize{{static_cast<uint32_t>(logical[0]), static_cast<uint32_t>(logical[1])}};
+  }
   const slint::PhysicalSize logical_size =
-      reconcileLogicalWithPhysical(m_window_system, physical_size, reported_logical);
+      m_child_window ? reported_logical
+                     : reconcileLogicalWithPhysical(m_window_system, physical_size,
+                                                    reported_logical);
   if (physical_size.width == m_target_size.width &&
       physical_size.height == m_target_size.height &&
       logical_size.width == m_target_logical_size.width &&
@@ -329,13 +383,25 @@ void SlintSystem::SlintWindowAdapter::pollDrawableSize() {
 }
 
 void SlintSystem::SlintWindowAdapter::refreshTargetSizesFromWindow() {
-  if (!m_visible || !m_window_system) {
+  if (!m_visible || boundWindow() == nullptr) {
     return;
   }
   const slint::PhysicalSize physical_size = size();
-  const slint::PhysicalSize reported_logical = queryLogicalWindowSize(m_window_system);
+  slint::PhysicalSize reported_logical{{physical_size.width, physical_size.height}};
+  if (m_child_window) {
+    int logical_w = 0;
+    int logical_h = 0;
+    SDL_GetWindowSize(m_child_window, &logical_w, &logical_h);
+    reported_logical = slint::PhysicalSize{
+        {static_cast<uint32_t>(eastl::max(logical_w, 1)),
+         static_cast<uint32_t>(eastl::max(logical_h, 1))}};
+  } else if (m_window_system) {
+    reported_logical = queryLogicalWindowSize(m_window_system);
+  }
   const slint::PhysicalSize logical_size =
-      reconcileLogicalWithPhysical(m_window_system, physical_size, reported_logical);
+      m_child_window ? reported_logical
+                     : reconcileLogicalWithPhysical(m_window_system, physical_size,
+                                                    reported_logical);
   if (physical_size.width != m_target_size.width ||
       physical_size.height != m_target_size.height ||
       logical_size.width != m_target_logical_size.width ||
@@ -353,7 +419,12 @@ void SlintSystem::SlintWindowAdapter::applyWindowLayoutNow(int override_logical_
   }
 
   refreshTargetSizesFromWindow();
-  const float layout_scale = queryWindowScaleFactor(m_window_system);
+  float layout_scale = 1.0f;
+  if (m_child_window) {
+    layout_scale = SDL_GetWindowDisplayScale(m_child_window);
+  } else if (m_window_system) {
+    layout_scale = queryWindowScaleFactor(m_window_system);
+  }
   if (layout_scale > 0.0f && m_target_size.width > 0 && m_target_size.height > 0) {
     const uint32_t from_physical_w = static_cast<uint32_t>(
         static_cast<float>(m_target_size.width) / layout_scale + 0.5f);
@@ -401,7 +472,12 @@ void SlintSystem::SlintWindowAdapter::applyWindowLayoutNow(int override_logical_
     m_committed_logical_size = m_target_logical_size;
   }
 
-  const float scale = queryWindowScaleFactor(m_window_system);
+  float scale = 1.0f;
+  if (m_child_window) {
+    scale = SDL_GetWindowDisplayScale(m_child_window);
+  } else if (m_window_system) {
+    scale = queryWindowScaleFactor(m_window_system);
+  }
   window().dispatch_resize_event(
       slint::LogicalSize({static_cast<float>(m_target_logical_size.width),
                           static_cast<float>(m_target_logical_size.height)}));
@@ -508,6 +584,7 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
   const auto skia_start = std::chrono::steady_clock::now();
   try {
     m_renderer->render();
+    m_needs_redraw = false;
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem] SkiaRenderer::render failed: {}", e.what());
     m_present_suppress_frames = 2u;
@@ -545,11 +622,44 @@ SlintSystem::SlintPlatform::SlintPlatform(
 
 std::unique_ptr<slint::platform::WindowAdapter>
 SlintSystem::SlintPlatform::create_window_adapter() {
+  if (m_pending_child_window != nullptr) {
+    SDL_Window* child = m_pending_child_window;
+    m_pending_child_window = nullptr;
+    auto adapter = std::make_unique<SlintWindowAdapter>(m_window_system, 0, 0, 0, 0, child);
+    m_child_adapters.push_back(adapter.get());
+    return adapter;
+  }
   auto adapter = std::make_unique<SlintWindowAdapter>(
       m_window_system, m_vk_instance, m_vk_physical_device, m_vk_device,
       m_vk_queue_family);
   m_window_adapter = adapter.get();
   return adapter;
+}
+
+SlintSystem::SlintWindowAdapter* SlintSystem::SlintPlatform::adapterForWindowId(
+    const SDL_WindowID window_id) const {
+  if (m_window_adapter != nullptr && m_window_adapter->windowId() == window_id) {
+    return m_window_adapter;
+  }
+  for (SlintWindowAdapter* adapter : m_child_adapters) {
+    if (adapter != nullptr && adapter->windowId() == window_id) {
+      return adapter;
+    }
+  }
+  return nullptr;
+}
+
+void SlintSystem::SlintPlatform::unregisterChildAdapter(SDL_Window* window) {
+  if (!window) {
+    return;
+  }
+  for (auto it = m_child_adapters.begin(); it != m_child_adapters.end(); ++it) {
+    SlintWindowAdapter* adapter = *it;
+    if (adapter != nullptr && adapter->boundWindow() == window) {
+      m_child_adapters.erase(it);
+      return;
+    }
+  }
 }
 
 slint::SharedString SlintSystem::mapKeycode(SDL_Keycode keycode) {
@@ -692,7 +802,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_hierarchy_entity_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, int entity_id) {
           m_hierarchy_handled_by_slint = true;
-          host.enqueue(UiEvent::selectEntity(static_cast<EntityId>(entity_id)));
+          UiSelectionMode mode = UiSelectionMode::replace;
+          const SDL_Keymod mods = SDL_GetModState();
+          if ((mods & SDL_KMOD_CTRL) != 0) {
+            mode = UiSelectionMode::toggle;
+          } else if ((mods & SDL_KMOD_SHIFT) != 0) {
+            mode = UiSelectionMode::add;
+          }
+          host.enqueue(UiEvent::selectEntity(static_cast<EntityId>(entity_id), mode));
         }));
 
     component->on_hierarchy_entity_toggle(UiCallbackBinder::bind(
@@ -747,6 +864,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_window_component->operator->()->set_import_mesh_dialog_visible(false);
       }
     });
+    component->on_piercing_entity_selected([this](const int entity_id) {
+      onPiercingMenuEntitySelected(static_cast<EntityId>(entity_id));
+    });
+    component->on_piercing_menu_dismissed([this]() { hidePiercingMenu(); });
     component->on_browser_folder_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
           m_tree_folder_handled_by_slint = true;
@@ -844,10 +965,16 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       m_docking_model_dirty = true;
     });
     component->on_docking_tab_moved([this](float x, float y) {
+      if (m_dock_manager.dragNeedsGlobalPointerPoll()) {
+        return;
+      }
       m_dock_manager.handleDragMove(glm::vec2{x, y});
       m_docking_model_dirty = true;
     });
     component->on_docking_tab_released([this](float x, float y) {
+      if (m_dock_manager.dragNeedsGlobalPointerPoll()) {
+        return;
+      }
       m_dock_manager.handleDragMove(glm::vec2{x, y});
       m_dock_manager.endDrag();
       m_docking_model_dirty = true;
@@ -860,12 +987,16 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       m_dock_manager.closeWidget(static_cast<DockId>(widget_id));
       m_docking_model_dirty = true;
     });
-    component->on_docking_splitter_pressed([](int, float, float) {});
+    component->on_docking_splitter_pressed([this](int, float, float) {
+      m_splitter_resize_active = true;
+    });
     component->on_docking_splitter_moved([this](int node_id, float x, float y) {
       m_dock_manager.resizeSplitter(static_cast<DockId>(node_id), glm::vec2{x, y});
       m_docking_model_dirty = true;
     });
-    component->on_docking_splitter_released([]() {});
+    component->on_docking_splitter_released([this]() {
+      m_splitter_resize_active = false;
+    });
     component->on_docking_floating_move_pressed([this](int node_id, float x, float y) {
       m_dock_manager.beginFloatingMove(static_cast<DockId>(node_id), glm::vec2{x, y});
       m_docking_model_dirty = true;
@@ -882,6 +1013,55 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       m_dock_manager.endFloatingInteraction();
       m_docking_model_dirty = true;
     });
+    component->on_docking_floating_window_close([this](int node_id) {
+      const std::shared_ptr<DockNode> node =
+          m_dock_manager.findNode(static_cast<DockId>(node_id));
+      if (node && node->isFloating()) {
+        if (const auto content = node->floatingContent()) {
+          if (const auto widget = content->activeWidget()) {
+            m_dock_manager.closeWidget(widget->id());
+            m_docking_model_dirty = true;
+          }
+        }
+      }
+    });
+
+    component->on_docking_tab_pin_pressed([this](int widget_id) {
+      if (m_dock_manager.pinWidgetToDefaultEdge(static_cast<DockId>(widget_id))) {
+        m_docking_model_dirty = true;
+      }
+    });
+    component->on_docking_auto_hide_tab_pressed([this](int widget_id) {
+      cancelAutoHideHoverTimer();
+      m_dock_manager.toggleAutoHideExpanded(static_cast<DockId>(widget_id));
+      m_docking_model_dirty = true;
+    });
+    component->on_docking_auto_hide_tab_unpin([this](int widget_id) {
+      cancelAutoHideHoverTimer();
+      m_dock_manager.unpinAutoHide(static_cast<DockId>(widget_id));
+      m_docking_model_dirty = true;
+    });
+    component->on_docking_auto_hide_overlay_minimize([this](int widget_id) {
+      m_dock_manager.collapseAutoHide(static_cast<DockId>(widget_id));
+      m_docking_model_dirty = true;
+    });
+    component->on_docking_auto_hide_overlay_close([this](int widget_id) {
+      m_dock_manager.closeWidget(static_cast<DockId>(widget_id));
+      m_docking_model_dirty = true;
+    });
+    component->on_docking_auto_hide_overlay_resize_pressed([this](int widget_id, float x,
+                                                                float y) {
+      m_dock_manager.beginAutoHideResize(static_cast<DockId>(widget_id), glm::vec2{x, y});
+      m_docking_model_dirty = true;
+    });
+    component->on_docking_auto_hide_overlay_resize_moved([this](int, float x, float y) {
+      m_dock_manager.updateAutoHideResize(glm::vec2{x, y});
+      m_docking_model_dirty = true;
+    });
+    component->on_docking_auto_hide_overlay_resize_released([this]() {
+      m_dock_manager.endAutoHideResize();
+      m_docking_model_dirty = true;
+    });
 
     component->show();
     m_window_component = component;
@@ -891,6 +1071,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     m_window_adapter = g_slint_platform_instance->getWindowAdapter();
     ASSERT(m_window_adapter);
     m_window_adapter->setOwner(this);
+
+    m_child_window_registry.reset(m_window_system);
+    m_floating_host.initialize(m_window_system, this);
+    wireNativeFloatingCallbacks();
 
     m_window_system->setNativeEventCallback(
         [this](const SDL_Event& event) { processEvent(event); });
@@ -933,6 +1117,8 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 }
 
 void SlintSystem::shutdown() {
+  m_floating_host.shutdown();
+
   if (m_window_component) {
     m_window_component->operator->()->hide();
     m_window_component.reset();
@@ -1541,9 +1727,9 @@ void SlintSystem::syncHierarchy() {
   }
 
   HierarchySystem& hierarchy = *services->hierarchy;
-  const EntityId selected = services->selection
-                                ? services->selection->getSelection()
-                                : k_invalid_entity_id;
+  EditorSelectionSystem* selection = services->selection.get();
+  const EntityId primary =
+      selection ? selection->getPrimarySelection() : k_invalid_entity_id;
 
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -1556,12 +1742,13 @@ void SlintSystem::syncHierarchy() {
       slint_row.expanded = row.is_expanded;
       slint_row.has_children = row.has_children;
       slint_row.selected =
-          isValid(selected) && row.entity_id == static_cast<uint32_t>(selected);
+          selection != nullptr &&
+          selection->isSelected(static_cast<EntityId>(row.entity_id));
       tree_model->push_back(slint_row);
     }
     m_window_component->operator->()->set_hierarchy_tree_rows(tree_model);
     m_window_component->operator->()->set_hierarchy_selected_entity_id(
-        isValid(selected) ? static_cast<int>(selected) : 0);
+        isValid(primary) ? static_cast<int>(primary) : 0);
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncHierarchy] {}", e.what());
   } catch (...) {
@@ -1787,6 +1974,77 @@ void SlintSystem::showImportMeshDialogForPendingPaths() {
   m_window_component->operator->()->set_import_mesh_scale(1.0f);
 }
 
+void SlintSystem::showPiercingMenu(const eastl::vector<PiercingMenuItem>& items,
+                                   const float window_x, const float window_y,
+                                   const bool add_mode) {
+  if (!m_window_component || items.empty()) {
+    return;
+  }
+
+  m_piercing_menu_add_mode = add_mode;
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    const eastl::array<float, 2> logical =
+        mapWindowPointerToLogical(m_window_system, window_x, window_y);
+    auto rows_model = std::make_shared<slint::VectorModel<PiercingMenuRow>>();
+    for (const PiercingMenuItem& item : items) {
+      PiercingMenuRow row{};
+      row.entity_id = static_cast<int>(item.entity_id);
+      row.name = slint::SharedString(item.name.c_str());
+      rows_model->push_back(row);
+    }
+    auto& ui = *m_window_component;
+    ui->set_piercing_menu_rows(rows_model);
+    ui->set_piercing_menu_anchor_x(logical[0]);
+    ui->set_piercing_menu_anchor_y(logical[1]);
+    ui->set_piercing_menu_visible(true);
+    markFullSkiaRefresh();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::showPiercingMenu] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::showPiercingMenu] unknown exception");
+  }
+}
+
+void SlintSystem::hidePiercingMenu() {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_window_component->operator->()->set_piercing_menu_visible(false);
+    markFullSkiaRefresh();
+  } catch (...) {
+  }
+}
+
+void SlintSystem::onPiercingMenuEntitySelected(const EntityId entity_id) {
+  hidePiercingMenu();
+  if (!isValid(entity_id)) {
+    return;
+  }
+
+  EditorSelectionSystem* selection = g_runtime_global_context.m_editor_selection.get();
+  if (selection == nullptr) {
+    return;
+  }
+
+  if (m_piercing_menu_add_mode) {
+    selection->addToSelection(entity_id);
+  } else {
+    selection->setSelection(entity_id);
+  }
+
+  if (g_runtime_global_context.m_ui_host) {
+    g_runtime_global_context.m_ui_host->panels().markDirty(
+        EditorPanelDirty::inspector);
+    g_runtime_global_context.m_ui_host->panels().markDirty(
+        EditorPanelDirty::hierarchy);
+  }
+  syncInspectorFromSelection();
+  syncHierarchy();
+}
+
 void SlintSystem::completePendingMeshImport() {
   const auto services = lockServices();
   if (!m_window_component || !services || !services->asset_import ||
@@ -1976,9 +2234,177 @@ bool SlintSystem::isPointerOverViewport(float logical_x, float logical_y) const 
   return pointInRect(logical_x, logical_y, m_cached_viewport_logical_rect);
 }
 
+bool SlintSystem::isDockLayoutDragActive() const {
+  return m_dock_manager.drag().isActive();
+}
+
+bool SlintSystem::isSplitterResizeInteractionActive() const {
+  return m_splitter_resize_active || m_dock_manager.isAutoHideResizeActive();
+}
+
+void SlintSystem::cancelAutoHideHoverTimer() {
+  m_auto_hide_hover_widget_id = k_invalid_dock_id;
+  m_auto_hide_hover_deadline_ms = 0;
+}
+
+void SlintSystem::pollAutoHidePointerHover() {
+  if (!testAutoHideFlag(m_dock_manager.autoHideConfig(),
+                        DockAutoHideFlag::show_on_mouse_over)) {
+    return;
+  }
+  if (!m_window_component || m_last_mouse_window_x < 0.0f) {
+    return;
+  }
+  const slint::LogicalPosition logical =
+      slintPointerPosition(m_window_system, m_last_mouse_window_x, m_last_mouse_window_y);
+  const float local_x = logical.x - m_window_component->operator->()->get_docking_origin_x();
+  const float local_y = logical.y - m_window_component->operator->()->get_docking_origin_y();
+  const DockLayoutModel model = m_dock_manager.buildLayoutModel();
+
+  DockId hovered_tab{k_invalid_dock_id};
+  for (const DockAutoHideTabView& tab : model.auto_hide_tabs) {
+    if (tab.rect.contains(glm::vec2{local_x, local_y})) {
+      hovered_tab = tab.widget_id;
+      break;
+    }
+  }
+
+  DockRect overlay_hit{};
+  const bool over_overlay =
+      m_dock_manager.hitTestExpandedAutoHideOverlay(glm::vec2{local_x, local_y}, overlay_hit);
+
+  if (hovered_tab != k_invalid_dock_id) {
+    if (m_auto_hide_hover_widget_id != hovered_tab || !m_auto_hide_hover_expand) {
+      m_auto_hide_hover_widget_id = hovered_tab;
+      m_auto_hide_hover_expand = true;
+      m_auto_hide_hover_deadline_ms =
+          static_cast<uint64_t>(SDL_GetTicks()) + k_auto_hide_hover_delay_ms;
+    }
+    return;
+  }
+
+  if (over_overlay) {
+    cancelAutoHideHoverTimer();
+    return;
+  }
+
+  if (m_auto_hide_hover_widget_id != k_invalid_dock_id && m_auto_hide_hover_expand) {
+    m_auto_hide_hover_expand = false;
+    m_auto_hide_hover_deadline_ms =
+        static_cast<uint64_t>(SDL_GetTicks()) + k_auto_hide_hover_delay_ms;
+    return;
+  }
+  cancelAutoHideHoverTimer();
+}
+
+void SlintSystem::tickAutoHideHover() {
+  pollAutoHidePointerHover();
+  if (m_auto_hide_hover_widget_id == k_invalid_dock_id || m_auto_hide_hover_deadline_ms == 0) {
+    return;
+  }
+  if (static_cast<uint64_t>(SDL_GetTicks()) < m_auto_hide_hover_deadline_ms) {
+    return;
+  }
+  const DockId widget_id = m_auto_hide_hover_widget_id;
+  cancelAutoHideHoverTimer();
+  if (m_auto_hide_hover_expand) {
+    m_dock_manager.expandAutoHide(widget_id);
+  } else {
+    m_dock_manager.collapseAutoHide(widget_id);
+  }
+  m_docking_model_dirty = true;
+}
+
+void SlintSystem::tickGlobalDockPointerPoll() {
+  if (!m_window_system || !m_window_component) {
+    return;
+  }
+  const bool drag_active = m_dock_manager.drag().isActive();
+  const bool float_active = m_dock_manager.isFloatingInteractionActive();
+  if (!drag_active && !float_active) {
+    return;
+  }
+
+  float global_x = 0.0f;
+  float global_y = 0.0f;
+  const SDL_MouseButtonFlags buttons = SDL_GetGlobalMouseState(&global_x, &global_y);
+  const bool left_down = (buttons & SDL_BUTTON_LMASK) != 0;
+
+  const float origin_x = m_window_component->operator->()->get_docking_origin_x();
+  const float origin_y = m_window_component->operator->()->get_docking_origin_y();
+  const int screen_x = static_cast<int>(global_x + 0.5f);
+  const int screen_y = static_cast<int>(global_y + 0.5f);
+  const bool native_float_drag = m_dock_manager.nativeFloatingNodeForActiveDrag().has_value();
+  const glm::vec2 dock =
+      native_float_drag ? m_child_window_registry.screenToDockLocal(screen_x, screen_y, origin_x,
+                                                                    origin_y)
+                        : m_child_window_registry.pointerToDockLocal(screen_x, screen_y, origin_x,
+                                                                     origin_y);
+
+  if (drag_active) {
+    if (m_dock_manager.dragNeedsGlobalPointerPoll()) {
+      m_dock_manager.handleDragMove(dock);
+      m_docking_model_dirty = true;
+      if (!left_down) {
+        const DockId hidden_float = m_hidden_native_float_during_drag;
+        m_hidden_native_float_during_drag = k_invalid_dock_id;
+        m_dock_manager.endDrag();
+        m_docking_model_dirty = true;
+        if (hidden_float != k_invalid_dock_id && m_dock_manager.findNode(hidden_float)) {
+          m_floating_host.setFloatVisible(hidden_float, true);
+        }
+      }
+    }
+    return;
+  }
+
+  m_dock_manager.updateFloatingInteraction(dock);
+  m_docking_model_dirty = true;
+  if (!left_down) {
+    m_dock_manager.endFloatingInteraction();
+    m_docking_model_dirty = true;
+  }
+}
+
+void SlintSystem::hideNativeFloatForActiveTabDrag() {
+  if (const auto float_id = m_dock_manager.nativeFloatingNodeForActiveDrag()) {
+    m_hidden_native_float_during_drag = *float_id;
+    m_floating_host.setFloatVisible(*float_id, false);
+  }
+}
+
+void SlintSystem::restoreHiddenNativeFloatAfterTabDrag() {
+  const DockId hidden_id = m_hidden_native_float_during_drag;
+  m_hidden_native_float_during_drag = k_invalid_dock_id;
+  if (hidden_id == k_invalid_dock_id) {
+    return;
+  }
+  if (m_dock_manager.findNode(hidden_id)) {
+    m_floating_host.setFloatVisible(hidden_id, true);
+  }
+}
+
+void SlintSystem::handleAutoHideOutsideClick(float logical_x, float logical_y) {
+  if (!testAutoHideFlag(m_dock_manager.autoHideConfig(),
+                        DockAutoHideFlag::close_on_outside_click)) {
+    return;
+  }
+  if (!m_window_component) {
+    return;
+  }
+  const float local_x = logical_x - m_window_component->operator->()->get_docking_origin_x();
+  const float local_y = logical_y - m_window_component->operator->()->get_docking_origin_y();
+  DockRect hit_rect{};
+  if (m_dock_manager.hitTestExpandedAutoHideOverlay(glm::vec2{local_x, local_y}, hit_rect)) {
+    return;
+  }
+  m_dock_manager.collapseAllAutoHide();
+  m_docking_model_dirty = true;
+}
+
 bool SlintSystem::shouldDeferHeavyFrameWork() const {
   if (m_win32_size_modal || m_resize_cooldown_frames > 0 ||
-      m_layout_cooldown_frames > 0 || isDockLayoutDragActive()) {
+      m_layout_cooldown_frames > 0) {
     return true;
   }
   return false;
@@ -2637,8 +3063,13 @@ bool SlintSystem::shouldPresentSkiaFrame() const {
   if (m_pending_dock_layout_present) {
     return true;
   }
-  // Only explicit composite requests should drive viewport Skia presents.
-  // Double-buffered VkImage rebinds must not force a composite every frame.
+  if (m_pending_full_skia_refresh) {
+    return true;
+  }
+  if (m_window_adapter->needsRedraw()) {
+    return true;
+  }
+  // Viewport VkImage rebind / upload requests a composite.
   return m_viewport_frame_ready;
 }
 
@@ -2703,6 +3134,7 @@ void SlintSystem::syncDockingWorkspace() {
   m_docking_model_dirty = false;
   if (docking_changed || size_changed) {
     markFullSkiaRefresh();
+    m_pending_dock_layout_present = true;
   }
 
   m_dock_manager.setHostRect(makeDockRect(0.0f, 0.0f, host_w, host_h));
@@ -2724,6 +3156,18 @@ void SlintSystem::syncDockingWorkspace() {
     } else if (scan.active_panel_kind == DockPanelKind::content_browser) {
       has_browser = true;
       browser_rect = scan.content_rect;
+    }
+  }
+  for (const DockAutoHideOverlayView& overlay : model.auto_hide_overlays) {
+    if (overlay.panel_kind == DockPanelKind::viewport) {
+      m_docking_has_viewport = true;
+      m_docking_viewport_local_rect = overlay.content_rect;
+    } else if (overlay.panel_kind == DockPanelKind::hierarchy) {
+      has_hierarchy = true;
+      hierarchy_rect = overlay.content_rect;
+    } else if (overlay.panel_kind == DockPanelKind::content_browser) {
+      has_browser = true;
+      browser_rect = overlay.content_rect;
     }
   }
 
@@ -2830,6 +3274,7 @@ void SlintSystem::syncDockingWorkspace() {
     row.title = slint::SharedString(view.title.c_str());
     row.panel_kind = static_cast<int>(view.panel_kind);
     row.active = view.active;
+    row.show_pin = view.show_pin;
     row.x = view.rect.x;
     row.y = view.rect.y;
     row.width = view.rect.width;
@@ -2888,6 +3333,7 @@ void SlintSystem::syncDockingWorkspace() {
     row.width = view.rect.width;
     row.height = view.rect.height;
     row.highlighted = view.highlighted;
+    row.faint = view.faint;
 
     if (guide_idx < guide_model->row_count()) {
       guide_model->set_row_data(guide_idx, row);
@@ -2914,7 +3360,7 @@ void SlintSystem::syncDockingWorkspace() {
     row.y = view.frame_rect.y;
     row.width = view.frame_rect.width;
     row.height = view.frame_rect.height;
-    row.title_height = view.title_rect.height;
+    row.chrome_height = view.title_rect.height;
     row.grip_size = view.grip_rect.width;
     row.title = slint::SharedString(view.title.c_str());
 
@@ -2936,7 +3382,633 @@ void SlintSystem::syncDockingWorkspace() {
   preview.width = model.preview.rect.width;
   preview.height = model.preview.rect.height;
   component->set_docking_preview(preview);
-  component->set_docking_drag_active(model.preview.visible);
+
+  auto host_guide_existing = component->get_docking_host_guides();
+  auto host_guide_model =
+      std::dynamic_pointer_cast<slint::VectorModel<DockHostGuide>>(host_guide_existing);
+  if (!host_guide_model) {
+    host_guide_model = std::make_shared<slint::VectorModel<DockHostGuide>>();
+    component->set_docking_host_guides(host_guide_model);
+  }
+  size_t host_guide_idx = 0;
+  for (const DockHostGuideView& view : model.host_guides) {
+    DockHostGuide row{};
+    row.slot = static_cast<int>(view.slot);
+    row.x = view.rect.x;
+    row.y = view.rect.y;
+    row.width = view.rect.width;
+    row.height = view.rect.height;
+    row.highlighted = view.highlighted;
+    row.faint = view.faint;
+
+    if (host_guide_idx < host_guide_model->row_count()) {
+      host_guide_model->set_row_data(host_guide_idx, row);
+    } else {
+      host_guide_model->push_back(row);
+    }
+    host_guide_idx++;
+  }
+  while (host_guide_model->row_count() > model.host_guides.size()) {
+    host_guide_model->erase(host_guide_model->row_count() - 1);
+  }
+
+  DockPreview host_preview{};
+  host_preview.visible = model.host_dock_preview.visible;
+  host_preview.x = model.host_dock_preview.rect.x;
+  host_preview.y = model.host_dock_preview.rect.y;
+  host_preview.width = model.host_dock_preview.rect.width;
+  host_preview.height = model.host_dock_preview.rect.height;
+  component->set_docking_host_dock_preview(host_preview);
+
+  component->set_docking_cross_guides_visible(model.cross_guides_visible);
+
+  DockAutoHideDropPreview ah_drop_preview{};
+  ah_drop_preview.visible = model.auto_hide_drop_preview.visible;
+  ah_drop_preview.edge = model.auto_hide_drop_preview.edge;
+  ah_drop_preview.x = model.auto_hide_drop_preview.rect.x;
+  ah_drop_preview.y = model.auto_hide_drop_preview.rect.y;
+  ah_drop_preview.width = model.auto_hide_drop_preview.rect.width;
+  ah_drop_preview.height = model.auto_hide_drop_preview.rect.height;
+  component->set_docking_auto_hide_drop_preview(ah_drop_preview);
+
+  component->set_docking_drag_active(m_dock_manager.drag().isActive());
+
+  DockDragPreview drag_preview{};
+  drag_preview.visible = model.drag_floating_preview.visible;
+  drag_preview.x = model.drag_floating_preview.rect.x;
+  drag_preview.y = model.drag_floating_preview.rect.y;
+  drag_preview.width = model.drag_floating_preview.rect.width;
+  drag_preview.height = model.drag_floating_preview.rect.height;
+  drag_preview.title = slint::SharedString(model.drag_floating_preview.title.c_str());
+  component->set_docking_drag_preview(drag_preview);
+
+  auto ah_tab_existing = component->get_docking_auto_hide_tabs();
+  auto ah_tab_model =
+      std::dynamic_pointer_cast<slint::VectorModel<DockAutoHideTab>>(ah_tab_existing);
+  if (!ah_tab_model) {
+    ah_tab_model = std::make_shared<slint::VectorModel<DockAutoHideTab>>();
+    component->set_docking_auto_hide_tabs(ah_tab_model);
+  }
+  size_t ah_tab_idx = 0;
+  for (const DockAutoHideTabView& view : model.auto_hide_tabs) {
+    DockAutoHideTab row{};
+    row.widget_id = static_cast<int>(view.widget_id);
+    row.edge = view.edge;
+    row.title = slint::SharedString(view.title.c_str());
+    row.panel_kind = static_cast<int>(view.panel_kind);
+    row.expanded = view.expanded;
+    row.x = view.rect.x;
+    row.y = view.rect.y;
+    row.width = view.rect.width;
+    row.height = view.rect.height;
+    if (ah_tab_idx < ah_tab_model->row_count()) {
+      ah_tab_model->set_row_data(ah_tab_idx, row);
+    } else {
+      ah_tab_model->push_back(row);
+    }
+    ++ah_tab_idx;
+  }
+  while (ah_tab_model->row_count() > model.auto_hide_tabs.size()) {
+    ah_tab_model->erase(ah_tab_model->row_count() - 1);
+  }
+
+  auto ah_overlay_existing = component->get_docking_auto_hide_overlays();
+  auto ah_overlay_model =
+      std::dynamic_pointer_cast<slint::VectorModel<DockAutoHideOverlay>>(ah_overlay_existing);
+  if (!ah_overlay_model) {
+    ah_overlay_model = std::make_shared<slint::VectorModel<DockAutoHideOverlay>>();
+    component->set_docking_auto_hide_overlays(ah_overlay_model);
+  }
+  size_t ah_overlay_idx = 0;
+  for (const DockAutoHideOverlayView& view : model.auto_hide_overlays) {
+    DockAutoHideOverlay row{};
+    row.widget_id = static_cast<int>(view.widget_id);
+    row.edge = view.edge;
+    row.title = slint::SharedString(view.title.c_str());
+    row.panel_kind = static_cast<int>(view.panel_kind);
+    row.frame_x = view.frame_rect.x;
+    row.frame_y = view.frame_rect.y;
+    row.frame_width = view.frame_rect.width;
+    row.frame_height = view.frame_rect.height;
+    row.title_x = view.title_rect.x;
+    row.title_y = view.title_rect.y;
+    row.title_width = view.title_rect.width;
+    row.title_height = view.title_rect.height;
+    row.content_x = view.content_rect.x;
+    row.content_y = view.content_rect.y;
+    row.content_width = view.content_rect.width;
+    row.content_height = view.content_rect.height;
+    row.resize_x = view.resize_rect.x;
+    row.resize_y = view.resize_rect.y;
+    row.resize_width = view.resize_rect.width;
+    row.resize_height = view.resize_rect.height;
+    row.show_close = view.show_close;
+    row.show_minimize = view.show_minimize;
+    if (ah_overlay_idx < ah_overlay_model->row_count()) {
+      ah_overlay_model->set_row_data(ah_overlay_idx, row);
+    } else {
+      ah_overlay_model->push_back(row);
+    }
+    ++ah_overlay_idx;
+  }
+  while (ah_overlay_model->row_count() > model.auto_hide_overlays.size()) {
+    ah_overlay_model->erase(ah_overlay_model->row_count() - 1);
+  }
+
+  syncNativeFloatingWindows(model);
+}
+
+void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
+  if (!m_window_component) {
+    return;
+  }
+  MainEditorWindow& main = *m_window_component->operator->();
+  const float origin_x = main.get_docking_origin_x();
+  const float origin_y = main.get_docking_origin_y();
+  m_floating_host.sync(m_dock_manager, model, origin_x, origin_y);
+
+  for (const std::shared_ptr<DockNode>& node : m_dock_manager.floatingNodes()) {
+    if (!node || !m_dock_manager.isNativeFloating(node->id())) {
+      continue;
+    }
+    const std::shared_ptr<DockWidget> widget =
+        node->floatingContent() ? node->floatingContent()->activeWidget() : nullptr;
+    if (!widget) {
+      continue;
+    }
+
+    NativeFloatPanelSnapshot snapshot;
+    snapshot.panel_kind = widget->panelKind();
+    switch (snapshot.panel_kind) {
+      case DockPanelKind::hierarchy: {
+        if (const auto rows = main.get_hierarchy_tree_rows()) {
+          for (std::size_t i = 0; i < rows->row_count(); ++i) {
+            const HierarchyTreeRow row = rows->row_data(i).value();
+            NativeFloatHierarchyRow copy{};
+            copy.entity_id = row.entity_id;
+            copy.name = row.name.data();
+            copy.depth = row.depth;
+            copy.expanded = row.expanded;
+            copy.has_children = row.has_children;
+            copy.selected = row.selected;
+            snapshot.hierarchy_rows.push_back(eastl::move(copy));
+          }
+        }
+        snapshot.hierarchy_selected_entity_id = main.get_hierarchy_selected_entity_id();
+        break;
+      }
+      case DockPanelKind::inspector:
+        snapshot.inspector_has_selection = main.get_inspector_has_selection();
+        snapshot.inspector_entity_name = main.get_inspector_entity_name().data();
+        snapshot.inspector_pos_x = main.get_inspector_pos_x();
+        snapshot.inspector_pos_y = main.get_inspector_pos_y();
+        snapshot.inspector_pos_z = main.get_inspector_pos_z();
+        snapshot.inspector_rot_x = main.get_inspector_rot_x();
+        snapshot.inspector_rot_y = main.get_inspector_rot_y();
+        snapshot.inspector_rot_z = main.get_inspector_rot_z();
+        snapshot.inspector_scale_x = main.get_inspector_scale_x();
+        snapshot.inspector_scale_y = main.get_inspector_scale_y();
+        snapshot.inspector_scale_z = main.get_inspector_scale_z();
+        snapshot.light_dir_x = main.get_light_dir_x();
+        snapshot.light_dir_y = main.get_light_dir_y();
+        snapshot.light_dir_z = main.get_light_dir_z();
+        snapshot.light_color_r = main.get_light_color_r();
+        snapshot.light_color_g = main.get_light_color_g();
+        snapshot.light_color_b = main.get_light_color_b();
+        snapshot.ambient_r = main.get_ambient_r();
+        snapshot.ambient_g = main.get_ambient_g();
+        snapshot.ambient_b = main.get_ambient_b();
+        snapshot.diffuse_r = main.get_diffuse_r();
+        snapshot.diffuse_g = main.get_diffuse_g();
+        snapshot.diffuse_b = main.get_diffuse_b();
+        snapshot.specular_r = main.get_specular_r();
+        snapshot.specular_g = main.get_specular_g();
+        snapshot.specular_b = main.get_specular_b();
+        snapshot.shininess = main.get_shininess();
+        snapshot.shading_unlit = main.get_shading_unlit();
+        snapshot.ssao_enabled = main.get_ssao_enabled();
+        snapshot.ssao_radius = main.get_ssao_radius();
+        snapshot.ssao_bias = main.get_ssao_bias();
+        snapshot.ssao_strength = main.get_ssao_strength();
+        break;
+      case DockPanelKind::content_browser: {
+        if (const auto tree_rows = main.get_browser_tree_rows()) {
+          for (std::size_t i = 0; i < tree_rows->row_count(); ++i) {
+            const BrowserTreeRow row = tree_rows->row_data(i).value();
+            NativeFloatBrowserTreeRow copy{};
+            copy.path = row.path.data();
+            copy.name = row.name.data();
+            copy.depth = row.depth;
+            copy.is_dir = row.is_dir;
+            copy.expanded = row.expanded;
+            copy.has_children = row.has_children;
+            snapshot.browser_tree_rows.push_back(eastl::move(copy));
+          }
+        }
+        if (const auto grid_rows = main.get_browser_grid_rows()) {
+          for (std::size_t i = 0; i < grid_rows->row_count(); ++i) {
+            const BrowserGridRow row = grid_rows->row_data(i).value();
+            NativeFloatBrowserGridRow copy{};
+            copy.path = row.path.data();
+            copy.name = row.name.data();
+            copy.thumb = row.thumb;
+            copy.is_dir = row.is_dir;
+            snapshot.browser_grid_rows.push_back(eastl::move(copy));
+          }
+        }
+        if (const auto path_segments = main.get_browser_path_segments()) {
+          for (std::size_t i = 0; i < path_segments->row_count(); ++i) {
+            const BrowserPathSegment segment = path_segments->row_data(i).value();
+            NativeFloatBrowserPathSegment copy{};
+            copy.path = segment.path.data();
+            copy.name = segment.name.data();
+            snapshot.browser_path_segments.push_back(eastl::move(copy));
+          }
+        }
+        snapshot.browser_drag_active = main.get_browser_drag_active();
+        snapshot.browser_drag_source_path = main.get_browser_drag_source_path().data();
+        snapshot.browser_drop_highlight_path = main.get_browser_drop_highlight_path().data();
+        snapshot.browser_viewport_drop_active = main.get_browser_viewport_drop_active();
+        snapshot.browser_status_text = main.get_browser_status_text().data();
+        snapshot.browser_selected_folder_path = main.get_browser_selected_folder_path().data();
+        break;
+      }
+      default:
+        break;
+    }
+    m_floating_host.applyPanelSnapshot(node->id(), snapshot);
+  }
+}
+
+
+void SlintSystem::wireNativeFloatingCallbacks() {
+  DockFloatingWindowHost::Callbacks callbacks;
+  callbacks.on_docking_dirty = [this]() { m_docking_model_dirty = true; };
+  callbacks.on_close_widget = [this](DockId widget_id) {
+    m_dock_manager.closeWidget(widget_id);
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_floating_pressed = [this](DockId node_id, float x, float y, bool resize,
+                                         DockResizeEdge edge) {
+    if (resize) {
+      m_dock_manager.beginFloatingResize(node_id, glm::vec2{x, y}, edge);
+    } else {
+      m_dock_manager.beginFloatingMove(node_id, glm::vec2{x, y});
+    }
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_floating_moved = [this](float x, float y) {
+    m_dock_manager.updateFloatingInteraction(glm::vec2{x, y});
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_floating_released = [this]() {
+    m_dock_manager.endFloatingInteraction();
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_tab_pressed = [this](DockId widget_id, float x, float y) {
+    m_dock_manager.beginDrag(widget_id, glm::vec2{x, y});
+    hideNativeFloatForActiveTabDrag();
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_tab_moved = [this](float x, float y) {
+    if (m_dock_manager.dragNeedsGlobalPointerPoll()) {
+      return;
+    }
+    m_dock_manager.handleDragMove(glm::vec2{x, y});
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_tab_released = [this](float x, float y) {
+    if (m_dock_manager.dragNeedsGlobalPointerPoll()) {
+      return;
+    }
+    m_dock_manager.handleDragMove(glm::vec2{x, y});
+    restoreHiddenNativeFloatAfterTabDrag();
+    m_dock_manager.endDrag();
+    m_docking_model_dirty = true;
+  };
+  callbacks.on_hierarchy_entity_selected = [this](int entity_id) {
+    m_hierarchy_handled_by_slint = true;
+    if (const auto host = m_ui_host.lock()) {
+      UiSelectionMode mode = UiSelectionMode::replace;
+      const SDL_Keymod mods = SDL_GetModState();
+      if ((mods & SDL_KMOD_CTRL) != 0) {
+        mode = UiSelectionMode::toggle;
+      } else if ((mods & SDL_KMOD_SHIFT) != 0) {
+        mode = UiSelectionMode::add;
+      }
+      host->enqueue(UiEvent::selectEntity(static_cast<EntityId>(entity_id), mode));
+    }
+  };
+  callbacks.on_hierarchy_entity_toggle = [this](int entity_id) {
+    m_hierarchy_handled_by_slint = true;
+    if (const auto host = m_ui_host.lock()) {
+      host->enqueue(UiEvent::toggleHierarchyNode(static_cast<EntityId>(entity_id)));
+    }
+  };
+  callbacks.on_inspector_transform_edited = [this]() {
+    if (const auto host = m_ui_host.lock()) {
+      host->enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited));
+    }
+  };
+  callbacks.on_browser_folder_selected = UiCallbackBinder::bind(
+      m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+        m_tree_folder_handled_by_slint = true;
+        host.enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
+                                     eastl::string(path.data())));
+      });
+  callbacks.on_browser_folder_toggle = UiCallbackBinder::bind(
+      m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+        m_tree_folder_handled_by_slint = true;
+        host.enqueue(UiEvent::withPath(UiEventKind::browserFolderToggle,
+                                     eastl::string(path.data())));
+      });
+  callbacks.on_browser_refresh_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); });
+  callbacks.on_browser_import_requested = [this]() { queueOpenImportFileDialog(); };
+  callbacks.on_browser_item_press = [this](const slint::SharedString& path, float x, float y) {
+    const auto services = lockServices();
+    if (!services || !services->content_browser) {
+      return;
+    }
+    services->content_browser->dragController().beginPress(eastl::string(path.data()), x, y);
+    m_drop_highlight_path.clear();
+    syncContentBrowser();
+  };
+  callbacks.on_browser_item_move = [this](const slint::SharedString& path, float x, float y) {
+    (void)path;
+    const auto services = lockServices();
+    if (!services || !services->content_browser) {
+      return;
+    }
+    services->content_browser->dragController().updateMove(x, y);
+  };
+  callbacks.on_browser_item_release = [this](const slint::SharedString& path, float x, float y) {
+    (void)path;
+    (void)x;
+    (void)y;
+    finishContentBrowserDragAtCursor();
+  };
+  callbacks.on_browser_search_changed = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host, const slint::SharedString& text) {
+        host.enqueue(UiEvent::withPath(UiEventKind::browserSearchChanged,
+                                     eastl::string(text.data())));
+      });
+  callbacks.on_browser_path_segment_clicked = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+        host.enqueue(UiEvent::withPath(UiEventKind::browserPathSegmentClicked,
+                                     eastl::string(path.data())));
+      });
+  m_floating_host.setCallbacks(eastl::move(callbacks));
+}
+
+void SlintSystem::setPendingSlintChildWindow(SDL_Window* window) {
+  if (g_slint_platform_instance != nullptr) {
+    g_slint_platform_instance->setPendingChildWindow(window);
+  }
+}
+
+void SlintSystem::unregisterSlintChildAdapter(SDL_Window* window) {
+  if (g_slint_platform_instance != nullptr) {
+    g_slint_platform_instance->unregisterChildAdapter(window);
+  }
+}
+
+SlintSystem::SlintWindowAdapter* SlintSystem::slintAdapterForWindow(
+    const SDL_WindowID window_id) const {
+  if (g_slint_platform_instance == nullptr) {
+    return nullptr;
+  }
+  return g_slint_platform_instance->adapterForWindowId(window_id);
+}
+
+void SlintSystem::renderSlintAdapter(SlintWindowAdapter* adapter) {
+  if (!adapter) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    adapter->pollDrawableSize();
+    adapter->commitWindowSize(false);
+    adapter->renderIfNeeded();
+  } catch (...) {
+  }
+}
+
+namespace {
+
+SDL_Cursor* cachedSystemCursor(SDL_SystemCursor id) {
+  static SDL_Cursor* cache[32]{};
+  const size_t idx = static_cast<size_t>(id);
+  if (idx < 32 && cache[idx] != nullptr) {
+    return cache[idx];
+  }
+  SDL_Cursor* cursor = SDL_CreateSystemCursor(id);
+  if (idx < 32) {
+    cache[idx] = cursor;
+  }
+  return cursor;
+}
+
+DockResizeEdge hitFloatResizeEdge(float width, float height, float x, float y) {
+  // Keep in sync with DockChromeMetrics.bar-height in docking_panel.slint
+  constexpr float k_chrome_top = 32.0f;
+  constexpr float k_edge = 5.0f;
+  constexpr float k_grip = 14.0f;
+
+  if (y < k_chrome_top || width <= 0.0f || height <= k_chrome_top) {
+    return DockResizeEdge::none;
+  }
+
+  if (x >= width - k_grip && y >= height - k_grip) {
+    return DockResizeEdge::south_east;
+  }
+
+  const bool in_content_y = y >= k_chrome_top + k_edge && y < height - k_edge;
+  const bool in_content_x = x >= k_edge && x < width - k_edge;
+
+  if (y < k_chrome_top + k_edge && x <= k_edge) {
+    return DockResizeEdge::north_west;
+  }
+  if (y < k_chrome_top + k_edge && x >= width - k_edge) {
+    return DockResizeEdge::north_east;
+  }
+  if (y >= height - k_edge && x <= k_edge) {
+    return DockResizeEdge::south_west;
+  }
+  if (y < k_chrome_top + k_edge && in_content_x) {
+    return DockResizeEdge::north;
+  }
+  if (y >= height - k_edge && in_content_x) {
+    return DockResizeEdge::south;
+  }
+  if (x <= k_edge && in_content_y) {
+    return DockResizeEdge::west;
+  }
+  if (x >= width - k_edge && in_content_y) {
+    return DockResizeEdge::east;
+  }
+  return DockResizeEdge::none;
+}
+
+SDL_Cursor* cursorForResizeEdge(DockResizeEdge edge) {
+  switch (edge) {
+    case DockResizeEdge::east:
+    case DockResizeEdge::west:
+      return cachedSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+    case DockResizeEdge::north:
+    case DockResizeEdge::south:
+      return cachedSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
+    case DockResizeEdge::south_east:
+    case DockResizeEdge::north_west:
+      return cachedSystemCursor(SDL_SYSTEM_CURSOR_NWSE_RESIZE);
+    case DockResizeEdge::north_east:
+    case DockResizeEdge::south_west:
+      return cachedSystemCursor(SDL_SYSTEM_CURSOR_NESW_RESIZE);
+    default:
+      return cachedSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+  }
+}
+
+}  // namespace
+
+void SlintSystem::updateNativeFloatResizeCursor(SlintWindowAdapter* adapter, float logical_x,
+                                                float logical_y) {
+  if (!adapter || !adapter->isChildWindow()) {
+    return;
+  }
+  SDL_Window* window = adapter->boundWindow();
+  if (!window) {
+    return;
+  }
+  int logical_w = 0;
+  int logical_h = 0;
+  SDL_GetWindowSize(window, &logical_w, &logical_h);
+  if (logical_w <= 0 || logical_h <= 0) {
+    return;
+  }
+
+  constexpr float k_title_h = 22.0f;
+  if (logical_y < k_title_h) {
+    SDL_SetCursor(cachedSystemCursor(SDL_SYSTEM_CURSOR_MOVE));
+    return;
+  }
+
+  const DockResizeEdge edge = hitFloatResizeEdge(static_cast<float>(logical_w),
+                                                static_cast<float>(logical_h), logical_x,
+                                                logical_y);
+  SDL_SetCursor(cursorForResizeEdge(edge));
+}
+
+void SlintSystem::clearNativeFloatResizeCursor() {
+  SDL_SetCursor(cachedSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT));
+}
+
+bool SlintSystem::processSlintAdapterEvent(SlintWindowAdapter* adapter,
+                                           const SDL_Event& event) {
+  if (!adapter) {
+    return false;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    slint::Window& window = adapter->window();
+    const SDL_WindowID window_id = adapter->windowId();
+    if (window_id == 0) {
+      return false;
+    }
+
+    auto mapPointer = [adapter](float x, float y) -> slint::LogicalPosition {
+      const eastl::array<float, 2> logical =
+          mapSdlWindowPointerToLogical(adapter->boundWindow(), x, y);
+      return slint::LogicalPosition({logical[0], logical[1]});
+    };
+
+    switch (event.type) {
+      case SDL_EVENT_WINDOW_RESIZED:
+      case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        if (event.window.windowID == window_id) {
+          adapter->pollDrawableSize();
+          adapter->commitWindowSize(true);
+          adapter->request_redraw();
+        }
+        break;
+      case SDL_EVENT_WINDOW_FOCUS_GAINED:
+        if (event.window.windowID == window_id) {
+          window.dispatch_window_active_changed_event(true);
+        }
+        break;
+      case SDL_EVENT_WINDOW_FOCUS_LOST:
+        if (event.window.windowID == window_id) {
+          window.dispatch_window_active_changed_event(false);
+        }
+        break;
+      case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        if (event.window.windowID == window_id) {
+          window.dispatch_close_requested_event();
+        }
+        break;
+      case SDL_EVENT_MOUSE_MOTION:
+        if (event.motion.windowID == window_id) {
+          const eastl::array<float, 2> logical =
+              mapSdlWindowPointerToLogical(adapter->boundWindow(),
+                                           static_cast<float>(event.motion.x),
+                                           static_cast<float>(event.motion.y));
+          window.dispatch_pointer_move_event(
+              slint::LogicalPosition({logical[0], logical[1]}));
+          if (adapter->isChildWindow()) {
+            updateNativeFloatResizeCursor(adapter, logical[0], logical[1]);
+          }
+        }
+        break;
+      case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (event.button.windowID == window_id) {
+          window.dispatch_pointer_press_event(
+              mapPointer(static_cast<float>(event.button.x),
+                         static_cast<float>(event.button.y)),
+              mapPointerButton(event.button.button));
+        }
+        break;
+      case SDL_EVENT_MOUSE_BUTTON_UP:
+        if (event.button.windowID == window_id) {
+          window.dispatch_pointer_release_event(
+              mapPointer(static_cast<float>(event.button.x),
+                         static_cast<float>(event.button.y)),
+              mapPointerButton(event.button.button));
+          if (adapter->isChildWindow()) {
+            clearNativeFloatResizeCursor();
+          }
+        }
+        break;
+      case SDL_EVENT_MOUSE_WHEEL:
+        if (event.wheel.windowID == window_id) {
+          window.dispatch_pointer_scroll_event(
+              mapPointer(static_cast<float>(event.wheel.mouse_x),
+                         static_cast<float>(event.wheel.mouse_y)),
+              static_cast<float>(event.wheel.x), static_cast<float>(event.wheel.y));
+        }
+        break;
+      case SDL_EVENT_KEY_DOWN:
+        if (event.key.windowID == window_id) {
+          const slint::SharedString text = mapKeycode(event.key.key);
+          if (!text.empty()) {
+            window.dispatch_key_press_event(text);
+          }
+        }
+        break;
+      case SDL_EVENT_KEY_UP:
+        if (event.key.windowID == window_id) {
+          const slint::SharedString text = mapKeycode(event.key.key);
+          if (!text.empty()) {
+            window.dispatch_key_release_event(text);
+          }
+        }
+        break;
+      default:
+        return false;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
 }
 
 void SlintSystem::beginFrame() {
@@ -2954,6 +4026,8 @@ void SlintSystem::beginFrame() {
     m_projection_toggle_consumed_this_frame = false;
     ++m_frame_counter;
     updateViewportPacingTier();
+    tickAutoHideHover();
+    tickGlobalDockPointerPoll();
     processPendingAssetImports();
     processCoalescedSdlMouseMotion();
     flushPendingPointerMove();
@@ -3055,10 +4129,18 @@ void SlintSystem::endFrame() {
           if (shouldSkipSkiaPresentDuringDefer()) {
             m_window_adapter->request_redraw();
           } else if (splitter_interaction) {
-            // H21: Skia composite ~14ms/frame starves SDL_AppIterate during motion flood.
-            m_window_adapter->request_redraw();
-          } else if (isDockLayoutDragActive()) {
-            m_window_adapter->request_redraw();
+            // Throttle Skia during splitter drags — still show live layout feedback.
+            static uint64_t s_last_splitter_present_ns = 0;
+            const uint64_t now_ns = SDL_GetTicksNS();
+            if (s_last_splitter_present_ns == 0 ||
+                now_ns - s_last_splitter_present_ns >= 16'000'000) {
+              s_last_splitter_present_ns = now_ns;
+              m_window_adapter->compositeFrame();
+              m_viewport_image_dirty = false;
+              m_viewport_frame_ready = false;
+            } else {
+              m_window_adapter->request_redraw();
+            }
           } else {
             static uint64_t s_last_defer_present_ns = 0;
             const uint64_t now_ns = SDL_GetTicksNS();
@@ -3072,8 +4154,6 @@ void SlintSystem::endFrame() {
               m_window_adapter->request_redraw();
             }
           }
-        } else if (splitter_interaction) {
-          m_window_adapter->request_redraw();
         } else if (shouldPresentSkiaFrame()) {
           static uint64_t s_last_full_composite_ns = 0;
           const uint64_t now_ns = SDL_GetTicksNS();
@@ -3102,6 +4182,7 @@ void SlintSystem::endFrame() {
       }
     }
     m_window_resize_active = false;
+    m_floating_host.renderFrames();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::endFrame] {}", e.what());
     if (m_window_system) {
@@ -3122,6 +4203,10 @@ void SlintSystem::update() {
 }
 
 void SlintSystem::processEvent(const SDL_Event& event) {
+  if (m_floating_host.processEvent(event)) {
+    return;
+  }
+
   if (m_open_import_dialog_event != 0 &&
       event.type == m_open_import_dialog_event) {
     openImportFileDialog();
@@ -3325,6 +4410,11 @@ void SlintSystem::processEvent(const SDL_Event& event) {
                   slintPointerPosition(m_window_system, window_x, window_y);
               finishContentBrowserDrag(logical_pos.x, logical_pos.y);
             }
+            if (event.button.button == SDL_BUTTON_LEFT && m_window_component) {
+              const slint::LogicalPosition logical_pos =
+                  slintPointerPosition(m_window_system, window_x, window_y);
+              handleAutoHideOutsideClick(logical_pos.x, logical_pos.y);
+            }
           }
           window.dispatch_pointer_release_event(
               slintPointerPosition(m_window_system, window_x, window_y),
@@ -3357,6 +4447,12 @@ void SlintSystem::processEvent(const SDL_Event& event) {
         break;
       case SDL_EVENT_KEY_DOWN:
         if (event.key.windowID == window_id) {
+          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+              m_dock_manager.drag().isActive()) {
+            m_dock_manager.cancelDrag();
+            m_docking_model_dirty = true;
+            break;
+          }
           if (!event.key.repeat && event.key.key == SDLK_P) {
             requestViewportProjectionToggle("keyboard_p");
           }

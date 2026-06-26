@@ -1,0 +1,1041 @@
+import { DockChromeCloseIcon, DockChromePinIcon, DockChromeMinimizeIcon } from "dock_chrome_icons.slint";
+
+// Keep in sync with DockLayoutMetrics::chrome_bar_height in dock_manager.h
+export global DockChromeMetrics {
+    in-out property <length> bar-height: 32px;
+}
+
+export struct DockTab {
+    widget-id: int,
+    container-id: int,
+    title: string,
+    panel-kind: int,
+    active: bool,
+    show-pin: bool,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+}
+
+export struct DockTile {
+    node-id: int,
+    tab-x: length,
+    tab-y: length,
+    tab-width: length,
+    tab-height: length,
+    content-x: length,
+    content-y: length,
+    content-width: length,
+    content-height: length,
+    active-widget-id: int,
+    active-panel-kind: int,
+    floating: bool,
+}
+
+export struct DockSplitterHandle {
+    node-id: int,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    vertical: bool,
+}
+
+export struct DockGuide {
+    slot: int,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    highlighted: bool,
+    faint: bool,
+}
+
+export struct DockHostGuide {
+    slot: int,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    highlighted: bool,
+    faint: bool,
+}
+
+export struct DockPreview {
+    visible: bool,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+}
+
+export struct DockAutoHideDropPreview {
+    visible: bool,
+    edge: int,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+}
+
+export struct DockAutoHideGuide {
+    edge: int,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    highlighted: bool,
+}
+
+export struct DockDragPreview {
+    visible: bool,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    title: string,
+}
+
+export struct DockFloating {
+    node-id: int,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    chrome-height: length,
+    grip-size: length,
+    title: string,
+}
+
+export struct DockAutoHideTab {
+    widget-id: int,
+    edge: int,
+    title: string,
+    panel-kind: int,
+    expanded: bool,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+}
+
+export struct DockAutoHideOverlay {
+    widget-id: int,
+    edge: int,
+    title: string,
+    panel-kind: int,
+    frame-x: length,
+    frame-y: length,
+    frame-width: length,
+    frame-height: length,
+    title-x: length,
+    title-y: length,
+    title-width: length,
+    title-height: length,
+    content-x: length,
+    content-y: length,
+    content-width: length,
+    content-height: length,
+    resize-x: length,
+    resize-y: length,
+    resize-width: length,
+    resize-height: length,
+    show-close: bool,
+    show-minimize: bool,
+}
+
+export component DockTabsLayer inherits Rectangle {
+    in property <[DockTab]> tabs: [];
+
+    callback tab-pressed(int, length, length);
+    callback tab-moved(length, length);
+    callback tab-released(length, length);
+    callback tab-activated(int);
+    callback widget-closed(int);
+    callback tab-pin-pressed(int);
+
+    background: transparent;
+
+    for tab in root.tabs: Rectangle {
+        x: tab.x;
+        y: tab.y;
+        width: tab.width;
+        height: tab.height;
+        background: tab.active ? #2d2d2d : #1f1f1f;
+        border-color: tab.active ? #3d3d3d : #161616;
+        border-width: 1px;
+        border-radius: 4px;
+
+        Text {
+            x: 8px;
+            width: parent.width - (tab.show-pin ? 44px : 26px);
+            height: parent.height;
+            vertical-alignment: center;
+            overflow: elide;
+            text: tab.title;
+            color: tab.active ? #ffffff : #a8a8a8;
+            font-size: 12px;
+        }
+
+        drag-area := TouchArea {
+            width: parent.width - (tab.show-pin ? 44px : 26px);
+            height: parent.height;
+            mouse-cursor: MouseCursor.grab;
+            moved => {
+                root.tab-moved(self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                               self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+            }
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left
+                    && event.kind == PointerEventKind.down) {
+                    root.tab-activated(tab.widget-id);
+                    root.tab-pressed(tab.widget-id,
+                                     self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                                     self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+                }
+                if (event.button == PointerEventButton.left
+                    && event.kind == PointerEventKind.up) {
+                    root.tab-released(self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                                      self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+                }
+            }
+        }
+
+        if tab.show-pin: pin-area := TouchArea {
+            x: parent.width - 40px;
+            width: 18px;
+            y: 0;
+            height: parent.height;
+            mouse-cursor: MouseCursor.pointer;
+            clicked => {
+                root.tab-pin-pressed(tab.widget-id);
+            }
+            DockChromePinIcon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                icon-color: pin-area.has-hover ? #ffffff : #808080;
+            }
+        }
+
+        close-area := TouchArea {
+            x: parent.width - 20px;
+            width: 18px;
+            y: 0;
+            height: parent.height;
+            clicked => {
+                root.widget-closed(tab.widget-id);
+            }
+            DockChromeCloseIcon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                icon-color: close-area.has-hover ? #ffffff : #808080;
+            }
+        }
+    }
+}
+
+export component DockChromeBar inherits Rectangle {
+    in property <[DockTab]> tabs: [];
+    in property <bool> show-chrome-move: false;
+    in property <bool> show-window-close: false;
+    // When true, only draws bar chrome + move/close (tabs rendered by a sibling overlay).
+    in property <bool> chrome-bar-only: false;
+    // Fixed-height chrome strip (float windows). When false, fills parent as tab overlay.
+    in property <bool> embedded: false;
+
+    callback tab-pressed(int, length, length);
+    callback tab-moved(length, length);
+    callback tab-released(length, length);
+    callback tab-activated(int);
+    callback widget-closed(int);
+    callback tab-pin-pressed(int);
+    callback chrome-move-pressed(length, length);
+    callback chrome-move-moved(length, length);
+    callback chrome-move-released();
+    callback window-close-pressed();
+
+    preferred-height: (root.embedded || root.chrome-bar-only) ? DockChromeMetrics.bar-height : 0;
+    background: root.embedded || root.chrome-bar-only ? #252525 : transparent;
+    border-color: #161616;
+    border-width: root.embedded ? 1px : 0px;
+
+    property <length> window-close-width: 26px;
+    property <length> tabs-end-x: root.tabs.length == 0
+        ? 0px
+        : root.tabs[root.tabs.length - 1].x + root.tabs[root.tabs.length - 1].width;
+
+    if !root.chrome-bar-only: tabs-layer := DockTabsLayer {
+        x: 0;
+        y: 0;
+        width: parent.width - (root.show-window-close ? root.window-close-width : 0px);
+        height: parent.height;
+        clip: root.embedded;
+        tabs: root.tabs;
+        tab-pressed(id, px, py) => {
+            root.tab-pressed(id,
+                tabs-layer.absolute-position.x - root.absolute-position.x + px,
+                tabs-layer.absolute-position.y - root.absolute-position.y + py);
+        }
+        tab-moved(px, py) => {
+            root.tab-moved(
+                tabs-layer.absolute-position.x - root.absolute-position.x + px,
+                tabs-layer.absolute-position.y - root.absolute-position.y + py);
+        }
+        tab-released(px, py) => {
+            root.tab-released(
+                tabs-layer.absolute-position.x - root.absolute-position.x + px,
+                tabs-layer.absolute-position.y - root.absolute-position.y + py);
+        }
+        tab-activated(id) => { root.tab-activated(id); }
+        widget-closed(id) => { root.widget-closed(id); }
+        tab-pin-pressed(id) => { root.tab-pin-pressed(id); }
+    }
+
+    if root.show-chrome-move: chrome-move-strip := Rectangle {
+        x: root.chrome-bar-only ? 0px : root.tabs-end-x;
+        y: 0;
+        width: parent.width - self.x - (root.show-window-close ? root.window-close-width : 0px);
+        height: parent.height;
+        background: transparent;
+
+        chrome-move := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            mouse-cursor: MouseCursor.move;
+            moved => {
+                root.chrome-move-moved(
+                    self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+            }
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                    root.chrome-move-pressed(
+                        self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                        self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+                }
+                if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                    root.chrome-move-released();
+                }
+            }
+        }
+    }
+
+    if root.show-window-close: window-close-touch := TouchArea {
+        x: parent.width - root.window-close-width;
+        width: root.window-close-width;
+        height: parent.height;
+        clicked => { root.window-close-pressed(); }
+
+        Rectangle {
+            width: parent.width;
+            height: 18px;
+            y: (parent.height - self.height) / 2;
+            background: window-close-touch.has-hover ? #c44 : transparent;
+            border-radius: 2px;
+
+            DockChromeCloseIcon {
+                width: 10px;
+                height: 10px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                icon-color: window-close-touch.has-hover ? #ffffff : #d0d0d0;
+            }
+        }
+    }
+}
+
+export component DockSplittersLayer inherits Rectangle {
+    in property <[DockSplitterHandle]> splitters: [];
+
+    callback splitter-pressed(int, length, length);
+    callback splitter-moved(int, length, length);
+    callback splitter-released();
+
+    background: transparent;
+
+    for handle in root.splitters: Rectangle {
+        x: handle.x;
+        y: handle.y;
+        width: handle.width;
+        height: handle.height;
+        background: split-area.has-hover ? #3a6ea5 : #2e2e2e;
+
+        split-area := TouchArea {
+            mouse-cursor: handle.vertical ? MouseCursor.ew-resize : MouseCursor.ns-resize;
+            moved => {
+                root.splitter-moved(handle.node-id,
+                                    self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                                    self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+            }
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left
+                    && event.kind == PointerEventKind.down) {
+                    root.splitter-pressed(handle.node-id,
+                                          self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                                          self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+                }
+                if (event.button == PointerEventButton.left
+                    && event.kind == PointerEventKind.up) {
+                    root.splitter-released();
+                }
+            }
+        }
+    }
+}
+
+export global DockGuideMetrics {
+    in-out property <brush> frame-stroke: #4a90d9;
+    in-out property <brush> frame-stroke-highlight: #6ab0ff;
+    in-out property <brush> chrome-fill: #4a90d9;
+    in-out property <brush> active-fill: #4a90d9;
+    in-out property <color> inactive-fill: #2a2a2a;
+    in-out property <brush> dash-color: #5a9fd4;
+    in-out property <length> chrome-height: 9px;
+    in-out property <length> dash-length: 3px;
+    in-out property <length> dash-gap: 2px;
+    in-out property <int> dash-count-h: 6;
+    in-out property <int> dash-count-v: 6;
+}
+
+export component DockGuideDashedHLine inherits Rectangle {
+    in property <brush> dash-color: DockGuideMetrics.dash-color;
+    in property <length> dash-len: DockGuideMetrics.dash-length;
+    in property <length> gap: DockGuideMetrics.dash-gap;
+    in property <int> count: DockGuideMetrics.dash-count-h;
+    in property <length> line-width: root.width;
+
+    height: 1px;
+    background: transparent;
+
+    property <length> step: dash-len + gap;
+    property <length> total: count * dash-len + (count - 1) * gap;
+    property <length> offset-x: (line-width - total) * 0.5;
+
+    for seg[i] in count: Rectangle {
+        x: offset-x + i * step;
+        y: 0;
+        width: dash-len;
+        height: 1px;
+        background: dash-color;
+    }
+}
+
+export component DockGuideDashedVLine inherits Rectangle {
+    in property <brush> dash-color: DockGuideMetrics.dash-color;
+    in property <length> dash-len: DockGuideMetrics.dash-length;
+    in property <length> gap: DockGuideMetrics.dash-gap;
+    in property <int> count: DockGuideMetrics.dash-count-v;
+    in property <length> line-height: root.height;
+
+    width: 1px;
+    background: transparent;
+
+    property <length> step: dash-len + gap;
+    property <length> total: count * dash-len + (count - 1) * gap;
+    property <length> offset-y: (line-height - total) * 0.5;
+
+    for seg[i] in count: Rectangle {
+        x: 0;
+        y: offset-y + i * step;
+        width: 1px;
+        height: dash-len;
+        background: dash-color;
+    }
+}
+
+export component DockGuideButton inherits Rectangle {
+    // DockSlot: 1=left, 2=right, 3=top, 4=bottom, 5=center
+    in property <int> slot: 0;
+    in property <bool> highlighted: false;
+    in property <bool> faint: false;
+
+    opacity: root.faint && !root.highlighted ? 0.45 : 1.0;
+
+    property <brush> frame-color:
+        root.highlighted ? DockGuideMetrics.frame-stroke-highlight : DockGuideMetrics.frame-stroke;
+    property <length> inset: 1px;
+    property <length> chrome-h: DockGuideMetrics.chrome-height;
+    property <length> body-y: inset + chrome-h;
+    property <length> body-h: root.height - body-y - inset;
+    property <length> body-w: root.width - 2 * inset;
+    property <length> half-w: body-w / 2;
+    property <length> half-h: body-h / 2;
+    property <float> active-opacity: root.highlighted ? 0.5 : 0.4;
+
+    background: DockGuideMetrics.inactive-fill;
+    border-color: frame-color;
+    border-width: root.highlighted ? 2px : 1px;
+    border-radius: 2px;
+
+    Rectangle {
+        x: inset;
+        y: inset;
+        width: body-w;
+        height: chrome-h;
+        background: DockGuideMetrics.chrome-fill;
+    }
+
+    Rectangle {
+        x: inset;
+        y: body-y;
+        width: body-w;
+        height: body-h;
+        background: DockGuideMetrics.inactive-fill;
+    }
+
+    if root.slot == 3: Rectangle {
+        x: inset;
+        y: body-y;
+        width: body-w;
+        height: half-h;
+        background: DockGuideMetrics.active-fill;
+        opacity: active-opacity;
+    }
+
+    if root.slot == 4: Rectangle {
+        x: inset;
+        y: body-y + half-h;
+        width: body-w;
+        height: body-h - half-h;
+        background: DockGuideMetrics.active-fill;
+        opacity: active-opacity;
+    }
+
+    if root.slot == 1: Rectangle {
+        x: inset;
+        y: body-y;
+        width: half-w;
+        height: body-h;
+        background: DockGuideMetrics.active-fill;
+        opacity: active-opacity;
+    }
+
+    if root.slot == 2: Rectangle {
+        x: inset + half-w;
+        y: body-y;
+        width: body-w - half-w;
+        height: body-h;
+        background: DockGuideMetrics.active-fill;
+        opacity: active-opacity;
+    }
+
+    if root.slot == 5: Rectangle {
+        x: inset;
+        y: body-y;
+        width: body-w;
+        height: body-h;
+        background: DockGuideMetrics.active-fill;
+        opacity: active-opacity;
+        border-color: frame-color;
+        border-width: 1px;
+        border-radius: 1px;
+    }
+
+    if root.slot == 3 || root.slot == 4: DockGuideDashedHLine {
+        x: inset;
+        y: body-y + half-h;
+        width: body-w;
+        line-width: body-w;
+        dash-color: root.highlighted ? DockGuideMetrics.frame-stroke-highlight : DockGuideMetrics.dash-color;
+    }
+
+    if root.slot == 1 || root.slot == 2: DockGuideDashedVLine {
+        x: inset + half-w;
+        y: body-y;
+        height: body-h;
+        line-height: body-h;
+        dash-color: root.highlighted ? DockGuideMetrics.frame-stroke-highlight : DockGuideMetrics.dash-color;
+    }
+}
+
+// Keep in sync with DockLayoutMetrics::auto_hide_guide_* in dock_manager.h
+export global DockEdgeGuideMetrics {
+    in-out property <length> arrow-size: 8px;
+    in-out property <length> arrow-gap: 3px;
+    // Landscape (top/bottom) icon size; portrait (left/right) swaps width/height.
+    in-out property <length> icon-width: 48px;
+    in-out property <length> icon-height: 28px;
+    in-out property <length> chrome-height: 7px;
+    in-out property <float> body-opacity: 0.3;
+    in-out property <float> faint-opacity: 0.45;
+    in-out property <brush> arrow-fill: #ffffff;
+}
+
+// Deprecated alias — use DockEdgeGuideMetrics.
+export global DockAutoHideGuideMetrics {
+    in-out property <length> arrow-size: DockEdgeGuideMetrics.arrow-size;
+    in-out property <length> arrow-gap: DockEdgeGuideMetrics.arrow-gap;
+    in-out property <length> icon-width: DockEdgeGuideMetrics.icon-width;
+    in-out property <length> icon-height: DockEdgeGuideMetrics.icon-height;
+    in-out property <length> chrome-height: DockEdgeGuideMetrics.chrome-height;
+    in-out property <float> body-opacity: DockEdgeGuideMetrics.body-opacity;
+    in-out property <brush> arrow-fill: DockEdgeGuideMetrics.arrow-fill;
+}
+
+export component DockEdgeGuideArrow inherits Rectangle {
+    // DockEdge: 0=left, 1=right, 2=top, 3=bottom
+    in property <int> edge: 0;
+    in property <length> size: DockEdgeGuideMetrics.arrow-size;
+
+    width: size;
+    height: size;
+    background: transparent;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        fill: DockEdgeGuideMetrics.arrow-fill;
+        commands: root.edge == 0 ? "M 0 0 L 8 4 L 0 8 Z" :
+            root.edge == 1 ? "M 8 0 L 0 4 L 8 8 Z" :
+            root.edge == 2 ? "M 4 0 L 8 8 L 0 8 Z" :
+            "M 0 0 L 8 0 L 4 8 Z";
+    }
+}
+
+export component DockAutoHideGuideArrow inherits DockEdgeGuideArrow {}
+
+export component DockEdgeGuideIcon inherits Rectangle {
+    in property <bool> highlighted: false;
+
+    property <brush> frame-color:
+        root.highlighted ? DockGuideMetrics.frame-stroke-highlight : DockGuideMetrics.frame-stroke;
+    property <length> inset: 1px;
+    property <length> chrome-h: DockEdgeGuideMetrics.chrome-height;
+    property <length> body-y: inset + chrome-h;
+    property <length> body-h: root.height - body-y - inset;
+    property <length> body-w: root.width - 2 * inset;
+
+    background: DockGuideMetrics.inactive-fill;
+    border-color: frame-color;
+    border-width: root.highlighted ? 2px : 1px;
+    border-radius: 2px;
+
+    Rectangle {
+        x: inset;
+        y: inset;
+        width: body-w;
+        height: chrome-h;
+        background: DockGuideMetrics.chrome-fill;
+    }
+
+    Rectangle {
+        x: inset;
+        y: body-y;
+        width: body-w;
+        height: body-h;
+        background: DockGuideMetrics.active-fill;
+        opacity: DockEdgeGuideMetrics.body-opacity;
+    }
+}
+
+export component DockAutoHideGuideIcon inherits DockEdgeGuideIcon {}
+
+export component DockEdgeGuideButton inherits Rectangle {
+    // DockEdge: 0=left, 1=right, 2=top, 3=bottom
+    in property <int> edge: 0;
+    in property <bool> highlighted: false;
+    in property <bool> faint: false;
+
+    opacity: root.faint && !root.highlighted ? DockEdgeGuideMetrics.faint-opacity : 1.0;
+
+    property <length> arrow-sz: DockEdgeGuideMetrics.arrow-size;
+    property <length> arrow-gap: DockEdgeGuideMetrics.arrow-gap;
+    property <bool> portrait: root.edge == 0 || root.edge == 1;
+    property <length> target-icon-w:
+        portrait ? DockEdgeGuideMetrics.icon-height : DockEdgeGuideMetrics.icon-width;
+    property <length> target-icon-h:
+        portrait ? DockEdgeGuideMetrics.icon-width : DockEdgeGuideMetrics.icon-height;
+    property <length> icon-w: target-icon-w;
+    property <length> icon-h: target-icon-h;
+    property <length> icon-x:
+        root.edge == 0 ? arrow-sz + arrow-gap :
+        root.edge == 1 ? 0px :
+        0px;
+    property <length> icon-y:
+        root.edge == 2 ? arrow-sz + arrow-gap :
+        root.edge == 3 ? 0px :
+        0px;
+    property <length> arrow-x:
+        root.edge == 1 ? icon-w + arrow-gap :
+        root.edge == 2 || root.edge == 3 ? (root.width - arrow-sz) * 0.5 :
+        0px;
+    property <length> arrow-y:
+        root.edge == 3 ? icon-h + arrow-gap :
+        root.edge == 2 ? 0 :
+        (root.height - arrow-sz) * 0.5;
+
+    background: transparent;
+
+    DockEdgeGuideIcon {
+        x: icon-x;
+        y: icon-y;
+        width: icon-w;
+        height: icon-h;
+        highlighted: root.highlighted;
+    }
+
+    DockEdgeGuideArrow {
+        x: arrow-x;
+        y: arrow-y;
+        edge: root.edge;
+    }
+}
+
+export component DockAutoHideGuideButton inherits DockEdgeGuideButton {}
+
+export component DockGuidesLayer inherits Rectangle {
+    in property <[DockGuide]> guides: [];
+    in property <DockPreview> preview;
+    in property <bool> drag-active: false;
+    in property <bool> show-guides: false;
+
+    background: transparent;
+
+    for guide in root.guides: DockGuideButton {
+        x: guide.x;
+        y: guide.y;
+        width: guide.width;
+        height: guide.height;
+        visible: root.show-guides;
+        slot: guide.slot;
+        highlighted: guide.highlighted;
+        faint: guide.faint;
+    }
+
+    Rectangle {
+        x: root.preview.x;
+        y: root.preview.y;
+        width: root.preview.width;
+        height: root.preview.height;
+        visible: root.preview.visible;
+        background: #4a90d9;
+        opacity: 0.28;
+        border-color: #7fc1ff;
+        border-width: 2px;
+        border-radius: 2px;
+    }
+}
+
+export component DockHostGuidesLayer inherits Rectangle {
+    in property <[DockHostGuide]> guides: [];
+    in property <DockPreview> preview;
+
+    background: transparent;
+
+    for guide in root.guides: DockEdgeGuideButton {
+        x: guide.x;
+        y: guide.y;
+        width: guide.width;
+        height: guide.height;
+        visible: true;
+        edge: guide.slot - 1;
+        highlighted: guide.highlighted;
+        faint: guide.faint;
+    }
+
+    Rectangle {
+        x: root.preview.x;
+        y: root.preview.y;
+        width: root.preview.width;
+        height: root.preview.height;
+        visible: root.preview.visible;
+        background: #4a90d9;
+        opacity: 0.28;
+        border-color: #7fc1ff;
+        border-width: 2px;
+        border-radius: 2px;
+    }
+}
+
+export component DockAutoHideGuidesLayer inherits Rectangle {
+    in property <[DockAutoHideGuide]> guides: [];
+    in property <bool> show-guides: false;
+
+    background: transparent;
+
+    for guide in root.guides: DockAutoHideGuideButton {
+        x: guide.x;
+        y: guide.y;
+        width: guide.width;
+        height: guide.height;
+        visible: root.show-guides;
+        edge: guide.edge;
+        highlighted: guide.highlighted;
+    }
+}
+
+export component DockAutoHideDropPreviewLayer inherits Rectangle {
+    in property <DockAutoHideDropPreview> preview;
+
+    background: transparent;
+
+    Rectangle {
+        x: root.preview.x;
+        y: root.preview.y;
+        width: root.preview.width;
+        height: root.preview.height;
+        visible: root.preview.visible;
+        background: #3a6ea5;
+        opacity: 0.35;
+        border-color: #6ab0ff;
+        border-width: 2px;
+        border-radius: 2px;
+    }
+}
+
+export component DockFloatingDragPreviewLayer inherits Rectangle {
+    in property <DockDragPreview> preview;
+
+    background: transparent;
+
+    if root.preview.visible: Rectangle {
+        x: root.preview.x;
+        y: root.preview.y;
+        width: root.preview.width;
+        height: root.preview.height;
+        background: #1c1c1c;
+        opacity: 0.6;
+        border-color: #7fc1ff;
+        border-width: 1px;
+        border-radius: 2px;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: DockChromeMetrics.bar-height;
+            background: #2b2b2b;
+            opacity: 1.0;
+
+            Text {
+                x: 8px;
+                width: parent.width - 16px;
+                height: parent.height;
+                vertical-alignment: center;
+                overflow: elide;
+                text: root.preview.title;
+                color: #d0d0d0;
+                font-size: 12px;
+            }
+        }
+    }
+}
+
+export component DockAutoHideTabsLayer inherits Rectangle {
+    in property <[DockAutoHideTab]> tabs: [];
+
+    callback tab-pressed(int);
+    callback tab-unpin-pressed(int);
+
+    background: transparent;
+
+    for tab in root.tabs: Rectangle {
+        x: tab.x;
+        y: tab.y;
+        width: tab.width;
+        height: tab.height;
+        background: tab.expanded ? #3a6ea5 : #242424;
+        border-color: #161616;
+        border-width: 1px;
+
+        Text {
+            x: 4px;
+            width: parent.width - 8px;
+            height: parent.height;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            overflow: elide;
+            text: tab.title;
+            color: tab.expanded ? #ffffff : #c8c8c8;
+            font-size: 11px;
+        }
+
+        tab-touch := TouchArea {
+            x: 0;
+            y: 0;
+            width: parent.width - 14px;
+            height: parent.height;
+            mouse-cursor: MouseCursor.pointer;
+            clicked => {
+                root.tab-pressed(tab.widget-id);
+            }
+        }
+
+        unpin-touch := TouchArea {
+            x: parent.width - 14px;
+            y: 2px;
+            width: 12px;
+            height: 12px;
+            clicked => {
+                root.tab-unpin-pressed(tab.widget-id);
+            }
+            DockChromeCloseIcon {
+                icon-size: 8px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                icon-color: unpin-touch.has-hover ? #ffffff : #666666;
+            }
+        }
+    }
+}
+
+export component DockAutoHideOverlaysLayer inherits Rectangle {
+    in property <[DockAutoHideOverlay]> overlays: [];
+
+    callback overlay-minimize-pressed(int);
+    callback overlay-close-pressed(int);
+    callback overlay-resize-pressed(int, length, length);
+    callback overlay-resize-moved(int, length, length);
+    callback overlay-resize-released();
+
+    background: transparent;
+
+    for overlay in root.overlays: Rectangle {
+        x: overlay.frame-x;
+        y: overlay.frame-y;
+        width: overlay.frame-width;
+        height: overlay.frame-height;
+        background: #1c1c1c;
+        border-color: #4a4a4a;
+        border-width: 1px;
+        clip: true;
+
+        Rectangle {
+            x: overlay.title-x - overlay.frame-x;
+            y: overlay.title-y - overlay.frame-y;
+            width: overlay.title-width;
+            height: overlay.title-height;
+            background: #2b2b2b;
+
+            Text {
+                x: 8px;
+                width: parent.width - 48px;
+                height: parent.height;
+                vertical-alignment: center;
+                overflow: elide;
+                text: overlay.title;
+                color: #d0d0d0;
+                font-size: 12px;
+            }
+
+            if overlay.show-minimize: minimize-touch := TouchArea {
+                x: parent.width - 36px;
+                width: 16px;
+                height: parent.height;
+                clicked => { root.overlay-minimize-pressed(overlay.widget-id); }
+                DockChromeMinimizeIcon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    icon-color: minimize-touch.has-hover ? #ffffff : #888888;
+                }
+            }
+
+            if overlay.show-close: close-touch := TouchArea {
+                x: parent.width - 18px;
+                width: 16px;
+                height: parent.height;
+                clicked => { root.overlay-close-pressed(overlay.widget-id); }
+                DockChromeCloseIcon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    icon-color: close-touch.has-hover ? #ffffff : #888888;
+                }
+            }
+        }
+
+        Rectangle {
+            x: overlay.resize-x - overlay.frame-x;
+            y: overlay.resize-y - overlay.frame-y;
+            width: overlay.resize-width;
+            height: overlay.resize-height;
+            background: resize-touch.has-hover ? #3a6ea5 : #2e2e2e;
+
+            resize-touch := TouchArea {
+                width: parent.width;
+                height: parent.height;
+                mouse-cursor: overlay.edge == 0 || overlay.edge == 1 ? MouseCursor.ew-resize : MouseCursor.ns-resize;
+                moved => {
+                    root.overlay-resize-moved(overlay.widget-id,
+                        self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                        self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+                }
+                pointer-event(event) => {
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                        root.overlay-resize-pressed(overlay.widget-id,
+                            self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                            self.absolute-position.y - root.absolute-position.y + self.mouse-y);
+                    }
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                        root.overlay-resize-released();
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component DockingHost inherits Rectangle {
+    in property <[DockTile]> tiles: [];
+    in property <[DockTab]> tabs: [];
+    in property <[DockSplitterHandle]> splitters: [];
+    in property <[DockGuide]> guides: [];
+    in property <DockPreview> preview;
+    in property <bool> drag-active: false;
+
+    callback tab-pressed(int, length, length);
+    callback tab-moved(length, length);
+    callback tab-released(length, length);
+    callback tab-activated(int);
+    callback widget-closed(int);
+    callback tab-pin-pressed(int);
+    callback splitter-pressed(int, length, length);
+    callback splitter-moved(int, length, length);
+    callback splitter-released();
+
+    background: #161616;
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    for tile in root.tiles: Rectangle {
+        x: tile.content-x;
+        y: tile.content-y;
+        width: tile.content-width;
+        height: tile.content-height;
+        background: tile.floating ? #232323 : #1c1c1c;
+        border-color: #2a2a2a;
+        border-width: 1px;
+    }
+
+    DockChromeBar {
+        width: 100%;
+        height: 100%;
+        tabs: root.tabs;
+        tab-pressed(id, px, py) => { root.tab-pressed(id, px, py); }
+        tab-moved(px, py) => { root.tab-moved(px, py); }
+        tab-released(px, py) => { root.tab-released(px, py); }
+        tab-activated(id) => { root.tab-activated(id); }
+        widget-closed(id) => { root.widget-closed(id); }
+        tab-pin-pressed(id) => { root.tab-pin-pressed(id); }
+    }
+
+    DockSplittersLayer {
+        width: 100%;
+        height: 100%;
+        splitters: root.splitters;
+        splitter-pressed(id, px, py) => { root.splitter-pressed(id, px, py); }
+        splitter-moved(id, px, py) => { root.splitter-moved(id, px, py); }
+        splitter-released() => { root.splitter-released(); }
+    }
+
+    DockGuidesLayer {
+        width: 100%;
+        height: 100%;
+        guides: root.guides;
+        preview: root.preview;
+        drag-active: root.drag-active;
+    }
+}

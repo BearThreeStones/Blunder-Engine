@@ -1,0 +1,73 @@
+// Font-independent dock chrome glyphs (close, pin, minimize).
+
+export component DockChromeCloseIcon inherits Rectangle {
+    in property <color> icon-color: #808080;
+    in property <length> icon-size: 10px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Rectangle {
+        width: parent.width * 0.65;
+        height: 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: root.icon-color;
+        transform-rotation: 45deg;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+    }
+
+    Rectangle {
+        width: parent.width * 0.65;
+        height: 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: root.icon-color;
+        transform-rotation: -45deg;
+        transform-origin: { x: self.width / 2, y: self.height / 2 };
+    }
+}
+
+export component DockChromePinIcon inherits Rectangle {
+    in property <color> icon-color: #808080;
+    in property <length> icon-size: 10px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Rectangle {
+        width: 5px;
+        height: 5px;
+        x: (parent.width - self.width) / 2;
+        y: 1px;
+        border-radius: self.width / 2;
+        background: root.icon-color;
+    }
+
+    Rectangle {
+        width: 1.5px;
+        height: parent.height - 6px;
+        x: (parent.width - self.width) / 2;
+        y: 5px;
+        background: root.icon-color;
+    }
+}
+
+export component DockChromeMinimizeIcon inherits Rectangle {
+    in property <color> icon-color: #808080;
+    in property <length> icon-size: 10px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Rectangle {
+        width: parent.width * 0.8;
+        height: 1px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: root.icon-color;
+    }
+}
