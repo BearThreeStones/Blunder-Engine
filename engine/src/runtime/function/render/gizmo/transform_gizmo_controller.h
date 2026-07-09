@@ -22,7 +22,13 @@ class TransformGizmoController final {
   }
   bool wantsCameraLock() const { return isDragging(); }
   ManipulatorAxis getActiveAxis() const {
-    return m_active_axis.value_or(ManipulatorAxis::trans_x);
+    if (m_active_axis.has_value()) {
+      return *m_active_axis;
+    }
+    if (m_translate_session.isActive()) {
+      return m_translate_session.activeHandle();
+    }
+    return ManipulatorAxis::trans_x;
   }
 
   float getRotationDragStartAngle() const { return m_drag_start_angle; }

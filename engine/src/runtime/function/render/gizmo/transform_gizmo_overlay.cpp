@@ -275,14 +275,22 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
 
   const bool translate_session_active =
       m_controller.isTranslateModalSessionActive();
+  const bool translate_grab_session =
+      translate_session_active &&
+      m_controller.translateModalSession().isGrabEntry();
+  const bool translate_handle_feedback =
+      translate_session_active && !translate_grab_session;
   const ManipulatorAxis translate_active_handle =
       translate_session_active
           ? m_controller.translateModalSession().activeHandle()
           : ManipulatorAxis::last;
 
   const auto draw_translate_axis = [&](const ManipulatorAxis axis) {
-    const bool highlight =
-        m_controller.isDragging() && m_controller.getActiveAxis() == axis;
+    // Live pivot handles stay unhighlighted during modal sessions; handle-entry
+    // feedback (ghost/guides) draws at drag-start basis instead.
+    const bool highlight = !translate_session_active &&
+                           m_controller.isDragging() &&
+                           m_controller.getActiveAxis() == axis;
     if (gizmoAxisFadeFactor(axis, idot) <= 0.0f) {
       return;
     }
@@ -308,7 +316,7 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
       draw_translate_axis(ManipulatorAxis::trans_c);
     }
 
-    if (translate_session_active) {
+    if (translate_handle_feedback) {
       const TranslateModalSession& session =
           m_controller.translateModalSession();
       const GizmoBasis& start_basis = session.dragStartBasis();

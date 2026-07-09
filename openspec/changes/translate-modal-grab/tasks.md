@@ -14,10 +14,10 @@
 
 ## 3. Grab feedback
 
-- [ ] 3.1 Set/restore four-way move cursor for grab session lifetime
-- [ ] 3.2 Apply grab visibility: hide solid center; keep reference axis arrows on live pivot; no guides; no handle ghost; no origin dot
-- [ ] 3.3 Drive transform-active outline while grab session active (reuse P1 session-active flag)
-- [ ] 3.4 Request viewport redraw on grab begin/move/end
+- [x] 3.1 Set/restore four-way move cursor for grab session lifetime
+- [x] 3.2 Apply grab visibility: hide solid center; keep reference axis arrows on live pivot; no guides; no handle ghost; no origin dot
+- [x] 3.3 Drive transform-active outline while grab session active (reuse P1 session-active flag)
+- [x] 3.4 Request viewport redraw on grab begin/move/end
 
 ## 4. Docs + validation
 
