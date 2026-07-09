@@ -58,6 +58,9 @@ void markSceneDirty() {
   if (g_runtime_global_context.m_editor_scene_edit) {
     g_runtime_global_context.m_editor_scene_edit->markDirty();
   }
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
+  }
 }
 
 }  // namespace
