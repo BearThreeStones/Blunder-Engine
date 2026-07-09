@@ -25,8 +25,12 @@ _Avoid_: Semi-transparent fill, view-background mix
 ### Transform gizmo (translate)
 
 **Translate modal session**:
-The shared interaction session for moving a selection in translate mode, whether started from a handle or (later) from grab. Owns motion, constraints, confirm/cancel, and drag feedback.
+The shared interaction session for moving a selection in translate mode, whether started from a handle or from grab. Owns motion, constraints, confirm/cancel, and drag feedback.
 _Avoid_: Gizmo drag only, ad-hoc translate handler
+
+**Grab entry**:
+Starting a Translate Modal Session with `G` for free view-plane translation. Confirms with LMB click (not release). Distinct from handle entry.
+_Avoid_: Gizmo drag, handle press
 
 **Constraint guide**:
 Axis-colored lines through the drag-start pivot showing the active translation constraint. One line for a single axis, two for a plane, none for free center move. Guides stay pinned at drag-start while the object moves.

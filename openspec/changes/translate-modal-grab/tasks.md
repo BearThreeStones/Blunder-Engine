@@ -21,8 +21,8 @@
 
 ## 4. Docs + validation
 
-- [ ] 4.1 Add **Grab entry** term to `CONTEXT.md` under Transform gizmo (translate)
-- [ ] 4.2 Note grab entry / click-to-confirm in `docs/agents/render-pipeline.md`
+- [x] 4.1 Add **Grab entry** term to `CONTEXT.md` under Transform gizmo (translate)
+- [x] 4.2 Note grab entry / click-to-confirm in `docs/agents/render-pipeline.md`
 - [ ] 4.3 Build/run grab-related unit tests
 - [ ] 4.4 Manual QA: `G` free move; LMB click confirm; Esc/RMB cancel; cursor; outline; no guides/ghost; handle path still release-confirm
-- [ ] 4.5 `openspec validate translate-modal-grab`
+- [x] 4.5 `openspec validate translate-modal-grab`
