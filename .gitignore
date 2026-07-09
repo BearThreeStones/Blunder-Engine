@@ -86,3 +86,6 @@ agent-transcripts/
 .tmp-*
 slint_bt_*.txt
 skia-*.tar.gz
+
+# Git worktrees (superpowers / local agent isolation)
+.worktrees/
