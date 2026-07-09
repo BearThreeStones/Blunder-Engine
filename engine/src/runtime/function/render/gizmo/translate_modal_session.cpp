@@ -87,7 +87,7 @@ bool translateSessionShowsPlaneHandle(const ManipulatorAxis active,
   if (isPlaneManipulator(active)) {
     return active == plane;
   }
-  return active == ManipulatorAxis::last;
+  return active == ManipulatorAxis::trans_c || active == ManipulatorAxis::last;
 }
 
 bool translateSessionShowsCenterHandle() {

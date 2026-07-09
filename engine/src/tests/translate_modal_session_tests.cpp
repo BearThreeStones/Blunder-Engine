@@ -83,6 +83,15 @@ void planeDragKeepsOnlyActivePlaneHandle() {
       Blunder::ManipulatorAxis::trans_xy, Blunder::ManipulatorAxis::trans_zx));
 }
 
+void centerDragKeepsPlaneHandlesVisible() {
+  assert(Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_c, Blunder::ManipulatorAxis::trans_xy));
+  assert(Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_c, Blunder::ManipulatorAxis::trans_yz));
+  assert(Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_c, Blunder::ManipulatorAxis::trans_zx));
+}
+
 void centerHandleIsHiddenDuringTranslateSession() {
   assert(!Blunder::translateSessionShowsCenterHandle());
 }
@@ -152,6 +161,7 @@ int main() {
   centerConstraintKeepsViewPlaneDelta();
   axisDragHidesAllPlaneHandles();
   planeDragKeepsOnlyActivePlaneHandle();
+  centerDragKeepsPlaneHandlesVisible();
   centerHandleIsHiddenDuringTranslateSession();
   guideAxisCountMatchesActiveConstraint();
   planeOriginColorUsesNormalAxis();
