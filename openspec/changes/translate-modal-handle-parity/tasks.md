@@ -1,10 +1,10 @@
 ## 1. Session + screen-space motion (TDD)
 
-- [ ] 1.1 Add `TranslateModalSession` (header/cpp) with begin-from-handle, pointer-move, confirm, cancel, and feedback query API
-- [ ] 1.2 Implement screen-delta → world view-plane delta using `EditorCamera` (Blender `convertViewVec` analogue)
-- [ ] 1.3 Implement axis / infinite-plane / free-center constraint projection + view-aligned axis fallback
-- [ ] 1.4 Add unit tests for axis, plane (infinite), and center deltas at fixed camera poses; watch RED then GREEN
-- [ ] 1.5 Register new sources in render CMake and test target in `engine/src/tests/CMakeLists.txt`
+- [x] 1.1 Add `TranslateModalSession` (header/cpp) with begin-from-handle, pointer-move, confirm, cancel, and feedback query API
+- [x] 1.2 Implement screen-delta → world view-plane delta using `EditorCamera` (Blender `convertViewVec` analogue)
+- [x] 1.3 Implement axis / infinite-plane / free-center constraint projection + view-aligned axis fallback
+- [x] 1.4 Add unit tests for axis, plane (infinite), and center deltas at fixed camera poses; watch RED then GREEN
+- [x] 1.5 Register new sources in render CMake and test target in `engine/src/tests/CMakeLists.txt`
 
 ## 2. Wire handle entry + confirm/cancel
 

@@ -98,6 +98,8 @@ set(RENDER_SOURCES
     "function/render/gizmo/transform_gizmo_types.cpp"
     "function/render/gizmo/gizmo_math.h"
     "function/render/gizmo/gizmo_math.cpp"
+    "function/render/gizmo/translate_modal_session.h"
+    "function/render/gizmo/translate_modal_session.cpp"
     "function/render/gizmo/transform_gizmo_pick.h"
     "function/render/gizmo/transform_gizmo_pick.cpp"
     "function/render/gizmo/transform_gizmo_shared.h"
