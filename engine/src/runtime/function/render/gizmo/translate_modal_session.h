@@ -20,6 +20,11 @@ struct TranslateModalCameraState {
   float viewport_height_world_per_pixel{1.0f};
 };
 
+enum class TranslateModalEntry : uint8_t {
+  handle,
+  grab,
+};
+
 glm::vec3 screenDeltaToViewPlaneWorld(const glm::vec3& camera_position,
                                       const glm::vec3& camera_forward,
                                       const glm::vec3& camera_right,
@@ -39,6 +44,8 @@ uint32_t translateSessionGuideAxisCount(ManipulatorAxis active);
 uint32_t translateSessionGuideAxes(ManipulatorAxis active,
                                    ManipulatorAxis out_axes[2]);
 ManipulatorAxis translateSessionOriginColorAxis(ManipulatorAxis active);
+bool translateModalConfirmsOnMousePress(TranslateModalEntry entry);
+bool translateModalConfirmsOnMouseRelease(TranslateModalEntry entry);
 
 float viewportHeightWorldPerPixel(const EditorCamera& camera);
 float viewportHeightWorldPerPixel(const EditorCamera& camera,
@@ -57,6 +64,12 @@ class TranslateModalSession final {
                        const glm::vec2& pointer_position,
                        const glm::vec3& object_position,
                        const EditorCamera& camera);
+  void beginFromGrab(const glm::vec2& pointer_position,
+                     const glm::vec3& object_position,
+                     const TranslateModalCameraState& camera);
+  void beginFromGrab(const glm::vec2& pointer_position,
+                     const glm::vec3& object_position,
+                     const EditorCamera& camera);
   void onPointerMove(const glm::vec2& pointer_position,
                      const TranslateModalCameraState& camera);
   void onPointerMove(const glm::vec2& pointer_position,
@@ -69,8 +82,11 @@ class TranslateModalSession final {
   const GizmoBasis& dragStartBasis() const;
   glm::vec3 feedbackDelta() const;
   glm::vec3 feedbackPosition() const;
+  TranslateModalEntry entryKind() const;
+  bool isGrabEntry() const;
 
  private:
+  TranslateModalEntry m_entry{TranslateModalEntry::handle};
   ManipulatorAxis m_axis{ManipulatorAxis::last};
   GizmoBasis m_basis{};
   TranslateModalCameraState m_camera{};

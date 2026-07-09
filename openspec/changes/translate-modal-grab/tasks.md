@@ -1,8 +1,8 @@
 ## 1. Session grab entry + confirm policy (TDD)
 
-- [ ] 1.1 Add session entry kind (`handle` vs `grab`) and `beginFromGrab` (free view-plane constraint + start TRS/pivot snapshot)
-- [ ] 1.2 Add confirm-policy helper: grab confirms on LMB press; handle remains LMB release
-- [ ] 1.3 Unit tests: grab begin is free/unconstrained; grab confirm policy vs handle; cancel restores start pose; watch RED then GREEN
+- [x] 1.1 Add session entry kind (`handle` vs `grab`) and `beginFromGrab` (free view-plane constraint + start TRS/pivot snapshot)
+- [x] 1.2 Add confirm-policy helper: grab confirms on LMB press; handle remains LMB release
+- [x] 1.3 Unit tests: grab begin is free/unconstrained; grab confirm policy vs handle; cancel restores start pose; watch RED then GREEN
 
 ## 2. Wire G key + grab confirm/cancel
 

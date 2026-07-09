@@ -36,6 +36,15 @@ glm::vec3 projectOntoPlaneAxes(const glm::vec3& delta, const glm::vec3& axis_a,
   return a * glm::dot(delta, a) + b * glm::dot(delta, b);
 }
 
+GizmoBasis worldBasisAt(const glm::vec3& origin) {
+  GizmoBasis basis{};
+  basis.origin = origin;
+  basis.axis_x = glm::vec3(1.0f, 0.0f, 0.0f);
+  basis.axis_y = glm::vec3(0.0f, 1.0f, 0.0f);
+  basis.axis_z = glm::vec3(0.0f, 0.0f, 1.0f);
+  return basis;
+}
+
 }  // namespace
 
 glm::vec3 screenDeltaToViewPlaneWorld(
@@ -144,6 +153,14 @@ ManipulatorAxis translateSessionOriginColorAxis(const ManipulatorAxis active) {
   }
 }
 
+bool translateModalConfirmsOnMousePress(const TranslateModalEntry entry) {
+  return entry == TranslateModalEntry::grab;
+}
+
+bool translateModalConfirmsOnMouseRelease(const TranslateModalEntry entry) {
+  return entry == TranslateModalEntry::handle;
+}
+
 float viewportHeightWorldPerPixel(const EditorCamera& camera,
                                   const glm::vec3& pivot_position) {
   const float height = std::max(camera.getViewportHeight(), 1.0f);
@@ -185,6 +202,7 @@ void TranslateModalSession::beginFromHandle(
     const ManipulatorAxis axis, const GizmoBasis& basis,
     const glm::vec2& pointer_position, const glm::vec3& object_position,
     const TranslateModalCameraState& camera) {
+  m_entry = TranslateModalEntry::handle;
   m_axis = axis;
   m_basis = basis;
   m_camera = camera;
@@ -202,6 +220,26 @@ void TranslateModalSession::beginFromHandle(
   // the local/entity-space translation baseline for feedbackPosition().
   beginFromHandle(axis, basis, pointer_position, object_position,
                   cameraStateFromEditorCamera(camera, basis.origin));
+}
+
+void TranslateModalSession::beginFromGrab(
+    const glm::vec2& pointer_position, const glm::vec3& object_position,
+    const TranslateModalCameraState& camera) {
+  m_entry = TranslateModalEntry::grab;
+  m_axis = ManipulatorAxis::trans_c;
+  m_basis = worldBasisAt(object_position);
+  m_camera = camera;
+  m_start_pointer = pointer_position;
+  m_object_position_at_begin = object_position;
+  m_feedback_delta = glm::vec3(0.0f);
+  m_active = true;
+}
+
+void TranslateModalSession::beginFromGrab(
+    const glm::vec2& pointer_position, const glm::vec3& object_position,
+    const EditorCamera& camera) {
+  beginFromGrab(pointer_position, object_position,
+                cameraStateFromEditorCamera(camera, object_position));
 }
 
 void TranslateModalSession::onPointerMove(
@@ -256,6 +294,14 @@ glm::vec3 TranslateModalSession::feedbackDelta() const {
 
 glm::vec3 TranslateModalSession::feedbackPosition() const {
   return m_object_position_at_begin + m_feedback_delta;
+}
+
+TranslateModalEntry TranslateModalSession::entryKind() const {
+  return m_entry;
+}
+
+bool TranslateModalSession::isGrabEntry() const {
+  return m_entry == TranslateModalEntry::grab;
 }
 
 }  // namespace Blunder

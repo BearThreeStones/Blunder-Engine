@@ -155,6 +155,59 @@ void sessionAppliesAccumulatedScreenDeltaUntilConfirm() {
   assert(!session.isActive());
 }
 
+void grabSessionBeginsAsFreeViewPlaneMove() {
+  Blunder::TranslateModalCameraState camera{};
+  camera.forward = glm::vec3(0.0f, 1.0f, 0.0f);
+  camera.right = glm::vec3(1.0f, 0.0f, 0.0f);
+  camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+  camera.viewport_height_world_per_pixel = 0.25f;
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(12.0f, 20.0f),
+                        glm::vec3(4.0f, 5.0f, 6.0f), camera);
+  session.onPointerMove(glm::vec2(16.0f, 12.0f), camera);
+
+  assert(session.isActive());
+  assert(session.entryKind() == Blunder::TranslateModalEntry::grab);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_c);
+  expectVec3(session.dragStartBasis().origin, glm::vec3(4.0f, 5.0f, 6.0f));
+  expectVec3(session.dragStartBasis().axis_x, glm::vec3(1.0f, 0.0f, 0.0f));
+  expectVec3(session.dragStartBasis().axis_y, glm::vec3(0.0f, 1.0f, 0.0f));
+  expectVec3(session.dragStartBasis().axis_z, glm::vec3(0.0f, 0.0f, 1.0f));
+  expectVec3(session.feedbackPosition(), glm::vec3(5.0f, 5.0f, 8.0f));
+}
+
+void translateModalConfirmPolicyDependsOnEntryKind() {
+  assert(Blunder::translateModalConfirmsOnMousePress(
+      Blunder::TranslateModalEntry::grab));
+  assert(!Blunder::translateModalConfirmsOnMouseRelease(
+      Blunder::TranslateModalEntry::grab));
+
+  assert(!Blunder::translateModalConfirmsOnMousePress(
+      Blunder::TranslateModalEntry::handle));
+  assert(Blunder::translateModalConfirmsOnMouseRelease(
+      Blunder::TranslateModalEntry::handle));
+}
+
+void grabSessionCancelClearsActiveAndRestoresStartFeedback() {
+  Blunder::TranslateModalCameraState camera{};
+  camera.forward = glm::vec3(0.0f, 1.0f, 0.0f);
+  camera.right = glm::vec3(1.0f, 0.0f, 0.0f);
+  camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+  camera.viewport_height_world_per_pixel = 0.5f;
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(2.0f, 3.0f, 4.0f),
+                        camera);
+  session.onPointerMove(glm::vec2(8.0f, -2.0f), camera);
+  session.cancel();
+
+  assert(!session.isActive());
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f));
+  expectVec3(session.feedbackPosition(), glm::vec3(2.0f, 3.0f, 4.0f));
+  assert(!session.confirm().has_value());
+}
+
 void sessionCancelClearsFeedback() {
   Blunder::TranslateModalCameraState camera{};
   Blunder::TranslateModalSession session;
@@ -183,6 +236,9 @@ int main() {
   guideAxisCountMatchesActiveConstraint();
   planeOriginColorUsesNormalAxis();
   sessionAppliesAccumulatedScreenDeltaUntilConfirm();
+  grabSessionBeginsAsFreeViewPlaneMove();
+  translateModalConfirmPolicyDependsOnEntryKind();
+  grabSessionCancelClearsActiveAndRestoresStartFeedback();
   sessionCancelClearsFeedback();
   return 0;
 }
