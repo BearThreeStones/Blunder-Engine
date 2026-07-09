@@ -9,6 +9,8 @@
 #include "runtime/function/render/gizmo/transform_gizmo_overlay.h"
 #include "runtime/function/render/overlay/navigate_gizmo_overlay.h"
 #include "runtime/function/render/overlay/origins_overlay.h"
+#include "runtime/function/render/overlay/outline_overlay.h"
+#include "runtime/function/render/overlay/outline_targets.h"
 #include "runtime/function/render/overlay/overlay_anti_aliasing.h"
 #include "runtime/function/render/overlay/overlay_line_pass.h"
 #include "runtime/function/render/overlay/overlay_line_targets.h"
@@ -50,8 +52,10 @@ class OverlaySystem final {
                   uint32_t current_frame);
 
   bool hasActiveLineOverlays() const;
+  bool hasActiveOutline() const;
 
   void draw_scene_overlays(VkCommandBuffer cmd);
+  void draw_outline(VkCommandBuffer cmd);
   void draw_overlay_lines(VkCommandBuffer cmd);
   void draw_overlay_aa(VkCommandBuffer cmd);
   void draw_screen_overlays(VkCommandBuffer cmd);
@@ -59,6 +63,7 @@ class OverlaySystem final {
   GridOverlay& grid() { return m_grid; }
   AxesOverlay& axes() { return m_axes; }
   WireframeOverlay& wireframe() { return m_wireframe; }
+  OutlineOverlay& outline() { return m_outline; }
   OriginsOverlay& origins() { return m_origins; }
   NavigateGizmoOverlay& navigate_gizmo() { return m_navigate_gizmo; }
   TransformGizmoOverlay& transform_gizmo() { return m_transform_gizmo; }
@@ -72,6 +77,9 @@ class OverlaySystem final {
   ScreenOverlayPass m_screen_pass;
   OverlayLineTargets m_line_targets;
   OverlayLinePass m_line_pass;
+
+  OutlineTargets m_outline_targets;
+  OutlineOverlay m_outline;
 
   GridOverlay m_grid;
   AxesOverlay m_axes;

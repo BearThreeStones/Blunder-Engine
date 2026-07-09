@@ -1113,6 +1113,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   }
 
   if (m_overlay_system) {
+    if (m_overlay_system->hasActiveOutline()) {
+      m_overlay_system->draw_outline(command_buffer);
+    }
     if (m_overlay_system->hasActiveLineOverlays()) {
       m_overlay_system->draw_overlay_lines(command_buffer);
       if (editorOverlayAaEnabled()) {
@@ -1278,6 +1281,15 @@ bool RenderSystem::isTransformGizmoSpaceGlobal() const {
 bool RenderSystem::isTransformGizmoDragging() const {
   if (m_overlay_system) {
     return m_overlay_system->transform_gizmo().controller().isDragging();
+  }
+  return false;
+}
+
+bool RenderSystem::isTranslateModalSessionActive() const {
+  if (m_overlay_system) {
+    return m_overlay_system->transform_gizmo()
+        .controller()
+        .isTranslateModalSessionActive();
   }
   return false;
 }

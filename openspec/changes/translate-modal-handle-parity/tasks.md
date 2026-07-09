@@ -25,9 +25,9 @@
 
 ## 4. Transform-active outline
 
-- [ ] 4.1 Expose session-active (or translate-drag-active) to outline resolve
-- [ ] 4.2 Use fixed light/off-white transform-active outline color while translate session active; restore `#F57011` on end
-- [ ] 4.3 Verify selection-cleared-during-drag disables outline (existing scenario)
+- [x] 4.1 Expose session-active (or translate-drag-active) to outline resolve
+- [x] 4.2 Use fixed light/off-white transform-active outline color while translate session active; restore `#F57011` on end
+- [x] 4.3 Verify selection-cleared-during-drag disables outline (existing scenario)
 
 ## 5. Docs + validation
 

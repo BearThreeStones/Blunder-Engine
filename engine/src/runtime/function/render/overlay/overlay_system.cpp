@@ -39,6 +39,9 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_line_targets.initialize(ctx, alloc, m_native_offscreen);
   m_line_pass.initialize(ctx, m_native_offscreen, &m_line_targets);
 
+  m_outline_targets.initialize(ctx, alloc);
+  m_outline.initialize(ctx, alloc, m_native_offscreen, compiler, &m_outline_targets);
+
   m_grid.initialize(ctx, alloc, m_resources, compiler);
   m_navigate_gizmo.initialize(m_resources, compiler);
   m_transform_gizmo.initialize(m_resources, compiler);
@@ -50,6 +53,8 @@ void OverlaySystem::shutdown() {
   m_navigate_gizmo.shutdown();
   m_transform_gizmo.shutdown();
   m_grid.shutdown();
+  m_outline.shutdown();
+  m_outline_targets.shutdown();
   m_line_pass.shutdown();
   m_line_targets.shutdown();
   m_screen_pass.shutdown();
@@ -65,6 +70,8 @@ void OverlaySystem::shutdown() {
 void OverlaySystem::resize(uint32_t width, uint32_t height) {
   m_line_targets.resize(width, height);
   m_line_pass.resize(width, height);
+  m_outline_targets.resize(width, height);
+  m_outline.resize(width, height);
   m_anti_aliasing.resize(width, height);
 }
 
@@ -91,6 +98,7 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
   m_origins.begin_sync(m_resources, m_state);
   m_navigate_gizmo.begin_sync(m_resources, m_state);
   m_transform_gizmo.begin_sync(m_resources, m_state);
+  m_outline.begin_sync(m_resources, m_state);
   m_anti_aliasing.begin_sync(m_resources, m_state);
 }
 
@@ -98,10 +106,19 @@ bool OverlaySystem::hasActiveLineOverlays() const {
   return m_axes.isEnabled() || m_wireframe.isEnabled();
 }
 
+bool OverlaySystem::hasActiveOutline() const {
+  return m_outline.isEnabled();
+}
+
 void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
   m_axes.draw(cmd, m_state);
   m_wireframe.draw(cmd, m_state);
   m_origins.draw_color_only(cmd, m_state);
+}
+
+void OverlaySystem::draw_outline(VkCommandBuffer cmd) {
+  m_outline.drawPrepass(cmd, m_state);
+  m_outline.drawResolve(cmd, m_native_offscreen, m_state);
 }
 
 void OverlaySystem::draw_overlay_lines(VkCommandBuffer cmd) {
