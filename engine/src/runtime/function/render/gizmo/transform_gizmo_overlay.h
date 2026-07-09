@@ -43,7 +43,10 @@ class TransformGizmoOverlay final : public Overlay {
  private:
   bool drawTranslateHandle(VkCommandBuffer cmd, const OverlayState& state,
                            ManipulatorAxis axis, const GizmoBasis& basis, const float idot[3],
-                           float group_scale, bool highlight);
+                           float group_scale, bool highlight, float alpha_scale = 1.0f);
+  void drawTranslateOriginDot(VkCommandBuffer cmd, const OverlayState& state,
+                              const GizmoBasis& basis, float group_scale,
+                              ManipulatorAxis color_axis);
   bool drawScaleHandle(VkCommandBuffer cmd, const OverlayState& state, ManipulatorAxis axis,
                        const GizmoBasis& basis, const float idot[3], float group_scale,
                        bool highlight);

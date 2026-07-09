@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
 #include <glm/vec2.hpp>
@@ -31,6 +32,12 @@ glm::vec3 constrainTranslationDelta(const glm::vec3& free_delta,
                                     const GizmoBasis& basis,
                                     const glm::vec3& view_forward);
 
+bool translateSessionShowsPlaneHandle(ManipulatorAxis active,
+                                      ManipulatorAxis plane);
+bool translateSessionShowsCenterHandle();
+uint32_t translateSessionGuideAxisCount(ManipulatorAxis active);
+ManipulatorAxis translateSessionOriginColorAxis(ManipulatorAxis active);
+
 float viewportHeightWorldPerPixel(const EditorCamera& camera);
 float viewportHeightWorldPerPixel(const EditorCamera& camera,
                                   const glm::vec3& pivot_position);
@@ -57,6 +64,7 @@ class TranslateModalSession final {
 
   bool isActive() const;
   ManipulatorAxis activeHandle() const;
+  const GizmoBasis& dragStartBasis() const;
   glm::vec3 feedbackDelta() const;
   glm::vec3 feedbackPosition() const;
 

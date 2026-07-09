@@ -16,12 +16,12 @@
 
 ## 3. Drag feedback: cursor, guides, ghost, visibility, origin dot
 
-- [ ] 3.1 Set/restore four-way move cursor for session lifetime (no hover cursor change)
-- [ ] 3.2 Draw constraint guides pinned at drag-start (1 axis / 2 plane / none free)
-- [ ] 3.3 Draw active-handle-only drag ghost at drag-start pose (including center ghost when free-moving)
-- [ ] 3.4 Apply handle visibility: reference axis arrows follow live pivot; hide planes on axis drag; keep only active plane on plane drag; hide solid center during session
-- [ ] 3.5 Draw origin dot (axis root / plane handle with normal-axis color)
-- [ ] 3.6 Request viewport redraw whenever session feedback state changes
+- [x] 3.1 Set/restore four-way move cursor for session lifetime (no hover cursor change)
+- [x] 3.2 Draw constraint guides pinned at drag-start (1 axis / 2 plane / none free)
+- [x] 3.3 Draw active-handle-only drag ghost at drag-start pose (including center ghost when free-moving)
+- [x] 3.4 Apply handle visibility: reference axis arrows follow live pivot; hide planes on axis drag; keep only active plane on plane drag; hide solid center during session
+- [x] 3.5 Draw origin dot (axis root / plane handle with normal-axis color)
+- [x] 3.6 Request viewport redraw whenever session feedback state changes
 
 ## 4. Transform-active outline
 

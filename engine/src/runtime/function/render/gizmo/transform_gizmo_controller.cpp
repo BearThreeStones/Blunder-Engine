@@ -16,6 +16,7 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/slint/slint_system.h"
+#include "runtime/platform/window/window_system.h"
 
 namespace Blunder {
 
@@ -74,6 +75,24 @@ void TransformGizmoController::endCameraLock(EditorCamera* camera) {
   }
 }
 
+void TransformGizmoController::setTranslateModalCursor() {
+  if (g_runtime_global_context.m_window_system) {
+    g_runtime_global_context.m_window_system->setSystemCursor(SDL_SYSTEM_CURSOR_MOVE);
+  }
+}
+
+void TransformGizmoController::clearTranslateModalCursor() {
+  if (g_runtime_global_context.m_window_system) {
+    g_runtime_global_context.m_window_system->clearSystemCursor();
+  }
+}
+
+void TransformGizmoController::requestViewportRedraw() const {
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
+  }
+}
+
 void TransformGizmoController::setMode(const TransformGizmoMode mode,
                                        EditorCamera* camera) {
   if (m_mode == mode) {
@@ -81,21 +100,19 @@ void TransformGizmoController::setMode(const TransformGizmoMode mode,
   }
   cancelInteraction(camera);
   m_mode = mode;
-  if (g_runtime_global_context.m_render_system) {
-    g_runtime_global_context.m_render_system->requestViewportRedraw();
-  }
+  requestViewportRedraw();
 }
 
 void TransformGizmoController::toggleSpace() {
   m_space = (m_space == GizmoSpace::global) ? GizmoSpace::local : GizmoSpace::global;
-  if (g_runtime_global_context.m_render_system) {
-    g_runtime_global_context.m_render_system->requestViewportRedraw();
-  }
+  requestViewportRedraw();
 }
 
 void TransformGizmoController::cancelInteraction(EditorCamera* camera) {
   if (m_translate_session.isActive()) {
     m_translate_session.cancel();
+    clearTranslateModalCursor();
+    requestViewportRedraw();
   }
   m_active_axis.reset();
   endCameraLock(camera);
@@ -291,6 +308,8 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   if (m_mode == TransformGizmoMode::translate && isTranslationManipulator(*hit)) {
     m_translate_session.beginFromHandle(*hit, basis, window_pos,
                                         entity->getPosition(), camera);
+    setTranslateModalCursor();
+    requestViewportRedraw();
   } else if (m_mode == TransformGizmoMode::scale && isScaleManipulator(*hit)) {
     if (*hit == ManipulatorAxis::trans_c) {
       const Plane view_plane =
@@ -357,6 +376,7 @@ bool TransformGizmoController::onMouseReleased(Event& event, EditorCamera& camer
     } else {
       m_translate_session.cancel();
     }
+    clearTranslateModalCursor();
   }
   m_active_axis.reset();
   endCameraLock(&camera);

@@ -51,6 +51,8 @@ class WindowSystem final {
   bool isMouseButtonDown(int button) const;
   bool getFocusMode() const { return m_is_focus_mode; }
   void setFocusMode(bool mode);
+  void setSystemCursor(SDL_SystemCursor cursor);
+  void clearSystemCursor();
 
   bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) const;
   eastl::array<const char*, 16> getRequiredVulkanExtensions(
@@ -86,6 +88,7 @@ class WindowSystem final {
   void handleDropEvent(const SDL_Event& event);
 
   SDL_Window* m_window{nullptr};
+  SDL_Cursor* m_system_cursor{nullptr};
   int m_width{0};
   int m_height{0};
   int m_client_pixel_w{0};

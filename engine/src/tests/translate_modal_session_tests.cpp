@@ -65,6 +65,49 @@ void centerConstraintKeepsViewPlaneDelta() {
   expectVec3(delta, glm::vec3(3.0f, 4.0f, 5.0f));
 }
 
+void axisDragHidesAllPlaneHandles() {
+  assert(!Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_x, Blunder::ManipulatorAxis::trans_xy));
+  assert(!Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_x, Blunder::ManipulatorAxis::trans_yz));
+  assert(!Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_x, Blunder::ManipulatorAxis::trans_zx));
+}
+
+void planeDragKeepsOnlyActivePlaneHandle() {
+  assert(Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_xy, Blunder::ManipulatorAxis::trans_xy));
+  assert(!Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_xy, Blunder::ManipulatorAxis::trans_yz));
+  assert(!Blunder::translateSessionShowsPlaneHandle(
+      Blunder::ManipulatorAxis::trans_xy, Blunder::ManipulatorAxis::trans_zx));
+}
+
+void centerHandleIsHiddenDuringTranslateSession() {
+  assert(!Blunder::translateSessionShowsCenterHandle());
+}
+
+void guideAxisCountMatchesActiveConstraint() {
+  assert(Blunder::translateSessionGuideAxisCount(
+             Blunder::ManipulatorAxis::trans_y) == 1u);
+  assert(Blunder::translateSessionGuideAxisCount(
+             Blunder::ManipulatorAxis::trans_yz) == 2u);
+  assert(Blunder::translateSessionGuideAxisCount(
+             Blunder::ManipulatorAxis::trans_c) == 0u);
+}
+
+void planeOriginColorUsesNormalAxis() {
+  assert(Blunder::translateSessionOriginColorAxis(
+             Blunder::ManipulatorAxis::trans_xy) ==
+         Blunder::ManipulatorAxis::trans_z);
+  assert(Blunder::translateSessionOriginColorAxis(
+             Blunder::ManipulatorAxis::trans_yz) ==
+         Blunder::ManipulatorAxis::trans_x);
+  assert(Blunder::translateSessionOriginColorAxis(
+             Blunder::ManipulatorAxis::trans_zx) ==
+         Blunder::ManipulatorAxis::trans_y);
+}
+
 void sessionAppliesAccumulatedScreenDeltaUntilConfirm() {
   Blunder::TranslateModalCameraState camera{};
   camera.forward = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -107,6 +150,11 @@ int main() {
   axisConstraintUsesViewAlignedFallbackWhenAxisFacesCamera();
   planeConstraintProjectsOntoInfinitePlane();
   centerConstraintKeepsViewPlaneDelta();
+  axisDragHidesAllPlaneHandles();
+  planeDragKeepsOnlyActivePlaneHandle();
+  centerHandleIsHiddenDuringTranslateSession();
+  guideAxisCountMatchesActiveConstraint();
+  planeOriginColorUsesNormalAxis();
   sessionAppliesAccumulatedScreenDeltaUntilConfirm();
   sessionCancelClearsFeedback();
   return 0;

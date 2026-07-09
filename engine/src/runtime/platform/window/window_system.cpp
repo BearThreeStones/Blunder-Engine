@@ -65,6 +65,7 @@ void WindowSystem::shutdown() {
   m_native_event_callback = {};
   m_event_callback = {};
 
+  clearSystemCursor();
   if (m_window) {
     SDL_StopTextInput(m_window);
     SDL_DestroyWindow(m_window);
@@ -265,6 +266,27 @@ void WindowSystem::setFocusMode(bool mode) {
   } else {
     SDL_ShowCursor();
     SDL_SetWindowMouseGrab(m_window, false);
+  }
+}
+
+void WindowSystem::setSystemCursor(const SDL_SystemCursor cursor) {
+  SDL_Cursor* sdl_cursor = SDL_CreateSystemCursor(cursor);
+  if (sdl_cursor == nullptr) {
+    LOG_WARN("[WindowSystem::setSystemCursor] failed: {}", SDL_GetError());
+    return;
+  }
+  if (m_system_cursor != nullptr) {
+    SDL_DestroyCursor(m_system_cursor);
+  }
+  m_system_cursor = sdl_cursor;
+  SDL_SetCursor(m_system_cursor);
+}
+
+void WindowSystem::clearSystemCursor() {
+  if (m_system_cursor != nullptr) {
+    SDL_SetCursor(SDL_GetDefaultCursor());
+    SDL_DestroyCursor(m_system_cursor);
+    m_system_cursor = nullptr;
   }
 }
 

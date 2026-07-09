@@ -26,6 +26,12 @@ class TransformGizmoController final {
   float getRotationDragStartAngle() const { return m_drag_start_angle; }
   float getRotationDragCurrentAngle() const { return m_drag_current_angle; }
   float getRotationArcMeshBase() const { return m_rotation_arc_mesh_base; }
+  bool isTranslateModalSessionActive() const {
+    return m_translate_session.isActive();
+  }
+  const TranslateModalSession& translateModalSession() const {
+    return m_translate_session;
+  }
 
   void setMode(TransformGizmoMode mode, EditorCamera* camera = nullptr);
   void toggleSpace();
@@ -37,6 +43,9 @@ class TransformGizmoController final {
 
  private:
   void endCameraLock(EditorCamera* camera);
+  void setTranslateModalCursor();
+  void clearTranslateModalCursor();
+  void requestViewportRedraw() const;
 
   bool onKeyPressed(Event& event, EditorCamera& camera);
   bool onMousePressed(Event& event, EditorCamera& camera);

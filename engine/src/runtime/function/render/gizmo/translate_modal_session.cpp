@@ -79,6 +79,48 @@ glm::vec3 constrainTranslationDelta(const glm::vec3& free_delta,
   return axis_dir * glm::dot(free_delta, axis_dir);
 }
 
+bool translateSessionShowsPlaneHandle(const ManipulatorAxis active,
+                                      const ManipulatorAxis plane) {
+  if (!isPlaneManipulator(plane)) {
+    return false;
+  }
+  if (isPlaneManipulator(active)) {
+    return active == plane;
+  }
+  return active == ManipulatorAxis::last;
+}
+
+bool translateSessionShowsCenterHandle() {
+  return false;
+}
+
+uint32_t translateSessionGuideAxisCount(const ManipulatorAxis active) {
+  if (active == ManipulatorAxis::trans_c) {
+    return 0u;
+  }
+  if (isPlaneManipulator(active)) {
+    return 2u;
+  }
+  return isTranslationManipulator(active) ? 1u : 0u;
+}
+
+ManipulatorAxis translateSessionOriginColorAxis(const ManipulatorAxis active) {
+  switch (active) {
+    case ManipulatorAxis::trans_xy:
+      return ManipulatorAxis::trans_z;
+    case ManipulatorAxis::trans_yz:
+      return ManipulatorAxis::trans_x;
+    case ManipulatorAxis::trans_zx:
+      return ManipulatorAxis::trans_y;
+    case ManipulatorAxis::trans_x:
+    case ManipulatorAxis::trans_y:
+    case ManipulatorAxis::trans_z:
+      return active;
+    default:
+      return ManipulatorAxis::last;
+  }
+}
+
 float viewportHeightWorldPerPixel(const EditorCamera& camera,
                                   const glm::vec3& pivot_position) {
   const float height = std::max(camera.getViewportHeight(), 1.0f);
@@ -179,6 +221,10 @@ bool TranslateModalSession::isActive() const {
 
 ManipulatorAxis TranslateModalSession::activeHandle() const {
   return m_active ? m_axis : ManipulatorAxis::last;
+}
+
+const GizmoBasis& TranslateModalSession::dragStartBasis() const {
+  return m_basis;
 }
 
 glm::vec3 TranslateModalSession::feedbackDelta() const {
