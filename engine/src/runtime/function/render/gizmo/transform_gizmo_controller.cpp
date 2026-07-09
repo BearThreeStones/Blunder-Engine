@@ -91,8 +91,18 @@ void TransformGizmoController::toggleSpace() {
 }
 
 void TransformGizmoController::cancelInteraction(EditorCamera* camera) {
+  if (m_translate_session.isActive()) {
+    m_translate_session.cancel();
+  }
   m_active_axis.reset();
   endCameraLock(camera);
+}
+
+void TransformGizmoController::restoreEntityTransformAtDragStart(
+    Entity& entity) const {
+  entity.setPosition(m_entity_position_at_drag_start);
+  entity.setRotation(m_entity_rotation_at_drag_start);
+  entity.setScale(m_entity_scale_at_drag_start);
 }
 
 bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) const {
@@ -172,9 +182,10 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
     case SDLK_ESCAPE:
       if (isDragging()) {
         if (Entity* entity = selectedEntity()) {
-          if (m_mode == TransformGizmoMode::translate &&
+          if (m_translate_session.isActive() &&
+              m_mode == TransformGizmoMode::translate &&
               isTranslationManipulator(*m_active_axis)) {
-            entity->setPosition(m_entity_position_at_drag_start);
+            restoreEntityTransformAtDragStart(*entity);
           } else if (m_mode == TransformGizmoMode::rotate &&
                      isRotationManipulator(*m_active_axis)) {
             entity->setRotation(m_entity_rotation_at_drag_start);
@@ -202,6 +213,16 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
 
 bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera) {
   auto& mouse = static_cast<MouseButtonPressedEvent&>(event);
+  if (mouse.getMouseButton() == SDL_BUTTON_RIGHT &&
+      m_translate_session.isActive()) {
+    if (Entity* entity = selectedEntity()) {
+      restoreEntityTransformAtDragStart(*entity);
+      markSceneDirty();
+      syncInspectorLive();
+    }
+    cancelInteraction(&camera);
+    return true;
+  }
   if (mouse.getMouseButton() != SDL_BUTTON_LEFT || !mouse.hasMousePosition()) {
     return false;
   }
@@ -265,8 +286,8 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   m_entity_scale_at_drag_start = entity->getScale();
 
   if (m_mode == TransformGizmoMode::translate && isTranslationManipulator(*hit)) {
-    const auto start_pt = dragWorldPoint(*hit, ray, basis);
-    m_drag_start_world = start_pt.value_or(basis.origin);
+    m_translate_session.beginFromHandle(*hit, basis, window_pos,
+                                        entity->getPosition(), camera);
   } else if (m_mode == TransformGizmoMode::scale && isScaleManipulator(*hit)) {
     if (*hit == ManipulatorAxis::trans_c) {
       const Plane view_plane =
@@ -324,6 +345,16 @@ bool TransformGizmoController::onMouseReleased(Event& event, EditorCamera& camer
     return false;
   }
 
+  if (m_translate_session.isActive()) {
+    if (Entity* entity = selectedEntity()) {
+      if (const std::optional<glm::vec3> confirmed =
+              m_translate_session.confirm()) {
+        entity->setPosition(Vec3(*confirmed));
+      }
+    } else {
+      m_translate_session.cancel();
+    }
+  }
   m_active_axis.reset();
   endCameraLock(&camera);
   markSceneDirty();
@@ -349,19 +380,16 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
     return true;
   }
 
-  const Ray ray = camera.makeRayFromWindowPosition(window_pos);
-
   if (m_mode == TransformGizmoMode::translate &&
       isTranslationManipulator(*m_active_axis)) {
-    const auto current_pt = dragWorldPoint(*m_active_axis, ray, m_drag_basis);
-    if (!current_pt) {
+    if (!m_translate_session.isActive()) {
       return true;
     }
-    const glm::vec3 delta = worldTranslationDelta(
-        m_drag_basis, *m_active_axis, m_drag_start_world, *current_pt);
-    entity->setPosition(m_entity_position_at_drag_start + Vec3(delta));
+    m_translate_session.onPointerMove(window_pos, camera);
+    entity->setPosition(Vec3(m_translate_session.feedbackPosition()));
   } else if (m_mode == TransformGizmoMode::rotate &&
              isRotationManipulator(*m_active_axis)) {
+    const Ray ray = camera.makeRayFromWindowPosition(window_pos);
     const glm::vec3 rot_axis = rotationAxisFor(*m_active_axis, m_drag_basis);
     const auto plane_hit = intersectRayWithAxisPlane(ray, m_drag_basis.origin, rot_axis);
     if (!plane_hit) {
@@ -376,6 +404,7 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
                                           rot_axis, angle_delta, m_space, parent_q));
   } else if (m_mode == TransformGizmoMode::scale &&
              isScaleManipulator(*m_active_axis)) {
+    const Ray ray = camera.makeRayFromWindowPosition(window_pos);
     float factor = 1.0f;
     if (*m_active_axis == ManipulatorAxis::trans_c) {
       const Plane view_plane =
@@ -411,45 +440,6 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
   markSceneDirty();
   syncInspectorLive();
   return true;
-}
-
-std::optional<glm::vec3> TransformGizmoController::dragWorldPoint(
-    const ManipulatorAxis axis, const Ray& ray, const GizmoBasis& basis) const {
-  const float plane_half =
-      computeGizmoHandleScale(m_gizmo_group_scale, ManipulatorAxis::trans_xy) *
-      TransformGizmoMetrics::k_mesh_plane_half_extent;
-
-  if (axis == ManipulatorAxis::trans_x || axis == ManipulatorAxis::trans_y ||
-      axis == ManipulatorAxis::trans_z) {
-    glm::vec3 dir = basis.axis_x;
-    if (axis == ManipulatorAxis::trans_y) {
-      dir = basis.axis_y;
-    } else if (axis == ManipulatorAxis::trans_z) {
-      dir = basis.axis_z;
-    }
-    const auto t = rayLineParameter(ray, basis.origin, dir);
-    if (!t) {
-      return std::nullopt;
-    }
-    return closestPointOnLine(basis.origin, dir, ray.pointAt(*t));
-  }
-
-  if (axis == ManipulatorAxis::trans_xy) {
-    return intersectRayPlaneQuad(ray, basis.origin, basis.axis_x, basis.axis_y,
-                                 plane_half);
-  }
-  if (axis == ManipulatorAxis::trans_yz) {
-    return intersectRayPlaneQuad(ray, basis.origin, basis.axis_y, basis.axis_z,
-                                 plane_half);
-  }
-  if (axis == ManipulatorAxis::trans_zx) {
-    return intersectRayPlaneQuad(ray, basis.origin, basis.axis_z, basis.axis_x,
-                                 plane_half);
-  }
-
-  const Plane view_plane =
-      Plane::fromPointAndNormal(basis.origin, m_drag_view_normal);
-  return intersectRayPlane(ray, view_plane);
 }
 
 }  // namespace Blunder

@@ -4,11 +4,13 @@
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/function/render/gizmo/gizmo_math.h"
+#include "runtime/function/render/gizmo/translate_modal_session.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 
 namespace Blunder {
 
 class EditorCamera;
+class Entity;
 class Event;
 
 class TransformGizmoController final {
@@ -41,8 +43,7 @@ class TransformGizmoController final {
   bool onMouseReleased(Event& event, EditorCamera& camera);
   bool onMouseMoved(Event& event, EditorCamera& camera);
 
-  std::optional<glm::vec3> dragWorldPoint(ManipulatorAxis axis, const Ray& ray,
-                                           const GizmoBasis& basis) const;
+  void restoreEntityTransformAtDragStart(Entity& entity) const;
 
   TransformGizmoMode m_mode{TransformGizmoMode::none};
   GizmoSpace m_space{GizmoSpace::global};
@@ -59,6 +60,7 @@ class TransformGizmoController final {
   float m_rotation_arc_mesh_base{0.0f};
 
   GizmoBasis m_drag_basis{};
+  TranslateModalSession m_translate_session{};
   float m_gizmo_group_scale{1.0f};
   glm::vec3 m_drag_view_normal{0.0f, 0.0f, 1.0f};
   EditorCamera* m_locked_camera{nullptr};

@@ -32,7 +32,11 @@ glm::vec3 constrainTranslationDelta(const glm::vec3& free_delta,
                                     const glm::vec3& view_forward);
 
 float viewportHeightWorldPerPixel(const EditorCamera& camera);
+float viewportHeightWorldPerPixel(const EditorCamera& camera,
+                                  const glm::vec3& pivot_position);
 TranslateModalCameraState cameraStateFromEditorCamera(const EditorCamera& camera);
+TranslateModalCameraState cameraStateFromEditorCamera(
+    const EditorCamera& camera, const glm::vec3& pivot_position);
 
 class TranslateModalSession final {
  public:

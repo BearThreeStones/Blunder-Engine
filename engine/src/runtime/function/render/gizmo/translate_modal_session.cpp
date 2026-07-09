@@ -79,24 +79,41 @@ glm::vec3 constrainTranslationDelta(const glm::vec3& free_delta,
   return axis_dir * glm::dot(free_delta, axis_dir);
 }
 
-float viewportHeightWorldPerPixel(const EditorCamera& camera) {
+float viewportHeightWorldPerPixel(const EditorCamera& camera,
+                                  const glm::vec3& pivot_position) {
   const float height = std::max(camera.getViewportHeight(), 1.0f);
   if (camera.getProjectionMode() == EditorCamera::ProjectionMode::orthographic) {
     return camera.getOrthoSize() / height;
   }
+  const glm::vec3 view_forward =
+      normalizedOr(camera.getForwardDirection(), glm::vec3(0.0f, 0.0f, -1.0f));
+  const float pivot_depth = std::max(
+      std::abs(glm::dot(pivot_position - glm::vec3(camera.getPosition()),
+                        view_forward)),
+      camera.getNearClip());
   const float visible_height =
-      2.0f * camera.getDistance() * std::tan(camera.getVerticalFov() * 0.5f);
+      2.0f * pivot_depth * std::tan(camera.getVerticalFov() * 0.5f);
   return visible_height / height;
 }
 
-TranslateModalCameraState cameraStateFromEditorCamera(const EditorCamera& camera) {
+float viewportHeightWorldPerPixel(const EditorCamera& camera) {
+  return viewportHeightWorldPerPixel(camera, camera.getFocalPoint());
+}
+
+TranslateModalCameraState cameraStateFromEditorCamera(
+    const EditorCamera& camera, const glm::vec3& pivot_position) {
   TranslateModalCameraState state{};
   state.position = camera.getPosition();
   state.forward = camera.getForwardDirection();
   state.right = camera.getRightDirection();
   state.up = camera.getUpDirection();
-  state.viewport_height_world_per_pixel = viewportHeightWorldPerPixel(camera);
+  state.viewport_height_world_per_pixel =
+      viewportHeightWorldPerPixel(camera, pivot_position);
   return state;
+}
+
+TranslateModalCameraState cameraStateFromEditorCamera(const EditorCamera& camera) {
+  return cameraStateFromEditorCamera(camera, camera.getFocalPoint());
 }
 
 void TranslateModalSession::beginFromHandle(
@@ -117,7 +134,7 @@ void TranslateModalSession::beginFromHandle(
     const glm::vec2& pointer_position, const glm::vec3& object_position,
     const EditorCamera& camera) {
   beginFromHandle(axis, basis, pointer_position, object_position,
-                  cameraStateFromEditorCamera(camera));
+                  cameraStateFromEditorCamera(camera, object_position));
 }
 
 void TranslateModalSession::onPointerMove(
@@ -136,7 +153,8 @@ void TranslateModalSession::onPointerMove(
 
 void TranslateModalSession::onPointerMove(const glm::vec2& pointer_position,
                                           const EditorCamera& camera) {
-  onPointerMove(pointer_position, cameraStateFromEditorCamera(camera));
+  onPointerMove(pointer_position,
+                cameraStateFromEditorCamera(camera, m_object_position_at_begin));
 }
 
 std::optional<glm::vec3> TranslateModalSession::confirm() {

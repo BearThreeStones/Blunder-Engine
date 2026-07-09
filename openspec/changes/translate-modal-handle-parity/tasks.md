@@ -8,11 +8,11 @@
 
 ## 2. Wire handle entry + confirm/cancel
 
-- [ ] 2.1 Route translate LMB press on axis/plane/center into `TranslateModalSession::beginFromHandle`
-- [ ] 2.2 Drive `onMouseMoved` translate path through the session (remove finite plane-quad tracking for translate)
-- [ ] 2.3 Confirm on LMB release; cancel on Escape / RMB with restore of drag-start entity TRS
-- [ ] 2.4 Keep inspector live sync + `notifyViewportAfterGizmoTransformEdit` / scene dirty on session updates
-- [ ] 2.5 Ensure rotate/scale handle paths remain unchanged
+- [x] 2.1 Route translate LMB press on axis/plane/center into `TranslateModalSession::beginFromHandle`
+- [x] 2.2 Drive `onMouseMoved` translate path through the session (remove finite plane-quad tracking for translate)
+- [x] 2.3 Confirm on LMB release; cancel on Escape / RMB with restore of drag-start entity TRS
+- [x] 2.4 Keep inspector live sync + `notifyViewportAfterGizmoTransformEdit` / scene dirty on session updates
+- [x] 2.5 Ensure rotate/scale handle paths remain unchanged
 
 ## 3. Drag feedback: cursor, guides, ghost, visibility, origin dot
 
