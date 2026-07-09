@@ -275,11 +275,12 @@ void WindowSystem::setSystemCursor(const SDL_SystemCursor cursor) {
     LOG_WARN("[WindowSystem::setSystemCursor] failed: {}", SDL_GetError());
     return;
   }
-  if (m_system_cursor != nullptr) {
-    SDL_DestroyCursor(m_system_cursor);
+  SDL_Cursor* old_cursor = m_system_cursor;
+  SDL_SetCursor(sdl_cursor);
+  if (old_cursor != nullptr) {
+    SDL_DestroyCursor(old_cursor);
   }
   m_system_cursor = sdl_cursor;
-  SDL_SetCursor(m_system_cursor);
 }
 
 void WindowSystem::clearSystemCursor() {

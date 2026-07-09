@@ -25,7 +25,7 @@ namespace Blunder {
 
 namespace {
 
-/// Max handles drawn per frame (7 translate + 4 rotate with ghost).
+/// Max handles drawn per frame (translate plane drag: live handles + guides + ghost + dot).
 constexpr uint32_t k_max_gizmo_draws_per_frame = 12u;
 
 constexpr glm::vec4 k_plane_quad_layout{0.2f, 0.2f, 0.1f, 0.1f};
@@ -68,31 +68,6 @@ GizmoDrawStyle styleForTranslateAxis(ManipulatorAxis axis) {
       return GizmoDrawStyle::plane;
     default:
       return GizmoDrawStyle::arrow;
-  }
-}
-
-uint32_t translateSessionGuideAxes(ManipulatorAxis active,
-                                   ManipulatorAxis out_axes[2]) {
-  switch (active) {
-    case ManipulatorAxis::trans_x:
-    case ManipulatorAxis::trans_y:
-    case ManipulatorAxis::trans_z:
-      out_axes[0] = active;
-      return 1u;
-    case ManipulatorAxis::trans_xy:
-      out_axes[0] = ManipulatorAxis::trans_x;
-      out_axes[1] = ManipulatorAxis::trans_y;
-      return 2u;
-    case ManipulatorAxis::trans_yz:
-      out_axes[0] = ManipulatorAxis::trans_y;
-      out_axes[1] = ManipulatorAxis::trans_z;
-      return 2u;
-    case ManipulatorAxis::trans_zx:
-      out_axes[0] = ManipulatorAxis::trans_z;
-      out_axes[1] = ManipulatorAxis::trans_x;
-      return 2u;
-    default:
-      return 0u;
   }
 }
 

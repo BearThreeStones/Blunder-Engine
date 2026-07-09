@@ -36,6 +36,8 @@ bool translateSessionShowsPlaneHandle(ManipulatorAxis active,
                                       ManipulatorAxis plane);
 bool translateSessionShowsCenterHandle();
 uint32_t translateSessionGuideAxisCount(ManipulatorAxis active);
+uint32_t translateSessionGuideAxes(ManipulatorAxis active,
+                                   ManipulatorAxis out_axes[2]);
 ManipulatorAxis translateSessionOriginColorAxis(ManipulatorAxis active);
 
 float viewportHeightWorldPerPixel(const EditorCamera& camera);

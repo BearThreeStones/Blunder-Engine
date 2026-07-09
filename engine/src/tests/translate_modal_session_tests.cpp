@@ -97,12 +97,29 @@ void centerHandleIsHiddenDuringTranslateSession() {
 }
 
 void guideAxisCountMatchesActiveConstraint() {
+  Blunder::ManipulatorAxis axes[2] = {Blunder::ManipulatorAxis::last,
+                                      Blunder::ManipulatorAxis::last};
+
   assert(Blunder::translateSessionGuideAxisCount(
-             Blunder::ManipulatorAxis::trans_y) == 1u);
+             Blunder::ManipulatorAxis::trans_x) == 1u);
+  assert(Blunder::translateSessionGuideAxes(
+             Blunder::ManipulatorAxis::trans_x, axes) == 1u);
+  assert(axes[0] == Blunder::ManipulatorAxis::trans_x);
+  assert(axes[1] == Blunder::ManipulatorAxis::last);
+
   assert(Blunder::translateSessionGuideAxisCount(
-             Blunder::ManipulatorAxis::trans_yz) == 2u);
+             Blunder::ManipulatorAxis::trans_xy) == 2u);
+  assert(Blunder::translateSessionGuideAxes(
+             Blunder::ManipulatorAxis::trans_xy, axes) == 2u);
+  assert(axes[0] == Blunder::ManipulatorAxis::trans_x);
+  assert(axes[1] == Blunder::ManipulatorAxis::trans_y);
+
   assert(Blunder::translateSessionGuideAxisCount(
              Blunder::ManipulatorAxis::trans_c) == 0u);
+  assert(Blunder::translateSessionGuideAxes(
+             Blunder::ManipulatorAxis::trans_c, axes) == 0u);
+  assert(axes[0] == Blunder::ManipulatorAxis::last);
+  assert(axes[1] == Blunder::ManipulatorAxis::last);
 }
 
 void planeOriginColorUsesNormalAxis() {
