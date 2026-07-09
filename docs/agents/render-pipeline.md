@@ -56,6 +56,14 @@ SlintSystem::update()
 | Line AA | `draw_overlay_aa` | Before SSAO; composites onto main color |
 | Screen | `draw_screen_overlays` | After SSAO; LOAD pass (`ScreenOverlayPass`) |
 
+Translate handle drags enter `TranslateModalSession`, which owns screen-space
+motion, constraint projection, confirm/cancel, and session feedback. While the
+session is active, `TransformGizmoOverlay` draws drag-start constraint guides,
+an active-handle drag ghost, the origin dot, and translate handle visibility
+rules; reference axis arrows stay visible at the live pivot. The outline resolve
+uses the session-active `color_id` to select the light transform-active color,
+and `WindowSystem` keeps the four-way move cursor for the session lifetime.
+
 ## Notes / known limitations
 
 - Slint is source-built from the **fork** submodule (`blunder/v1.16.1` on

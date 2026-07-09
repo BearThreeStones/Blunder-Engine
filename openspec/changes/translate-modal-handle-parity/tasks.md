@@ -31,8 +31,8 @@
 
 ## 5. Docs + validation
 
-- [ ] 5.1 Note translate modal handle feedback path in `docs/agents/render-pipeline.md`
-- [ ] 5.2 Confirm `CONTEXT.md` translate terms still match implementation names
+- [x] 5.1 Note translate modal handle feedback path in `docs/agents/render-pipeline.md`
+- [x] 5.2 Confirm `CONTEXT.md` translate terms still match implementation names
 - [ ] 5.3 Build `engine_runtime` / relevant tests; run motion unit tests
 - [ ] 5.4 Manual QA (static camera): axis / plane / center drag feel; guides pinned; ghost; visibility; origin dot; cursor; outline; Escape/RMB cancel; LMB release confirm
-- [ ] 5.5 `openspec validate translate-modal-handle-parity`
+- [x] 5.5 `openspec validate translate-modal-handle-parity`
