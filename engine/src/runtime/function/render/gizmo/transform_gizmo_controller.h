@@ -17,7 +17,9 @@ class TransformGizmoController final {
  public:
   TransformGizmoMode getMode() const { return m_mode; }
   GizmoSpace getSpace() const { return m_space; }
-  bool isDragging() const { return m_active_axis.has_value(); }
+  bool isDragging() const {
+    return m_active_axis.has_value() || m_translate_session.isActive();
+  }
   bool wantsCameraLock() const { return isDragging(); }
   ManipulatorAxis getActiveAxis() const {
     return m_active_axis.value_or(ManipulatorAxis::trans_x);
@@ -53,6 +55,9 @@ class TransformGizmoController final {
   bool onMouseMoved(Event& event, EditorCamera& camera);
 
   void restoreEntityTransformAtDragStart(Entity& entity) const;
+  bool beginGrabFromSelection(EditorCamera& camera);
+  bool confirmTranslateModalSession(EditorCamera& camera);
+  bool cancelTranslateModalSession(EditorCamera& camera);
 
   TransformGizmoMode m_mode{TransformGizmoMode::none};
   GizmoSpace m_space{GizmoSpace::global};

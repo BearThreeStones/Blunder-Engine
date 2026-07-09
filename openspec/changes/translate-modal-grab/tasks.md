@@ -6,11 +6,11 @@
 
 ## 2. Wire G key + grab confirm/cancel
 
-- [ ] 2.1 Route `G` (selection present, no active session) into `beginFromGrab` + full TRS snapshot + camera lock
-- [ ] 2.2 While grab-active, consume LMB press to confirm before pick / handle hit tests
-- [ ] 2.3 Cancel grab on Escape / RMB with TRS restore (reuse P1 restore path)
-- [ ] 2.4 Keep inspector live sync + scene dirty + viewport redraw on grab move/confirm/cancel
-- [ ] 2.5 Ensure handle release-to-confirm path remains unchanged
+- [x] 2.1 Route `G` (selection present, no active session) into `beginFromGrab` + full TRS snapshot + camera lock
+- [x] 2.2 While grab-active, consume LMB press to confirm before pick / handle hit tests
+- [x] 2.3 Cancel grab on Escape / RMB with TRS restore (reuse P1 restore path)
+- [x] 2.4 Keep inspector live sync + scene dirty + viewport redraw on grab move/confirm/cancel
+- [x] 2.5 Ensure handle release-to-confirm path remains unchanged
 
 ## 3. Grab feedback
 

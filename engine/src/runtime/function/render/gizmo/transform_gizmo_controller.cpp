@@ -64,6 +64,28 @@ void markSceneDirty() {
   }
 }
 
+EntityId selectedEntityId() {
+  if (!g_runtime_global_context.m_editor_selection ||
+      !g_runtime_global_context.m_editor_selection->hasSelection()) {
+    return k_invalid_entity_id;
+  }
+  return g_runtime_global_context.m_editor_selection->getSelection();
+}
+
+Vec3 localPositionForWorldPosition(const SceneInstance& scene,
+                                   const Entity& entity,
+                                   const glm::vec3& world_position) {
+  Mat4 parent_world = scene.getSceneToWorldMatrix();
+  const EntityId parent_id = entity.getParentId();
+  if (isValid(parent_id)) {
+    parent_world = scene.getWorldMatrix(parent_id);
+  }
+
+  const Vec4 local_position =
+      glm::inverse(parent_world) * Vec4(world_position, 1.0f);
+  return Vec3(local_position);
+}
+
 }  // namespace
 
 void TransformGizmoController::endCameraLock(EditorCamera* camera) {
@@ -123,6 +145,90 @@ void TransformGizmoController::restoreEntityTransformAtDragStart(
   entity.setPosition(m_entity_position_at_drag_start);
   entity.setRotation(m_entity_rotation_at_drag_start);
   entity.setScale(m_entity_scale_at_drag_start);
+}
+
+bool TransformGizmoController::beginGrabFromSelection(EditorCamera& camera) {
+  if (m_translate_session.isActive() || isDragging()) {
+    return false;
+  }
+
+  SceneInstance* scene = activeScene();
+  Entity* entity = selectedEntity();
+  const EntityId entity_id = selectedEntityId();
+  if (!scene || !entity || !isValid(entity_id)) {
+    return false;
+  }
+
+  const glm::mat4 world = scene->getWorldMatrix(entity_id);
+  const GizmoBasis basis = buildGizmoBasis(world, m_space);
+  float mouse_x = 0.0f;
+  float mouse_y = 0.0f;
+  SDL_GetMouseState(&mouse_x, &mouse_y);
+  const Vec2 window_pos(mouse_x, mouse_y);
+  if (!camera.isWindowPositionInViewport(window_pos)) {
+    return false;
+  }
+
+  m_drag_basis = basis;
+  m_entity_position_at_drag_start = entity->getPosition();
+  m_entity_rotation_at_drag_start = entity->getRotation();
+  m_entity_scale_at_drag_start = entity->getScale();
+  m_translate_session.beginFromGrab(window_pos, basis.origin,
+                                    cameraStateFromEditorCamera(camera, basis.origin));
+
+  m_locked_camera = &camera;
+  camera.setInteractionLocked(true);
+  setTranslateModalCursor();
+  markSceneDirty();
+  syncInspectorLive();
+  return true;
+}
+
+bool TransformGizmoController::confirmTranslateModalSession(EditorCamera& camera) {
+  if (!m_translate_session.isActive()) {
+    return false;
+  }
+
+  SceneInstance* scene = activeScene();
+  Entity* entity = selectedEntity();
+  const bool was_grab_entry = m_translate_session.isGrabEntry();
+  if (entity != nullptr && scene != nullptr) {
+    if (const std::optional<glm::vec3> confirmed =
+            m_translate_session.confirm()) {
+      if (was_grab_entry) {
+        entity->setPosition(localPositionForWorldPosition(*scene, *entity,
+                                                          *confirmed));
+      } else {
+        entity->setPosition(Vec3(*confirmed));
+      }
+    }
+  } else {
+    m_translate_session.cancel();
+  }
+
+  clearTranslateModalCursor();
+  m_active_axis.reset();
+  endCameraLock(&camera);
+  markSceneDirty();
+  syncInspectorLive();
+  return true;
+}
+
+bool TransformGizmoController::cancelTranslateModalSession(EditorCamera& camera) {
+  if (!m_translate_session.isActive()) {
+    return false;
+  }
+
+  if (Entity* entity = selectedEntity()) {
+    restoreEntityTransformAtDragStart(*entity);
+  }
+  m_translate_session.cancel();
+  clearTranslateModalCursor();
+  m_active_axis.reset();
+  endCameraLock(&camera);
+  markSceneDirty();
+  syncInspectorLive();
+  return true;
 }
 
 bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) const {
@@ -185,9 +291,7 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
 
   switch (key_event.getKeyCode()) {
     case SDLK_G:
-      setMode(TransformGizmoMode::translate, &camera);
-      syncToolbar();
-      return true;
+      return beginGrabFromSelection(camera);
     case SDLK_R:
       setMode(TransformGizmoMode::rotate, &camera);
       syncToolbar();
@@ -200,18 +304,19 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
       }
       return false;
     case SDLK_ESCAPE:
-      if (isDragging()) {
+      if (m_translate_session.isActive()) {
+        return cancelTranslateModalSession(camera);
+      }
+      if (m_active_axis) {
         if (Entity* entity = selectedEntity()) {
-          if (m_translate_session.isActive() &&
-              m_mode == TransformGizmoMode::translate &&
-              isTranslationManipulator(*m_active_axis)) {
-            restoreEntityTransformAtDragStart(*entity);
-          } else if (m_mode == TransformGizmoMode::rotate &&
-                     isRotationManipulator(*m_active_axis)) {
+          if (m_mode == TransformGizmoMode::rotate &&
+              isRotationManipulator(*m_active_axis)) {
             entity->setRotation(m_entity_rotation_at_drag_start);
           } else if (m_mode == TransformGizmoMode::scale &&
                      isScaleManipulator(*m_active_axis)) {
             entity->setScale(m_entity_scale_at_drag_start);
+          } else {
+            restoreEntityTransformAtDragStart(*entity);
           }
           markSceneDirty();
           syncInspectorLive();
@@ -235,13 +340,12 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   auto& mouse = static_cast<MouseButtonPressedEvent&>(event);
   if (mouse.getMouseButton() == SDL_BUTTON_RIGHT &&
       m_translate_session.isActive()) {
-    if (Entity* entity = selectedEntity()) {
-      restoreEntityTransformAtDragStart(*entity);
-      markSceneDirty();
-      syncInspectorLive();
-    }
-    cancelInteraction(&camera);
-    return true;
+    return cancelTranslateModalSession(camera);
+  }
+  if (mouse.getMouseButton() == SDL_BUTTON_LEFT &&
+      m_translate_session.isActive() &&
+      translateModalConfirmsOnMousePress(m_translate_session.entryKind())) {
+    return confirmTranslateModalSession(camera);
   }
   if (mouse.getMouseButton() != SDL_BUTTON_LEFT || !mouse.hasMousePosition()) {
     return false;
@@ -367,16 +471,9 @@ bool TransformGizmoController::onMouseReleased(Event& event, EditorCamera& camer
     return false;
   }
 
-  if (m_translate_session.isActive()) {
-    if (Entity* entity = selectedEntity()) {
-      if (const std::optional<glm::vec3> confirmed =
-              m_translate_session.confirm()) {
-        entity->setPosition(Vec3(*confirmed));
-      }
-    } else {
-      m_translate_session.cancel();
-    }
-    clearTranslateModalCursor();
+  if (m_translate_session.isActive() &&
+      translateModalConfirmsOnMouseRelease(m_translate_session.entryKind())) {
+    return confirmTranslateModalSession(camera);
   }
   m_active_axis.reset();
   endCameraLock(&camera);
@@ -385,7 +482,7 @@ bool TransformGizmoController::onMouseReleased(Event& event, EditorCamera& camer
 }
 
 bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) {
-  if (!m_active_axis) {
+  if (!m_active_axis && !m_translate_session.isActive()) {
     return false;
   }
 
@@ -403,13 +500,15 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
     return true;
   }
 
-  if (m_mode == TransformGizmoMode::translate &&
-      isTranslationManipulator(*m_active_axis)) {
-    if (!m_translate_session.isActive()) {
-      return true;
-    }
+  if (m_translate_session.isActive()) {
+    const bool is_grab_entry = m_translate_session.isGrabEntry();
     m_translate_session.onPointerMove(window_pos, camera);
-    entity->setPosition(Vec3(m_translate_session.feedbackPosition()));
+    if (is_grab_entry) {
+      entity->setPosition(localPositionForWorldPosition(
+          *scene, *entity, m_translate_session.feedbackPosition()));
+    } else {
+      entity->setPosition(Vec3(m_translate_session.feedbackPosition()));
+    }
   } else if (m_mode == TransformGizmoMode::rotate &&
              isRotationManipulator(*m_active_axis)) {
     const Ray ray = camera.makeRayFromWindowPosition(window_pos);
