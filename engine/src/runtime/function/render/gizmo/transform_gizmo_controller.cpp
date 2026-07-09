@@ -345,6 +345,13 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   if (mouse.getMouseButton() == SDL_BUTTON_LEFT &&
       m_translate_session.isActive() &&
       translateModalConfirmsOnMousePress(m_translate_session.entryKind())) {
+    if (!mouse.hasMousePosition()) {
+      return false;
+    }
+    const Vec2 window_pos(mouse.getX(), mouse.getY());
+    if (!camera.isWindowPositionInViewport(window_pos)) {
+      return false;
+    }
     return confirmTranslateModalSession(camera);
   }
   if (mouse.getMouseButton() != SDL_BUTTON_LEFT || !mouse.hasMousePosition()) {
