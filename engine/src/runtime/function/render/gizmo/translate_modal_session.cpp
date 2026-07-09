@@ -133,8 +133,10 @@ void TranslateModalSession::beginFromHandle(
     const ManipulatorAxis axis, const GizmoBasis& basis,
     const glm::vec2& pointer_position, const glm::vec3& object_position,
     const EditorCamera& camera) {
+  // Depth scaling uses the world-space gizmo pivot; object_position remains
+  // the local/entity-space translation baseline for feedbackPosition().
   beginFromHandle(axis, basis, pointer_position, object_position,
-                  cameraStateFromEditorCamera(camera, object_position));
+                  cameraStateFromEditorCamera(camera, basis.origin));
 }
 
 void TranslateModalSession::onPointerMove(
@@ -154,7 +156,7 @@ void TranslateModalSession::onPointerMove(
 void TranslateModalSession::onPointerMove(const glm::vec2& pointer_position,
                                           const EditorCamera& camera) {
   onPointerMove(pointer_position,
-                cameraStateFromEditorCamera(camera, m_object_position_at_begin));
+                cameraStateFromEditorCamera(camera, m_basis.origin));
 }
 
 std::optional<glm::vec3> TranslateModalSession::confirm() {
