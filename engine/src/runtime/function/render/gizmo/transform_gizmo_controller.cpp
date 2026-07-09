@@ -232,9 +232,12 @@ bool TransformGizmoController::cancelTranslateModalSession(EditorCamera& camera)
 }
 
 bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) const {
+  const bool grab_translate_session =
+      m_translate_session.isActive() && m_translate_session.isGrabEntry();
   if (m_mode != TransformGizmoMode::translate &&
       m_mode != TransformGizmoMode::rotate &&
-      m_mode != TransformGizmoMode::scale) {
+      m_mode != TransformGizmoMode::scale &&
+      !grab_translate_session) {
     return false;
   }
   if (!g_runtime_global_context.m_editor_selection ||

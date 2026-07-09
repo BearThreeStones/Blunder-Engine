@@ -230,10 +230,14 @@ void TransformGizmoOverlay::shutdown() {
 
 void TransformGizmoOverlay::begin_sync(OverlayResources& /*res*/,
                                        const OverlayState& state) {
+  const bool grab_translate_session =
+      m_controller.isTranslateModalSessionActive() &&
+      m_controller.translateModalSession().isGrabEntry();
   enabled_ = state.has_selection &&
              (state.gizmo_mode == TransformGizmoMode::translate ||
               state.gizmo_mode == TransformGizmoMode::rotate ||
-              state.gizmo_mode == TransformGizmoMode::scale);
+              state.gizmo_mode == TransformGizmoMode::scale ||
+              grab_translate_session);
 }
 
 void TransformGizmoOverlay::draw_screen(VkCommandBuffer cmd,
@@ -297,7 +301,7 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
     (void)drawTranslateHandle(cmd, state, axis, basis, idot, group_scale, highlight);
   };
 
-  if (state.gizmo_mode == TransformGizmoMode::translate) {
+  if (state.gizmo_mode == TransformGizmoMode::translate || translate_grab_session) {
     // Draw planes first, then arrows on top (Blender-style layering).
     const ManipulatorAxis planes[] = {ManipulatorAxis::trans_xy, ManipulatorAxis::trans_yz,
                                       ManipulatorAxis::trans_zx};
