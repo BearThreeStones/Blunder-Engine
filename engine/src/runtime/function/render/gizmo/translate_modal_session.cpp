@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 #include <glm/geometric.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -220,6 +221,7 @@ void TranslateModalSession::beginFromHandle(
   m_feedback_delta = glm::vec3(0.0f);
   m_active_slot = constraintSlotForManipulator(axis);
   m_orientation = initial_orientation;
+  m_numeric_buffer.clear();
   if (m_axis != ManipulatorAxis::trans_c &&
       m_orientation == TranslateModalConstraintOrientation::local) {
     rebuildConstraintBasis();
@@ -254,6 +256,7 @@ void TranslateModalSession::beginFromGrab(
   m_feedback_delta = glm::vec3(0.0f);
   m_active_slot = TranslateModalConstraintSlot::none;
   m_orientation = TranslateModalConstraintOrientation::global;
+  m_numeric_buffer.clear();
   m_active = true;
 }
 
@@ -360,6 +363,107 @@ void TranslateModalSession::reprojectFeedbackFromPointer() {
       constrainTranslationDelta(free_delta, m_axis, m_basis, m_camera.forward);
 }
 
+float TranslateModalSession::parseNumericBuffer() const {
+  if (m_numeric_buffer.empty() || m_numeric_buffer == "-" ||
+      m_numeric_buffer == "." || m_numeric_buffer == "-.") {
+    return 0.0f;
+  }
+  char* end = nullptr;
+  const float value =
+      std::strtof(m_numeric_buffer.c_str(), &end);
+  if (end == m_numeric_buffer.c_str()) {
+    return 0.0f;
+  }
+  return value;
+}
+
+glm::vec3 TranslateModalSession::numericConstraintDirection() const {
+  if (m_axis == ManipulatorAxis::trans_x ||
+      m_axis == ManipulatorAxis::trans_y ||
+      m_axis == ManipulatorAxis::trans_z) {
+    return normalizedOr(axisDirectionFor(m_axis, m_basis),
+                        glm::vec3(1.0f, 0.0f, 0.0f));
+  }
+
+  const glm::vec2 pixel_delta = m_current_pointer - m_start_pointer;
+  const glm::vec3 free_delta = screenDeltaToViewPlaneWorld(
+      m_camera.position, m_camera.forward, m_camera.right, m_camera.up,
+      m_camera.viewport_height_world_per_pixel, pixel_delta);
+  const glm::vec3 constrained = constrainTranslationDelta(
+      free_delta, m_axis, m_basis, m_camera.forward);
+  return normalizedOr(constrained,
+                      normalizedOr(m_camera.right, glm::vec3(1.0f, 0.0f, 0.0f)));
+}
+
+void TranslateModalSession::applyNumericDistance() {
+  m_feedback_delta = numericConstraintDirection() * parseNumericBuffer();
+}
+
+void TranslateModalSession::exitNumericMode() {
+  m_numeric_buffer.clear();
+  reprojectFeedbackFromPointer();
+}
+
+bool TranslateModalSession::appendNumericChar(const char c) {
+  if (!m_active) {
+    return false;
+  }
+
+  if (c >= '0' && c <= '9') {
+    m_numeric_buffer.push_back(c);
+    applyNumericDistance();
+    return true;
+  }
+
+  if (c == '-') {
+    if (!m_numeric_buffer.empty()) {
+      return false;
+    }
+    m_numeric_buffer.push_back(c);
+    applyNumericDistance();
+    return true;
+  }
+
+  if (c == '.') {
+    if (m_numeric_buffer.find('.') != std::string::npos) {
+      return false;
+    }
+    m_numeric_buffer.push_back(c);
+    applyNumericDistance();
+    return true;
+  }
+
+  return false;
+}
+
+bool TranslateModalSession::backspaceNumeric() {
+  if (!m_active || m_numeric_buffer.empty()) {
+    return false;
+  }
+  m_numeric_buffer.pop_back();
+  if (m_numeric_buffer.empty()) {
+    exitNumericMode();
+  } else {
+    applyNumericDistance();
+  }
+  return true;
+}
+
+void TranslateModalSession::clearNumeric() {
+  if (m_numeric_buffer.empty()) {
+    return;
+  }
+  exitNumericMode();
+}
+
+bool TranslateModalSession::hasNumericInput() const {
+  return !m_numeric_buffer.empty();
+}
+
+const std::string& TranslateModalSession::numericBuffer() const {
+  return m_numeric_buffer;
+}
+
 void TranslateModalSession::setGlobalAxisConstraint(
     const TranslateModalAxisKey key) {
   m_active_slot = axisSlotFor(key);
@@ -418,7 +522,11 @@ void TranslateModalSession::applyAxisConstraintKey(
   const TranslateModalConstraintSlot slot = axisSlotFor(key);
   const ManipulatorAxis axis = manipulatorAxisFor(key);
   advanceConstraintCycle(slot, axis);
-  reprojectFeedbackFromPointer();
+  if (hasNumericInput()) {
+    applyNumericDistance();
+  } else {
+    reprojectFeedbackFromPointer();
+  }
 }
 
 void TranslateModalSession::applyPlaneConstraintKey(
@@ -429,7 +537,11 @@ void TranslateModalSession::applyPlaneConstraintKey(
   const TranslateModalConstraintSlot slot = planeSlotFor(locked_axis);
   const ManipulatorAxis axis = manipulatorPlaneFor(locked_axis);
   advanceConstraintCycle(slot, axis);
-  reprojectFeedbackFromPointer();
+  if (hasNumericInput()) {
+    applyNumericDistance();
+  } else {
+    reprojectFeedbackFromPointer();
+  }
 }
 
 void TranslateModalSession::onPointerMove(
@@ -439,7 +551,9 @@ void TranslateModalSession::onPointerMove(
   }
   m_camera = camera;
   m_current_pointer = pointer_position;
-  reprojectFeedbackFromPointer();
+  if (!hasNumericInput()) {
+    reprojectFeedbackFromPointer();
+  }
 }
 
 void TranslateModalSession::onPointerMove(const glm::vec2& pointer_position,
@@ -460,6 +574,7 @@ std::optional<glm::vec3> TranslateModalSession::confirm() {
 void TranslateModalSession::cancel() {
   m_active = false;
   m_feedback_delta = glm::vec3(0.0f);
+  m_numeric_buffer.clear();
 }
 
 bool TranslateModalSession::isActive() const {

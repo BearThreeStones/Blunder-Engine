@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/vec2.hpp>
@@ -100,6 +101,11 @@ class TranslateModalSession final {
                      const TranslateModalCameraState& camera);
   void onPointerMove(const glm::vec2& pointer_position,
                      const EditorCamera& camera);
+  bool appendNumericChar(char c);
+  bool backspaceNumeric();
+  void clearNumeric();
+  bool hasNumericInput() const;
+  const std::string& numericBuffer() const;
   std::optional<glm::vec3> confirm();
   void cancel();
 
@@ -126,6 +132,10 @@ class TranslateModalSession final {
 
   void rebuildConstraintBasis();
   void reprojectFeedbackFromPointer();
+  void applyNumericDistance();
+  glm::vec3 numericConstraintDirection() const;
+  float parseNumericBuffer() const;
+  void exitNumericMode();
   void setGlobalAxisConstraint(TranslateModalAxisKey key);
   void setGlobalPlaneConstraint(TranslateModalAxisKey locked_axis);
   void advanceConstraintCycle(TranslateModalConstraintSlot slot,
@@ -150,6 +160,7 @@ class TranslateModalSession final {
   TranslateModalConstraintSlot m_active_slot{TranslateModalConstraintSlot::none};
   TranslateModalConstraintOrientation m_orientation{
       TranslateModalConstraintOrientation::global};
+  std::string m_numeric_buffer{};
   bool m_active{false};
 };
 

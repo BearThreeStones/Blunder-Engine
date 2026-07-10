@@ -545,6 +545,82 @@ void inactiveSessionIgnoresConstraintKeys() {
   assert(!session.isActive());
 }
 
+void numericInputSetsAxisDistanceAlongGlobalX() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_x, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(1.0f, 2.0f, 3.0f), camera);
+
+  assert(session.appendNumericChar('2'));
+  assert(session.hasNumericInput());
+  assert(session.numericBuffer() == "2");
+  expectVec3(session.feedbackDelta(), glm::vec3(2.0f, 0.0f, 0.0f));
+  expectVec3(session.feedbackPosition(), glm::vec3(3.0f, 2.0f, 3.0f));
+
+  const std::optional<glm::vec3> confirmed = session.confirm();
+  assert(confirmed.has_value());
+  expectVec3(*confirmed, glm::vec3(3.0f, 2.0f, 3.0f));
+}
+
+void numericInputSupportsNegativeAndDecimal() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_y, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(0.0f), camera);
+
+  assert(session.appendNumericChar('-'));
+  assert(session.appendNumericChar('2'));
+  assert(session.appendNumericChar('.'));
+  assert(session.appendNumericChar('5'));
+  assert(session.numericBuffer() == "-2.5");
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, -2.5f, 0.0f));
+}
+
+void numericInputIgnoresPointerMotionUntilCleared() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_x, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  assert(session.appendNumericChar('2'));
+  expectVec3(session.feedbackDelta(), glm::vec3(2.0f, 0.0f, 0.0f));
+
+  session.onPointerMove(glm::vec2(50.0f, -20.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(2.0f, 0.0f, 0.0f));
+}
+
+void clearingNumericRestoresPointerDrivenMotion() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_x, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  assert(session.appendNumericChar('2'));
+  expectVec3(session.feedbackDelta(), glm::vec3(2.0f, 0.0f, 0.0f));
+
+  session.onPointerMove(glm::vec2(50.0f, -20.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(2.0f, 0.0f, 0.0f));
+
+  assert(session.backspaceNumeric());
+  assert(!session.hasNumericInput());
+  expectVec3(session.feedbackDelta(), glm::vec3(5.0f, 0.0f, 0.0f));
+
+  assert(session.appendNumericChar('3'));
+  expectVec3(session.feedbackDelta(), glm::vec3(3.0f, 0.0f, 0.0f));
+
+  session.clearNumeric();
+  assert(!session.hasNumericInput());
+  expectVec3(session.feedbackDelta(), glm::vec3(5.0f, 0.0f, 0.0f));
+}
+
 }  // namespace
 
 int main() {
@@ -581,5 +657,9 @@ int main() {
   localAxisUsesSessionStartRotation();
   constraintChangeUsesCurrentPointerNotAccumulatedDelta();
   inactiveSessionIgnoresConstraintKeys();
+  numericInputSetsAxisDistanceAlongGlobalX();
+  numericInputSupportsNegativeAndDecimal();
+  numericInputIgnoresPointerMotionUntilCleared();
+  clearingNumericRestoresPointerDrivenMotion();
   return 0;
 }
