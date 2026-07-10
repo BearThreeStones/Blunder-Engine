@@ -86,6 +86,38 @@ Vec3 localPositionForWorldPosition(const SceneInstance& scene,
   return Vec3(local_position);
 }
 
+std::optional<TranslateModalAxisKey> axisKeyFromKeyCode(const int key_code) {
+  switch (key_code) {
+    case SDLK_X:
+      return TranslateModalAxisKey::x;
+    case SDLK_Y:
+      return TranslateModalAxisKey::y;
+    case SDLK_Z:
+      return TranslateModalAxisKey::z;
+    default:
+      return std::nullopt;
+  }
+}
+
+char numericCharFromKeyCode(const int key_code) {
+  if (key_code >= SDLK_0 && key_code <= SDLK_9) {
+    return static_cast<char>('0' + (key_code - SDLK_0));
+  }
+  if (key_code >= SDLK_KP_0 && key_code <= SDLK_KP_9) {
+    return static_cast<char>('0' + (key_code - SDLK_KP_0));
+  }
+  switch (key_code) {
+    case SDLK_MINUS:
+    case SDLK_KP_MINUS:
+      return '-';
+    case SDLK_PERIOD:
+    case SDLK_KP_DECIMAL:
+      return '.';
+    default:
+      return '\0';
+  }
+}
+
 }  // namespace
 
 void TransformGizmoController::endCameraLock(EditorCamera* camera) {
@@ -314,6 +346,54 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
     return false;
   }
 
+  if (m_translate_session.isActive()) {
+    const int key_code = key_event.getKeyCode();
+
+    if (const std::optional<TranslateModalAxisKey> axis_key =
+            axisKeyFromKeyCode(key_code)) {
+      if (key_event.isShiftDown()) {
+        m_translate_session.applyPlaneConstraintKey(*axis_key);
+      } else {
+        m_translate_session.applyAxisConstraintKey(*axis_key);
+      }
+      syncTranslateSessionEntityPosition(camera);
+      return true;
+    }
+
+    if (const char numeric_char = numericCharFromKeyCode(key_code);
+        numeric_char != '\0') {
+      if (m_translate_session.appendNumericChar(numeric_char)) {
+        syncTranslateSessionEntityPosition(camera);
+      }
+      return true;
+    }
+
+    switch (key_code) {
+      case SDLK_BACKSPACE:
+        if (m_translate_session.backspaceNumeric()) {
+          syncTranslateSessionEntityPosition(camera);
+        }
+        return true;
+      case SDLK_ESCAPE:
+        if (m_translate_session.hasNumericInput()) {
+          m_translate_session.clearNumeric();
+          syncTranslateSessionEntityPosition(camera);
+          return true;
+        }
+        return cancelTranslateModalSession(camera);
+      case SDLK_RETURN:
+      case SDLK_KP_ENTER:
+        return confirmTranslateModalSession(camera);
+      case SDLK_G:
+      case SDLK_R:
+      case SDLK_S:
+      case SDLK_COMMA:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   switch (key_event.getKeyCode()) {
     case SDLK_G:
       return beginGrabFromSelection(camera);
@@ -329,9 +409,6 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
       }
       return false;
     case SDLK_ESCAPE:
-      if (m_translate_session.isActive()) {
-        return cancelTranslateModalSession(camera);
-      }
       if (m_active_axis) {
         if (Entity* entity = selectedEntity()) {
           if (m_mode == TransformGizmoMode::rotate &&

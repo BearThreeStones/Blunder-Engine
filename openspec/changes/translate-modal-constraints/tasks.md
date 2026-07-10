@@ -20,10 +20,10 @@
 
 ## 4. Controller input routing
 
-- [ ] 4.1 While session active, route `X`/`Y`/`Z` (+ Shift) into session constraint handlers (not mode switches)
-- [ ] 4.2 Route digits/`-`/`.`/Backspace into numeric input; Escape clears numeric first, then cancels
-- [ ] 4.3 Route Enter to confirm (handle and grab)
-- [ ] 4.4 Keep inspector sync, scene dirty, and viewport redraw on constraint/numeric/MMB updates
+- [x] 4.1 While session active, route `X`/`Y`/`Z` (+ Shift) into session constraint handlers (not mode switches)
+- [x] 4.2 Route digits/`-`/`.`/Backspace into numeric input; Escape clears numeric first, then cancels
+- [x] 4.3 Route Enter to confirm (handle and grab)
+- [x] 4.4 Keep inspector sync, scene dirty, and viewport redraw on constraint/numeric/MMB updates
 
 ## 5. Live constraint feedback
 
