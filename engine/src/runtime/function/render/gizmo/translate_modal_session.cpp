@@ -101,8 +101,6 @@ ManipulatorAxis nearestProjectedAxis(const glm::vec3& origin,
   return best_axis;
 }
 
-namespace {
-
 glm::vec3 screenDeltaToViewPlaneWorld(
     const glm::vec3& camera_position, const glm::vec3& camera_forward,
     const glm::vec3& camera_right, const glm::vec3& camera_up,
