@@ -1,0 +1,7 @@
+type: Mesh
+guid: c4e8f2a1-9b3d-4e5f-a6c7-1d2e3f4a5b6c
+source: resources/Models/PickTest/Cube.gltf
+import:
+  materials: true
+  animations: false
+  scale: 1

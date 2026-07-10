@@ -1,0 +1,40 @@
+{
+  "type": "Scene",
+  "entities": [
+    {
+      "name": "Sun",
+      "position": [96.3266, 70.2041, 10],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    },
+    {
+      "name": "CameraRig",
+      "position": [0, 0, 5],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "parent": "Sun"
+    },
+    {
+      "name": "BoxFront",
+      "mesh": "assets/Meshes/Cube.mesh.yaml",
+      "position": [0, 2, 1],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    },
+    {
+      "name": "BoxMid",
+      "mesh": "assets/Meshes/Cube.mesh.yaml",
+      "position": [0, 2.9, 1],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    },
+    {
+      "name": "BoxBack",
+      "mesh": "assets/Meshes/Cube.mesh.yaml",
+      "position": [0, 3.8, 1],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    }
+  ],
+  "childScenes": []
+}
