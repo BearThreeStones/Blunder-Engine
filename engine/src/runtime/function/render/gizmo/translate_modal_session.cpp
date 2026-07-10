@@ -50,26 +50,6 @@ glm::vec3 rotateAxis(const glm::quat& rotation, const glm::vec3& axis) {
   return normalizedOr(rotation * axis, axis);
 }
 
-TranslateModalSession::TranslateModalConstraintSlot constraintSlotForAxis(
-    const ManipulatorAxis axis) {
-  switch (axis) {
-    case ManipulatorAxis::trans_x:
-      return TranslateModalSession::TranslateModalConstraintSlot::axis_x;
-    case ManipulatorAxis::trans_y:
-      return TranslateModalSession::TranslateModalConstraintSlot::axis_y;
-    case ManipulatorAxis::trans_z:
-      return TranslateModalSession::TranslateModalConstraintSlot::axis_z;
-    case ManipulatorAxis::trans_xy:
-      return TranslateModalSession::TranslateModalConstraintSlot::plane_lock_z;
-    case ManipulatorAxis::trans_yz:
-      return TranslateModalSession::TranslateModalConstraintSlot::plane_lock_x;
-    case ManipulatorAxis::trans_zx:
-      return TranslateModalSession::TranslateModalConstraintSlot::plane_lock_y;
-    default:
-      return TranslateModalSession::TranslateModalConstraintSlot::none;
-  }
-}
-
 }  // namespace
 
 glm::vec3 screenDeltaToViewPlaneWorld(
@@ -227,7 +207,8 @@ void TranslateModalSession::beginFromHandle(
     const ManipulatorAxis axis, const GizmoBasis& basis,
     const glm::vec2& pointer_position, const glm::vec3& object_position,
     const TranslateModalCameraState& camera,
-    const glm::quat& session_start_rotation) {
+    const glm::quat& session_start_rotation,
+    const TranslateModalConstraintOrientation initial_orientation) {
   m_entry = TranslateModalEntry::handle;
   m_axis = axis;
   m_basis = basis;
@@ -237,20 +218,25 @@ void TranslateModalSession::beginFromHandle(
   m_object_position_at_begin = object_position;
   m_session_start_rotation = session_start_rotation;
   m_feedback_delta = glm::vec3(0.0f);
-  m_active_slot = constraintSlotForAxis(axis);
-  m_orientation = TranslateModalConstraintOrientation::global;
+  m_active_slot = constraintSlotForManipulator(axis);
+  m_orientation = initial_orientation;
+  if (m_axis != ManipulatorAxis::trans_c &&
+      m_orientation == TranslateModalConstraintOrientation::local) {
+    rebuildConstraintBasis();
+  }
   m_active = true;
 }
 
 void TranslateModalSession::beginFromHandle(
     const ManipulatorAxis axis, const GizmoBasis& basis,
     const glm::vec2& pointer_position, const glm::vec3& object_position,
-    const EditorCamera& camera, const glm::quat& session_start_rotation) {
+    const EditorCamera& camera, const glm::quat& session_start_rotation,
+    const TranslateModalConstraintOrientation initial_orientation) {
   // Depth scaling uses the world-space gizmo pivot; object_position remains
   // the local/entity-space translation baseline for feedbackPosition().
   beginFromHandle(axis, basis, pointer_position, object_position,
                   cameraStateFromEditorCamera(camera, basis.origin),
-                  session_start_rotation);
+                  session_start_rotation, initial_orientation);
 }
 
 void TranslateModalSession::beginFromGrab(
@@ -303,6 +289,26 @@ TranslateModalSession::planeSlotFor(const TranslateModalAxisKey key) {
       return TranslateModalConstraintSlot::plane_lock_z;
   }
   return TranslateModalConstraintSlot::none;
+}
+
+TranslateModalSession::TranslateModalConstraintSlot
+TranslateModalSession::constraintSlotForManipulator(const ManipulatorAxis axis) {
+  switch (axis) {
+    case ManipulatorAxis::trans_x:
+      return TranslateModalConstraintSlot::axis_x;
+    case ManipulatorAxis::trans_y:
+      return TranslateModalConstraintSlot::axis_y;
+    case ManipulatorAxis::trans_z:
+      return TranslateModalConstraintSlot::axis_z;
+    case ManipulatorAxis::trans_xy:
+      return TranslateModalConstraintSlot::plane_lock_z;
+    case ManipulatorAxis::trans_yz:
+      return TranslateModalConstraintSlot::plane_lock_x;
+    case ManipulatorAxis::trans_zx:
+      return TranslateModalConstraintSlot::plane_lock_y;
+    default:
+      return TranslateModalConstraintSlot::none;
+  }
 }
 
 ManipulatorAxis TranslateModalSession::manipulatorAxisFor(

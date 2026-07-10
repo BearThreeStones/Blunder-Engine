@@ -73,13 +73,17 @@ class TranslateModalSession final {
                        const glm::vec3& object_position,
                        const TranslateModalCameraState& camera,
                        const glm::quat& session_start_rotation =
-                           glm::identity<glm::quat>());
+                           glm::identity<glm::quat>(),
+                       TranslateModalConstraintOrientation initial_orientation =
+                           TranslateModalConstraintOrientation::global);
   void beginFromHandle(ManipulatorAxis axis, const GizmoBasis& basis,
                        const glm::vec2& pointer_position,
                        const glm::vec3& object_position,
                        const EditorCamera& camera,
                        const glm::quat& session_start_rotation =
-                           glm::identity<glm::quat>());
+                           glm::identity<glm::quat>(),
+                       TranslateModalConstraintOrientation initial_orientation =
+                           TranslateModalConstraintOrientation::global);
   void beginFromGrab(const glm::vec2& pointer_position,
                      const glm::vec3& object_position,
                      const TranslateModalCameraState& camera,
@@ -129,6 +133,8 @@ class TranslateModalSession final {
 
   static TranslateModalConstraintSlot axisSlotFor(TranslateModalAxisKey key);
   static TranslateModalConstraintSlot planeSlotFor(TranslateModalAxisKey key);
+  static TranslateModalConstraintSlot constraintSlotForManipulator(
+      ManipulatorAxis axis);
   static ManipulatorAxis manipulatorAxisFor(TranslateModalAxisKey key);
   static ManipulatorAxis manipulatorPlaneFor(TranslateModalAxisKey locked_axis);
 

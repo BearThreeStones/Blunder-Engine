@@ -1,9 +1,11 @@
+#include "runtime/function/render/gizmo/gizmo_math.h"
 #include "runtime/function/render/gizmo/translate_modal_session.h"
 
 #include <cassert>
 #include <cmath>
 #include <optional>
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 namespace {
@@ -376,6 +378,55 @@ void handleStartedSessionAppliesConstraintKey() {
   expectVec3(session.feedbackPosition(), glm::vec3(1.0f, 1.0f, 3.0f));
 }
 
+void worldRotationFromMatrixStripsScale() {
+  glm::mat4 world(1.0f);
+  world = glm::rotate(world, glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+  world = glm::scale(world, glm::vec3(2.0f, 2.0f, 2.0f));
+  const glm::quat rotation = Blunder::worldRotationFromMatrix(world);
+  expectVec3(rotation * glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+}
+
+void handleStartedGlobalAxisPressXCyclesToLocalThenFree() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_x, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.isConstraintFree());
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
+}
+
+void handleStartedLocalAxisPressXCyclesToFree() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(
+      Blunder::ManipulatorAxis::trans_x, identityBasis(), glm::vec2(0.0f),
+      glm::vec3(0.0f), camera, glm::identity<glm::quat>(),
+      Blunder::TranslateModalConstraintOrientation::local);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.isConstraintFree());
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
+}
+
 void differentAxisKeyResetsToGlobal() {
   Blunder::TranslateModalCameraState camera = topDownCamera();
 
@@ -457,6 +508,7 @@ void grabThenConstrainReprojectsFromSessionStart() {
 
 void localAxisUsesSessionStartRotation() {
   Blunder::TranslateModalCameraState camera = topDownCamera();
+  // session_start_rotation is world-space (controller passes worldRotationFromMatrix).
   const glm::quat rotation =
       glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
 
@@ -519,6 +571,9 @@ int main() {
   shiftYConstrainsToZxPlaneGlobally();
   localPlaneUsesSessionStartRotation();
   handleStartedSessionAppliesConstraintKey();
+  worldRotationFromMatrixStripsScale();
+  handleStartedGlobalAxisPressXCyclesToLocalThenFree();
+  handleStartedLocalAxisPressXCyclesToFree();
   differentAxisKeyResetsToGlobal();
   planeKeyConstrainsAndCyclesIndependently();
   axisKeyAfterPlaneKeyStartsGlobalAxis();

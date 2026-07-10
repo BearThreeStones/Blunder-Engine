@@ -25,6 +25,9 @@ struct GizmoBasis {
 
 GizmoBasis buildGizmoBasis(const glm::mat4& selection_world, GizmoSpace space);
 
+/// World-space rotation from a TRS/world matrix (scale stripped from basis columns).
+glm::quat worldRotationFromMatrix(const glm::mat4& world_matrix);
+
 /// Inputs for Blender wm_gizmo_calculate_scale / ED_view3d_pixel_size_no_ui_scale.
 struct TransformGizmoScaleContext {
   glm::mat4 view_projection{1.0f};

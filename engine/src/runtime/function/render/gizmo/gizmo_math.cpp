@@ -73,6 +73,13 @@ GizmoBasis buildGizmoBasis(const glm::mat4& selection_world, const GizmoSpace sp
   return basis;
 }
 
+glm::quat worldRotationFromMatrix(const glm::mat4& world_matrix) {
+  const glm::mat3 rot(glm::normalize(glm::vec3(world_matrix[0])),
+                      glm::normalize(glm::vec3(world_matrix[1])),
+                      glm::normalize(glm::vec3(world_matrix[2])));
+  return glm::normalize(glm::quat_cast(rot));
+}
+
 float computeView3dPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx) {
   const float vp = std::max(ctx.viewport_height, 1.0f);
   const float pixsize = 2.0f / vp;

@@ -161,6 +161,7 @@ bool TransformGizmoController::beginGrabFromSelection(EditorCamera& camera) {
 
   const glm::mat4 world = scene->getWorldMatrix(entity_id);
   const GizmoBasis basis = buildGizmoBasis(world, m_space);
+  const glm::quat world_rotation = worldRotationFromMatrix(world);
   float mouse_x = 0.0f;
   float mouse_y = 0.0f;
   SDL_GetMouseState(&mouse_x, &mouse_y);
@@ -175,7 +176,7 @@ bool TransformGizmoController::beginGrabFromSelection(EditorCamera& camera) {
   m_entity_scale_at_drag_start = entity->getScale();
   m_translate_session.beginFromGrab(window_pos, basis.origin,
                                     cameraStateFromEditorCamera(camera, basis.origin),
-                                    entity->getRotation());
+                                    world_rotation);
 
   m_locked_camera = &camera;
   camera.setInteractionLocked(true);
@@ -421,9 +422,19 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   m_entity_scale_at_drag_start = entity->getScale();
 
   if (m_mode == TransformGizmoMode::translate && isTranslationManipulator(*hit)) {
+    SceneInstance* scene = activeScene();
+    const EntityId selection_id =
+        g_runtime_global_context.m_editor_selection->getSelection();
+    const glm::mat4 world =
+        scene != nullptr ? scene->getWorldMatrix(selection_id) : glm::mat4(1.0f);
+    const glm::quat world_rotation = worldRotationFromMatrix(world);
+    const TranslateModalConstraintOrientation initial_orientation =
+        m_space == GizmoSpace::local
+            ? TranslateModalConstraintOrientation::local
+            : TranslateModalConstraintOrientation::global;
     m_translate_session.beginFromHandle(*hit, basis, window_pos,
                                         entity->getPosition(), camera,
-                                        entity->getRotation());
+                                        world_rotation, initial_orientation);
     setTranslateModalCursor();
     requestViewportRedraw();
   } else if (m_mode == TransformGizmoMode::scale && isScaleManipulator(*hit)) {
