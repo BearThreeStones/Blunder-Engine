@@ -27,9 +27,9 @@
 
 ## 5. Live constraint feedback
 
-- [ ] 5.1 Update guides / origin dot / plane-center visibility from **live** constraint (including grab free→constrained)
-- [ ] 5.2 Keep handle ghost tied to originally pressed handle only; grab never shows handle ghost
-- [ ] 5.3 Optional MMB-pick preview guides (three axes or nearest highlight) through drag-start pivot
+- [x] 5.1 Update guides / origin dot / plane-center visibility from **live** constraint (including grab free→constrained)
+- [x] 5.2 Keep handle ghost tied to originally pressed handle only; grab never shows handle ghost
+- [x] 5.3 Optional MMB-pick preview guides (three axes or nearest highlight) through drag-start pivot
 
 ## 6. Docs + validation
 

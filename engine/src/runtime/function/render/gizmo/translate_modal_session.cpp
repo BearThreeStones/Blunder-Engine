@@ -209,6 +209,18 @@ ManipulatorAxis translateSessionOriginColorAxis(const ManipulatorAxis active) {
   }
 }
 
+bool translateSessionShowsConstraintGuides(const ManipulatorAxis live_axis) {
+  return translateSessionGuideAxisCount(live_axis) > 0u;
+}
+
+bool translateSessionShowsOriginDot(const ManipulatorAxis live_axis) {
+  return translateSessionOriginColorAxis(live_axis) != ManipulatorAxis::last;
+}
+
+bool translateSessionShowsHandleGhost(const TranslateModalEntry entry) {
+  return entry == TranslateModalEntry::handle;
+}
+
 bool translateModalConfirmsOnMousePress(const TranslateModalEntry entry) {
   return entry == TranslateModalEntry::grab;
 }
@@ -262,6 +274,7 @@ void TranslateModalSession::beginFromHandle(
     const TranslateModalConstraintOrientation initial_orientation) {
   m_entry = TranslateModalEntry::handle;
   m_axis = axis;
+  m_pressed_handle = axis;
   m_basis = basis;
   m_camera = camera;
   m_start_pointer = pointer_position;
@@ -297,6 +310,7 @@ void TranslateModalSession::beginFromGrab(
     const glm::quat& session_start_rotation) {
   m_entry = TranslateModalEntry::grab;
   m_axis = ManipulatorAxis::trans_c;
+  m_pressed_handle = ManipulatorAxis::last;
   m_basis = worldBasisAt(object_position);
   m_camera = camera;
   m_start_pointer = pointer_position;
@@ -739,6 +753,14 @@ bool TranslateModalSession::isActive() const {
 
 ManipulatorAxis TranslateModalSession::activeHandle() const {
   return m_active ? m_axis : ManipulatorAxis::last;
+}
+
+ManipulatorAxis TranslateModalSession::pressedHandle() const {
+  return m_active ? m_pressed_handle : ManipulatorAxis::last;
+}
+
+GizmoBasis TranslateModalSession::mmbPickPreviewBasis() const {
+  return mmbPickProjectionBasis();
 }
 
 const GizmoBasis& TranslateModalSession::dragStartBasis() const {

@@ -57,6 +57,9 @@ uint32_t translateSessionGuideAxisCount(ManipulatorAxis active);
 uint32_t translateSessionGuideAxes(ManipulatorAxis active,
                                    ManipulatorAxis out_axes[2]);
 ManipulatorAxis translateSessionOriginColorAxis(ManipulatorAxis active);
+bool translateSessionShowsConstraintGuides(ManipulatorAxis live_axis);
+bool translateSessionShowsOriginDot(ManipulatorAxis live_axis);
+bool translateSessionShowsHandleGhost(TranslateModalEntry entry);
 bool translateModalConfirmsOnMousePress(TranslateModalEntry entry);
 bool translateModalConfirmsOnMouseRelease(TranslateModalEntry entry);
 
@@ -123,6 +126,8 @@ class TranslateModalSession final {
 
   bool isActive() const;
   ManipulatorAxis activeHandle() const;
+  ManipulatorAxis pressedHandle() const;
+  GizmoBasis mmbPickPreviewBasis() const;
   const GizmoBasis& dragStartBasis() const;
   glm::vec3 feedbackDelta() const;
   glm::vec3 feedbackPosition() const;
@@ -165,6 +170,7 @@ class TranslateModalSession final {
 
   TranslateModalEntry m_entry{TranslateModalEntry::handle};
   ManipulatorAxis m_axis{ManipulatorAxis::last};
+  ManipulatorAxis m_pressed_handle{ManipulatorAxis::last};
   GizmoBasis m_basis{};
   TranslateModalCameraState m_camera{};
   glm::vec2 m_start_pointer{0.0f};

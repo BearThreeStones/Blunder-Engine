@@ -100,6 +100,67 @@ void centerHandleIsHiddenDuringTranslateSession() {
   assert(!Blunder::translateSessionShowsCenterHandle());
 }
 
+void constraintFeedbackFollowsLiveConstraint() {
+  assert(!Blunder::translateSessionShowsConstraintGuides(
+      Blunder::ManipulatorAxis::trans_c));
+  assert(!Blunder::translateSessionShowsOriginDot(
+      Blunder::ManipulatorAxis::trans_c));
+
+  assert(Blunder::translateSessionShowsConstraintGuides(
+      Blunder::ManipulatorAxis::trans_x));
+  assert(Blunder::translateSessionShowsOriginDot(
+      Blunder::ManipulatorAxis::trans_x));
+  assert(Blunder::translateSessionShowsConstraintGuides(
+      Blunder::ManipulatorAxis::trans_xy));
+  assert(Blunder::translateSessionShowsOriginDot(
+      Blunder::ManipulatorAxis::trans_xy));
+}
+
+void handleGhostOnlyForHandleEntry() {
+  assert(Blunder::translateSessionShowsHandleGhost(
+      Blunder::TranslateModalEntry::handle));
+  assert(!Blunder::translateSessionShowsHandleGhost(
+      Blunder::TranslateModalEntry::grab));
+}
+
+void pressedHandleSurvivesLiveConstraintChange() {
+  Blunder::TranslateModalCameraState camera{};
+  camera.forward = glm::vec3(0.0f, 1.0f, 0.0f);
+  camera.right = glm::vec3(1.0f, 0.0f, 0.0f);
+  camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+  camera.viewport_height_world_per_pixel = 0.1f;
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_y, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  assert(session.pressedHandle() == Blunder::ManipulatorAxis::trans_y);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_y);
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_x);
+  assert(session.pressedHandle() == Blunder::ManipulatorAxis::trans_y);
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_c);
+  assert(session.pressedHandle() == Blunder::ManipulatorAxis::trans_y);
+}
+
+void grabSessionHasNoPressedHandle() {
+  Blunder::TranslateModalCameraState camera{};
+  camera.forward = glm::vec3(0.0f, 1.0f, 0.0f);
+  camera.right = glm::vec3(1.0f, 0.0f, 0.0f);
+  camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+  camera.viewport_height_world_per_pixel = 0.1f;
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  assert(session.pressedHandle() == Blunder::ManipulatorAxis::last);
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::z);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_z);
+  assert(session.pressedHandle() == Blunder::ManipulatorAxis::last);
+}
+
 void guideAxisCountMatchesActiveConstraint() {
   Blunder::ManipulatorAxis axes[2] = {Blunder::ManipulatorAxis::last,
                                       Blunder::ManipulatorAxis::last};
@@ -722,6 +783,10 @@ int main() {
   planeDragKeepsOnlyActivePlaneHandle();
   centerDragKeepsPlaneHandlesVisible();
   centerHandleIsHiddenDuringTranslateSession();
+  constraintFeedbackFollowsLiveConstraint();
+  handleGhostOnlyForHandleEntry();
+  pressedHandleSurvivesLiveConstraintChange();
+  grabSessionHasNoPressedHandle();
   guideAxisCountMatchesActiveConstraint();
   planeOriginColorUsesNormalAxis();
   sessionAppliesAccumulatedScreenDeltaUntilConfirm();

@@ -282,8 +282,6 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
   const bool translate_grab_session =
       translate_session_active &&
       m_controller.translateModalSession().isGrabEntry();
-  const bool translate_handle_feedback =
-      translate_session_active && !translate_grab_session;
   const ManipulatorAxis translate_active_handle =
       translate_session_active
           ? m_controller.translateModalSession().activeHandle()
@@ -320,7 +318,7 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
       draw_translate_axis(ManipulatorAxis::trans_c);
     }
 
-    if (translate_handle_feedback) {
+    if (translate_session_active) {
       const TranslateModalSession& session =
           m_controller.translateModalSession();
       const GizmoBasis& start_basis = session.dragStartBasis();
@@ -339,32 +337,55 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
           computeGizmoGroupScale(start_scale_ctx);
 
       const float guide_idot[3] = {1.0f, 1.0f, 1.0f};
-      ManipulatorAxis guide_axes[2] = {ManipulatorAxis::last,
-                                       ManipulatorAxis::last};
-      const uint32_t guide_count =
-          translateSessionGuideAxes(translate_active_handle, guide_axes);
-      for (uint32_t i = 0; i < guide_count; ++i) {
-        (void)drawTranslateHandle(
-            cmd, state, guide_axes[i], start_basis, guide_idot,
-            start_group_scale * k_translate_guide_scale_multiplier, false,
-            k_translate_guide_alpha);
+
+      if (session.isMmbAxisPicking()) {
+        const GizmoBasis preview_basis = session.mmbPickPreviewBasis();
+        const ManipulatorAxis nearest = session.mmbPickNearestAxis();
+        const ManipulatorAxis preview_axes[] = {
+            ManipulatorAxis::trans_x, ManipulatorAxis::trans_y,
+            ManipulatorAxis::trans_z};
+        for (const ManipulatorAxis axis : preview_axes) {
+          const bool highlight = axis == nearest;
+          const float guide_alpha =
+              highlight ? k_translate_guide_alpha
+                        : k_translate_guide_alpha * 0.45f;
+          (void)drawTranslateHandle(
+              cmd, state, axis, preview_basis, guide_idot,
+              start_group_scale * k_translate_guide_scale_multiplier, highlight,
+              guide_alpha);
+        }
+      } else if (translateSessionShowsConstraintGuides(translate_active_handle)) {
+        ManipulatorAxis guide_axes[2] = {ManipulatorAxis::last,
+                                         ManipulatorAxis::last};
+        const uint32_t guide_count =
+            translateSessionGuideAxes(translate_active_handle, guide_axes);
+        for (uint32_t i = 0; i < guide_count; ++i) {
+          (void)drawTranslateHandle(
+              cmd, state, guide_axes[i], start_basis, guide_idot,
+              start_group_scale * k_translate_guide_scale_multiplier, false,
+              k_translate_guide_alpha);
+        }
+
+        if (translateSessionShowsOriginDot(translate_active_handle)) {
+          const ManipulatorAxis dot_color_axis =
+              translateSessionOriginColorAxis(translate_active_handle);
+          GizmoBasis dot_basis = basis;
+          if (isPlaneManipulator(translate_active_handle)) {
+            dot_basis.origin = translatePlaneHandleCenter(
+                basis, translate_active_handle,
+                computeGizmoHandleScale(group_scale, translate_active_handle));
+          }
+          drawTranslateOriginDot(cmd, state, dot_basis, group_scale,
+                                 dot_color_axis);
+        }
       }
 
-      (void)drawTranslateHandle(cmd, state, translate_active_handle, start_basis,
-                                start_idot, start_group_scale, true,
-                                k_translate_ghost_alpha);
-
-      const ManipulatorAxis dot_color_axis =
-          translateSessionOriginColorAxis(translate_active_handle);
-      if (dot_color_axis != ManipulatorAxis::last) {
-        GizmoBasis dot_basis = basis;
-        if (isPlaneManipulator(translate_active_handle)) {
-          dot_basis.origin = translatePlaneHandleCenter(
-              basis, translate_active_handle,
-              computeGizmoHandleScale(group_scale, translate_active_handle));
-        }
-        drawTranslateOriginDot(cmd, state, dot_basis, group_scale,
-                               dot_color_axis);
+      if (translateSessionShowsHandleGhost(session.entryKind()) &&
+          !session.isMmbAxisPicking()) {
+        const ManipulatorAxis ghost_handle = session.pressedHandle();
+        (void)drawTranslateHandle(cmd, state, ghost_handle, start_basis,
+                                  start_idot, start_group_scale, true,
+                                  k_translate_ghost_alpha);
       }
     }
   } else if (state.gizmo_mode == TransformGizmoMode::scale) {
