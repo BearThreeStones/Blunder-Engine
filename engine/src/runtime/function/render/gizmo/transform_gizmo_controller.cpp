@@ -225,16 +225,11 @@ bool TransformGizmoController::confirmTranslateModalSession(EditorCamera& camera
 
   SceneInstance* scene = activeScene();
   Entity* entity = selectedEntity();
-  const bool was_grab_entry = m_translate_session.isGrabEntry();
   if (entity != nullptr && scene != nullptr) {
     if (const std::optional<glm::vec3> confirmed =
             m_translate_session.confirm()) {
-      if (was_grab_entry) {
-        entity->setPosition(localPositionForWorldPosition(*scene, *entity,
-                                                          *confirmed));
-      } else {
-        entity->setPosition(Vec3(*confirmed));
-      }
+      entity->setPosition(
+          localPositionForWorldPosition(*scene, *entity, *confirmed));
     }
   } else {
     m_translate_session.cancel();
@@ -274,13 +269,9 @@ void TransformGizmoController::syncTranslateSessionEntityPosition(
     return;
   }
 
-  const bool is_grab_entry = m_translate_session.isGrabEntry();
-  if (is_grab_entry) {
-    entity->setPosition(localPositionForWorldPosition(
-        *scene, *entity, m_translate_session.feedbackPosition()));
-  } else {
-    entity->setPosition(Vec3(m_translate_session.feedbackPosition()));
-  }
+  // Session feedback is always world-space (pivot + constrained delta).
+  entity->setPosition(localPositionForWorldPosition(
+      *scene, *entity, m_translate_session.feedbackPosition()));
   markSceneDirty();
   syncInspectorLive();
 }
@@ -540,7 +531,7 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
             ? TranslateModalConstraintOrientation::local
             : TranslateModalConstraintOrientation::global;
     m_translate_session.beginFromHandle(*hit, basis, window_pos,
-                                        entity->getPosition(), camera,
+                                        basis.origin, camera,
                                         world_rotation, initial_orientation);
     setTranslateModalCursor();
     requestViewportRedraw();

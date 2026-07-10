@@ -64,8 +64,7 @@ void planeConstraintProjectsOntoInfinitePlane() {
 
 void pickTranslationPrefersPlaneHandleOverNearbyAxes() {
   // Plane handles sit in axis corners. A ray through the XY plane center is
-  // also within the generous axis pick threshold — pick distance metrics must
-  // be comparable or axes always win and plane drag never starts.
+  // also within the generous axis pick threshold — plane hits must win.
   const float group_scale = 1.0f;
   const float plane_scale = Blunder::computeGizmoHandleScale(
       group_scale, Blunder::ManipulatorAxis::trans_xy);
@@ -85,6 +84,26 @@ void pickTranslationPrefersPlaneHandleOverNearbyAxes() {
       Blunder::pickTranslationGizmoHandle(ctx);
   assert(hit.has_value());
   assert(*hit == Blunder::ManipulatorAxis::trans_xy);
+}
+
+void handlePlaneSessionMovesOnPointerDelta() {
+  Blunder::TranslateModalCameraState camera{};
+  camera.forward = glm::vec3(0.0f, 0.0f, -1.0f);
+  camera.right = glm::vec3(1.0f, 0.0f, 0.0f);
+  camera.up = glm::vec3(0.0f, 1.0f, 0.0f);
+  camera.viewport_height_world_per_pixel = 0.1f;
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_xy, identityBasis(),
+                          glm::vec2(10.0f, 10.0f), glm::vec3(1.0f, 2.0f, 3.0f),
+                          camera);
+  session.onPointerMove(glm::vec2(20.0f, 0.0f), camera);
+
+  assert(session.isActive());
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_xy);
+  // Screen delta (10, -10) → world (1, 1, 0) on view plane; XY keeps both.
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 1.0f, 0.0f));
+  expectVec3(session.feedbackPosition(), glm::vec3(2.0f, 3.0f, 3.0f));
 }
 
 void centerConstraintKeepsViewPlaneDelta() {
@@ -805,6 +824,7 @@ int main() {
   axisConstraintUsesViewAlignedFallbackWhenAxisFacesCamera();
   planeConstraintProjectsOntoInfinitePlane();
   pickTranslationPrefersPlaneHandleOverNearbyAxes();
+  handlePlaneSessionMovesOnPointerDelta();
   centerConstraintKeepsViewPlaneDelta();
   axisDragHidesAllPlaneHandles();
   planeDragKeepsOnlyActivePlaneHandle();

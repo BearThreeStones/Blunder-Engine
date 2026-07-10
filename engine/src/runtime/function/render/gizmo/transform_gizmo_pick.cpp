@@ -27,16 +27,18 @@ bool pickAxis(const Ray& ray, const glm::vec3& origin, const glm::vec3& directio
 bool pickPlaneHandle(const Ray& ray, const glm::vec3& center, const glm::vec3& axis_u,
                      const glm::vec3& axis_v, float half_extent, float threshold,
                      float& out_distance) {
-  (void)threshold;
+  // Expand the pick quad slightly so the visible plane is easy to hit.
+  const float pick_half = half_extent + threshold;
   const auto hit =
-      intersectRayPlaneQuad(ray, center, axis_u, axis_v, half_extent);
+      intersectRayPlaneQuad(ray, center, axis_u, axis_v, pick_half);
   if (!hit) {
     return false;
   }
-  // Use distance to the plane-handle center (not ray depth) so pickBest can
-  // compare against axis perpendicular distances. Ray depth is always much
-  // larger, which made nearby axes win every corner-plane click.
-  out_distance = glm::length(*hit - center);
+  // Perpendicular distance from the ray to the hit is ~0 for a true ray hit.
+  // That beats nearby axis segment distances so corner planes are selectable.
+  const glm::vec3 w = *hit - ray.origin;
+  out_distance = glm::length(glm::cross(ray.direction, w)) /
+                 std::max(glm::length(ray.direction), 1e-6f);
   return true;
 }
 
@@ -83,6 +85,29 @@ ManipulatorAxis pickBest(eastl::vector<eastl::pair<ManipulatorAxis, float>>& hit
     }
   }
   return best;
+}
+
+ManipulatorAxis pickBestTranslation(
+    eastl::vector<eastl::pair<ManipulatorAxis, float>>& hits) {
+  // If the ray hit a plane quad, prefer that over nearby axes/center. Plane
+  // handles sit in axis corners where axis thresholds always overlap.
+  bool has_plane = false;
+  ManipulatorAxis best_plane = ManipulatorAxis::last;
+  float best_plane_dist = 1e10f;
+  for (const auto& hit : hits) {
+    if (!isPlaneManipulator(hit.first)) {
+      continue;
+    }
+    has_plane = true;
+    if (hit.second < best_plane_dist) {
+      best_plane_dist = hit.second;
+      best_plane = hit.first;
+    }
+  }
+  if (has_plane) {
+    return best_plane;
+  }
+  return pickBest(hits);
 }
 
 }  // namespace
@@ -140,7 +165,7 @@ std::optional<ManipulatorAxis> pickTranslationGizmoHandle(
   if (hits.empty()) {
     return std::nullopt;
   }
-  return pickBest(hits);
+  return pickBestTranslation(hits);
 }
 
 std::optional<ManipulatorAxis> pickRotationGizmoHandle(
