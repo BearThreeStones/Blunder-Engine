@@ -621,6 +621,95 @@ void clearingNumericRestoresPointerDrivenMotion() {
   expectVec3(session.feedbackDelta(), glm::vec3(5.0f, 0.0f, 0.0f));
 }
 
+void nearestAxisPicksHorizontalDeltaAsX() {
+  const Blunder::TranslateModalCameraState camera = topDownCamera();
+  const Blunder::GizmoBasis basis = identityBasis();
+  assert(Blunder::nearestProjectedAxis(basis.origin, basis, camera,
+                                       glm::vec2(120.0f, 0.0f)) ==
+         Blunder::ManipulatorAxis::trans_x);
+}
+
+void nearestAxisPicksVerticalDeltaAsY() {
+  const Blunder::TranslateModalCameraState camera = topDownCamera();
+  const Blunder::GizmoBasis basis = identityBasis();
+  assert(Blunder::nearestProjectedAxis(basis.origin, basis, camera,
+                                       glm::vec2(0.0f, 80.0f)) ==
+         Blunder::ManipulatorAxis::trans_y);
+  assert(Blunder::nearestProjectedAxis(basis.origin, basis, camera,
+                                       glm::vec2(0.0f, -80.0f)) ==
+         Blunder::ManipulatorAxis::trans_y);
+}
+
+void nearestAxisPicksZFromSideView() {
+  const Blunder::TranslateModalCameraState camera = sideCamera();
+  const Blunder::GizmoBasis basis = identityBasis();
+  assert(Blunder::nearestProjectedAxis(basis.origin, basis, camera,
+                                       glm::vec2(0.0f, 60.0f)) ==
+         Blunder::ManipulatorAxis::trans_z);
+}
+
+void mmbPickCommitsGlobalAxisAndContinuesSession() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
+
+  session.beginMmbAxisPick(glm::vec2(20.0f, 20.0f));
+  assert(session.isMmbAxisPicking());
+  session.updateMmbAxisPick(glm::vec2(120.0f, 25.0f), camera);
+  assert(session.mmbPickNearestAxis() == Blunder::ManipulatorAxis::trans_x);
+
+  const Blunder::ManipulatorAxis committed = session.endMmbAxisPick();
+  assert(committed == Blunder::ManipulatorAxis::trans_x);
+  assert(!session.isMmbAxisPicking());
+  assert(session.isActive());
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_x);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+}
+
+void mmbPickUsesLocalProjectionBasisWhenOrientationLocal() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+  const glm::quat rotation =
+      glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera, rotation);
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+
+  session.beginMmbAxisPick(glm::vec2(0.0f, 0.0f));
+  session.updateMmbAxisPick(glm::vec2(0.0f, 100.0f), camera);
+  assert(session.mmbPickNearestAxis() == Blunder::ManipulatorAxis::trans_x);
+
+  session.endMmbAxisPick();
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_x);
+}
+
+void mmbPickBlocksPointerMotionUntilRelease() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 0.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  session.beginMmbAxisPick(glm::vec2(0.0f, 0.0f));
+  session.onPointerMove(glm::vec2(50.0f, 0.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  session.updateMmbAxisPick(glm::vec2(50.0f, 0.0f), camera);
+  session.endMmbAxisPick();
+  expectVec3(session.feedbackDelta(), glm::vec3(5.0f, 0.0f, 0.0f));
+}
+
 }  // namespace
 
 int main() {
@@ -661,5 +750,11 @@ int main() {
   numericInputSupportsNegativeAndDecimal();
   numericInputIgnoresPointerMotionUntilCleared();
   clearingNumericRestoresPointerDrivenMotion();
+  nearestAxisPicksHorizontalDeltaAsX();
+  nearestAxisPicksVerticalDeltaAsY();
+  nearestAxisPicksZFromSideView();
+  mmbPickCommitsGlobalAxisAndContinuesSession();
+  mmbPickUsesLocalProjectionBasisWhenOrientationLocal();
+  mmbPickBlocksPointerMotionUntilRelease();
   return 0;
 }

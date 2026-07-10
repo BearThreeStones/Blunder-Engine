@@ -64,6 +64,7 @@ class TransformGizmoController final {
   bool beginGrabFromSelection(EditorCamera& camera);
   bool confirmTranslateModalSession(EditorCamera& camera);
   bool cancelTranslateModalSession(EditorCamera& camera);
+  void syncTranslateSessionEntityPosition(EditorCamera& camera);
 
   TransformGizmoMode m_mode{TransformGizmoMode::none};
   GizmoSpace m_space{GizmoSpace::global};

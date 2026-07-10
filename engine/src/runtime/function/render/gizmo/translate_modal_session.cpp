@@ -51,7 +51,57 @@ glm::vec3 rotateAxis(const glm::quat& rotation, const glm::vec3& axis) {
   return normalizedOr(rotation * axis, axis);
 }
 
+glm::vec2 worldAxisToScreenDelta(const glm::vec3& world_direction,
+                                 const TranslateModalCameraState& camera) {
+  const glm::vec3 right = normalizedOr(camera.right, glm::vec3(1.0f, 0.0f, 0.0f));
+  const glm::vec3 up = normalizedOr(camera.up, glm::vec3(0.0f, 1.0f, 0.0f));
+  const float pixels_per_world =
+      1.0f / std::max(camera.viewport_height_world_per_pixel, 1e-8f);
+  return glm::vec2(glm::dot(world_direction, right) * pixels_per_world,
+                   -glm::dot(world_direction, up) * pixels_per_world);
+}
+
 }  // namespace
+
+ManipulatorAxis nearestProjectedAxis(const glm::vec3& origin,
+                                     const GizmoBasis& basis,
+                                     const TranslateModalCameraState& camera,
+                                     const glm::vec2& delta_pixels) {
+  (void)origin;
+  const glm::vec3 axis_dirs[3] = {basis.axis_x, basis.axis_y, basis.axis_z};
+  const ManipulatorAxis axis_ids[3] = {ManipulatorAxis::trans_x,
+                                       ManipulatorAxis::trans_y,
+                                       ManipulatorAxis::trans_z};
+
+  const float mouse_len2 = glm::dot(delta_pixels, delta_pixels);
+  if (mouse_len2 < 1e-6f) {
+    return ManipulatorAxis::trans_x;
+  }
+
+  float best_residual = 1e10f;
+  ManipulatorAxis best_axis = ManipulatorAxis::trans_x;
+  for (int i = 0; i < 3; ++i) {
+    glm::vec2 axis_screen =
+        worldAxisToScreenDelta(normalizedOr(axis_dirs[i], glm::vec3(1.0f, 0.0f, 0.0f)),
+                               camera);
+    const float axis_len2 = glm::dot(axis_screen, axis_screen);
+    if (axis_len2 < 1e-6f) {
+      continue;
+    }
+    axis_screen /= std::sqrt(axis_len2);
+
+    const float projection = glm::dot(delta_pixels, axis_screen);
+    const glm::vec2 perpendicular = delta_pixels - axis_screen * projection;
+    const float residual = glm::dot(perpendicular, perpendicular) / mouse_len2;
+    if (residual < best_residual) {
+      best_residual = residual;
+      best_axis = axis_ids[i];
+    }
+  }
+  return best_axis;
+}
+
+namespace {
 
 glm::vec3 screenDeltaToViewPlaneWorld(
     const glm::vec3& camera_position, const glm::vec3& camera_forward,
@@ -472,6 +522,13 @@ void TranslateModalSession::setGlobalAxisConstraint(
   rebuildConstraintBasis();
 }
 
+void TranslateModalSession::setLocalAxisConstraint(const ManipulatorAxis axis) {
+  m_axis = axis;
+  m_active_slot = constraintSlotForManipulator(axis);
+  m_orientation = TranslateModalConstraintOrientation::local;
+  rebuildConstraintBasis();
+}
+
 void TranslateModalSession::setGlobalPlaneConstraint(
     const TranslateModalAxisKey locked_axis) {
   m_active_slot = planeSlotFor(locked_axis);
@@ -544,9 +601,107 @@ void TranslateModalSession::applyPlaneConstraintKey(
   }
 }
 
+GizmoBasis TranslateModalSession::mmbPickProjectionBasis() const {
+  if (!isConstraintFree() &&
+      m_orientation == TranslateModalConstraintOrientation::local) {
+    return m_basis;
+  }
+  return worldBasisAt(m_basis.origin);
+}
+
+void TranslateModalSession::commitPickedAxisConstraint(const ManipulatorAxis axis) {
+  if (isConstraintFree()) {
+    switch (axis) {
+      case ManipulatorAxis::trans_x:
+        setGlobalAxisConstraint(TranslateModalAxisKey::x);
+        break;
+      case ManipulatorAxis::trans_y:
+        setGlobalAxisConstraint(TranslateModalAxisKey::y);
+        break;
+      case ManipulatorAxis::trans_z:
+        setGlobalAxisConstraint(TranslateModalAxisKey::z);
+        break;
+      default:
+        break;
+    }
+    return;
+  }
+
+  if (m_orientation == TranslateModalConstraintOrientation::local) {
+    setLocalAxisConstraint(axis);
+    return;
+  }
+
+  switch (axis) {
+    case ManipulatorAxis::trans_x:
+      setGlobalAxisConstraint(TranslateModalAxisKey::x);
+      break;
+    case ManipulatorAxis::trans_y:
+      setGlobalAxisConstraint(TranslateModalAxisKey::y);
+      break;
+    case ManipulatorAxis::trans_z:
+      setGlobalAxisConstraint(TranslateModalAxisKey::z);
+      break;
+    default:
+      break;
+  }
+}
+
+void TranslateModalSession::beginMmbAxisPick(const glm::vec2& pointer) {
+  if (!m_active) {
+    return;
+  }
+  m_mmb_picking = true;
+  m_mmb_pick_start_pointer = pointer;
+  m_mmb_pick_current_pointer = pointer;
+  m_mmb_pick_nearest_axis = ManipulatorAxis::trans_x;
+  updateMmbAxisPick(pointer, m_camera);
+}
+
+void TranslateModalSession::updateMmbAxisPick(
+    const glm::vec2& pointer, const TranslateModalCameraState& camera) {
+  if (!m_active || !m_mmb_picking) {
+    return;
+  }
+  m_camera = camera;
+  m_mmb_pick_current_pointer = pointer;
+  const glm::vec2 delta = pointer - m_mmb_pick_start_pointer;
+  m_mmb_pick_nearest_axis = nearestProjectedAxis(
+      m_basis.origin, mmbPickProjectionBasis(), camera, delta);
+}
+
+void TranslateModalSession::updateMmbAxisPick(const glm::vec2& pointer,
+                                              const EditorCamera& camera) {
+  updateMmbAxisPick(pointer, cameraStateFromEditorCamera(camera, m_basis.origin));
+}
+
+ManipulatorAxis TranslateModalSession::endMmbAxisPick() {
+  if (!m_active || !m_mmb_picking) {
+    return ManipulatorAxis::last;
+  }
+  const ManipulatorAxis picked = m_mmb_pick_nearest_axis;
+  m_mmb_picking = false;
+  m_current_pointer = m_mmb_pick_current_pointer;
+  commitPickedAxisConstraint(picked);
+  if (hasNumericInput()) {
+    applyNumericDistance();
+  } else {
+    reprojectFeedbackFromPointer();
+  }
+  return picked;
+}
+
+bool TranslateModalSession::isMmbAxisPicking() const {
+  return m_active && m_mmb_picking;
+}
+
+ManipulatorAxis TranslateModalSession::mmbPickNearestAxis() const {
+  return m_mmb_pick_nearest_axis;
+}
+
 void TranslateModalSession::onPointerMove(
     const glm::vec2& pointer_position, const TranslateModalCameraState& camera) {
-  if (!m_active) {
+  if (!m_active || m_mmb_picking) {
     return;
   }
   m_camera = camera;
@@ -573,6 +728,7 @@ std::optional<glm::vec3> TranslateModalSession::confirm() {
 
 void TranslateModalSession::cancel() {
   m_active = false;
+  m_mmb_picking = false;
   m_feedback_delta = glm::vec3(0.0f);
   m_numeric_buffer.clear();
 }

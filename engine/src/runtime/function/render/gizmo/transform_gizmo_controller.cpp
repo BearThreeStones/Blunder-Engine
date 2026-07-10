@@ -233,6 +233,26 @@ bool TransformGizmoController::cancelTranslateModalSession(EditorCamera& camera)
   return true;
 }
 
+void TransformGizmoController::syncTranslateSessionEntityPosition(
+    EditorCamera& camera) {
+  (void)camera;
+  Entity* entity = selectedEntity();
+  SceneInstance* scene = activeScene();
+  if (!entity || !scene || !m_translate_session.isActive()) {
+    return;
+  }
+
+  const bool is_grab_entry = m_translate_session.isGrabEntry();
+  if (is_grab_entry) {
+    entity->setPosition(localPositionForWorldPosition(
+        *scene, *entity, m_translate_session.feedbackPosition()));
+  } else {
+    entity->setPosition(Vec3(m_translate_session.feedbackPosition()));
+  }
+  markSceneDirty();
+  syncInspectorLive();
+}
+
 bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) const {
   const bool grab_translate_session =
       m_translate_session.isActive() && m_translate_session.isGrabEntry();
@@ -346,6 +366,16 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   if (mouse.getMouseButton() == SDL_BUTTON_RIGHT &&
       m_translate_session.isActive()) {
     return cancelTranslateModalSession(camera);
+  }
+  if (mouse.getMouseButton() == SDL_BUTTON_MIDDLE &&
+      m_translate_session.isActive() && mouse.hasMousePosition()) {
+    const Vec2 window_pos(mouse.getX(), mouse.getY());
+    if (!camera.isWindowPositionInViewport(window_pos)) {
+      return false;
+    }
+    m_translate_session.beginMmbAxisPick(window_pos);
+    requestViewportRedraw();
+    return true;
   }
   if (mouse.getMouseButton() == SDL_BUTTON_LEFT &&
       m_translate_session.isActive() &&
@@ -490,6 +520,19 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
 
 bool TransformGizmoController::onMouseReleased(Event& event, EditorCamera& camera) {
   auto& mouse = static_cast<MouseButtonReleasedEvent&>(event);
+  if (mouse.getMouseButton() == SDL_BUTTON_MIDDLE &&
+      m_translate_session.isMmbAxisPicking()) {
+    if (mouse.hasMousePosition()) {
+      const Vec2 window_pos(mouse.getX(), mouse.getY());
+      if (camera.isWindowPositionInViewport(window_pos)) {
+        m_translate_session.updateMmbAxisPick(window_pos, camera);
+      }
+    }
+    m_translate_session.endMmbAxisPick();
+    syncTranslateSessionEntityPosition(camera);
+    requestViewportRedraw();
+    return true;
+  }
   if (mouse.getMouseButton() != SDL_BUTTON_LEFT || !m_active_axis) {
     return false;
   }
@@ -524,14 +567,13 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
   }
 
   if (m_translate_session.isActive()) {
-    const bool is_grab_entry = m_translate_session.isGrabEntry();
-    m_translate_session.onPointerMove(window_pos, camera);
-    if (is_grab_entry) {
-      entity->setPosition(localPositionForWorldPosition(
-          *scene, *entity, m_translate_session.feedbackPosition()));
-    } else {
-      entity->setPosition(Vec3(m_translate_session.feedbackPosition()));
+    if (m_translate_session.isMmbAxisPicking()) {
+      m_translate_session.updateMmbAxisPick(window_pos, camera);
+      requestViewportRedraw();
+      return true;
     }
+    m_translate_session.onPointerMove(window_pos, camera);
+    syncTranslateSessionEntityPosition(camera);
   } else if (m_mode == TransformGizmoMode::rotate &&
              isRotationManipulator(*m_active_axis)) {
     const Ray ray = camera.makeRayFromWindowPosition(window_pos);
@@ -582,8 +624,10 @@ bool TransformGizmoController::onMouseMoved(Event& event, EditorCamera& camera) 
         applyScaleDrag(m_entity_scale_at_drag_start, *m_active_axis, factor));
   }
 
-  markSceneDirty();
-  syncInspectorLive();
+  if (!m_translate_session.isActive()) {
+    markSceneDirty();
+    syncInspectorLive();
+  }
   return true;
 }
 

@@ -60,6 +60,11 @@ ManipulatorAxis translateSessionOriginColorAxis(ManipulatorAxis active);
 bool translateModalConfirmsOnMousePress(TranslateModalEntry entry);
 bool translateModalConfirmsOnMouseRelease(TranslateModalEntry entry);
 
+ManipulatorAxis nearestProjectedAxis(const glm::vec3& origin,
+                                     const GizmoBasis& basis,
+                                     const TranslateModalCameraState& camera,
+                                     const glm::vec2& delta_pixels);
+
 float viewportHeightWorldPerPixel(const EditorCamera& camera);
 float viewportHeightWorldPerPixel(const EditorCamera& camera,
                                   const glm::vec3& pivot_position);
@@ -97,6 +102,13 @@ class TranslateModalSession final {
                          glm::identity<glm::quat>());
   void applyAxisConstraintKey(TranslateModalAxisKey key);
   void applyPlaneConstraintKey(TranslateModalAxisKey locked_axis);
+  void beginMmbAxisPick(const glm::vec2& pointer);
+  void updateMmbAxisPick(const glm::vec2& pointer,
+                         const TranslateModalCameraState& camera);
+  void updateMmbAxisPick(const glm::vec2& pointer, const EditorCamera& camera);
+  ManipulatorAxis endMmbAxisPick();
+  bool isMmbAxisPicking() const;
+  ManipulatorAxis mmbPickNearestAxis() const;
   void onPointerMove(const glm::vec2& pointer_position,
                      const TranslateModalCameraState& camera);
   void onPointerMove(const glm::vec2& pointer_position,
@@ -137,7 +149,10 @@ class TranslateModalSession final {
   float parseNumericBuffer() const;
   void exitNumericMode();
   void setGlobalAxisConstraint(TranslateModalAxisKey key);
+  void setLocalAxisConstraint(ManipulatorAxis axis);
   void setGlobalPlaneConstraint(TranslateModalAxisKey locked_axis);
+  GizmoBasis mmbPickProjectionBasis() const;
+  void commitPickedAxisConstraint(ManipulatorAxis axis);
   void advanceConstraintCycle(TranslateModalConstraintSlot slot,
                               ManipulatorAxis axis);
 
@@ -162,6 +177,10 @@ class TranslateModalSession final {
       TranslateModalConstraintOrientation::global};
   std::string m_numeric_buffer{};
   bool m_active{false};
+  bool m_mmb_picking{false};
+  glm::vec2 m_mmb_pick_start_pointer{0.0f};
+  glm::vec2 m_mmb_pick_current_pointer{0.0f};
+  ManipulatorAxis m_mmb_pick_nearest_axis{ManipulatorAxis::trans_x};
 };
 
 }  // namespace Blunder
