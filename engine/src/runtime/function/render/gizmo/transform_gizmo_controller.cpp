@@ -174,7 +174,8 @@ bool TransformGizmoController::beginGrabFromSelection(EditorCamera& camera) {
   m_entity_rotation_at_drag_start = entity->getRotation();
   m_entity_scale_at_drag_start = entity->getScale();
   m_translate_session.beginFromGrab(window_pos, basis.origin,
-                                    cameraStateFromEditorCamera(camera, basis.origin));
+                                    cameraStateFromEditorCamera(camera, basis.origin),
+                                    entity->getRotation());
 
   m_locked_camera = &camera;
   camera.setInteractionLocked(true);
@@ -421,7 +422,8 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
 
   if (m_mode == TransformGizmoMode::translate && isTranslationManipulator(*hit)) {
     m_translate_session.beginFromHandle(*hit, basis, window_pos,
-                                        entity->getPosition(), camera);
+                                        entity->getPosition(), camera,
+                                        entity->getRotation());
     setTranslateModalCursor();
     requestViewportRedraw();
   } else if (m_mode == TransformGizmoMode::scale && isScaleManipulator(*hit)) {
