@@ -1,5 +1,6 @@
 #include "runtime/function/render/gizmo/gizmo_math.h"
 #include "runtime/function/render/gizmo/translate_modal_session.h"
+#include "runtime/function/render/gizmo/transform_gizmo_pick.h"
 
 #include <cassert>
 #include <cmath>
@@ -59,6 +60,31 @@ void planeConstraintProjectsOntoInfinitePlane() {
       identityBasis(), glm::vec3(0.0f, -1.0f, 0.0f));
 
   expectVec3(delta, glm::vec3(3.0f, 0.0f, 5.0f));
+}
+
+void pickTranslationPrefersPlaneHandleOverNearbyAxes() {
+  // Plane handles sit in axis corners. A ray through the XY plane center is
+  // also within the generous axis pick threshold — pick distance metrics must
+  // be comparable or axes always win and plane drag never starts.
+  const float group_scale = 1.0f;
+  const float plane_scale = Blunder::computeGizmoHandleScale(
+      group_scale, Blunder::ManipulatorAxis::trans_xy);
+  const float plane_offset =
+      plane_scale * Blunder::TransformGizmoMetrics::k_mesh_plane_center_offset;
+  const glm::vec3 plane_center(plane_offset, plane_offset, 0.0f);
+
+  Blunder::TransformGizmoPickContext ctx{};
+  ctx.basis = identityBasis();
+  ctx.group_scale = group_scale;
+  ctx.camera_position = glm::vec3(plane_center.x, plane_center.y, 10.0f);
+  ctx.camera_forward = glm::vec3(0.0f, 0.0f, -1.0f);
+  ctx.ray.origin = ctx.camera_position;
+  ctx.ray.direction = glm::normalize(plane_center - ctx.camera_position);
+
+  const std::optional<Blunder::ManipulatorAxis> hit =
+      Blunder::pickTranslationGizmoHandle(ctx);
+  assert(hit.has_value());
+  assert(*hit == Blunder::ManipulatorAxis::trans_xy);
 }
 
 void centerConstraintKeepsViewPlaneDelta() {
@@ -778,6 +804,7 @@ int main() {
   axisConstraintProjectsOntoHandleAxis();
   axisConstraintUsesViewAlignedFallbackWhenAxisFacesCamera();
   planeConstraintProjectsOntoInfinitePlane();
+  pickTranslationPrefersPlaneHandleOverNearbyAxes();
   centerConstraintKeepsViewPlaneDelta();
   axisDragHidesAllPlaneHandles();
   planeDragKeepsOnlyActivePlaneHandle();

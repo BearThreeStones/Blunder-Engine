@@ -27,14 +27,17 @@ bool pickAxis(const Ray& ray, const glm::vec3& origin, const glm::vec3& directio
 bool pickPlaneHandle(const Ray& ray, const glm::vec3& center, const glm::vec3& axis_u,
                      const glm::vec3& axis_v, float half_extent, float threshold,
                      float& out_distance) {
+  (void)threshold;
   const auto hit =
       intersectRayPlaneQuad(ray, center, axis_u, axis_v, half_extent);
   if (!hit) {
     return false;
   }
-  const float dist = glm::length(*hit - ray.origin);
-  out_distance = dist;
-  return dist < half_extent * 4.0f + threshold * 8.0f;
+  // Use distance to the plane-handle center (not ray depth) so pickBest can
+  // compare against axis perpendicular distances. Ray depth is always much
+  // larger, which made nearby axes win every corner-plane click.
+  out_distance = glm::length(*hit - center);
+  return true;
 }
 
 bool pickCenter(const Ray& ray, const glm::vec3& center, float radius, float threshold,
