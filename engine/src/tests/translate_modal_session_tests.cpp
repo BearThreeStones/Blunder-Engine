@@ -256,6 +256,126 @@ void axisKeyCyclesGlobalLocalThenFree() {
   expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
 }
 
+void axisKeyYCyclesGlobalLocalThenFree() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::y);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_y);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, -1.0f, 0.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::y);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, -1.0f, 0.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::y);
+  assert(session.isConstraintFree());
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_c);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
+}
+
+Blunder::TranslateModalCameraState sideCamera() {
+  Blunder::TranslateModalCameraState camera{};
+  camera.forward = glm::vec3(1.0f, 0.0f, 0.0f);
+  camera.right = glm::vec3(0.0f, 1.0f, 0.0f);
+  camera.up = glm::vec3(0.0f, 0.0f, 1.0f);
+  camera.viewport_height_world_per_pixel = 0.1f;
+  return camera;
+}
+
+void axisKeyZCyclesGlobalLocalThenFree() {
+  Blunder::TranslateModalCameraState camera = sideCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::z);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_z);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, 0.0f, -1.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::z);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, 0.0f, -1.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::z);
+  assert(session.isConstraintFree());
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_c);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, 1.0f, -1.0f));
+}
+
+void shiftXConstrainsToYzPlaneGlobally() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  session.applyPlaneConstraintKey(Blunder::TranslateModalAxisKey::x);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_yz);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, -1.0f, 0.0f));
+}
+
+void shiftYConstrainsToZxPlaneGlobally() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  session.applyPlaneConstraintKey(Blunder::TranslateModalAxisKey::y);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_zx);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+}
+
+void localPlaneUsesSessionStartRotation() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+  const glm::quat rotation =
+      glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+
+  Blunder::TranslateModalSession session;
+  session.beginFromGrab(glm::vec2(0.0f), glm::vec3(0.0f), camera, rotation);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+
+  session.applyPlaneConstraintKey(Blunder::TranslateModalAxisKey::z);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
+
+  session.applyPlaneConstraintKey(Blunder::TranslateModalAxisKey::z);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::local);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, 0.0f, 0.0f));
+}
+
+void handleStartedSessionAppliesConstraintKey() {
+  Blunder::TranslateModalCameraState camera = topDownCamera();
+
+  Blunder::TranslateModalSession session;
+  session.beginFromHandle(Blunder::ManipulatorAxis::trans_c, identityBasis(),
+                          glm::vec2(0.0f), glm::vec3(1.0f, 2.0f, 3.0f), camera);
+  session.onPointerMove(glm::vec2(10.0f, 10.0f), camera);
+  expectVec3(session.feedbackDelta(), glm::vec3(1.0f, -1.0f, 0.0f));
+
+  session.applyAxisConstraintKey(Blunder::TranslateModalAxisKey::y);
+  assert(session.activeHandle() == Blunder::ManipulatorAxis::trans_y);
+  assert(session.constraintOrientation() ==
+         Blunder::TranslateModalConstraintOrientation::global);
+  expectVec3(session.feedbackDelta(), glm::vec3(0.0f, -1.0f, 0.0f));
+  expectVec3(session.feedbackPosition(), glm::vec3(1.0f, 1.0f, 3.0f));
+}
+
 void differentAxisKeyResetsToGlobal() {
   Blunder::TranslateModalCameraState camera = topDownCamera();
 
@@ -393,6 +513,12 @@ int main() {
   grabSessionCancelClearsActiveAndRestoresStartFeedback();
   sessionCancelClearsFeedback();
   axisKeyCyclesGlobalLocalThenFree();
+  axisKeyYCyclesGlobalLocalThenFree();
+  axisKeyZCyclesGlobalLocalThenFree();
+  shiftXConstrainsToYzPlaneGlobally();
+  shiftYConstrainsToZxPlaneGlobally();
+  localPlaneUsesSessionStartRotation();
+  handleStartedSessionAppliesConstraintKey();
   differentAxisKeyResetsToGlobal();
   planeKeyConstrainsAndCyclesIndependently();
   axisKeyAfterPlaneKeyStartsGlobalAxis();
