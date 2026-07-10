@@ -68,6 +68,14 @@ both paths. The outline resolve uses the session-active `color_id` to select the
 light transform-active color, and `WindowSystem` keeps the four-way move cursor
 for the session lifetime.
 
+**P3 — mid-session constraints:** while a translate modal session is active,
+`X`/`Y`/`Z` (with `Shift` for plane constraints) cycle orientation global →
+local → free on re-press of the same key; a different key starts a new global
+constraint. Middle-mouse drag picks the nearest projected axis and commits it on
+release. Typed digits apply a signed distance along the active constraint;
+`Enter` confirms the session; `Escape` clears numeric input first, then cancels.
+Live constraint changes update guides, origin dot, and plane-center visibility.
+
 ## Notes / known limitations
 
 - Slint is source-built from the **fork** submodule (`blunder/v1.16.1` on

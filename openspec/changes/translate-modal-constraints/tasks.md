@@ -33,8 +33,8 @@
 
 ## 6. Docs + validation
 
-- [ ] 6.1 Add CONTEXT.md terms: constraint orientation cycle, MMB axis pick, numeric input
-- [ ] 6.2 Note P3 constraint/MMB/numeric behavior in `docs/agents/render-pipeline.md`
+- [x] 6.1 Add CONTEXT.md terms: constraint orientation cycle, MMB axis pick, numeric input
+- [x] 6.2 Note P3 constraint/MMB/numeric behavior in `docs/agents/render-pipeline.md`
 - [ ] 6.3 Build/run constraint-related unit tests
 - [ ] 6.4 Manual QA: handle + grab with X/Y/Z cycle, Shift planes, MMB pick, numeric + Escape order, Enter confirm, feedback updates
-- [ ] 6.5 `openspec validate translate-modal-constraints`
+- [x] 6.5 `openspec validate translate-modal-constraints`

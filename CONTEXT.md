@@ -51,3 +51,15 @@ _Avoid_: Drag highlight, selection glow
 **Reference axis arrows**:
 The three axis arrows kept visible during translate drag as orientation reference. They follow the object's current position. Plane handles and the free-move center are hidden according to which handle is active.
 _Avoid_: Inactive gizmos, leftover handles
+
+**Constraint orientation cycle**:
+Re-pressing the same axis or plane key during a translate modal session cycles constraint orientation: global → local → free. A different key starts a new global constraint for that axis or plane.
+_Avoid_: Toggle mode, one-shot constrain
+
+**MMB axis pick**:
+Middle-mouse drag during an active translate modal session picks the nearest projected world axis from the mouse delta and commits a single-axis constraint on release.
+_Avoid_: Orbit camera, right-click axis select
+
+**Numeric input**:
+Typed digits, minus, and decimal during a translate modal session set a signed distance along the active constraint; pointer motion is ignored while numeric input is active.
+_Avoid_: Inspector field, typed offset in free mode
