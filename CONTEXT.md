@@ -57,7 +57,7 @@ Re-pressing the same axis or plane key during a translate modal session cycles c
 _Avoid_: Toggle mode, one-shot constrain
 
 **MMB axis pick**:
-Middle-mouse drag during an active translate modal session picks the nearest projected world axis from the mouse delta and commits a single-axis constraint on release.
+Middle-mouse drag during an active translate modal session picks the nearest projected axis from the mouse delta (world axes when free/global; local axes when orientation is already local) and commits a single-axis constraint on release.
 _Avoid_: Orbit camera, right-click axis select
 
 **Numeric input**:
