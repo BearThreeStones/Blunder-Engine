@@ -6,14 +6,14 @@ namespace Blunder {
 
 /// Blunder world space: right-handed, Z-up.
 /// +X right, +Y forward, +Z up (X x Y = Z).
-inline constexpr Vec3 kWorldRight{1.0f, 0.0f, 0.0f};
-inline constexpr Vec3 kWorldForward{0.0f, 1.0f, 0.0f};
-inline constexpr Vec3 kWorldUp{0.0f, 0.0f, 1.0f};
+inline const Vec3 kWorldRight{1.0f, 0.0f, 0.0f};
+inline const Vec3 kWorldForward{0.0f, 1.0f, 0.0f};
+inline const Vec3 kWorldUp{0.0f, 0.0f, 1.0f};
 
-/// Positive world axis colors (viewport grid / gizmos, Unity-style RGB = XYZ).
-inline constexpr Vec3 kAxisColorPositiveX{0.90f, 0.28f, 0.28f};
-inline constexpr Vec3 kAxisColorPositiveY{0.42f, 0.82f, 0.32f};
-inline constexpr Vec3 kAxisColorPositiveZ{0.32f, 0.52f, 0.94f};
+/// Positive world axis colors — Blender default theme (userdef_default_theme.c TH_AXIS_*).
+inline const Vec3 kAxisColorPositiveX{255.0f / 255.0f, 51.0f / 255.0f, 82.0f / 255.0f};
+inline const Vec3 kAxisColorPositiveY{139.0f / 255.0f, 220.0f / 255.0f, 0.0f / 255.0f};
+inline const Vec3 kAxisColorPositiveZ{40.0f / 255.0f, 144.0f / 255.0f, 255.0f / 255.0f};
 
 /// 3x3 rotation C: glTF (RH, Y-up) -> engine (RH, Z-up).
 /// Maps (x, y, z)_gltf to (x, z, -y)_engine (rotation -90 deg about +X).

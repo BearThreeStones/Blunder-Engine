@@ -25,13 +25,25 @@ namespace Blunder {
 
 namespace {
 
-/// Max handles drawn per frame (translate plane drag: live handles + guides + ghost + dot).
-constexpr uint32_t k_max_gizmo_draws_per_frame = 12u;
+/// Max handles drawn per frame (translate session guides/ghost + rotate/scale).
+constexpr uint32_t k_max_gizmo_draws_per_frame = 16u;
 
-constexpr glm::vec4 k_plane_quad_layout{0.2f, 0.2f, 0.1f, 0.1f};
+const glm::vec4 k_plane_quad_layout{
+    TransformGizmoMetrics::k_mesh_plane_center_offset,
+    TransformGizmoMetrics::k_mesh_plane_center_offset,
+    TransformGizmoMetrics::k_mesh_plane_half_extent,
+    TransformGizmoMetrics::k_mesh_plane_half_extent};
+const glm::vec4 k_scale_plane_quad_layout{
+    TransformGizmoMetrics::k_mesh_plane_center_offset,
+    TransformGizmoMetrics::k_mesh_plane_center_offset,
+    TransformGizmoMetrics::k_mesh_plane_half_extent *
+        TransformGizmoMetrics::k_scale_plane_length_factor,
+    TransformGizmoMetrics::k_mesh_plane_half_extent *
+        TransformGizmoMetrics::k_scale_plane_length_factor};
 constexpr float k_plane_quad_z = 0.05f;
-constexpr glm::vec4 k_center_quad_layout{0.0f, 0.0f, 0.22f, 0.22f};
-constexpr glm::vec4 k_scale_tip_quad_layout{0.0f, 0.0f, 0.14f, 0.14f};
+constexpr float k_center_quad_z = 0.05f;
+const glm::vec4 k_center_quad_layout{0.0f, 0.0f, 0.22f, 0.22f};
+const glm::vec4 k_scale_tip_quad_layout{0.0f, 0.0f, 0.14f, 0.14f};
 constexpr float k_scale_tip_quad_z = 0.8f;
 constexpr float k_scale_center_quad_z = 0.05f;
 constexpr float k_translate_guide_scale_multiplier = 18.0f;
@@ -44,7 +56,12 @@ TransformGizmoUniformData makeUniform(const OverlayState& state,
                                       const glm::vec4& color, GizmoDrawStyle style,
                                       float alpha, const glm::vec4& quad_layout,
                                       float quad_z, float line_width_scale = 1.0f,
-                                      float arc_start = 0.0f, float arc_delta = 0.0f) {
+                                      float arc_start = 0.0f, float arc_delta = 0.0f,
+                                      const glm::vec4& clip_plane = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+                                      float clip_enabled = 0.0f,
+                                      ManipulatorAxis axis = ManipulatorAxis::trans_x,
+                                      float line_width_px = 0.0f,
+                                      uint32_t dial_sides = TransformGizmoMetrics::k_dial_sides_min) {
   TransformGizmoUniformData u{};
   u.view = state.view;
   u.proj = state.projection;
@@ -56,7 +73,23 @@ TransformGizmoUniformData makeUniform(const OverlayState& state,
                        arc_delta);
   u.quad_layout = quad_layout;
   u.quad_z = quad_z;
+  u.clip_enabled = clip_enabled;
+  u.line_width_px =
+      line_width_px > 0.0f ? line_width_px : gizmoPolylineWidthPx(axis, style);
+  u.viewport_height_px =
+      std::max(static_cast<float>(state.viewport_height), 1.0f);
+  u.clip_plane = clip_plane;
+  u.dial_sides = static_cast<float>(dial_sides);
   return u;
+}
+
+uint32_t dialSidesForRing(const OverlayState& state, const glm::mat4& gizmo_world,
+                          const float mesh_radius) {
+  const float screen_radius_px = computeRingScreenRadiusPx(
+      state.view, state.projection, gizmo_world,
+      static_cast<float>(state.viewport_width), static_cast<float>(state.viewport_height),
+      mesh_radius);
+  return computeDialSides(screen_radius_px);
 }
 
 GizmoDrawStyle styleForTranslateAxis(ManipulatorAxis axis) {
@@ -64,7 +97,6 @@ GizmoDrawStyle styleForTranslateAxis(ManipulatorAxis axis) {
     case ManipulatorAxis::trans_xy:
     case ManipulatorAxis::trans_yz:
     case ManipulatorAxis::trans_zx:
-    case ManipulatorAxis::trans_c:
       return GizmoDrawStyle::plane;
     default:
       return GizmoDrawStyle::arrow;
@@ -99,6 +131,14 @@ uint32_t vertexCountForStyle(GizmoDrawStyle style) {
       return TransformGizmoDrawCounts::k_dial_verts;
     case GizmoDrawStyle::scale_box:
       return TransformGizmoDrawCounts::k_scale_box_verts;
+    case GizmoDrawStyle::dial_wire:
+      return TransformGizmoDrawCounts::k_dial_wire_verts;
+    case GizmoDrawStyle::annulus:
+      return TransformGizmoDrawCounts::k_annulus_verts;
+    case GizmoDrawStyle::dial_fill:
+      return TransformGizmoDrawCounts::k_dial_fill_verts;
+    case GizmoDrawStyle::scale_stem_box:
+      return TransformGizmoDrawCounts::k_scale_stem_box_verts;
     case GizmoDrawStyle::arrow:
       return TransformGizmoDrawCounts::k_arrow_verts;
     default:
@@ -267,8 +307,10 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
   vkCmdSetScissor(cmd, 0, 1, &scissor);
 
   TransformGizmoScaleContext scale_ctx{};
+  scale_ctx.projection = state.projection;
   scale_ctx.view_projection = state.projection * state.view;
   scale_ctx.pivot = basis.origin;
+  scale_ctx.viewport_width = static_cast<float>(state.viewport_width);
   scale_ctx.viewport_height = static_cast<float>(state.viewport_height);
   scale_ctx.is_perspective = state.is_perspective;
   scale_ctx.ortho_size = state.ortho_size;
@@ -290,9 +332,8 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
   const auto draw_translate_axis = [&](const ManipulatorAxis axis) {
     // Live pivot handles stay unhighlighted during modal sessions; handle-entry
     // feedback (ghost/guides) draws at drag-start basis instead.
-    const bool highlight = !translate_session_active &&
-                           m_controller.isDragging() &&
-                           m_controller.getActiveAxis() == axis;
+    const bool highlight =
+        !translate_session_active && m_controller.isHandleHighlighted(axis);
     if (gizmoAxisFadeFactor(axis, idot) <= 0.0f) {
       return;
     }
@@ -389,22 +430,39 @@ void TransformGizmoOverlay::recordGizmoDraw(VkCommandBuffer cmd,
       }
     }
   } else if (state.gizmo_mode == TransformGizmoMode::scale) {
+    drawScaleOuterAnnulus(cmd, state, basis, group_scale);
+    const ManipulatorAxis planes[] = {ManipulatorAxis::trans_xy, ManipulatorAxis::trans_yz,
+                                      ManipulatorAxis::trans_zx};
+    for (const ManipulatorAxis axis : planes) {
+      const bool highlight = m_controller.isHandleHighlighted(axis);
+      if (gizmoAxisFadeFactor(axis, idot) <= 0.0f) {
+        continue;
+      }
+      (void)drawScalePlaneHandle(cmd, state, axis, basis, idot, group_scale, highlight);
+    }
     const ManipulatorAxis axes[] = {ManipulatorAxis::trans_x, ManipulatorAxis::trans_y,
-                                    ManipulatorAxis::trans_z, ManipulatorAxis::trans_c};
+                                    ManipulatorAxis::trans_z};
     for (const ManipulatorAxis axis : axes) {
-      const bool highlight =
-          m_controller.isDragging() && m_controller.getActiveAxis() == axis;
+      const bool highlight = m_controller.isHandleHighlighted(axis);
       if (gizmoAxisFadeFactor(axis, idot) <= 0.0f) {
         continue;
       }
       (void)drawScaleHandle(cmd, state, axis, basis, idot, group_scale, highlight);
     }
+    {
+      const ManipulatorAxis axis = ManipulatorAxis::trans_c;
+      const bool highlight = m_controller.isHandleHighlighted(axis);
+      if (gizmoAxisFadeFactor(axis, idot) > 0.0f) {
+        (void)drawScaleHandle(cmd, state, axis, basis, idot, group_scale, highlight);
+      }
+    }
   } else if (state.gizmo_mode == TransformGizmoMode::rotate) {
+    drawRotateTrackball(cmd, state, basis, group_scale);
+    drawRotateOuterRing(cmd, state, basis, group_scale);
     const ManipulatorAxis axes[] = {ManipulatorAxis::rot_x, ManipulatorAxis::rot_y,
                                     ManipulatorAxis::rot_z};
     for (const ManipulatorAxis axis : axes) {
-      const bool highlight =
-          m_controller.isDragging() && m_controller.getActiveAxis() == axis;
+      const bool highlight = m_controller.isHandleHighlighted(axis);
       drawRotationDial(cmd, state, axis, basis, idot, group_scale, highlight, false);
     }
 
@@ -428,9 +486,8 @@ bool TransformGizmoOverlay::drawTranslateHandle(VkCommandBuffer cmd,
   }
 
   const GizmoDrawStyle draw_style = styleForTranslateAxis(axis);
-  const GizmoAxisColor axis_color = gizmoAxisColor(axis, idot);
-  const glm::vec4 color = highlight ? axis_color.color_hi : axis_color.color;
-  const float alpha = std::max(color.a, 0.85f) * alpha_scale;
+  const glm::vec4 color = gizmoColorGet(axis, idot, highlight);
+  const float alpha = color.a * alpha_scale;
   const float line_width_scale = gizmoLineWidthScale(axis, draw_style);
 
   const float handle_scale = computeGizmoHandleScale(group_scale, axis);
@@ -441,7 +498,7 @@ bool TransformGizmoOverlay::drawTranslateHandle(VkCommandBuffer cmd,
 
   if (axis == ManipulatorAxis::trans_c) {
     recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f),
-               GizmoDrawStyle::plane, alpha, k_center_quad_layout, k_plane_quad_z,
+               GizmoDrawStyle::center, alpha, k_plane_quad_layout, k_center_quad_z,
                line_width_scale);
     return true;
   }
@@ -474,22 +531,60 @@ bool TransformGizmoOverlay::drawScaleHandle(VkCommandBuffer cmd, const OverlaySt
     return false;
   }
 
-  const GizmoAxisColor axis_color = gizmoAxisColor(axis, idot);
-  const glm::vec4 color = highlight ? axis_color.color_hi : axis_color.color;
-  const float alpha = std::max(color.a, 0.85f);
-  const float line_width_scale = gizmoLineWidthScale(axis, GizmoDrawStyle::plane);
+  const glm::vec4 color = gizmoColorGet(axis, idot, highlight);
+  const float alpha = color.a;
+  const GizmoDrawStyle draw_style =
+      axis == ManipulatorAxis::trans_c ? GizmoDrawStyle::scale_box
+                                       : GizmoDrawStyle::scale_stem_box;
+  const float line_width_scale = gizmoLineWidthScale(axis, draw_style);
   const float handle_scale = computeGizmoHandleScale(group_scale, axis);
   const glm::mat4 handle_matrix =
       axis == ManipulatorAxis::trans_c
           ? gizmoViewAlignedCenterMatrix(basis, handle_scale, state.camera_position)
           : gizmoScaleBoxMatrix(basis, axis, handle_scale);
-  const glm::vec4 quad_layout =
-      axis == ManipulatorAxis::trans_c ? k_center_quad_layout : k_scale_tip_quad_layout;
-  const float quad_z =
-      axis == ManipulatorAxis::trans_c ? k_scale_center_quad_z : k_scale_tip_quad_z;
-  recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f),
-             GizmoDrawStyle::plane, alpha, quad_layout, quad_z, line_width_scale);
+  const float scale_uniform = axis == ManipulatorAxis::trans_c ? 1.0f : 0.0f;
+  recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f), draw_style, alpha,
+             k_plane_quad_layout, k_plane_quad_z, line_width_scale, 0.0f, scale_uniform);
   return true;
+}
+
+bool TransformGizmoOverlay::drawScalePlaneHandle(VkCommandBuffer cmd,
+                                                 const OverlayState& state,
+                                                 ManipulatorAxis axis,
+                                                 const GizmoBasis& basis, const float idot[3],
+                                                 float group_scale, bool highlight) {
+  const float fade = gizmoAxisFadeFactor(axis, idot);
+  if (fade <= 0.0f) {
+    return false;
+  }
+
+  const glm::vec4 color = gizmoColorGet(axis, idot, highlight);
+  const float alpha = color.a;
+  const float line_width_scale = gizmoLineWidthScale(axis, GizmoDrawStyle::plane);
+  const float handle_scale = computeGizmoHandleScale(group_scale, axis);
+  const glm::mat4 handle_matrix = gizmoHandleMatrix(basis, axis, handle_scale);
+
+  recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f),
+             GizmoDrawStyle::plane, alpha, k_scale_plane_quad_layout, k_plane_quad_z,
+             line_width_scale);
+  return true;
+}
+
+void TransformGizmoOverlay::drawRotateTrackball(VkCommandBuffer cmd, const OverlayState& state,
+                                              const GizmoBasis& basis, float group_scale) {
+  float idot[3]{};
+  computeGizmoIdot(basis, state.camera_position, basis.origin, idot);
+  const glm::vec4 color = gizmoColorGet(ManipulatorAxis::rot_t, idot, false);
+  const float handle_scale = computeGizmoHandleScale(group_scale, ManipulatorAxis::rot_t);
+  const glm::mat4 handle_matrix =
+      gizmoViewAlignedCenterMatrix(basis, handle_scale, state.camera_position);
+
+  recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f),
+             GizmoDrawStyle::dial_fill, color.a, k_plane_quad_layout, k_plane_quad_z, 1.0f,
+             0.0f, 0.0f, glm::vec4(0.0f, 0.0f, 1.0f, 0.0f), 0.0f,
+             ManipulatorAxis::rot_t, 0.0f,
+             dialSidesForRing(state, handle_matrix,
+                              TransformGizmoMetrics::k_mesh_outer_ring_radius));
 }
 
 void TransformGizmoOverlay::drawRotationDial(VkCommandBuffer cmd,
@@ -498,8 +593,7 @@ void TransformGizmoOverlay::drawRotationDial(VkCommandBuffer cmd,
                                               const GizmoBasis& basis, const float idot[3],
                                               float group_scale, bool highlight, bool ghost) {
   const GizmoDrawStyle style = ghost ? GizmoDrawStyle::dial_ghost : GizmoDrawStyle::dial;
-  const GizmoAxisColor axis_color = gizmoAxisColor(axis, idot);
-  glm::vec4 color = highlight ? axis_color.color_hi : axis_color.color;
+  glm::vec4 color = gizmoColorGet(axis, idot, highlight);
   float alpha = color.a;
   if (ghost) {
     color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
@@ -517,8 +611,65 @@ void TransformGizmoOverlay::drawRotationDial(VkCommandBuffer cmd,
         m_controller.getRotationDragCurrentAngle() - m_controller.getRotationDragStartAngle();
   }
 
+  glm::vec4 clip_plane{0.0f, 0.0f, 1.0f, 0.0f};
+  float clip_enabled = 0.0f;
+  if (!ghost && !m_controller.isDragging()) {
+    TransformGizmoScaleContext scale_ctx{};
+    scale_ctx.projection = state.projection;
+    scale_ctx.view_projection = state.projection * state.view;
+    scale_ctx.pivot = basis.origin;
+    scale_ctx.viewport_width = static_cast<float>(state.viewport_width);
+    scale_ctx.viewport_height = static_cast<float>(state.viewport_height);
+    scale_ctx.is_perspective = state.is_perspective;
+    scale_ctx.ortho_size = state.ortho_size;
+    const float pixel_size = computeGizmoPixelSizeNoUiScale(scale_ctx);
+    clip_plane = buildDialClipPlane(basis.origin, state.camera_position, pixel_size);
+    clip_enabled = 1.0f;
+  }
+
   recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f), style, alpha,
-             k_plane_quad_layout, k_plane_quad_z, line_width_scale, arc_start, arc_delta);
+             k_plane_quad_layout, k_plane_quad_z, line_width_scale, arc_start, arc_delta,
+             clip_plane, clip_enabled, axis, 0.0f,
+             dialSidesForRing(state, handle_matrix,
+                              TransformGizmoMetrics::k_mesh_dial_major_radius));
+}
+
+void TransformGizmoOverlay::drawRotateOuterRing(VkCommandBuffer cmd,
+                                              const OverlayState& state,
+                                              const GizmoBasis& basis, float group_scale) {
+  float idot[3]{};
+  computeGizmoIdot(basis, state.camera_position, basis.origin, idot);
+  const glm::vec4 color = gizmoColorGet(ManipulatorAxis::rot_c, idot, false);
+  const float handle_scale = computeGizmoHandleScale(group_scale, ManipulatorAxis::rot_c);
+  const glm::mat4 handle_matrix =
+      gizmoViewAlignedCenterMatrix(basis, handle_scale, state.camera_position);
+
+  recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f),
+             GizmoDrawStyle::dial_wire, color.a, k_plane_quad_layout, k_plane_quad_z, 1.0f,
+             0.0f, 0.0f, glm::vec4(0.0f, 0.0f, 1.0f, 0.0f), 0.0f, ManipulatorAxis::rot_c,
+             0.0f,
+             dialSidesForRing(state, handle_matrix,
+                              TransformGizmoMetrics::k_mesh_outer_ring_radius));
+}
+
+void TransformGizmoOverlay::drawScaleOuterAnnulus(VkCommandBuffer cmd,
+                                                  const OverlayState& state,
+                                                  const GizmoBasis& basis,
+                                                  float group_scale) {
+  float idot[3]{};
+  computeGizmoIdot(basis, state.camera_position, basis.origin, idot);
+  const glm::vec4 color = gizmoColorGet(ManipulatorAxis::scale_c_outer, idot, false);
+  const float handle_scale =
+      computeGizmoHandleScale(group_scale, ManipulatorAxis::scale_c_outer);
+  const glm::mat4 handle_matrix =
+      gizmoViewAlignedCenterMatrix(basis, handle_scale, state.camera_position);
+
+  recordDraw(cmd, state, handle_matrix, glm::vec4(glm::vec3(color), 1.0f),
+             GizmoDrawStyle::annulus, color.a, k_plane_quad_layout, k_plane_quad_z, 1.0f,
+             0.0f, 0.0f, glm::vec4(0.0f, 0.0f, 1.0f, 0.0f), 0.0f,
+             ManipulatorAxis::scale_c_outer, 0.0f,
+             dialSidesForRing(state, handle_matrix,
+                              TransformGizmoMetrics::k_mesh_outer_ring_radius));
 }
 
 void TransformGizmoOverlay::recordDraw(VkCommandBuffer cmd, const OverlayState& state,
@@ -526,10 +677,13 @@ void TransformGizmoOverlay::recordDraw(VkCommandBuffer cmd, const OverlayState& 
                                      GizmoDrawStyle style, float alpha,
                                      const glm::vec4& quad_layout, float quad_z,
                                      float line_width_scale, float arc_start,
-                                     float arc_delta) {
+                                     float arc_delta, const glm::vec4& clip_plane,
+                                     float clip_enabled, ManipulatorAxis axis,
+                                     float line_width_px, uint32_t dial_sides) {
   TransformGizmoUniformData uniform =
       makeUniform(state, gizmo_world, color, style, alpha, quad_layout, quad_z,
-                  line_width_scale, arc_start, arc_delta);
+                  line_width_scale, arc_start, arc_delta, clip_plane, clip_enabled, axis,
+                  line_width_px, dial_sides);
 
   ASSERT(m_next_draw_slot < k_max_gizmo_draws_per_frame);
   const uint32_t frames = VulkanSync::k_max_frames_in_flight;

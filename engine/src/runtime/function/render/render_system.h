@@ -18,6 +18,8 @@
 
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 
+#include "runtime/function/scene/entity_id.h"
+
 namespace Blunder {
 
 class Event;
@@ -132,6 +134,12 @@ class RenderSystem final {
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
 
   EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }
+  uint64_t getViewportRenderGeneration() const {
+    return m_viewport_render_generation;
+  }
+  EntityId pickEntityAtWindowPosition(float window_x, float window_y);
+  eastl::vector<EntityId> pickAllEntitiesAtWindowPosition(float window_x,
+                                                         float window_y);
 
   /// Frames the active scene once the viewport has a valid size (see tick).
   void requestSceneCameraFocus();
@@ -149,6 +157,7 @@ class RenderSystem final {
     return m_offscreen.get();
   }
   bool isVulkanBackend() const;
+  OverlaySystem* getOverlaySystem() const { return m_overlay_system.get(); }
 
  private:
   void initializeVulkanPath(const RenderSystemInitInfo& info);
@@ -227,6 +236,7 @@ class RenderSystem final {
   void pollViewportPresent();
 
   void markViewportRenderDirty();
+  void pollViewportPickIfActive();
 };
 
 }  // namespace Blunder

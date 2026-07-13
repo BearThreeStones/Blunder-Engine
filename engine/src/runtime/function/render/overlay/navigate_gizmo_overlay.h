@@ -44,9 +44,17 @@ class NavigateGizmoOverlay final : public Overlay {
   /// Returns true when the click hit a nav gizmo axis (view snap).
   bool tryHandleMouseClick(const Vec2& window_position, EditorCamera& camera);
 
+  /// Updates hover highlight; returns true when hover state changed.
+  bool updateHoverFromPointer(const Vec2& window_position, const EditorCamera& camera);
+  void clearHover();
+  bool hasHover() const { return m_gizmo_active; }
+
  private:
   void record_gizmo_draw(VkCommandBuffer cmd, const OverlayState& state,
                          float gizmo_x, float gizmo_y, float gizmo_size);
+
+  bool m_gizmo_active{false};
+  int m_highlight_endpoint{-1};
 
   VulkanContext* m_vk_context{nullptr};
   VulkanAllocator* m_vk_allocator{nullptr};

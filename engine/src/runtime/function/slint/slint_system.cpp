@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <string>
@@ -27,8 +28,13 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/inspector_transform_ops.h"
+#include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/document_history_helpers.h"
+#include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -42,6 +48,7 @@
 #include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/transform_edit_viewport_notify.h"
 #include "runtime/function/ui/ui_callback_binder.h"
 #include "runtime/function/ui/ui_events.h"
 #include "runtime/function/ui/ui_host.h"
@@ -791,6 +798,11 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_save_scene_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::saveScene)); }));
 
+    component->on_edit_undo_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::undo)); }));
+    component->on_edit_redo_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::redo)); }));
+
     component->on_viewport_projection_toggled([this]() {
       // Slint TouchArea callback intentionally ignored.
       // C++ handles the toggle via SDL MOUSE_BUTTON_DOWN or Win32 pointer poll.
@@ -821,6 +833,114 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_inspector_transform_edited(UiCallbackBinder::bind(
         m_ui_host,
         [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited)); }));
+
+    component->on_inspector_field_focus_changed([this](int field_id, bool focused) {
+      if (focused) {
+        m_inspector_focused_field = field_id;
+        m_inspector_last_edited_field = field_id;
+      } else if (m_inspector_focused_field == field_id) {
+        m_inspector_focused_field = -1;
+      }
+    });
+
+    component->on_inspector_field_text_committed(
+        [this](int field_id, const slint::SharedString& text) {
+          if (!m_window_component) {
+            return;
+          }
+          char* end = nullptr;
+          const float parsed = std::strtof(text.data(), &end);
+          if (end == text.data()) {
+            m_inspector_focused_field = -1;
+            syncInspectorFromSelection();
+            return;
+          }
+          m_inspector_last_edited_field = field_id;
+          m_inspector_focused_field = -1;
+          auto& ui = *m_window_component;
+          switch (field_id) {
+            case 0:
+              ui->set_inspector_pos_x(parsed);
+              ui->set_inspector_pos_x_mixed(false);
+              break;
+            case 1:
+              ui->set_inspector_pos_y(parsed);
+              ui->set_inspector_pos_y_mixed(false);
+              break;
+            case 2:
+              ui->set_inspector_pos_z(parsed);
+              ui->set_inspector_pos_z_mixed(false);
+              break;
+            case 3:
+              ui->set_inspector_rot_x(parsed);
+              ui->set_inspector_rot_x_mixed(false);
+              break;
+            case 4:
+              ui->set_inspector_rot_y(parsed);
+              ui->set_inspector_rot_y_mixed(false);
+              break;
+            case 5:
+              ui->set_inspector_rot_z(parsed);
+              ui->set_inspector_rot_z_mixed(false);
+              break;
+            case 6:
+              ui->set_inspector_scale_x(parsed);
+              ui->set_inspector_scale_x_mixed(false);
+              break;
+            case 7:
+              ui->set_inspector_scale_y(parsed);
+              ui->set_inspector_scale_y_mixed(false);
+              break;
+            case 8:
+              ui->set_inspector_scale_z(parsed);
+              ui->set_inspector_scale_z_mixed(false);
+              break;
+            case 9:
+              ui->set_inspector_quat_x(parsed);
+              break;
+            case 10:
+              ui->set_inspector_quat_y(parsed);
+              break;
+            case 11:
+              ui->set_inspector_quat_z(parsed);
+              break;
+            case 12:
+              ui->set_inspector_quat_w(parsed);
+              break;
+            default:
+              break;
+          }
+          if (const auto host = m_ui_host.lock()) {
+            host->enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited));
+          }
+        });
+
+    component->on_inspector_rotation_mode_changed([this](bool euler) {
+      m_inspector_rotation_mode = euler ? InspectorRotationEditMode::euler
+                                        : InspectorRotationEditMode::quaternion;
+      if (m_window_component) {
+        (*m_window_component)->set_inspector_rotation_edit_mode_euler(euler);
+      }
+      m_inspector_focused_field = -1;
+      syncInspectorFromSelection();
+    });
+
+    component->on_inspector_scale_link_toggled([this](bool linked) {
+      m_inspector_scale_link = linked;
+      if (m_window_component) {
+        (*m_window_component)->set_inspector_scale_link_enabled(linked);
+      }
+    });
+
+    component->on_inspector_multi_edit_mode_changed([this](bool absolute) {
+      m_inspector_multi_edit_mode = absolute ? InspectorMultiEditMode::absolute
+                                             : InspectorMultiEditMode::delta;
+      if (m_window_component) {
+        (*m_window_component)->set_inspector_multi_edit_absolute(absolute);
+      }
+      m_inspector_focused_field = -1;
+      syncInspectorFromSelection();
+    });
 
     component->on_transform_mode_selected([](int mode) {
       if (!g_runtime_global_context.m_render_system) {
@@ -1191,7 +1311,8 @@ void SlintSystem::applyPendingViewportInvalidate() {
   m_viewport_cpu_pixel_buffer.reset();
   m_cpu_viewport_slint_image_bound = false;
   clearBorrowedViewportImageCache();
-  static const uint8_t k_clear_pixel[4] = {10u, 10u, 10u, 255u};
+  // Match Blender ThemeSpaceView3D / kViewportBackgroundRgb (0.22).
+  static const uint8_t k_clear_pixel[4] = {56u, 56u, 56u, 255u};
   setViewportImageInternal(k_clear_pixel, 1u, 1u, true);
   LOG_INFO(
       "[SlintSystem] viewport invalidate: hide 3D image until next render ({}x{} "
@@ -1774,9 +1895,17 @@ void SlintSystem::syncInspectorFromSelection() {
     m_applying_inspector_sync = true;
     auto& ui = *m_window_component;
 
+    const auto set_float_unless_focused = [&](int field_id, auto setter, float value) {
+      if (m_inspector_focused_field == field_id) {
+        return;
+      }
+      setter(value);
+    };
+
     if (!selection || !scene || !selection->hasSelection()) {
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
+      ui->set_inspector_multi_edit_visible(false);
       m_applying_inspector_sync = false;
       if (selection) {
         selection->clearDirty();
@@ -1784,28 +1913,139 @@ void SlintSystem::syncInspectorFromSelection() {
       return;
     }
 
-    const Entity* entity = scene->getEntity(selection->getSelection());
-    if (entity == nullptr) {
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    Entity* primary = scene->getEntity(selection->getPrimarySelection());
+    if (primary == nullptr || ids.empty()) {
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
+      ui->set_inspector_multi_edit_visible(false);
       m_applying_inspector_sync = false;
       selection->clearDirty();
       return;
     }
 
-    const Vec3 euler = SceneSerializer::rotationToEulerDegrees(entity->getRotation());
+    const bool multi = ids.size() > 1;
+    const bool delta_mode =
+        multi && m_inspector_multi_edit_mode == InspectorMultiEditMode::delta;
+    const bool euler_mode =
+        multi || m_inspector_rotation_mode == InspectorRotationEditMode::euler;
+
     ui->set_inspector_has_selection(true);
-    ui->set_inspector_entity_name(
-        slint::SharedString(entity->getName().c_str()));
-    ui->set_inspector_pos_x(entity->getPosition().x);
-    ui->set_inspector_pos_y(entity->getPosition().y);
-    ui->set_inspector_pos_z(entity->getPosition().z);
-    ui->set_inspector_rot_x(euler.x);
-    ui->set_inspector_rot_y(euler.y);
-    ui->set_inspector_rot_z(euler.z);
-    ui->set_inspector_scale_x(entity->getScale().x);
-    ui->set_inspector_scale_y(entity->getScale().y);
-    ui->set_inspector_scale_z(entity->getScale().z);
+    if (multi) {
+      char label[64];
+      std::snprintf(label, sizeof(label), "%zu selected", ids.size());
+      ui->set_inspector_entity_name(slint::SharedString(label));
+    } else {
+      ui->set_inspector_entity_name(
+          slint::SharedString(primary->getName().c_str()));
+    }
+    ui->set_inspector_multi_edit_visible(multi);
+    ui->set_inspector_multi_edit_absolute(
+        m_inspector_multi_edit_mode == InspectorMultiEditMode::absolute);
+    ui->set_inspector_scale_link_enabled(m_inspector_scale_link);
+    ui->set_inspector_rotation_edit_mode_euler(euler_mode);
+
+    auto gather_component = [&](auto getter) {
+      float first = 0.0f;
+      bool have = false;
+      bool mixed = false;
+      for (EntityId id : ids) {
+        Entity* e = scene->getEntity(id);
+        if (!e) {
+          continue;
+        }
+        const float v = getter(*e);
+        if (!have) {
+          first = v;
+          have = true;
+        } else if (isMixedComponent(first, v)) {
+          mixed = true;
+        }
+      }
+      return std::pair<float, bool>{first, mixed};
+    };
+
+    // Position / Scale use Absolute|Delta. Rotation multi-edit is always Delta
+    // (0 baseline) regardless of the Absolute/Delta toggle for TRS.
+    const auto sync_trs_axis = [&](int field_id, auto setter, auto mixed_setter,
+                                   auto getter) {
+      const auto [value, mixed] = gather_component(getter);
+      mixed_setter(multi && !delta_mode && mixed);
+      if (delta_mode) {
+        set_float_unless_focused(field_id, setter, 0.0f);
+      } else if (!(multi && mixed)) {
+        set_float_unless_focused(field_id, setter, value);
+      }
+    };
+    const auto sync_rot_axis = [&](int field_id, auto setter, auto mixed_setter,
+                                   auto getter) {
+      const auto [value, mixed] = gather_component(getter);
+      mixed_setter(false);
+      if (multi) {
+        set_float_unless_focused(field_id, setter, 0.0f);
+      } else {
+        set_float_unless_focused(field_id, setter, value);
+      }
+      (void)mixed;
+    };
+
+    sync_trs_axis(
+        0, [&](float v) { ui->set_inspector_pos_x(v); },
+        [&](bool m) { ui->set_inspector_pos_x_mixed(m); },
+        [](Entity& e) { return e.getPosition().x; });
+    sync_trs_axis(
+        1, [&](float v) { ui->set_inspector_pos_y(v); },
+        [&](bool m) { ui->set_inspector_pos_y_mixed(m); },
+        [](Entity& e) { return e.getPosition().y; });
+    sync_trs_axis(
+        2, [&](float v) { ui->set_inspector_pos_z(v); },
+        [&](bool m) { ui->set_inspector_pos_z_mixed(m); },
+        [](Entity& e) { return e.getPosition().z; });
+
+    sync_rot_axis(
+        3, [&](float v) { ui->set_inspector_rot_x(v); },
+        [&](bool m) { ui->set_inspector_rot_x_mixed(m); },
+        [](Entity& e) {
+          return SceneSerializer::rotationToEulerDegrees(e.getRotation()).x;
+        });
+    sync_rot_axis(
+        4, [&](float v) { ui->set_inspector_rot_y(v); },
+        [&](bool m) { ui->set_inspector_rot_y_mixed(m); },
+        [](Entity& e) {
+          return SceneSerializer::rotationToEulerDegrees(e.getRotation()).y;
+        });
+    sync_rot_axis(
+        5, [&](float v) { ui->set_inspector_rot_z(v); },
+        [&](bool m) { ui->set_inspector_rot_z_mixed(m); },
+        [](Entity& e) {
+          return SceneSerializer::rotationToEulerDegrees(e.getRotation()).z;
+        });
+
+    sync_trs_axis(
+        6, [&](float v) { ui->set_inspector_scale_x(v); },
+        [&](bool m) { ui->set_inspector_scale_x_mixed(m); },
+        [](Entity& e) { return e.getScale().x; });
+    sync_trs_axis(
+        7, [&](float v) { ui->set_inspector_scale_y(v); },
+        [&](bool m) { ui->set_inspector_scale_y_mixed(m); },
+        [](Entity& e) { return e.getScale().y; });
+    sync_trs_axis(
+        8, [&](float v) { ui->set_inspector_scale_z(v); },
+        [&](bool m) { ui->set_inspector_scale_z_mixed(m); },
+        [](Entity& e) { return e.getScale().z; });
+
+    if (!multi && !euler_mode) {
+      const Quat q = normalizeQuaternion(primary->getRotation());
+      set_float_unless_focused(9, [&](float v) { ui->set_inspector_quat_x(v); },
+                               q.x);
+      set_float_unless_focused(10, [&](float v) { ui->set_inspector_quat_y(v); },
+                               q.y);
+      set_float_unless_focused(11, [&](float v) { ui->set_inspector_quat_z(v); },
+                               q.z);
+      set_float_unless_focused(12, [&](float v) { ui->set_inspector_quat_w(v); },
+                               q.w);
+    }
+
     selection->clearDirty();
     m_applying_inspector_sync = false;
   } catch (const std::exception& e) {
@@ -1833,24 +2073,167 @@ void SlintSystem::applyInspectorTransform() {
     return;
   }
 
-  Entity* entity = scene->getEntity(selection->getSelection());
-  if (entity == nullptr) {
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.empty()) {
     return;
   }
 
   try {
     const auto& ui = *m_window_component;
-    entity->setPosition(
-        Vec3(ui->get_inspector_pos_x(), ui->get_inspector_pos_y(),
-             ui->get_inspector_pos_z()));
-    entity->setRotation(SceneSerializer::rotationFromEulerDegrees(Vec3(
-        ui->get_inspector_rot_x(), ui->get_inspector_rot_y(),
-        ui->get_inspector_rot_z())));
-    entity->setScale(Vec3(ui->get_inspector_scale_x(), ui->get_inspector_scale_y(),
-                          ui->get_inspector_scale_z()));
+    const bool multi = ids.size() > 1;
+    const bool delta_mode =
+        multi && m_inspector_multi_edit_mode == InspectorMultiEditMode::delta;
+    const bool euler_mode =
+        multi || m_inspector_rotation_mode == InspectorRotationEditMode::euler;
+
+    m_inspector_scale_link = ui->get_inspector_scale_link_enabled();
+    m_inspector_multi_edit_mode = ui->get_inspector_multi_edit_absolute()
+                                      ? InspectorMultiEditMode::absolute
+                                      : InspectorMultiEditMode::delta;
+    if (!multi) {
+      m_inspector_rotation_mode = ui->get_inspector_rotation_edit_mode_euler()
+                                      ? InspectorRotationEditMode::euler
+                                      : InspectorRotationEditMode::quaternion;
+    }
+
+    const Vec3 ui_pos(ui->get_inspector_pos_x(), ui->get_inspector_pos_y(),
+                      ui->get_inspector_pos_z());
+    const Vec3 ui_rot(ui->get_inspector_rot_x(), ui->get_inspector_rot_y(),
+                      ui->get_inspector_rot_z());
+    const Vec3 ui_scale(ui->get_inspector_scale_x(), ui->get_inspector_scale_y(),
+                        ui->get_inspector_scale_z());
+    const Quat ui_quat = normalizeQuaternion(
+        Quat(ui->get_inspector_quat_w(), ui->get_inspector_quat_x(),
+             ui->get_inspector_quat_y(), ui->get_inspector_quat_z()));
+
+    auto dominant_axis = [](const Vec3& old_v, const Vec3& new_v) {
+      int axis = 0;
+      float best = std::fabs(new_v[0] - old_v[0]);
+      for (int i = 1; i < 3; ++i) {
+        const float d = std::fabs(new_v[i] - old_v[i]);
+        if (d > best) {
+          best = d;
+          axis = i;
+        }
+      }
+      return axis;
+    };
+
+    const bool single = ids.size() == 1;
+    EntityId history_id = k_invalid_entity_id;
+    Vec3 before_position{};
+    Quat before_rotation{glm::identity<Quat>()};
+    Vec3 before_scale{1.0f};
+    const SelectionSnapshot selection_before = currentSelectionSnapshot();
+    if (single) {
+      history_id = ids[0];
+      if (Entity* entity = scene->getEntity(history_id)) {
+        before_position = entity->getPosition();
+        before_rotation = entity->getRotation();
+        before_scale = entity->getScale();
+      } else {
+        history_id = k_invalid_entity_id;
+      }
+    }
+
+    for (EntityId id : ids) {
+      Entity* entity = scene->getEntity(id);
+      if (!entity) {
+        continue;
+      }
+
+      const int edited = m_inspector_last_edited_field;
+
+      // Position
+      Vec3 pos = entity->getPosition();
+      if (delta_mode) {
+        applyDeltaComponent(ui_pos.x, pos.x);
+        applyDeltaComponent(ui_pos.y, pos.y);
+        applyDeltaComponent(ui_pos.z, pos.z);
+      } else if (multi) {
+        if (edited >= 0 && edited <= 2) {
+          applyAbsoluteComponent(ui_pos[edited], pos[edited]);
+        }
+      } else {
+        applyAbsoluteComponent(ui_pos.x, pos.x);
+        applyAbsoluteComponent(ui_pos.y, pos.y);
+        applyAbsoluteComponent(ui_pos.z, pos.z);
+      }
+      entity->setPosition(pos);
+
+      // Scale
+      const Vec3 old_scale = entity->getScale();
+      Vec3 scale = old_scale;
+      if (delta_mode) {
+        if (m_inspector_scale_link) {
+          const int axis = (edited >= 6 && edited <= 8)
+                               ? (edited - 6)
+                               : dominant_axis(Vec3(0.0f), ui_scale);
+          scale =
+              applyScaleLinkEdit(old_scale, axis, old_scale[axis] + ui_scale[axis]);
+        } else {
+          applyDeltaComponent(ui_scale.x, scale.x);
+          applyDeltaComponent(ui_scale.y, scale.y);
+          applyDeltaComponent(ui_scale.z, scale.z);
+        }
+      } else if (multi) {
+        if (edited >= 6 && edited <= 8) {
+          const int axis = edited - 6;
+          if (m_inspector_scale_link) {
+            scale = applyScaleLinkEdit(old_scale, axis, ui_scale[axis]);
+          } else {
+            applyAbsoluteComponent(ui_scale[axis], scale[axis]);
+          }
+        }
+      } else if (m_inspector_scale_link) {
+        const int axis = (edited >= 6 && edited <= 8)
+                             ? (edited - 6)
+                             : dominant_axis(old_scale, ui_scale);
+        scale = applyScaleLinkEdit(old_scale, axis, ui_scale[axis]);
+      } else {
+        scale = ui_scale;
+      }
+      entity->setScale(scale);
+
+      // Rotation: multi-select always Euler-delta; skip no-op to avoid euler roundtrip drift.
+      if (multi) {
+        const bool rot_edited = edited >= 3 && edited <= 5;
+        const bool has_delta = std::fabs(ui_rot.x) + std::fabs(ui_rot.y) +
+                                   std::fabs(ui_rot.z) >
+                               1e-6f;
+        if (rot_edited || has_delta) {
+          entity->setRotation(
+              applyEulerDeltaDegrees(entity->getRotation(), ui_rot));
+        }
+      } else if (euler_mode) {
+        entity->setRotation(SceneSerializer::rotationFromEulerDegrees(ui_rot));
+      } else {
+        entity->setRotation(ui_quat);
+      }
+    }
+
     scene->markTransformsDirty();
-    if (services->editor_scene_edit) {
+    if (isValid(history_id)) {
+      if (Entity* entity = scene->getEntity(history_id)) {
+        const Vec3 after_position = entity->getPosition();
+        const Quat after_rotation = entity->getRotation();
+        const Vec3 after_scale = entity->getScale();
+        if (before_position != after_position ||
+            before_rotation != after_rotation ||
+            before_scale != after_scale) {
+          pushDocumentCommand(makeSetEntityTransformCommand(
+              scene, history_id, before_position, before_rotation, before_scale,
+              after_position, after_rotation, after_scale, selection_before,
+              currentSelectionSnapshot()));
+        }
+      }
+    } else if (services->editor_scene_edit) {
       services->editor_scene_edit->markDirty();
+    }
+    notifyViewportAfterInspectorTransformEdit(services->render_system.get(), this);
+
+    if (multi) {
+      syncInspectorFromSelection();
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorTransform] {}", e.what());
@@ -1898,6 +2281,12 @@ void SlintSystem::syncTransformToolbarFromEngine() {
     ui->set_transform_gizmo_mode(slint_mode);
     ui->set_transform_gizmo_space_global(
         g_runtime_global_context.m_render_system->isTransformGizmoSpaceGlobal());
+    if (g_runtime_global_context.m_document_history) {
+      ui->set_edit_can_undo(
+          g_runtime_global_context.m_document_history->canUndo());
+      ui->set_edit_can_redo(
+          g_runtime_global_context.m_document_history->canRedo());
+    }
   } catch (...) {
   }
 }
@@ -2013,12 +2402,26 @@ void SlintSystem::hidePiercingMenu() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     m_window_component->operator->()->set_piercing_menu_visible(false);
-    markFullSkiaRefresh();
+    markViewportDirtyRegion();
   } catch (...) {
   }
 }
 
+bool SlintSystem::isPiercingMenuVisible() const {
+  if (!m_window_component) {
+    return false;
+  }
+  try {
+    return m_window_component->operator->()->get_piercing_menu_visible();
+  } catch (...) {
+    return false;
+  }
+}
+
 void SlintSystem::onPiercingMenuEntitySelected(const EntityId entity_id) {
+  if (g_runtime_global_context.m_viewport_pick) {
+    g_runtime_global_context.m_viewport_pick->suppressNextLeftReleasePick();
+  }
   hidePiercingMenu();
   if (!isValid(entity_id)) {
     return;
@@ -2414,6 +2817,9 @@ bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
   // Block input layers (camera orbit etc.) while a modal dialog is open.
   if (m_window_component &&
       m_window_component->operator->()->get_import_mesh_dialog_visible()) {
+    return false;
+  }
+  if (isPiercingMenuVisible()) {
     return false;
   }
   if (!m_docking_has_viewport) {
@@ -3569,6 +3975,25 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_scale_x = main.get_inspector_scale_x();
         snapshot.inspector_scale_y = main.get_inspector_scale_y();
         snapshot.inspector_scale_z = main.get_inspector_scale_z();
+        snapshot.inspector_quat_x = main.get_inspector_quat_x();
+        snapshot.inspector_quat_y = main.get_inspector_quat_y();
+        snapshot.inspector_quat_z = main.get_inspector_quat_z();
+        snapshot.inspector_quat_w = main.get_inspector_quat_w();
+        snapshot.inspector_pos_x_mixed = main.get_inspector_pos_x_mixed();
+        snapshot.inspector_pos_y_mixed = main.get_inspector_pos_y_mixed();
+        snapshot.inspector_pos_z_mixed = main.get_inspector_pos_z_mixed();
+        snapshot.inspector_rot_x_mixed = main.get_inspector_rot_x_mixed();
+        snapshot.inspector_rot_y_mixed = main.get_inspector_rot_y_mixed();
+        snapshot.inspector_rot_z_mixed = main.get_inspector_rot_z_mixed();
+        snapshot.inspector_scale_x_mixed = main.get_inspector_scale_x_mixed();
+        snapshot.inspector_scale_y_mixed = main.get_inspector_scale_y_mixed();
+        snapshot.inspector_scale_z_mixed = main.get_inspector_scale_z_mixed();
+        snapshot.inspector_transform_expanded = main.get_inspector_transform_expanded();
+        snapshot.inspector_rotation_edit_mode_euler =
+            main.get_inspector_rotation_edit_mode_euler();
+        snapshot.inspector_scale_link_enabled = main.get_inspector_scale_link_enabled();
+        snapshot.inspector_multi_edit_visible = main.get_inspector_multi_edit_visible();
+        snapshot.inspector_multi_edit_absolute = main.get_inspector_multi_edit_absolute();
         snapshot.light_dir_x = main.get_light_dir_x();
         snapshot.light_dir_y = main.get_light_dir_y();
         snapshot.light_dir_z = main.get_light_dir_z();
@@ -3709,6 +4134,110 @@ void SlintSystem::wireNativeFloatingCallbacks() {
     if (const auto host = m_ui_host.lock()) {
       host->enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited));
     }
+  };
+  callbacks.on_inspector_field_focus_changed = [this](int field_id, bool focused) {
+    if (focused) {
+      m_inspector_focused_field = field_id;
+      m_inspector_last_edited_field = field_id;
+    } else if (m_inspector_focused_field == field_id) {
+      m_inspector_focused_field = -1;
+    }
+  };
+  callbacks.on_inspector_field_text_committed =
+      [this](int field_id, const slint::SharedString& text) {
+        if (m_window_component) {
+          // Reuse main-window handler path via the same enqueue after property set.
+          // Floating edits update the floating component; sync main then apply.
+          char* end = nullptr;
+          const float parsed = std::strtof(text.data(), &end);
+          if (end == text.data()) {
+            m_inspector_focused_field = -1;
+            syncInspectorFromSelection();
+            return;
+          }
+          m_inspector_last_edited_field = field_id;
+          m_inspector_focused_field = -1;
+          auto& ui = *m_window_component;
+          switch (field_id) {
+            case 0:
+              ui->set_inspector_pos_x(parsed);
+              ui->set_inspector_pos_x_mixed(false);
+              break;
+            case 1:
+              ui->set_inspector_pos_y(parsed);
+              ui->set_inspector_pos_y_mixed(false);
+              break;
+            case 2:
+              ui->set_inspector_pos_z(parsed);
+              ui->set_inspector_pos_z_mixed(false);
+              break;
+            case 3:
+              ui->set_inspector_rot_x(parsed);
+              ui->set_inspector_rot_x_mixed(false);
+              break;
+            case 4:
+              ui->set_inspector_rot_y(parsed);
+              ui->set_inspector_rot_y_mixed(false);
+              break;
+            case 5:
+              ui->set_inspector_rot_z(parsed);
+              ui->set_inspector_rot_z_mixed(false);
+              break;
+            case 6:
+              ui->set_inspector_scale_x(parsed);
+              ui->set_inspector_scale_x_mixed(false);
+              break;
+            case 7:
+              ui->set_inspector_scale_y(parsed);
+              ui->set_inspector_scale_y_mixed(false);
+              break;
+            case 8:
+              ui->set_inspector_scale_z(parsed);
+              ui->set_inspector_scale_z_mixed(false);
+              break;
+            case 9:
+              ui->set_inspector_quat_x(parsed);
+              break;
+            case 10:
+              ui->set_inspector_quat_y(parsed);
+              break;
+            case 11:
+              ui->set_inspector_quat_z(parsed);
+              break;
+            case 12:
+              ui->set_inspector_quat_w(parsed);
+              break;
+            default:
+              break;
+          }
+        }
+        if (const auto host = m_ui_host.lock()) {
+          host->enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited));
+        }
+      };
+  callbacks.on_inspector_rotation_mode_changed = [this](bool euler) {
+    m_inspector_rotation_mode = euler ? InspectorRotationEditMode::euler
+                                      : InspectorRotationEditMode::quaternion;
+    if (m_window_component) {
+      (*m_window_component)->set_inspector_rotation_edit_mode_euler(euler);
+    }
+    m_inspector_focused_field = -1;
+    syncInspectorFromSelection();
+  };
+  callbacks.on_inspector_scale_link_toggled = [this](bool linked) {
+    m_inspector_scale_link = linked;
+    if (m_window_component) {
+      (*m_window_component)->set_inspector_scale_link_enabled(linked);
+    }
+  };
+  callbacks.on_inspector_multi_edit_mode_changed = [this](bool absolute) {
+    m_inspector_multi_edit_mode = absolute ? InspectorMultiEditMode::absolute
+                                           : InspectorMultiEditMode::delta;
+    if (m_window_component) {
+      (*m_window_component)->set_inspector_multi_edit_absolute(absolute);
+    }
+    m_inspector_focused_field = -1;
+    syncInspectorFromSelection();
   };
   callbacks.on_browser_folder_selected = UiCallbackBinder::bind(
       m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
@@ -4168,7 +4697,7 @@ void SlintSystem::endFrame() {
                   ? eastl::max(editorViewportPresentMinIntervalNs(), tier_request_ns)
                   : ui_animating ? 16'000'000ull
                                  : 33'000'000ull;
-          if (s_last_full_composite_ns == 0 ||
+          if (m_pending_full_skia_refresh || s_last_full_composite_ns == 0 ||
               now_ns - s_last_full_composite_ns >= min_interval_ns) {
             s_last_full_composite_ns = now_ns;
             m_window_adapter->compositeFrame();

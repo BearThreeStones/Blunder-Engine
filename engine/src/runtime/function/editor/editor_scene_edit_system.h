@@ -39,6 +39,9 @@ class EditorSceneEditSystem final {
   SpawnAssetResult spawnAssetAtWindowPosition(
       const eastl::string& asset_virtual_path, float window_x, float window_y);
 
+  /// Soft-deletes the current selection and records an Editor Command.
+  bool softDeleteSelection();
+
  private:
   SpawnAssetResult spawnMeshAsset(const eastl::string& asset_virtual_path,
                                   float window_x, float window_y);

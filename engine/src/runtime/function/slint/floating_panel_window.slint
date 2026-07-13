@@ -23,6 +23,24 @@ export component FloatingPanelWindow inherits Window {
     in-out property <float> inspector-scale-x: 1.0;
     in-out property <float> inspector-scale-y: 1.0;
     in-out property <float> inspector-scale-z: 1.0;
+    in-out property <float> inspector-quat-x: 0.0;
+    in-out property <float> inspector-quat-y: 0.0;
+    in-out property <float> inspector-quat-z: 0.0;
+    in-out property <float> inspector-quat-w: 1.0;
+    in property <bool> inspector-pos-x-mixed: false;
+    in property <bool> inspector-pos-y-mixed: false;
+    in property <bool> inspector-pos-z-mixed: false;
+    in property <bool> inspector-rot-x-mixed: false;
+    in property <bool> inspector-rot-y-mixed: false;
+    in property <bool> inspector-rot-z-mixed: false;
+    in property <bool> inspector-scale-x-mixed: false;
+    in property <bool> inspector-scale-y-mixed: false;
+    in property <bool> inspector-scale-z-mixed: false;
+    in-out property <bool> inspector-transform-expanded: true;
+    in-out property <bool> inspector-rotation-edit-mode-euler: true;
+    in-out property <bool> inspector-scale-link-enabled: true;
+    in property <bool> inspector-multi-edit-visible: false;
+    in-out property <bool> inspector-multi-edit-absolute: true;
     in-out property <float> light-dir-x: 0.45;
     in-out property <float> light-dir-y: 0.7;
     in-out property <float> light-dir-z: 0.55;
@@ -69,6 +87,11 @@ export component FloatingPanelWindow inherits Window {
     callback hierarchy-entity-selected(int);
     callback hierarchy-entity-toggle(int);
     callback inspector-transform-edited();
+    callback inspector-field-text-committed(int, string);
+    callback inspector-field-focus-changed(int, bool);
+    callback inspector-rotation-mode-changed(bool);
+    callback inspector-scale-link-toggled(bool);
+    callback inspector-multi-edit-mode-changed(bool);
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
@@ -155,6 +178,24 @@ export component FloatingPanelWindow inherits Window {
                 scale-x <=> root.inspector-scale-x;
                 scale-y <=> root.inspector-scale-y;
                 scale-z <=> root.inspector-scale-z;
+                quat-x <=> root.inspector-quat-x;
+                quat-y <=> root.inspector-quat-y;
+                quat-z <=> root.inspector-quat-z;
+                quat-w <=> root.inspector-quat-w;
+                pos-x-mixed: root.inspector-pos-x-mixed;
+                pos-y-mixed: root.inspector-pos-y-mixed;
+                pos-z-mixed: root.inspector-pos-z-mixed;
+                rot-x-mixed: root.inspector-rot-x-mixed;
+                rot-y-mixed: root.inspector-rot-y-mixed;
+                rot-z-mixed: root.inspector-rot-z-mixed;
+                scale-x-mixed: root.inspector-scale-x-mixed;
+                scale-y-mixed: root.inspector-scale-y-mixed;
+                scale-z-mixed: root.inspector-scale-z-mixed;
+                transform-expanded <=> root.inspector-transform-expanded;
+                rotation-edit-mode-euler <=> root.inspector-rotation-edit-mode-euler;
+                scale-link-enabled <=> root.inspector-scale-link-enabled;
+                multi-edit-visible: root.inspector-multi-edit-visible;
+                multi-edit-absolute <=> root.inspector-multi-edit-absolute;
                 light-dir-x <=> root.light-dir-x;
                 light-dir-y <=> root.light-dir-y;
                 light-dir-z <=> root.light-dir-z;
@@ -177,6 +218,11 @@ export component FloatingPanelWindow inherits Window {
                 ssao-bias <=> root.ssao-bias;
                 ssao-strength <=> root.ssao-strength;
                 transform-edited => { root.inspector-transform-edited(); }
+                field-text-committed(id, text) => { root.inspector-field-text-committed(id, text); }
+                field-focus-changed(id, focused) => { root.inspector-field-focus-changed(id, focused); }
+                rotation-mode-changed(euler) => { root.inspector-rotation-mode-changed(euler); }
+                scale-link-toggled(linked) => { root.inspector-scale-link-toggled(linked); }
+                multi-edit-mode-changed(absolute) => { root.inspector-multi-edit-mode-changed(absolute); }
             }
 
             if root.panel-kind == 4 : ContentBrowser {

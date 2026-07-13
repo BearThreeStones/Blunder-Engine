@@ -53,12 +53,26 @@ class TransformGizmoOverlay final : public Overlay {
   void drawRotationDial(VkCommandBuffer cmd, const OverlayState& state,
                         ManipulatorAxis axis, const GizmoBasis& basis, const float idot[3],
                         float group_scale, bool highlight, bool ghost);
+  void drawRotateOuterRing(VkCommandBuffer cmd, const OverlayState& state,
+                           const GizmoBasis& basis, float group_scale);
+  void drawRotateTrackball(VkCommandBuffer cmd, const OverlayState& state,
+                           const GizmoBasis& basis, float group_scale);
+  bool drawScalePlaneHandle(VkCommandBuffer cmd, const OverlayState& state,
+                            ManipulatorAxis axis, const GizmoBasis& basis, const float idot[3],
+                            float group_scale, bool highlight);
+  void drawScaleOuterAnnulus(VkCommandBuffer cmd, const OverlayState& state,
+                             const GizmoBasis& basis, float group_scale);
   void recordGizmoDraw(VkCommandBuffer cmd, const OverlayState& state);
   void recordDraw(VkCommandBuffer cmd, const OverlayState& state,
                   const glm::mat4& gizmo_world, const glm::vec4& color,
                   GizmoDrawStyle style, float alpha, const glm::vec4& quad_layout,
                   float quad_z, float line_width_scale = 1.0f, float arc_start = 0.0f,
-                  float arc_delta = 0.0f);
+                  float arc_delta = 0.0f,
+                  const glm::vec4& clip_plane = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+                  float clip_enabled = 0.0f,
+                  ManipulatorAxis axis = ManipulatorAxis::trans_x,
+                  float line_width_px = 0.0f,
+                  uint32_t dial_sides = TransformGizmoMetrics::k_dial_sides_min);
 
   TransformGizmoController m_controller;
   VulkanContext* m_vk_context{nullptr};

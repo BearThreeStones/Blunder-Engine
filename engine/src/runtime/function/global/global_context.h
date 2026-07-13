@@ -24,6 +24,8 @@ class ContentBrowserSystem;
 class EditorSelectionSystem;
 class HierarchySystem;
 class EditorSceneEditSystem;
+class DocumentHistory;
+class ViewportPickSystem;
 // class ConfigManager;
 // class WorldManager;
 class RenderSystem;
@@ -57,6 +59,8 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<EditorSelectionSystem> m_editor_selection;
   eastl::shared_ptr<HierarchySystem> m_hierarchy;
   eastl::shared_ptr<EditorSceneEditSystem> m_editor_scene_edit;
+  eastl::shared_ptr<DocumentHistory> m_document_history;
+  eastl::shared_ptr<ViewportPickSystem> m_viewport_pick;
   // eastl::shared_ptr<ConfigManager> m_config_manager;
   // eastl::shared_ptr<WorldManager> m_world_manager;
   // eastl::shared_ptr<PhysicsManager> m_physics_manager;

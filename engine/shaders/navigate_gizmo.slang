@@ -4,11 +4,17 @@
 // Vertex layout (84 total):
 //   [0-5]    Background disc
 //   [6-11]   Center dot
-//   [12-83]  6 sorted axis slots × 12 verts each (arm quad + ball quad)
+//   [12-83]  6 sorted axis slots × 12 verts each (positive arm quad + ball quad; neg ball only)
 
 static const uint VERT_BG_END      = 6u;
 static const uint VERT_CENTER_END  = 12u;
 static const uint VERTS_PER_SLOT   = 12u;
+
+/// Matches TransformGizmoMetrics::k_sdf_stroke_width_px / NavigateGizmoMetrics::kNegBallBorderWidthPx.
+static const float kNegBallBorderWidthPx = 0.3;
+/// Matches NavigateGizmoMetrics muted axis fill.
+static const float kNegBallFillGray = 0.20;
+static const float kNegBallFillMix = 0.25;
 
 struct GizmoUniformData
 {
@@ -17,14 +23,15 @@ struct GizmoUniformData
     float4   axisColorX;       // rgb + alpha
     float4   axisColorY;
     float4   axisColorZ;
-    float4   centerColor;      // rgb + alpha
-    float4   bgColor;          // rgb + alpha
+    float4   viewBgColor;      // Blender ED_view3d_background_color_get
+    float4   bgColor;          // rgb + alpha (disc; hover uses color_hi)
     // params: x=armLength, y=ballRadius, z=centerRadius, w=negBallRadius
     float4   params;
     // params2: x=armHalfWidth, y=negAlphaScale, z=bgRadius, w=letterThreshold
     float4   params2;
     float4   sortOrder0;       // 4 sorted indices (back-to-front)
-    float4   sortOrder1;       // 2 sorted indices + padding
+    float4   sortOrder1;       // 2 sorted indices + D + perspectiveFactor
+    float4   hoverState;       // x=gizmoActive, y=highlightEndpoint (-1 none)
 };
 
 [[vk::binding(0, 0)]]
@@ -41,6 +48,8 @@ struct VertexOutput
     nointerpolation uint primType;   // 0=bg, 1=center, 2=arm, 3=posBall, 4=negBall
     [[vk::location(3)]]
     nointerpolation uint axisIndex;  // 0=X, 1=Y, 2=Z
+    [[vk::location(4)]]
+    nointerpolation int endpointIndex; // 0..5
 };
 
 // ---------- Quad helpers ----------
@@ -89,6 +98,33 @@ float4 getAxisColor(uint axisIdx)
     if (axisIdx == 0u) return ubo.axisColorX;
     if (axisIdx == 1u) return ubo.axisColorY;
     return ubo.axisColorZ;
+}
+
+float4 getAxisRgb(uint axisIdx)
+{
+    float4 c = getAxisColor(axisIdx);
+    return float4(c.xyz, 1.0);
+}
+
+float4 navigateAxisFadingColor(float depth, float3 axisRgb)
+{
+    float t = (depth + 1.0) * 0.25 + 0.5;
+    float4 axis = float4(axisRgb, 1.0);
+    return lerp(ubo.viewBgColor, axis, t);
+}
+
+float4 navigateAxisMiddleColor(float3 axisRgb)
+{
+    float4 axis = float4(axisRgb, 1.0);
+    return lerp(ubo.viewBgColor, axis, 0.75);
+}
+
+float4 navigateAxisNegativeFillColor(float3 axisRgb)
+{
+    // Fixed neutral gray biased toward axis color; opaque for occlusion.
+    float3 fill = lerp(float3(kNegBallFillGray, kNegBallFillGray, kNegBallFillGray),
+                       axisRgb, kNegBallFillMix);
+    return float4(fill, 1.0);
 }
 
 float4 projectPos3D(float3 pos3D)
@@ -146,13 +182,13 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
     output.color = float4(0, 0, 0, 0);
     output.primType = 0u;
     output.axisIndex = 0u;
+    output.endpointIndex = -1;
 
     float armLength   = ubo.params.x;
     float ballRadius  = ubo.params.y;
     float centerRad   = ubo.params.z;
     float negBallRad  = ubo.params.w;
     float armHalfW    = ubo.params2.x;
-    float negAlpha    = ubo.params2.y;
     float bgRadius    = ubo.params2.z;
 
     float D = ubo.sortOrder1.z;
@@ -171,15 +207,23 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
         return output;
     }
 
-    // ---- Center dot ----
+    // ---- Center dot (skipped when centerRad <= 0) ----
     if (vertexId < VERT_CENTER_END)
     {
         output.primType = 1u;
         float2 uv = getQuadUV(vertexId - VERT_BG_END);
         output.uv = uv;
-        output.color = ubo.centerColor;
-        float3 pos3D = viewPosCenter + float3(uv * centerRad, 0.0);
-        output.sv_position = projectPos3D(pos3D);
+        output.color = float4(0, 0, 0, 0);
+        if (centerRad > 0.001)
+        {
+            output.color = ubo.viewBgColor;
+            float3 pos3D = viewPosCenter + float3(uv * centerRad, 0.0);
+            output.sv_position = projectPos3D(pos3D);
+        }
+        else
+        {
+            output.sv_position = float4(0.0, 0.0, -2.0, 1.0);
+        }
         return output;
     }
 
@@ -192,20 +236,28 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
     uint axisIdx = uint(endpointIdx) / 2u;
     bool isPositive = (uint(endpointIdx) % 2u == 0u);
     output.axisIndex = axisIdx;
+    output.endpointIndex = endpointIdx;
 
     float3 worldDir = getWorldAxis(axisIdx);
     if (!isPositive) worldDir = -worldDir;
 
     // Rotate world axis by view rotation (translation stripped on CPU).
     float3 viewDir3D = mul(ubo.viewRotation, float4(worldDir, 0.0)).xyz;
+    float depth = viewDir3D.z;
     float3 endPos = viewPosCenter + viewDir3D * armLength;
-    float4 axisColor = getAxisColor(axisIdx);
+    float3 axisRgb = getAxisRgb(axisIdx).xyz;
 
     float visualScale = lerp(1.0, D / -endPos.z, perspectiveFactor);
 
     if (slotLocal < 6u)
     {
-        // ---- Arm quad ----
+        // ---- Arm quad (positive axes only) ----
+        if (!isPositive) {
+            output.sv_position = float4(0.0, 0.0, -2.0, 1.0);
+            output.color = float4(0, 0, 0, 0);
+            return output;
+        }
+
         output.primType = 2u;
 
         float3 startPos = viewPosCenter + viewDir3D * (centerRad * 0.5);
@@ -235,8 +287,9 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
         float3 cornerPos = basePos + armPerp * ap.y;
 
         output.sv_position = projectPos3D(cornerPos);
-        float armAlpha = isPositive ? 0.85 : (0.85 * negAlpha);
-        output.color = float4(axisColor.xyz, armAlpha);
+        float4 middleColor = navigateAxisMiddleColor(axisRgb);
+        float4 fadingColor = navigateAxisFadingColor(depth, axisRgb);
+        output.color = lerp(middleColor, fadingColor, ap.x);
         output.uv = float2(0, 0);
         return output;
     }
@@ -254,8 +307,15 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
         float3 ballPos = endPos + float3(uv * rad * visualScale, 0.0);
         output.sv_position = projectPos3D(ballPos);
 
-        float alpha = isPositive ? axisColor.w : (axisColor.w * negAlpha);
-        output.color = float4(axisColor.xyz, alpha);
+        if (isPositive)
+        {
+            output.color = navigateAxisFadingColor(depth, axisRgb);
+        }
+        else
+        {
+            // Fill color; fragment replaces edge with full axis color for the border.
+            output.color = navigateAxisNegativeFillColor(axisRgb);
+        }
         return output;
     }
 }
@@ -275,25 +335,59 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         float dist = length(uv);
         if (dist > 1.0) discard;
 
-        // Smooth edge anti-aliasing
-        float edgeAlpha = 1.0 - smoothstep(0.82, 1.0, dist);
-        color.a *= edgeAlpha;
-
-        // Letter rendering on positive axis balls only
-        if (primType == 3u)
+        if (primType == 4u)
         {
+            // Negative ball: muted axis fill + full axis-color SDF border (plane-handle width).
+            // Opaque fill occludes arms / other balls via back-to-front draw. Hover keeps fill.
+            float3 fillRgb = color.xyz;
+            float3 borderRgb = getAxisRgb(input.axisIndex).xyz;
+            float pxFromEdge = (1.0 - dist) / max(fwidth(dist), 1e-6);
+            float halfW = max(kNegBallBorderWidthPx * 0.5, 0.1);
+            float borderAlpha = saturate(halfW + 1.25 - pxFromEdge);
+            float fillAlpha = 1.0 - smoothstep(0.82, 1.0, dist);
+            color.xyz = lerp(fillRgb, borderRgb, borderAlpha);
+            color.a = max(borderAlpha, fillAlpha);
+
             float lt = ubo.params2.w;
-            // Scale UV so letters fill ~55% of ball
-            float2 letterUV = uv * 1.8;
-            float ld = letterDist(letterUV, input.axisIndex);
-            float letterAlpha = 1.0 - smoothstep(lt * 0.6, lt, ld);
+            bool isHighlight = ubo.hoverState.y >= 0.0 &&
+                               int(ubo.hoverState.y) == input.endpointIndex;
+            if (isHighlight)
+            {
+                float2 letterUV = uv * 1.8;
+                float ld = letterDist(letterUV, input.axisIndex);
+                float letterAlpha = 1.0 - smoothstep(lt * 0.6, lt, ld);
+                color.xyz = lerp(color.xyz, float3(1.0, 1.0, 1.0), letterAlpha * 0.92);
+            }
+        }
+        else
+        {
+            // Smooth edge anti-aliasing
+            float edgeAlpha = 1.0 - smoothstep(0.82, 1.0, dist);
+            color.a *= edgeAlpha;
 
-            // Contrast: white letters on dark axes, dark on bright
-            float3 letterColor = float3(1.0, 1.0, 1.0);
-            float lum = dot(color.xyz, float3(0.299, 0.587, 0.114));
-            if (lum > 0.5) letterColor = float3(0.12, 0.12, 0.12);
+            // Letter rendering on positive axis balls only
+            if (primType == 3u)
+            {
+                float lt = ubo.params2.w;
+                float2 letterUV = uv * 1.8;
+                float ld = letterDist(letterUV, input.axisIndex);
+                float letterAlpha = 1.0 - smoothstep(lt * 0.6, lt, ld);
 
-            color.xyz = lerp(color.xyz, letterColor, letterAlpha * 0.92);
+                float3 letterColor = float3(1.0, 1.0, 1.0);
+                bool isHighlight = ubo.hoverState.y >= 0.0 &&
+                                   int(ubo.hoverState.y) == input.endpointIndex;
+                bool gizmoActive = ubo.hoverState.x > 0.5;
+                if (!isHighlight)
+                {
+                    letterColor = float3(0.0, 0.0, 0.0);
+                    letterAlpha *= gizmoActive ? 1.0 : 0.9;
+                }
+
+                float lum = dot(color.xyz, float3(0.299, 0.587, 0.114));
+                if (!isHighlight && lum > 0.5) letterColor = float3(0.12, 0.12, 0.12);
+
+                color.xyz = lerp(color.xyz, letterColor, letterAlpha * 0.92);
+            }
         }
     }
     // primType == 2u: arm — just use solid color as-is

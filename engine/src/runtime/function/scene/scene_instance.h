@@ -35,6 +35,11 @@ class SceneInstance final {
                         const Quat& rotation, const Vec3& scale,
                         EntityId parent_id = k_invalid_entity_id);
 
+  /// Soft-delete: keep EntityId stable; hide from editable document.
+  bool softDeleteEntity(EntityId id);
+  bool restoreEntity(EntityId id);
+  bool isTombstoned(EntityId id) const;
+
   const Entity* getEntity(EntityId id) const;
   Entity* getEntity(EntityId id);
   EntityId findEntityByName(const eastl::string& name) const;
@@ -43,6 +48,7 @@ class SceneInstance final {
   Mat4 getWorldMatrix(EntityId id) const;
 
   void markTransformsDirty() { m_world_matrices_dirty = true; }
+  bool isWorldMatricesDirty() const { return m_world_matrices_dirty; }
 
   EntityId getEntityIdAtIndex(size_t index) const;
 
@@ -69,6 +75,9 @@ class SceneInstance final {
   template <typename Fn>
   void forEachMeshRenderer(const Fn& fn) const {
     for (const auto& entry : m_mesh_renderers) {
+      if (isTombstoned(entry.first)) {
+        continue;
+      }
       fn(entry.first, entry.second);
     }
   }

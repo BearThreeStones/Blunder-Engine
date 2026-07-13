@@ -7,9 +7,14 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/document_history_helpers.h"
+#include "runtime/function/editor/editor_commands.h"
+#include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/transform_edit_viewport_notify.h"
 #include "runtime/function/render/gizmo/transform_gizmo_pick.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
@@ -59,9 +64,8 @@ void markSceneDirty() {
   if (g_runtime_global_context.m_editor_scene_edit) {
     g_runtime_global_context.m_editor_scene_edit->markDirty();
   }
-  if (g_runtime_global_context.m_render_system) {
-    g_runtime_global_context.m_render_system->requestViewportRedraw();
-  }
+  notifyViewportAfterGizmoTransformEdit(
+      g_runtime_global_context.m_render_system.get());
 }
 
 EntityId selectedEntityId() {
@@ -169,6 +173,7 @@ void TransformGizmoController::cancelInteraction(EditorCamera* camera) {
     requestViewportRedraw();
   }
   m_active_axis.reset();
+  clearHover();
   endCameraLock(camera);
 }
 
@@ -225,6 +230,12 @@ bool TransformGizmoController::confirmTranslateModalSession(EditorCamera& camera
 
   SceneInstance* scene = activeScene();
   Entity* entity = selectedEntity();
+  const EntityId entity_id = selectedEntityId();
+  const SelectionSnapshot selection_before = currentSelectionSnapshot();
+  const Vec3 before_position = m_entity_position_at_drag_start;
+  const Quat before_rotation = m_entity_rotation_at_drag_start;
+  const Vec3 before_scale = m_entity_scale_at_drag_start;
+
   if (entity != nullptr && scene != nullptr) {
     if (const std::optional<glm::vec3> confirmed =
             m_translate_session.confirm()) {
@@ -233,6 +244,21 @@ bool TransformGizmoController::confirmTranslateModalSession(EditorCamera& camera
     }
   } else {
     m_translate_session.cancel();
+  }
+
+  if (entity != nullptr && scene != nullptr && isValid(entity_id)) {
+    const Vec3 after_position = entity->getPosition();
+    const Quat after_rotation = entity->getRotation();
+    const Vec3 after_scale = entity->getScale();
+    const bool changed =
+        before_position != after_position || before_rotation != after_rotation ||
+        before_scale != after_scale;
+    if (changed) {
+      pushDocumentCommand(makeSetEntityTransformCommand(
+          scene, entity_id, before_position, before_rotation, before_scale,
+          after_position, after_rotation, after_scale, selection_before,
+          currentSelectionSnapshot()));
+    }
   }
 
   clearTranslateModalCursor();
@@ -274,6 +300,81 @@ void TransformGizmoController::syncTranslateSessionEntityPosition(
       *scene, *entity, m_translate_session.feedbackPosition()));
   markSceneDirty();
   syncInspectorLive();
+}
+
+bool TransformGizmoController::buildPickContext(
+    const Vec2& window_pos, EditorCamera& camera, GizmoBasis& out_basis,
+    TransformGizmoPickContext& out_ctx, float& out_group_scale) const {
+  if (m_mode != TransformGizmoMode::translate &&
+      m_mode != TransformGizmoMode::rotate &&
+      m_mode != TransformGizmoMode::scale) {
+    return false;
+  }
+  if (!camera.isWindowPositionInViewport(window_pos)) {
+    return false;
+  }
+  if (!buildActiveGizmoBasis(out_basis)) {
+    return false;
+  }
+
+  const Ray ray = camera.makeRayFromWindowPosition(window_pos);
+  TransformGizmoScaleContext scale_ctx{};
+  scale_ctx.projection = camera.getProjectionMatrix();
+  scale_ctx.view_projection = camera.getProjectionMatrix() * camera.getViewMatrix();
+  scale_ctx.pivot = out_basis.origin;
+  scale_ctx.viewport_width = camera.getViewportWidth();
+  scale_ctx.viewport_height = camera.getViewportHeight();
+  scale_ctx.is_perspective =
+      camera.getProjectionMode() == EditorCamera::ProjectionMode::perspective;
+  scale_ctx.ortho_size = camera.getOrthoSize();
+  out_group_scale = computeGizmoGroupScale(scale_ctx);
+
+  out_ctx.ray = ray;
+  out_ctx.basis = out_basis;
+  out_ctx.group_scale = out_group_scale;
+  out_ctx.gizmo_pixel_size = computeGizmoPixelSizeNoUiScale(scale_ctx);
+  out_ctx.camera_forward = camera.getForwardDirection();
+  out_ctx.camera_position = camera.getPosition();
+  return true;
+}
+
+bool TransformGizmoController::isHandleHighlighted(const ManipulatorAxis axis) const {
+  return gizmoHandleHighlighted(m_active_axis, m_hover_axis, axis);
+}
+
+void TransformGizmoController::clearHover() {
+  m_hover_axis.reset();
+}
+
+bool TransformGizmoController::updateHoverFromPointer(const Vec2& window_pos,
+                                                      EditorCamera& camera) {
+  if (isDragging() || m_mode == TransformGizmoMode::none) {
+    const bool had_hover = m_hover_axis.has_value();
+    clearHover();
+    return had_hover;
+  }
+  if (!camera.isWindowPositionInViewport(window_pos)) {
+    const bool had_hover = m_hover_axis.has_value();
+    clearHover();
+    return had_hover;
+  }
+
+  GizmoBasis basis{};
+  TransformGizmoPickContext pick_ctx{};
+  float group_scale = 1.0f;
+  if (!buildPickContext(window_pos, camera, basis, pick_ctx, group_scale)) {
+    const bool had_hover = m_hover_axis.has_value();
+    clearHover();
+    return had_hover;
+  }
+
+  const std::optional<ManipulatorAxis> hit =
+      pickTransformGizmoHandle(m_mode, pick_ctx);
+  if (hit == m_hover_axis) {
+    return false;
+  }
+  m_hover_axis = hit;
+  return true;
 }
 
 bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) const {
@@ -335,6 +436,57 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
   auto& key_event = static_cast<KeyPressedEvent&>(event);
   if (key_event.isRepeat()) {
     return false;
+  }
+
+  if (!m_translate_session.isActive() && !m_active_axis) {
+    DocumentHistory* history = g_runtime_global_context.m_document_history.get();
+    if (history != nullptr && key_event.isCtrlDown()) {
+      const int key_code = key_event.getKeyCode();
+      if (key_code == SDLK_Z && !key_event.isShiftDown()) {
+        if (history->undo()) {
+          markSceneDirty();
+          syncInspectorLive();
+          if (g_runtime_global_context.m_hierarchy && activeScene()) {
+            g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
+                activeScene());
+            g_runtime_global_context.m_hierarchy->markDirty();
+          }
+          if (g_runtime_global_context.m_editor_scene_edit) {
+            if (history->isDirtyRelativeToSave()) {
+              g_runtime_global_context.m_editor_scene_edit->markDirty();
+            } else {
+              g_runtime_global_context.m_editor_scene_edit->clearDirty();
+            }
+          }
+        }
+        return true;
+      }
+      if (key_code == SDLK_Y ||
+          (key_code == SDLK_Z && key_event.isShiftDown())) {
+        if (history->redo()) {
+          markSceneDirty();
+          syncInspectorLive();
+          if (g_runtime_global_context.m_hierarchy && activeScene()) {
+            g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
+                activeScene());
+            g_runtime_global_context.m_hierarchy->markDirty();
+          }
+          if (g_runtime_global_context.m_editor_scene_edit) {
+            if (history->isDirtyRelativeToSave()) {
+              g_runtime_global_context.m_editor_scene_edit->markDirty();
+            } else {
+              g_runtime_global_context.m_editor_scene_edit->clearDirty();
+            }
+          }
+        }
+        return true;
+      }
+    }
+
+    if (key_event.getKeyCode() == SDLK_DELETE &&
+        g_runtime_global_context.m_editor_scene_edit) {
+      return g_runtime_global_context.m_editor_scene_edit->softDeleteSelection();
+    }
   }
 
   if (m_translate_session.isActive()) {
@@ -467,43 +619,20 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
   }
 
   const Vec2 window_pos(mouse.getX(), mouse.getY());
-  if (!camera.isWindowPositionInViewport(window_pos)) {
+
+  GizmoBasis basis{};
+  TransformGizmoPickContext pick_ctx{};
+  float group_scale = 1.0f;
+  if (!buildPickContext(window_pos, camera, basis, pick_ctx, group_scale)) {
     return false;
   }
 
-  GizmoBasis basis;
-  if (!buildActiveGizmoBasis(basis)) {
-    return false;
-  }
-
-  const Ray ray = camera.makeRayFromWindowPosition(window_pos);
-  TransformGizmoScaleContext scale_ctx{};
-  scale_ctx.view_projection = camera.getProjectionMatrix() * camera.getViewMatrix();
-  scale_ctx.pivot = basis.origin;
-  scale_ctx.viewport_height = camera.getViewportHeight();
-  scale_ctx.is_perspective =
-      camera.getProjectionMode() == EditorCamera::ProjectionMode::perspective;
-  scale_ctx.ortho_size = camera.getOrthoSize();
-  const float group_scale = computeGizmoGroupScale(scale_ctx);
   m_gizmo_group_scale = group_scale;
   m_drag_view_normal =
       glm::normalize(basis.origin - glm::vec3(camera.getPosition()));
 
-  TransformGizmoPickContext pick_ctx{};
-  pick_ctx.ray = ray;
-  pick_ctx.basis = basis;
-  pick_ctx.group_scale = group_scale;
-  pick_ctx.camera_forward = camera.getForwardDirection();
-  pick_ctx.camera_position = camera.getPosition();
-
-  std::optional<ManipulatorAxis> hit;
-  if (m_mode == TransformGizmoMode::translate) {
-    hit = pickTranslationGizmoHandle(pick_ctx);
-  } else if (m_mode == TransformGizmoMode::rotate) {
-    hit = pickRotationGizmoHandle(pick_ctx);
-  } else {
-    hit = pickScaleGizmoHandle(pick_ctx);
-  }
+  const std::optional<ManipulatorAxis> hit =
+      pickTransformGizmoHandle(m_mode, pick_ctx);
   if (!hit) {
     return false;
   }
@@ -513,8 +642,10 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
     return false;
   }
 
+  clearHover();
   m_active_axis = hit;
   m_drag_basis = basis;
+  const Ray ray = pick_ctx.ray;
   m_entity_position_at_drag_start = entity->getPosition();
   m_entity_rotation_at_drag_start = entity->getRotation();
   m_entity_scale_at_drag_start = entity->getScale();
@@ -609,6 +740,27 @@ bool TransformGizmoController::onMouseReleased(Event& event, EditorCamera& camer
       translateModalConfirmsOnMouseRelease(m_translate_session.entryKind())) {
     return confirmTranslateModalSession(camera);
   }
+
+  SceneInstance* scene = activeScene();
+  Entity* entity = selectedEntity();
+  const EntityId entity_id = selectedEntityId();
+  if (entity != nullptr && scene != nullptr && isValid(entity_id)) {
+    const Vec3 after_position = entity->getPosition();
+    const Quat after_rotation = entity->getRotation();
+    const Vec3 after_scale = entity->getScale();
+    const bool changed =
+        m_entity_position_at_drag_start != after_position ||
+        m_entity_rotation_at_drag_start != after_rotation ||
+        m_entity_scale_at_drag_start != after_scale;
+    if (changed) {
+      pushDocumentCommand(makeSetEntityTransformCommand(
+          scene, entity_id, m_entity_position_at_drag_start,
+          m_entity_rotation_at_drag_start, m_entity_scale_at_drag_start,
+          after_position, after_rotation, after_scale,
+          SelectionSnapshot{entity_id}, currentSelectionSnapshot()));
+    }
+  }
+
   m_active_axis.reset();
   endCameraLock(&camera);
   markSceneDirty();

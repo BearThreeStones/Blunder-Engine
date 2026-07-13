@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 #include "runtime/function/slint/window_pointer_map.h"
 #include <SDL3/SDL_scancode.h>
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "runtime/core/math/coordinate_system.h"
@@ -28,8 +29,8 @@ constexpr float k_free_look_rotate_speed = 0.0025f;
 constexpr float k_free_look_move_speed = 6.0f;
 constexpr float k_free_look_sprint_multiplier = 3.0f;
 constexpr float k_dolly_speed = 1.2f;
-constexpr float k_max_pitch = glm::radians(89.0f);
-constexpr float k_min_pitch = glm::radians(-89.0f);
+const float k_max_pitch = glm::radians(89.0f);
+const float k_min_pitch = glm::radians(-89.0f);
 
 bool wantsMouseCapture(const WindowSystem* window_system,
                        bool right_drag_started_in_viewport,
@@ -389,9 +390,24 @@ Vec2 EditorCamera::viewportLocalToNdc(const Vec2& viewport_position) const {
     return Vec2(0.0f, 0.0f);
   }
 
-  const float normalized_x = viewport_position.x / m_viewport_width;
-  const float normalized_y = viewport_position.y / m_viewport_height;
+  const float normalized_x = viewport_position.x / m_viewport_logical_width;
+  const float normalized_y = viewport_position.y / m_viewport_logical_height;
   return Vec2(normalized_x * 2.0f - 1.0f, 1.0f - normalized_y * 2.0f);
+}
+
+glm::ivec2 EditorCamera::windowToViewportRenderPixel(
+    const Vec2& window_position) const {
+  const Vec2 local = windowToViewportLocal(window_position);
+  if (!isViewportReady() || m_viewport_logical_width <= 0.0f ||
+      m_viewport_logical_height <= 0.0f) {
+    return glm::ivec2(static_cast<int32_t>(local.x),
+                      static_cast<int32_t>(local.y));
+  }
+
+  const float scale_x = m_viewport_width / m_viewport_logical_width;
+  const float scale_y = m_viewport_height / m_viewport_logical_height;
+  return glm::ivec2(static_cast<int32_t>(local.x * scale_x),
+                    static_cast<int32_t>(local.y * scale_y));
 }
 
 Ray EditorCamera::makeRayFromWindowPosition(const Vec2& window_position) const {
@@ -416,11 +432,18 @@ Ray EditorCamera::makeRayFromWindowPosition(const Vec2& window_position) const {
   return Ray{m_position, direction};
 }
 
-void EditorCamera::setViewportRect(int32_t x, int32_t y, float width,
-                                   float height) {
+void EditorCamera::setViewportRect(const int32_t x, const int32_t y,
+                                   const float logical_width,
+                                   const float logical_height,
+                                   const float render_width,
+                                   const float render_height) {
   m_viewport_origin_x = x;
   m_viewport_origin_y = y;
-  setViewportSize(width, height);
+  if (logical_width > 0.0f && logical_height > 0.0f) {
+    m_viewport_logical_width = logical_width;
+    m_viewport_logical_height = logical_height;
+  }
+  setViewportSize(render_width, render_height);
 }
 
 void EditorCamera::setViewportSize(float width, float height) {
@@ -517,7 +540,7 @@ void EditorCamera::alignToIsometricView() {
 
 void EditorCamera::alignToDefaultPerspectiveView() {
   // Keep yaw; reset elevation to editor default (+30°) so Persp ≠ Iso oblique.
-  constexpr float k_default_pitch = glm::radians(30.0f);
+  const float k_default_pitch = glm::radians(30.0f);
   float target_pitch = k_default_pitch;
   target_pitch = std::clamp(target_pitch, k_min_pitch, k_max_pitch);
 

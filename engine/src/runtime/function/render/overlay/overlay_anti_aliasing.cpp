@@ -16,6 +16,7 @@
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
+#include "runtime/function/render/viewport_style.h"
 #include "runtime/function/render/vulkan/vulkan_shader.h"
 
 namespace Blunder {
@@ -24,6 +25,9 @@ namespace {
 
 struct OverlayAaUniformData {
   glm::vec4 screen_params;
+  float do_smooth_lines = 1.0f;
+  float line_kernel = 0.0f;
+  glm::vec2 pad{};
 };
 
 VkPipeline createAaPipeline(VkDevice device, VkRenderPass render_pass,
@@ -561,7 +565,10 @@ void OverlayAntiAliasing::apply(VkCommandBuffer cmd,
   OverlayAaUniformData ubo{};
   ubo.screen_params =
       glm::vec4(1.0f / static_cast<float>(m_width),
-                1.0f / static_cast<float>(m_height), 0.0f, 0.0f);
+                1.0f / static_cast<float>(m_height),
+                static_cast<float>(m_width), static_cast<float>(m_height));
+  ubo.do_smooth_lines = 1.0f;
+  ubo.line_kernel = 0.0f;
   m_uniform_buffer->upload(&ubo, sizeof(ubo));
 
   VkViewport viewport{};
@@ -572,7 +579,8 @@ void OverlayAntiAliasing::apply(VkCommandBuffer cmd,
                    {state.viewport_width, state.viewport_height}};
 
   VkClearValue clears[2]{};
-  clears[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  clears[0].color = {{kViewportBackgroundRgb, kViewportBackgroundRgb,
+                      kViewportBackgroundRgb, 1.0f}};
   clears[1].depthStencil = {1.0f, 0};
   VkRenderPassBeginInfo begin{};
   begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;

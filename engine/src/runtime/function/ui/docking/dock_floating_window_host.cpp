@@ -188,6 +188,25 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_scale_x(snapshot.inspector_scale_x);
       ui.set_inspector_scale_y(snapshot.inspector_scale_y);
       ui.set_inspector_scale_z(snapshot.inspector_scale_z);
+      ui.set_inspector_quat_x(snapshot.inspector_quat_x);
+      ui.set_inspector_quat_y(snapshot.inspector_quat_y);
+      ui.set_inspector_quat_z(snapshot.inspector_quat_z);
+      ui.set_inspector_quat_w(snapshot.inspector_quat_w);
+      ui.set_inspector_pos_x_mixed(snapshot.inspector_pos_x_mixed);
+      ui.set_inspector_pos_y_mixed(snapshot.inspector_pos_y_mixed);
+      ui.set_inspector_pos_z_mixed(snapshot.inspector_pos_z_mixed);
+      ui.set_inspector_rot_x_mixed(snapshot.inspector_rot_x_mixed);
+      ui.set_inspector_rot_y_mixed(snapshot.inspector_rot_y_mixed);
+      ui.set_inspector_rot_z_mixed(snapshot.inspector_rot_z_mixed);
+      ui.set_inspector_scale_x_mixed(snapshot.inspector_scale_x_mixed);
+      ui.set_inspector_scale_y_mixed(snapshot.inspector_scale_y_mixed);
+      ui.set_inspector_scale_z_mixed(snapshot.inspector_scale_z_mixed);
+      ui.set_inspector_transform_expanded(snapshot.inspector_transform_expanded);
+      ui.set_inspector_rotation_edit_mode_euler(
+          snapshot.inspector_rotation_edit_mode_euler);
+      ui.set_inspector_scale_link_enabled(snapshot.inspector_scale_link_enabled);
+      ui.set_inspector_multi_edit_visible(snapshot.inspector_multi_edit_visible);
+      ui.set_inspector_multi_edit_absolute(snapshot.inspector_multi_edit_absolute);
       ui.set_light_dir_x(snapshot.light_dir_x);
       ui.set_light_dir_y(snapshot.light_dir_y);
       ui.set_light_dir_z(snapshot.light_dir_z);
@@ -399,6 +418,32 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
     component->on_inspector_transform_edited([this]() {
       if (m_callbacks.on_inspector_transform_edited) {
         m_callbacks.on_inspector_transform_edited();
+      }
+    });
+    component->on_inspector_field_text_committed(
+        [this](int field_id, const slint::SharedString& text) {
+          if (m_callbacks.on_inspector_field_text_committed) {
+            m_callbacks.on_inspector_field_text_committed(field_id, text);
+          }
+        });
+    component->on_inspector_field_focus_changed([this](int field_id, bool focused) {
+      if (m_callbacks.on_inspector_field_focus_changed) {
+        m_callbacks.on_inspector_field_focus_changed(field_id, focused);
+      }
+    });
+    component->on_inspector_rotation_mode_changed([this](bool euler) {
+      if (m_callbacks.on_inspector_rotation_mode_changed) {
+        m_callbacks.on_inspector_rotation_mode_changed(euler);
+      }
+    });
+    component->on_inspector_scale_link_toggled([this](bool linked) {
+      if (m_callbacks.on_inspector_scale_link_toggled) {
+        m_callbacks.on_inspector_scale_link_toggled(linked);
+      }
+    });
+    component->on_inspector_multi_edit_mode_changed([this](bool absolute) {
+      if (m_callbacks.on_inspector_multi_edit_mode_changed) {
+        m_callbacks.on_inspector_multi_edit_mode_changed(absolute);
       }
     });
     component->on_browser_folder_selected([this](const slint::SharedString& path) {

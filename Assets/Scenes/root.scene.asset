@@ -13,23 +13,7 @@
       "rotation": [0, 0, 0],
       "rotationMode": "euler_degrees",
       "parent": "Sun"
-    },
-    {
-      "name": "Sponza.mesh",
-      "mesh": "assets/Sponza.mesh.yaml",
-      "position": [-3.13362, 6.65048, 0],
-      "rotation": [0, 0, 0],
-      "rotationMode": "euler_degrees"
     }
   ],
-  "childScenes": [
-    {
-      "scene": "assets/Scenes/sub.scene.asset",
-      "name": "SubLevel",
-      "position": [0, 0, 0],
-      "rotation": [0, 0, 0],
-      "rotationMode": "euler_degrees",
-      "scale": [1, 1, 1]
-    }
-  ]
+  "childScenes": []
 }

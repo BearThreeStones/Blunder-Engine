@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "runtime/core/base/macro.h"
+
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -80,21 +82,77 @@ glm::quat worldRotationFromMatrix(const glm::mat4& world_matrix) {
   return glm::normalize(glm::quat_cast(rot));
 }
 
-float computeView3dPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx) {
-  const float vp = std::max(ctx.viewport_height, 1.0f);
-  const float pixsize = 2.0f / vp;
-  if (!ctx.is_perspective) {
-    return ctx.ortho_size / vp;
-  }
-  const glm::vec4 clip = ctx.view_projection * glm::vec4(ctx.pivot, 1.0f);
-  const float zfac = std::max(std::abs(clip.w), 1e-4f);
-  return zfac * pixsize;
+namespace {
+
+float perspectivePixsizeFromMatrixColumns(const glm::mat4& matrix, const float viewfac) {
+  const glm::vec3 col0 = glm::vec3(matrix[0]);
+  const glm::vec3 col1 = glm::vec3(matrix[1]);
+  const float len0 = glm::dot(col0, col0);
+  const float len1 = glm::dot(col1, col1);
+  const float len_px = 2.0f / std::sqrt(std::max(std::min(len0, len1), 1e-8f));
+  return len_px / viewfac;
 }
 
-float computeGizmoGroupScale(const TransformGizmoScaleContext& ctx) {
-  const float pixel_size = computeView3dPixelSizeNoUiScale(ctx);
-  return ctx.ui_scale * ctx.gizmo_size * pixel_size;
+}  // namespace
+
+float computeViewportPixsize(const glm::mat4& projection, const float viewport_width,
+                             const float viewport_height, const bool is_perspective,
+                             const float ortho_size) {
+  const float viewfac =
+      std::max(std::max(viewport_width, viewport_height), 1.0f);
+  if (!is_perspective) {
+    return ortho_size / viewfac;
+  }
+
+  return perspectivePixsizeFromMatrixColumns(projection, viewfac);
 }
+
+float computeGizmoPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx) {
+  const float pixsize =
+      computeViewportPixsize(ctx.projection, ctx.viewport_width, ctx.viewport_height,
+                             ctx.is_perspective, ctx.ortho_size);
+  if (!ctx.is_perspective) {
+    return pixsize;
+  }
+  const glm::vec4 clip = ctx.view_projection * glm::vec4(ctx.pivot, 1.0f);
+  const float depth = std::max(std::abs(clip.w), 1e-4f);
+  return pixsize * depth;
+}
+
+float computeView3dPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx) {
+  return computeGizmoPixelSizeNoUiScale(ctx);
+}
+
+namespace {
+
+float computeEffectiveGizmoSize(const TransformGizmoScaleContext& ctx) {
+  const float vp_min = std::min(ctx.viewport_width, ctx.viewport_height);
+  const float cap = vp_min * TransformGizmoMetrics::k_viewport_gizmo_size_factor;
+  return std::min(ctx.gizmo_size, cap);
+}
+
+}  // namespace
+
+float computeGizmoGroupScale(const TransformGizmoScaleContext& ctx) {
+  const float pixel_size = computeGizmoPixelSizeNoUiScale(ctx);
+  return ctx.ui_scale * computeEffectiveGizmoSize(ctx) * pixel_size;
+}
+
+#ifndef NDEBUG
+void debugLogGizmoScaleParity(const TransformGizmoScaleContext& perspective,
+                              const TransformGizmoScaleContext& orthographic) {
+  const float persp_scale = computeGizmoGroupScale(perspective);
+  const float ortho_scale = computeGizmoGroupScale(orthographic);
+  if (ortho_scale <= 1e-6f) {
+    return;
+  }
+  const float ratio = persp_scale / ortho_scale;
+  if (ratio < 0.85f || ratio > 1.15f) {
+    LOG_WARN("[TransformGizmo] Persp/Ortho group_scale ratio {:.2f} outside [0.85, 1.15]",
+             ratio);
+  }
+}
+#endif
 
 float computeGizmoHandleScale(const float group_scale, const ManipulatorAxis axis) {
   return group_scale * gizmoScaleBasisForAxis(axis);
@@ -103,6 +161,40 @@ float computeGizmoHandleScale(const float group_scale, const ManipulatorAxis axi
 float computeGizmoHandleScale(const TransformGizmoScaleContext& ctx,
                               const ManipulatorAxis axis) {
   return computeGizmoHandleScale(computeGizmoGroupScale(ctx), axis);
+}
+
+uint32_t computeDialSides(const float screen_radius_px) {
+  using M = TransformGizmoMetrics;
+  if (screen_radius_px < 1.0f) {
+    return M::k_dial_sides_min;
+  }
+  const float circumference = 2.0f * 3.14159265f * screen_radius_px;
+  const uint32_t sides = static_cast<uint32_t>(
+      std::ceil(circumference / M::k_dial_target_chord_px));
+  return std::clamp(sides, M::k_dial_sides_min, M::k_dial_sides_max);
+}
+
+float computeRingScreenRadiusPx(const glm::mat4& view, const glm::mat4& proj,
+                                  const glm::mat4& gizmo_world,
+                                  const float viewport_width,
+                                  const float viewport_height,
+                                  const float mesh_radius) {
+  const glm::vec3 center = glm::vec3(gizmo_world[3]);
+  const glm::vec3 world_x = glm::vec3(gizmo_world[0]) * mesh_radius;
+  const glm::vec3 world_y = glm::vec3(gizmo_world[1]) * mesh_radius;
+
+  const auto to_screen = [&](const glm::vec3& world) -> glm::vec2 {
+    const glm::vec4 clip = proj * view * glm::vec4(world, 1.0f);
+    const float w = std::max(std::abs(clip.w), 1e-6f);
+    const glm::vec2 ndc = glm::vec2(clip) / w;
+    return glm::vec2((ndc.x * 0.5f + 0.5f) * viewport_width,
+                     (0.5f - ndc.y * 0.5f) * viewport_height);
+  };
+
+  const glm::vec2 center_px = to_screen(center);
+  const float radius_x = glm::length(to_screen(center + world_x) - center_px);
+  const float radius_y = glm::length(to_screen(center + world_y) - center_px);
+  return std::max(radius_x, radius_y);
 }
 
 void computeGizmoIdot(const GizmoBasis& basis, const glm::vec3& camera_position,
@@ -476,6 +568,14 @@ Quat parentWorldRotation(SceneInstance& scene, const EntityId entity_id) {
   const glm::mat3 parent_rot =
       glm::mat3(scene.getWorldMatrix(entity->getParentId()));
   return glm::normalize(glm::quat_cast(parent_rot));
+}
+
+glm::vec4 buildDialClipPlane(const glm::vec3& pivot, const glm::vec3& camera_position,
+                             const float pixel_size) {
+  glm::vec3 n = glm::normalize(camera_position - pivot);
+  float d = -glm::dot(n, pivot);
+  d += TransformGizmoMetrics::k_dial_clip_bias * pixel_size;
+  return glm::vec4(n, d);
 }
 
 }  // namespace Blunder

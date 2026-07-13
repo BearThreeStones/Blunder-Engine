@@ -4,6 +4,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "EASTL/vector.h"
+
 #include "runtime/function/render/overlay/axes_overlay.h"
 #include "runtime/function/render/overlay/grid_overlay.h"
 #include "runtime/function/render/gizmo/transform_gizmo_overlay.h"
@@ -11,6 +13,10 @@
 #include "runtime/function/render/overlay/origins_overlay.h"
 #include "runtime/function/render/overlay/outline_overlay.h"
 #include "runtime/function/render/overlay/outline_targets.h"
+#include "runtime/function/render/overlay/pick_overlay.h"
+#include "runtime/function/render/pick/hybrid_gpu_pick_system.h"
+#include "runtime/function/render/pick/pick_instance_buffer.h"
+#include "runtime/function/render/overlay/pick_targets.h"
 #include "runtime/function/render/overlay/overlay_anti_aliasing.h"
 #include "runtime/function/render/overlay/overlay_line_pass.h"
 #include "runtime/function/render/overlay/overlay_line_targets.h"
@@ -19,10 +25,16 @@
 #include "runtime/function/render/overlay/screen_overlay_pass.h"
 #include "runtime/function/render/overlay/wireframe_overlay.h"
 
+#include "runtime/function/scene/entity_id.h"
+
 namespace Blunder {
 
+class EditorCamera;
 class OffscreenRenderTarget;
+class RenderSystem;
+class SceneInstance;
 class SlangCompiler;
+class ViewportPickSystem;
 class VulkanAllocator;
 class VulkanContext;
 
@@ -60,6 +72,24 @@ class OverlaySystem final {
   void draw_overlay_aa(VkCommandBuffer cmd);
   void draw_screen_overlays(VkCommandBuffer cmd);
 
+  EntityId pickAtWindowPosition(float window_x, float window_y, EditorCamera& camera,
+                                SceneInstance& scene, RenderSystem& render_system);
+
+  eastl::vector<EntityId> pickAllAtWindowPosition(float window_x, float window_y,
+                                                  EditorCamera& camera,
+                                                  SceneInstance& scene,
+                                                  RenderSystem& render_system);
+
+  HybridGpuPickSystem& hybridPick() { return m_hybrid_pick; }
+  const HybridGpuPickSystem& hybridPick() const { return m_hybrid_pick; }
+
+  void markPickInstancesDirty() { m_pick_instances_dirty = true; }
+  void rebuildPickInstancesIfNeeded(SceneInstance& scene, RenderSystem& render_system);
+  const PickInstanceBuffer& pickInstances() const { return m_pick_instances; }
+
+  void pollHybridPick(EditorCamera& camera, SceneInstance& scene,
+                      RenderSystem& render_system, ViewportPickSystem& viewport_pick);
+
   GridOverlay& grid() { return m_grid; }
   AxesOverlay& axes() { return m_axes; }
   WireframeOverlay& wireframe() { return m_wireframe; }
@@ -80,6 +110,12 @@ class OverlaySystem final {
 
   OutlineTargets m_outline_targets;
   OutlineOverlay m_outline;
+
+  PickTargets m_pick_targets;
+  PickOverlay m_pick;
+  HybridGpuPickSystem m_hybrid_pick;
+  PickInstanceBuffer m_pick_instances;
+  bool m_pick_instances_dirty{true};
 
   GridOverlay m_grid;
   AxesOverlay m_axes;

@@ -3,6 +3,8 @@
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
+#include "runtime/function/editor/document_history.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_render_bridge.h"
@@ -60,7 +62,18 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (!services.selection) {
         return;
       }
-      services.selection->setSelection(event.entity_id);
+      switch (event.selection_mode) {
+        case UiSelectionMode::add:
+          services.selection->addToSelection(event.entity_id);
+          break;
+        case UiSelectionMode::toggle:
+          services.selection->toggleSelection(event.entity_id);
+          break;
+        case UiSelectionMode::replace:
+        default:
+          services.selection->setSelection(event.entity_id);
+          break;
+      }
       m_panels.markDirty(EditorPanelDirty::inspector);
       m_panels.markDirty(EditorPanelDirty::hierarchy);
       break;
@@ -86,6 +99,41 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         services.editor_scene_edit->saveActiveScene();
       }
       break;
+    case UiEventKind::undo:
+    case UiEventKind::redo: {
+      DocumentHistory* history = g_runtime_global_context.m_document_history.get();
+      if (history == nullptr) {
+        break;
+      }
+      const bool ok = event.kind == UiEventKind::undo ? history->undo()
+                                                       : history->redo();
+      if (!ok) {
+        break;
+      }
+      if (services.editor_scene_edit) {
+        if (history->isDirtyRelativeToSave()) {
+          services.editor_scene_edit->markDirty();
+        } else {
+          services.editor_scene_edit->clearDirty();
+        }
+      }
+      if (services.hierarchy && services.scene) {
+        if (SceneInstance* scene = services.scene->getActiveInstance()) {
+          services.hierarchy->rebuildVisibleTree(scene);
+          services.hierarchy->markDirty();
+        }
+      }
+      if (m_presentation) {
+        m_presentation->syncInspectorFromSelection();
+        m_presentation->refreshEditorScenePanels();
+      }
+      if (services.render_system) {
+        services.render_system->requestViewportRedraw();
+      }
+      m_panels.markDirty(EditorPanelDirty::inspector);
+      m_panels.markDirty(EditorPanelDirty::hierarchy);
+      break;
+    }
     case UiEventKind::browserRefresh:
       if (services.content_browser) {
         services.content_browser->refresh();

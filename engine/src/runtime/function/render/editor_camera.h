@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <glm/vec2.hpp>
+
 #include "runtime/core/event/event.h"
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
@@ -45,10 +47,14 @@ class EditorCamera final {
 
   bool isWindowPositionInViewport(const Vec2& window_position) const;
   Vec2 windowToViewportLocal(const Vec2& window_position) const;
+  /// Maps a window click to offscreen render-target pixel coordinates (HiDPI aware).
+  glm::ivec2 windowToViewportRenderPixel(const Vec2& window_position) const;
   Vec2 viewportLocalToNdc(const Vec2& viewport_position) const;
   Ray makeRayFromWindowPosition(const Vec2& window_position) const;
 
-  void setViewportRect(int32_t x, int32_t y, float width, float height);
+  void setViewportRect(int32_t x, int32_t y, float logical_width,
+                       float logical_height, float render_width,
+                       float render_height);
   void setViewportSize(float width, float height);
   float getViewportWidth() const { return m_viewport_width; }
   float getViewportHeight() const { return m_viewport_height; }
@@ -124,6 +130,8 @@ class EditorCamera final {
 
   float m_viewport_width{1280.0f};
   float m_viewport_height{720.0f};
+  float m_viewport_logical_width{1280.0f};
+  float m_viewport_logical_height{720.0f};
   int32_t m_viewport_origin_x{0};
   int32_t m_viewport_origin_y{0};
   float m_vertical_fov{glm::radians(45.0f)};

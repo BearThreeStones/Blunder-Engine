@@ -22,6 +22,9 @@ class VulkanContext final {
   void shutdown();
   VkCommandBuffer beginImmediateCommands();
   void endImmediateCommands(VkCommandBuffer command_buffer);
+  /// Submits one-shot immediate commands without blocking; caller owns fence until signaled.
+  void submitImmediateCommandsNoWait(VkCommandBuffer command_buffer, VkFence fence);
+  void freeImmediateCommandBuffer(VkCommandBuffer command_buffer);
 
   VkInstance getInstance() const { return m_instance; }
   VkPhysicalDevice getPhysicalDevice() const { return m_physical_device; }

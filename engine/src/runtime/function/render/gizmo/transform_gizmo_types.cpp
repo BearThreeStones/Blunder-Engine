@@ -9,8 +9,8 @@ namespace Blunder {
 
 namespace {
 
-/// Blender TH_GIZMO_VIEW_ALIGN (neutral view-align gray).
-constexpr glm::vec3 kGizmoViewAlignColor{0.78f, 0.78f, 0.78f};
+/// Blender TH_GIZMO_VIEW_ALIGN (default theme: white).
+const glm::vec3 kGizmoViewAlignColor{1.0f, 1.0f, 1.0f};
 
 glm::vec3 themeAxisRgb(const ManipulatorAxis axis) {
   switch (axis) {
@@ -30,6 +30,9 @@ glm::vec3 themeAxisRgb(const ManipulatorAxis axis) {
     case ManipulatorAxis::trans_xy:
       return kAxisColorPositiveZ;
     case ManipulatorAxis::trans_c:
+    case ManipulatorAxis::rot_t:
+    case ManipulatorAxis::rot_c:
+    case ManipulatorAxis::scale_c_outer:
       return kGizmoViewAlignColor;
     default:
       return kGizmoViewAlignColor;
@@ -81,6 +84,11 @@ uint32_t gizmoOrientationAxis(const ManipulatorAxis axis, bool* out_is_plane) {
 }
 
 float gizmoAxisFadeFactor(const ManipulatorAxis axis, const float idot[3]) {
+  if (axis == ManipulatorAxis::rot_t || axis == ManipulatorAxis::rot_c ||
+      axis == ManipulatorAxis::scale_c_outer) {
+    return 1.0f;
+  }
+
   if (isRotationManipulator(axis)) {
     return 1.0f;
   }
@@ -111,7 +119,11 @@ float gizmoAxisFadeFactor(const ManipulatorAxis axis, const float idot[3]) {
 
 GizmoAxisColor gizmoAxisColor(const ManipulatorAxis axis, const float idot[3]) {
   const glm::vec3 rgb = themeAxisRgb(axis);
-  const float alpha_fac = gizmoAxisFadeFactor(axis, idot);
+  float alpha_fac = gizmoAxisFadeFactor(axis, idot);
+  if (axis == ManipulatorAxis::rot_t) {
+    // Blender MAN_AXIS_ROT_T: faint trackball overlay (~5% of axis alpha).
+    alpha_fac = TransformGizmoMetrics::k_trackball_alpha_factor;
+  }
   GizmoAxisColor result{};
   result.color =
       glm::vec4(rgb, TransformGizmoMetrics::k_gizmo_color_alpha * alpha_fac);
@@ -120,29 +132,71 @@ GizmoAxisColor gizmoAxisColor(const ManipulatorAxis axis, const float idot[3]) {
   return result;
 }
 
+bool gizmoHandleUsesHoverColorHi(const ManipulatorAxis axis) {
+  switch (axis) {
+    case ManipulatorAxis::rot_t:
+    case ManipulatorAxis::rot_c:
+    case ManipulatorAxis::scale_c_outer:
+      return false;
+    default:
+      return true;
+  }
+}
+
+glm::vec4 gizmoColorGet(const ManipulatorAxis axis, const float idot[3],
+                        const bool highlight) {
+  const GizmoAxisColor colors = gizmoAxisColor(axis, idot);
+  return (highlight && gizmoHandleUsesHoverColorHi(axis)) ? colors.color_hi : colors.color;
+}
+
 float gizmoLineWidthScale(const ManipulatorAxis axis, const GizmoDrawStyle style) {
-  float line_width = TransformGizmoMetrics::k_axis_line_width;
+  if (isPolylineGizmoStyle(style)) {
+    return 1.0f;
+  }
+  return 1.0f;
+}
+
+bool isPolylineGizmoStyle(const GizmoDrawStyle style) {
+  return style == GizmoDrawStyle::dial || style == GizmoDrawStyle::dial_ghost ||
+         style == GizmoDrawStyle::dial_wire || style == GizmoDrawStyle::annulus;
+}
+
+float gizmoSdfStrokeWidthPx(const GizmoDrawStyle style) {
+  switch (style) {
+    case GizmoDrawStyle::arrow:
+    case GizmoDrawStyle::plane:
+    case GizmoDrawStyle::scale_stem_box:
+      return TransformGizmoMetrics::k_sdf_stroke_width_px;
+    default:
+      return 0.0f;
+  }
+}
+
+float gizmoPolylineWidthPx(const ManipulatorAxis axis, const GizmoDrawStyle style) {
+  if (const float sdf_width = gizmoSdfStrokeWidthPx(style); sdf_width > 0.0f) {
+    return sdf_width;
+  }
+  if (!isPolylineGizmoStyle(style)) {
+    return 0.0f;
+  }
+  if (style == GizmoDrawStyle::dial_wire || style == GizmoDrawStyle::annulus) {
+    return TransformGizmoMetrics::k_outer_ring_polyline_width_px;
+  }
   if (isRotationManipulator(axis) || style == GizmoDrawStyle::dial ||
       style == GizmoDrawStyle::dial_ghost) {
-    line_width = TransformGizmoMetrics::k_rotate_line_width;
-  } else if (style == GizmoDrawStyle::plane) {
-    line_width = TransformGizmoMetrics::k_plane_line_width;
-  } else if (style == GizmoDrawStyle::scale_box) {
-    line_width = TransformGizmoMetrics::k_axis_line_width;
+    return TransformGizmoMetrics::k_dial_polyline_width_px;
   }
-  return line_width / TransformGizmoMetrics::k_axis_line_width;
+  return TransformGizmoMetrics::k_dial_polyline_width_px;
 }
 
 glm::vec4 axisColorFor(const ManipulatorAxis axis, const bool highlight) {
   const float idot[3] = {1.0f, 1.0f, 1.0f};
-  const GizmoAxisColor colors = gizmoAxisColor(axis, idot);
-  return highlight ? colors.color_hi : colors.color;
+  return gizmoColorGet(axis, idot, highlight);
 }
 
 glm::vec4 centerColor(const bool highlight) {
   const float idot[3] = {1.0f, 1.0f, 1.0f};
-  const GizmoAxisColor colors = gizmoAxisColor(ManipulatorAxis::trans_c, idot);
-  return highlight ? colors.color_hi : colors.color;
+  return gizmoColorGet(ManipulatorAxis::trans_c, idot, highlight);
 }
 
 glm::vec3 manipulatorLocalDirection(const ManipulatorAxis axis) {
@@ -191,8 +245,14 @@ float gizmoScaleBasisForAxis(const ManipulatorAxis axis) {
   if (axis == ManipulatorAxis::trans_c) {
     return TransformGizmoMetrics::k_translate_center_scale_basis;
   }
+  if (axis == ManipulatorAxis::rot_c) {
+    return TransformGizmoMetrics::k_rotate_outer_ring_scale_basis;
+  }
+  if (axis == ManipulatorAxis::scale_c_outer) {
+    return TransformGizmoMetrics::k_scale_outer_ring_scale_basis;
+  }
   if (isRotationManipulator(axis)) {
-    return TransformGizmoMetrics::k_rotate_dial_scale_basis;
+    return TransformGizmoMetrics::k_rotate_axis_dial_scale_basis;
   }
   return TransformGizmoMetrics::k_translate_handle_scale_basis;
 }

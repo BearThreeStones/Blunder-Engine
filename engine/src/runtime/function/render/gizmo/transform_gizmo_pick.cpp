@@ -10,7 +10,7 @@ namespace {
 
 float pickThreshold(const float handle_scale) {
   return handle_scale * TransformGizmoMetrics::k_mesh_stem_radius *
-         TransformGizmoMetrics::k_pick_slop * 8.0f;
+         TransformGizmoMetrics::k_pick_slop * 14.0f;
 }
 
 bool pickAxis(const Ray& ray, const glm::vec3& origin, const glm::vec3& direction,
@@ -67,7 +67,7 @@ bool pickDialRing(const Ray& ray, const glm::vec3& pivot, const glm::vec3& axis,
   }
   const glm::vec3 radial = *hit - pivot;
   const float dist = glm::length(radial);
-  const float threshold = tube_radius * TransformGizmoMetrics::k_pick_slop * 2.5f;
+  const float threshold = tube_radius * TransformGizmoMetrics::k_pick_slop * 4.0f;
   if (std::abs(dist - major_radius) > threshold) {
     return false;
   }
@@ -173,7 +173,9 @@ std::optional<ManipulatorAxis> pickRotationGizmoHandle(
   const float dial_scale =
       computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::rot_x);
   const float major_r = dial_scale * TransformGizmoMetrics::k_mesh_dial_major_radius;
-  const float tube_r = dial_scale * TransformGizmoMetrics::k_mesh_dial_tube_radius;
+  const float tube_r = ctx.gizmo_pixel_size *
+                       TransformGizmoMetrics::k_dial_polyline_width_px * 0.5f *
+                       TransformGizmoMetrics::k_pick_slop;
 
   eastl::vector<eastl::pair<ManipulatorAxis, float>> hits;
   hits.reserve(3);
@@ -199,6 +201,8 @@ std::optional<ManipulatorAxis> pickScaleGizmoHandle(
     const TransformGizmoPickContext& ctx) {
   const float axis_scale =
       computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_x);
+  const float plane_scale =
+      computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_xy);
   const float center_scale =
       computeGizmoHandleScale(ctx.group_scale, ManipulatorAxis::trans_c);
   const float axis_half =
@@ -206,9 +210,27 @@ std::optional<ManipulatorAxis> pickScaleGizmoHandle(
   const float center_half =
       center_scale * TransformGizmoMetrics::k_mesh_scale_center_half_extent;
   const float threshold = pickThreshold(axis_scale);
+  const float stem_start =
+      axis_scale * TransformGizmoMetrics::k_mesh_scale_stem_start;
+  const float stem_end =
+      axis_scale * TransformGizmoMetrics::k_mesh_scale_box_center_offset;
+  const float plane_half =
+      plane_scale * TransformGizmoMetrics::k_mesh_plane_half_extent *
+      TransformGizmoMetrics::k_scale_plane_length_factor;
+  const float plane_offset =
+      plane_scale * TransformGizmoMetrics::k_mesh_plane_center_offset;
 
   eastl::vector<eastl::pair<ManipulatorAxis, float>> hits;
-  hits.reserve(4);
+  hits.reserve(7);
+
+  auto try_stem = [&](const ManipulatorAxis axis, const glm::vec3& dir) {
+    const glm::vec3 start = ctx.basis.origin + glm::normalize(dir) * stem_start;
+    const glm::vec3 end = ctx.basis.origin + glm::normalize(dir) * stem_end;
+    float dist = 0.0f;
+    if (pickAxis(ctx.ray, start, end - start, glm::length(end - start), threshold, dist)) {
+      hits.push_back({axis, dist});
+    }
+  };
 
   auto try_box = [&](const ManipulatorAxis axis, const glm::vec3& center,
                      const float half_extent) {
@@ -217,6 +239,10 @@ std::optional<ManipulatorAxis> pickScaleGizmoHandle(
       hits.push_back({axis, dist});
     }
   };
+
+  try_stem(ManipulatorAxis::trans_x, ctx.basis.axis_x);
+  try_stem(ManipulatorAxis::trans_y, ctx.basis.axis_y);
+  try_stem(ManipulatorAxis::trans_z, ctx.basis.axis_z);
 
   try_box(ManipulatorAxis::trans_x,
           scaleHandleWorldCenter(ctx.basis, ManipulatorAxis::trans_x, axis_scale),
@@ -227,12 +253,50 @@ std::optional<ManipulatorAxis> pickScaleGizmoHandle(
   try_box(ManipulatorAxis::trans_z,
           scaleHandleWorldCenter(ctx.basis, ManipulatorAxis::trans_z, axis_scale),
           axis_half);
+
+  auto try_plane = [&](const ManipulatorAxis axis, const glm::vec3& u, const glm::vec3& v) {
+    const glm::vec3 center = ctx.basis.origin + glm::normalize(u) * plane_offset +
+                             glm::normalize(v) * plane_offset;
+    float dist = 0.0f;
+    if (pickPlaneHandle(ctx.ray, center, u, v, plane_half, threshold, dist)) {
+      hits.push_back({axis, dist});
+    }
+  };
+
+  try_plane(ManipulatorAxis::trans_xy, ctx.basis.axis_x, ctx.basis.axis_y);
+  try_plane(ManipulatorAxis::trans_yz, ctx.basis.axis_y, ctx.basis.axis_z);
+  try_plane(ManipulatorAxis::trans_zx, ctx.basis.axis_z, ctx.basis.axis_x);
+
   try_box(ManipulatorAxis::trans_c, ctx.basis.origin, center_half);
 
   if (hits.empty()) {
     return std::nullopt;
   }
   return pickBest(hits);
+}
+
+bool gizmoHandleHighlighted(const std::optional<ManipulatorAxis> active_axis,
+                            const std::optional<ManipulatorAxis> hover_axis,
+                            const ManipulatorAxis axis) {
+  if (active_axis) {
+    return *active_axis == axis;
+  }
+  return hover_axis && *hover_axis == axis;
+}
+
+std::optional<ManipulatorAxis> pickTransformGizmoHandle(
+    const TransformGizmoMode mode, const TransformGizmoPickContext& ctx) {
+  switch (mode) {
+    case TransformGizmoMode::translate:
+      return pickTranslationGizmoHandle(ctx);
+    case TransformGizmoMode::rotate:
+      return pickRotationGizmoHandle(ctx);
+    case TransformGizmoMode::scale:
+      return pickScaleGizmoHandle(ctx);
+    case TransformGizmoMode::none:
+    default:
+      return std::nullopt;
+  }
 }
 
 }  // namespace Blunder

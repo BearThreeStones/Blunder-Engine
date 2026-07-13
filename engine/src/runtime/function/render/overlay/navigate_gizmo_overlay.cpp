@@ -14,9 +14,12 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/slint/slint_system.h"
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/render/overlay/navigate_gizmo_hit_test.h"
 #include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/overlay/navigate_gizmo_shared.h"
+#include "runtime/function/render/overlay/navigate_gizmo_style.h"
+#include "runtime/function/render/viewport_style.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/rhi_desc.h"
@@ -38,15 +41,17 @@ struct GizmoUniformData {
   glm::vec4 axis_color_x;
   glm::vec4 axis_color_y;
   glm::vec4 axis_color_z;
-  glm::vec4 center_color;
+  glm::vec4 view_bg_color;
   glm::vec4 bg_color;
   glm::vec4 params;
   glm::vec4 params2;
   glm::vec4 sort_order_0;
   glm::vec4 sort_order_1;
+  glm::vec4 hover_state;
 };
 
-constexpr float k_neg_alpha_scale = 0.50f;
+/// Unused by shader fill (neg balls are opaque); kept in params2.y for UBO layout stability.
+constexpr float k_neg_alpha_scale = 1.0f;
 constexpr float k_letter_threshold = 0.14f;
 
 constexpr uint32_t k_gizmo_vertex_count = 84u;
@@ -239,6 +244,46 @@ bool NavigateGizmoOverlay::tryHandleMouseClick(const Vec2& window_position,
   return true;
 }
 
+bool NavigateGizmoOverlay::updateHoverFromPointer(const Vec2& window_position,
+                                                const EditorCamera& camera) {
+  const bool was_active = m_gizmo_active;
+  const int was_highlight = m_highlight_endpoint;
+
+  m_gizmo_active = false;
+  m_highlight_endpoint = -1;
+
+  if (!camera.isWindowPositionInViewport(window_position)) {
+    return was_active || was_highlight != -1;
+  }
+
+  const Vec2 viewport_local = camera.windowToViewportLocal(window_position);
+  const uint32_t vp_w = static_cast<uint32_t>(camera.getViewportWidth());
+  const uint32_t vp_h = static_cast<uint32_t>(camera.getViewportHeight());
+  const NavigateGizmoLayout layout = computeNavigateGizmoLayout(vp_w, vp_h);
+  if (!layout.visible ||
+      !rectContains(layout.gizmo_rect, viewport_local.x, viewport_local.y)) {
+    return was_active || was_highlight != -1;
+  }
+
+  m_gizmo_active = true;
+  const float proj_t = camera.getProjectionTransitionT();
+  const float smooth_proj_t = proj_t * proj_t * (3.0f - 2.0f * proj_t);
+  const float perspective_factor = 1.0f - smooth_proj_t;
+  const std::optional<NavigateGizmoAxisHit> axis_hit =
+      hitTestNavigateGizmoAxis(viewport_local.x, viewport_local.y, layout,
+                               camera.getViewMatrix(), perspective_factor);
+  if (axis_hit.has_value()) {
+    m_highlight_endpoint = axis_hit->endpoint_index;
+  }
+
+  return m_gizmo_active != was_active || m_highlight_endpoint != was_highlight;
+}
+
+void NavigateGizmoOverlay::clearHover() {
+  m_gizmo_active = false;
+  m_highlight_endpoint = -1;
+}
+
 void NavigateGizmoOverlay::record_gizmo_draw(VkCommandBuffer cmd,
                                              const OverlayState& state,
                                              float gizmo_x, float gizmo_y,
@@ -258,17 +303,22 @@ void NavigateGizmoOverlay::record_gizmo_draw(VkCommandBuffer cmd,
   gizmo_ubo.projection = (1.0f - smooth_t) * persp + smooth_t * ortho;
   gizmo_ubo.projection[1][1] *= -1.0f;
 
-  gizmo_ubo.axis_color_x = glm::vec4(kAxisColorPositiveX, 0.95f);
-  gizmo_ubo.axis_color_y = glm::vec4(kAxisColorPositiveY, 0.95f);
-  gizmo_ubo.axis_color_z = glm::vec4(kAxisColorPositiveZ, 0.95f);
-  gizmo_ubo.center_color = glm::vec4(0.45f, 0.45f, 0.50f, 0.85f);
-  gizmo_ubo.bg_color = glm::vec4(0.12f, 0.12f, 0.14f, 0.55f);
+  gizmo_ubo.axis_color_x = glm::vec4(kAxisColorPositiveX, 1.0f);
+  gizmo_ubo.axis_color_y = glm::vec4(kAxisColorPositiveY, 1.0f);
+  gizmo_ubo.axis_color_z = glm::vec4(kAxisColorPositiveZ, 1.0f);
+  // Blender ED_view3d_background_color_get — match viewport clear until scene-driven.
+  gizmo_ubo.view_bg_color = viewportBackgroundColor();
+  gizmo_ubo.bg_color = m_gizmo_active ? navigateGizmoHighlightBackdropColor()
+                                      : glm::vec4(0.12f, 0.12f, 0.14f, 0.55f);
   gizmo_ubo.params = glm::vec4(
       NavigateGizmoMetrics::kArmLength, NavigateGizmoMetrics::kBallRadius,
       NavigateGizmoMetrics::kCenterRadius, NavigateGizmoMetrics::kNegBallRadius);
   gizmo_ubo.params2 =
       glm::vec4(NavigateGizmoMetrics::kArmHalfWidth, k_neg_alpha_scale,
                 NavigateGizmoMetrics::kBgRadius, k_letter_threshold);
+  gizmo_ubo.hover_state =
+      glm::vec4(m_gizmo_active ? 1.0f : 0.0f,
+                static_cast<float>(m_highlight_endpoint), 0.0f, 0.0f);
 
   AxisSortEntry entries[6];
   for (int i = 0; i < 3; ++i) {

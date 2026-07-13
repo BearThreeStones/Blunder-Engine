@@ -36,8 +36,8 @@
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/event/event.h"
-#include "runtime/core/event/mouse_event.h"
 #include "runtime/core/event/key_event.h"
+#include "runtime/core/event/mouse_event.h"
 #include "runtime/function/render/debug/renderdoc_capture.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/function/ui/ui_host.h"
@@ -46,6 +46,10 @@
 #include "runtime/function/ui/viewport/viewport_cpu_frame.h"
 #include "runtime/function/ui/viewport/viewport_vulkan_image.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/editor/viewport_pick_system.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
 #include <vulkan/vulkan.h>
 
 #include "runtime/function/render/offscreen_render_target.h"
@@ -68,10 +72,7 @@
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
-#include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
-#include "runtime/function/scene/scene_instance.h"
-#include "runtime/function/scene/scene_system.h"
 
 namespace Blunder {
 
@@ -461,6 +462,21 @@ bool RenderSystem::addTransparentMeshDraw(
 }
 
 void RenderSystem::markViewportRenderDirty() { ++m_viewport_render_generation; }
+
+void RenderSystem::pollViewportPickIfActive() {
+  if (!m_overlay_system || !m_editor_camera ||
+      !g_runtime_global_context.m_viewport_pick ||
+      !g_runtime_global_context.m_scene_system) {
+    return;
+  }
+  SceneInstance* scene =
+      g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    return;
+  }
+  m_overlay_system->pollHybridPick(*m_editor_camera, *scene, *this,
+                                   *g_runtime_global_context.m_viewport_pick);
+}
 
 bool RenderSystem::usesZeroCopyViewport() const {
   return !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
@@ -866,6 +882,20 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     return;
   }
 
+  if (m_overlay_system && g_runtime_global_context.m_scene_system) {
+    SceneInstance* scene =
+        g_runtime_global_context.m_scene_system->getActiveInstance();
+    if (scene != nullptr) {
+      m_overlay_system->rebuildPickInstancesIfNeeded(*scene, *this);
+    }
+  }
+
+  if (g_runtime_global_context.m_viewport_pick) {
+    g_runtime_global_context.m_viewport_pick->tickDeferredPickRequest();
+  }
+
+  pollViewportPickIfActive();
+
   VkInstance instance = vkCtx(this)->getInstance();
   if (m_renderdoc_capture) {
     m_renderdoc_capture->beginFrame(instance);
@@ -885,14 +915,21 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   if (m_editor_camera) {
     int32_t viewport_x = 0;
     int32_t viewport_y = 0;
+    float viewport_logical_w = static_cast<float>(offscreen_extent.width);
+    float viewport_logical_h = static_cast<float>(offscreen_extent.height);
     if (m_viewport_layout_source) {
       const ViewportLogicalRect viewport_rect =
           m_viewport_layout_source->getViewportLogicalRect();
       viewport_x = viewport_rect.x;
       viewport_y = viewport_rect.y;
+      if (viewport_rect.width > 0 && viewport_rect.height > 0) {
+        viewport_logical_w = static_cast<float>(viewport_rect.width);
+        viewport_logical_h = static_cast<float>(viewport_rect.height);
+      }
     }
     m_editor_camera->setViewportRect(
-        viewport_x, viewport_y, static_cast<float>(offscreen_extent.width),
+        viewport_x, viewport_y, viewport_logical_w, viewport_logical_h,
+        static_cast<float>(offscreen_extent.width),
         static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
 
@@ -1028,6 +1065,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
 
   if (!tryBeginRecordingSlot(m_current_frame)) {
     pollViewportPresent();
+    if (m_viewport_render_generation != m_last_rendered_viewport_generation) {
+      m_force_viewport_render = true;
+    }
     return;
   }
 
@@ -1110,6 +1150,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         command_buffer, frame_state, opaque_draws.data(),
         static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
         static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
+  }
+
+  if (m_overlay_system && m_overlay_system->hasActiveOutline()) {
+    m_overlay_system->draw_outline(command_buffer);
   }
 
   if (m_overlay_system) {
@@ -1224,6 +1268,44 @@ void RenderSystem::onEvent(Event& event) {
   }
 
   if (m_overlay_system && m_editor_camera &&
+      event.getEventType() == EventType::MouseMoved && !event.handled) {
+    auto& mouse_event = static_cast<MouseMovedEvent&>(event);
+    {
+      auto& gizmo_ctrl = m_overlay_system->transform_gizmo().controller();
+      const Vec2 pos(mouse_event.getX(), mouse_event.getY());
+      bool hover_changed = false;
+      if (gizmo_ctrl.getMode() != TransformGizmoMode::none && !gizmo_ctrl.isDragging()) {
+        if (m_editor_camera->isWindowPositionInViewport(pos)) {
+          hover_changed = gizmo_ctrl.updateHoverFromPointer(pos, *m_editor_camera);
+        } else if (gizmo_ctrl.hasHover()) {
+          gizmo_ctrl.clearHover();
+          hover_changed = true;
+        }
+      } else if (gizmo_ctrl.hasHover()) {
+        gizmo_ctrl.clearHover();
+        hover_changed = true;
+      }
+      if (hover_changed) {
+        requestViewportRedraw();
+      }
+    }
+    {
+      auto& nav_gizmo = m_overlay_system->navigate_gizmo();
+      const Vec2 pos(mouse_event.getX(), mouse_event.getY());
+      bool nav_hover_changed = false;
+      if (m_editor_camera->isWindowPositionInViewport(pos)) {
+        nav_hover_changed = nav_gizmo.updateHoverFromPointer(pos, *m_editor_camera);
+      } else if (nav_gizmo.hasHover()) {
+        nav_gizmo.clearHover();
+        nav_hover_changed = true;
+      }
+      if (nav_hover_changed) {
+        requestViewportRedraw();
+      }
+    }
+  }
+
+  if (m_overlay_system && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
@@ -1236,9 +1318,115 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
+  if (!event.handled && m_editor_camera &&
+      event.getEventType() == EventType::MouseButtonPressed) {
+    auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
+    if (mouse_event.hasMousePosition() &&
+        m_editor_camera->isWindowPositionInViewport(
+            Vec2(mouse_event.getX(), mouse_event.getY())) &&
+        g_runtime_global_context.m_viewport_pick) {
+      if (mouse_event.getMouseButton() == SDL_BUTTON_RIGHT ||
+          mouse_event.getMouseButton() == SDL_BUTTON_MIDDLE) {
+        g_runtime_global_context.m_viewport_pick->onCameraInteractionStarted();
+      }
+    }
+  }
+
+  if (!event.handled && m_editor_camera &&
+      event.getEventType() == EventType::MouseMoved) {
+    auto& mouse_event = static_cast<MouseMovedEvent&>(event);
+    if (g_runtime_global_context.m_viewport_pick) {
+      g_runtime_global_context.m_viewport_pick->onViewportPointerMoved(
+          mouse_event.getX(), mouse_event.getY());
+    }
+  }
+
+  if (!event.handled && m_editor_camera &&
+      event.getEventType() == EventType::MouseButtonPressed) {
+    auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
+    if (mouse_event.getMouseButton() == SDL_BUTTON_RIGHT &&
+        mouse_event.hasMousePosition() &&
+        m_editor_camera->isWindowPositionInViewport(
+            Vec2(mouse_event.getX(), mouse_event.getY())) &&
+        g_runtime_global_context.m_viewport_pick) {
+      const uint16_t modifiers =
+          static_cast<uint16_t>(SDL_GetModState() & 0xFFFFu);
+      if (keyModifiersCtrl(modifiers)) {
+        g_runtime_global_context.m_viewport_pick->onPiercingMenuRequest(
+            mouse_event.getX(), mouse_event.getY(), modifiers);
+        event.handled = true;
+        return;
+      }
+    }
+  }
+
+  if (!event.handled && m_editor_camera &&
+      event.getEventType() == EventType::MouseButtonPressed) {
+    auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
+    if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
+        mouse_event.hasMousePosition() &&
+        m_editor_camera->isWindowPositionInViewport(
+            Vec2(mouse_event.getX(), mouse_event.getY())) &&
+        g_runtime_global_context.m_viewport_pick) {
+      g_runtime_global_context.m_viewport_pick->onViewportLeftPressed(
+          mouse_event.getX(), mouse_event.getY());
+    }
+  }
+
+  if (!event.handled && m_editor_camera &&
+      event.getEventType() == EventType::MouseButtonReleased) {
+    auto& mouse_event = static_cast<MouseButtonReleasedEvent&>(event);
+    if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
+        mouse_event.hasMousePosition() &&
+        g_runtime_global_context.m_viewport_pick) {
+      const uint16_t modifiers =
+          static_cast<uint16_t>(SDL_GetModState() & 0xFFFFu);
+      g_runtime_global_context.m_viewport_pick->onViewportLeftReleased(
+          mouse_event.getX(), mouse_event.getY(), modifiers);
+      if (m_editor_camera->isWindowPositionInViewport(
+              Vec2(mouse_event.getX(), mouse_event.getY()))) {
+        event.handled = true;
+        return;
+      }
+    }
+  }
+
   if (m_editor_camera) {
     m_editor_camera->onEvent(event);
   }
+}
+
+EntityId RenderSystem::pickEntityAtWindowPosition(const float window_x,
+                                                  const float window_y) {
+  if (!m_overlay_system || !m_editor_camera) {
+    return k_invalid_entity_id;
+  }
+  if (!g_runtime_global_context.m_scene_system) {
+    return k_invalid_entity_id;
+  }
+  SceneInstance* scene = g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    return k_invalid_entity_id;
+  }
+  return m_overlay_system->pickAtWindowPosition(window_x, window_y, *m_editor_camera,
+                                              *scene, *this);
+}
+
+eastl::vector<EntityId> RenderSystem::pickAllEntitiesAtWindowPosition(
+    const float window_x, const float window_y) {
+  eastl::vector<EntityId> hits;
+  if (!m_overlay_system || !m_editor_camera) {
+    return hits;
+  }
+  if (!g_runtime_global_context.m_scene_system) {
+    return hits;
+  }
+  SceneInstance* scene = g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    return hits;
+  }
+  return m_overlay_system->pickAllAtWindowPosition(window_x, window_y, *m_editor_camera,
+                                                   *scene, *this);
 }
 
 void RenderSystem::requestViewportRedraw() {

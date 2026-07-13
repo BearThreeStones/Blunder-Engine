@@ -133,6 +133,33 @@ EntityId SceneInstance::createEntity(eastl::string name, const Vec3& position,
   return id;
 }
 
+bool SceneInstance::softDeleteEntity(EntityId id) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr || entity->isTombstoned()) {
+    return false;
+  }
+  entity->setTombstoned(true);
+  entity->setEnabled(false);
+  m_world_matrices_dirty = true;
+  return true;
+}
+
+bool SceneInstance::restoreEntity(EntityId id) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr || !entity->isTombstoned()) {
+    return false;
+  }
+  entity->setTombstoned(false);
+  entity->setEnabled(true);
+  m_world_matrices_dirty = true;
+  return true;
+}
+
+bool SceneInstance::isTombstoned(EntityId id) const {
+  const Entity* entity = getEntity(id);
+  return entity != nullptr && entity->isTombstoned();
+}
+
 const Entity* SceneInstance::getEntity(EntityId id) const {
   if (!isValid(id)) {
     return nullptr;
@@ -175,6 +202,9 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
 
   for (size_t i = 0; i < m_entities.size(); ++i) {
     const Entity& entity = m_entities[i];
+    if (entity.isTombstoned()) {
+      continue;
+    }
     SceneEntityDefinition definition;
     definition.name = entity.getName();
     definition.position = entity.getPosition();
@@ -184,7 +214,7 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
     const EntityId parent_id = entity.getParentId();
     if (isValid(parent_id)) {
       const Entity* parent = getEntity(parent_id);
-      if (parent != nullptr) {
+      if (parent != nullptr && !parent->isTombstoned()) {
         definition.parent_name = parent->getName();
       }
     }

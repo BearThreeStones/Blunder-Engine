@@ -1,0 +1,3 @@
+# Inspector multi-select Transform uses Absolute/Delta with Rotation-delta-only
+
+When multiple entities are selected, Transform edits apply to the whole selection. An Inspector Multi-edit mode chooses Absolute (write the same local component value to every selected entity) or Delta (add the same offset to each entity's current value). Mixed components show a placeholder. Rotation multi-edit is Delta-only and applies as an Euler-angle delta through the fixed engine Euler convention onto each entity's authoritative Quaternion — Absolute Euler/Quaternion multi-set is deferred because it easily destroys relative orientations. Absolute/Delta and related toggles are editor-session UI state, not scene data.

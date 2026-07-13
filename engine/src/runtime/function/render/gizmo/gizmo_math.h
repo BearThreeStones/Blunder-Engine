@@ -30,8 +30,12 @@ glm::quat worldRotationFromMatrix(const glm::mat4& world_matrix);
 
 /// Inputs for Blender wm_gizmo_calculate_scale / ED_view3d_pixel_size_no_ui_scale.
 struct TransformGizmoScaleContext {
+  /// Projection only (winmat) — pixsize must not include view rotation.
+  glm::mat4 projection{1.0f};
+  /// Full view×projection (persmat) — pivot depth / zfac.
   glm::mat4 view_projection{1.0f};
   glm::vec3 pivot{0.0f};
+  float viewport_width{1.0f};
   float viewport_height{1.0f};
   bool is_perspective{true};
   float ortho_size{10.0f};
@@ -39,8 +43,21 @@ struct TransformGizmoScaleContext {
   float ui_scale{TransformGizmoMetrics::k_ui_scale_factor};
 };
 
-/// Blender ED_view3d_pixel_size_no_ui_scale: zfac(persmat, co) * pixsize.
+/// Blender rv3d->pixsize from winmat column lengths (view3d_draw.cc); not view×projection.
+float computeViewportPixsize(const glm::mat4& projection, float viewport_width,
+                             float viewport_height, bool is_perspective, float ortho_size);
+
+/// Blender ED_view3d_pixel_size_no_ui_scale: ortho=pixsize, persp=pixsize×depth.
+float computeGizmoPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx);
+
+/// Deprecated alias for computeGizmoPixelSizeNoUiScale.
 float computeView3dPixelSizeNoUiScale(const TransformGizmoScaleContext& ctx);
+
+#ifndef NDEBUG
+/// Logs when Persp/Ortho group_scale ratio falls outside [0.85, 1.15].
+void debugLogGizmoScaleParity(const TransformGizmoScaleContext& perspective,
+                              const TransformGizmoScaleContext& orthographic);
+#endif
 
 /// Blender wm_gizmo_calculate_scale group factor (before per-handle scale_basis).
 float computeGizmoGroupScale(const TransformGizmoScaleContext& ctx);
@@ -50,6 +67,14 @@ float computeGizmoHandleScale(const TransformGizmoScaleContext& ctx,
                               ManipulatorAxis axis);
 
 float computeGizmoHandleScale(float group_scale, ManipulatorAxis axis);
+
+/// Ring segment count from on-screen radius (chord length capped in pixels).
+uint32_t computeDialSides(float screen_radius_px);
+
+/// Project a gizmo ring's local mesh radius to screen pixels (max of two axis samples).
+float computeRingScreenRadiusPx(const glm::mat4& view, const glm::mat4& proj,
+                                  const glm::mat4& gizmo_world, float viewport_width,
+                                  float viewport_height, float mesh_radius = 1.0f);
 
 /// Blender gizmo_get_idot: per-axis view alignment metric.
 void computeGizmoIdot(const GizmoBasis& basis, const glm::vec3& camera_position,
@@ -69,6 +94,10 @@ Vec3 applyScaleDrag(const Vec3& scale_at_drag_start, ManipulatorAxis axis, float
 /// Blender draw_prepare view-aligned center (TH_GIZMO_VIEW_ALIGN circle).
 glm::mat4 gizmoViewAlignedCenterMatrix(const GizmoBasis& basis, float uniform_scale,
                                        const glm::vec3& camera_position);
+
+/// Blender dial3d_gizmo clip plane: normal toward camera, through pivot + bias.
+glm::vec4 buildDialClipPlane(const glm::vec3& pivot, const glm::vec3& camera_position,
+                             float pixel_size);
 
 /// Closest point on infinite line (origin + t * direction).
 glm::vec3 closestPointOnLine(const glm::vec3& origin, const glm::vec3& direction,

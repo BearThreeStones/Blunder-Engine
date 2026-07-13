@@ -269,6 +269,44 @@ void VulkanContext::endImmediateCommands(VkCommandBuffer command_buffer) {
                        &command_buffer);
 }
 
+void VulkanContext::submitImmediateCommandsNoWait(
+    VkCommandBuffer command_buffer, VkFence fence) {
+  ASSERT(m_device != VK_NULL_HANDLE);
+  ASSERT(command_buffer != VK_NULL_HANDLE);
+  ASSERT(fence != VK_NULL_HANDLE);
+
+  const VkResult end_result = vkEndCommandBuffer(command_buffer);
+  if (end_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[VulkanContext::submitImmediateCommandsNoWait] vkEndCommandBuffer "
+        "failed: {}",
+        static_cast<int>(end_result));
+  }
+
+  VkSubmitInfo submit_info{};
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.commandBufferCount = 1;
+  submit_info.pCommandBuffers = &command_buffer;
+
+  const VkResult submit_result =
+      vkQueueSubmit(m_graphics_queue, 1, &submit_info, fence);
+  if (submit_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[VulkanContext::submitImmediateCommandsNoWait] vkQueueSubmit failed: "
+        "{}",
+        static_cast<int>(submit_result));
+  }
+}
+
+void VulkanContext::freeImmediateCommandBuffer(VkCommandBuffer command_buffer) {
+  ASSERT(m_device != VK_NULL_HANDLE);
+  ASSERT(m_immediate_command_pool != VK_NULL_HANDLE);
+  if (command_buffer != VK_NULL_HANDLE) {
+    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
+                         &command_buffer);
+  }
+}
+
 void VulkanContext::createInstance() {
   uint32_t supported_api_version = VK_API_VERSION_1_1;
   if (vkEnumerateInstanceVersion != nullptr) {

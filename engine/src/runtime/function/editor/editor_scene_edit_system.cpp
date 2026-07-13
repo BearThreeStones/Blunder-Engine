@@ -15,6 +15,9 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/document_history_helpers.h"
+#include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/scene/scene_system.h"
@@ -143,6 +146,9 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
     }
     if (active != nullptr) {
       setActiveScenePath(virtual_path);
+      if (g_runtime_global_context.m_document_history) {
+        g_runtime_global_context.m_document_history->clear();
+      }
       return true;
     }
   }
@@ -156,6 +162,10 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
 
   m_scene_system->setActiveInstance(instance.get());
   setActiveScenePath(virtual_path);
+
+  if (g_runtime_global_context.m_document_history) {
+    g_runtime_global_context.m_document_history->clear();
+  }
 
   if (g_runtime_global_context.m_editor_selection) {
     g_runtime_global_context.m_editor_selection->clearSelection();
@@ -216,6 +226,9 @@ bool EditorSceneEditSystem::saveActiveScene() {
   }
 
   m_dirty = false;
+  if (g_runtime_global_context.m_document_history) {
+    g_runtime_global_context.m_document_history->markSaveBaseline();
+  }
   LOG_INFO("[EditorSceneEdit] saved '{}'", m_active_scene_virtual_path.c_str());
   return true;
 }
@@ -262,11 +275,14 @@ SpawnAssetResult EditorSceneEditSystem::spawnMeshAsset(
     renderer.double_sided = renderer.material->isDoubleSided();
   }
   instance->setMeshRenderer(entity_id, eastl::move(renderer));
-  markDirty();
 
+  const SelectionSnapshot selection_before = currentSelectionSnapshot();
   if (g_runtime_global_context.m_editor_selection) {
     g_runtime_global_context.m_editor_selection->setSelection(entity_id);
   }
+  pushDocumentCommand(makeSpawnEntityCommand(
+      instance, entity_id, selection_before, SelectionSnapshot{entity_id}));
+
   if (g_runtime_global_context.m_hierarchy) {
     g_runtime_global_context.m_hierarchy->rebuildVisibleTree(instance);
     g_runtime_global_context.m_hierarchy->markDirty();
@@ -299,6 +315,40 @@ SpawnAssetResult EditorSceneEditSystem::spawnAssetAtWindowPosition(
   LOG_WARN("[EditorSceneEdit] spawn unsupported asset type: {}",
            asset_virtual_path.c_str());
   return result;
+}
+
+bool EditorSceneEditSystem::softDeleteSelection() {
+  if (!m_scene_system || !g_runtime_global_context.m_editor_selection ||
+      !g_runtime_global_context.m_editor_selection->hasSelection()) {
+    return false;
+  }
+
+  SceneInstance* instance = m_scene_system->getActiveInstance();
+  if (instance == nullptr) {
+    return false;
+  }
+
+  const EntityId entity_id =
+      g_runtime_global_context.m_editor_selection->getSelection();
+  if (!isValid(entity_id) || instance->isTombstoned(entity_id)) {
+    return false;
+  }
+
+  const SelectionSnapshot selection_before = currentSelectionSnapshot();
+  if (!instance->softDeleteEntity(entity_id)) {
+    return false;
+  }
+
+  g_runtime_global_context.m_editor_selection->clearSelection();
+  pushDocumentCommand(makeSoftDeleteEntityCommand(
+      instance, entity_id, selection_before, currentSelectionSnapshot()));
+
+  if (g_runtime_global_context.m_hierarchy) {
+    g_runtime_global_context.m_hierarchy->rebuildVisibleTree(instance);
+    g_runtime_global_context.m_hierarchy->markDirty();
+  }
+
+  return true;
 }
 
 }  // namespace Blunder

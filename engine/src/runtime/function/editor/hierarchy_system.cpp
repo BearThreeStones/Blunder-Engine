@@ -15,10 +15,15 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
   }
 
   if (m_expanded_entity_ids.empty()) {
-    scene_instance->forEachEntity([&](EntityId entity_id, const Entity&) {
+    scene_instance->forEachEntity([&](EntityId entity_id, const Entity& entity) {
+      if (entity.isTombstoned()) {
+        return;
+      }
       bool has_children = false;
-      scene_instance->forEachChild(entity_id, [&](EntityId, const Entity&) {
-        has_children = true;
+      scene_instance->forEachChild(entity_id, [&](EntityId, const Entity& child) {
+        if (!child.isTombstoned()) {
+          has_children = true;
+        }
       });
       if (has_children) {
         m_expanded_entity_ids.insert(entity_id);
@@ -27,6 +32,9 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
   }
 
   scene_instance->forEachEntity([&](EntityId entity_id, const Entity& entity) {
+    if (entity.isTombstoned()) {
+      return;
+    }
     if (!isValid(entity.getParentId())) {
       appendVisibleSubtree(scene_instance, entity_id, 0);
     }
@@ -38,13 +46,15 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
 void HierarchySystem::appendVisibleSubtree(SceneInstance* scene_instance,
                                            EntityId entity_id, int32_t depth) {
   const Entity* entity = scene_instance->getEntity(entity_id);
-  if (entity == nullptr) {
+  if (entity == nullptr || entity->isTombstoned()) {
     return;
   }
 
   bool has_children = false;
-  scene_instance->forEachChild(entity_id, [&](EntityId, const Entity&) {
-    has_children = true;
+  scene_instance->forEachChild(entity_id, [&](EntityId, const Entity& child) {
+    if (!child.isTombstoned()) {
+      has_children = true;
+    }
   });
 
   const bool expanded = !has_children || isExpanded(entity_id);
@@ -61,8 +71,10 @@ void HierarchySystem::appendVisibleSubtree(SceneInstance* scene_instance,
     return;
   }
 
-  scene_instance->forEachChild(entity_id, [&](EntityId child_id, const Entity&) {
-    appendVisibleSubtree(scene_instance, child_id, depth + 1);
+  scene_instance->forEachChild(entity_id, [&](EntityId child_id, const Entity& child) {
+    if (!child.isTombstoned()) {
+      appendVisibleSubtree(scene_instance, child_id, depth + 1);
+    }
   });
 }
 

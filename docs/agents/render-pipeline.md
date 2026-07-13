@@ -17,6 +17,7 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
          ├─ transparent meshes
          ├─ scene overlays (axes, wireframe solids — depth-aware, main color)
          ├─ RHI endRenderPass → SHADER_READ_ONLY
+   ├─ OverlaySystem::draw_outline (ID prepass + edge resolve → main color)
    ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT: grid lines → line_tx)
    ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang → main color)
    ├─ SsaOPass::apply (composite AO onto main color)
@@ -52,8 +53,9 @@ SlintSystem::update()
 | Phase | API | When |
 |-------|-----|------|
 | Scene | `draw_scene_overlays` | Inside forward render pass |
-| Lines | `draw_overlay_lines` | After forward; MRT to `OverlayLineTargets` |
-| Line AA | `draw_overlay_aa` | Before SSAO; composites onto main color |
+| Outline | `draw_outline` | After forward; ID prepass (`color_id`/`ob_id` packed in `R16_UINT`) + smooth resolve composite; multi-select + transform-drag color |
+| Lines | `draw_overlay_lines` | After outline; MRT to `OverlayLineTargets` |
+| Line AA | `draw_overlay_aa` | Before SSAO; Blender-style cross-neighbor line composite when `BLUNDER_EDITOR_OVERLAY_AA=1` |
 | Screen | `draw_screen_overlays` | After SSAO; LOAD pass (`ScreenOverlayPass`) |
 
 Translate handle drags and `G` grab entry both enter `TranslateModalSession`,
@@ -75,6 +77,105 @@ constraint. Middle-mouse drag picks the nearest projected axis and commits it on
 release. Typed digits apply a signed distance along the active constraint;
 `Enter` confirms the session; `Escape` clears numeric input first, then cancels.
 Live constraint changes update guides, origin dot, and plane-center visibility.
+
+### Selection outline (packed ID)
+
+- Prepass writes `R16_UINT` per pixel: `(color_id << 14) | (ob_id & 0x3FFF)`.
+- `color_id`: `0` = transform-drag orange while gizmo is dragging; `1` = object-select `#F57011`.
+- `ob_id`: unique per selected Hierarchy root; subtree meshes share the root's `ob_id`.
+- Resolve: 8-neighbor smooth edge mask; edges vs background or `color_id` change; no seam between co-selected meshes with the same `color_id`.
+- **Outline AA:** `outline_resolve.slang` `edgeCoverage()` applies linear smoothstep on neighbor count with `kOutlineEdgeSmoothMin = 0.25` / `kOutlineEdgeSmoothMax = 2.5`. CPU mirror: `outline_aa.cpp` (`outlineEdgeCoverage`). Default-on; no env toggle.
+- Resolve samples `object_id` / depth using fragment `SV_Position` pixel coordinates (same extent as prepass RT).
+- Hierarchy: click = replace, Shift+click = add, Ctrl+click = toggle.
+
+### Overlay anti-aliasing (Blender three-layer model)
+
+1. **Polyline intrinsic AA** — `transform_gizmo.slang` polylines + arrow stems: Blender `smoothline` formula (`kPolylineSmoothWidth = 1`, CPU: `polylineStrokeAlphaBlender`). Screen pass, not line MRT.
+2. **Line MRT composite AA** — `OverlayLinePass` writes color + `packLineData` line target; `overlay_aa.slang` decodes and runs cross-neighbor `line_coverage` (CPU: `overlay_line_aa.cpp`). Gated by `BLUNDER_EDITOR_OVERLAY_AA=1`.
+3. **Outline resolve** — v1: 8-neighbor kernel in `outline_resolve.slang`; optional v3: Blender directional `pack_line_data` detect.
+
+Shared line pack encoding: `overlay_line_pack.slang` / `overlay_common_lib.glsl` (`sin_theta * 0.5 + 0.5`, `dist * 0.4 + 0.5`).
+
+### Viewport mesh picking
+
+Left-click inside the editor viewport selects scene meshes via `ViewportPickSystem` using the **GPU entity-ID prepass only** (`PickOverlay`).
+
+**Input priority (left-click):**
+
+1. `TransformGizmoController` (handle drag)
+2. Navigate gizmo
+3. Viewport mesh pick (`ViewportPickSystem::onViewportClick`)
+4. Editor camera (orbit/pan does not use left-click)
+
+**Gizmo hover:** On `MouseMoved` inside the viewport (when transform gizmo mode is active and not dragging), `TransformGizmoController::updateHoverFromPointer` runs the same CPU analytic pick as click/drag. Colors follow Blender `gizmo_color_get` via `gizmoColorGet`: normal handles use theme RGB at alpha **0.6** × `alpha_fac` (`color`), hovered interactive handles use the same RGB at alpha **1.0** × `alpha_fac` (`color_hi`). Decor axes (`rot_t`, `rot_c`, `scale_c_outer`) never select `color_hi` — `gizmoHandleUsesHoverColorHi` mirrors Blender `WM_GIZMO_DRAW_HOVER`. Theme RGB matches Blender default `userdef_default_theme.c` (`TH_AXIS_*`, white `TH_GIZMO_VIEW_ALIGN`). Redraw occurs only when the hovered axis changes. Hover does **not** set `event.handled` and does not change selection.
+
+**Transform gizmo SDF AA:** Rotate dials, outer ring, scale annulus, ghost arc, and plane borders draw via local 2D SDF quads in `transform_gizmo.slang` (`ScreenOverlayPass`). Translate/scale **arrow stems** use navigate-gizmo-style view-space arm quads (`vsNavigateStyleArmQuad`). SDF paths use `strokeCoord` markers (`kStrokeSdfRing`, `kStrokeSdfDisc`, `kStrokeSdfRect`); solids and arms use sentinel `> 1`. CPU mirrors: `gizmo_sdf_aa.cpp`. Legacy `gizmo_polyline_aa.cpp` remains for Blender polyline stroke math.
+
+**Navigate gizmo style:** `NavigateGizmoOverlay` draws Blender `VIEW3D_GT_navigate_rotate` at 80px diameter (10px margin). Colors use `navigate_gizmo_style` depth fade against `viewBgColor` in `navigate_gizmo.slang`. On `MouseMoved`, `updateHoverFromPointer` sets hover backdrop (`navigateGizmoHighlightBackdropColor`, gray 0.5) and per-axis label highlight — same redraw-on-change pattern as transform hover.
+
+**Input priority (right-click):**
+
+1. Gizmo / navigate gizmo (same as left-click when applicable)
+2. **Ctrl+right-click** in viewport → piercing menu (`ViewportPickSystem::onPiercingMenuClick`)
+3. Editor camera free-look (plain right-drag)
+
+**GPU pick (hybrid broad + narrow):**
+
+| Operation | Implementation |
+|-----------|----------------|
+| Instance buffer (P1) | `PickInstanceBuffer` rebuilds on scene dirty (`syncSceneToRender` / `tickVulkan`), not per click; caches `PickDraw[]` + `PickInstanceGpu` SSBO |
+| Left-click pick | Release → **sync narrow** front-most (`pickEntityAtWindowPosition` + promote) → immediate `applySelection` in input phase → sync peel list for cycling → async **broad compute** + narrow refines `m_last_peel_hits` |
+| Piercing menu (Ctrl+right) | Broad compute only; `peel_hits` carries promoted hit list |
+| Async delivery | `pollHybridPick` at **start** of `tickVulkan` (before viewport skip/render) |
+| Selection present | `onSelectionChanged` → `markViewportDirtyRegion()` + `requestViewportRedraw` |
+| Transform edit (gizmo / Inspector) | Gizmo `markSceneDirty()` → `notifyViewportAfterGizmoTransformEdit` / `requestViewportRedraw`; Inspector `applyInspectorTransform` → `notifyViewportAfterInspectorTransformEdit` (`markViewportDirtyRegion` + `requestViewportRedraw`) (static camera must not skip the offscreen pass) |
+| Piercing menu input | Menu visible → `shouldRouteMouseToInputLayers` false; menu row select suppresses matching left-release pick |
+
+**Selection modifiers:**
+
+| Input | Effect |
+|-------|--------|
+| Left-click | Replace selection |
+| Shift+left-click | Add to selection |
+| Ctrl+left-click | Toggle selection |
+| Ctrl+right-click | Piercing menu → replace from menu |
+| Ctrl+Shift+right-click | Piercing menu → add from menu |
+| Repeat left-click within 3 px | Cycle through `m_last_peel_hits` (sync peel list on first click; async broad list refines when ready) |
+
+- GPU pick rasterizes the **leaf entity** owning the hit `MeshRendererComponent`, then promotes to the **scene-root child**: walk up while the current entity's parent has a valid grandparent, then select that parent (e.g. `node_prim0` → `BoxFront` in pick_test). Entities with no parent are returned unchanged.
+- Blend-transparent meshes are not pickable.
+- Click on empty viewport clears selection (same modifier semantics as Hierarchy).
+- `requestPick` marks the viewport dirty so peel passes progress and outline/gizmo refresh without camera movement.
+
+### Pick multi-hit (broad phase)
+
+Editor camera uses **`glm::perspectiveZO`**. Pick prepass uses depth clear `0.0` and `VK_COMPARE_OP_GREATER` for front-most narrow hits.
+
+**Multi-hit** (piercing menu, same-pixel cycling) uses **compute broad phase** (`pick_broad_phase.slang` ray vs world AABB per `PickInstanceGpu`), not iterative entity-ID peel:
+
+1. `PickBroadPhase` dispatch → read back leaf hits with distance `t`
+2. `sortBroadHitsByDistance` → `promoteAndDedupeBroadHits` → `m_last_peel_hits`
+3. Left-click: one narrow raster pass on broad candidate draws only (front-most leaf → promote)
+
+Depth peel shader uniforms (`isPeelPass` / `peelDepth`) remain for legacy sync dev paths only; not used on the hot path.
+
+**Idle viewport:** `pollViewportPickIfActive` runs at the start of every `tickVulkan` (including when the offscreen pass is later skipped for a static camera).
+
+**Sync-then-async left-click:** `onViewportLeftReleased` sync-picks front-most + `applySelection` in the input phase, then **defers** `requestPick(multi_peel)` to the **next** `tickVulkan` so the selection frame can render outline/gizmo and composite before broad-phase GPU work starts. `notifyEditorUi` calls `markFullSkiaRefresh()`; `endFrame` bypasses idle composite pacing when that flag is set. `deliverPickResult` updates `m_last_peel_hits` from the async broad list and skips redundant `applySelection` when the promoted front matches the current primary.
+
+### Pick-test scene (manual QA)
+
+Default editor startup loads **`assets/Scenes/pick_test.scene.asset`** (override with env `BLUNDER_STARTUP_SCENE`, e.g. `assets/Scenes/root.scene.asset`).
+
+| Entity | Position (Z-up) | Role |
+|--------|-----------------|------|
+| `BoxFront` | `[0, 2.0, 1.0]` | Nearest along +Y |
+| `BoxMid` | `[0, 2.9, 1.0]` | Middle (0.9 m spacing, overlapping 1 m cubes) |
+| `BoxBack` | `[0, 3.8, 1.0]` | Farthest along +Y |
+
+All three are **root entities** sharing `assets/Meshes/Cube.mesh.yaml`. View the stack along ±Y so the ray through overlapping voxels hits three mesh renderers. glTF import adds `node → node_prim0` under each box; promotion walks up to `BoxFront` / `BoxMid` / `BoxBack`. Hybrid pick QA expects **≥3** piercing-menu rows and **≥3** same-pixel cycle steps with those promoted names. Sync peel list on first click enables same-pixel cycling on the second click; async broad delivery refines the list when ready.
+
+Restore Sponza demo: set `BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset` and spawn `assets/Sponza.mesh.yaml` from the Content Browser.
 
 ## Notes / known limitations
 

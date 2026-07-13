@@ -13,7 +13,8 @@ set(SHADER_CANDIDATES
     shadow_depth.slang
     ssao_generate.slang
     ssao_apply.slang
-    overlay_aa.slang
+    pick_broad_phase.slang
+    pick_prepass.slang
     navigate_gizmo.slang
     ui_overlay.slang
 )

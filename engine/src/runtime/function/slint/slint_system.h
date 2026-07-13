@@ -218,6 +218,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void showPiercingMenu(const eastl::vector<PiercingMenuItem>& items, float window_x,
                         float window_y, bool add_mode);
   void hidePiercingMenu();
+  bool isPiercingMenuVisible() const;
 
   /// Hit-tests the Persp/Iso strip and toggles projection (engine mouse path).
   bool tryToggleProjectionAtWindow(float window_x, float window_y);
@@ -413,6 +414,17 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_piercing_menu_add_mode{false};
   bool m_left_mouse_down_prev{false};
   bool m_applying_inspector_sync{false};
+  enum class InspectorRotationEditMode : uint8_t { euler = 0, quaternion = 1 };
+  enum class InspectorMultiEditMode : uint8_t { absolute = 0, delta = 1 };
+  InspectorRotationEditMode m_inspector_rotation_mode{
+      InspectorRotationEditMode::euler};
+  InspectorMultiEditMode m_inspector_multi_edit_mode{
+      InspectorMultiEditMode::absolute};
+  bool m_inspector_scale_link{true};
+  /// -1 = none; else field id while keyboard draft / scrub is active.
+  int m_inspector_focused_field{-1};
+  /// Last Transform field that triggered an edit (Absolute multi applies only this axis).
+  int m_inspector_last_edited_field{-1};
   bool m_force_window_commit{false};
   bool m_window_resize_active{false};
   uint32_t m_resize_events_pumped{0};

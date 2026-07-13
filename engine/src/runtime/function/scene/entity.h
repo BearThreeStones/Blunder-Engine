@@ -30,6 +30,9 @@ class Entity final {
   bool isEnabled() const { return m_enabled; }
   void setEnabled(bool enabled) { m_enabled = enabled; }
 
+  bool isTombstoned() const { return m_tombstoned; }
+  void setTombstoned(bool tombstoned) { m_tombstoned = tombstoned; }
+
   Mat4 getLocalMatrix() const;
 
  private:
@@ -39,6 +42,7 @@ class Entity final {
   Vec3 m_scale{1.0f, 1.0f, 1.0f};
   EntityId m_parent_id{k_invalid_entity_id};
   bool m_enabled{true};
+  bool m_tombstoned{false};
 };
 
 }  // namespace Blunder

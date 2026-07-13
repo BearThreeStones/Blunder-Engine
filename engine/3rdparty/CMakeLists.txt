@@ -10,6 +10,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/yaml_cpp.cmake)
 # producing an empty glm.lib / glmd.lib that the linker can't find.
 set(GLM_BUILD_LIBRARY OFF CACHE BOOL "" FORCE)
 add_subdirectory(glm)
+target_compile_definitions(glm INTERFACE GLM_FORCE_INTRINSICS)
 add_subdirectory(spdlog)
 
 if(MSVC)

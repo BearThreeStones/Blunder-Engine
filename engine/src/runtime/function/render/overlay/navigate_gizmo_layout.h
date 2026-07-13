@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "runtime/function/render/overlay/navigate_gizmo_style.h"
+
 namespace Blunder {
 
 struct Rect2f {
@@ -24,7 +26,7 @@ struct NavigateGizmoLayout {
   bool visible{false};
 };
 
-constexpr float kNavigateGizmoBaseSize = 110.0f;
+constexpr float kNavigateGizmoBaseSize = kBlenderNavigateGizmoDiameterPx;
 constexpr float kNavigateGizmoMargin = 10.0f;
 constexpr float kNavigateGizmoMinSize = 30.0f;
 constexpr float kProjectionButtonWidth = 56.0f;

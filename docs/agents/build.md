@@ -25,7 +25,16 @@ start build/vs2026-debug/BlunderEngine.sln
 
 # Run editor
 ./build/vs2026-debug/engine/src/editor/Debug/engine_editor.exe
+
+# Default scene is `assets/Scenes/pick_test.scene.asset`; override:
+# set BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset
 ```
+
+## CPU requirements (Windows)
+
+MSVC engine targets (e.g. `engine_runtime`) are built with `/arch:AVX2` so GLM can use AVX2 matrix/vector intrinsics. The editor requires an **x64 CPU with AVX2** (roughly Intel Haswell 2013+ or AMD Excavator 2015+). Pre-AVX2 hardware will not run Windows editor binaries from this configuration.
+
+Linux GCC builds use `GLM_FORCE_INTRINSICS` without the MSVC `/arch:AVX2` flag; SIMD level follows the compiler's default x86_64 ISA.
 
 ## See also
 

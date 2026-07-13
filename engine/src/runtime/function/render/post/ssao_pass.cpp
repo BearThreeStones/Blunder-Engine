@@ -17,6 +17,7 @@
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_shader.h"
 #include "runtime/function/render/vulkan/vulkan_texture.h"
+#include "runtime/function/render/viewport_style.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 
 namespace Blunder {
@@ -902,7 +903,8 @@ void SsaOPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
   }
 
   VkClearValue composite_clear{};
-  composite_clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+  composite_clear.color = {{kViewportBackgroundRgb, kViewportBackgroundRgb,
+                            kViewportBackgroundRgb, 1.0f}};
   VkRenderPassBeginInfo composite_begin{};
   composite_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   composite_begin.renderPass = m_composite_render_pass;

@@ -104,7 +104,7 @@ inline std::optional<NavigateGizmoAxisHit> hitTestNavigateGizmoAxis(
     bool hit = false;
     if (glm::length(pos2d - end_pos) <= ball_radius) {
       hit = true;
-    } else {
+    } else if (is_positive) {
       float center_scale = 1.0f;
       const glm::vec2 arm_start = projectGizmoPoint(world_dir * (NavigateGizmoMetrics::kCenterRadius * 0.5f),
                                                      view_rotation, perspective_factor, k_D, center_scale);

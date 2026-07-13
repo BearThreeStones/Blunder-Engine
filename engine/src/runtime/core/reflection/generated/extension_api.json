@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "classes": [
+    {
+      "name": "Object",
+      "header": "engine/src/runtime/core/object/object.h",
+      "properties": [
+        {
+          "name": "name",
+          "type": "String"
+        },
+        {
+          "name": "enabled",
+          "type": "Bool"
+        },
+        {
+          "name": "position",
+          "type": "Vec3"
+        },
+        {
+          "name": "rotation",
+          "type": "Quat"
+        },
+        {
+          "name": "scale",
+          "type": "Vec3"
+        }
+      ],
+      "methods": [
+        {
+          "name": "set_name",
+          "arguments": [
+            "String"
+          ]
+        }
+      ],
+      "lifecycle": [
+        "Ready",
+        "Tick"
+      ]
+    }
+  ]
+}

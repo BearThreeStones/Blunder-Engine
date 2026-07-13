@@ -4,6 +4,7 @@
 
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/reflection/class_db.h"
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
 #include "runtime/function/scene/scene_system.h"
@@ -29,6 +30,8 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/viewport_pick_system.h"
 // #include "runtime/resource/config_manager/config_manager.h"
 
 namespace Blunder {
@@ -36,6 +39,8 @@ RuntimeGlobalContext g_runtime_global_context;
 
 void RuntimeGlobalContext::startSystems() {
   m_memory_system.initialize();
+
+  ClassDB::initialize();
 
   // m_config_manager = eastl::make_shared<ConfigManager>();
   // m_config_manager->initialize(config_file_path);
@@ -72,6 +77,20 @@ void RuntimeGlobalContext::startSystems() {
   m_editor_scene_edit = eastl::make_shared<EditorSceneEditSystem>();
   m_editor_scene_edit->initialize(m_file_system.get(), m_asset_manager.get(),
                                     m_scene_system.get());
+  m_document_history = eastl::make_shared<DocumentHistory>();
+  m_document_history->setSelectionRestorer(
+      [](const SelectionSnapshot& snapshot) {
+        if (!g_runtime_global_context.m_editor_selection) {
+          return;
+        }
+        if (isValid(snapshot.primary)) {
+          g_runtime_global_context.m_editor_selection->setSelection(
+              snapshot.primary);
+        } else {
+          g_runtime_global_context.m_editor_selection->clearSelection();
+        }
+      });
+  m_viewport_pick = eastl::make_shared<ViewportPickSystem>();
 
   m_thumbnail_generator = eastl::make_shared<ThumbnailGenerator>();
   ThumbnailGeneratorInit thumbnail_init{};
@@ -242,6 +261,8 @@ void RuntimeGlobalContext::shutdownSystems() {
     m_thumbnail_generator.reset();
   }
 
+  m_viewport_pick.reset();
+  m_document_history.reset();
   m_editor_scene_edit.reset();
   m_hierarchy.reset();
   m_editor_selection.reset();
@@ -267,6 +288,8 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   m_logger_system.reset();
+
+  ClassDB::shutdown();
 
   m_memory_system.shutdown();
 

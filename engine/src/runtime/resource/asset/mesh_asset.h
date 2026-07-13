@@ -8,6 +8,7 @@
 #include "EASTL/shared_ptr.h"
 #include "EASTL/vector.h"
 
+#include "runtime/core/math/geometry.h"
 #include "runtime/resource/asset/asset.h"
 #include "runtime/resource/asset/material_asset.h"
 
@@ -20,6 +21,24 @@ struct MeshVertex {
   glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
 };
 
+namespace {
+
+inline AABB computeLocalBounds(const eastl::vector<MeshVertex>& vertices) {
+  AABB bounds{};
+  if (vertices.empty()) {
+    bounds.min = bounds.max = glm::vec3(0.0f);
+    return bounds;
+  }
+
+  bounds.min = bounds.max = vertices.front().position;
+  for (size_t i = 1; i < vertices.size(); ++i) {
+    bounds.expandToInclude(vertices[i].position);
+  }
+  return bounds;
+}
+
+}  // namespace
+
 /// CPU-side mesh resource used by the importer before any render-backend
 /// specific vertex conversion happens.
 class MeshAsset final : public Asset {
@@ -31,7 +50,8 @@ class MeshAsset final : public Asset {
         m_vertices(eastl::move(vertices)),
         m_indices(eastl::move(indices)),
         m_material(eastl::move(material)),
-        m_material_asset(eastl::move(material_asset)) {
+        m_material_asset(eastl::move(material_asset)),
+        m_local_bounds(computeLocalBounds(m_vertices)) {
     setState(State::Loaded);
   }
 
@@ -49,12 +69,14 @@ class MeshAsset final : public Asset {
   size_t getVertexCount() const { return m_vertices.size(); }
   size_t getVertexByteSize() const { return m_vertices.size() * sizeof(MeshVertex); }
   size_t getIndexCount() const { return m_indices.size(); }
+  const AABB& getLocalBounds() const { return m_local_bounds; }
 
  private:
   eastl::vector<MeshVertex> m_vertices;
   eastl::vector<uint32_t> m_indices;
   AssetHandle m_material;
   eastl::shared_ptr<MaterialAsset> m_material_asset;
+  AABB m_local_bounds{};
 };
 
 }  // namespace Blunder

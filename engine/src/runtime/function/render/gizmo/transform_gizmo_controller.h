@@ -4,6 +4,7 @@
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/function/render/gizmo/gizmo_math.h"
+#include "runtime/function/render/gizmo/transform_gizmo_pick.h"
 #include "runtime/function/render/gizmo/translate_modal_session.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 
@@ -49,11 +50,23 @@ class TransformGizmoController final {
 
   bool buildActiveGizmoBasis(GizmoBasis& out_basis) const;
 
+  bool hasHover() const { return m_hover_axis.has_value(); }
+  std::optional<ManipulatorAxis> getHoverAxis() const { return m_hover_axis; }
+  bool isHandleHighlighted(ManipulatorAxis axis) const;
+
+  /// Returns true when hovered axis changed (caller should redraw).
+  bool updateHoverFromPointer(const Vec2& window_pos, EditorCamera& camera);
+  void clearHover();
+
  private:
   void endCameraLock(EditorCamera* camera);
   void setTranslateModalCursor();
   void clearTranslateModalCursor();
   void requestViewportRedraw() const;
+
+  bool buildPickContext(const Vec2& window_pos, EditorCamera& camera,
+                        GizmoBasis& out_basis, TransformGizmoPickContext& out_ctx,
+                        float& out_group_scale) const;
 
   bool onKeyPressed(Event& event, EditorCamera& camera);
   bool onMousePressed(Event& event, EditorCamera& camera);
@@ -69,6 +82,7 @@ class TransformGizmoController final {
   TransformGizmoMode m_mode{TransformGizmoMode::none};
   GizmoSpace m_space{GizmoSpace::global};
   std::optional<ManipulatorAxis> m_active_axis;
+  std::optional<ManipulatorAxis> m_hover_axis;
 
   glm::vec3 m_drag_start_world{0.0f};
   Vec3 m_entity_position_at_drag_start{0.0f};

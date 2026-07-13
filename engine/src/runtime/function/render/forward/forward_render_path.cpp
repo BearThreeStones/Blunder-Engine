@@ -15,6 +15,7 @@
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/rhi_types.h"
+#include "runtime/function/render/viewport_style.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
@@ -585,7 +586,8 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
   command_list.bind(m_vk_context, command_buffer);
 
   rhi::ClearValue clears[2]{};
-  clears[0].color = {0.1f, 0.1f, 0.1f, 1.0f};
+  clears[0].color = {kViewportBackgroundRgb, kViewportBackgroundRgb,
+                     kViewportBackgroundRgb, 1.0f};
   clears[1].depth_stencil = {1.0f, 0};
 
   m_offscreen->beginRenderPass(command_list, clears, 2);

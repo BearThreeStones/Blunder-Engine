@@ -2,11 +2,14 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
+#include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/offscreen_render_target.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/slang/slang_compiler.h"
@@ -39,8 +42,15 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_line_targets.initialize(ctx, alloc, m_native_offscreen);
   m_line_pass.initialize(ctx, m_native_offscreen, &m_line_targets);
 
+  const VkExtent2D extent = m_native_offscreen->getExtent();
   m_outline_targets.initialize(ctx, alloc);
+  m_outline_targets.resize(extent.width, extent.height);
   m_outline.initialize(ctx, alloc, m_native_offscreen, compiler, &m_outline_targets);
+
+  m_pick_targets.initialize(ctx, alloc);
+  m_pick_targets.resize(extent.width, extent.height);
+  m_pick.initialize(ctx, alloc, compiler, &m_pick_targets);
+  m_hybrid_pick.initialize(ctx, alloc, compiler, &m_pick);
 
   m_grid.initialize(ctx, alloc, m_resources, compiler);
   m_navigate_gizmo.initialize(m_resources, compiler);
@@ -49,7 +59,13 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
 }
 
 void OverlaySystem::shutdown() {
+  m_pick_instances.shutdownGpu();
+  m_hybrid_pick.shutdown();
   m_anti_aliasing.shutdown();
+  m_pick.shutdown();
+  m_pick_targets.shutdown();
+  m_outline.shutdown();
+  m_outline_targets.shutdown();
   m_navigate_gizmo.shutdown();
   m_transform_gizmo.shutdown();
   m_grid.shutdown();
@@ -72,7 +88,19 @@ void OverlaySystem::resize(uint32_t width, uint32_t height) {
   m_line_pass.resize(width, height);
   m_outline_targets.resize(width, height);
   m_outline.resize(width, height);
+  m_pick_targets.resize(width, height);
+  m_pick.resize(width, height);
   m_anti_aliasing.resize(width, height);
+}
+
+void OverlaySystem::rebuildPickInstancesIfNeeded(SceneInstance& scene,
+                                                 RenderSystem& render_system) {
+  if (!m_pick_instances_dirty && !scene.isWorldMatricesDirty()) {
+    return;
+  }
+  m_pick_instances.rebuild(scene, &render_system);
+  m_pick_instances.uploadToGpu(m_resources.vk_allocator);
+  m_pick_instances_dirty = false;
 }
 
 void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
@@ -96,6 +124,7 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
   m_axes.begin_sync(m_resources, m_state);
   m_wireframe.begin_sync(m_resources, m_state);
   m_origins.begin_sync(m_resources, m_state);
+  m_outline.begin_sync(m_resources, m_state);
   m_navigate_gizmo.begin_sync(m_resources, m_state);
   m_transform_gizmo.begin_sync(m_resources, m_state);
   m_outline.begin_sync(m_resources, m_state);
@@ -117,6 +146,9 @@ void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
 }
 
 void OverlaySystem::draw_outline(VkCommandBuffer cmd) {
+  if (!m_outline.isEnabled()) {
+    return;
+  }
   m_outline.drawPrepass(cmd, m_state);
   m_outline.drawResolve(cmd, m_native_offscreen, m_state);
 }
@@ -138,6 +170,28 @@ void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
   m_transform_gizmo.draw_screen(cmd, m_state);
   m_navigate_gizmo.draw_screen(cmd, m_state);
   m_screen_pass.end(cmd);
+}
+
+EntityId OverlaySystem::pickAtWindowPosition(const float window_x,
+                                             const float window_y,
+                                             EditorCamera& camera,
+                                             SceneInstance& scene,
+                                             RenderSystem& render_system) {
+  return m_pick.pickAtWindowPosition(window_x, window_y, camera, scene,
+                                     render_system);
+}
+
+eastl::vector<EntityId> OverlaySystem::pickAllAtWindowPosition(
+    const float window_x, const float window_y, EditorCamera& camera,
+    SceneInstance& scene, RenderSystem& render_system) {
+  return m_pick.pickAllAtWindowPosition(window_x, window_y, camera, scene,
+                                        render_system);
+}
+
+void OverlaySystem::pollHybridPick(EditorCamera& camera, SceneInstance& scene,
+                                   RenderSystem& render_system,
+                                   ViewportPickSystem& viewport_pick) {
+  m_hybrid_pick.poll(camera, scene, render_system, viewport_pick);
 }
 
 }  // namespace Blunder

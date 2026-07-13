@@ -34,13 +34,24 @@
 #include <SDL3/SDL_system.h>
 #endif
 
+#include <cstdlib>
+
 namespace Blunder {
 bool g_is_editor_mode{false};
 eastl::unordered_set<eastl::string> g_editor_tick_component_types{};
 
 namespace {
 
-constexpr const char* k_startup_scene_path = "assets/Scenes/root.scene.asset";
+constexpr const char* k_default_startup_scene_path =
+    "assets/Scenes/pick_test.scene.asset";
+
+const char* resolveStartupScenePath() {
+  const char* env = std::getenv("BLUNDER_STARTUP_SCENE");
+  if (env != nullptr && env[0] != '\0') {
+    return env;
+  }
+  return k_default_startup_scene_path;
+}
 
 void focusEditorCameraOnActiveScene() {
   if (g_runtime_global_context.m_render_system) {
@@ -277,7 +288,7 @@ void BlunderEngine::initialize() {
   }
 
   if (g_runtime_global_context.m_scene_system) {
-    activateEditorScene(k_startup_scene_path);
+    activateEditorScene(resolveStartupScenePath());
     if (SceneInstance* active =
             g_runtime_global_context.m_scene_system->getActiveInstance()) {
       LOG_INFO("[BlunderEngine] active scene '{}' (entities={})",

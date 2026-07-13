@@ -4,6 +4,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/gpu_mesh.h"
+#include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -31,6 +32,10 @@ VulkanTexture* resolveTexture(RenderSystem* render_system,
 void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instance) {
   if (render_system == nullptr) {
     return;
+  }
+
+  if (OverlaySystem* overlay = render_system->getOverlaySystem()) {
+    overlay->markPickInstancesDirty();
   }
 
   render_system->clearOpaqueMeshDraws();
