@@ -1,4 +1,4 @@
-// Font-independent dock chrome glyphs (close, pin, minimize).
+// Dock chrome glyphs: close/pin from vendored Godot editor icons; minimize stays geometry.
 
 export component DockChromeCloseIcon inherits Rectangle {
     in property <color> icon-color: #808080;
@@ -8,24 +8,12 @@ export component DockChromeCloseIcon inherits Rectangle {
     height: icon-size;
     background: transparent;
 
-    Rectangle {
-        width: parent.width * 0.65;
-        height: 1px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: root.icon-color;
-        transform-rotation: 45deg;
-        transform-origin: { x: self.width / 2, y: self.height / 2 };
-    }
-
-    Rectangle {
-        width: parent.width * 0.65;
-        height: 1px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        background: root.icon-color;
-        transform-rotation: -45deg;
-        transform-origin: { x: self.width / 2, y: self.height / 2 };
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/GuiClose.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
     }
 }
 
@@ -37,21 +25,12 @@ export component DockChromePinIcon inherits Rectangle {
     height: icon-size;
     background: transparent;
 
-    Rectangle {
-        width: 5px;
-        height: 5px;
-        x: (parent.width - self.width) / 2;
-        y: 1px;
-        border-radius: self.width / 2;
-        background: root.icon-color;
-    }
-
-    Rectangle {
-        width: 1.5px;
-        height: parent.height - 6px;
-        x: (parent.width - self.width) / 2;
-        y: 5px;
-        background: root.icon-color;
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Pin.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
     }
 }
 

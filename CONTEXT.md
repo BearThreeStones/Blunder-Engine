@@ -78,6 +78,16 @@ _Avoid_: Boxing every script call into Variant, exposing C++ member pointers to 
 A small engine dynamic value used for editor-facing property get/set, serialization glue, and other type-erased tooling paths — not the primary script call ABI.
 _Avoid_: Using Variant as the only interop calling convention, conflating with `std::variant` / EASTL variant
 
+### Editor icons
+
+**Editor Icon**:
+A themed vector glyph used for editor chrome and panel affordances (dock close/pin, browser search/refresh/folder, tree/breadcrumb arrows, Inspector scale-link). Sourced from Godot's `editor/icons` SVG set and shown through dedicated Slint icon components with UI colorization.
+_Avoid_: Emoji or Unicode text as the source for those affordances; one-off hand-drawn geometry once a Godot glyph is adopted for the same control
+
+**Scale-link icons**:
+The Inspector Scale link toggle uses Godot's linked/unlinked chain pair: linked (proportion locked) and unlinked (axes independent) — the same pair Godot's vector property linker uses (`Instance` / `Unlinked`).
+_Avoid_: Padlock Lock/Unlock for Scale link; chain emoji
+
 ### Navigate gizmo
 
 **Positive ball**:

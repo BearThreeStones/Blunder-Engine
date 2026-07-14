@@ -23,11 +23,12 @@ class VulkanGraphicsPipeline;
 struct OverlayResources;
 struct OverlayState;
 
-/// Grid ground-plane overlay with analytical anti-aliased lines and LOD.
+/// Grid ground-plane overlay with analytical anti-aliased lines and GridPass LOD.
 ///
 /// Renders a large quad on the grid plane and computes grid lines per pixel
 /// using screen-space derivatives (fwidth) for smooth anti-aliasing.
-/// Owns its own Vulkan pipeline, uniform buffers, and descriptor sets.
+/// LOD uses log10(camera-to-ground) nested spacings with fracLog blending and
+/// |ray·planeNormal| horizon fade. Owns its Vulkan pipeline and descriptors.
 class GridOverlay final : public Overlay {
  public:
   GridOverlay() = default;

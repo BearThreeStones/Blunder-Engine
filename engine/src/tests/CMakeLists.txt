@@ -232,3 +232,18 @@ target_precompile_headers(editor_commands_test
 
 add_test(NAME editor_commands_test
          COMMAND editor_commands_test)
+
+add_executable(godot_editor_icons_test
+    "godot_editor_icons_test.cpp"
+)
+
+target_compile_definitions(godot_editor_icons_test
+    PRIVATE "BLUNDER_REPO_ROOT=R\"(${CMAKE_SOURCE_DIR})\""
+)
+
+if(MSVC)
+    target_compile_options(godot_editor_icons_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME godot_editor_icons_test
+         COMMAND godot_editor_icons_test)

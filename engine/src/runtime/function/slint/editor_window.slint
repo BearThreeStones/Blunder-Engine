@@ -278,11 +278,19 @@ export component MainEditorWindow inherits Window {
                 }
 
                 for tile in root.docking-tiles: Rectangle {
+                    x: tile.tab-x;
+                    y: tile.tab-y;
+                    width: tile.tab-width;
+                    height: tile.tab-height;
+                    background: #2d2d2d;
+                }
+
+                for tile in root.docking-tiles: Rectangle {
                     x: tile.content-x;
                     y: tile.content-y;
                     width: tile.content-width;
                     height: tile.content-height;
-                    background: tile.floating ? #232323 : #1c1c1c;
+                    background: #2d2d2d;
                     border-color: #2a2a2a;
                     border-width: 1px;
                     clip: true;

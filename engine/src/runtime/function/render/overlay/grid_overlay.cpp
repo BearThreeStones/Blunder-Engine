@@ -40,40 +40,53 @@ struct GridUniformData {
   glm::vec4 quad_center;
   glm::vec4 plane_axis_u;
   glm::vec4 plane_axis_v;
+  // Nested LOD spacings in [0..2]; remaining slots unused (keep len=8 for UBO ABI).
   glm::vec4 steps[k_grid_steps_len];
-  // params: x=level, y=quadHalfExtent, z=alphaScale, w=pixelFac
+  // params: x=fracLog, y=quadHalfExtent, z=alphaScale, w=unused
   glm::vec4 params;
   glm::vec4 axis_color_u;
   glm::vec4 axis_color_v;
 };
 
-// Default step sizes (powers of 10, scene units).
-constexpr float k_grid_default_steps[k_grid_steps_len] = {
-    0.01f, 0.1f, 1.0f, 10.0f, 100.0f, 1000.0f, 10000.0f, 100000.0f};
-
+/// Base cell size for GridPass-style exponential LOD (scene units).
+constexpr float k_grid_base_spacing = 1.0f;
 constexpr float k_grid_base_alpha = 0.65f;
 constexpr float k_grid_axis_alpha = 1.0f;
 
 /// 6 vertices for a fullscreen quad (TriangleList).
 constexpr uint32_t k_grid_vertex_count = 6u;
 
-/// Compute the float `level` by finding where `dist` falls between
-/// two adjacent step sizes.  Integer part = level index, fractional
-/// part = smooth cross-fade progress.
-float computeGridLevel(const float* steps, float dist) {
-  for (int i = 0; i < static_cast<int>(k_grid_steps_len); ++i) {
-    const float curr = steps[i];
-    const float next = (i < static_cast<int>(k_grid_steps_len) - 1)
-                           ? steps[i + 1]
-                           : curr * 10.0f;
-    if (next >= dist || i == static_cast<int>(k_grid_steps_len) - 1) {
-      const float denom = next - curr;
-      const float frac =
-          (denom > 1e-8f) ? (dist - curr) / denom : 0.0f;
-      return static_cast<float>(i) + std::clamp(frac, 0.0f, 1.0f);
-    }
+/// GridPass nested LOD: log10 distance → three exponential spacings + frac.
+struct GridPassLod {
+  float frac_log = 0.0f;
+  float spacing[k_grid_steps_draw] = {0.1f, 1.0f, 10.0f};
+};
+
+/// View distance driving GridPass LOD.
+/// Perspective: max(height above plane, orbit distance) so zoom and elevation
+/// both coarsen the grid. Ortho: visible window size.
+float computeViewDist(const OverlayState& state, const glm::vec3& plane_normal,
+                      bool is_ortho) {
+  if (is_ortho) {
+    return std::max(state.ortho_size, 1e-3f);
   }
-  return 0.0f;
+  const float height =
+      std::abs(glm::dot(state.camera_position, plane_normal));
+  return std::max(std::max(height, state.camera_distance), 1e-3f);
+}
+
+/// GridPass LOD: logDist = log10(max(viewDist * 0.1, 1)), capped at 7.
+GridPassLod computeGridPassLod(float view_dist, float base_spacing) {
+  GridPassLod lod;
+  float log_dist =
+      std::log(std::max(view_dist * 0.1f, 1.0f)) / std::log(10.0f);
+  log_dist = std::min(log_dist, 7.0f);
+  const float floor_log = std::floor(log_dist);
+  lod.frac_log = log_dist - floor_log;
+  lod.spacing[0] = base_spacing * std::pow(10.0f, floor_log - 1.0f);
+  lod.spacing[1] = base_spacing * std::pow(10.0f, floor_log);
+  lod.spacing[2] = base_spacing * std::pow(10.0f, floor_log + 1.0f);
+  return lod;
 }
 
 /// World point where the camera looks (orbit focal), projected onto the grid plane.
@@ -147,21 +160,6 @@ float computeGridHalfExtentOnPlane(const OverlayState& state,
 
   const float fallback = std::max(view_half_width, view_half_height) * 8.0f;
   return std::max(max_radius * 1.25f, fallback);
-}
-
-/// Compute a reference distance metric for the current camera.
-float computeDistMetric(const OverlayState& state,
-                        const glm::vec3& plane_normal) {
-  (void)plane_normal;
-  const bool is_ortho = std::abs(state.projection[3][3]) > 0.5f;
-  const float vp_h =
-      std::max(static_cast<float>(state.viewport_height), 1.0f);
-  const float world_per_pixel =
-      is_ortho ? (state.ortho_size * 2.0f / vp_h)
-               : (2.0f * std::tan(state.vertical_fov * 0.5f) *
-                  state.camera_distance / vp_h);
-  // Target ~40 pixels per cell so grid lines are clearly spaced and visible.
-  return std::max(world_per_pixel * 40.0f, 0.004f);
 }
 
 }  // namespace
@@ -366,15 +364,17 @@ void GridOverlay::draw_screen(VkCommandBuffer cmd, const OverlayState& state) {
                   state.camera_distance / vp_h);
   grid_ubo.plane_axis_u.w = world_per_pixel;
 
-  // Fill steps array.
+  // GridPass nested LOD: logDist → three exponential spacings + fracLog.
+  const float view_dist = computeViewDist(state, plane_normal, is_ortho);
+  const GridPassLod lod =
+      computeGridPassLod(view_dist, k_grid_base_spacing);
   for (uint32_t i = 0; i < k_grid_steps_len; ++i) {
-    const float s = k_grid_default_steps[i];
+    grid_ubo.steps[i] = glm::vec4(0.0f);
+  }
+  for (uint32_t i = 0; i < k_grid_steps_draw; ++i) {
+    const float s = lod.spacing[i];
     grid_ubo.steps[i] = glm::vec4(s, s, 0.0f, 0.0f);
   }
-
-  // Compute reference distance and float level.
-  const float dist = computeDistMetric(state, plane_normal);
-  const float level = computeGridLevel(k_grid_default_steps, dist);
 
   // Center on look-at focal (orbit target), not camera ground footprint — Iso was missing
   // the grid at the origin because the quad followed the camera projection (G112).
@@ -387,7 +387,7 @@ void GridOverlay::draw_screen(VkCommandBuffer cmd, const OverlayState& state) {
   const float grid_alpha =
       is_ortho ? std::max(k_grid_base_alpha, 0.82f) : k_grid_base_alpha;
   grid_ubo.params =
-      glm::vec4(level, half_extent, grid_alpha, state.camera_distance);
+      glm::vec4(lod.frac_log, half_extent, grid_alpha, 0.0f);
 
   // Upload uniform data.
   m_uniform_buffers[frame_index]->upload(&grid_ubo, sizeof(grid_ubo));

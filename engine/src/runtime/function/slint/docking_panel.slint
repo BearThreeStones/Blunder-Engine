@@ -162,9 +162,10 @@ export component DockTabsLayer inherits Rectangle {
         y: tab.y;
         width: tab.width;
         height: tab.height;
-        background: tab.active ? #2d2d2d : #1f1f1f;
-        border-color: tab.active ? #3d3d3d : #161616;
-        border-width: 1px;
+        // Active tab matches panel/view surface (#2d2d2d) so chrome and content read as one plane.
+        background: tab.active ? #2d2d2d : #242424;
+        border-color: tab.active ? #2d2d2d : #1a1a1a;
+        border-width: tab.active ? 0px : 1px;
         border-radius: 4px;
 
         Text {
@@ -256,8 +257,8 @@ export component DockChromeBar inherits Rectangle {
     callback window-close-pressed();
 
     preferred-height: (root.embedded || root.chrome-bar-only) ? DockChromeMetrics.bar-height : 0;
-    background: root.embedded || root.chrome-bar-only ? #252525 : transparent;
-    border-color: #161616;
+    background: root.embedded || root.chrome-bar-only ? #2d2d2d : transparent;
+    border-color: #2a2a2a;
     border-width: root.embedded ? 1px : 0px;
 
     property <length> window-close-width: 26px;
@@ -896,7 +897,7 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
         y: overlay.frame-y;
         width: overlay.frame-width;
         height: overlay.frame-height;
-        background: #1c1c1c;
+        background: #2d2d2d;
         border-color: #4a4a4a;
         border-width: 1px;
         clip: true;
@@ -1001,11 +1002,19 @@ export component DockingHost inherits Rectangle {
     }
 
     for tile in root.tiles: Rectangle {
+        x: tile.tab-x;
+        y: tile.tab-y;
+        width: tile.tab-width;
+        height: tile.tab-height;
+        background: #2d2d2d;
+    }
+
+    for tile in root.tiles: Rectangle {
         x: tile.content-x;
         y: tile.content-y;
         width: tile.content-width;
         height: tile.content-height;
-        background: tile.floating ? #232323 : #1c1c1c;
+        background: #2d2d2d;
         border-color: #2a2a2a;
         border-width: 1px;
     }
