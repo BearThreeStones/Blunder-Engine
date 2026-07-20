@@ -277,6 +277,42 @@ bool reexportArchivedSourceToIntermediate(FileSystem* file_system,
   return exportSceneToColladaFile(scene, file_system, intermediate_absolute);
 }
 
+bool endsWithIgnoreCase(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  for (size_t i = 0; i < suffix_length; ++i) {
+    char a = value[value.size() - suffix_length + i];
+    char b = suffix[i];
+    if (a >= 'A' && a <= 'Z') {
+      a = static_cast<char>(a - 'A' + 'a');
+    }
+    if (b >= 'A' && b <= 'Z') {
+      b = static_cast<char>(b - 'A' + 'a');
+    }
+    if (a != b) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isLegacyGltfIntermediateSource(const eastl::string& source) {
+  return endsWithIgnoreCase(source, ".gltf") ||
+         endsWithIgnoreCase(source, ".glb");
+}
+
+eastl::string replaceExtensionWithDae(const eastl::string& virtual_path) {
+  const size_t dot = virtual_path.find_last_of('.');
+  if (dot == eastl::string::npos) {
+    return virtual_path + ".dae";
+  }
+  eastl::string result = virtual_path;
+  result.replace(dot, eastl::string::npos, ".dae");
+  return result;
+}
+
 fs::path resolveResourcesVirtualPath(FileSystem* file_system,
                                      const eastl::string& virtual_path) {
   eastl::string relative = virtual_path;
@@ -284,6 +320,29 @@ fs::path resolveResourcesVirtualPath(FileSystem* file_system,
     relative.erase(0, 10);
   }
   return file_system->resolveResource(fs::path(relative.c_str()));
+}
+
+/// Convert Intermediate glTF/GLB to sibling `.dae`. Empty on failure.
+eastl::string convertLegacyGltfToSiblingCollada(
+    FileSystem* file_system, const eastl::string& source_virtual,
+    const fs::path& source_absolute) {
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, source_absolute);
+  if (!scene) {
+    return eastl::string();
+  }
+
+  const eastl::string dae_virtual = replaceExtensionWithDae(source_virtual);
+  const fs::path dae_absolute =
+      resolveResourcesVirtualPath(file_system, dae_virtual);
+  if (!exportSceneToColladaFile(scene, file_system, dae_absolute)) {
+    if (file_system->exists(dae_absolute)) {
+      std::error_code ec;
+      fs::remove(dae_absolute, ec);
+    }
+    return eastl::string();
+  }
+  return dae_virtual;
 }
 
 fs::path resolveDescriptorAbsolute(FileSystem* file_system,
@@ -753,6 +812,127 @@ bool AssetImportService::requestReimports(
     any_ok = true;
   }
   return any_ok;
+}
+
+uint32_t AssetImportService::upgradeLegacyMeshIntermediates() {
+  if (!m_is_initialized) {
+    return 0;
+  }
+
+  const auto entries = m_asset_registry->registeredEntries();
+  eastl::vector<eastl::pair<eastl::string, eastl::string>> mesh_candidates;
+  mesh_candidates.reserve(entries.size());
+  for (const auto& entry : entries) {
+    const eastl::string& descriptor_virtual = entry.second;
+    if (descriptor_virtual.size() < 10 ||
+        descriptor_virtual.compare(descriptor_virtual.size() - 10, 10,
+                                   ".mesh.yaml") != 0) {
+      continue;
+    }
+    mesh_candidates.push_back(entry);
+  }
+  if (mesh_candidates.empty()) {
+    return 0;
+  }
+
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+  }
+
+  uint32_t upgraded = 0;
+  for (const auto& entry : mesh_candidates) {
+    const eastl::string& guid = entry.first;
+    const eastl::string& descriptor_virtual = entry.second;
+    const fs::path descriptor_absolute =
+        resolveDescriptorAbsolute(m_file_system, descriptor_virtual);
+
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
+      continue;
+    }
+
+    MeshAssetDescriptor descriptor{};
+    if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+      continue;
+    }
+    if (!isLegacyGltfIntermediateSource(descriptor.source)) {
+      continue;
+    }
+
+    const fs::path source_absolute =
+        resolveResourcesVirtualPath(m_file_system, descriptor.source);
+    if (!m_file_system->exists(source_absolute)) {
+      LOG_WARN(
+          "[AssetImport] Intermediate Upgrade skipped: missing source {} "
+          "(guid={})",
+          descriptor.source.c_str(), guid.c_str());
+      continue;
+    }
+
+    const eastl::string dae_virtual = convertLegacyGltfToSiblingCollada(
+        m_file_system, descriptor.source, source_absolute);
+    if (dae_virtual.empty()) {
+      LOG_WARN(
+          "[AssetImport] Intermediate Upgrade failed for guid={} source={} "
+          "(leaving legacy glTF/GLB source unchanged)",
+          guid.c_str(), descriptor.source.c_str());
+      continue;
+    }
+
+    const eastl::string previous_source = descriptor.source;
+    if (descriptor.archived_source.empty()) {
+      const eastl::string archived =
+          archiveSourceAsset(m_file_system, source_absolute, "Models");
+      if (archived.empty()) {
+        LOG_WARN(
+            "[AssetImport] Intermediate Upgrade: archive failed for {} "
+            "(guid={}); leaving descriptor unchanged",
+            previous_source.c_str(), guid.c_str());
+        const fs::path dae_absolute =
+            resolveResourcesVirtualPath(m_file_system, dae_virtual);
+        if (m_file_system->exists(dae_absolute)) {
+          std::error_code ec;
+          fs::remove(dae_absolute, ec);
+        }
+        continue;
+      }
+      descriptor.archived_source = archived;
+    }
+
+    descriptor.source = dae_virtual;
+    // GUID must stay stable across Intermediate Upgrade.
+    descriptor.guid = guid;
+
+    if (!m_file_system->writeText(
+            descriptor_absolute,
+            AssetYaml::serializeMeshDescriptor(descriptor))) {
+      LOG_WARN(
+          "[AssetImport] Intermediate Upgrade: failed to write descriptor {} "
+          "(guid={})",
+          descriptor_virtual.c_str(), guid.c_str());
+      continue;
+    }
+
+    LOG_INFO(
+        "[AssetImport] Intermediate Upgrade guid={} {} -> {} (archived={})",
+        guid.c_str(), previous_source.c_str(), descriptor.source.c_str(),
+        descriptor.archived_source.c_str());
+
+    if (m_asset_compiler) {
+      m_asset_compiler->invalidateAssetAndDependents(guid);
+    }
+    ++upgraded;
+  }
+
+  return upgraded;
+}
+
+uint32_t AssetImportService::scanAndUpgradeLegacyIntermediates() {
+  if (!m_is_initialized) {
+    return 0;
+  }
+  m_asset_registry->rebuildFromScan();
+  return upgradeLegacyMeshIntermediates();
 }
 
 }  // namespace Blunder

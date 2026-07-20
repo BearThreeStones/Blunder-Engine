@@ -115,6 +115,9 @@ void RuntimeGlobalContext::startSystems() {
   import_init.content_browser = m_content_browser.get();
   import_init.asset_compiler = m_asset_compiler.get();
   m_asset_import->initialize(import_init);
+  m_asset_compiler->setAssetImportService(m_asset_import.get());
+  // Project open: upgrade legacy glTF Intermediate → COLLADA before watch starts.
+  m_asset_import->upgradeLegacyMeshIntermediates();
   m_content_browser->setReimportTarget(m_asset_import.get());
   m_content_browser->startFileWatch();
 

@@ -830,6 +830,132 @@ void importTextureWritesIntermediateAndDescriptor() {
   fs::remove_all(external.parent_path());
 }
 
+// Task 3.1: lazy Intermediate Upgrade success path (legacy glTF → .dae).
+void lazyIntermediateUpgradeGltfToDaeSuccessPath() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+  fs::create_directories(project / "Resources" / "Source");
+
+  const fs::path legacy_gltf =
+      project / "Resources" / "Models" / "legacy" / "hero.gltf";
+  writeTextFile(legacy_gltf, kTriangleGltf);
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  writeTextFile(descriptor_absolute,
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/legacy/hero.gltf\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+  expect_true("upgrade fixture: registry has legacy guid",
+              registry.resolveGuid(eastl::string(kGuid)) ==
+                  "assets/Meshes/hero.mesh.yaml");
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  // Plant cooked Final so upgrade must mark it stale.
+  const fs::path mesh_cooked = cookedMeshPath(file_system, eastl::string(kGuid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(kGuid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+  expect_true("upgrade fixture: planted cooked Final",
+              file_system.exists(mesh_cooked));
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  // Combined registry scan + Intermediate Upgrade (project open / cook path).
+  const uint32_t upgraded = import_service.scanAndUpgradeLegacyIntermediates();
+  expect_true("upgrade reports at least one Asset", upgraded >= 1);
+
+  expect_true("upgrade preserves GUID in registry",
+              registry.resolveGuid(eastl::string(kGuid)) ==
+                  "assets/Meshes/hero.mesh.yaml");
+
+  eastl::string yaml_after;
+  expect_true("upgrade: read descriptor after",
+              file_system.readText(descriptor_absolute, yaml_after));
+  MeshAssetDescriptor parsed{};
+  expect_true("upgrade: parse descriptor after",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed));
+  expect_true("upgrade preserves descriptor GUID", parsed.guid == kGuid);
+  expect_true("upgrade rewrites source to Intermediate .dae",
+              containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("upgrade source is not still glTF/GLB",
+              !containsIgnoreCase(parsed.source, ".gltf") &&
+                  !containsIgnoreCase(parsed.source, ".glb"));
+  expect_true("upgrade archives former glTF under Source",
+              !parsed.archived_source.empty());
+  expect_true("upgrade archived_source keeps .gltf",
+              containsIgnoreCase(parsed.archived_source, ".gltf"));
+  expect_true("upgrade archived_source under Source",
+              containsIgnoreCase(parsed.archived_source, "source/"));
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  const fs::path dae_absolute = resolveResourcesVirtual(parsed.source);
+  expect_true("upgrade Intermediate .dae exists",
+              file_system.exists(dae_absolute));
+  const std::string dae_body = readTextFile(dae_absolute);
+  expect_true("upgrade Intermediate body looks like COLLADA",
+              dae_body.find("COLLADA") != std::string::npos ||
+                  dae_body.find("collada") != std::string::npos);
+
+  const fs::path archived_absolute =
+      resolveResourcesVirtual(parsed.archived_source);
+  expect_true("upgrade archived glTF exists",
+              file_system.exists(archived_absolute));
+  expect_true("upgrade archived glTF content preserved",
+              readTextFile(archived_absolute) == kTriangleGltf);
+
+  expect_true("upgrade marks cooked Final stale",
+              !file_system.exists(mesh_cooked));
+  expect_true("upgrade marks cooked meta stale",
+              !file_system.exists(mesh_meta));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -841,6 +967,7 @@ int main() {
   importUnsupportedSourceExportRejected();
   reimportObjPreservesGuidAndRefreshesIntermediate();
   reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();
+  lazyIntermediateUpgradeGltfToDaeSuccessPath();
   if (g_failures != 0) {
     std::fprintf(stderr, "asset_import_test: %d failure(s)\n", g_failures);
     return 1;

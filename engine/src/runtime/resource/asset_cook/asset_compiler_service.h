@@ -8,6 +8,7 @@
 
 namespace Blunder {
 
+class AssetImportService;
 class AssetManager;
 class AssetRegistry;
 class FileSystem;
@@ -24,6 +25,9 @@ class AssetCompilerService final {
   void initialize(FileSystem* file_system, AssetManager* asset_manager,
                   AssetRegistry* asset_registry);
   void shutdown();
+
+  /// Optional: run Intermediate Upgrade after registry scan in cookAll.
+  void setAssetImportService(AssetImportService* asset_import);
 
   AssetCompilerStats cookAll(bool force = false);
 
@@ -66,6 +70,7 @@ class AssetCompilerService final {
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
+  AssetImportService* m_asset_import{nullptr};
   AssetDependencyGraph m_dependency_graph;
   uint32_t m_dependency_graph_rebuild_count{0};
   bool m_is_initialized{false};

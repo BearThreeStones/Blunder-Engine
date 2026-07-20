@@ -13,6 +13,7 @@
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
@@ -98,7 +99,13 @@ void AssetCompilerService::shutdown() {
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_asset_registry = nullptr;
+  m_asset_import = nullptr;
   m_is_initialized = false;
+}
+
+void AssetCompilerService::setAssetImportService(
+    AssetImportService* asset_import) {
+  m_asset_import = asset_import;
 }
 
 void AssetCompilerService::rebuildDependencyGraph() {
@@ -116,6 +123,10 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
   }
 
   m_asset_registry->rebuildFromScan();
+  // Registry scan / project warm-up: upgrade legacy glTF Intermediate → .dae.
+  if (m_asset_import) {
+    m_asset_import->upgradeLegacyMeshIntermediates();
+  }
 
   const fs::path asset_root = m_file_system->getAssetRoot();
   const eastl::vector<DirectoryEntry> entries =

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 
 #include "EASTL/string.h"
@@ -71,6 +72,18 @@ class AssetImportService final {
   /// Batch Reimport: one rebuildDependencyGraph, then refresh + invalidate
   /// each GUID. Prefer this over N× requestReimport for watch debounce flush.
   bool requestReimports(const eastl::vector<eastl::string>& guids);
+
+  /// Lazy Intermediate Upgrade (project open / registry scan): for each mesh
+  /// Asset whose Intermediate `source` is still glTF/GLB, Assimp-convert to a
+  /// sibling `.dae`, rewrite `source`, archive the former file under Source
+  /// when `archived_source` is empty, preserve GUID, and mark Finals stale.
+  /// Fail-soft: conversion failure leaves descriptor/`source` unchanged.
+  /// Returns the number of Assets successfully upgraded.
+  uint32_t upgradeLegacyMeshIntermediates();
+
+  /// Rebuild registry from Assets/ scan, then run Intermediate Upgrade.
+  /// Editor/tests use this as the combined scan/open path.
+  uint32_t scanAndUpgradeLegacyIntermediates();
 
   /// COLLADA Intermediate exchange extension (not Source Assets).
   static bool isMeshIntermediateExtension(const eastl::string& extension_lower);
