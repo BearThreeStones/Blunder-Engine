@@ -1,0 +1,306 @@
+﻿===== asset_yaml_test =====
+EXIT=0
+
+===== asset_registry_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210394932800
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210394932800/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210394932800/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210394932800/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210401394200
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210401394200/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210401394200/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210401394200/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210407582000
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210407582000/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210407582000/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210407582000/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210412340600
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210412340600/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210412340600/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_25210412340600/engine/shaders
+asset_registry_test: all passed
+EXIT=0
+
+===== scene_serializer_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_scene_serializer_test_25210532071600
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_scene_serializer_test_25210532071600/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_scene_serializer_test_25210532071600/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_scene_serializer_test_25210532071600/engine/shaders
+scene_serializer_test: all passed
+EXIT=0
+
+===== asset_manager_guid_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/Resources/Models/tri.gltf, mesh_index=0, primitive_index=0)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_guid_test_25210643180300/Resources/Models/tri.gltf, mesh_index=0, primitive_index=0)
+[error] [AssetManager] loadMeshByGuid: unknown guid 00000000-0000-4000-8000-000000000000
+asset_manager_guid_test: all passed
+EXIT=0
+
+===== asset_manager_fast_path_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/Resources/Models/tri.gltf, mesh_index=0, primitive_index=0)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/Resources/Models/tri.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/tri.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210771611100/.blunder/cooked/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01.meshbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/Resources)
+[warning] [AssetManager] cooked texture missing/stale for assets/Textures/pixel.texture.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Texture2D resources/Textures/pixel.png (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/Resources/Textures/pixel.png, 1x1, src_channels=3)
+[info] [AssetCompiler] cooked texture assets/Textures/pixel.texture.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210785778100/.blunder/cooked/bbbbbbbb-cccc-4ddd-8eee-ffffffffff02.texbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/stale.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/stale.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Resources/Models/stale.gltf, mesh_index=0, primitive_index=0)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/stale.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/stale.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Resources/Models/stale.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/stale.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/.blunder/cooked/cccccccc-dddd-4eee-8fff-aaaaaaaaaa03.meshbin
+[info] [AssetCompiler] cooked mesh assets/Meshes/stale.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/.blunder/cooked/cccccccc-dddd-4eee-8fff-aaaaaaaaaa03.meshbin
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/stale.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/stale.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Resources/Models/stale.gltf, mesh_index=0, primitive_index=0)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/stale.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/stale.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/Resources/Models/stale.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/stale.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210796658600/.blunder/cooked/cccccccc-dddd-4eee-8fff-aaaaaaaaaa03.meshbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/fresh.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/fresh.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/Resources/Models/fresh.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/fresh.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/.blunder/cooked/dddddddd-eeee-4fff-8000-bbbbbbbbbb04.meshbin
+[info] [AssetManager] loaded cooked Mesh assets/Meshes/fresh.mesh.yaml (C:/Users/EDY/AppData/Local/Temp/blunder_asset_manager_fast_path_test_25210815204200/.blunder/cooked/dddddddd-eeee-4fff-8000-bbbbbbbbbb04.meshbin)
+asset_manager_fast_path_test: all passed
+EXIT=0
+
+===== asset_compiler_freshness_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210941665900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210941665900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210941665900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210941665900/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210941665900/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210941665900/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210949055500
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210949055500/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210949055500/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210949055500/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210949055500/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210949055500/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/Resources/Models/tri.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/tri.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210955243500/.blunder/cooked/cccccccc-dddd-4eee-8fff-000000000001.meshbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri2.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri2.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/Resources/Models/tri2.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/tri2.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/.blunder/cooked/dddddddd-eeee-4fff-8000-111111111111.meshbin
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri2.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri2.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/Resources/Models/tri2.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/tri2.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210968019000/.blunder/cooked/dddddddd-eeee-4fff-8000-111111111111.meshbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/tri3.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/tri3.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/Resources/Models/tri3.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/tri3.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/.blunder/cooked/eeeeeeee-ffff-4000-8000-222222222222.meshbin
+[info] [AssetManager] loaded cooked Mesh assets/Meshes/tri3.mesh.yaml (C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/.blunder/cooked/eeeeeeee-ffff-4000-8000-222222222222.meshbin)
+[info] [AssetCompiler] cooked mesh assets/Meshes/tri3.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_freshness_test_25210983090600/.blunder/cooked/eeeeeeee-ffff-4000-8000-222222222222.meshbin
+asset_compiler_freshness_test: all passed
+EXIT=0
+
+===== asset_compiler_invalidate_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211112431900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211112431900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211112431900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211112431900/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211112431900/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211112431900/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211131270500
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211131270500/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211131270500/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211131270500/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211131270500/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211131270500/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/Resources)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/hero.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/hero.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/Resources/Models/hero.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/hero.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/.blunder/cooked/22222222-2222-4222-8222-222222222222.meshbin
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/hero.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/hero.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/Resources/Models/hero.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/hero.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211142058300/.blunder/cooked/22222222-2222-4222-8222-222222222222.meshbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211164345100
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211164345100/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211164345100/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211164345100/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211164345100/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211164345100/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211200472300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211200472300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211200472300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211200472300/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211200472300/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_compiler_invalidate_test_25211200472300/Resources)
+asset_compiler_invalidate_test: all passed
+EXIT=0
+
+===== asset_dependency_graph_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211337810600
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211337810600/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211337810600/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211337810600/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211367008400
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211367008400/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211367008400/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211367008400/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211387724700
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211387724700/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211387724700/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_25211387724700/engine/shaders
+asset_dependency_graph_test: all passed
+EXIT=0
+
+===== asset_watch_path_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211536985900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211536985900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211536985900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211536985900/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211557699800
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211557699800/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211557699800/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211557699800/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211583535600
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211583535600/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211583535600/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211583535600/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211583535600/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211583535600/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211603829400
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211603829400/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211603829400/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211603829400/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211603829400/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211603829400/Resources)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Resources)
+[warning] [AssetImport] Assimp failed to read C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Resources/Source/Models/hero.fbx: FBX-Parser unexpected end of file
+[warning] [AssetImport] Reimport: Assimp re-export failed for C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Resources/Source/Models/hero.fbx -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211620899800/Resources/Models/hero/hero.gltf
+[warning] [AssetImport] requestReimport: Intermediate refresh failed for guid=44444444-4444-4444-8444-444444444444 (GUID preserved; still invalidating Finals)
+[info] [AssetImport] requestReimport guid=44444444-4444-4444-8444-444444444444 descriptor=assets/Meshes/hero.mesh.yaml
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/Resources)
+[warning] [AssetImport] Reimport: archived Source missing C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/Resources/Source/Models/hero.fbx
+[warning] [AssetImport] requestReimport: Intermediate refresh failed for guid=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee (GUID preserved; still invalidating Finals)
+[info] [AssetImport] requestReimport guid=eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee descriptor=assets/Meshes/hero.mesh.yaml
+[warning] [AssetImport] Reimport: archived Source missing C:/Users/EDY/AppData/Local/Temp/blunder_asset_watch_path_test_25211650257900/Resources/Source/Models/prop.fbx
+[warning] [AssetImport] requestReimport: Intermediate refresh failed for guid=ffffffff-ffff-4fff-8fff-ffffffffffff (GUID preserved; still invalidating Finals)
+[info] [AssetImport] requestReimport guid=ffffffff-ffff-4fff-8fff-ffffffffffff descriptor=assets/Meshes/prop.mesh.yaml
+asset_watch_path_test: all passed
+EXIT=0
+
+===== asset_import_test =====
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211785805900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211785805900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211785805900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211785805900/engine/shaders
+[info] [AssetImport] mesh C:/Users/EDY/AppData/Local/Temp/blunder_import_ext_25211789501400/cube.gltf -> assets/Meshes/cube.mesh.yaml (Intermediate: resources/Models/cube/cube.gltf)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211801084700
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211801084700/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211801084700/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211801084700/engine/shaders
+[info] [AssetImport] texture C:/Users/EDY/AppData/Local/Temp/blunder_import_tex_25211804230300/albedo.png -> assets/Textures/albedo.texture.yaml (Intermediate: resources/Textures/albedo/albedo.png)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211813942400
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211813942400/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211813942400/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211813942400/engine/shaders
+[info] [AssetImport] Source Export C:/Users/EDY/AppData/Local/Temp/blunder_import_obj_25211816835200/triangle.obj -> assets/Meshes/triangle.mesh.yaml (Intermediate: resources/Models/triangle/triangle.gltf, archived: resources/Source/Models/triangle/triangle.obj)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211835687400
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211835687400/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211835687400/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211835687400/engine/shaders
+[warning] [AssetImport] unsupported mesh input C:/Users/EDY/AppData/Local/Temp/blunder_import_blend_25211838803600/cube.blend (v1 Source Export whitelist is .fbx/.obj; .blend automatic export is not supported)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211844497300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211844497300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211844497300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211844497300/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211844497300/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211844497300/Resources)
+[info] [AssetImport] Source Export C:/Users/EDY/AppData/Local/Temp/blunder_reimport_obj_25211847743300/triangle.obj -> assets/Meshes/triangle.mesh.yaml (Intermediate: resources/Models/triangle/triangle.gltf, archived: resources/Source/Models/triangle/triangle.obj)
+[info] [AssetImport] Reimport refreshed Intermediate resources/Models/triangle/triangle.gltf from archived resources/Source/Models/triangle/triangle.obj
+[info] [AssetImport] requestReimport guid=562ee175-c417-4161-9989-89e992421ef8 descriptor=assets/Meshes/triangle.mesh.yaml
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211879500300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211879500300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211879500300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211879500300/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211879500300/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_25211879500300/Resources)
+[info] [AssetImport] mesh C:/Users/EDY/AppData/Local/Temp/blunder_reimport_gltf_25211883289300/cube.gltf -> assets/Meshes/cube.mesh.yaml (Intermediate: resources/Models/cube/cube.gltf)
+[info] [AssetImport] requestReimport guid=06d6b4ee-3565-407b-94d6-4890847b7adf descriptor=assets/Meshes/cube.mesh.yaml
+asset_import_test: all passed
+EXIT=0
+
+===== scene_soft_delete_test =====
+scene_soft_delete_test: all passed
+EXIT=0
+
