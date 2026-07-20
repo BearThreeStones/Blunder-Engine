@@ -104,6 +104,8 @@ add_library(engine_runtime STATIC
     "project/project_file.cpp"
     "project/project_create.h"
     "project/project_create.cpp"
+    "project/editor_launch.h"
+    "project/editor_launch.cpp"
     "function/script/scripts_builder.h"
     "function/script/scripts_builder.cpp"
     "resource/asset/asset.h"
@@ -199,6 +201,7 @@ slint_target_sources(engine_runtime
     "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
     "function/slint/transform_toolbar.slint"
+    "function/slint/project_manager.slint"
 )
 
 target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})

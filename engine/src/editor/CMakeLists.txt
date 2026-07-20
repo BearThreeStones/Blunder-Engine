@@ -62,3 +62,16 @@ endif()
 if(TARGET blunder_api)
     add_dependencies(engine_editor blunder_api)
 endif()
+if(TARGET blunder_script_host)
+    add_dependencies(engine_editor blunder_script_host)
+endif()
+
+# nethost.dll must sit beside the editor for DotNetHost (linked via nethost.lib).
+if(WIN32 AND BLUNDER_HAS_NETHOST AND EXISTS "${BLUNDER_NETHOST_DIR}/nethost.dll")
+    add_custom_command(TARGET engine_editor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BLUNDER_NETHOST_DIR}/nethost.dll"
+            "$<TARGET_FILE_DIR:engine_editor>/nethost.dll"
+        COMMENT "Copying nethost.dll beside engine_editor"
+    )
+endif()

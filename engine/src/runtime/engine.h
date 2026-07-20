@@ -24,7 +24,8 @@ class BlunderEngine {
   static const float s_fps_alpha;
 
  public:
-  void startEngine();
+  void startEngine(const std::filesystem::path& project_root =
+                       std::filesystem::path{});
   void shutdownEngine();
 
   void initialize();

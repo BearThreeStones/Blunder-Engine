@@ -13,6 +13,7 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/function/script/dotnet_host.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -20,6 +21,8 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/core/object/object_db.h"
+#include "runtime/core/reflection/lifecycle.h"
 
 #include <SDL3/SDL.h>
 #if defined(_WIN32)
@@ -202,8 +205,8 @@ void BlunderEngine::processSdlEvent(const SDL_Event& event) {
   window_system->dispatchApplicationEvent(event, route_to_layers);
 }
 
-void BlunderEngine::startEngine() {
-  g_runtime_global_context.startSystems();
+void BlunderEngine::startEngine(const std::filesystem::path& project_root) {
+  g_runtime_global_context.startSystems(project_root);
 
   g_runtime_global_context.m_window_system->setEventCallback(
       [](Event& e) { onEvent(e); });
@@ -378,6 +381,20 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
         syncSceneToRender(g_runtime_global_context.m_render_system.get(),
                           g_runtime_global_context.m_scene_system->getActiveInstance());
       }
+    }
+
+    // Drive Behaviour Ready/Tick when CoreCLR ScriptHost is running.
+    // Ready is once-per-peer (BehaviourSlot::ready_invoked).
+    if (g_runtime_global_context.m_dotnet_host &&
+        g_runtime_global_context.m_dotnet_host->isRunning()) {
+      float tick_dt = delta_time;
+      ObjectDB::forEach(
+          [](Object* object, void* user) {
+            const float dt = *static_cast<const float*>(user);
+            LifecycleDispatch::invokeReady(object);
+            LifecycleDispatch::invokeTick(object, dt);
+          },
+          &tick_dt);
     }
   }
 

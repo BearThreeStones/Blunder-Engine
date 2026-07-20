@@ -3,6 +3,9 @@
 #include "EASTL/memory.h"
 #include "EASTL/shared_ptr.h"
 #include "EASTL/string.h"
+
+#include <filesystem>
+
 #include "runtime/core/memory/memory_system.h"
 
 namespace Blunder {
@@ -24,14 +27,15 @@ class ContentBrowserSystem;
 class EditorSelectionSystem;
 class HierarchySystem;
 class EditorSceneEditSystem;
-class DocumentHistory;
-class ViewportPickSystem;
+  class DocumentHistory;
+  class ViewportPickSystem;
 // class ConfigManager;
 // class WorldManager;
 class RenderSystem;
 class SceneSystem;
 class WindowSystem;
 class LayerStack;
+class DotNetHost;
 // class ParticleManager;
 
 struct EngineInitParams;
@@ -40,7 +44,8 @@ struct EngineInitParams;
 class RuntimeGlobalContext {
  public:
   // create all global systems and initialize these systems
-  void startSystems();
+  void startSystems(
+      const std::filesystem::path& project_root = std::filesystem::path{});
   // destroy all global systems
   void shutdownSystems();
 
@@ -60,6 +65,8 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<HierarchySystem> m_hierarchy;
   eastl::shared_ptr<EditorSceneEditSystem> m_editor_scene_edit;
   eastl::shared_ptr<DocumentHistory> m_document_history;
+  /// Global History placeholder (same stack type; no Global Commands yet).
+  eastl::shared_ptr<DocumentHistory> m_global_history;
   eastl::shared_ptr<ViewportPickSystem> m_viewport_pick;
   // eastl::shared_ptr<ConfigManager> m_config_manager;
   // eastl::shared_ptr<WorldManager> m_world_manager;
@@ -71,6 +78,9 @@ class RuntimeGlobalContext {
   eastl::unique_ptr<IViewportSink> m_viewport_sink;
   eastl::unique_ptr<UIViewportBridge> m_viewport_bridge;
   eastl::shared_ptr<LayerStack> m_layer_stack;
+  /// In-process CoreCLR host. Owned here; started lazily from startSystems when
+  /// gated (see docs/agents/testing.md). Null or !isRunning() is normal.
+  eastl::unique_ptr<DotNetHost> m_dotnet_host;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
 };
 

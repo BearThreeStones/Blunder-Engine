@@ -45,11 +45,11 @@
 
 ## 8. Engine integration
 
-- [ ] 8.1 Own `DotNetHost` on `RuntimeGlobalContext`; lazy-start when Scripts output exists (or documented gate)
-- [ ] 8.2 From the engine frame, `forEach` Objects and `LifecycleDispatch::invokeTick` when host is running
-- [ ] 8.3 Manual smoke: open/create Project, build Scripts, run editor without crash; Tick works for attached Behaviour
+- [x] 8.1 Own `DotNetHost` on `RuntimeGlobalContext`; lazy-start when Scripts output exists (or documented gate)
+- [x] 8.2 From the engine frame, `forEach` Objects and `LifecycleDispatch::invokeTick` when host is running
+- [x] 8.3 Manual smoke: open/create Project, build Scripts, run editor without crash; Tick works for attached Behaviour
 
 ## 9. Docs alignment
 
-- [ ] 9.1 Confirm ADR 0011 / CONTEXT / testing docs match shipped behavior
-- [ ] 9.2 Cross-check OpenSpec tasks against `docs/superpowers/plans/2026-07-20-dotnet-host-mvp.md` (close any gaps)
+- [x] 9.1 Confirm ADR 0011 / CONTEXT / testing docs match shipped behavior
+- [x] 9.2 Cross-check OpenSpec tasks against `docs/superpowers/plans/2026-07-20-dotnet-host-mvp.md` (close any gaps)
