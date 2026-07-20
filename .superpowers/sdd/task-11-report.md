@@ -3,7 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** *(filled after commit)*
+**Commit:** `eae4d10` — test: cover Fast Path stale meta and fresh Final preference
 
 ## Summary
 
