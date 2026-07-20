@@ -47,6 +47,7 @@ void ContentBrowserSystem::initialize(const ContentBrowserInit& init) {
 
 void ContentBrowserSystem::shutdown() {
   stopFileWatch();
+  m_file_watch.setReimportTarget(nullptr);
   m_file_watch.setInvalidateTargets(nullptr, nullptr);
   m_file_watch.shutdown();
   m_entries.clear();
@@ -236,8 +237,13 @@ void ContentBrowserSystem::startFileWatch() {
 
 void ContentBrowserSystem::stopFileWatch() { m_file_watch.stop(); }
 
+void ContentBrowserSystem::setReimportTarget(AssetImportService* asset_import) {
+  m_file_watch.setReimportTarget(asset_import);
+}
+
 bool ContentBrowserSystem::tickFileWatch() {
   m_file_watch.consumeInvalidateRequest();
+  m_file_watch.consumeReimportRequest();
   return m_file_watch.consumeRefreshRequest();
 }
 

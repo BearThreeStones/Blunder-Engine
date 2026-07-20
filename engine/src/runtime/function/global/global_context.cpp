@@ -113,7 +113,9 @@ void RuntimeGlobalContext::startSystems() {
   import_init.file_system = m_file_system.get();
   import_init.asset_registry = m_asset_registry.get();
   import_init.content_browser = m_content_browser.get();
+  import_init.asset_compiler = m_asset_compiler.get();
   m_asset_import->initialize(import_init);
+  m_content_browser->setReimportTarget(m_asset_import.get());
   m_content_browser->startFileWatch();
 
   // m_physics_manager = eastl::make_shared<PhysicsManager>();

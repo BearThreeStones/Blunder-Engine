@@ -5,6 +5,8 @@
 #include <cstring>
 #include <string>
 
+#include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset_dependency/asset_dependency_graph.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
@@ -227,6 +229,90 @@ eastl::vector<eastl::string> guidsToInvalidateForWatchedPath(
     if (!without_prefix.empty() &&
         pathsEqualNormalized(leaves.intermediate_source_path, without_prefix)) {
       pushUnique(entry.first);
+    }
+  }
+
+  return result;
+}
+
+eastl::vector<eastl::string> guidsForArchivedSourcePath(
+    const fs::path& absolute_source_path, const fs::path& resources_root,
+    const AssetRegistry& registry, FileSystem& file_system) {
+  eastl::vector<eastl::string> result;
+
+  const eastl::string under_resources =
+      virtualPathUnderRoot(absolute_source_path, resources_root, "resources");
+  if (under_resources.empty()) {
+    return result;
+  }
+
+  // Canonical forms that descriptors may use for archived_source.
+  eastl::vector<eastl::string> candidates;
+  candidates.push_back(under_resources);  // resources/Source/...
+  if (under_resources.size() > 10 &&
+      under_resources.compare(0, 10, "resources/") == 0) {
+    candidates.push_back(eastl::string(under_resources.c_str() + 10));  // Source/...
+  }
+
+  auto pushUnique = [&result](const eastl::string& guid) {
+    if (guid.empty()) {
+      return;
+    }
+    for (const eastl::string& existing : result) {
+      if (existing == guid) {
+        return;
+      }
+    }
+    result.push_back(guid);
+  };
+
+  auto matchesArchived = [&candidates](const eastl::string& archived) {
+    if (archived.empty()) {
+      return false;
+    }
+    const eastl::string normalized = normalizeWatchVirtualPath(archived);
+    for (const eastl::string& candidate : candidates) {
+      if (normalized == normalizeWatchVirtualPath(candidate)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const eastl::vector<eastl::pair<eastl::string, eastl::string>> entries =
+      registry.registeredEntries();
+  for (const auto& entry : entries) {
+    const eastl::string& guid = entry.first;
+    const eastl::string& virtual_path = entry.second;
+
+    eastl::string relative = virtual_path;
+    if (relative.compare(0, 7, "assets/") == 0) {
+      relative.erase(0, 7);
+    }
+    const fs::path absolute =
+        file_system.resolveAsset(fs::path(relative.c_str()));
+    eastl::string yaml_text;
+    if (!file_system.readText(absolute, yaml_text)) {
+      continue;
+    }
+
+    if (virtual_path.size() >= 10 &&
+        virtual_path.compare(virtual_path.size() - 10, 10, ".mesh.yaml") == 0) {
+      MeshAssetDescriptor desc;
+      if (AssetYaml::parseMeshDescriptor(yaml_text, desc) &&
+          matchesArchived(desc.archived_source)) {
+        pushUnique(guid);
+      }
+      continue;
+    }
+    if (virtual_path.size() >= 13 &&
+        virtual_path.compare(virtual_path.size() - 13, 13, ".texture.yaml") ==
+            0) {
+      TextureAssetDescriptor desc;
+      if (AssetYaml::parseTextureDescriptor(yaml_text, desc) &&
+          matchesArchived(desc.archived_source)) {
+        pushUnique(guid);
+      }
     }
   }
 

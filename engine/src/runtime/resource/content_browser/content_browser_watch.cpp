@@ -6,6 +6,7 @@
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/asset_watch_path.h"
 #include "runtime/resource/asset_dependency/asset_dependency_graph.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
@@ -44,6 +45,10 @@ void ContentBrowserWatch::setInvalidateTargets(
   m_asset_registry = asset_registry;
 }
 
+void ContentBrowserWatch::setReimportTarget(AssetImportService* asset_import) {
+  m_asset_import = asset_import;
+}
+
 void ContentBrowserWatch::start() {
 #if defined(BLUNDER_HAS_EFSW)
   if (!m_file_system || m_started.exchange(true)) {
@@ -67,8 +72,8 @@ void ContentBrowserWatch::start() {
     LOG_WARN("[ContentBrowserWatch] failed to watch Resources: {}",
              resources_path.c_str());
   } else {
-    LOG_INFO("[ContentBrowserWatch] watching Resources (Intermediate; Source "
-             "excluded from invalidate): {}",
+    LOG_INFO("[ContentBrowserWatch] watching Resources (Intermediate invalidate "
+             "+ Source auto-Reimport): {}",
              resources_path.c_str());
   }
 
@@ -97,9 +102,11 @@ void ContentBrowserWatch::stop() {
   {
     std::lock_guard<std::mutex> lock(m_pending_mutex);
     m_pending_invalidate_paths.clear();
+    m_pending_reimport_paths.clear();
   }
   m_dirty.store(false);
   m_invalidate_dirty.store(false);
+  m_reimport_dirty.store(false);
 }
 
 void ContentBrowserWatch::suppressNotificationsFor(
@@ -198,6 +205,68 @@ bool ContentBrowserWatch::consumeInvalidateRequest() {
   return !guids.empty();
 }
 
+bool ContentBrowserWatch::consumeReimportRequest() {
+  if (!m_reimport_dirty.load()) {
+    return false;
+  }
+  if (!m_asset_import || !m_file_system) {
+    m_reimport_dirty.store(false);
+    std::lock_guard<std::mutex> lock(m_pending_mutex);
+    m_pending_reimport_paths.clear();
+    return false;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(m_timing_mutex);
+    if (now < m_suppress_until) {
+      return false;
+    }
+    if (now - m_last_reimport_event_time < k_debounce_delay) {
+      return false;
+    }
+  }
+
+  std::vector<std::string> pending;
+  {
+    std::lock_guard<std::mutex> lock(m_pending_mutex);
+    pending.swap(m_pending_reimport_paths);
+    m_reimport_dirty.store(false);
+  }
+  if (pending.empty()) {
+    return false;
+  }
+
+  eastl::vector<eastl::string> guids;
+  auto pushUnique = [&guids](const eastl::string& guid) {
+    if (guid.empty()) {
+      return;
+    }
+    for (const eastl::string& existing : guids) {
+      if (existing == guid) {
+        return;
+      }
+    }
+    guids.push_back(guid);
+  };
+
+  for (const std::string& path : pending) {
+    const eastl::vector<eastl::string> mapped =
+        m_asset_import->findGuidsByArchivedSource(path);
+    for (const eastl::string& guid : mapped) {
+      pushUnique(guid);
+    }
+  }
+
+  bool any = false;
+  for (const eastl::string& guid : guids) {
+    if (m_asset_import->requestReimport(guid)) {
+      any = true;
+    }
+  }
+  return any;
+}
+
 #if defined(BLUNDER_HAS_EFSW)
 
 bool ContentBrowserWatch::shouldIgnoreEvent(
@@ -247,6 +316,25 @@ void ContentBrowserWatch::queueInvalidatePath(const std::string& absolute_path) 
   m_invalidate_dirty.store(true);
 }
 
+void ContentBrowserWatch::queueReimportPath(const std::string& absolute_path) {
+  if (absolute_path.empty()) {
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  {
+    std::lock_guard<std::mutex> lock(m_timing_mutex);
+    if (now < m_suppress_until) {
+      return;
+    }
+    m_last_reimport_event_time = now;
+  }
+  {
+    std::lock_guard<std::mutex> lock(m_pending_mutex);
+    m_pending_reimport_paths.push_back(absolute_path);
+  }
+  m_reimport_dirty.store(true);
+}
+
 void ContentBrowserWatch::handleFileAction(efsw::WatchID watch_id,
                                            const std::string& dir,
                                            const std::string& filename,
@@ -281,7 +369,10 @@ void ContentBrowserWatch::handleFileAction(efsw::WatchID watch_id,
       }
       break;
     case AssetWatchPathClass::SourceArchive:
-      // Task 4.4: auto-Reimport. Intermediate invalidation must not fire.
+      queueReimportPath(absolute);
+      if (!old_filename.empty()) {
+        queueReimportPath(joinDirFile(dir, old_filename));
+      }
       break;
     case AssetWatchPathClass::Ignored:
       break;

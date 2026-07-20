@@ -7,6 +7,8 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
+#include "runtime/resource/asset_cook/asset_watch_path.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 
@@ -75,6 +77,7 @@ void AssetImportService::initialize(const AssetImportServiceInit& init) {
   m_file_system = init.file_system;
   m_asset_registry = init.asset_registry;
   m_content_browser = init.content_browser;
+  m_asset_compiler = init.asset_compiler;
   m_is_initialized = m_file_system != nullptr && m_asset_registry != nullptr;
 }
 
@@ -82,6 +85,7 @@ void AssetImportService::shutdown() {
   m_file_system = nullptr;
   m_asset_registry = nullptr;
   m_content_browser = nullptr;
+  m_asset_compiler = nullptr;
   m_is_initialized = false;
 }
 
@@ -280,6 +284,41 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
     m_content_browser->refresh();
   }
   return results;
+}
+
+eastl::vector<eastl::string> AssetImportService::findGuidsByArchivedSource(
+    const fs::path& absolute_source_path) const {
+  if (!m_is_initialized) {
+    return {};
+  }
+  return guidsForArchivedSourcePath(absolute_source_path,
+                                    m_file_system->getResourcesRoot(),
+                                    *m_asset_registry, *m_file_system);
+}
+
+bool AssetImportService::requestReimport(const eastl::string& guid) {
+  if (!m_is_initialized || guid.empty()) {
+    return false;
+  }
+
+  const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
+  if (descriptor_path.empty()) {
+    LOG_WARN("[AssetImport] requestReimport: unknown guid {}", guid.c_str());
+    return false;
+  }
+
+  // Task 4.4 stub: invalidate Finals now; Assimp Source Export dual-write
+  // refresh is owned by task 5.3.
+  LOG_INFO(
+      "[AssetImport] requestReimport guid={} descriptor={} "
+      "(stub: invalidate Finals; full Source Export in 5.3)",
+      guid.c_str(), descriptor_path.c_str());
+
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+    m_asset_compiler->invalidateAssetAndDependents(guid);
+  }
+  return true;
 }
 
 }  // namespace Blunder

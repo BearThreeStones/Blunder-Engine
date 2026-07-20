@@ -189,11 +189,80 @@ void pathToGuidMapping() {
   fs::remove_all(project);
 }
 
+void archivedSourcePathToGuids() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const char* kOtherGuid = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "hero.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/hero/hero.gltf\n" +
+                    "archived_source: Source/Models/hero.fbx\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Assets" / "Meshes" / "prop.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kOtherGuid + "\n" +
+                    "source: resources/Models/prop/prop.gltf\n" +
+                    "archived_source: Source/Models/prop.fbx\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.gltf",
+                "gltf");
+  writeTextFile(project / "Resources" / "Models" / "prop" / "prop.gltf",
+                "gltf");
+  writeTextFile(project / "Resources" / "Source" / "Models" / "hero.fbx",
+                "fbx");
+  writeTextFile(project / "Resources" / "Source" / "Models" / "prop.fbx",
+                "fbx");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path hero_source = resources / "Source" / "Models" / "hero.fbx";
+
+  {
+    const eastl::vector<eastl::string> guids =
+        guidsForArchivedSourcePath(hero_source, resources, registry,
+                                   file_system);
+    expect_true("archived Source path maps to owning mesh guid",
+                containsGuid(guids, kMeshGuid));
+    expect_true("archived Source path does not include unrelated guid",
+                !containsGuid(guids, kOtherGuid));
+  }
+
+  {
+    const eastl::vector<eastl::string> guids = guidsForArchivedSourcePath(
+        resources / "Source" / "Models" / "missing.fbx", resources, registry,
+        file_system);
+    expect_true("unknown archived Source yields no guids", guids.empty());
+  }
+
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
   classifyPaths();
   pathToGuidMapping();
+  archivedSourcePathToGuids();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

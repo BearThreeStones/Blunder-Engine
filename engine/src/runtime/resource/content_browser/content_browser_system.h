@@ -15,6 +15,7 @@
 namespace Blunder {
 
 class AssetCompilerService;
+class AssetImportService;
 class AssetManager;
 class AssetRegistry;
 class ThumbnailGenerator;
@@ -36,7 +37,11 @@ class ContentBrowserSystem final {
   void startFileWatch();
   void stopFileWatch();
 
-  /// Debounced refresh / Intermediate invalidation; call once per frame on the main thread.
+  /// Wire AssetImportService for SourceArchive auto-Reimport (task 4.4).
+  void setReimportTarget(AssetImportService* asset_import);
+
+  /// Debounced refresh / Intermediate invalidation / Source Reimport;
+  /// call once per frame on the main thread.
   bool tickFileWatch();
 
   ContentBrowserRefreshStats refresh();

@@ -16,10 +16,11 @@
 namespace Blunder {
 
 class AssetCompilerService;
+class AssetImportService;
 class AssetRegistry;
 
-/// Watches Assets/ (Content Browser refresh) and Intermediate Resources/
-/// (Final invalidation). Excludes Resources/Source from Intermediate invalidate.
+/// Watches Assets/ (Content Browser refresh), Intermediate Resources/
+/// (Final invalidation), and Source archive (auto-Reimport hook).
 class ContentBrowserWatch final
 #if defined(BLUNDER_HAS_EFSW)
     : public efsw::FileWatchListener
@@ -36,12 +37,20 @@ class ContentBrowserWatch final
   void setInvalidateTargets(AssetCompilerService* asset_compiler,
                             AssetRegistry* asset_registry);
 
+  /// Optional: when set, SourceArchive changes call findGuidsByArchivedSource
+  /// + requestReimport after debounce.
+  void setReimportTarget(AssetImportService* asset_import);
+
   /// Call from the main thread each frame; returns true once when a refresh should run.
   bool consumeRefreshRequest();
 
   /// Debounced Intermediate/descriptor invalidation via AssetCompilerService.
   /// No-op when compiler/registry are unset. Returns true when invalidation ran.
   bool consumeInvalidateRequest();
+
+  /// Debounced SourceArchive auto-Reimport via AssetImportService.
+  /// No-op when import service is unset. Returns true when any Reimport ran.
+  bool consumeReimportRequest();
 
   /// Suppress watcher callbacks for a short period (e.g. after self-initiated writes).
   void suppressNotificationsFor(std::chrono::milliseconds duration);
@@ -58,6 +67,7 @@ class ContentBrowserWatch final
                          const std::string& old_filename) const;
   void markRefreshDirty();
   void queueInvalidatePath(const std::string& absolute_path);
+  void queueReimportPath(const std::string& absolute_path);
 
   efsw::FileWatcher m_watcher;
   efsw::WatchID m_assets_watch_id{0};
@@ -67,16 +77,20 @@ class ContentBrowserWatch final
   FileSystem* m_file_system{nullptr};
   AssetCompilerService* m_asset_compiler{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
+  AssetImportService* m_asset_import{nullptr};
 
   std::atomic<bool> m_dirty{false};
   std::atomic<bool> m_invalidate_dirty{false};
+  std::atomic<bool> m_reimport_dirty{false};
   std::atomic<bool> m_started{false};
   std::mutex m_timing_mutex;
   std::chrono::steady_clock::time_point m_last_event_time{};
   std::chrono::steady_clock::time_point m_last_invalidate_event_time{};
+  std::chrono::steady_clock::time_point m_last_reimport_event_time{};
   std::chrono::steady_clock::time_point m_suppress_until{};
   std::mutex m_pending_mutex;
   std::vector<std::string> m_pending_invalidate_paths;
+  std::vector<std::string> m_pending_reimport_paths;
   static constexpr std::chrono::milliseconds k_debounce_delay{300};
 };
 
