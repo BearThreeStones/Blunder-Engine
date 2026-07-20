@@ -42,10 +42,12 @@ void ContentBrowserSystem::initialize(const ContentBrowserInit& init) {
   m_selected_folder = rootVirtualPath(m_active_root);
   m_is_initialized = m_file_system != nullptr && m_thumbnail_generator != nullptr;
   m_file_watch.initialize(m_file_system);
+  m_file_watch.setInvalidateTargets(init.asset_compiler, init.asset_registry);
 }
 
 void ContentBrowserSystem::shutdown() {
   stopFileWatch();
+  m_file_watch.setInvalidateTargets(nullptr, nullptr);
   m_file_watch.shutdown();
   m_entries.clear();
   m_entry_index.clear();
@@ -235,6 +237,7 @@ void ContentBrowserSystem::startFileWatch() {
 void ContentBrowserSystem::stopFileWatch() { m_file_watch.stop(); }
 
 bool ContentBrowserSystem::tickFileWatch() {
+  m_file_watch.consumeInvalidateRequest();
   return m_file_watch.consumeRefreshRequest();
 }
 

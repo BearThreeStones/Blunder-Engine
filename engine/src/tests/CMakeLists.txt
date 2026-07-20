@@ -415,3 +415,22 @@ target_precompile_headers(asset_compiler_invalidate_test
 
 add_test(NAME asset_compiler_invalidate_test
          COMMAND asset_compiler_invalidate_test)
+
+add_executable(asset_watch_path_test
+    "asset_watch_path_test.cpp"
+)
+
+target_link_libraries(asset_watch_path_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_watch_path_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_watch_path_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_watch_path_test
+         COMMAND asset_watch_path_test)

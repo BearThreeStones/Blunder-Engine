@@ -106,6 +106,8 @@ void RuntimeGlobalContext::startSystems() {
   browser_init.file_system = m_file_system.get();
   browser_init.asset_manager = m_asset_manager.get();
   browser_init.thumbnail_generator = m_thumbnail_generator.get();
+  browser_init.asset_compiler = m_asset_compiler.get();
+  browser_init.asset_registry = m_asset_registry.get();
   m_content_browser->initialize(browser_init);
   AssetImportServiceInit import_init{};
   import_init.file_system = m_file_system.get();

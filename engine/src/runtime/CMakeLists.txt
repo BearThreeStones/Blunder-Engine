@@ -115,6 +115,8 @@ add_library(engine_runtime STATIC
     "resource/asset_cook/texture_cooker.cpp"
     "resource/asset_cook/asset_compiler_service.h"
     "resource/asset_cook/asset_compiler_service.cpp"
+    "resource/asset_cook/asset_watch_path.h"
+    "resource/asset_cook/asset_watch_path.cpp"
     "resource/asset_dependency/asset_dependency_graph.h"
     "resource/asset_dependency/asset_dependency_graph.cpp"
     "resource/asset_import/asset_import_service.h"
