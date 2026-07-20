@@ -100,20 +100,6 @@ add_library(engine_runtime STATIC
     "platform/window/window_system.cpp"
     "platform/file_system/file_system.h"
     "platform/file_system/file_system.cpp"
-    "project/project_file.h"
-    "project/project_file.cpp"
-    "project/project_create.h"
-    "project/project_create.cpp"
-    "project/project_list.h"
-    "project/project_list.cpp"
-    "project/editor_launch.h"
-    "project/editor_launch.cpp"
-    "project/project_relaunch.h"
-    "project/project_relaunch.cpp"
-    "project/project_manager_controller.h"
-    "project/project_manager_controller.cpp"
-    "project/project_manager_app.h"
-    "project/project_manager_app.cpp"
     "resource/asset/asset.h"
     "resource/asset/guid.h"
     "resource/asset/guid.cpp"
@@ -197,7 +183,6 @@ add_subdirectory(function/render)
 
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
-    "function/slint/history_panel.slint"
     "function/slint/import_mesh_dialog.slint"
     "function/slint/piercing_menu.slint"
     "function/slint/hierarchy.slint"
@@ -206,7 +191,6 @@ slint_target_sources(engine_runtime
     "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
     "function/slint/transform_toolbar.slint"
-    "function/slint/project_manager.slint"
 )
 
 target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})
@@ -269,10 +253,11 @@ if(TARGET efsw)
     target_link_libraries(engine_runtime PRIVATE efsw)
 endif()
 
-# Default Project root for Debug FileSystem / editor launch (not the engine checkout).
+# Inject the project source root so FileSystem can resolve asset/shader paths
+# during dev builds without relying on the executable's working directory.
 target_compile_definitions(engine_runtime
     PRIVATE
-        BLUNDER_PROJECT_ROOT="${BLUNDER_DEFAULT_PROJECT_ROOT}"
+        BLUNDER_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
 )
 
 if(BLUNDER_RENDER_BACKEND STREQUAL "d3d12")
