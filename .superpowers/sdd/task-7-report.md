@@ -3,7 +3,8 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** `a9f371c` — feat: AssetManager GUID load/resolve helpers
+**Commit:** `a9f371c` — feat: AssetManager GUID load/resolve helpers  
+**Follow-up:** `9aa695c` — test asserts geometry parity (not cache pointer identity)
 
 ## Summary
 
