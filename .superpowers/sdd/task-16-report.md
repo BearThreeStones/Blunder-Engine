@@ -3,7 +3,9 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** `973d4d1` — test: cover watch invalidation and Reimport gate (4.5)
+**Commits:**
+- `973d4d1` — test: cover watch invalidation and Reimport gate (4.5)
+- `05872c1` — test: cover watch invalidation and Source Reimport Finals (report/logs/progress)
 
 ## Summary
 
@@ -39,7 +41,7 @@ Preset: `build/vs2026-debug` Debug. PATH includes Slint DLL dirs.
 | `asset_watch_path_test` | exit 0 (`asset_watch_path_test: all passed`) |
 | `asset_compiler_invalidate_test` | exit 0 (`asset_compiler_invalidate_test: all passed`) |
 
-Logs: `.superpowers/sdd/task-16-watch-run.txt`, `.superpowers/sdd/task-16-invalidate-run.txt`
+Logs: `.superpowers/sdd/task-16-build.txt`, `task-16-watch-run.txt`, `task-16-invalidate-run.txt`
 
 ## OpenSpec tasks
 
