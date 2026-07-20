@@ -95,6 +95,52 @@ bool isUsableIntermediateVirtualPath(const eastl::string& resources_virtual) {
          !isSourceArchiveVirtualPath(resources_virtual);
 }
 
+/// Ensure Intermediate body lives under Resources (non-Source). Copies when the
+/// input is external or under Resources/Source/.
+eastl::string registerIntermediateBody(FileSystem* file_system,
+                                       const fs::path& input_absolute,
+                                       const char* resources_subdir) {
+  const eastl::string existing =
+      resolveIntermediateVirtualPath(file_system, input_absolute);
+  if (isUsableIntermediateVirtualPath(existing)) {
+    return existing;
+  }
+
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
+  const eastl::string file_name(
+      input_absolute.filename().generic_string().c_str());
+
+  auto try_dest = [&](const eastl::string& folder_stem) -> eastl::string {
+    const fs::path relative =
+        fs::path(resources_subdir) / folder_stem.c_str() / file_name.c_str();
+    const fs::path absolute = file_system->resolveResource(relative);
+    if (file_system->exists(absolute)) {
+      return eastl::string();
+    }
+    if (!file_system->copyFile(input_absolute, absolute, false)) {
+      return eastl::string();
+    }
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
+  };
+
+  eastl::string virtual_path = try_dest(stem);
+  if (!virtual_path.empty()) {
+    return virtual_path;
+  }
+
+  for (uint32_t index = 1; index < 10000; ++index) {
+    char alt[128];
+    std::snprintf(alt, sizeof(alt), "%s_%u", stem.c_str(), index);
+    virtual_path = try_dest(eastl::string(alt));
+    if (!virtual_path.empty()) {
+      return virtual_path;
+    }
+  }
+  return eastl::string();
+}
+
 }  // namespace
 
 void AssetImportService::initialize(const AssetImportServiceInit& init) {
@@ -123,49 +169,6 @@ bool AssetImportService::isTextureIntermediateExtension(
   return extension_lower == ".png" || extension_lower == ".jpg" ||
          extension_lower == ".jpeg" || extension_lower == ".bmp" ||
          extension_lower == ".tga";
-}
-
-eastl::string AssetImportService::registerIntermediateBody(
-    const fs::path& input_absolute, const char* resources_subdir) const {
-  const eastl::string existing =
-      resolveIntermediateVirtualPath(m_file_system, input_absolute);
-  if (isUsableIntermediateVirtualPath(existing)) {
-    return existing;
-  }
-
-  const eastl::string stem(input_absolute.stem().generic_string().c_str());
-  const eastl::string file_name(
-      input_absolute.filename().generic_string().c_str());
-
-  auto try_dest = [&](const eastl::string& folder_stem) -> eastl::string {
-    const fs::path relative =
-        fs::path(resources_subdir) / folder_stem.c_str() / file_name.c_str();
-    const fs::path absolute = m_file_system->resolveResource(relative);
-    if (m_file_system->exists(absolute)) {
-      return eastl::string();
-    }
-    if (!m_file_system->copyFile(input_absolute, absolute, false)) {
-      return eastl::string();
-    }
-    eastl::string virtual_path("resources/");
-    virtual_path.append(relative.generic_string().c_str());
-    return virtual_path;
-  };
-
-  eastl::string virtual_path = try_dest(stem);
-  if (!virtual_path.empty()) {
-    return virtual_path;
-  }
-
-  for (uint32_t index = 1; index < 10000; ++index) {
-    char alt[128];
-    std::snprintf(alt, sizeof(alt), "%s_%u", stem.c_str(), index);
-    virtual_path = try_dest(eastl::string(alt));
-    if (!virtual_path.empty()) {
-      return virtual_path;
-    }
-  }
-  return eastl::string();
 }
 
 eastl::string AssetImportService::makeUniqueDescriptorName(
@@ -218,7 +221,7 @@ ImportResult AssetImportService::importMesh(
 
   const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
   const eastl::string resource_virtual_path =
-      registerIntermediateBody(input_absolute, "Models");
+      registerIntermediateBody(m_file_system, input_absolute, "Models");
   if (resource_virtual_path.empty()) {
     LOG_WARN("[AssetImport] failed to place mesh Intermediate {}",
              input_absolute.generic_string());
@@ -281,7 +284,7 @@ ImportResult AssetImportService::importTexture(
 
   const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
   const eastl::string resource_virtual_path =
-      registerIntermediateBody(input_absolute, "Textures");
+      registerIntermediateBody(m_file_system, input_absolute, "Textures");
   if (resource_virtual_path.empty()) {
     LOG_WARN("[AssetImport] failed to place texture Intermediate {}",
              input_absolute.generic_string());

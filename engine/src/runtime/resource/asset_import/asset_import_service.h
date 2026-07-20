@@ -30,7 +30,7 @@ struct AssetImportServiceInit {
 /// Registers Intermediate exchange files (glTF / images) as Assets.
 /// Copies Intermediate bodies under Resources (non-Source) and writes Assets
 /// descriptors. Descriptor field `source` stores the Intermediate virtual path.
-/// Source Export (FBX/OBJ → Assimp) is owned by later tasks.
+/// Source Export (FBX/OBJ → Assimp) is owned by later tasks (5.2).
 class AssetImportService final {
  public:
   void initialize(const AssetImportServiceInit& init);
