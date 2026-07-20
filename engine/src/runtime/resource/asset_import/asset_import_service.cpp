@@ -22,6 +22,15 @@ namespace Blunder {
 namespace fs = std::filesystem;
 
 namespace {
+// Test seam for Intermediate Upgrade fail-soft (Task 3.2).
+bool g_force_upgrade_convert_failure_for_test = false;
+}  // namespace
+
+void AssetImportService::setForceUpgradeConvertFailureForTest(bool force) {
+  g_force_upgrade_convert_failure_for_test = force;
+}
+
+namespace {
 
 eastl::string extensionLower(const fs::path& path) {
   eastl::string ext(path.extension().generic_string().c_str());
@@ -326,6 +335,12 @@ fs::path resolveResourcesVirtualPath(FileSystem* file_system,
 eastl::string convertLegacyGltfToSiblingCollada(
     FileSystem* file_system, const eastl::string& source_virtual,
     const fs::path& source_absolute) {
+  if (g_force_upgrade_convert_failure_for_test) {
+    // Injected Assimp convert failure: leave any pre-existing sibling `.dae`
+    // for the upgrade caller to clean (fail-soft partial cleanup).
+    return eastl::string();
+  }
+
   Assimp::Importer importer;
   const aiScene* scene = readSourceScene(importer, source_absolute);
   if (!scene) {
@@ -872,6 +887,16 @@ uint32_t AssetImportService::upgradeLegacyMeshIntermediates() {
     const eastl::string dae_virtual = convertLegacyGltfToSiblingCollada(
         m_file_system, descriptor.source, source_absolute);
     if (dae_virtual.empty()) {
+      // Fail-soft: never rewrite descriptor; remove any leftover sibling `.dae`
+      // so `source` cannot be confused with a partial Intermediate.
+      const eastl::string sibling_dae =
+          replaceExtensionWithDae(descriptor.source);
+      const fs::path sibling_dae_absolute =
+          resolveResourcesVirtualPath(m_file_system, sibling_dae);
+      if (m_file_system->exists(sibling_dae_absolute)) {
+        std::error_code ec;
+        fs::remove(sibling_dae_absolute, ec);
+      }
       LOG_WARN(
           "[AssetImport] Intermediate Upgrade failed for guid={} source={} "
           "(leaving legacy glTF/GLB source unchanged)",
@@ -908,8 +933,14 @@ uint32_t AssetImportService::upgradeLegacyMeshIntermediates() {
             AssetYaml::serializeMeshDescriptor(descriptor))) {
       LOG_WARN(
           "[AssetImport] Intermediate Upgrade: failed to write descriptor {} "
-          "(guid={})",
+          "(guid={}); leaving legacy source unchanged",
           descriptor_virtual.c_str(), guid.c_str());
+      const fs::path dae_absolute =
+          resolveResourcesVirtualPath(m_file_system, dae_virtual);
+      if (m_file_system->exists(dae_absolute)) {
+        std::error_code ec;
+        fs::remove(dae_absolute, ec);
+      }
       continue;
     }
 

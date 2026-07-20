@@ -85,6 +85,10 @@ class AssetImportService final {
   /// Editor/tests use this as the combined scan/open path.
   uint32_t scanAndUpgradeLegacyIntermediates();
 
+  /// Test seam: when true, Intermediate Upgrade convert always fails so fail-soft
+  /// behavior can be asserted with a still-loadable legacy glTF Intermediate.
+  static void setForceUpgradeConvertFailureForTest(bool force);
+
   /// COLLADA Intermediate exchange extension (not Source Assets).
   static bool isMeshIntermediateExtension(const eastl::string& extension_lower);
   /// Image Intermediate exchange extensions (not Source Assets).

@@ -2,6 +2,7 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
@@ -956,6 +957,107 @@ void lazyIntermediateUpgradeGltfToDaeSuccessPath() {
   fs::remove_all(project);
 }
 
+// Task 3.2: fail-soft Intermediate Upgrade — convert failure leaves legacy
+// glTF `source`, cleans partial sibling `.dae`, and legacy loadMesh still works.
+void lazyIntermediateUpgradeFailSoftLeavesLegacySource() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+  fs::create_directories(project / "Resources" / "Source");
+
+  const fs::path legacy_gltf =
+      project / "Resources" / "Models" / "legacy" / "hero.gltf";
+  writeTextFile(legacy_gltf, kTriangleGltf);
+
+  // Plant a partial sibling .dae from a previous failed convert attempt.
+  const fs::path partial_dae =
+      project / "Resources" / "Models" / "legacy" / "hero.dae";
+  writeTextFile(partial_dae, "PARTIAL_DAE_NOT_COLLADA");
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  const std::string descriptor_before =
+      std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+      "source: resources/Models/legacy/hero.gltf\n" +
+      "import:\n"
+      "  materials: true\n"
+      "  animations: true\n"
+      "  scale: 1\n";
+  writeTextFile(descriptor_absolute, descriptor_before);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  auto compiler = eastl::make_shared<AssetCompilerService>();
+  compiler->initialize(&file_system, &manager, &registry);
+  manager.setAssetCompiler(compiler);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = compiler.get();
+  import_service.initialize(import_init);
+
+  AssetImportService::setForceUpgradeConvertFailureForTest(true);
+  const uint32_t upgraded = import_service.scanAndUpgradeLegacyIntermediates();
+  AssetImportService::setForceUpgradeConvertFailureForTest(false);
+
+  expect_true("fail-soft upgrade reports zero Assets", upgraded == 0);
+
+  eastl::string yaml_after;
+  expect_true("fail-soft: read descriptor after",
+              file_system.readText(descriptor_absolute, yaml_after));
+  expect_true("fail-soft: descriptor body unchanged",
+              std::string(yaml_after.c_str()) == descriptor_before);
+
+  MeshAssetDescriptor parsed{};
+  expect_true("fail-soft: parse descriptor after",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed));
+  expect_true("fail-soft: source still legacy .gltf",
+              containsIgnoreCase(parsed.source, ".gltf"));
+  expect_true("fail-soft: source does not point at .dae",
+              !containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("fail-soft: archived_source not invented on failure",
+              parsed.archived_source.empty());
+  expect_true("fail-soft: cleans partial sibling .dae",
+              !file_system.exists(partial_dae));
+  expect_true("fail-soft: legacy Intermediate glTF preserved",
+              file_system.exists(legacy_gltf));
+
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string("assets/Meshes/hero.mesh.yaml"));
+  expect_true("fail-soft: loadMesh legacy Fast Path returns mesh",
+              mesh != nullptr);
+  expect_true("fail-soft: loadMesh legacy Fast Path has vertices",
+              mesh && mesh->getVertexCount() == 3);
+
+  import_service.shutdown();
+  manager.setAssetCompiler({});
+  compiler->shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -968,6 +1070,7 @@ int main() {
   reimportObjPreservesGuidAndRefreshesIntermediate();
   reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();
   lazyIntermediateUpgradeGltfToDaeSuccessPath();
+  lazyIntermediateUpgradeFailSoftLeavesLegacySource();
   if (g_failures != 0) {
     std::fprintf(stderr, "asset_import_test: %d failure(s)\n", g_failures);
     return 1;
