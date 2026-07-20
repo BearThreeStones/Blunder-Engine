@@ -4,8 +4,23 @@
 #include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/behaviour_id.h"
+#include "runtime/core/reflection/variant.h"
 
 namespace Blunder {
+
+/// One JSON property bag entry (bool / number / string only).
+struct SceneBehaviourProperty final {
+  eastl::string key;
+  Variant value;
+};
+
+/// Ordered Behaviour declaration persisted on a scene entity.
+struct SceneBehaviourDeclaration final {
+  eastl::string type;
+  BehaviourId id{k_invalid_behaviour_id};
+  eastl::vector<SceneBehaviourProperty> properties;
+};
 
 /// Static entity definition deserialized from a Scene asset.
 struct SceneEntityDefinition final {
@@ -17,6 +32,8 @@ struct SceneEntityDefinition final {
   /// Mesh Asset Reference: preferred GUID; may briefly hold a legacy
   /// `assets/...mesh.yaml` path until migration on load/save.
   eastl::string mesh_virtual_path;
+  /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
+  eastl::vector<SceneBehaviourDeclaration> behaviours;
 };
 
 /// Reference to a nested child scene (loaded explicitly by SceneSystem).

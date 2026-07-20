@@ -215,8 +215,8 @@ add_test(NAME native_abi_test
          COMMAND native_abi_test)
 
 # DotNetHost e2e: fixture game + managed Tick via SHARED blunder_engine_c
-# (Approach A â€” one ObjectDB: create/lifecycle only through the ScriptHost-
-# staged C-ABI DLL, loaded via LoadLibrary â€” do not link the import lib or a
+# (Approach A â€?one ObjectDB: create/lifecycle only through the ScriptHost-
+# staged C-ABI DLL, loaded via LoadLibrary â€?do not link the import lib or a
 # second copy next to the test exe).
 # Requires .NET 10 SDK/runtime (DOTNET_ROOT) and nethost from the host pack.
 add_executable(dotnet_host_test
@@ -226,7 +226,7 @@ add_executable(dotnet_host_test
 # engine_runtime provides DotNetHost only. Object traffic uses LoadLibrary on
 # the staged SHARED blunder_engine_c; RegisterNativeAbi fills from that module
 # (Approach A / single-image host). In-process CoreCLR uses registered
-# BlunderNativeAbi pointers â€” Api does not DllImport SHARED.
+# BlunderNativeAbi pointers â€?Api does not DllImport SHARED.
 target_link_libraries(dotnet_host_test
     PRIVATE
         engine_runtime
@@ -489,7 +489,7 @@ add_executable(scene_serializer_test
 )
 
 target_link_libraries(scene_serializer_test
-    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
