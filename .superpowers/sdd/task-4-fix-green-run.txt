@@ -1,0 +1,22 @@
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205176281500
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205176281500/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205176281500/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205176281500/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205182734800
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205182734800/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205182734800/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205182734800/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205188959900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205188959900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205188959900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205188959900/engine/shaders
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205193878300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205193878300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205193878300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_registry_test_3205193878300/engine/shaders
+asset_registry_test: all passed
+EXIT=0

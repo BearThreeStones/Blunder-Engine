@@ -69,7 +69,7 @@ Re-verify: `.superpowers/sdd/task-6-verify-green-build.txt`, `.superpowers/sdd/t
 
 **Finding:** `SceneInstance::exportToScene` never copied `mesh_virtual_path`, so editor `saveActiveScene` dropped mesh GUID/path refs even though SceneSerializer was correct.
 
-**Fix commit:** (pending below) — store mesh ref on `Entity` through instantiate/export; spawn sets it too.
+**Fix commit:** `08217d0` — store mesh ref on `Entity` through instantiate/export; spawn sets it too.
 
 ### RED
 

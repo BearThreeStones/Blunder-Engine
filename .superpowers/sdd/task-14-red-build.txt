@@ -1,0 +1,46 @@
+﻿閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.7.1+024f5b037
+
+  Checking File Globs
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.74s
+  Copying byproducts `slint_cpp.dll.lib` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.dll` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  Detour.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Detour\Debug\Detour-d.lib
+  DetourCrowd.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourCrowd\Debug\DetourCrowd-d.lib
+  DetourTileCache.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourTileCache\Debug\DetourTileCache-d.lib
+  EASTL.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\EASTL\Debug\EASTLd.lib
+  Recast.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Recast\Debug\Recast-d.lib
+  SDL3-static.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\SDL\Debug\SDL3-staticd.lib
+  cgltf_impl.c
+  cgltf.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\cgltfd.lib
+  efsw.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\efsw\Debug\efswd.lib
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.73s
+  Copying byproducts `slint-compiler.exe` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_compiler.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  spdlog.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\spdlog\Debug\spdlogd.lib
+  stb_impl.c
+  stb.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\stbd.lib
+  yaml-cpp.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.cmake_deps\yaml-cpp-build\Debug\yaml-cppd.lib
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+  engine_runtime.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\runtime\Debug\engine_runtimed.lib
+  Copying PDB for PCH reuse from engine_runtime for asset_watch_path_test
+  Building Custom Rule E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/tests/CMakeLists.txt
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+  asset_watch_path_test.cpp
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(6,1): fatal  error C1083: 閺冪姵纭堕幍鎾崇磻閸栧懏瀚弬鍥︽: 閳ユ笧untime/resource/asset_cook/asset_watch_path.h閳? No such file or directory [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(6,1): error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥渞untime/resource/asset_cook/asset_watch_path.h鈥? No such file or directory [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(534,5): warning MSB8074: 鏃犳硶璇诲彇妯″潡渚濊禆椤规枃浠?asset_watch_path_test.dir\Debug\asset_watch_path_test.cpp.module.json: 搴斾负鏉ヨ嚜鍛藉悕绌洪棿鈥溾€濈殑鍏冪礌鈥渞oot鈥濄€傘€傞亣鍒板悕绉颁负鈥溾€濄€佸懡鍚嶇┖闂翠负鈥溾€濈殑鈥淣one鈥濄€?鐢熸垚椤哄簭鍙兘涓嶆纭€?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+  姝ｅ湪缂栬瘧...
+  asset_watch_path_test.cpp
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DBLUNDER_HAS_EFSW=1鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_watch_path_test.cpp鈥?
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DBLUNDER_PROJECT_ROOT="E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull"鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_watch_path_test.cpp鈥?
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DBLUNDER_RENDER_BACKEND_VULKAN=1鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_watch_path_test.cpp鈥?
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DYAML_CPP_STATIC_DEFINE鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_watch_path_test.cpp鈥?
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_watch_path_test.cpp(6,1): error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥渞untime/resource/asset_cook/asset_watch_path.h鈥? No such file or directory [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_watch_path_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_watch_path_test.cpp鈥?
+  
