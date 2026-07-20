@@ -8,6 +8,15 @@
 
 #include "EASTL/string.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 using namespace Blunder;
 
 extern "C" {
@@ -197,6 +206,87 @@ int blunder_ptrcall(const char* class_name, const char* method_name,
     return BLUNDER_ENGINE_ERROR;
   }
   bind->ptrcall(object, args, ret);
+  return BLUNDER_ENGINE_OK;
+}
+
+void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
+  if (out == nullptr) {
+    return;
+  }
+  out->engine_abi_version = &blunder_engine_abi_version;
+  out->object_create = &blunder_object_create;
+  out->object_destroy = &blunder_object_destroy;
+  out->object_is_valid = &blunder_object_is_valid;
+  out->object_set_bool_property = &blunder_object_set_bool_property;
+  out->object_get_bool_property = &blunder_object_get_bool_property;
+  out->object_add_behaviour = &blunder_object_add_behaviour;
+  out->object_remove_behaviour = &blunder_object_remove_behaviour;
+  out->object_behaviour_count = &blunder_object_behaviour_count;
+  out->object_behaviour_id_at = &blunder_object_behaviour_id_at;
+  out->object_set_behaviour_peer = &blunder_object_set_behaviour_peer;
+  out->object_get_behaviour_peer = &blunder_object_get_behaviour_peer;
+  out->object_set_vec3_property = &blunder_object_set_vec3_property;
+  out->object_get_vec3_property = &blunder_object_get_vec3_property;
+  out->lifecycle_set_tick_hook = &blunder_lifecycle_set_tick_hook;
+  out->lifecycle_set_ready_hook = &blunder_lifecycle_set_ready_hook;
+  out->lifecycle_clear_hooks = &blunder_lifecycle_clear_hooks;
+}
+
+int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
+  if (out == nullptr || module == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+
+#if defined(_WIN32) || defined(_WIN64)
+  auto load = [module](const char* name) -> void* {
+    return reinterpret_cast<void*>(
+        ::GetProcAddress(static_cast<HMODULE>(module), name));
+  };
+#else
+  auto load = [module](const char* name) -> void* {
+    return ::dlsym(module, name);
+  };
+#endif
+
+#define BLUNDER_NATIVE_ABI_LOAD(field, symbol)                          \
+  do {                                                                  \
+    out->field = reinterpret_cast<decltype(out->field)>(load(symbol)); \
+    if (out->field == nullptr) {                                        \
+      return BLUNDER_ENGINE_ERROR;                                      \
+    }                                                                   \
+  } while (0)
+
+  BLUNDER_NATIVE_ABI_LOAD(engine_abi_version, "blunder_engine_abi_version");
+  BLUNDER_NATIVE_ABI_LOAD(object_create, "blunder_object_create");
+  BLUNDER_NATIVE_ABI_LOAD(object_destroy, "blunder_object_destroy");
+  BLUNDER_NATIVE_ABI_LOAD(object_is_valid, "blunder_object_is_valid");
+  BLUNDER_NATIVE_ABI_LOAD(object_set_bool_property,
+                          "blunder_object_set_bool_property");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_bool_property,
+                          "blunder_object_get_bool_property");
+  BLUNDER_NATIVE_ABI_LOAD(object_add_behaviour, "blunder_object_add_behaviour");
+  BLUNDER_NATIVE_ABI_LOAD(object_remove_behaviour,
+                          "blunder_object_remove_behaviour");
+  BLUNDER_NATIVE_ABI_LOAD(object_behaviour_count,
+                          "blunder_object_behaviour_count");
+  BLUNDER_NATIVE_ABI_LOAD(object_behaviour_id_at,
+                          "blunder_object_behaviour_id_at");
+  BLUNDER_NATIVE_ABI_LOAD(object_set_behaviour_peer,
+                          "blunder_object_set_behaviour_peer");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_behaviour_peer,
+                          "blunder_object_get_behaviour_peer");
+  BLUNDER_NATIVE_ABI_LOAD(object_set_vec3_property,
+                          "blunder_object_set_vec3_property");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_vec3_property,
+                          "blunder_object_get_vec3_property");
+  BLUNDER_NATIVE_ABI_LOAD(lifecycle_set_tick_hook,
+                          "blunder_lifecycle_set_tick_hook");
+  BLUNDER_NATIVE_ABI_LOAD(lifecycle_set_ready_hook,
+                          "blunder_lifecycle_set_ready_hook");
+  BLUNDER_NATIVE_ABI_LOAD(lifecycle_clear_hooks,
+                          "blunder_lifecycle_clear_hooks");
+
+#undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;
 }
 

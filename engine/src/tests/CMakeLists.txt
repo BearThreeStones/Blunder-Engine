@@ -187,6 +187,33 @@ target_precompile_headers(engine_c_abi_test
 add_test(NAME engine_c_abi_test
          COMMAND engine_c_abi_test)
 
+# Native ABI fill helpers: process-linked symbols + LoadLibrary SHARED module.
+add_executable(native_abi_test
+    "native_abi_test.cpp"
+)
+
+target_link_libraries(native_abi_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_compile_definitions(native_abi_test
+    PRIVATE
+        "BLUNDER_ENGINE_C_SHARED_PATH=R\"($<TARGET_FILE:blunder_engine_c>)\""
+)
+
+if(MSVC)
+    target_compile_options(native_abi_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(native_abi_test
+    REUSE_FROM engine_runtime
+)
+
+add_dependencies(native_abi_test blunder_engine_c)
+
+add_test(NAME native_abi_test
+         COMMAND native_abi_test)
+
 # DotNetHost e2e: fixture game + managed Tick via SHARED blunder_engine_c
 # (Approach A — one ObjectDB: create/lifecycle only through the ScriptHost-
 # staged C-ABI DLL, loaded via LoadLibrary — do not link the import lib or a

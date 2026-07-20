@@ -81,6 +81,48 @@ BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
+// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v2 entry points.
+// Hosts register this into ScriptHost so managed code shares one ObjectDB image.
+typedef struct BlunderNativeAbi {
+  int (*engine_abi_version)(void);
+  BlunderObjectId (*object_create)(void);
+  int (*object_destroy)(BlunderObjectId id);
+  int (*object_is_valid)(BlunderObjectId id);
+  int (*object_set_bool_property)(BlunderObjectId id, const char* class_name,
+                                  const char* property_name, int value);
+  int (*object_get_bool_property)(BlunderObjectId id, const char* class_name,
+                                  const char* property_name, int* out_value);
+  BlunderBehaviourId (*object_add_behaviour)(BlunderObjectId id,
+                                             const char* type_name);
+  int (*object_remove_behaviour)(BlunderObjectId id,
+                                 BlunderBehaviourId behaviour_id);
+  int (*object_behaviour_count)(BlunderObjectId id);
+  BlunderBehaviourId (*object_behaviour_id_at)(BlunderObjectId id, int index);
+  int (*object_set_behaviour_peer)(BlunderObjectId id,
+                                   BlunderBehaviourId behaviour_id, void* peer);
+  void* (*object_get_behaviour_peer)(BlunderObjectId id,
+                                     BlunderBehaviourId behaviour_id);
+  int (*object_set_vec3_property)(BlunderObjectId id, const char* class_name,
+                                  const char* property_name, float x, float y,
+                                  float z);
+  int (*object_get_vec3_property)(BlunderObjectId id, const char* class_name,
+                                  const char* property_name, float* x, float* y,
+                                  float* z);
+  int (*lifecycle_set_tick_hook)(const char* class_name, BlunderTickHook hook);
+  int (*lifecycle_set_ready_hook)(const char* class_name, BlunderReadyHook hook);
+  int (*lifecycle_clear_hooks)(void);
+} BlunderNativeAbi;
+
+// Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).
+BLUNDER_ENGINE_C_API void blunder_native_abi_fill_from_process(
+    BlunderNativeAbi* out);
+
+// Fill from a LoadLibrary'd / dlopen'd SHARED blunder_engine_c module (tests).
+// module is HMODULE on Windows, void* handle elsewhere. Returns BLUNDER_ENGINE_OK
+// when every Api entry resolves; otherwise BLUNDER_ENGINE_ERROR.
+BLUNDER_ENGINE_C_API int blunder_native_abi_fill_from_module(
+    BlunderNativeAbi* out, void* module);
+
 #ifdef __cplusplus
 }
 #endif
