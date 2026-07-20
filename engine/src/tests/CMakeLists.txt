@@ -224,7 +224,9 @@ add_executable(dotnet_host_test
 )
 
 # engine_runtime provides DotNetHost only. Object traffic uses LoadLibrary on
-# the staged SHARED blunder_engine_c (same image ScriptHost DllImports).
+# the staged SHARED blunder_engine_c; RegisterNativeAbi fills from that module
+# (Approach A / single-image host). In-process CoreCLR uses registered
+# BlunderNativeAbi pointers — Api does not DllImport SHARED.
 target_link_libraries(dotnet_host_test
     PRIVATE
         engine_runtime

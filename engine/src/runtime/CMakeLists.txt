@@ -297,8 +297,10 @@ if(MSVC)
     target_compile_options(blunder_engine_c_static PRIVATE /Zc:preprocessor)
 endif()
 
-# Shared C-ABI DLL for managed DllImport (Blunder.Api). Do not also link
-# blunder_engine_c_static into the same process.
+# SHARED C-ABI DLL for Approach A / single-image hosts (LoadLibrary +
+# blunder_native_abi_fill_from_module). In-process CoreCLR uses registered
+# BlunderNativeAbi pointers (fill_from_process / blunder_engine_c_static) —
+# do not also LoadLibrary SHARED for Object traffic beside the static image.
 add_library(blunder_engine_c SHARED
     "core/reflection/engine_c_abi.cpp"
 )
@@ -314,7 +316,7 @@ target_compile_definitions(blunder_engine_c
     PRIVATE
         BLUNDER_ENGINE_C_EXPORTS
 )
-# Keep DLL basename stable for managed DllImport("blunder_engine_c").
+# Keep DLL basename stable for Approach A / single-image LoadLibrary hosts.
 set_target_properties(blunder_engine_c PROPERTIES
     OUTPUT_NAME "blunder_engine_c"
     DEBUG_POSTFIX ""

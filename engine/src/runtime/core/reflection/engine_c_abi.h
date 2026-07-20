@@ -70,7 +70,8 @@ BLUNDER_ENGINE_C_API int blunder_lifecycle_set_ready_hook(
     const char* class_name, BlunderReadyHook hook);
 BLUNDER_ENGINE_C_API int blunder_lifecycle_clear_hooks(void);
 // Invoke Ready/Tick against the ObjectDB that owns this C-ABI image
-// (SHARED blunder_engine_c for managed DllImport / Approach A e2e tests).
+// (process-linked static, or SHARED for Approach A / single-image hosts).
+// In-process CoreCLR uses registered BlunderNativeAbi pointers — not DllImport.
 BLUNDER_ENGINE_C_API int blunder_lifecycle_invoke_ready(BlunderObjectId id);
 BLUNDER_ENGINE_C_API int blunder_lifecycle_invoke_tick(BlunderObjectId id,
                                                        float delta_time);
