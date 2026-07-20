@@ -447,6 +447,10 @@ target_link_libraries(asset_import_test
     PRIVATE engine_runtime
 )
 
+target_include_directories(asset_import_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
 if(MSVC)
     target_compile_options(asset_import_test PRIVATE /Zc:preprocessor)
 endif()

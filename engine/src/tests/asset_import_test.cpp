@@ -2,7 +2,10 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
+#include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
 #include <cctype>
@@ -44,6 +47,7 @@ fs::path makeTempProject() {
   fs::create_directories(root / "Resources" / "Models");
   fs::create_directories(root / "Resources" / "Textures");
   fs::create_directories(root / "Resources" / "Source");
+  fs::create_directories(root / ".blunder" / "cooked");
   return root;
 }
 
@@ -51,6 +55,12 @@ void writeTextFile(const fs::path& path, const std::string& text) {
   fs::create_directories(path.parent_path());
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out << text;
+}
+
+void writeBinaryFile(const fs::path& path, const char* bytes, size_t size) {
+  fs::create_directories(path.parent_path());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(bytes, static_cast<std::streamsize>(size));
 }
 
 std::string readTextFile(const fs::path& path) {
@@ -308,6 +318,222 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
   fs::remove_all(external.parent_path());
 }
 
+// Minimal Wavefront OBJ quad (distinct from triangle for Reimport refresh).
+constexpr const char* kQuadObj = R"(# blunder Reimport fixture
+o Quad
+v 0.0 0.0 0.0
+v 1.0 0.0 0.0
+v 1.0 1.0 0.0
+v 0.0 1.0 0.0
+f 1 2 3
+f 1 3 4
+)";
+
+// Task 5.3: Reimport from archived Source preserves GUID and refreshes Intermediate.
+void reimportObjPreservesGuidAndRefreshesIntermediate() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_reimport_obj_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "triangle.obj";
+  writeTextFile(external, kTriangleObj);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  const ImportResult imported =
+      import_service.importMesh(external, "assets/Meshes", settings);
+  expect_true("Reimport fixture: OBJ import succeeds", imported.success);
+  expect_true("Reimport fixture: GUID allocated", !imported.guid.empty());
+  const eastl::string original_guid = imported.guid;
+
+  eastl::string desc_rel = imported.descriptor_virtual_path;
+  if (startsWith(desc_rel, "assets/")) {
+    desc_rel.erase(0, 7);
+  }
+  const fs::path descriptor_absolute =
+      file_system.resolveAsset(fs::path(desc_rel.c_str()));
+  eastl::string yaml;
+  expect_true("Reimport fixture: read descriptor",
+              file_system.readText(descriptor_absolute, yaml));
+  MeshAssetDescriptor parsed{};
+  expect_true("Reimport fixture: parse descriptor",
+              AssetYaml::parseMeshDescriptor(yaml, parsed));
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  const fs::path intermediate_absolute =
+      resolveResourcesVirtual(parsed.source);
+  const fs::path archived_absolute =
+      resolveResourcesVirtual(parsed.archived_source);
+  expect_true("Reimport fixture: Intermediate exists",
+              file_system.exists(intermediate_absolute));
+  expect_true("Reimport fixture: archived Source exists",
+              file_system.exists(archived_absolute));
+
+  // Stamp Intermediate so we can detect a real Assimp re-export overwrite.
+  writeTextFile(intermediate_absolute, "STALE_INTERMEDIATE_MARKER");
+  expect_true("Reimport fixture: Intermediate stamped stale",
+              readTextFile(intermediate_absolute) ==
+                  "STALE_INTERMEDIATE_MARKER");
+
+  // Plant a cooked Final so Reimport must invalidate it.
+  const fs::path mesh_cooked = cookedMeshPath(file_system, original_guid);
+  const fs::path mesh_meta = cookedMeshMetaPath(file_system, original_guid);
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+  expect_true("Reimport fixture: planted cooked Final",
+              file_system.exists(mesh_cooked));
+
+  // Modify archived Source (simulates artist edit / watch trigger input).
+  writeTextFile(archived_absolute, kQuadObj);
+
+  expect_true("requestReimport succeeds",
+              import_service.requestReimport(original_guid));
+
+  expect_true("Reimport preserves GUID in registry",
+              registry.resolveGuid(original_guid) ==
+                  imported.descriptor_virtual_path);
+
+  eastl::string yaml_after;
+  expect_true("Reimport: read descriptor after",
+              file_system.readText(descriptor_absolute, yaml_after));
+  MeshAssetDescriptor parsed_after{};
+  expect_true("Reimport: parse descriptor after",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed_after));
+  expect_true("Reimport preserves descriptor GUID",
+              parsed_after.guid == original_guid);
+  expect_true("Reimport keeps Intermediate source path",
+              parsed_after.source == parsed.source);
+  expect_true("Reimport keeps archived_source path",
+              parsed_after.archived_source == parsed.archived_source);
+
+  const std::string intermediate_after =
+      readTextFile(intermediate_absolute);
+  expect_true("Reimport refreshes Intermediate (not stale marker)",
+              intermediate_after != "STALE_INTERMEDIATE_MARKER");
+  expect_true("Reimport Intermediate still looks like glTF",
+              intermediate_after.find("\"asset\"") != std::string::npos ||
+                  intermediate_after.find("asset") != std::string::npos ||
+                  intermediate_after.find("meshes") != std::string::npos);
+
+  expect_true("Reimport invalidates cooked Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("Reimport invalidates cooked meta",
+              !file_system.exists(mesh_meta));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
+// Task 5.3: Intermediate-only Reimport preserves GUID and invalidates Finals.
+void reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_reimport_gltf_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "cube.gltf";
+  writeTextFile(external, "gltf-intermediate-body");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  const ImportResult imported =
+      import_service.importMesh(external, "assets/Meshes", settings);
+  expect_true("glTF Reimport fixture import succeeds", imported.success);
+  const eastl::string original_guid = imported.guid;
+
+  const fs::path mesh_cooked = cookedMeshPath(file_system, original_guid);
+  const fs::path mesh_meta = cookedMeshMetaPath(file_system, original_guid);
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+
+  expect_true("Intermediate-only requestReimport succeeds",
+              import_service.requestReimport(original_guid));
+  expect_true("Intermediate-only Reimport preserves GUID",
+              registry.resolveGuid(original_guid) ==
+                  imported.descriptor_virtual_path);
+  expect_true("Intermediate-only Reimport invalidates Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("Intermediate-only Reimport invalidates meta",
+              !file_system.exists(mesh_meta));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
 void importUnsupportedSourceExportRejected() {
   using namespace Blunder;
   ensureLogger();
@@ -429,6 +655,8 @@ int main() {
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
   importUnsupportedSourceExportRejected();
+  reimportObjPreservesGuidAndRefreshesIntermediate();
+  reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();
   if (g_failures != 0) {
     std::fprintf(stderr, "asset_import_test: %d failure(s)\n", g_failures);
     return 1;

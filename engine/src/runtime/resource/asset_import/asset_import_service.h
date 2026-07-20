@@ -58,14 +58,15 @@ class AssetImportService final {
   eastl::vector<eastl::string> findGuidsByArchivedSource(
       const std::filesystem::path& absolute_source_path) const;
 
-  /// Request Reimport for an Asset GUID. v1 stub (task 4.4): logs and
-  /// invalidateAssetAndDependents when a compiler is wired. Full Assimp
-  /// Source Export re-run lands in task 5.3.
+  /// Request Reimport for an Asset GUID. Preserves GUID always.
+  /// If `archived_source` is FBX/OBJ: Assimp re-exports Intermediate glTF
+  /// (overwrite), then invalidates Finals/dependents. Intermediate-only:
+  /// invalidate Finals (settings refresh optional / no GUID change).
   /// Rebuilds the dependency graph once (equivalent to requestReimports of one).
   bool requestReimport(const eastl::string& guid);
 
-  /// Batch Reimport: one rebuildDependencyGraph, then invalidate each GUID.
-  /// Prefer this over N× requestReimport when applying a watch debounce flush.
+  /// Batch Reimport: one rebuildDependencyGraph, then refresh + invalidate
+  /// each GUID. Prefer this over N× requestReimport for watch debounce flush.
   bool requestReimports(const eastl::vector<eastl::string>& guids);
 
   /// glTF/GLB Intermediate exchange extensions (not Source Assets).

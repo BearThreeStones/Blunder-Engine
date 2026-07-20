@@ -185,10 +185,9 @@ eastl::string archiveSourceAsset(FileSystem* file_system,
   return eastl::string();
 }
 
-/// Assimp Import + Export to Intermediate glTF under Resources/Models/{stem}/.
-eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
-                                             const fs::path& input_absolute) {
-  Assimp::Importer importer;
+/// Assimp Import. Returns nullptr on failure (importer owns the scene).
+const aiScene* readSourceScene(Assimp::Importer& importer,
+                               const fs::path& input_absolute) {
   const aiScene* scene = importer.ReadFile(
       input_absolute.string(),
       aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
@@ -197,6 +196,37 @@ eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
       (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0u) {
     LOG_WARN("[AssetImport] Assimp failed to read {}: {}",
              input_absolute.generic_string(), importer.GetErrorString());
+    return nullptr;
+  }
+  return scene;
+}
+
+/// Assimp Export to an absolute Intermediate glTF path (overwrites).
+bool exportSceneToGltfFile(const aiScene* scene, FileSystem* file_system,
+                           const fs::path& output_absolute) {
+  if (!scene || !file_system) {
+    return false;
+  }
+  if (!file_system->ensureParentDirectory(output_absolute)) {
+    return false;
+  }
+  Assimp::Exporter exporter;
+  const aiReturn status =
+      exporter.Export(scene, "gltf2", output_absolute.string());
+  if (status != aiReturn_SUCCESS) {
+    LOG_WARN("[AssetImport] Assimp gltf2 export failed for {}: {}",
+             output_absolute.generic_string(), exporter.GetErrorString());
+    return false;
+  }
+  return file_system->exists(output_absolute);
+}
+
+/// Assimp Import + Export to Intermediate glTF under Resources/Models/{stem}/.
+eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
+                                             const fs::path& input_absolute) {
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, input_absolute);
+  if (!scene) {
     return eastl::string();
   }
 
@@ -210,19 +240,7 @@ eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
     if (file_system->exists(absolute)) {
       return eastl::string();
     }
-    if (!file_system->ensureParentDirectory(absolute)) {
-      return eastl::string();
-    }
-
-    Assimp::Exporter exporter;
-    const aiReturn status =
-        exporter.Export(scene, "gltf2", absolute.string());
-    if (status != aiReturn_SUCCESS) {
-      LOG_WARN("[AssetImport] Assimp gltf2 export failed for {}: {}",
-               absolute.generic_string(), exporter.GetErrorString());
-      return eastl::string();
-    }
-    if (!file_system->exists(absolute)) {
+    if (!exportSceneToGltfFile(scene, file_system, absolute)) {
       return eastl::string();
     }
 
@@ -245,6 +263,101 @@ eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
     }
   }
   return eastl::string();
+}
+
+/// Re-export archived FBX/OBJ over an existing Intermediate glTF (overwrite).
+bool reexportArchivedSourceToIntermediate(FileSystem* file_system,
+                                          const fs::path& archived_absolute,
+                                          const fs::path& intermediate_absolute) {
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, archived_absolute);
+  if (!scene) {
+    return false;
+  }
+  return exportSceneToGltfFile(scene, file_system, intermediate_absolute);
+}
+
+fs::path resolveResourcesVirtualPath(FileSystem* file_system,
+                                     const eastl::string& virtual_path) {
+  eastl::string relative = virtual_path;
+  if (relative.compare(0, 10, "resources/") == 0) {
+    relative.erase(0, 10);
+  }
+  return file_system->resolveResource(fs::path(relative.c_str()));
+}
+
+fs::path resolveDescriptorAbsolute(FileSystem* file_system,
+                                   const eastl::string& descriptor_virtual) {
+  eastl::string relative = descriptor_virtual;
+  if (relative.compare(0, 7, "assets/") == 0) {
+    relative.erase(0, 7);
+  }
+  return file_system->resolveAsset(fs::path(relative.c_str()));
+}
+
+/// When archived_source is FBX/OBJ, overwrite Intermediate via Assimp.
+/// GUID / descriptor paths are left unchanged. Returns false only on
+/// hard failure of an attempted Source Export re-run.
+bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
+                                           const eastl::string& descriptor_virtual,
+                                           const eastl::string& yaml_text) {
+  const bool is_mesh = descriptor_virtual.size() >= 10 &&
+                       descriptor_virtual.compare(
+                           descriptor_virtual.size() - 10, 10, ".mesh.yaml") == 0;
+  if (!is_mesh) {
+    return true;  // textures / other: invalidate-only path
+  }
+
+  MeshAssetDescriptor descriptor{};
+  if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+    LOG_WARN("[AssetImport] Reimport: failed to parse mesh {}",
+             descriptor_virtual.c_str());
+    return false;
+  }
+
+  if (descriptor.archived_source.empty()) {
+    // Intermediate-only Asset: keep GUID; Finals invalidation is enough.
+    return true;
+  }
+
+  const fs::path archived_absolute =
+      resolveResourcesVirtualPath(file_system, descriptor.archived_source);
+  const eastl::string archived_ext = extensionLower(archived_absolute);
+  if (!AssetImportService::isMeshSourceExportExtension(archived_ext)) {
+    LOG_WARN(
+        "[AssetImport] Reimport: archived_source {} is not FBX/OBJ; "
+        "invalidating Finals only",
+        descriptor.archived_source.c_str());
+    return true;
+  }
+
+  if (!file_system->exists(archived_absolute)) {
+    LOG_WARN("[AssetImport] Reimport: archived Source missing {}",
+             archived_absolute.generic_string());
+    return false;
+  }
+
+  if (descriptor.source.empty()) {
+    LOG_WARN("[AssetImport] Reimport: mesh {} has empty Intermediate source",
+             descriptor_virtual.c_str());
+    return false;
+  }
+
+  const fs::path intermediate_absolute =
+      resolveResourcesVirtualPath(file_system, descriptor.source);
+  if (!reexportArchivedSourceToIntermediate(file_system, archived_absolute,
+                                            intermediate_absolute)) {
+    LOG_WARN(
+        "[AssetImport] Reimport: Assimp re-export failed for {} -> {}",
+        archived_absolute.generic_string(),
+        intermediate_absolute.generic_string());
+    return false;
+  }
+
+  LOG_INFO(
+      "[AssetImport] Reimport refreshed Intermediate {} from archived {}",
+      descriptor.source.c_str(), descriptor.archived_source.c_str());
+  return true;
 }
 
 }  // namespace
@@ -597,23 +710,42 @@ bool AssetImportService::requestReimports(
     return false;
   }
 
-  // Match Intermediate watch: one rebuildDependencyGraph, then N invalidates.
-  // Full Assimp Source Export dual-write refresh is owned by task 5.3.
+  // One rebuildDependencyGraph, then per-GUID Source Export refresh + invalidate.
+  // GUID is never reallocated: descriptor paths and registry entries stay put.
   if (m_asset_compiler) {
     m_asset_compiler->rebuildDependencyGraph();
   }
 
+  bool any_ok = false;
   for (const eastl::string& guid : valid) {
-    const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
-    LOG_INFO(
-        "[AssetImport] requestReimport guid={} descriptor={} "
-        "(stub: invalidate Finals; full Source Export in 5.3)",
-        guid.c_str(), descriptor_path.c_str());
+    const eastl::string descriptor_virtual =
+        m_asset_registry->resolveGuid(guid);
+    const fs::path descriptor_absolute =
+        resolveDescriptorAbsolute(m_file_system, descriptor_virtual);
+
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
+      LOG_WARN("[AssetImport] requestReimport: failed to read {}",
+               descriptor_virtual.c_str());
+      continue;
+    }
+
+    if (!refreshIntermediateFromArchivedSource(m_file_system,
+                                               descriptor_virtual, yaml_text)) {
+      LOG_WARN(
+          "[AssetImport] requestReimport: Intermediate refresh failed for "
+          "guid={} (GUID preserved; still invalidating Finals)",
+          guid.c_str());
+    }
+
+    LOG_INFO("[AssetImport] requestReimport guid={} descriptor={}",
+             guid.c_str(), descriptor_virtual.c_str());
     if (m_asset_compiler) {
       m_asset_compiler->invalidateAssetAndDependents(guid);
     }
+    any_ok = true;
   }
-  return true;
+  return any_ok;
 }
 
 }  // namespace Blunder
