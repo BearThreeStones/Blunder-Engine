@@ -47,7 +47,7 @@
 
 - [x] 8.1 Own `DotNetHost` on `RuntimeGlobalContext`; lazy-start when Scripts output exists (or documented gate)
 - [x] 8.2 From the engine frame, `forEach` Objects and `LifecycleDispatch::invokeTick` when host is running
-- [x] 8.3 Manual smoke: open/create Project, build Scripts, run editor without crash; Tick works for attached Behaviour
+- [x] 8.3 Manual smoke: open/create Project, build Scripts, run editor without crash; managed Tick proven via `dotnet_host_test` (Approach A / SHARED ObjectDB). Editor Scripts load remains gated (`BLUNDER_DOTNET_LOAD_SCRIPTS`) until single-ObjectDB — do not claim editor scene Object Tick yet
 
 ## 9. Docs alignment
 

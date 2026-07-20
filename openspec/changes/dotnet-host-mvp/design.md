@@ -68,3 +68,4 @@ Reflection kernel is done: ClassDB, Clang pilot export, API Blueprint, Object/Ob
 
 - Exact Play-mode UX gate (`BLUNDER_DOTNET_SCRIPTS` env vs automatic load when `scripts_bin` exists) — **resolved:** require `BLUNDER_DOTNET_SCRIPTS=1` to start ScriptHost (Play UI missing). Game assembly load is separately gated by `BLUNDER_DOTNET_LOAD_SCRIPTS=1` until dual-ObjectDB unification (document in `docs/agents/testing.md`).
 - Whether `blunder_engine_c` is a separate SHARED target or `engine_editor` exports — prefer dedicated SHARED for tests and managed DllImport (**shipped**). Editor still needs a follow-up so DllImport resolves to the **same** ObjectDB as `engine_runtime` (function pointers or main-module exports).
+- Editor-frame `LifecycleDispatch` is wired when ScriptHost is running, but **managed Tick on editor scene Objects is not claimed** until DllImport uses that same ObjectDB. Proven path today: `dotnet_host_test` against SHARED `blunder_engine_c`.
