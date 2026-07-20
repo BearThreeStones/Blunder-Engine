@@ -350,3 +350,26 @@ target_precompile_headers(asset_compiler_freshness_test
 
 add_test(NAME asset_compiler_freshness_test
          COMMAND asset_compiler_freshness_test)
+
+add_executable(asset_manager_fast_path_test
+    "asset_manager_fast_path_test.cpp"
+)
+
+target_link_libraries(asset_manager_fast_path_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_manager_fast_path_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_manager_fast_path_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_manager_fast_path_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_manager_fast_path_test
+         COMMAND asset_manager_fast_path_test)

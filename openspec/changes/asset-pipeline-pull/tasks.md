@@ -14,7 +14,7 @@
 ## 3. Pull Cook & Fast Path
 
 - [x] 3.1 Formalize freshness API: mark stale, cook one Asset, cook dependents; keep startup `cookIfStale` as optional warm-up only
-- [ ] 3.2 Ensure load path: fresh Final → Final; else Fast Path Intermediate + request Cook (mesh and texture)
+- [x] 3.2 Ensure load path: fresh Final → Final; else Fast Path Intermediate + request Cook (mesh and texture)
 - [ ] 3.3 Unit/integration tests: missing Final Fast Path; stale meta Fast Path; fresh Final preferred
 
 ## 4. Dependency graph & watch

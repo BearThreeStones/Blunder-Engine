@@ -7,6 +7,7 @@
 #include "EASTL/string.h"
 #include "EASTL/unordered_map.h"
 #include "EASTL/vector.h"
+#include "EASTL/weak_ptr.h"
 
 #include <cgltf.h>
 
@@ -20,6 +21,7 @@
 
 namespace Blunder {
 
+class AssetCompilerService;
 class AssetRegistry;
 class FileSystem;
 
@@ -71,6 +73,10 @@ class AssetManager final {
 
   void initialize(const AssetManagerInitInfo& info);
   void shutdown();
+
+  /// Optional Pull cook request target. Weak so AssetManager does not own the
+  /// compiler lifetime; clear on shutdown / before destroying the compiler.
+  void setAssetCompiler(eastl::weak_ptr<AssetCompilerService> compiler);
 
   // ---- Loading -----------------------------------------------------------
 
@@ -149,13 +155,21 @@ class AssetManager final {
 
   eastl::string canonicalKey(const eastl::string& virtual_path) const;
 
+  /// After Fast Path Intermediate load: request cookAsset(guid). Sync is OK
+  /// for v1; Intermediate is already loaded and returned regardless of Cook
+  /// duration. Reentrancy-guarded so cookMeshDescriptor → loadMesh does not
+  /// recurse into another cook request.
+  void requestCookAfterFastPath(const eastl::string& guid);
+
   FileSystem* m_file_system{nullptr};
+  eastl::weak_ptr<AssetCompilerService> m_asset_compiler;
   Cache<Texture2DAsset> m_texture_cache;
   Cache<ShaderAsset> m_shader_cache;
   Cache<MeshAsset> m_mesh_cache;
   Cache<MaterialAsset> m_material_cache;
   Cache<SceneAsset> m_scene_cache;
   bool m_is_initialized{false};
+  bool m_inside_cook_request{false};
 };
 
 }  // namespace Blunder

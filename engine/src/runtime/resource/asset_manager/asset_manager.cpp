@@ -3,6 +3,7 @@
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
 
@@ -299,8 +300,31 @@ void AssetManager::shutdown() {
     return;
   }
   clearCache();
+  m_asset_compiler.reset();
+  m_inside_cook_request = false;
   m_file_system = nullptr;
   m_is_initialized = false;
+}
+
+void AssetManager::setAssetCompiler(
+    eastl::weak_ptr<AssetCompilerService> compiler) {
+  m_asset_compiler = eastl::move(compiler);
+}
+
+void AssetManager::requestCookAfterFastPath(const eastl::string& guid) {
+  if (guid.empty() || m_inside_cook_request) {
+    return;
+  }
+  auto compiler = m_asset_compiler.lock();
+  if (!compiler) {
+    return;
+  }
+  // Sync cook for v1 is intentional: Intermediate is already loaded and will
+  // be returned to the caller; the next load can prefer Final. Guard against
+  // re-entrancy when cookMeshDescriptor loads the same descriptor path.
+  m_inside_cook_request = true;
+  (void)compiler->cookAsset(guid);
+  m_inside_cook_request = false;
 }
 
 eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
@@ -367,9 +391,15 @@ eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
     }
 
     LOG_WARN(
-        "[AssetManager] cooked texture missing/stale for {}, falling back to source",
+        "[AssetManager] cooked texture missing/stale for {}, Fast Path "
+        "Intermediate + request Cook",
         key.c_str());
-    return loadTexture2D(descriptor.source);
+    eastl::shared_ptr<Texture2DAsset> intermediate =
+        loadTexture2D(descriptor.source);
+    if (intermediate) {
+      requestCookAfterFastPath(descriptor.guid);
+    }
+    return intermediate;
   }
 
   const ResolvedContentPath resolved =
@@ -738,10 +768,15 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
     }
 
     LOG_WARN(
-        "[AssetManager] cooked mesh missing/stale for {}, falling back to source",
+        "[AssetManager] cooked mesh missing/stale for {}, Fast Path "
+        "Intermediate + request Cook",
         key.c_str());
     (void)descriptor.import;
-    return loadMesh(descriptor.source);
+    eastl::shared_ptr<MeshAsset> intermediate = loadMesh(descriptor.source);
+    if (intermediate) {
+      requestCookAfterFastPath(descriptor.guid);
+    }
+    return intermediate;
   }
   if (endsWithSuffix(request_key, ".mesh.asset")) {
     const ResolvedContentPath descriptor_path =

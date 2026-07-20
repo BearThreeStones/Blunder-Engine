@@ -63,6 +63,9 @@ void RuntimeGlobalContext::startSystems() {
   m_asset_compiler = eastl::make_shared<AssetCompilerService>();
   m_asset_compiler->initialize(m_file_system.get(), m_asset_manager.get(),
                                  m_asset_registry.get());
+  // Wire Pull Fast Path → cookAsset before warm-up so load-time cook requests
+  // work once systems start serving descriptors.
+  m_asset_manager->setAssetCompiler(m_asset_compiler);
   m_asset_compiler->cookIfStale();
 
   m_asset_import = eastl::make_shared<AssetImportService>();
@@ -249,6 +252,10 @@ void RuntimeGlobalContext::shutdownSystems() {
   if (m_asset_import) {
     m_asset_import->shutdown();
     m_asset_import.reset();
+  }
+
+  if (m_asset_manager) {
+    m_asset_manager->setAssetCompiler({});
   }
 
   if (m_asset_compiler) {
