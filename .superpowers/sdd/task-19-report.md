@@ -3,6 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Feature commit:** `2c2c481`  
+**Docs/evidence commit:** `b1f6b54`  
 **OpenSpec:** `- [x] 5.3 Implement Reimport preserving GUID (from archived Source or Intermediate + settings)`
 
 ## Summary
