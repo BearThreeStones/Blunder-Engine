@@ -3,7 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** (see git log after commit)
+**Commit:** `6853f2b` — feat: propagate Final invalidation along Asset Dependency Graph
 
 ## Summary
 
