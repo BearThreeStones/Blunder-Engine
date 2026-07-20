@@ -34,4 +34,4 @@ Task 4.5: complete (973d4d1; watch/invalidation/Reimport tests gate; report task
 Task 4.5: complete (973d4d1; pending review)
 Task 5.1: complete (a0190e1..79b40ba; report task-17-report.md; Intermediate Import + Resources copy)
 Task 5.1: complete (pending review)
-Task 5.2: complete (dc95d61; Assimp FBX/OBJ Source Export dual-write; report task-18-report.md)
+Task 5.2: complete (dc95d61..5c0a7d1; Assimp FBX/OBJ Source Export dual-write; report task-18-report.md)

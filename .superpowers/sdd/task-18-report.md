@@ -3,6 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Feature commit:** `dc95d61`  
+**Docs commit:** `5c0a7d1`  
 **OpenSpec:** `- [x] 5.2 Implement Assimp whitelist Source Export (FBX/OBJ→glTF), dual-write Source archive + Intermediate, descriptor fields`
 
 ## Summary
