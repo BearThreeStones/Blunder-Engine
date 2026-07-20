@@ -11,48 +11,42 @@ namespace Blunder.ScriptHost;
 public static class HostExports
 {
     static Assembly? s_gameAssembly;
-    static bool s_resolverRegistered;
 
-    static void EnsureApiResolver()
+    /// <summary>
+    /// Loads game assemblies while forcing Blunder.Api to ScriptHost's copy.
+    /// Default ALC probing can still materialize a second Api and break
+    /// Behaviour type identity even with a Resolving hook.
+    /// </summary>
+    sealed class GameAssemblyLoadContext : System.Runtime.Loader.AssemblyLoadContext
     {
-        if (s_resolverRegistered)
+        public GameAssemblyLoadContext() : base(isCollectible: false) { }
+
+        protected override Assembly? Load(AssemblyName assemblyName)
         {
-            return;
-        }
-
-        s_resolverRegistered = true;
-        System.Runtime.Loader.AssemblyLoadContext.Default.Resolving +=
-            static (_, name) =>
+            if (assemblyName.Name == "Blunder.Api")
             {
-                if (name.Name == "Blunder.Api")
-                {
-                    return typeof(Behaviour).Assembly;
-                }
+                return typeof(Behaviour).Assembly;
+            }
 
-                return null;
-            };
+            return null;
+        }
     }
+
+    static readonly GameAssemblyLoadContext s_gameAlc = new();
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     public static int LoadGameAssembly(IntPtr utf8Path)
     {
         try
         {
-            EnsureApiResolver();
-
             string? path = Utf8ToString(utf8Path);
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
                 return Native.Error;
             }
 
-            // Load into the default ALC so Blunder.Api matches ScriptHost's
-            // already-loaded copy (Assembly.LoadFrom can duplicate deps and
-            // break Behaviour type identity).
             string fullPath = Path.GetFullPath(path);
-            s_gameAssembly =
-                System.Runtime.Loader.AssemblyLoadContext.Default
-                    .LoadFromAssemblyPath(fullPath);
+            s_gameAssembly = s_gameAlc.LoadFromAssemblyPath(fullPath);
             return Native.Ok;
         }
         catch (Exception ex)
@@ -93,8 +87,10 @@ public static class HostExports
             {
                 Console.Error.WriteLine(
                     $"AttachBehaviour: not a Behaviour: {type.FullName} " +
-                    $"(base={type.BaseType?.AssemblyQualifiedName}; " +
-                    $"expected={typeof(Behaviour).AssemblyQualifiedName})");
+                    $"(base={type.BaseType?.AssemblyQualifiedName} " +
+                    $"mvid={type.BaseType?.Assembly.ManifestModule.ModuleVersionId}; " +
+                    $"expected={typeof(Behaviour).AssemblyQualifiedName} " +
+                    $"mvid={typeof(Behaviour).Assembly.ManifestModule.ModuleVersionId})");
                 return Native.Error;
             }
 

@@ -417,6 +417,7 @@ endif()
 # Visible to engine/src/tests (sibling) for nethost.dll copy beside test exe.
 set(BLUNDER_HAS_NETHOST "${BLUNDER_HAS_NETHOST}" PARENT_SCOPE)
 set(BLUNDER_NETHOST_DIR "${BLUNDER_NETHOST_DIR}" PARENT_SCOPE)
+set(BLUNDER_DOTNET_EXE "${BLUNDER_DOTNET_EXE}" PARENT_SCOPE)
 
 if(BLUNDER_HAS_NETHOST)
     message(STATUS "Blunder nethost: ${BLUNDER_NETHOST_DIR}")
