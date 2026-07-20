@@ -286,7 +286,7 @@ void markFinalStaleForcesRecook() {
       "Final restored after recook",
       file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
 
-  // Stub must be callable; dependency graph (4.x) owns real fan-out.
+  // cookDependents fans out via held dependency graph (OpenSpec 4.2).
   compiler.cookDependents(eastl::string(kGuid));
 
   compiler.shutdown();

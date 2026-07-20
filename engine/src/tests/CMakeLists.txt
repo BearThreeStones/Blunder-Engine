@@ -392,3 +392,26 @@ target_precompile_headers(asset_dependency_graph_test
 
 add_test(NAME asset_dependency_graph_test
          COMMAND asset_dependency_graph_test)
+
+add_executable(asset_compiler_invalidate_test
+    "asset_compiler_invalidate_test.cpp"
+)
+
+target_link_libraries(asset_compiler_invalidate_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_compiler_invalidate_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_compiler_invalidate_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_compiler_invalidate_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_compiler_invalidate_test
+         COMMAND asset_compiler_invalidate_test)

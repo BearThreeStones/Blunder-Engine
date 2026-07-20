@@ -3,6 +3,9 @@
 #include <cstring>
 #include <filesystem>
 
+#include "EASTL/hash_set.h"
+#include "EASTL/vector.h"
+
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
@@ -89,10 +92,18 @@ void AssetCompilerService::initialize(FileSystem* file_system,
 }
 
 void AssetCompilerService::shutdown() {
+  m_dependency_graph.clear();
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_asset_registry = nullptr;
   m_is_initialized = false;
+}
+
+void AssetCompilerService::rebuildDependencyGraph() {
+  if (!m_is_initialized) {
+    return;
+  }
+  m_dependency_graph.rebuildFromProject(*m_file_system, *m_asset_registry);
 }
 
 AssetCompilerStats AssetCompilerService::cookAll(bool force) {
@@ -160,6 +171,33 @@ void AssetCompilerService::markFinalStale(const eastl::string& guid) {
   removeIfExists(*m_file_system, cookedTextureMetaPath(*m_file_system, guid));
 }
 
+void AssetCompilerService::invalidateAssetAndDependents(
+    const eastl::string& guid) {
+  if (!m_is_initialized || guid.empty()) {
+    return;
+  }
+
+  eastl::hash_set<eastl::string> visited;
+  eastl::vector<eastl::string> queue;
+  queue.push_back(guid);
+
+  while (!queue.empty()) {
+    const eastl::string current = queue.back();
+    queue.pop_back();
+    if (current.empty() || !visited.insert(current).second) {
+      continue;
+    }
+
+    markFinalStale(current);
+
+    const eastl::vector<eastl::string> dependents =
+        m_dependency_graph.dependentsOf(current);
+    for (const eastl::string& dependent : dependents) {
+      queue.push_back(dependent);
+    }
+  }
+}
+
 bool AssetCompilerService::cookAsset(const eastl::string& guid, bool force) {
   if (!m_is_initialized || guid.empty()) {
     return false;
@@ -184,9 +222,15 @@ bool AssetCompilerService::cookAsset(const eastl::string& guid, bool force) {
 }
 
 void AssetCompilerService::cookDependents(const eastl::string& guid) {
-  // Stub: Asset Dependency Graph (OpenSpec task 4.x) owns reverse-edge fan-out.
-  // Until then this is intentionally a no-op so Pull callers can wire the hook.
-  (void)guid;
+  if (!m_is_initialized || guid.empty()) {
+    return;
+  }
+
+  const eastl::vector<eastl::string> dependents =
+      m_dependency_graph.dependentsOf(guid);
+  for (const eastl::string& dependent : dependents) {
+    cookAsset(dependent);
+  }
 }
 
 bool AssetCompilerService::cookMeshDescriptor(

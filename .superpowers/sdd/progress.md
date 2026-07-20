@@ -24,3 +24,5 @@ Task 3.2: complete (5df42cb..dc6bbeb, review clean; Important: sync cook blocks 
 Task 3.3: complete (pending review)
 Task 3.3: complete (dc6bbeb..d3ea3cf, review clean)
 Task 4.1: complete (d3ea3cf..7ad5e12; report task-12-report.md)
+Task 4.1: complete (d3ea3cf..f728887, review clean)
+Task 4.2: complete (invalidate along reverse edges; report task-13-report.md)

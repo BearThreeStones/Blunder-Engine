@@ -4,6 +4,8 @@
 
 #include "EASTL/string.h"
 
+#include "runtime/resource/asset_dependency/asset_dependency_graph.h"
+
 namespace Blunder {
 
 class AssetManager;
@@ -30,18 +32,24 @@ class AssetCompilerService final {
   /// not by this scan.
   AssetCompilerStats cookIfStale();
 
+  /// Rebuild the held Asset Dependency Graph from the registry + on-disk docs.
+  void rebuildDependencyGraph();
+
   /// Delete Final artifacts (mesh/texture bin + meta) for `guid` so the next
   /// cookAsset / load Fast Path treats the Asset as stale.
   void markFinalStale(const eastl::string& guid);
+
+  /// markFinalStale on `guid` and every reverse-edge dependent (transitive).
+  /// Call rebuildDependencyGraph() first so the held graph is current.
+  void invalidateAssetAndDependents(const eastl::string& guid);
 
   /// Resolve `guid` via AssetRegistry and cook that one Mesh/Texture descriptor.
   /// Returns true when a new Final was written; false when skipped (fresh),
   /// unknown, or cook failed.
   bool cookAsset(const eastl::string& guid, bool force = false);
 
-  /// Stub until the Asset Dependency Graph (OpenSpec 4.x) lands. Currently a
-  /// no-op; callers may invoke it after cookAsset / markFinalStale without
-  /// fan-out. Do not treat this as cooking dependents yet.
+  /// cookAsset on reverse-edge dependents of `guid` (direct dependents only).
+  /// Call rebuildDependencyGraph() first so the held graph is current.
   void cookDependents(const eastl::string& guid);
 
  private:
@@ -53,6 +61,7 @@ class AssetCompilerService final {
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
+  AssetDependencyGraph m_dependency_graph;
   bool m_is_initialized{false};
 };
 
