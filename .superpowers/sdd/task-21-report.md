@@ -3,41 +3,41 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**OpenSpec:** `- [x] 5.5 Tests: FBX/OBJ Import dual-write; Reimport preserves GUID; glTF Import unchanged success path`  
-**Commit:** docs/gate only (no new production code; coverage from 5.1–5.4)
+**Docs commits:** `a37d744`..`HEAD` (no new production code; coverage from 5.1–5.4; blend asserts in `aa8375f`)  
+**OpenSpec:** `- [x] 5.5 Tests: FBX/OBJ Import dual-write; Reimport preserves GUID; glTF Import unchanged success path`
 
 ## Summary
 
-Audited `asset_import_test` against the three 5.5 themes. All required behaviors are already covered and green. No new fixtures added.
+Audited `asset_import_test` coverage for the three 5.5 themes. All themes already green from 5.1–5.3; no new production code. FBX runtime Assimp path documented as whitelist-only with OBJ dual-write evidence (no proprietary FBX fixture added).
 
 ## Coverage audit
 
 | Theme | Evidence | Notes |
-|-------|----------|--------|
-| OBJ Import dual-write | `importObjSourceExportDualWritesArchiveAndIntermediate` | Source archive under `Resources/Source`, Intermediate `.gltf` under `Resources/Models`, descriptor `source` + `archived_source` + GUID |
-| FBX Import dual-write | `isMeshSourceExportExtension(".fbx")` true in same test; same Assimp path as OBJ | **Whitelist-only** — no proprietary FBX binary fixture (brief allows OBJ as Assimp evidence) |
-| Reimport preserves GUID | `reimportObjPreservesGuidAndRefreshesIntermediate`; `reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal` | OBJ: refresh Intermediate from archived Source; glTF Intermediate-only: invalidate Finals |
-| glTF Import unchanged | `importMeshWritesIntermediateAndDescriptor` | Intermediate under Resources (non-Source), empty `archived_source`, registry GUID |
-
-Supporting: PNG Intermediate Import; `.blend` reject (5.4).
+|-------|----------|-------|
+| FBX/OBJ Import dual-write | `importObjSourceExportDualWritesArchiveAndIntermediate` | OBJ end-to-end: Source archive + Intermediate glTF + descriptor `archived_source` / GUID. FBX covered by `isMeshSourceExportExtension(".fbx")` whitelist assert; same Assimp export path as OBJ |
+| Reimport preserves GUID | `reimportObjPreservesGuidAndRefreshesIntermediate`, `reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal` | Archived-Source Assimp refresh + Intermediate-only invalidate; GUID / paths stable |
+| glTF Import unchanged | `importMeshWritesIntermediateAndDescriptor` | Intermediate register + Resources copy; `archived_source` empty |
 
 ## Gaps considered / not added
 
-1. **FBX binary dual-write fixture** — deferred; Assimp Source Export path is exercised end-to-end via OBJ; FBX is whitelist-gated. Adding a tiny ASCII FBX is fragile / not worth proprietary binary.
-2. No production gaps for this gate.
+1. **FBX binary fixture** — deferred; brief allows whitelist + OBJ Assimp evidence when proprietary FBX is hard.
+2. **PNG / texture Reimport** — outside 5.5 mesh themes (invalidate-only already covered via Intermediate-only mesh case).
 
 ## Verification
 
-Same green run as task 5.4 (full suite):
+Preset: `build/vs2026-debug` Debug. PATH includes `.cmake_deps/slint-build`.
 
 | Target | Result |
 |--------|--------|
-| `asset_import_test` | exit 0 — `asset_import_test: all passed` |
+| `asset_import_test` | exit 0 (`asset_import_test: all passed`) |
 
-Evidence: `.superpowers/sdd/task-21-green-run.txt` (copy of task-20 green run).
+Shared log: `.superpowers/sdd/task-21-green-run.txt` (same run as task-20).
+
+## OpenSpec tasks
+
+- [x] 5.5 in `openspec/changes/asset-pipeline-pull/tasks.md`
 
 ## Concerns
 
-1. FBX runtime dual-write is API/whitelist + shared Assimp codepath confidence, not a separate binary fixture.
-2. Watch-path placeholder FBX bytes still expect Assimp warn + invalidate-only (see task 5.3 report) — outside this gate’s Import dual-write claim.
-3. Did not push.
+1. Gate packages existing 5.1–5.3 tests; FBX Assimp bytes not exercised in CI.
+2. Did not push.
