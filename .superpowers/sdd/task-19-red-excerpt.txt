@@ -1,0 +1,5 @@
+﻿RED evidence (stub before 5.3 implementation):
+FAIL Reimport refreshes Intermediate (not stale marker)
+FAIL Reimport Intermediate still looks like glTF
+asset_import_test: 2 failure(s)
+Log line from stub: (stub: invalidate Finals; full Source Export in 5.3)

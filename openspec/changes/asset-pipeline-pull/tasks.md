@@ -29,7 +29,7 @@
 
 - [x] 5.1 Keep glTF/image Import as Intermediate register + Resources copy (terminology: not “Source”)
 - [x] 5.2 Implement Assimp whitelist Source Export (FBX/OBJ→glTF), dual-write Source archive + Intermediate, descriptor fields
-- [ ] 5.3 Implement Reimport preserving GUID (from archived Source or Intermediate + settings)
+- [x] 5.3 Implement Reimport preserving GUID (from archived Source or Intermediate + settings)
 - [ ] 5.4 Reject or clearly non-support `.blend` automatic export in v1 (copy-to-Source-only or error)
 - [ ] 5.5 Tests: FBX/OBJ Import dual-write; Reimport preserves GUID; glTF Import unchanged success path
 
