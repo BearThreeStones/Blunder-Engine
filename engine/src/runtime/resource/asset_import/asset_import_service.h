@@ -27,17 +27,17 @@ struct AssetImportServiceInit {
   AssetCompilerService* asset_compiler{nullptr};
 };
 
-/// Registers Intermediate exchange files (glTF / images) as Assets.
-/// Copies Intermediate bodies under Resources (non-Source) and writes Assets
-/// descriptors. Descriptor field `source` stores the Intermediate virtual path.
-/// Source Export (FBX/OBJ → Assimp) is owned by later tasks (5.2).
+/// Registers Intermediate exchange files (glTF / images) as Assets, and runs
+/// Assimp Source Export for FBX/OBJ (dual-write Source archive + Intermediate).
+/// Descriptor field `source` stores the Intermediate virtual path; Source Export
+/// also sets `archived_source` to the Resources/Source archive path.
 class AssetImportService final {
  public:
   void initialize(const AssetImportServiceInit& init);
   void shutdown();
 
-  /// Import a glTF/GLB Intermediate file: copy under Resources/Models/{name}/
-  /// (when not already a non-Source Resources path) and write a .mesh.yaml.
+  /// Import a mesh: glTF/GLB Intermediate register, or FBX/OBJ Source Export
+  /// (archive under Resources/Source/, Assimp → Intermediate glTF under Models/).
   ImportResult importMesh(const std::filesystem::path& input_absolute,
                           const eastl::string& assets_folder_virtual,
                           const MeshImportSettings& settings);
@@ -73,6 +73,8 @@ class AssetImportService final {
   /// Image Intermediate exchange extensions (not Source Assets).
   static bool isTextureIntermediateExtension(
       const eastl::string& extension_lower);
+  /// FBX/OBJ whitelist for Assimp Source Export (v1).
+  static bool isMeshSourceExportExtension(const eastl::string& extension_lower);
 
   /// Deprecated aliases — prefer Intermediate names above.
   static bool isMeshSourceExtension(const eastl::string& extension_lower) {
@@ -83,6 +85,15 @@ class AssetImportService final {
   }
 
  private:
+  ImportResult importMeshIntermediate(
+      const std::filesystem::path& input_absolute,
+      const eastl::string& assets_folder_virtual,
+      const MeshImportSettings& settings);
+  ImportResult importMeshSourceExport(
+      const std::filesystem::path& input_absolute,
+      const eastl::string& assets_folder_virtual,
+      const MeshImportSettings& settings);
+
   eastl::string makeUniqueDescriptorName(const eastl::string& folder,
                                          const eastl::string& stem,
                                          const char* suffix) const;

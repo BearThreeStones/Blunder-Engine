@@ -169,6 +169,185 @@ void importMeshWritesIntermediateAndDescriptor() {
   fs::remove_all(external.parent_path());
 }
 
+// Minimal Wavefront OBJ triangle (Source Export fixture).
+constexpr const char* kTriangleObj = R"(# blunder Source Export fixture
+o Triangle
+v 0.0 0.0 0.0
+v 1.0 0.0 0.0
+v 0.0 1.0 0.0
+f 1 2 3
+)";
+
+// Task 5.2: FBX/OBJ Source Export dual-writes Source archive + Intermediate glTF.
+void importObjSourceExportDualWritesArchiveAndIntermediate() {
+  using namespace Blunder;
+  ensureLogger();
+
+  expect_true("obj is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".obj"));
+  expect_true("fbx is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".fbx"));
+  expect_true("gltf is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".gltf"));
+  expect_true("blend is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".blend"));
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_import_obj_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "triangle.obj";
+  writeTextFile(external, kTriangleObj);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  const ImportResult result =
+      import_service.importMesh(external, "assets/Meshes", settings);
+
+  expect_true("OBJ Source Export succeeds", result.success);
+  expect_true("OBJ Source Export returns guid", !result.guid.empty());
+  expect_true("OBJ descriptor under assets/",
+              startsWith(result.descriptor_virtual_path, "assets/"));
+  expect_true("OBJ descriptor ends with .mesh.yaml",
+              result.descriptor_virtual_path.find(".mesh.yaml") !=
+                  eastl::string::npos);
+
+  eastl::string desc_rel = result.descriptor_virtual_path;
+  if (startsWith(desc_rel, "assets/")) {
+    desc_rel.erase(0, 7);
+  }
+  const fs::path descriptor_absolute =
+      file_system.resolveAsset(fs::path(desc_rel.c_str()));
+  expect_true("OBJ Assets descriptor exists",
+              file_system.exists(descriptor_absolute));
+
+  eastl::string yaml;
+  expect_true("read OBJ descriptor yaml",
+              file_system.readText(descriptor_absolute, yaml));
+
+  MeshAssetDescriptor parsed{};
+  expect_true("parse OBJ mesh descriptor",
+              AssetYaml::parseMeshDescriptor(yaml, parsed));
+  expect_true("OBJ descriptor guid matches result", parsed.guid == result.guid);
+  expect_true("OBJ source is Intermediate resources/ path",
+              startsWith(parsed.source, "resources/"));
+  expect_true("OBJ source is Intermediate glTF",
+              containsIgnoreCase(parsed.source, ".gltf") ||
+                  containsIgnoreCase(parsed.source, ".glb"));
+  expect_true("OBJ source is not under Source archive",
+              !containsIgnoreCase(parsed.source, "/source/"));
+  expect_true("OBJ archived_source set", !parsed.archived_source.empty());
+  expect_true("OBJ archived_source under Source",
+              containsIgnoreCase(parsed.archived_source, "source/"));
+  expect_true("OBJ archived_source keeps .obj",
+              containsIgnoreCase(parsed.archived_source, ".obj"));
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  const fs::path intermediate_absolute = resolveResourcesVirtual(parsed.source);
+  expect_true("Intermediate glTF exists under Resources",
+              file_system.exists(intermediate_absolute));
+  expect_true("Intermediate glTF not under Resources/Source",
+              intermediate_absolute.generic_string().find("/Source/") ==
+                      std::string::npos &&
+                  intermediate_absolute.generic_string().find("\\Source\\") ==
+                      std::string::npos);
+  expect_true("Intermediate lives under Models",
+              containsIgnoreCase(eastl::string(intermediate_absolute.generic_string().c_str()),
+                                 "/models/") ||
+                  containsIgnoreCase(
+                      eastl::string(intermediate_absolute.generic_string().c_str()),
+                      "\\models\\"));
+
+  eastl::string archived_rel = parsed.archived_source;
+  if (startsWith(archived_rel, "resources/")) {
+    archived_rel.erase(0, 10);
+  }
+  const fs::path archived_absolute =
+      file_system.resolveResource(fs::path(archived_rel.c_str()));
+  expect_true("archived Source file exists under Resources/Source",
+              file_system.exists(archived_absolute));
+  expect_true("archived Source path contains Source",
+              archived_absolute.generic_string().find("/Source/") !=
+                      std::string::npos ||
+                  archived_absolute.generic_string().find("\\Source\\") !=
+                      std::string::npos);
+  expect_true("archived Source content matches OBJ",
+              readTextFile(archived_absolute) == kTriangleObj);
+
+  expect_true("registry maps OBJ guid to descriptor",
+              registry.resolveGuid(result.guid) ==
+                  result.descriptor_virtual_path);
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
+void importUnsupportedSourceExportRejected() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_import_blend_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "cube.blend";
+  writeTextFile(external, "not-a-real-blend");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  const ImportResult result =
+      import_service.importMesh(external, "assets/Meshes", settings);
+  expect_true("blend Source Export rejected", !result.success);
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
 void importTextureWritesIntermediateAndDescriptor() {
   using namespace Blunder;
   ensureLogger();
@@ -248,6 +427,8 @@ void importTextureWritesIntermediateAndDescriptor() {
 int main() {
   importMeshWritesIntermediateAndDescriptor();
   importTextureWritesIntermediateAndDescriptor();
+  importObjSourceExportDualWritesArchiveAndIntermediate();
+  importUnsupportedSourceExportRejected();
   if (g_failures != 0) {
     std::fprintf(stderr, "asset_import_test: %d failure(s)\n", g_failures);
     return 1;

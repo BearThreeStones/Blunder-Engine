@@ -245,6 +245,7 @@ target_link_libraries(engine_runtime
         Slint::Slint
     PRIVATE
         cgltf
+        assimp
         stb
         SDL3::SDL3
         vma
