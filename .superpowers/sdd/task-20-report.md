@@ -4,6 +4,7 @@
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
 **Feature commit:** `aa8375f`  
+**Docs commit:** `a37d744`  
 **OpenSpec:** `- [x] 5.4 Reject or clearly non-support `.blend` automatic export in v1 (copy-to-Source-only or error)`
 
 ## Summary
