@@ -3,7 +3,7 @@
 **Status:** DONE  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commits:** (see tip after commit)
+**Commits:** `8ab6233`
 
 ## Spot-check (docs ↔ code)
 
