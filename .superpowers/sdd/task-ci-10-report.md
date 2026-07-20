@@ -3,7 +3,7 @@
 **Status:** DONE  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commits:** `83f9886` (fixtures + mark 4.1), `dcd5f10` (report)
+**Commits:** `83f9886` (fixtures + mark 4.1); report tip `4608a00`
 
 ## Summary
 
