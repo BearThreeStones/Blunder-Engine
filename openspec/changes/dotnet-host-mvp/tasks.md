@@ -39,9 +39,9 @@
 
 ## 7. Project Scripts scaffold and build
 
-- [ ] 7.1 Extend `createProject` to scaffold `Scripts/` + minimal `net10.0` `.csproj` (HintPath to Blunder.Api)
-- [ ] 7.2 Implement `ScriptsBuilder` invoking `dotnet build` into `.blunder/scripts_bin`
-- [ ] 7.3 Update `project_create_test` for Scripts scaffold
+- [x] 7.1 Extend `createProject` to scaffold `Scripts/` + minimal `net10.0` `.csproj` (HintPath to Blunder.Api)
+- [x] 7.2 Implement `ScriptsBuilder` invoking `dotnet build` into `.blunder/scripts_bin`
+- [x] 7.3 Update `project_create_test` for Scripts scaffold
 
 ## 8. Engine integration
 

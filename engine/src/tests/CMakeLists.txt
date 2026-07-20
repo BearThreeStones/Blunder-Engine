@@ -326,6 +326,26 @@ target_precompile_headers(editor_commands_test
 add_test(NAME editor_commands_test
          COMMAND editor_commands_test)
 
+
+add_executable(project_create_test
+    "project_create_test.cpp"
+)
+
+target_link_libraries(project_create_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(project_create_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(project_create_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME project_create_test
+         COMMAND project_create_test)
+
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"
 )
