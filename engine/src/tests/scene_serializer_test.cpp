@@ -257,6 +257,108 @@ void deserializeLegacyEntityWithoutBehaviours() {
               loaded.getEntities()[0].behaviours.empty());
 }
 
+/// Hand-authored JSON: properties."id" before behaviour "id", and entity name
+/// equal to "behaviours", must not steal first-match findKey hits.
+void deserializeBehavioursScopedKeyLookup() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kJson = R"({
+  "type": "Scene",
+  "guid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "behaviours",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "behaviours": [
+        {
+          "type": "Game.Motor",
+          "properties": { "id": 999, "tag": "nested" },
+          "id": 42
+        }
+      ]
+    }
+  ]
+}
+)";
+
+  Scene loaded;
+  expect_true("deserialize scoped key lookup json",
+              SceneSerializer::deserialize(eastl::string(kJson), loaded));
+  expect_true("scoped: one entity", loaded.getEntities().size() == 1);
+  expect_true("scoped: entity name is behaviours",
+              loaded.getEntities()[0].name == "behaviours");
+  expect_true("scoped: one behaviour",
+              loaded.getEntities()[0].behaviours.size() == 1);
+  if (!loaded.getEntities().empty() &&
+      loaded.getEntities()[0].behaviours.size() == 1) {
+    const SceneBehaviourDeclaration& b = loaded.getEntities()[0].behaviours[0];
+    expect_true("scoped: behaviour id is 42 not nested 999",
+                b.id == static_cast<BehaviourId>(42));
+    expect_true("scoped: type preserved", b.type == "Game.Motor");
+    expect_true("scoped: nested property id kept as property",
+                b.properties.size() == 2 && b.properties[0].key == "id" &&
+                    b.properties[0].value ==
+                        Variant(static_cast<int64_t>(999)));
+  }
+}
+
+/// Quotes / backslashes in type names and string property values must round-trip.
+void serializeAndParseEscapedBehaviourStrings() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  scene.setGuid("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+
+  SceneEntityDefinition entity;
+  entity.name = "Actor";
+
+  SceneBehaviourDeclaration quoted;
+  quoted.type = "Game.\"Quoted\"";
+  quoted.id = static_cast<BehaviourId>(7);
+  quoted.properties.push_back(
+      {"msg", Variant(eastl::string("say \"hi\"\\there"))});
+  quoted.properties.push_back(
+      {"path", Variant(eastl::string("C:\\temp\\file"))});
+  entity.behaviours.push_back(eastl::move(quoted));
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize escaped behaviour strings",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json escapes quote in type",
+              json.find("Game.\\\"Quoted\\\"") != eastl::string::npos);
+  expect_true("json escapes quote in property",
+              json.find("say \\\"hi\\\"") != eastl::string::npos);
+  expect_true("json escapes backslash in property",
+              json.find("C:\\\\temp\\\\file") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize escaped behaviour strings",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("escaped: one entity", loaded.getEntities().size() == 1);
+  expect_true(
+      "escaped: one behaviour",
+      !loaded.getEntities().empty() &&
+          loaded.getEntities()[0].behaviours.size() == 1);
+  if (!loaded.getEntities().empty() &&
+      loaded.getEntities()[0].behaviours.size() == 1) {
+    const SceneBehaviourDeclaration& out = loaded.getEntities()[0].behaviours[0];
+    expect_true("escaped: type unescaped", out.type == "Game.\"Quoted\"");
+    expect_true("escaped: id", out.id == static_cast<BehaviourId>(7));
+    expect_true("escaped: msg property",
+                out.properties.size() >= 2 &&
+                    out.properties[0].value ==
+                        Variant(eastl::string("say \"hi\"\\there")));
+    expect_true("escaped: path property",
+                out.properties[1].value ==
+                    Variant(eastl::string("C:\\temp\\file")));
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -265,6 +367,8 @@ int main() {
   loadLegacyPathMeshMigratesToGuidOnSave();
   serializeAndParseBehaviours();
   deserializeLegacyEntityWithoutBehaviours();
+  deserializeBehavioursScopedKeyLookup();
+  serializeAndParseEscapedBehaviourStrings();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {
