@@ -3,7 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** (see git log; tests + tasks.md mark)
+**Commit:** `973d4d1` — test: cover watch invalidation and Reimport gate (4.5)
 
 ## Summary
 
