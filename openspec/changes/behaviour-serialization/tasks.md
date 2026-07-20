@@ -6,9 +6,9 @@
 
 ## 2. Instantiate: Object bind + slots
 
-- [ ] 2.1 On scene instantiate, for entities with Behaviours: create/bind Object to EntityId and restore slots/ids
-- [ ] 2.2 Advance Object next BehaviourId past max restored id
-- [ ] 2.3 Test: load without DotNetHost yields slots with null peers
+- [x] 2.1 On scene instantiate, for entities with Behaviours: create/bind Object to EntityId and restore slots/ids
+- [x] 2.2 Advance Object next BehaviourId past max restored id
+- [x] 2.3 Test: load without DotNetHost yields slots with null peers
 
 ## 3. Mount when host running
 

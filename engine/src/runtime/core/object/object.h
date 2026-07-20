@@ -36,6 +36,10 @@ class Object {
   bool hasEntity() const { return isValid(m_entity_id); }
 
   BehaviourId addBehaviour(eastl::string type_name);
+  /// Restore a persisted Behaviour slot with a fixed id (null peer). Advances
+  /// `m_next_behaviour_id` past `id` when needed. Returns false if `id` is
+  /// invalid or already present.
+  bool restoreBehaviour(BehaviourId id, eastl::string type_name);
   bool removeBehaviour(BehaviourId id);
   size_t getBehaviourCount() const { return m_behaviours.size(); }
   BehaviourId getBehaviourIdAt(size_t index) const;

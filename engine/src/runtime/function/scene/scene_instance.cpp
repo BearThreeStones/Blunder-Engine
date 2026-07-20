@@ -2,6 +2,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/object/object_db.h"
 #include "runtime/function/scene/scene_serializer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -32,6 +33,27 @@ void SceneInstance::instantiate(const Scene& scene) {
     if (!definition.mesh_virtual_path.empty()) {
       if (Entity* entity = getEntity(id)) {
         entity->setMeshVirtualPath(definition.mesh_virtual_path);
+      }
+    }
+    // Bind Object + restore Behaviour slots only when the list is non-empty.
+    // Peers stay null here; DotNetHost Attach is Task 3.
+    if (!definition.behaviours.empty()) {
+      const ObjectId object_id = ObjectDB::create();
+      Object* object = ObjectDB::get(object_id);
+      if (object == nullptr) {
+        LOG_ERROR("[SceneInstance] failed to create Object for entity '{}'",
+                  definition.name.c_str());
+        continue;
+      }
+      object->setName(definition.name);
+      object->setEntityId(id);
+      for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
+        if (!object->restoreBehaviour(decl.id, decl.type)) {
+          LOG_WARN(
+              "[SceneInstance] skipped Behaviour restore id={} type='{}' on '{}'",
+              static_cast<unsigned long long>(decl.id), decl.type.c_str(),
+              definition.name.c_str());
+        }
       }
     }
   }

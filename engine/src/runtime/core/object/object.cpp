@@ -65,6 +65,22 @@ BehaviourId Object::addBehaviour(eastl::string type_name) {
   return m_behaviours.back().id;
 }
 
+bool Object::restoreBehaviour(BehaviourId id, eastl::string type_name) {
+  if (!isValidBehaviourId(id) || findBehaviourSlot(id) != nullptr) {
+    return false;
+  }
+  BehaviourSlot slot;
+  slot.id = id;
+  slot.type_name = eastl::move(type_name);
+  slot.script_peer = nullptr;
+  slot.ready_invoked = false;
+  m_behaviours.push_back(eastl::move(slot));
+  if (id >= m_next_behaviour_id) {
+    m_next_behaviour_id = id + 1;
+  }
+  return true;
+}
+
 bool Object::removeBehaviour(BehaviourId id) {
   for (size_t i = 0; i < m_behaviours.size(); ++i) {
     if (m_behaviours[i].id == id) {

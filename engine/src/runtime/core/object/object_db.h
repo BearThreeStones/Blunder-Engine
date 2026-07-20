@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/core/object/object.h"
+#include "runtime/function/scene/entity_id.h"
 
 namespace Blunder {
 
@@ -15,6 +16,8 @@ class ObjectDB {
   static ObjectId create();
   static Object* get(ObjectId id);
   static void destroy(ObjectId id);
+  /// First occupied Object bound to `entity_id`, or nullptr. MVP scan.
+  static Object* findByEntityId(EntityId entity_id);
 
   // Visit every occupied Object (stable for later world Tick).
   static void forEach(ObjectVisitorFn fn);
