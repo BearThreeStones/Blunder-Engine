@@ -7,6 +7,9 @@
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
 
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 #include <cgltf.h>
 #include <spdlog/fmt/fmt.h>
 #include <stb_image.h>
@@ -17,9 +20,11 @@
 #include <limits>
 
 #include <algorithm>
+#include <glm/glm.hpp>
 
 #include "EASTL/utility.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -61,6 +66,110 @@ const char* cgltfResultToString(cgltf_result result) {
     default:
       return "unknown";
   }
+}
+
+/// Fast Path / Cook: load Intermediate COLLADA via Assimp (Y-up → engine Z-up).
+eastl::shared_ptr<MeshAsset> loadMeshFromColladaAssimp(
+    const std::filesystem::path& absolute, const eastl::string& cache_key) {
+  Assimp::Importer importer;
+  const aiScene* scene = importer.ReadFile(
+      absolute.string(),
+      aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
+          aiProcess_GenNormals | aiProcess_CalcTangentSpace |
+          aiProcess_PreTransformVertices);
+  if (!scene || !scene->mRootNode ||
+      (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0u ||
+      scene->mNumMeshes == 0) {
+    LOG_ERROR(
+        "[AssetManager] loadMesh: Assimp failed to read COLLADA {}: {}",
+        absolute.generic_string(), importer.GetErrorString());
+    return nullptr;
+  }
+
+  const aiMesh* mesh = nullptr;
+  for (unsigned int mesh_index = 0; mesh_index < scene->mNumMeshes;
+       ++mesh_index) {
+    const aiMesh* candidate = scene->mMeshes[mesh_index];
+    if (candidate != nullptr && candidate->HasPositions() &&
+        candidate->mNumFaces > 0 && candidate->mNumVertices > 0) {
+      mesh = candidate;
+      break;
+    }
+  }
+  if (mesh == nullptr) {
+    LOG_ERROR("[AssetManager] loadMesh: no usable mesh in COLLADA {}",
+              absolute.generic_string());
+    return nullptr;
+  }
+
+  eastl::vector<MeshVertex> vertices(mesh->mNumVertices);
+  for (unsigned int vertex_index = 0; vertex_index < mesh->mNumVertices;
+       ++vertex_index) {
+    const aiVector3D& position = mesh->mVertices[vertex_index];
+    vertices[vertex_index].position = transformPointGltfToEngine(
+        glm::vec3(position.x, position.y, position.z));
+
+    if (mesh->HasNormals()) {
+      const aiVector3D& normal = mesh->mNormals[vertex_index];
+      const Vec3 transformed_normal = transformDirectionGltfToEngine(
+          glm::vec3(normal.x, normal.y, normal.z));
+      const float normal_length = glm::length(transformed_normal);
+      if (normal_length > 1e-6f) {
+        vertices[vertex_index].normal = transformed_normal / normal_length;
+      }
+    }
+
+    if (mesh->HasTextureCoords(0)) {
+      const aiVector3D& uv = mesh->mTextureCoords[0][vertex_index];
+      vertices[vertex_index].uv = glm::vec2(uv.x, uv.y);
+    }
+
+    if (mesh->HasTangentsAndBitangents()) {
+      const aiVector3D& tangent = mesh->mTangents[vertex_index];
+      const Vec3 tangent_xyz = transformDirectionGltfToEngine(
+          glm::vec3(tangent.x, tangent.y, tangent.z));
+      float handedness = 1.0f;
+      if (mesh->HasNormals()) {
+        const aiVector3D& bitangent = mesh->mBitangents[vertex_index];
+        const Vec3 bitangent_xyz = transformDirectionGltfToEngine(
+            glm::vec3(bitangent.x, bitangent.y, bitangent.z));
+        const Vec3 normal_xyz = vertices[vertex_index].normal;
+        if (glm::dot(glm::cross(normal_xyz, tangent_xyz), bitangent_xyz) <
+            0.0f) {
+          handedness = -1.0f;
+        }
+      }
+      const float tangent_length = glm::length(tangent_xyz);
+      if (tangent_length > 1e-6f) {
+        vertices[vertex_index].tangent =
+            glm::vec4(tangent_xyz / tangent_length, handedness);
+      }
+    }
+  }
+
+  eastl::vector<uint32_t> indices;
+  indices.reserve(static_cast<size_t>(mesh->mNumFaces) * 3u);
+  for (unsigned int face_index = 0; face_index < mesh->mNumFaces; ++face_index) {
+    const aiFace& face = mesh->mFaces[face_index];
+    if (face.mNumIndices != 3) {
+      continue;
+    }
+    indices.push_back(face.mIndices[0]);
+    indices.push_back(face.mIndices[1]);
+    indices.push_back(face.mIndices[2]);
+  }
+  if (indices.empty()) {
+    LOG_ERROR("[AssetManager] loadMesh: no triangle faces in COLLADA {}",
+              absolute.generic_string());
+    return nullptr;
+  }
+
+  Asset::Meta meta;
+  meta.virtual_path = cache_key;
+  meta.absolute_path = absolute;
+  meta.source_timestamp = querySourceTimestamp(absolute);
+  return eastl::make_shared<MeshAsset>(
+      eastl::move(meta), eastl::move(vertices), eastl::move(indices));
 }
 
 bool relativePathEscapesRoot(const std::filesystem::path& relative_path) {
@@ -811,14 +920,27 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
   }
 
   const auto& absolute = resolved.absolute;
+  const eastl::string mesh_extension(
+      absolute.extension().generic_string().c_str());
+
+  // Intermediate COLLADA: Assimp. Legacy glTF/GLB Intermediate: cgltf only.
+  if (mesh_extension == ".dae") {
+    eastl::shared_ptr<MeshAsset> loaded =
+        loadMeshFromColladaAssimp(absolute, key);
+    if (loaded) {
+      m_mesh_cache[key] = loaded;
+      LOG_INFO("[AssetManager] loaded Mesh {} (COLLADA Assimp: {})",
+               key.c_str(), absolute.generic_string());
+    }
+    return loaded;
+  }
+
   eastl::vector<uint8_t> bytes;
   if (!m_file_system->readBinary(absolute, bytes)) {
     LOG_ERROR("[AssetManager] loadMesh: cannot read {}", absolute.generic_string());
     return nullptr;
   }
 
-  const eastl::string mesh_extension(
-      absolute.extension().generic_string().c_str());
   if (mesh_extension != ".gltf" && mesh_extension != ".glb") {
     LOG_ERROR("[AssetManager] loadMesh: unsupported mesh format {} for {}",
               mesh_extension.c_str(), absolute.generic_string());

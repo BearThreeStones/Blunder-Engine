@@ -6,7 +6,7 @@
 
 ## 2. Fast Path / Cook COLLADA
 
-- [ ] 2.1 Mesh Fast Path and Cook load Intermediate `.dae` via Assimp; gate cgltf (or legacy path) only when `source` is still glTF/GLB
+- [x] 2.1 Mesh Fast Path and Cook load Intermediate `.dae` via Assimp; gate cgltf (or legacy path) only when `source` is still glTF/GLB
 - [ ] 2.2 Update cook freshness / watch path helpers and fixtures that assume Intermediate `.gltf`
 - [ ] 2.3 Tests: missing/stale Final Fast Path from `.dae`; fresh Final preferred; Intermediate `.dae` change invalidates Final
 

@@ -66,7 +66,49 @@ void writeBinaryFile(const fs::path& path, const unsigned char* bytes,
             static_cast<std::streamsize>(size));
 }
 
-// Minimal single-triangle glTF with embedded buffer (no external .bin).
+// Minimal single-triangle COLLADA Intermediate (Assimp-readable).
+constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Y_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="tri-mesh" name="tri">
+      <mesh>
+        <source id="tri-positions">
+          <float_array id="tri-positions-array" count="9">0 0 0 1 0 0 0 1 0</float_array>
+          <technique_common>
+            <accessor source="#tri-positions-array" count="3" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="tri-vertices">
+          <input semantic="POSITION" source="#tri-positions"/>
+        </vertices>
+        <triangles count="1">
+          <input semantic="VERTEX" source="#tri-vertices" offset="0"/>
+          <p>0 1 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="tri-node" name="tri">
+        <instance_geometry url="#tri-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>
+)";
+
+// Legacy glTF Intermediate (cgltf Fast Path while source still points at glTF).
 constexpr char kMinimalTriangleGltf[] = R"({
   "asset": { "version": "2.0" },
   "scene": 0,
@@ -122,11 +164,11 @@ void loadMeshMissingFinalFastPathRequestsCook() {
   const char* kGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01";
   const char* kDescriptorPath = "assets/Meshes/tri.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "tri.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "tri.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "tri.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/tri.gltf\n" +
+                    "source: resources/Models/tri.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -246,11 +288,11 @@ void loadMeshStaleMetaFastPathRequestsCook() {
   const char* kGuid = "cccccccc-dddd-4eee-8fff-aaaaaaaaaa03";
   const char* kDescriptorPath = "assets/Meshes/stale.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "stale.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "stale.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "stale.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/stale.gltf\n" +
+                    "source: resources/Models/stale.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -293,8 +335,8 @@ void loadMeshStaleMetaFastPathRequestsCook() {
   const eastl::shared_ptr<MeshAsset> mesh =
       manager.loadMesh(eastl::string(kDescriptorPath));
   expect_true("stale meta Fast Path returns mesh", mesh != nullptr);
-  expect_true("stale meta Fast Path uses Intermediate glTF",
-              mesh && pathContains(mesh->getAbsolutePath(), ".gltf"));
+  expect_true("stale meta Fast Path uses Intermediate COLLADA",
+              mesh && pathContains(mesh->getAbsolutePath(), ".dae"));
   expect_true("stale meta Fast Path does not use descriptor as absolute",
               mesh && !pathContains(mesh->getAbsolutePath(), ".mesh.yaml"));
 
@@ -322,11 +364,11 @@ void loadMeshFreshFinalPreferred() {
   const char* kGuid = "dddddddd-eeee-4fff-8000-bbbbbbbbbb04";
   const char* kDescriptorPath = "assets/Meshes/fresh.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "fresh.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "fresh.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "fresh.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/fresh.gltf\n" +
+                    "source: resources/Models/fresh.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -367,11 +409,66 @@ void loadMeshFreshFinalPreferred() {
   expect_true("fresh Final preferred returns mesh", mesh != nullptr);
   expect_true("fresh Final preferred uses descriptor absolute path",
               mesh && pathContains(mesh->getAbsolutePath(), ".mesh.yaml"));
-  expect_true("fresh Final preferred does not use Intermediate glTF",
-              mesh && !pathContains(mesh->getAbsolutePath(), ".gltf"));
+  expect_true("fresh Final preferred does not use Intermediate COLLADA",
+              mesh && !pathContains(mesh->getAbsolutePath(), ".dae"));
   expect_true("fresh Final preferred has vertices",
               mesh && mesh->getVertexCount() == 3);
 
+  compiler->shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void loadMeshLegacyGltfFastPathStillWorks() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "eeeeeeee-ffff-4000-8000-cccccccccc05";
+  const char* kDescriptorPath = "assets/Meshes/legacy.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "legacy.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "legacy.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/legacy.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  expect_true("register legacy glTF mesh",
+              registry.registerAsset(eastl::string(kGuid),
+                                     eastl::string(kDescriptorPath)));
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  auto compiler = eastl::make_shared<AssetCompilerService>();
+  compiler->initialize(&file_system, &manager, &registry);
+  manager.setAssetCompiler(compiler);
+
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string(kDescriptorPath));
+  expect_true("legacy glTF Fast Path returns mesh", mesh != nullptr);
+  expect_true("legacy glTF Fast Path has vertices",
+              mesh && mesh->getVertexCount() == 3);
+  expect_true("legacy glTF Fast Path uses Intermediate glTF",
+              mesh && pathContains(mesh->getAbsolutePath(), ".gltf"));
+  expect_true(
+      "legacy glTF Fast Path requested cook",
+      file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
+
+  manager.setAssetCompiler({});
   compiler->shutdown();
   manager.shutdown();
   registry.shutdown();
@@ -386,6 +483,7 @@ int main() {
   loadTextureMissingFinalFastPathRequestsCook();
   loadMeshStaleMetaFastPathRequestsCook();
   loadMeshFreshFinalPreferred();
+  loadMeshLegacyGltfFastPathStillWorks();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {
