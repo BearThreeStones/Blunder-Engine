@@ -38,3 +38,6 @@ Task 5.2: complete (dc95d61..5c0a7d1; Assimp FBX/OBJ Source Export dual-write; r
 Task 5.2: complete (dc95d61; pending review)
 Task 5.2: complete (dc95d61..71dbb64, review Approved; Important: dual-write orphans deferred)
 Task 5.3: complete (2c2c481..b1f6b54; Reimport preserves GUID + Assimp Intermediate refresh; report task-19-report.md)
+Task 5.3: complete (2c2c481; review Approved)
+Task 5.4: complete (blend reject gate; strengthen no-side-effect asserts; report task-20-report.md)
+Task 5.5: complete (Import/Reimport tests gate; OBJ dual-write + Reimport GUID + glTF; FBX whitelist-only; report task-21-report.md)
