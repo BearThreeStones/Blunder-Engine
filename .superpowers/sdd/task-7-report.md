@@ -3,7 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** (see git log after commit)
+**Commit:** `a9f371c` — feat: AssetManager GUID load/resolve helpers
 
 ## Summary
 
