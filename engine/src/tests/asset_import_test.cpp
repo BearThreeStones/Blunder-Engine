@@ -1058,6 +1058,142 @@ void lazyIntermediateUpgradeFailSoftLeavesLegacySource() {
   fs::remove_all(project);
 }
 
+// Task 3.3: after Intermediate Upgrade, Reimport from archived Source
+// regenerates Intermediate COLLADA (.dae).
+void reimportAfterUpgradeRegeneratesDaeFromArchivedGltf() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "cccccccc-dddd-4eee-8fff-000000000000";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+  fs::create_directories(project / "Resources" / "Source");
+
+  const fs::path legacy_gltf =
+      project / "Resources" / "Models" / "legacy" / "hero.gltf";
+  writeTextFile(legacy_gltf, kTriangleGltf);
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  writeTextFile(descriptor_absolute,
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/legacy/hero.gltf\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  const uint32_t upgraded = import_service.scanAndUpgradeLegacyIntermediates();
+  expect_true("reimport-after-upgrade: upgrade reports Asset", upgraded >= 1);
+
+  eastl::string yaml;
+  expect_true("reimport-after-upgrade: read descriptor",
+              file_system.readText(descriptor_absolute, yaml));
+  MeshAssetDescriptor parsed{};
+  expect_true("reimport-after-upgrade: parse descriptor",
+              AssetYaml::parseMeshDescriptor(yaml, parsed));
+  expect_true("reimport-after-upgrade: source is .dae",
+              containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("reimport-after-upgrade: archived_source is .gltf",
+              containsIgnoreCase(parsed.archived_source, ".gltf"));
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  const fs::path dae_absolute = resolveResourcesVirtual(parsed.source);
+  const fs::path archived_absolute =
+      resolveResourcesVirtual(parsed.archived_source);
+  expect_true("reimport-after-upgrade: Intermediate .dae exists",
+              file_system.exists(dae_absolute));
+  expect_true("reimport-after-upgrade: archived glTF exists",
+              file_system.exists(archived_absolute));
+
+  // Stamp Intermediate so Reimport must overwrite from archived Source.
+  writeTextFile(dae_absolute, "STALE_DAE_AFTER_UPGRADE");
+  expect_true("reimport-after-upgrade: Intermediate stamped stale",
+              readTextFile(dae_absolute) == "STALE_DAE_AFTER_UPGRADE");
+
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(kGuid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(kGuid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+  expect_true("reimport-after-upgrade: planted cooked Final",
+              file_system.exists(mesh_cooked));
+
+  expect_true("reimport-after-upgrade: requestReimport succeeds",
+              import_service.requestReimport(eastl::string(kGuid)));
+
+  expect_true("reimport-after-upgrade: preserves GUID in registry",
+              registry.resolveGuid(eastl::string(kGuid)) ==
+                  "assets/Meshes/hero.mesh.yaml");
+
+  eastl::string yaml_after;
+  expect_true("reimport-after-upgrade: read descriptor after",
+              file_system.readText(descriptor_absolute, yaml_after));
+  MeshAssetDescriptor parsed_after{};
+  expect_true("reimport-after-upgrade: parse descriptor after",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed_after));
+  expect_true("reimport-after-upgrade: preserves descriptor GUID",
+              parsed_after.guid == kGuid);
+  expect_true("reimport-after-upgrade: keeps Intermediate source path",
+              parsed_after.source == parsed.source);
+  expect_true("reimport-after-upgrade: keeps archived_source path",
+              parsed_after.archived_source == parsed.archived_source);
+
+  const std::string dae_after = readTextFile(dae_absolute);
+  expect_true("reimport-after-upgrade: regenerates .dae (not stale)",
+              dae_after != "STALE_DAE_AFTER_UPGRADE");
+  expect_true("reimport-after-upgrade: regenerated body is COLLADA",
+              dae_after.find("COLLADA") != std::string::npos ||
+                  dae_after.find("collada") != std::string::npos);
+
+  expect_true("reimport-after-upgrade: invalidates cooked Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("reimport-after-upgrade: invalidates cooked meta",
+              !file_system.exists(mesh_meta));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -1071,6 +1207,7 @@ int main() {
   reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();
   lazyIntermediateUpgradeGltfToDaeSuccessPath();
   lazyIntermediateUpgradeFailSoftLeavesLegacySource();
+  reimportAfterUpgradeRegeneratesDaeFromArchivedGltf();
   if (g_failures != 0) {
     std::fprintf(stderr, "asset_import_test: %d failure(s)\n", g_failures);
     return 1;

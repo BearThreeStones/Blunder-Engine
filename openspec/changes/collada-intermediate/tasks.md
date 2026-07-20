@@ -14,7 +14,7 @@
 
 - [x] 3.1 Implement lazy Intermediate Upgrade on project open / registry scan (GUID preserve, archive former glTF, rewrite `source`, invalidate Finals)
 - [x] 3.2 Fail-soft: conversion failure leaves descriptor/`source` unchanged; no partial `.dae` as `source`; legacy load still works
-- [ ] 3.3 Tests: successful upgrade glTF→`.dae`; failed upgrade leaves legacy; Reimport from archived Source regenerates `.dae`
+- [x] 3.3 Tests: successful upgrade glTF→`.dae`; failed upgrade leaves legacy; Reimport from archived Source regenerates `.dae`
 
 ## 4. Validation
 
