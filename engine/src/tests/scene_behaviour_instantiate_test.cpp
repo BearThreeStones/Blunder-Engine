@@ -27,23 +27,36 @@ void ensureLogger() {
   }
 }
 
-struct FindByEntityCtx {
-  Blunder::EntityId entity_id{Blunder::k_invalid_entity_id};
-  Blunder::Object* found{nullptr};
-};
-
-void onFindByEntity(Blunder::Object* object, void* user) {
-  auto* ctx = static_cast<FindByEntityCtx*>(user);
-  if (object != nullptr && object->getEntityId() == ctx->entity_id) {
-    ctx->found = object;
-  }
+Blunder::Object* findObjectByEntityId(Blunder::EntityId entity_id) {
+  return Blunder::ObjectDB::findByEntityId(entity_id);
 }
 
-Blunder::Object* findObjectByEntityId(Blunder::EntityId entity_id) {
-  FindByEntityCtx ctx;
+size_t countObjectsByEntityId(Blunder::EntityId entity_id) {
+  struct CountCtx {
+    Blunder::EntityId entity_id{Blunder::k_invalid_entity_id};
+    size_t count{0};
+  };
+  CountCtx ctx;
   ctx.entity_id = entity_id;
-  Blunder::ObjectDB::forEach(onFindByEntity, &ctx);
-  return ctx.found;
+  Blunder::ObjectDB::forEach(
+      [](Blunder::Object* object, void* user) {
+        auto* c = static_cast<CountCtx*>(user);
+        if (object != nullptr && object->getEntityId() == c->entity_id) {
+          ++c->count;
+        }
+      },
+      &ctx);
+  return ctx.count;
+}
+
+size_t countOccupiedObjects() {
+  size_t count = 0;
+  Blunder::ObjectDB::forEach(
+      [](Blunder::Object*, void* user) {
+        ++(*static_cast<size_t*>(user));
+      },
+      &count);
+  return count;
 }
 
 /// Load scene JSON with behaviours, instantiate without DotNetHost: Object
@@ -132,10 +145,95 @@ void instantiateRestoresBehaviourSlotsWithoutHost() {
   ObjectDB::clear();
 }
 
+/// Re-instantiate must destroy prior bound Objects so findByEntityId does not
+/// return a stale Object still holding the old EntityId.
+void reinstantiateDestroysStaleBoundObjects() {
+  using namespace Blunder;
+  ensureLogger();
+  ObjectDB::clear();
+
+  const char* kJson = R"({
+  "type": "Scene",
+  "guid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "Actor",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "behaviours": [
+        { "type": "Game.Motor", "id": 1 },
+        { "type": "Game.Bark", "id": 3 }
+      ]
+    }
+  ]
+}
+)";
+
+  Scene scene;
+  expect_true("reinst deserialize",
+              SceneSerializer::deserialize(eastl::string(kJson), scene));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+
+  const EntityId actor_id_1 = instance.findEntityByName("Actor");
+  expect_true("reinst first actor id", isValid(actor_id_1));
+  Object* first = ObjectDB::findByEntityId(actor_id_1);
+  expect_true("reinst first Object bound", first != nullptr);
+  const ObjectId first_id =
+      first != nullptr ? first->getId() : k_invalid_object_id;
+  expect_true("reinst one occupied Object after first instantiate",
+              countOccupiedObjects() == 1);
+
+  instance.clear();
+  expect_true("reinst clear destroys bound Object",
+              countOccupiedObjects() == 0);
+  expect_true("reinst findByEntityId empty after clear",
+              ObjectDB::findByEntityId(actor_id_1) == nullptr);
+  expect_true("reinst first ObjectId invalidated after clear",
+              ObjectDB::get(first_id) == nullptr);
+
+  instance.instantiate(scene);
+  const EntityId actor_id_2 = instance.findEntityByName("Actor");
+  expect_true("reinst second actor id", isValid(actor_id_2));
+  expect_true("reinst EntityId stable across reinstantiate",
+              actor_id_2 == actor_id_1);
+  expect_true("reinst exactly one Object for EntityId",
+              countObjectsByEntityId(actor_id_2) == 1);
+  expect_true("reinst one occupied Object after second instantiate",
+              countOccupiedObjects() == 1);
+
+  Object* second = ObjectDB::findByEntityId(actor_id_2);
+  expect_true("reinst second Object bound", second != nullptr);
+  if (second != nullptr) {
+    expect_true("reinst second ObjectId differs from destroyed first",
+                second->getId() != first_id);
+    expect_true("reinst second Object entity id",
+                second->getEntityId() == actor_id_2);
+    expect_true("reinst two behaviour slots",
+                second->getBehaviourCount() == 2);
+    expect_true("reinst slot 0 id 1",
+                second->getBehaviourIdAt(0) == static_cast<BehaviourId>(1));
+    expect_true("reinst slot 1 id 3",
+                second->getBehaviourIdAt(1) == static_cast<BehaviourId>(3));
+  }
+
+  // instantiate() calls clear() first — a third pass must not accumulate.
+  instance.instantiate(scene);
+  expect_true("reinst third pass still one Object",
+              countOccupiedObjects() == 1);
+  expect_true("reinst third pass one binding",
+              countObjectsByEntityId(instance.findEntityByName("Actor")) == 1);
+
+  ObjectDB::clear();
+}
+
 }  // namespace
 
 int main() {
   instantiateRestoresBehaviourSlotsWithoutHost();
+  reinstantiateDestroysStaleBoundObjects();
 
   using namespace Blunder;
   ObjectDB::clear();

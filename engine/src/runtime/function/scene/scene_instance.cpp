@@ -20,6 +20,8 @@ Mat4 composeTrs(const Vec3& position, const Quat& rotation, const Vec3& scale) {
 
 }  // namespace
 
+SceneInstance::~SceneInstance() { clear(); }
+
 void SceneInstance::instantiate(const Scene& scene) {
   clear();
 
@@ -47,6 +49,7 @@ void SceneInstance::instantiate(const Scene& scene) {
       }
       object->setName(definition.name);
       object->setEntityId(id);
+      m_bound_object_ids.push_back(object_id);
       for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
         if (!object->restoreBehaviour(decl.id, decl.type)) {
           LOG_WARN(
@@ -88,6 +91,13 @@ void SceneInstance::instantiate(const Scene& scene) {
 }
 
 void SceneInstance::clear() {
+  // Destroy Objects bound for Behaviour slots so findByEntityId cannot return
+  // stale process-global entries after re-instantiate (EntityId is local).
+  for (ObjectId object_id : m_bound_object_ids) {
+    ObjectDB::destroy(object_id);
+  }
+  m_bound_object_ids.clear();
+
   m_entities.clear();
   m_world_matrices.clear();
   m_name_to_id.clear();
