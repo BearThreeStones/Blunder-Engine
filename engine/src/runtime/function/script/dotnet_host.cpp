@@ -97,7 +97,7 @@ std::string pathToUtf8(const std::filesystem::path& path) {
 
 bool DotNetHost::start(const std::filesystem::path& script_host_dll,
                        const std::filesystem::path& runtimeconfig,
-                       eastl::string& out_error) {
+                       const BlunderNativeAbi& abi, eastl::string& out_error) {
   out_error.clear();
   if (m_running) {
     out_error = "DotNetHost already running";
@@ -201,6 +201,15 @@ bool DotNetHost::start(const std::filesystem::path& script_host_dll,
     return false;
   }
 
+  // Register C-ABI table before any managed Native call (hooks / game load).
+  if (!registerNativeAbi(abi, out_error)) {
+    logHostError(out_error);
+    close_fn(context);
+    m_host_context = nullptr;
+    closeHandles();
+    return false;
+  }
+
   if (m_register_hooks != nullptr) {
     m_register_hooks();
   }
@@ -224,12 +233,14 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
   const char_t* type_name = L"Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* load_name = L"LoadGameAssembly";
   const char_t* attach_name = L"AttachBehaviour";
+  const char_t* register_abi_name = L"RegisterNativeAbi";
   const char_t* register_name = L"RegisterLifecycleHooks";
   const char_t* shutdown_name = L"ShutdownCleanup";
 #else
   const char_t* type_name = "Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* load_name = "LoadGameAssembly";
   const char_t* attach_name = "AttachBehaviour";
+  const char_t* register_abi_name = "RegisterNativeAbi";
   const char_t* register_name = "RegisterLifecycleHooks";
   const char_t* shutdown_name = "ShutdownCleanup";
 #endif
@@ -255,6 +266,16 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
   m_attach = reinterpret_cast<AttachBehaviourFn>(fn);
 
   fn = nullptr;
+  rc = load_and_get(dll_path.c_str(), type_name, register_abi_name,
+                    UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  if (rc != 0 || fn == nullptr) {
+    out_error = "Failed to resolve HostExports.RegisterNativeAbi code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
+  m_register_abi = reinterpret_cast<RegisterNativeAbiFn>(fn);
+
+  fn = nullptr;
   rc = load_and_get(dll_path.c_str(), type_name, register_name,
                     UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
   if (rc != 0 || fn == nullptr) {
@@ -273,6 +294,21 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
     return false;
   }
   m_shutdown_cleanup = reinterpret_cast<ShutdownCleanupFn>(fn);
+  return true;
+}
+
+bool DotNetHost::registerNativeAbi(const BlunderNativeAbi& abi,
+                                   eastl::string& out_error) {
+  if (m_register_abi == nullptr) {
+    out_error = "RegisterNativeAbi export is null";
+    return false;
+  }
+  const int rc = m_register_abi(&abi);
+  if (rc != 0) {
+    out_error = "RegisterNativeAbi failed code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
   return true;
 }
 
@@ -404,6 +440,7 @@ void DotNetHost::shutdown() {
 
   m_load_game = nullptr;
   m_attach = nullptr;
+  m_register_abi = nullptr;
   m_register_hooks = nullptr;
   m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
@@ -432,6 +469,7 @@ void DotNetHost::closeHandles() {
   m_load_assembly_and_get_fn = nullptr;
   m_load_game = nullptr;
   m_attach = nullptr;
+  m_register_abi = nullptr;
   m_register_hooks = nullptr;
   m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
@@ -453,7 +491,8 @@ void logHostError(const eastl::string& message) {
 }  // namespace
 
 bool DotNetHost::start(const std::filesystem::path&,
-                       const std::filesystem::path&, eastl::string& out_error) {
+                       const std::filesystem::path&, const BlunderNativeAbi&,
+                       eastl::string& out_error) {
   out_error =
       "nethost not available at build time (install .NET 10 SDK / set "
       "DOTNET_ROOT and reconfigure CMake)";
@@ -463,6 +502,12 @@ bool DotNetHost::start(const std::filesystem::path&,
 
 bool DotNetHost::resolveExports(const std::filesystem::path&,
                                 eastl::string& out_error) {
+  out_error = "nethost not available";
+  return false;
+}
+
+bool DotNetHost::registerNativeAbi(const BlunderNativeAbi&,
+                                   eastl::string& out_error) {
   out_error = "nethost not available";
   return false;
 }

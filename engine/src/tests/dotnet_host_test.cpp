@@ -2,9 +2,11 @@
 // ONE in-process image of SHARED blunder_engine_c — the copy staged beside
 // Blunder.ScriptHost (bin/<Config>/). The test must not link the import lib
 // against a second copy next to the exe (that yields two ObjectDBs).
+// Managed Native uses the registered SHARED exports (not process static).
 
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
+#include "runtime/core/reflection/engine_c_abi.h"
 #include "runtime/function/script/dotnet_host.h"
 
 #include <cstdio>
@@ -55,6 +57,7 @@ using ObjectDestroyFn = int (*)(uint64_t);
 using ObjectIsValidFn = int (*)(uint64_t);
 using LifecycleInvokeReadyFn = int (*)(uint64_t);
 using LifecycleInvokeTickFn = int (*)(uint64_t, float);
+using FillFromModuleFn = int (*)(BlunderNativeAbi*, void*);
 
 struct EngineCAbi {
 #ifdef _WIN32
@@ -68,6 +71,7 @@ struct EngineCAbi {
   ObjectIsValidFn object_is_valid{nullptr};
   LifecycleInvokeReadyFn invoke_ready{nullptr};
   LifecycleInvokeTickFn invoke_tick{nullptr};
+  FillFromModuleFn fill_from_module{nullptr};
 
   bool load(const std::filesystem::path& dll_path, eastl::string& out_error) {
     out_error.clear();
@@ -96,10 +100,15 @@ struct EngineCAbi {
         reinterpret_cast<LifecycleInvokeReadyFn>(sym("blunder_lifecycle_invoke_ready"));
     invoke_tick =
         reinterpret_cast<LifecycleInvokeTickFn>(sym("blunder_lifecycle_invoke_tick"));
+    fill_from_module =
+        reinterpret_cast<FillFromModuleFn>(sym("blunder_native_abi_fill_from_module"));
     if (abi_version == nullptr || object_create == nullptr ||
         object_destroy == nullptr || object_is_valid == nullptr ||
-        invoke_ready == nullptr || invoke_tick == nullptr) {
-      out_error = "blunder_engine_c exports missing (need invoke_ready/tick)";
+        invoke_ready == nullptr || invoke_tick == nullptr ||
+        fill_from_module == nullptr) {
+      out_error =
+          "blunder_engine_c exports missing (need invoke_ready/tick + "
+          "fill_from_module)";
       return false;
     }
     return true;
@@ -122,9 +131,10 @@ int main() {
   {
     DotNetHost missing;
     eastl::string err;
-    const bool ok = missing.start("Z:/definitely/missing/Blunder.ScriptHost.dll",
-                                  "Z:/definitely/missing/missing.runtimeconfig.json",
-                                  err);
+    const BlunderNativeAbi empty_abi{};
+    const bool ok = missing.start(
+        "Z:/definitely/missing/Blunder.ScriptHost.dll",
+        "Z:/definitely/missing/missing.runtimeconfig.json", empty_abi, err);
     expect_true("missing start returns false", !ok);
     expect_true("missing start sets error", !err.empty());
     expect_true("missing host not running", !missing.isRunning());
@@ -145,6 +155,15 @@ int main() {
 
   expect_true("abi version via shared dll", abi.abi_version() == 2);
 
+  BlunderNativeAbi native_abi{};
+  const int fill_rc = abi.fill_from_module(&native_abi, abi.lib);
+  expect_true("fill native abi from shared module",
+              fill_rc == BLUNDER_ENGINE_OK);
+  if (fill_rc != BLUNDER_ENGINE_OK) {
+    std::fprintf(stderr, "%d failure(s)\n", g_failures);
+    return 1;
+  }
+
   // Object lives in the ScriptHost-staged SHARED ObjectDB (Approach A).
   const uint64_t oid = abi.object_create();
   expect_true("create object via c-abi", oid != 0);
@@ -152,7 +171,7 @@ int main() {
 
   DotNetHost host;
   eastl::string err;
-  const bool started = host.start(dll, runtimeconfig, err);
+  const bool started = host.start(dll, runtimeconfig, native_abi, err);
   if (!started) {
     std::fprintf(stderr, "start error: %s\n", err.c_str());
     std::fprintf(stderr, "expected ScriptHost at: %s\n",

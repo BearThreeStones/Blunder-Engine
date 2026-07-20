@@ -3,7 +3,9 @@ add_executable(engine_editor
 )
 
 target_link_libraries(engine_editor
-    PRIVATE engine_runtime
+    PRIVATE
+        engine_runtime
+        blunder_engine_c_static
 )
 
 # When ON, link to profile/engine_editor_profile.exe so a locked Debug/engine_editor.exe

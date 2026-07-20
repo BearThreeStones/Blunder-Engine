@@ -12,8 +12,8 @@
 
 ## 3. DotNetHost wiring
 
-- [ ] 3.1 After ScriptHost load, DotNetHost fills + registers the process table before lifecycle hook registration and `loadGameAssembly`
-- [ ] 3.2 Update `dotnet_host_test` to register SHARED module exports (Approach A remains single-ObjectDB)
+- [x] 3.1 After ScriptHost load, DotNetHost fills + registers the process table before lifecycle hook registration and `loadGameAssembly`
+- [x] 3.2 Update `dotnet_host_test` to register SHARED module exports (Approach A remains single-ObjectDB)
 
 ## 4. Editor ObjectDB proof + gate removal
 

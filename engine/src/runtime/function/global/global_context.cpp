@@ -11,6 +11,7 @@
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/script/dotnet_host.h"
+#include "runtime/core/reflection/engine_c_abi.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/function/ui/editor_service_handles.h"
 #include "runtime/function/ui/ui_host.h"
@@ -90,7 +91,10 @@ void tryStartDotNetHost(RuntimeGlobalContext& ctx) {
 
   ctx.m_dotnet_host = eastl::make_unique<DotNetHost>();
   eastl::string error;
-  if (!ctx.m_dotnet_host->start(script_host_dll, runtimeconfig, error)) {
+  BlunderNativeAbi native_abi{};
+  blunder_native_abi_fill_from_process(&native_abi);
+  if (!ctx.m_dotnet_host->start(script_host_dll, runtimeconfig, native_abi,
+                                error)) {
     LOG_WARN("[DotNetHost] start failed (non-fatal): {}", error.c_str());
     ctx.m_dotnet_host.reset();
     return;
