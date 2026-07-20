@@ -538,6 +538,11 @@ void importUnsupportedSourceExportRejected() {
   using namespace Blunder;
   ensureLogger();
 
+  expect_true("blend is not Source Export whitelist",
+              !AssetImportService::isMeshSourceExportExtension(".blend"));
+  expect_true("blend is not Intermediate mesh extension",
+              !AssetImportService::isMeshIntermediateExtension(".blend"));
+
   const fs::path project = makeTempProject();
   const fs::path external =
       fs::temp_directory_path() /
@@ -564,7 +569,20 @@ void importUnsupportedSourceExportRejected() {
   MeshImportSettings settings{};
   const ImportResult result =
       import_service.importMesh(external, "assets/Meshes", settings);
+  // Task 5.4: .blend is not Assimp Source Export whitelist — clear failure,
+  // not silent success or copy-to-Source-only.
   expect_true("blend Source Export rejected", !result.success);
+  expect_true("blend reject leaves guid empty", result.guid.empty());
+  expect_true("blend reject leaves descriptor path empty",
+              result.descriptor_virtual_path.empty());
+  expect_true("blend reject writes no Assets descriptor",
+              !fs::exists(project / "Assets" / "Meshes" / "cube.mesh.yaml"));
+  expect_true("blend reject writes no Source archive",
+              !fs::exists(project / "Resources" / "Source" / "Models" /
+                          "cube"));
+  expect_true("blend reject writes no Intermediate under Models",
+              !fs::exists(project / "Resources" / "Models" / "cube.gltf") &&
+                  !fs::exists(project / "Resources" / "Models" / "cube.glb"));
 
   import_service.shutdown();
   registry.shutdown();

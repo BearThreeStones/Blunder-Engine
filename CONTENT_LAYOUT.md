@@ -120,8 +120,9 @@ Output cache:
 | **Source Export (v1)** | Whitelist (Assimp): FBX/OBJ → Intermediate glTF under `Resources/Models/{name}/`; **dual-write** archives the original under `Resources/Source/Models/{name}/`; descriptor `source` = Intermediate path, `archived_source` = Source archive path (`resources/Source/...`) |
 | **Reimport** | Re-runs Import / Source Export for an existing Asset; **preserves GUID**; refreshes Intermediate; invalidates Finals and dependents. Distinct from Cook. |
 
-`.blend` / `.psd` automatic export is out of v1 (files may still live under the Source root
-as archive-only).
+`.blend` / `.psd` automatic Source Export is **out of v1**: Import returns
+`success=false` (clear reject, no Asset / Intermediate / Source dual-write).
+Files may still be placed under the Source root manually as archive-only.
 
 ## Asset Watch
 

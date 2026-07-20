@@ -446,8 +446,13 @@ ImportResult AssetImportService::importMesh(
                                   settings);
   }
 
-  LOG_WARN("[AssetImport] unsupported mesh input {}",
-           input_absolute.generic_string());
+  // v1: FBX/OBJ Source Export only; .blend / others are a clear reject
+  // (success=false), not copy-to-Source and not silent success.
+  LOG_WARN(
+      "[AssetImport] unsupported mesh input {} "
+      "(v1 Source Export whitelist is .fbx/.obj; .blend automatic export is "
+      "not supported)",
+      input_absolute.generic_string());
   return result;
 }
 
