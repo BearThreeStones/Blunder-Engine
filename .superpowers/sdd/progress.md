@@ -41,3 +41,4 @@ Task 5.3: complete (2c2c481..b1f6b54; Reimport preserves GUID + Assimp Intermedi
 Task 5.3: complete (2c2c481; review Approved)
 Task 5.4: complete (aa8375f..a37d744; blend clear reject + no-side-effect asserts; report task-20-report.md)
 Task 5.5: complete (a37d744; Import/Reimport gate — OBJ dual-write + Reimport GUID + glTF; FBX whitelist-only; report task-21-report.md)
+Task 5.4+5.5: complete (aa8375f..7046bb7; pending review)
