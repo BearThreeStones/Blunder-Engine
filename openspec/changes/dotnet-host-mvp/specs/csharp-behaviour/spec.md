@@ -1,0 +1,30 @@
+## ADDED Requirements
+
+### Requirement: Ordered Behaviour list on Object
+An Object SHALL host an ordered list of zero or more Behaviours. Each Behaviour SHALL have a stable BehaviourId distinct from ObjectId and EntityId, a type name string, and at most one Script Peer handle. Duplicate type names on the same Object SHALL be allowed.
+
+#### Scenario: Add multiple Behaviours
+- **WHEN** an Object adds Behaviours "Motor", "Bark", and a second "Motor"
+- **THEN** the Behaviour count is 3, each has a distinct BehaviourId, and list order matches insertion order
+
+#### Scenario: Remove Behaviour
+- **WHEN** a BehaviourId is removed from an Object
+- **THEN** that id is no longer addressable and subsequent Tick does not invoke its peer
+
+### Requirement: Lifecycle runs per Behaviour peer in list order
+Ready and Tick SHALL be invoked once per Behaviour with a non-null Script Peer, in the Object's Behaviour list order, via the type-level lifecycle hook table.
+
+#### Scenario: Two peers both Tick
+- **WHEN** an Object has two Behaviours with Script Peers and invokeTick runs
+- **THEN** the Tick hook is called once for each peer in list order
+
+#### Scenario: Null peer skipped
+- **WHEN** a Behaviour slot has no Script Peer
+- **THEN** invokeTick does not call the lifecycle hook for that slot
+
+### Requirement: Blunder.Api Behaviour programming surface
+The Engine API assembly (Blunder.Api, `net10.0`) SHALL expose a Behaviour base type that holds a host Object handle and can query sibling Behaviours on that Object (`GetBehaviour` / `GetBehaviours`). Behaviour SHALL NOT be an Object subclass and SHALL NOT be an ECS Component.
+
+#### Scenario: GetBehaviour finds sibling
+- **WHEN** two Behaviours of different types are attached to the same Object
+- **THEN** one Behaviour can obtain the other via GetBehaviour of that type on the host Object handle
