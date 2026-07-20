@@ -56,3 +56,9 @@ if(WIN32)
         COMMENT "Copying runtime DLLs to output directory"
     )
 endif()
+
+
+# Stage Blunder.Api.dll (+ blunder_engine_c.dll) beside bin/<Config>/.
+if(TARGET blunder_api)
+    add_dependencies(engine_editor blunder_api)
+endif()

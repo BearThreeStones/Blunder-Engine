@@ -320,3 +320,41 @@ set_target_properties(blunder_engine_c PROPERTIES
 if(MSVC)
     target_compile_options(blunder_engine_c PRIVATE /Zc:preprocessor)
 endif()
+
+# ---------------------------------------------------------------------------
+# Blunder.Api (net10.0) - hand-authored managed bindings over blunder_engine_c.
+# Stages Blunder.Api.dll beside bin/<Config>/ for Create HintPath:
+#   $(BlunderEngineDir)/Blunder.Api.dll where BlunderEngineDir is the
+#   directory containing engine_editor.exe (same as bin/<Config>/).
+# ---------------------------------------------------------------------------
+find_program(BLUNDER_DOTNET_EXE NAMES dotnet)
+set(BLUNDER_API_CSPROJ
+    "${CMAKE_SOURCE_DIR}/engine/managed/Blunder.Api/Blunder.Api.csproj")
+set(BLUNDER_API_DLL_SRC
+    "${CMAKE_SOURCE_DIR}/engine/managed/Blunder.Api/bin/$<CONFIG>/net10.0/Blunder.Api.dll")
+set(BLUNDER_API_DLL_DST
+    "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/Blunder.Api.dll")
+
+if(BLUNDER_DOTNET_EXE)
+    add_custom_target(blunder_api ALL
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_API_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_API_DLL_SRC}"
+                "${BLUNDER_API_DLL_DST}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:blunder_engine_c>"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building Blunder.Api and staging beside bin/<Config>/"
+        VERBATIM
+        SOURCES "${BLUNDER_API_CSPROJ}"
+    )
+    add_dependencies(blunder_api blunder_engine_c)
+else()
+    message(WARNING
+        "dotnet SDK not found on PATH; skipping Blunder.Api (net10.0) build. "
+        "Install .NET 10 SDK to enable managed scripting bindings.")
+endif()

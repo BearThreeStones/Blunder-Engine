@@ -20,9 +20,9 @@
 
 ## 4. Blunder.Api (`net10.0`)
 
-- [ ] 4.1 Create `engine/managed/Blunder.Api` with `Behaviour`, `ObjectHandle`, `Vec3`, P/Invoke of C-ABI
-- [ ] 4.2 Implement `GetBehaviour` / `GetBehaviours` on the host Object handle
-- [ ] 4.3 CMake: build Api and copy `Blunder.Api.dll` (+ `blunder_engine_c.dll`) beside `bin/<Config>/`
+- [x] 4.1 Create `engine/managed/Blunder.Api` with `Behaviour`, `ObjectHandle`, `Vec3`, P/Invoke of C-ABI
+- [x] 4.2 Implement `GetBehaviour` / `GetBehaviours` on the host Object handle
+- [x] 4.3 CMake: build Api and copy `Blunder.Api.dll` (+ `blunder_engine_c.dll`) beside `bin/<Config>/`
 
 ## 5. CoreCLR ScriptHost
 
