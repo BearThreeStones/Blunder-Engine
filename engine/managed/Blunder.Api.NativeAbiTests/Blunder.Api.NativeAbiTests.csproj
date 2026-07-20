@@ -1,16 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
-    <AssemblyName>Blunder.Api</AssemblyName>
-    <RootNamespace>Blunder</RootNamespace>
+    <AssemblyName>Blunder.Api.NativeAbiTests</AssemblyName>
+    <RootNamespace>Blunder.Api.NativeAbiTests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Blunder.ScriptHost" />
-    <InternalsVisibleTo Include="Blunder.Api.NativeAbiTests" />
+    <ProjectReference Include="..\Blunder.Api\Blunder.Api.csproj" />
   </ItemGroup>
 </Project>

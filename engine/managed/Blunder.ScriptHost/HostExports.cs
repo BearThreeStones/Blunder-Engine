@@ -16,6 +16,8 @@ public static class HostExports
     /// Loads game assemblies while forcing Blunder.Api to ScriptHost's copy.
     /// Default ALC probing can still materialize a second Api and break
     /// Behaviour type identity even with a Resolving hook.
+    /// Shared Api also means <see cref="RegisterNativeAbi"/> registration is
+    /// visible to game assemblies (one Native static table).
     /// </summary>
     sealed class GameAssemblyLoadContext : System.Runtime.Loader.AssemblyLoadContext
     {
@@ -33,6 +35,30 @@ public static class HostExports
     }
 
     static readonly GameAssemblyLoadContext s_gameAlc = new();
+
+    /// <summary>
+    /// Stores the native C-ABI function-pointer table into Blunder.Api.
+    /// Must run before any managed Native / ObjectHandle C-ABI call.
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static unsafe int RegisterNativeAbi(BlunderNativeAbi* abi)
+    {
+        if (abi == null)
+        {
+            return Native.Error;
+        }
+
+        try
+        {
+            Native.Register(in *abi);
+            return Native.Ok;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"RegisterNativeAbi exception: {ex}");
+            return Native.Error;
+        }
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     public static int LoadGameAssembly(IntPtr utf8Path)

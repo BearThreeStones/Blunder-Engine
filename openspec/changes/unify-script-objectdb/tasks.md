@@ -6,9 +6,9 @@
 
 ## 2. Managed registration path
 
-- [ ] 2.1 Add ScriptHost `RegisterNativeAbi` `UnmanagedCallersOnly` export that stores the table for Blunder.Api
-- [ ] 2.2 Change Blunder.Api `Native` to call through the registered table; fail clearly if unregistered (no silent DllImport fallback)
-- [ ] 2.3 Resolve Blunder.Api from ScriptHost ALC so registration is visible to game assemblies (keep existing shared-Api ALC behavior)
+- [x] 2.1 Add ScriptHost `RegisterNativeAbi` `UnmanagedCallersOnly` export that stores the table for Blunder.Api
+- [x] 2.2 Change Blunder.Api `Native` to call through the registered table; fail clearly if unregistered (no silent DllImport fallback)
+- [x] 2.3 Resolve Blunder.Api from ScriptHost ALC so registration is visible to game assemblies (keep existing shared-Api ALC behavior)
 
 ## 3. DotNetHost wiring
 
