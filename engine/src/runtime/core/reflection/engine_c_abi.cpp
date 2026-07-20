@@ -1,9 +1,12 @@
 #include "runtime/core/reflection/engine_c_abi.h"
 
+#include "runtime/core/math/math_types.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/reflection/variant.h"
+
+#include "EASTL/string.h"
 
 using namespace Blunder;
 
@@ -55,9 +58,111 @@ int blunder_object_get_bool_property(BlunderObjectId id, const char* class_name,
   return BLUNDER_ENGINE_OK;
 }
 
+BlunderBehaviourId blunder_object_add_behaviour(BlunderObjectId id,
+                                                const char* type_name) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr || type_name == nullptr) {
+    return 0;
+  }
+  return static_cast<BlunderBehaviourId>(
+      object->addBehaviour(eastl::string(type_name)));
+}
+
+int blunder_object_remove_behaviour(BlunderObjectId id,
+                                    BlunderBehaviourId behaviour_id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return object->removeBehaviour(static_cast<BehaviourId>(behaviour_id))
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_object_behaviour_count(BlunderObjectId id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return 0;
+  }
+  return static_cast<int>(object->getBehaviourCount());
+}
+
+BlunderBehaviourId blunder_object_behaviour_id_at(BlunderObjectId id,
+                                                 int index) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr || index < 0) {
+    return 0;
+  }
+  return static_cast<BlunderBehaviourId>(
+      object->getBehaviourIdAt(static_cast<size_t>(index)));
+}
+
+int blunder_object_set_behaviour_peer(BlunderObjectId id,
+                                      BlunderBehaviourId behaviour_id,
+                                      void* peer) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr ||
+      object->getBehaviourTypeName(static_cast<BehaviourId>(behaviour_id)) ==
+          nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  object->setBehaviourScriptPeer(static_cast<BehaviourId>(behaviour_id), peer);
+  return BLUNDER_ENGINE_OK;
+}
+
+void* blunder_object_get_behaviour_peer(BlunderObjectId id,
+                                        BlunderBehaviourId behaviour_id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return nullptr;
+  }
+  return object->getBehaviourScriptPeer(
+      static_cast<BehaviourId>(behaviour_id));
+}
+
+int blunder_object_set_vec3_property(BlunderObjectId id, const char* class_name,
+                                     const char* property_name, float x,
+                                     float y, float z) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return ClassDB::setProperty(object, class_name, property_name,
+                              Variant(Vec3{x, y, z}))
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_object_get_vec3_property(BlunderObjectId id, const char* class_name,
+                                     const char* property_name, float* x,
+                                     float* y, float* z) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr || x == nullptr || y == nullptr || z == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  Variant value;
+  if (!ClassDB::getProperty(object, class_name, property_name, value)) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  if (value.getType() != VariantType::Vec3) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Vec3 v = value.asVec3();
+  *x = v.x;
+  *y = v.y;
+  *z = v.z;
+  return BLUNDER_ENGINE_OK;
+}
+
 int blunder_lifecycle_set_tick_hook(const char* class_name,
                                     BlunderTickHook hook) {
   LifecycleDispatch::setTickHook(class_name, hook);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_lifecycle_set_ready_hook(const char* class_name,
+                                     BlunderReadyHook hook) {
+  LifecycleDispatch::setReadyHook(class_name, hook);
   return BLUNDER_ENGINE_OK;
 }
 

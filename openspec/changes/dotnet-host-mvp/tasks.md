@@ -13,10 +13,10 @@
 
 ## 3. C-ABI v2
 
-- [ ] 3.1 Add C-ABI Behaviour add/remove/count/id-at/set-peer/get-peer entry points
-- [ ] 3.2 Add C-ABI Vec3 property get/set (at least Object position)
-- [ ] 3.3 Bump `BLUNDER_ENGINE_C_ABI_VERSION` to 2 and extend `engine_c_abi_test`
-- [ ] 3.4 Introduce SHARED `blunder_engine_c` (or equivalent) exporting C-ABI for managed `DllImport`
+- [x] 3.1 Add C-ABI Behaviour add/remove/count/id-at/set-peer/get-peer entry points
+- [x] 3.2 Add C-ABI Vec3 property get/set (at least Object position)
+- [x] 3.3 Bump `BLUNDER_ENGINE_C_ABI_VERSION` to 2 and extend `engine_c_abi_test`
+- [x] 3.4 Introduce SHARED `blunder_engine_c` (or equivalent) exporting C-ABI for managed `DllImport`
 
 ## 4. Blunder.Api (`net10.0`)
 
