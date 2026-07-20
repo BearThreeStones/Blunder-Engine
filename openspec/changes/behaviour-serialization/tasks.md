@@ -18,9 +18,9 @@
 
 ## 4. Export / save
 
-- [ ] 4.1 EntityId→Object lookup for export
-- [ ] 4.2 Write Behaviour list from Object when exporting Scene from live instance
-- [ ] 4.3 Confirm tombstoned entities still omitted (including behaviours)
+- [x] 4.1 EntityId→Object lookup for export
+- [x] 4.2 Write Behaviour list from Object when exporting Scene from live instance
+- [x] 4.3 Confirm tombstoned entities still omitted (including behaviours)
 
 ## 5. Docs + verify
 

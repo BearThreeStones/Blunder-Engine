@@ -526,6 +526,29 @@ target_precompile_headers(scene_behaviour_instantiate_test
 add_test(NAME scene_behaviour_instantiate_test
          COMMAND scene_behaviour_instantiate_test)
 
+add_executable(scene_behaviour_export_test
+    "scene_behaviour_export_test.cpp"
+)
+
+target_link_libraries(scene_behaviour_export_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_behaviour_export_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(scene_behaviour_export_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_behaviour_export_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_behaviour_export_test
+         COMMAND scene_behaviour_export_test)
+
 # Scene instantiate + mountSceneBehaviours with process ObjectDB / ProbeBehaviour.
 add_executable(scene_behaviour_mount_test
     "scene_behaviour_mount_test.cpp"

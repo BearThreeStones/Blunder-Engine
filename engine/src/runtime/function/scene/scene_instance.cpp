@@ -257,6 +257,30 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
       }
     }
 
+    // Prefer SceneInstance-tracked ObjectIds over a process-global EntityId scan.
+    const EntityId entity_id = indexToId(i);
+    Object* bound = nullptr;
+    for (ObjectId object_id : m_bound_object_ids) {
+      Object* candidate = ObjectDB::get(object_id);
+      if (candidate != nullptr && candidate->getEntityId() == entity_id) {
+        bound = candidate;
+        break;
+      }
+    }
+    if (bound != nullptr) {
+      const size_t behaviour_count = bound->getBehaviourCount();
+      definition.behaviours.reserve(behaviour_count);
+      for (size_t bi = 0; bi < behaviour_count; ++bi) {
+        const BehaviourId behaviour_id = bound->getBehaviourIdAt(bi);
+        const char* type_name = bound->getBehaviourTypeName(behaviour_id);
+        SceneBehaviourDeclaration decl;
+        decl.id = behaviour_id;
+        decl.type = type_name != nullptr ? type_name : "";
+        // Property bag is not stored on Object slots yet; skip empty.
+        definition.behaviours.push_back(eastl::move(decl));
+      }
+    }
+
     out_scene.getEntities().push_back(eastl::move(definition));
   }
 
