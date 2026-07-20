@@ -76,5 +76,13 @@ internal static class Native
         out float z);
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int blunder_lifecycle_set_tick_hook(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string className, IntPtr hook);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int blunder_lifecycle_set_ready_hook(
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string className, IntPtr hook);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     public static extern int blunder_lifecycle_clear_hooks();
 }

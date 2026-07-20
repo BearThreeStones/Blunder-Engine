@@ -176,6 +176,8 @@ add_library(engine_runtime STATIC
     "function/editor/document_history_helpers.cpp"
     "function/editor/viewport_pick_system.h"
     "function/editor/viewport_pick_system.cpp"
+    "function/script/dotnet_host.h"
+    "function/script/dotnet_host.cpp"
     "resource/asset/scene_asset.h"
 )
 
@@ -357,4 +359,117 @@ else()
     message(WARNING
         "dotnet SDK not found on PATH; skipping Blunder.Api (net10.0) build. "
         "Install .NET 10 SDK to enable managed scripting bindings.")
+endif()
+
+# ---------------------------------------------------------------------------
+# CoreCLR host (nethost / hostfxr) + Blunder.ScriptHost
+# Requires .NET 10 host pack. Prefer DOTNET_ROOT, else directory of `dotnet`.
+# ---------------------------------------------------------------------------
+set(BLUNDER_HAS_NETHOST FALSE)
+if(WIN32)
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_blunder_dotnet_rid "win-x64")
+    else()
+        set(_blunder_dotnet_rid "win-x86")
+    endif()
+elseif(APPLE)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        set(_blunder_dotnet_rid "osx-arm64")
+    else()
+        set(_blunder_dotnet_rid "osx-x64")
+    endif()
+else()
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+        set(_blunder_dotnet_rid "linux-arm64")
+    else()
+        set(_blunder_dotnet_rid "linux-x64")
+    endif()
+endif()
+
+if(DEFINED ENV{DOTNET_ROOT} AND NOT "$ENV{DOTNET_ROOT}" STREQUAL "")
+    set(_blunder_dotnet_root "$ENV{DOTNET_ROOT}")
+elseif(BLUNDER_DOTNET_EXE)
+    get_filename_component(_blunder_dotnet_root "${BLUNDER_DOTNET_EXE}" DIRECTORY)
+else()
+    set(_blunder_dotnet_root "")
+endif()
+
+set(_blunder_host_pack_root
+    "${_blunder_dotnet_root}/packs/Microsoft.NETCore.App.Host.${_blunder_dotnet_rid}")
+if(EXISTS "${_blunder_host_pack_root}")
+    file(GLOB _blunder_host_versions LIST_DIRECTORIES true
+         "${_blunder_host_pack_root}/*")
+    if(_blunder_host_versions)
+        list(SORT _blunder_host_versions COMPARE NATURAL ORDER DESCENDING)
+        list(GET _blunder_host_versions 0 _blunder_host_ver_dir)
+        set(BLUNDER_NETHOST_DIR
+            "${_blunder_host_ver_dir}/runtimes/${_blunder_dotnet_rid}/native")
+        if(EXISTS "${BLUNDER_NETHOST_DIR}/nethost.h" AND
+           (EXISTS "${BLUNDER_NETHOST_DIR}/nethost.lib" OR
+            EXISTS "${BLUNDER_NETHOST_DIR}/libnethost.so" OR
+            EXISTS "${BLUNDER_NETHOST_DIR}/libnethost.dylib" OR
+            EXISTS "${BLUNDER_NETHOST_DIR}/libnethost.a"))
+            set(BLUNDER_HAS_NETHOST TRUE)
+        endif()
+    endif()
+endif()
+
+# Visible to engine/src/tests (sibling) for nethost.dll copy beside test exe.
+set(BLUNDER_HAS_NETHOST "${BLUNDER_HAS_NETHOST}" PARENT_SCOPE)
+set(BLUNDER_NETHOST_DIR "${BLUNDER_NETHOST_DIR}" PARENT_SCOPE)
+
+if(BLUNDER_HAS_NETHOST)
+    message(STATUS "Blunder nethost: ${BLUNDER_NETHOST_DIR}")
+    target_compile_definitions(engine_runtime PUBLIC BLUNDER_HAS_NETHOST=1)
+    # PUBLIC: static engine_runtime leaves nethost symbols unresolved for
+    # SHARED consumers (blunder_engine_c) that must also link nethost.
+    target_include_directories(engine_runtime PRIVATE "${BLUNDER_NETHOST_DIR}")
+    target_link_directories(engine_runtime PUBLIC "${BLUNDER_NETHOST_DIR}")
+    target_link_libraries(engine_runtime PUBLIC nethost)
+else()
+    target_compile_definitions(engine_runtime PUBLIC BLUNDER_HAS_NETHOST=0)
+    message(WARNING
+        "nethost not found (need .NET 10 host pack under DOTNET_ROOT or "
+        "beside `dotnet` on PATH). DotNetHost::start will return false. "
+        "Install .NET 10 SDK and/or set DOTNET_ROOT.")
+endif()
+
+set(BLUNDER_SCRIPTHOST_CSPROJ
+    "${CMAKE_SOURCE_DIR}/engine/managed/Blunder.ScriptHost/Blunder.ScriptHost.csproj")
+set(BLUNDER_SCRIPTHOST_OUT_DIR
+    "${CMAKE_SOURCE_DIR}/engine/managed/Blunder.ScriptHost/bin/$<CONFIG>/net10.0")
+set(BLUNDER_SCRIPTHOST_STAGE_DIR
+    "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+if(BLUNDER_DOTNET_EXE)
+    add_custom_target(blunder_script_host ALL
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_SCRIPTHOST_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${BLUNDER_SCRIPTHOST_STAGE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_SCRIPTHOST_OUT_DIR}/Blunder.ScriptHost.dll"
+                "${BLUNDER_SCRIPTHOST_STAGE_DIR}/Blunder.ScriptHost.dll"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_SCRIPTHOST_OUT_DIR}/Blunder.ScriptHost.runtimeconfig.json"
+                "${BLUNDER_SCRIPTHOST_STAGE_DIR}/Blunder.ScriptHost.runtimeconfig.json"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_SCRIPTHOST_OUT_DIR}/Blunder.Api.dll"
+                "${BLUNDER_SCRIPTHOST_STAGE_DIR}/Blunder.Api.dll"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:blunder_engine_c>"
+                "${BLUNDER_SCRIPTHOST_STAGE_DIR}/"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building Blunder.ScriptHost and staging beside bin/<Config>/"
+        VERBATIM
+        SOURCES "${BLUNDER_SCRIPTHOST_CSPROJ}"
+    )
+    add_dependencies(blunder_script_host blunder_engine_c)
+    if(TARGET blunder_api)
+        add_dependencies(blunder_script_host blunder_api)
+    endif()
+else()
+    message(WARNING
+        "dotnet SDK not found on PATH; skipping Blunder.ScriptHost build. "
+        "Install .NET 10 SDK (and set DOTNET_ROOT if needed) for CoreCLR hosting.")
 endif()

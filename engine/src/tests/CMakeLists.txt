@@ -187,6 +187,46 @@ target_precompile_headers(engine_c_abi_test
 add_test(NAME engine_c_abi_test
          COMMAND engine_c_abi_test)
 
+# DotNetHost smoke: start CoreCLR against staged Blunder.ScriptHost.
+# Requires .NET 10 SDK/runtime (DOTNET_ROOT) and nethost from the host pack.
+add_executable(dotnet_host_test
+    "dotnet_host_test.cpp"
+)
+
+target_link_libraries(dotnet_host_test
+    PRIVATE engine_runtime
+)
+
+target_compile_definitions(dotnet_host_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+)
+
+if(MSVC)
+    target_compile_options(dotnet_host_test PRIVATE /Zc:preprocessor)
+endif()
+
+# Do not REUSE_FROM engine_runtime PCH ? keeps the link graph minimal
+# (DotNetHost must not pull Slint/ProjectManager via global_context).
+
+# Copy nethost.dll next to the test exe (engine_runtime POST_BUILD only
+# covers the static lib output dir, which is not where the .exe lands).
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET dotnet_host_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:dotnet_host_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(dotnet_host_test blunder_script_host)
+endif()
+
+add_test(NAME dotnet_host_test
+         COMMAND dotnet_host_test)
+
 add_executable(editor_history_test
     "editor_history_test.cpp"
 )

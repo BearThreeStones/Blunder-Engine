@@ -26,10 +26,10 @@
 
 ## 5. CoreCLR ScriptHost
 
-- [ ] 5.1 Create `engine/managed/Blunder.ScriptHost` with GCHandle peer table and `UnmanagedCallersOnly` exports
-- [ ] 5.2 Register Ready/Tick hooks that unbox GCHandle and call virtual `Behaviour` methods
-- [ ] 5.3 Implement native `DotNetHost` (`nethost` / `hostfxr`) to start ScriptHost and resolve exports
-- [ ] 5.4 Ensure host start failure is logged and non-fatal to editor/runtime startup
+- [x] 5.1 Create `engine/managed/Blunder.ScriptHost` with GCHandle peer table and `UnmanagedCallersOnly` exports
+- [x] 5.2 Register Ready/Tick hooks that unbox GCHandle and call virtual `Behaviour` methods
+- [x] 5.3 Implement native `DotNetHost` (`nethost` / `hostfxr`) to start ScriptHost and resolve exports
+- [x] 5.4 Ensure host start failure is logged and non-fatal to editor/runtime startup
 
 ## 6. End-to-end Tick smoke
 

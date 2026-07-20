@@ -7,4 +7,8 @@
     <AssemblyName>Blunder.Api</AssemblyName>
     <RootNamespace>Blunder</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blunder.ScriptHost" />
+  </ItemGroup>
 </Project>
