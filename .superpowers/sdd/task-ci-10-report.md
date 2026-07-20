@@ -3,8 +3,7 @@
 **Status:** DONE  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Feature commit:** `83f9886` — test: update smoke and related fixtures for COLLADA Intermediate  
-**Report commit:** tip on `feat/asset-pipeline-pull` (this file)
+**Commits:** `83f9886` (fixtures + mark 4.1), `aea7ad9` (report)
 
 ## Summary
 
@@ -23,17 +22,18 @@ No production code changes (fixture/assertion only).
 
 ## Evidence
 
-Build: `cmake --build build/vs2026-debug --config Debug` for smoke/guid/dependency/yaml/scene_serializer targets → succeeded (`task-ci-10-build.txt`)
+Build: `cmake --build build/vs2026-debug --config Debug` for smoke/guid/dependency/yaml/scene_serializer targets → succeeded
 
 | Test | Result |
 |------|--------|
 | `asset_pipeline_smoke_test` | all passed (OBJ → `.dae` Intermediate) |
 | `asset_manager_guid_test` | all passed (loads `tri.dae`) |
 | `asset_dependency_graph_test` | all passed |
-| `asset_yaml_test` | all passed |
+| `asset_yaml_test` | all passed (exit 0) |
 | `scene_serializer_test` | all passed |
 
 ## Concerns
 
-- Sample project Assets (`Cube.mesh.yaml`, `Sponza.mesh.yaml`) still point at legacy `.gltf` Intermediate — intentional until Intermediate Upgrade / Task 4.3 docs check
+- Sample project Assets may still point at legacy `.gltf` Intermediate until Intermediate Upgrade / Task 4.3
+- Full targeted suite still owned by task 4.2
 - Did not push
