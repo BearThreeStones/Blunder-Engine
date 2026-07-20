@@ -266,3 +266,22 @@ target_precompile_headers(asset_yaml_test
 
 add_test(NAME asset_yaml_test
          COMMAND asset_yaml_test)
+
+add_executable(asset_registry_test
+    "asset_registry_test.cpp"
+)
+
+target_link_libraries(asset_registry_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_registry_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_registry_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_registry_test
+         COMMAND asset_registry_test)

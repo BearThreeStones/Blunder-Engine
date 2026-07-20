@@ -7,7 +7,6 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
-#include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset/guid.h"
 
 namespace Blunder {
@@ -23,6 +22,82 @@ bool endsWith(const eastl::string& value, const char* suffix) {
   }
   return value.compare(value.size() - suffix_length, suffix_length, suffix) ==
          0;
+}
+
+bool startsWithPrefix(const eastl::string& value, const char* prefix) {
+  const size_t prefix_length = std::strlen(prefix);
+  if (value.size() < prefix_length) {
+    return false;
+  }
+  return value.compare(0, prefix_length, prefix) == 0;
+}
+
+bool isScannableDescriptor(const eastl::string& virtual_path) {
+  return endsWith(virtual_path, ".mesh.yaml") ||
+         endsWith(virtual_path, ".texture.yaml") ||
+         endsWith(virtual_path, ".scene.asset");
+}
+
+bool parseGuidFromDocument(const eastl::string& text, eastl::string& out_guid) {
+  out_guid.clear();
+  try {
+    const YAML::Node root = YAML::Load(text.c_str());
+    const YAML::Node guid_node = root["guid"];
+    if (guid_node && guid_node.IsScalar()) {
+      out_guid = guid_node.as<std::string>().c_str();
+    }
+  } catch (const YAML::Exception&) {
+    return false;
+  }
+  return !out_guid.empty() && isValidGuidFormat(out_guid);
+}
+
+/// Inserts `"guid": "<guid>"` into a Scene JSON document that lacks one.
+bool insertGuidIntoSceneJson(eastl::string& json_text,
+                             const eastl::string& guid) {
+  if (json_text.find("\"guid\"") != eastl::string::npos) {
+    return true;
+  }
+
+  const char* type_key = "\"type\"";
+  const size_t type_pos = json_text.find(type_key);
+  if (type_pos == eastl::string::npos) {
+    return false;
+  }
+
+  const size_t comma_after_type = json_text.find(',', type_pos);
+  if (comma_after_type == eastl::string::npos) {
+    // `{ "type": "Scene" }` with no trailing fields — insert before closing `}`.
+    const size_t close_brace = json_text.rfind('}');
+    if (close_brace == eastl::string::npos) {
+      return false;
+    }
+    eastl::string insertion = ",\n  \"guid\": \"";
+    insertion.append(guid);
+    insertion.append("\"");
+    json_text.insert(close_brace, insertion);
+    return true;
+  }
+
+  eastl::string insertion = "\n  \"guid\": \"";
+  insertion.append(guid);
+  insertion.append("\",");
+  json_text.insert(comma_after_type + 1, insertion);
+  return true;
+}
+
+fs::path resolveSceneAbsolutePath(FileSystem* file_system,
+                                  const eastl::string& scene_virtual_path) {
+  eastl::string normalized(fs::path(scene_virtual_path.c_str())
+                               .lexically_normal()
+                               .generic_string()
+                               .c_str());
+  if (startsWithPrefix(normalized, "assets/")) {
+    const eastl::string relative =
+        eastl::string(normalized.c_str() + std::strlen("assets/"));
+    return file_system->resolveAsset(fs::path(relative.c_str()));
+  }
+  return file_system->resolveAsset(fs::path(normalized.c_str()));
 }
 
 }  // namespace
@@ -135,33 +210,17 @@ void AssetRegistry::rebuildFromScan() {
 
     const eastl::string virtual_path(
         (eastl::string("assets/") + entry.relative_path.c_str()).c_str());
-    if (!endsWith(virtual_path, ".mesh.yaml") &&
-        !endsWith(virtual_path, ".texture.yaml")) {
+    if (!isScannableDescriptor(virtual_path)) {
       continue;
     }
 
-    eastl::string yaml_text;
-    if (!m_file_system->readText(entry.absolute_path, yaml_text)) {
+    eastl::string text;
+    if (!m_file_system->readText(entry.absolute_path, text)) {
       continue;
     }
 
     eastl::string guid;
-    eastl::string source;
-    if (!AssetYaml::parseSourceField(yaml_text, source)) {
-      (void)source;
-    }
-
-    try {
-      const YAML::Node root = YAML::Load(yaml_text.c_str());
-      const YAML::Node guid_node = root["guid"];
-      if (guid_node && guid_node.IsScalar()) {
-        guid = guid_node.as<std::string>().c_str();
-      }
-    } catch (const YAML::Exception&) {
-      continue;
-    }
-
-    if (guid.empty() || !isValidGuidFormat(guid)) {
+    if (!parseGuidFromDocument(text, guid)) {
       continue;
     }
 
@@ -170,6 +229,44 @@ void AssetRegistry::rebuildFromScan() {
   }
 
   save();
+}
+
+bool AssetRegistry::ensureSceneAssetRegistered(
+    const eastl::string& scene_virtual_path) {
+  if (!m_is_initialized || scene_virtual_path.empty() ||
+      !endsWith(scene_virtual_path, ".scene.asset")) {
+    return false;
+  }
+
+  const eastl::string normalized(
+      fs::path(scene_virtual_path.c_str())
+          .lexically_normal()
+          .generic_string()
+          .c_str());
+  const eastl::string virtual_path =
+      startsWithPrefix(normalized, "assets/")
+          ? normalized
+          : (eastl::string("assets/") + normalized.c_str());
+
+  const fs::path absolute =
+      resolveSceneAbsolutePath(m_file_system, virtual_path);
+  eastl::string text;
+  if (!m_file_system->readText(absolute, text)) {
+    return false;
+  }
+
+  eastl::string guid;
+  if (!parseGuidFromDocument(text, guid)) {
+    guid = allocateGuid();
+    if (!insertGuidIntoSceneJson(text, guid)) {
+      return false;
+    }
+    if (!m_file_system->writeText(absolute, text)) {
+      return false;
+    }
+  }
+
+  return registerAsset(guid, virtual_path);
 }
 
 bool AssetRegistry::save() const {

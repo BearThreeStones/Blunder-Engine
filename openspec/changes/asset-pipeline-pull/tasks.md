@@ -6,7 +6,7 @@
 ## 2. Asset identity
 
 - [x] 2.1 Extend descriptor schema with optional archived Source path field; keep Intermediate `source` as Cook/Fast Path input
-- [ ] 2.2 Register Scene documents in `AssetRegistry` (scan `*.scene.asset`); allocate/persist `guid` on create/open/upgrade
+- [x] 2.2 Register Scene documents in `AssetRegistry` (scan `*.scene.asset`); allocate/persist `guid` on create/open/upgrade
 - [ ] 2.3 Scene serializer: read/write `guid`; mesh field as GUID Asset Reference; migrate legacy path→GUID on load and rewrite on save
 - [ ] 2.4 Add GUID-based load/resolve helpers on `AssetManager` / registry (path remains for migration/display)
 - [ ] 2.5 Unit tests: registry GUID resolve; scene guid upgrade; path→GUID mesh migration
