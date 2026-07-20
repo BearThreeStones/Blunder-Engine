@@ -62,7 +62,7 @@ Covers: ordered type/id/properties round-trip; legacy entity without `behaviours
 ## Fix: Important review findings (findKey + JSON escape)
 
 **STATUS:** DONE  
-**Base:** `f3e3371` · **Fix commit:** *(filled after commit)*
+**Base:** `f3e3371` · **Fix commit:** `1d77dfa20e8c8ad00796a2fe51caf87e2dd66c64`
 
 ### What changed
 
