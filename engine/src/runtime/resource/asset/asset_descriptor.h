@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EASTL/string.h"
+#include "EASTL/vector.h"
 
 namespace Blunder {
 
@@ -19,6 +20,8 @@ struct MeshAssetDescriptor {
   eastl::string guid;
   eastl::string source;
   eastl::string archived_source;
+  /// Optional explicit Texture Asset GUID references (Mesh→Texture graph edges).
+  eastl::vector<eastl::string> texture_guids;
   MeshImportSettings import{};
 };
 

@@ -19,7 +19,7 @@
 
 ## 4. Dependency graph & watch
 
-- [ ] 4.1 Build minimal Asset Dependency Graph (Scene→Mesh, Mesh→explicit Texture, Asset→Intermediate leaves)
+- [x] 4.1 Build minimal Asset Dependency Graph (Scene→Mesh, Mesh→explicit Texture, Asset→Intermediate leaves)
 - [ ] 4.2 Propagate Final invalidation along reverse edges
 - [ ] 4.3 Extend file watch to Intermediate Resources (exclude Source for Intermediate invalidation; debounce; suppress self-writes)
 - [ ] 4.4 Watch Source root: debounced auto-Reimport for Assets archiving that Source

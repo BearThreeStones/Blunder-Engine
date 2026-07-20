@@ -78,6 +78,20 @@ bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
     readOptionalStringField(root, "archived_source",
                             out_descriptor.archived_source);
 
+    out_descriptor.texture_guids.clear();
+    const YAML::Node texture_guids = root["texture_guids"];
+    if (texture_guids && texture_guids.IsSequence()) {
+      for (const auto& item : texture_guids) {
+        if (!item || !item.IsScalar()) {
+          continue;
+        }
+        const eastl::string guid = item.as<std::string>().c_str();
+        if (!guid.empty()) {
+          out_descriptor.texture_guids.push_back(guid);
+        }
+      }
+    }
+
     const YAML::Node import = root["import"];
     if (import && import.IsMap()) {
       readBoolField(import, "materials", true,
@@ -138,6 +152,13 @@ eastl::string AssetYaml::serializeMeshDescriptor(
   if (!descriptor.archived_source.empty()) {
     emitter << YAML::Key << "archived_source" << YAML::Value
             << descriptor.archived_source.c_str();
+  }
+  if (!descriptor.texture_guids.empty()) {
+    emitter << YAML::Key << "texture_guids" << YAML::Value << YAML::BeginSeq;
+    for (const eastl::string& guid : descriptor.texture_guids) {
+      emitter << guid.c_str();
+    }
+    emitter << YAML::EndSeq;
   }
   emitter << YAML::Key << "import" << YAML::Value << YAML::BeginMap;
   emitter << YAML::Key << "materials" << YAML::Value

@@ -373,3 +373,22 @@ target_precompile_headers(asset_manager_fast_path_test
 
 add_test(NAME asset_manager_fast_path_test
          COMMAND asset_manager_fast_path_test)
+
+add_executable(asset_dependency_graph_test
+    "asset_dependency_graph_test.cpp"
+)
+
+target_link_libraries(asset_dependency_graph_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_dependency_graph_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_dependency_graph_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_dependency_graph_test
+         COMMAND asset_dependency_graph_test)

@@ -1,0 +1,27 @@
+[info] [FileSystem] executable dir: e:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118390798000
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118390798000/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118390798000/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118390798000/engine/shaders
+FAIL mesh dependents include scene
+FAIL mesh dependents size 1
+FAIL texture dependents include mesh
+FAIL texture dependents size 1
+FAIL mesh leaf descriptor path
+FAIL mesh leaf intermediate source
+FAIL texture leaf descriptor path
+FAIL texture leaf intermediate source
+FAIL scene leaf descriptor path
+[info] [FileSystem] executable dir: e:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118405925400
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118405925400/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118405925400/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118405925400/engine/shaders
+FAIL first rebuild has scene dependent
+[info] [FileSystem] executable dir: e:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118417507300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118417507300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118417507300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_dependency_graph_test_9118417507300/engine/shaders
+10 failure(s)
+EXIT=!ERRORLEVEL! 

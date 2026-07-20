@@ -284,6 +284,16 @@ bool AssetRegistry::ensureSceneAssetRegistered(
   return registerAsset(guid, virtual_path);
 }
 
+eastl::vector<eastl::pair<eastl::string, eastl::string>>
+AssetRegistry::registeredEntries() const {
+  eastl::vector<eastl::pair<eastl::string, eastl::string>> entries;
+  entries.reserve(m_guid_to_path.size());
+  for (const auto& pair : m_guid_to_path) {
+    entries.push_back(pair);
+  }
+  return entries;
+}
+
 bool AssetRegistry::save() const {
   if (!m_is_initialized) {
     return false;

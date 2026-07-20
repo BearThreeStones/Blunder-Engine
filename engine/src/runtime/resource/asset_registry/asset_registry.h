@@ -31,6 +31,10 @@ class AssetRegistry final {
   /// Allocates + persists guid when missing; registers when already present.
   bool ensureSceneAssetRegistered(const eastl::string& scene_virtual_path);
 
+  /// Snapshot of registered GUID → descriptor virtual path entries.
+  eastl::vector<eastl::pair<eastl::string, eastl::string>>
+  registeredEntries() const;
+
   bool save() const;
   bool load();
 

@@ -121,6 +121,85 @@ void omitEmptyArchivedSourceFromSerializedYaml() {
               tex_yaml.find("archived_source") == eastl::string::npos);
 }
 
+void parseMeshWithTextureGuids() {
+  using namespace Blunder;
+  const eastl::string yaml =
+      "type: Mesh\n"
+      "guid: 77777777-7777-7777-7777-777777777777\n"
+      "source: Resources/Models/Hero.gltf\n"
+      "texture_guids:\n"
+      "  - aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n"
+      "  - bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\n"
+      "import:\n"
+      "  materials: true\n"
+      "  animations: true\n"
+      "  scale: 1.0\n";
+
+  MeshAssetDescriptor desc;
+  expect_true("parse mesh with texture_guids",
+              AssetYaml::parseMeshDescriptor(yaml, desc));
+  expect_true("texture_guids size 2", desc.texture_guids.size() == 2);
+  expect_true("texture_guids[0]",
+              desc.texture_guids[0] ==
+                  "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  expect_true("texture_guids[1]",
+              desc.texture_guids[1] ==
+                  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+}
+
+void parseMeshWithoutTextureGuidsLeavesEmpty() {
+  using namespace Blunder;
+  const eastl::string yaml =
+      "type: Mesh\n"
+      "guid: 88888888-8888-8888-8888-888888888888\n"
+      "source: Resources/Models/Cube.gltf\n"
+      "import:\n"
+      "  materials: true\n"
+      "  animations: true\n"
+      "  scale: 1.0\n";
+
+  MeshAssetDescriptor desc;
+  expect_true("parse mesh without texture_guids",
+              AssetYaml::parseMeshDescriptor(yaml, desc));
+  expect_true("texture_guids empty when omitted",
+              desc.texture_guids.empty());
+}
+
+void roundTripMeshTextureGuids() {
+  using namespace Blunder;
+  MeshAssetDescriptor in;
+  in.guid = "99999999-9999-9999-9999-999999999999";
+  in.source = "Resources/Models/Hero.gltf";
+  in.texture_guids.push_back("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  in.texture_guids.push_back("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+
+  const eastl::string yaml = AssetYaml::serializeMeshDescriptor(in);
+  expect_true("serialize contains texture_guids key",
+              yaml.find("texture_guids") != eastl::string::npos);
+
+  MeshAssetDescriptor out;
+  expect_true("texture_guids round-trip parse",
+              AssetYaml::parseMeshDescriptor(yaml, out));
+  expect_true("texture_guids round-trip size",
+              out.texture_guids.size() == 2);
+  expect_true("texture_guids round-trip [0]",
+              out.texture_guids[0] == in.texture_guids[0]);
+  expect_true("texture_guids round-trip [1]",
+              out.texture_guids[1] == in.texture_guids[1]);
+}
+
+void omitEmptyTextureGuidsFromSerializedYaml() {
+  using namespace Blunder;
+  MeshAssetDescriptor mesh;
+  mesh.guid = "abababab-abab-4aba-8bab-abababababab";
+  mesh.source = "Resources/Models/Cube.gltf";
+  mesh.texture_guids.clear();
+
+  const eastl::string yaml = AssetYaml::serializeMeshDescriptor(mesh);
+  expect_true("mesh omits empty texture_guids",
+              yaml.find("texture_guids") == eastl::string::npos);
+}
+
 }  // namespace
 
 int main() {
@@ -129,6 +208,10 @@ int main() {
   roundTripMeshArchivedSource();
   roundTripTextureArchivedSource();
   omitEmptyArchivedSourceFromSerializedYaml();
+  parseMeshWithTextureGuids();
+  parseMeshWithoutTextureGuidsLeavesEmpty();
+  roundTripMeshTextureGuids();
+  omitEmptyTextureGuidsFromSerializedYaml();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
