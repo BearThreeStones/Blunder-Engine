@@ -267,6 +267,78 @@ void archivedSourcePathToGuids() {
   fs::remove_all(project);
 }
 
+// Spec: Intermediate Resources change (.dae) invalidates that Asset's Final.
+void meshIntermediateDaeChangeInvalidatesFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "55555555-5555-4555-8555-555555555555";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "solo.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/solo/solo.dae\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.dae",
+                "dae");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+  compiler.rebuildDependencyGraph();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(kMeshGuid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(kMeshGuid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+
+  const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+      AssetWatchPathClass::IntermediateResource,
+      resources / "Models" / "solo" / "solo.dae", assets, resources, registry,
+      graph);
+  expect_true("Intermediate .dae maps to mesh guid",
+              containsGuid(guids, kMeshGuid));
+
+  for (const eastl::string& guid : guids) {
+    compiler.invalidateAssetAndDependents(guid);
+  }
+
+  expect_true("Intermediate .dae change invalidates mesh Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("Intermediate .dae change invalidates mesh meta",
+              !file_system.exists(mesh_meta));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void intermediateTextureChangeInvalidatesMeshFinal() {
   using namespace Blunder;
   ensureLogger();
@@ -573,6 +645,7 @@ int main() {
   classifyPaths();
   pathToGuidMapping();
   archivedSourcePathToGuids();
+  meshIntermediateDaeChangeInvalidatesFinal();
   intermediateTextureChangeInvalidatesMeshFinal();
   descriptorChangeInvalidatesFinal();
   sourceChangeTriggersReimportInvalidatesFinal();

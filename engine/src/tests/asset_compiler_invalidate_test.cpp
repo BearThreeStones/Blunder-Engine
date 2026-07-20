@@ -62,43 +62,46 @@ void writeBinaryFile(const fs::path& path, const char* bytes, size_t size) {
   out.write(bytes, static_cast<std::streamsize>(size));
 }
 
-// Minimal single-triangle glTF with embedded buffer (no external .bin).
-constexpr char kMinimalTriangleGltf[] = R"({
-  "asset": { "version": "2.0" },
-  "scene": 0,
-  "scenes": [{ "nodes": [0] }],
-  "nodes": [{ "mesh": 0 }],
-  "meshes": [{
-    "primitives": [{
-      "attributes": { "POSITION": 1 },
-      "indices": 0
-    }]
-  }],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5123,
-      "count": 3,
-      "type": "SCALAR"
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC3",
-      "max": [1.0, 1.0, 0.0],
-      "min": [0.0, 0.0, 0.0]
-    }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
-    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
-  ],
-  "buffers": [{
-    "byteLength": 44,
-    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
-  }]
-}
+// Minimal single-triangle COLLADA Intermediate (Assimp-readable).
+constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Y_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="tri-mesh" name="tri">
+      <mesh>
+        <source id="tri-positions">
+          <float_array id="tri-positions-array" count="9">0 0 0 1 0 0 0 1 0</float_array>
+          <technique_common>
+            <accessor source="#tri-positions-array" count="3" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="tri-vertices">
+          <input semantic="POSITION" source="#tri-positions"/>
+        </vertices>
+        <triangles count="1">
+          <input semantic="VERTEX" source="#tri-vertices" offset="0"/>
+          <p>0 1 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="tri-node" name="tri">
+        <instance_geometry url="#tri-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>
 )";
 
 struct GraphFixture {
@@ -125,14 +128,14 @@ GraphFixture writeTextureMeshSceneFixture() {
   writeTextFile(
       fixture.project / "Assets" / "Meshes" / "hero.mesh.yaml",
       std::string("type: Mesh\n") + "guid: " + fixture.mesh_guid + "\n" +
-          "source: resources/Models/hero.gltf\n" + "texture_guids:\n" +
+          "source: resources/Models/hero.dae\n" + "texture_guids:\n" +
           "  - " + fixture.tex_guid + "\n" +
           "import:\n"
           "  materials: false\n"
           "  animations: false\n"
           "  scale: 1.0\n");
-  writeTextFile(fixture.project / "Resources" / "Models" / "hero.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(fixture.project / "Resources" / "Models" / "hero.dae",
+                kMinimalTriangleDae);
 
   writeTextFile(
       fixture.project / "Assets" / "Scenes" / "level.scene.asset",
@@ -307,6 +310,68 @@ void cookDependentsRecooksMeshAfterTextureInvalidate() {
   fs::remove_all(fixture.project);
 }
 
+// Task 2.3: Intermediate COLLADA (.dae) change → map GUID → invalidate → Final
+// stale.
+void meshIntermediateDaeChangeInvalidatesOwnFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const GraphFixture fixture = writeTextureMeshSceneFixture();
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = fixture.project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+  compiler.rebuildDependencyGraph();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(fixture.mesh_guid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(fixture.mesh_guid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 3\ndescriptor_mtime: 4\n");
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path intermediate_dae = resources / "Models" / "hero.dae";
+
+  const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+      AssetWatchPathClass::IntermediateResource, intermediate_dae, assets,
+      resources, registry, graph);
+  expect_true("intermediate .dae maps to mesh guid",
+              !guids.empty() && guids[0] == fixture.mesh_guid);
+
+  for (const eastl::string& guid : guids) {
+    compiler.invalidateAssetAndDependents(guid);
+  }
+
+  expect_true("Intermediate .dae change removes mesh Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("Intermediate .dae change removes mesh meta",
+              !file_system.exists(mesh_meta));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(fixture.project);
+}
+
 // Task 4.5 theme 1: Intermediate texture body change → map GUID → invalidate
 // dependents → mesh Final stale.
 void textureIntermediateChangeInvalidatesMeshFinal() {
@@ -440,6 +505,7 @@ int main() {
   invalidateMarksSelfAndDependents();
   invalidateWithoutDependentsOnlyMarksSelf();
   cookDependentsRecooksMeshAfterTextureInvalidate();
+  meshIntermediateDaeChangeInvalidatesOwnFinal();
   textureIntermediateChangeInvalidatesMeshFinal();
   descriptorChangeInvalidatesOwnFinal();
 
