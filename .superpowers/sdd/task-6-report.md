@@ -1,10 +1,9 @@
-﻿# Task 6 Report 鈥?OpenSpec 2.3 Scene serializer GUID + mesh Asset References
+﻿# Task 6 Report — OpenSpec 2.3 Scene serializer GUID + mesh Asset References
 
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** `e51aece` 鈥?feat: scene serializer GUID and mesh Asset References  
-**Commit:** `e32dc50` 鈥?feat: scene serializer GUID and mesh Asset References
+**Commit:** `69b9b08` — feat: scene serializer GUID and mesh Asset References
 
 ## Summary
 
@@ -31,15 +30,15 @@ Excerpt: `.superpowers/sdd/task-6-red-excerpt.txt`
 
 Minimal production changes:
 
-- `scene.h` 鈥?`m_guid` + accessors; document dual meaning of `mesh_virtual_path`
-- `scene_serializer.h/.cpp` 鈥?optional `AssetRegistry*`; guid R/W; path鈫扜UID migrate/rewrite
-- `asset_manager.cpp` 鈥?`ensureSceneAssetRegistered` + deserialize with registry
-- `editor_scene_edit_system.cpp` 鈥?ensure on open/save; serialize with registry; copy guid when saving
-- `scene_system.cpp` 鈥?GUID鈫抪ath bridge for mesh attach (temporary until 2.4)
+- `scene.h` — `m_guid` + accessors; document dual meaning of `mesh_virtual_path`
+- `scene_serializer.h/.cpp` — optional `AssetRegistry*`; guid R/W; path→GUID migrate/rewrite
+- `asset_manager.cpp` — `ensureSceneAssetRegistered` + deserialize with registry
+- `editor_scene_edit_system.cpp` — ensure on open/save; serialize with registry; copy guid when saving
+- `scene_system.cpp` — GUID→path bridge for mesh attach (temporary until 2.4)
 - `engine/src/tests/scene_serializer_test.cpp` + CMake wiring
 
-Build: `cmake --build build/vs2026-debug --config Debug --target scene_serializer_test` 鈫?succeeded  
-Run: `scene_serializer_test.exe` 鈫?**exit 0** (`scene_serializer_test: all passed`)
+Build: `cmake --build build/vs2026-debug --config Debug --target scene_serializer_test` → succeeded  
+Run: `scene_serializer_test.exe` → **exit 0** (`scene_serializer_test: all passed`)
 
 Logs: `.superpowers/sdd/task-6-green-build.txt`, `.superpowers/sdd/task-6-green-run.txt`  
 Re-verify: `.superpowers/sdd/task-6-verify-green-build.txt`, `.superpowers/sdd/task-6-verify-green-run.txt`
@@ -50,7 +49,7 @@ Re-verify: `.superpowers/sdd/task-6-verify-green-build.txt`, `.superpowers/sdd/t
 |------|--------|
 | Serialize/parse top-level scene `guid` | pass |
 | Save entity `mesh` that is already a GUID | pass |
-| Load legacy path mesh + registry 鈫?in-memory GUID; save emits GUID not path | pass |
+| Load legacy path mesh + registry → in-memory GUID; save emits GUID not path | pass |
 
 ## OpenSpec tasks
 
@@ -59,7 +58,7 @@ Re-verify: `.superpowers/sdd/task-6-verify-green-build.txt`, `.superpowers/sdd/t
 ## Concerns / notes
 
 1. `mesh_virtual_path` keeps its field name but dual-means GUID (preferred) or legacy path until migration; callers must treat GUID as first-class after load-with-registry.
-2. `SceneSystem` GUID鈫抪ath resolve is a temporary bridge for mesh import until 2.4 GUID load helpers exist.
+2. `SceneSystem` GUID→path resolve is a temporary bridge for mesh import until 2.4 GUID load helpers exist.
 3. Without a registry pointer, legacy mesh paths are left unchanged (no silent migration).
 4. Runtime-linked tests need `slint_cpp.dll` (and typically `slang.dll`) on `PATH`.
 5. Did not implement 2.4 GUID-based AssetManager load APIs. Did not push.
