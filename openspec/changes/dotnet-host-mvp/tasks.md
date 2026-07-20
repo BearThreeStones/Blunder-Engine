@@ -6,10 +6,10 @@
 
 ## 2. Lifecycle multi-peer dispatch
 
-- [ ] 2.1 Change `LifecycleDispatch::invokeTick` / `invokeReady` to walk Behaviour peers in list order
-- [ ] 2.2 Add `ObjectDB::forEach` (or equivalent) for world Tick
-- [ ] 2.3 Extend tests so two peers both receive Tick; null peers are skipped
-- [ ] 2.4 Track `ready_invoked` per Behaviour slot so Ready is not re-fired every frame
+- [x] 2.1 Change `LifecycleDispatch::invokeTick` / `invokeReady` to walk Behaviour peers in list order
+- [x] 2.2 Add `ObjectDB::forEach` (or equivalent) for world Tick
+- [x] 2.3 Extend tests so two peers both receive Tick; null peers are skipped
+- [x] 2.4 Track `ready_invoked` per Behaviour slot so Ready is not re-fired every frame
 
 ## 3. C-ABI v2
 

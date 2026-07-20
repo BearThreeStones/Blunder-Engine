@@ -42,6 +42,8 @@ class Object {
   const char* getBehaviourTypeName(BehaviourId id) const;
   void setBehaviourScriptPeer(BehaviourId id, void* peer);
   void* getBehaviourScriptPeer(BehaviourId id) const;
+  bool isBehaviourReadyInvoked(BehaviourId id) const;
+  void markBehaviourReadyInvoked(BehaviourId id);
 
   // Compatibility: operate on Behaviour index 0 only (no-op if empty).
   void* getScriptPeer() const;
@@ -67,6 +69,7 @@ class Object {
     BehaviourId id{k_invalid_behaviour_id};
     eastl::string type_name;
     void* script_peer{nullptr};
+    bool ready_invoked{false};
   };
 
   BehaviourSlot* findBehaviourSlot(BehaviourId id);

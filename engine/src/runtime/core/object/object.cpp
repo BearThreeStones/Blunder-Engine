@@ -60,6 +60,7 @@ BehaviourId Object::addBehaviour(eastl::string type_name) {
   slot.id = m_next_behaviour_id++;
   slot.type_name = eastl::move(type_name);
   slot.script_peer = nullptr;
+  slot.ready_invoked = false;
   m_behaviours.push_back(eastl::move(slot));
   return m_behaviours.back().id;
 }
@@ -93,6 +94,7 @@ void Object::setBehaviourScriptPeer(BehaviourId id, void* peer) {
   BehaviourSlot* slot = findBehaviourSlot(id);
   if (slot != nullptr) {
     slot->script_peer = peer;
+    slot->ready_invoked = false;
   }
 }
 
@@ -102,6 +104,21 @@ void* Object::getBehaviourScriptPeer(BehaviourId id) const {
     return nullptr;
   }
   return slot->script_peer;
+}
+
+bool Object::isBehaviourReadyInvoked(BehaviourId id) const {
+  const BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot == nullptr) {
+    return false;
+  }
+  return slot->ready_invoked;
+}
+
+void Object::markBehaviourReadyInvoked(BehaviourId id) {
+  BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot != nullptr) {
+    slot->ready_invoked = true;
+  }
 }
 
 void* Object::getScriptPeer() const {
@@ -116,6 +133,7 @@ void Object::setScriptPeer(void* peer) {
     return;
   }
   m_behaviours[0].script_peer = peer;
+  m_behaviours[0].ready_invoked = false;
 }
 
 void Object::clearScriptPeer() {
@@ -123,6 +141,7 @@ void Object::clearScriptPeer() {
     return;
   }
   m_behaviours[0].script_peer = nullptr;
+  m_behaviours[0].ready_invoked = false;
 }
 
 Vec3 Object::getPosition() const {

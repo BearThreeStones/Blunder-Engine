@@ -111,6 +111,18 @@ void ObjectDB::destroy(ObjectId id) {
   }
 }
 
+void ObjectDB::forEach(ObjectVisitorFn fn) {
+  if (fn == nullptr) {
+    return;
+  }
+  eastl::vector<Slot>& s = slots();
+  for (Slot& slot : s) {
+    if (slot.occupied && slot.object != nullptr) {
+      fn(slot.object.get());
+    }
+  }
+}
+
 void ObjectDB::setEntityStore(IEntityStore* store) { entityStore() = store; }
 
 IEntityStore* ObjectDB::getEntityStore() { return entityStore(); }
