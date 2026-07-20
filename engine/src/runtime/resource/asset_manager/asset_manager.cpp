@@ -536,6 +536,45 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   return asset;
 }
 
+eastl::string AssetManager::resolveGuidPath(
+    const eastl::string& guid, const AssetRegistry& registry) const {
+  if (guid.empty()) {
+    return eastl::string();
+  }
+  return registry.resolveGuid(guid);
+}
+
+eastl::shared_ptr<MeshAsset> AssetManager::loadMeshByGuid(
+    const eastl::string& guid, const AssetRegistry& registry) {
+  const eastl::string path = resolveGuidPath(guid, registry);
+  if (path.empty()) {
+    LOG_ERROR("[AssetManager] loadMeshByGuid: unknown guid {}", guid.c_str());
+    return nullptr;
+  }
+  return loadMesh(path);
+}
+
+eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2DByGuid(
+    const eastl::string& guid, const AssetRegistry& registry) {
+  const eastl::string path = resolveGuidPath(guid, registry);
+  if (path.empty()) {
+    LOG_ERROR("[AssetManager] loadTexture2DByGuid: unknown guid {}",
+              guid.c_str());
+    return nullptr;
+  }
+  return loadTexture2D(path);
+}
+
+eastl::shared_ptr<SceneAsset> AssetManager::loadSceneByGuid(
+    const eastl::string& guid, const AssetRegistry& registry) {
+  const eastl::string path = resolveGuidPath(guid, registry);
+  if (path.empty()) {
+    LOG_ERROR("[AssetManager] loadSceneByGuid: unknown guid {}", guid.c_str());
+    return nullptr;
+  }
+  return loadScene(path);
+}
+
 bool AssetManager::resolveGltfSourcePath(const eastl::string& virtual_path,
                                          eastl::string& out_gltf_source) const {
   out_gltf_source.clear();

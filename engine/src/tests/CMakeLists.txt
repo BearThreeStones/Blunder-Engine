@@ -304,3 +304,26 @@ target_precompile_headers(scene_serializer_test
 
 add_test(NAME scene_serializer_test
          COMMAND scene_serializer_test)
+
+add_executable(asset_manager_guid_test
+    "asset_manager_guid_test.cpp"
+)
+
+target_link_libraries(asset_manager_guid_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_manager_guid_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_manager_guid_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_manager_guid_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_manager_guid_test
+         COMMAND asset_manager_guid_test)

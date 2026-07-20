@@ -20,6 +20,7 @@
 
 namespace Blunder {
 
+class AssetRegistry;
 class FileSystem;
 
 struct AssetManagerInitInfo {
@@ -93,6 +94,19 @@ class AssetManager final {
       const std::filesystem::path& absolute,
       const eastl::string& gltf_canonical_key);
   eastl::shared_ptr<SceneAsset> loadScene(const eastl::string& virtual_path);
+
+  /// Resolve GUID → descriptor virtual path via registry. Empty if unknown.
+  /// Path-based APIs remain for migration and display.
+  eastl::string resolveGuidPath(const eastl::string& guid,
+                                const AssetRegistry& registry) const;
+
+  /// Load by GUID: resolve descriptor path then call the path-based load*.
+  eastl::shared_ptr<MeshAsset> loadMeshByGuid(const eastl::string& guid,
+                                              const AssetRegistry& registry);
+  eastl::shared_ptr<Texture2DAsset> loadTexture2DByGuid(
+      const eastl::string& guid, const AssetRegistry& registry);
+  eastl::shared_ptr<SceneAsset> loadSceneByGuid(const eastl::string& guid,
+                                                const AssetRegistry& registry);
 
   /// Opens a glTF/GLB file for import. On success, `out_document.data` must be
   /// released with closeGltfImportDocument().

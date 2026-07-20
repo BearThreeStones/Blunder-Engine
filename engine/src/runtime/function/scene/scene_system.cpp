@@ -142,12 +142,12 @@ void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
       continue;
     }
 
-    // Bridge until 2.4 GUID load APIs: resolve mesh Asset Reference GUID → path.
+    // Resolve mesh Asset Reference GUID → descriptor path via AssetManager helper.
     eastl::string mesh_ref = definition.mesh_virtual_path;
     if (isValidGuidFormat(mesh_ref) &&
         g_runtime_global_context.m_asset_registry) {
-      const eastl::string path =
-          g_runtime_global_context.m_asset_registry->resolveGuid(mesh_ref);
+      const eastl::string path = m_asset_manager->resolveGuidPath(
+          mesh_ref, *g_runtime_global_context.m_asset_registry);
       if (!path.empty()) {
         mesh_ref = path;
       }
