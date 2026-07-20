@@ -384,26 +384,26 @@ _Avoid_: Godot theme skin, restyle entire Inspector
 
 ### Asset pipeline
 
-On-disk layout and cook mechanics: [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md). Decision record: [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md).
+On-disk layout and cook mechanics: [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md). Decision records: [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) (Pull / three-tier), [docs/adr/0013-collada-intermediate.md](docs/adr/0013-collada-intermediate.md) (COLLADA mesh Intermediate).
 
 **Source Asset**:
-A DCC-native authoring file (e.g. `.blend`, `.psd`, `.fbx`) that holds the full creation data. Source Assets alone must be enough to rebuild Intermediate and Final Assets. They are not loaded by the runtime.
-_Avoid_: Treating glTF/PNG as Source, calling cooked binaries "source", storing only Source under `Assets/`
+A DCC-native or exchange file archived so Intermediate can be rebuilt (e.g. `.blend`, `.psd`, `.fbx`, `.obj`, `.gltf`, `.glb`). Source Assets alone must be enough to rebuild Intermediate and Final Assets. They are not loaded by the runtime; Cook and Fast Path never read them directly.
+_Avoid_: Calling cooked binaries "source", storing only Source under `Assets/`, treating COLLADA Intermediate as Source, treating glTF as Intermediate after Import
 
 **Intermediate Asset**:
-A lossless (or near-lossless), readable exchange/process form between Source and Final — primarily glTF and images, plus YAML descriptors (GUID, import settings, references). Fast Path and the Build Process operate on Intermediate Assets.
-_Avoid_: COLLADA as the Blunder intermediate (use glTF), opaque binary as the only intermediate, pruning/platform-optimizing at this stage
+A lossless (or near-lossless), readable exchange/process form between Source and Final — **mesh** Intermediate bodies are COLLADA (`.dae`); **texture** Intermediate bodies remain ordinary image files (PNG/JPEG/…), never wrapped as `.dae`; YAML Asset Descriptors carry GUID, import settings, and references. Fast Path and Cook consume Intermediate Assets. Khronos glTF is not the Intermediate body and not the Final runtime form in this pipeline.
+_Avoid_: glTF as Intermediate body, storing a Texture Asset as COLLADA, opaque binary as the only intermediate, pruning/platform-optimizing at this stage, calling the Asset Descriptor YAML “the Intermediate format”
 
 **Final Asset**:
-A platform-optimized, pruned runtime form produced by the Build Process (today: `.blunder/cooked/{guid}.*bin`). The runtime prefers Final Assets when present and fresh.
-_Avoid_: Hand-editing Final Assets as the source of truth, shipping DCC-native files as Final
+A platform-optimized, pruned runtime form produced by the Build Process (today: `.blunder/cooked/{guid}.*bin`). The runtime prefers Final Assets when present and fresh. glTF may later be an optional packaging/transmission product; it is not Final in v1.
+_Avoid_: Hand-editing Final Assets as the source of truth, shipping DCC-native or COLLADA files as Final, treating glTF as the engine Final
 
 **Assets root**:
-The project folder `Assets/` that holds Intermediate **descriptors** (YAML: GUID, import settings, references). It is the Content Browser’s primary tree and the engine’s identity entry for content — not the home for glTF/PNG bodies or Source Assets.
+The project folder `Assets/` that holds Intermediate **descriptors** (YAML: GUID, import settings, references). It is the Content Browser’s primary tree and the engine’s identity entry for content — not the home for COLLADA/image bodies or Source Assets.
 _Avoid_: Storing Intermediate data files or Source Assets under `Assets/`, treating `Assets/` as Unity-style “everything content”
 
 **Resources root**:
-The project folder `Resources/` whose non-Source subtree holds Intermediate **data bodies** (glTF, images, audio, …) referenced by descriptors. Not scanned as the Content Browser’s primary tree.
+The project folder `Resources/` whose non-Source subtree holds Intermediate **data bodies** (COLLADA, images, audio, …) referenced by descriptors. Not scanned as the Content Browser’s primary tree.
 _Avoid_: Putting descriptors under `Resources/`, using `Resources/` as the Final Asset store
 
 **Source root**:
@@ -439,24 +439,28 @@ Loading Intermediate data into a Loaded Asset for preview when Final is missing 
 _Avoid_: Blocking the first preview until Cook completes, treating Intermediate-only load as an error instead of an intentional path
 
 **Asset Dependency Graph**:
-A directed graph of Asset→Asset references used to invalidate Finals and to know what to Cook. v1 minimal edges: Scene→Mesh Asset; Mesh Asset→Texture Asset when the mesh records an explicit Texture Asset reference (embedded glTF textures that are not registered Assets are out of graph); each Asset→its Intermediate inputs (descriptor + `source` file) as leaves for freshness. No Material Asset nodes, animation/audio/shader edges, or Source-file parsing in v1.
-_Avoid_: Hand-maintained file lists, “only this Asset’s own mtime matters” with no cross-Asset invalidation, treating a packaging Manifest as required before the graph exists, inventing Material graph nodes before material descriptors exist
+A directed graph of Asset→Asset references used to invalidate Finals and to know what to Cook. v1 minimal edges: Scene→Mesh Asset; Mesh Asset→Texture Asset via the mesh descriptor’s authoritative `texture_guids` (not via paths inside COLLADA); textures referenced only by COLLADA `<image>` URIs and not registered as Assets are out of graph; each Asset→its Intermediate inputs (descriptor + `source` file) as leaves for freshness. No Material Asset nodes, animation/audio/shader edges, or Source-file parsing in v1.
+_Avoid_: Hand-maintained file lists, “only this Asset’s own mtime matters” with no cross-Asset invalidation, treating a packaging Manifest as required before the graph exists, inventing Material graph nodes before material descriptors exist, treating COLLADA image URIs as the canonical Mesh→Texture Asset Reference
 
 **Manifest**:
 The set of Assets required by a top-level product unit (e.g. a scene/level), derived by walking the Asset Dependency Graph from that root. Used later for packaging and “what is still needed”; not a separately hand-edited list.
 _Avoid_: Manually curated include lists as the source of truth, shipping every file under Resources because Manifest is unknown
 
 **Asset Reference**:
-A durable cross-Asset link stored as the target Asset’s GUID (not a filesystem path). Scenes and Mesh→Texture links use Asset References. Paths remain for display and for resolving a GUID via the registry; legacy path-only scene fields migrate to GUID on save.
-_Avoid_: Path-as-canonical reference, renaming descriptors without a GUID identity, treating virtual path as the stable public identity of an Asset
+A durable cross-Asset link stored as the target Asset’s GUID (not a filesystem path). Scenes and Mesh→Texture links use Asset References. For meshes, Mesh→Texture Asset References live in the Asset Descriptor (`texture_guids`); COLLADA may carry ordinary image URIs for interchange/preview but those URIs are not the durable Asset Reference. Paths remain for display and for resolving a GUID via the registry; legacy path-only scene fields migrate to GUID on save.
+_Avoid_: Path-as-canonical reference, renaming descriptors without a GUID identity, treating virtual path as the stable public identity of an Asset, embedding Blunder GUIDs inside COLLADA as a second source of truth
+
+**Intermediate Upgrade (v1)**:
+A one-shot, GUID-preserving refresh that runs when an Asset’s Intermediate mesh `source` still points at glTF/GLB after the COLLADA Intermediate switch: convert to `.dae`, rewrite the descriptor `source`, archive the former glTF/GLB under the Source root when not already archived, and mark Finals stale. Triggered lazily on project open / registry scan — not a separate user command. If conversion fails: leave the descriptor and glTF/GLB `source` unchanged, log the error, and allow Fast Path/Cook to keep using that glTF/GLB until a later successful upgrade or Reimport.
+_Avoid_: Requiring delete-and-re-import to leave glTF Intermediate, changing GUID on upgrade, leaving glTF as a permanent alternate Intermediate body, writing a partial `.dae` then pointing `source` at it, blocking load entirely when upgrade fails
 
 **Import**:
-The act of registering external content as project Assets: allocate GUID, write an Asset Descriptor, place Intermediate data under the Resources root, and register the Asset. When the input is a Source Asset, Import also runs automatic export into Intermediate before registration. Import is not Cook and is not opening a DCC for manual editing.
-_Avoid_: Calling Intermediate glTF/PNG “Source”, equating Import with Cook, leaving Source files as the only registered form with no Intermediate
+The act of registering external content as project Assets: allocate GUID, write an Asset Descriptor, place Intermediate data under the Resources root, and register the Asset. **COLLADA (`.dae`)** and image formats use Intermediate direct registration (copy body under Resources, no Source archive required). **FBX, OBJ, glTF, GLB** run Source Export into COLLADA first, then register. Import is not Cook and is not opening a DCC for manual editing.
+_Avoid_: Calling Intermediate COLLADA/PNG “Source”, equating Import with Cook, leaving Source files as the only registered form with no Intermediate, registering glTF/GLB as Intermediate bodies
 
 **Source Export (v1)**:
-The Import sub-step that converts a Source (or DCC exchange) file into Intermediate data. v1 supports an Assimp whitelist — primarily FBX and OBJ → glTF under the Resources root — then registers the Asset as usual. `.blend` / `.psd` automatic export is out of v1 (optional later via Blender CLI or similar). On Source Export, the original file is archived under the Source root and the descriptor may record that Source path; Cook and Fast Path always consume the Intermediate, which can be regenerated from the archived Source on Reimport.
-_Avoid_: Claiming silent `.blend` export in v1, treating every Assimp format as supported without a whitelist, skipping Intermediate and cooking Source bytes directly, discarding FBX/OBJ after conversion with no Source archive
+The Import sub-step that converts a Source (or DCC exchange) file into Intermediate data. v1 Assimp whitelist: **FBX, OBJ, glTF, GLB → COLLADA (`.dae`)** under the Resources root, then register the Asset as usual. `.blend` / `.psd` automatic export remains out of v1. On Source Export, the original file is archived under the Source root and the descriptor may record that Source path; Cook and Fast Path always consume Intermediate COLLADA (and images), regenerable from the archived Source on Reimport.
+_Avoid_: Claiming silent `.blend` export in v1, treating every Assimp format as supported without a whitelist, skipping Intermediate and cooking Source bytes directly, discarding FBX/OBJ/glTF after conversion with no Source archive, registering glTF/GLB as Intermediate bodies, exporting Source to glTF as Intermediate
 
 **Scene Asset**:
 A first-class Asset for a level/scene document. Persisted as `.scene.asset` JSON with a GUID field; registered like other Assets. Entity mesh links are Asset References (GUID). It is a root for walking the Asset Dependency Graph and (later) Manifests.

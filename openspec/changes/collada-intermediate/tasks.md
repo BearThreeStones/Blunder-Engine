@@ -20,4 +20,4 @@
 
 - [x] 4.1 Update `asset_pipeline_smoke_test` and related import/cook/watch tests for COLLADA Intermediate
 - [x] 4.2 Run targeted asset/import/cook/scene/smoke suite under project validation presets
-- [ ] 4.3 Confirm docs (CONTEXT / CONTENT_LAYOUT / ADR 0013) still match shipped behavior; fix only if code diverged
+- [x] 4.3 Confirm docs (CONTEXT / CONTENT_LAYOUT / ADR 0013) still match shipped behavior; fix only if code diverged

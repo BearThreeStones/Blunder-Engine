@@ -6,14 +6,14 @@ Blunder uses a **Pull** Asset Pipeline with three on-disk tiers.
 |------|-----|
 | **On-disk layout & cook mechanics** (this file) | Roots, descriptors, Import, Watch, CLI |
 | **Domain vocabulary** | [CONTEXT.md — Asset pipeline](CONTEXT.md#asset-pipeline) |
-| **Decision record** | [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) |
+| **Decision records** | [ADR 0012](docs/adr/0012-pull-asset-pipeline.md) (Pull / three-tier), [ADR 0013](docs/adr/0013-collada-intermediate.md) (COLLADA mesh Intermediate) |
 
 ## Three-tier roles
 
 | Tier | What it holds | On-disk root |
 |------|---------------|--------------|
-| **Source Asset** | DCC-native authoring files (e.g. `.fbx`, `.obj`, `.psd`, `.blend`) | [`Resources/Source/`](Resources/Source/) |
-| **Intermediate** | Descriptors (YAML / scene JSON) + readable data bodies (glTF, images, …) | Descriptors → [`Assets/`](Assets/); data → [`Resources/`](Resources/) (non-Source) |
+| **Source Asset** | DCC / exchange archives (e.g. `.fbx`, `.obj`, `.gltf`, `.glb`, `.psd`, `.blend`) | [`Resources/Source/`](Resources/Source/) |
+| **Intermediate** | Descriptors (YAML / scene JSON) + readable data bodies (**COLLADA** `.dae`, images, …) | Descriptors → [`Assets/`](Assets/); data → [`Resources/`](Resources/) (non-Source) |
 | **Final Asset** | Platform-optimized cooked binaries | `.blunder/cooked/{guid}.*bin` |
 
 An **Asset** is the product unit of identity, keyed by **GUID**. One Asset binds an
@@ -26,7 +26,7 @@ references, and Cook address Assets by GUID — not raw files alone.
 | Folder | Role | Virtual path prefix |
 |--------|------|---------------------|
 | [`Assets/`](Assets/) | Intermediate **descriptors** (YAML metadata, scenes) — Content Browser primary tree | `assets/` |
-| [`Resources/`](Resources/) | Intermediate **data bodies** (.gltf, .png, .wav, …); not the browser’s primary tree | `resources/` |
+| [`Resources/`](Resources/) | Intermediate **data bodies** (.dae, .png, .wav, …); not the browser’s primary tree | `resources/` |
 | [`Resources/Source/`](Resources/Source/) | **Source Assets** only — not loaded by the runtime, not Intermediate | *(under `resources/`)* |
 | `.blunder/cooked/` | **Final Assets** keyed by GUID — derived, regenerable | *(cache, not a virtual content prefix)* |
 | [`engine/shaders/`](engine/shaders/) | Built-in engine Slang shaders (not project content) | *(none — `FileSystem::resolveShader`)* |
@@ -34,11 +34,13 @@ references, and Cook address Assets by GUID — not raw files alone.
 `FileSystem` resolves:
 
 - `assets/Meshes/foo.mesh.yaml` → `<project>/Assets/Meshes/foo.mesh.yaml`
-- `resources/Models/foo.gltf` → `<project>/Resources/Models/foo.gltf`
-- `Models/foo.gltf` (no prefix) → Resources root (same as above)
+- `resources/Models/foo.dae` → `<project>/Resources/Models/foo.dae`
+- `Models/foo.dae` (no prefix) → Resources root (same as above)
 
-Do **not** treat glTF/PNG under `Resources/` as Source Assets. Source is reserved for
-DCC-native files under `Resources/Source/`.
+Do **not** treat COLLADA/PNG under `Resources/` as Source Assets. Source is reserved for
+DCC/exchange archives under `Resources/Source/` (including glTF/GLB after Source Export).
+glTF/GLB under non-Source `Resources/` is a **legacy Intermediate** form pending
+[Intermediate Upgrade](CONTEXT.md#asset-pipeline) to `.dae`.
 
 ## Identity and Asset References
 
@@ -52,13 +54,16 @@ DCC-native files under `Resources/Source/`.
 
 ## Mesh descriptor (`.mesh.yaml`)
 
-YAML metadata (`type`, `guid`, `source`, `import`) pointing at Intermediate glTF under
-Resources (non-Source). The descriptor field `source` is the Intermediate data path
-(glossary), not a Source Asset. May also record an archived Source path when Import used
-Source Export.
+YAML metadata (`type`, `guid`, `source`, `import`, optional `texture_guids`,
+`archived_source`) pointing at Intermediate **COLLADA** (`.dae`) under Resources
+(non-Source). The descriptor field `source` is the Intermediate data path (glossary),
+not a Source Asset. `texture_guids` is the authoritative Mesh→Texture Asset Reference
+list; COLLADA `<image>` URIs are interchange/preview only.
 
 Load prefers a fresh Final under `.blunder/cooked/{guid}.meshbin`; otherwise **Fast Path**
-loads Intermediate (cgltf) and may request on-demand **Cook**.
+loads Intermediate COLLADA (Assimp) and may request on-demand **Cook**. Legacy Intermediate
+glTF `source` is upgraded lazily to `.dae` (see ADR 0013); on upgrade failure the old
+`source` is left unchanged and may still load until a later success or Reimport.
 
 Legacy JSON `.mesh.asset` files are still accepted with a migration warning.
 
@@ -74,8 +79,8 @@ Static scene data remains JSON for now (see existing scene docs). Documents incl
 `guid` and are registered. Entity mesh links are Asset References (GUID).
 
 Positions and `rotation` / `euler_degrees` use **engine world space** (right-handed
-Z-up: +X right, +Y forward, +Z up). Intermediate glTF under `resources/` stays
-Y-up on disk; `AssetManager` converts at import (see `coordinate_system.h` in
+Z-up: +X right, +Y forward, +Z up). Intermediate COLLADA under `resources/` may arrive
+Y-up from DCC tools; `AssetManager` / Cook convert at load (see `coordinate_system.h` in
 [docs/agents/coordinate-system.md](docs/agents/coordinate-system.md)). After changing
 import axes, force-recook affected Finals (`.meshbin`).
 
@@ -114,11 +119,12 @@ Output cache:
 
 | Action | Behavior |
 |--------|----------|
-| **Import Asset** button | Opens a file dialog; images and glTF register as Intermediate Assets; FBX/OBJ run Source Export first |
+| **Import Asset** button | Opens a file dialog; images and `.dae` register as Intermediate Assets; FBX/OBJ/glTF/GLB run Source Export first |
 | **OS drag & drop** | Drop onto the Content Browser panel; same rules as the menu |
-| **glTF / images** | Copy Intermediate data → `Resources/Models/{name}/` or `Resources/Textures/{name}/`; write descriptor → selected `Assets/` folder; allocate GUID and register. These are **not** Source Assets. |
-| **Source Export (v1)** | Whitelist (Assimp): FBX/OBJ → Intermediate glTF under `Resources/Models/{name}/`; **dual-write** archives the original under `Resources/Source/Models/{name}/`; descriptor `source` = Intermediate path, `archived_source` = Source archive path (`resources/Source/...`) |
+| **COLLADA / images** | Copy Intermediate data → `Resources/Models/{name}/` or `Resources/Textures/{name}/`; write descriptor → selected `Assets/` folder; allocate GUID and register. These are **not** Source Assets. |
+| **Source Export (v1)** | Whitelist (Assimp): FBX/OBJ/glTF/GLB → Intermediate COLLADA (`.dae`) under `Resources/Models/{name}/`; **dual-write** archives the original under `Resources/Source/Models/{name}/`; descriptor `source` = Intermediate path, `archived_source` = Source archive path (`resources/Source/...`) |
 | **Reimport** | Re-runs Import / Source Export for an existing Asset; **preserves GUID**; refreshes Intermediate; invalidates Finals and dependents. Distinct from Cook. |
+| **Intermediate Upgrade** | On project open / registry scan: if mesh `source` is still glTF/GLB, convert to `.dae`, rewrite `source`, archive former glTF when needed, mark Finals stale. Failure leaves descriptor/`source` unchanged. |
 
 `.blend` / `.psd` automatic Source Export is **out of v1**: Import returns
 `success=false` (clear reject, no Asset / Intermediate / Source dual-write).
@@ -143,7 +149,8 @@ Editor thumbnails are generated at startup by `ThumbnailGenerator` and stored un
 
 `<project>/.blunder/cache/thumbnails/`
 
-Supported sources include `.mesh.yaml`, `.texture.yaml`, images, glTF, and legacy `.mesh.asset`.
+Supported sources include `.mesh.yaml`, `.texture.yaml`, images, COLLADA (`.dae`), legacy
+glTF Intermediate, and legacy `.mesh.asset`.
 
 The editor **Content Browser** (left dock) uses `ContentBrowserSystem` to scan **Assets only**,
 show a folder tree + thumbnail grid, and drive `ThumbnailGenerator` cache paths.
@@ -159,5 +166,6 @@ show a folder tree + thumbnail grid, and drive `ThumbnailGenerator` cache paths.
 
 - [CONTEXT.md — Asset pipeline](CONTEXT.md#asset-pipeline) — Source / Intermediate / Final, Asset, Pull, Cook, Fast Path, Import, Reimport
 - [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) — why Pull + three-tier + GUID Asset References
+- [docs/adr/0013-collada-intermediate.md](docs/adr/0013-collada-intermediate.md) — COLLADA mesh Intermediate (supersedes Intermediate=glTF)
 - [docs/agents/structure.md](docs/agents/structure.md) — repo tree including `Assets/` / `Resources/`
 - [docs/agents/common-tasks.md](docs/agents/common-tasks.md) — task routing for Content Browser / cook
