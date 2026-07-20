@@ -43,3 +43,5 @@ Task 5.4: complete (aa8375f..a37d744; blend clear reject + no-side-effect assert
 Task 5.5: complete (a37d744; Import/Reimport gate — OBJ dual-write + Reimport GUID + glTF; FBX whitelist-only; report task-21-report.md)
 Task 5.4+5.5: complete (aa8375f..7046bb7; pending review)
 Task 6.1: complete (targeted suite all green; report task-22-report.md; no code fix)
+Task 6.1: complete (4a91438; 11/11 tests green)
+Task 6.2: complete (asset_pipeline_smoke_test OBJ chain green + FBX UI checklist; report task-23-report.md)

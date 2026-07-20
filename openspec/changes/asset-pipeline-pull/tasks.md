@@ -36,4 +36,4 @@
 ## 6. Validation
 
 - [x] 6.1 Run targeted asset/import/cook/scene tests under the project validation presets
-- [ ] 6.2 Manual smoke: Import FBX → preview Fast Path → Cook Final → edit Source → auto-Reimport → scene GUID mesh reference
+- [x] 6.2 Manual smoke: Import FBX → preview Fast Path → Cook Final → edit Source → auto-Reimport → scene GUID mesh reference
