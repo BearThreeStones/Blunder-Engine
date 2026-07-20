@@ -1,7 +1,7 @@
 # object-identity Specification
 
 ## Purpose
-Object / ObjectId identity, Scene Tree ownership, optional Entity binding with lazy materialization, projected property surface, and at-most-one Script Peer.
+Object / ObjectId identity, Scene Tree ownership, optional Entity binding with lazy materialization, projected property surface, and multi-Behaviour Script Peers (ADR 0011).
 
 ## Requirements
 
@@ -41,13 +41,17 @@ ClassDB-advertised properties on Object (and subclasses) SHALL be the editor/scr
 - **WHEN** position is set then get on an Object with a bound Transform
 - **THEN** the returned value matches the stored Transform translation
 
-### Requirement: At most one Script Peer
-An Object SHALL host zero or one Script Peer handle. Script Peers SHALL NOT be stored on ECS components.
+### Requirement: Object hosts Behaviours / Script Peers
+An Object SHALL host zero or more Behaviours, each with at most one Script Peer handle. Script Peers SHALL NOT be stored on ECS components. BehaviourId SHALL identify a Behaviour instance for peer binding and SHALL be distinct from ObjectId.
 
-#### Scenario: Bind peer
-- **WHEN** a Script Peer handle is set on an Object that had none
-- **THEN** GetCSharpHandle (or equivalent) returns that handle until cleared
+#### Scenario: Bind peer on Behaviour
+- **WHEN** a Script Peer handle is set on a Behaviour that had none
+- **THEN** get-peer for that BehaviourId returns that handle until cleared or the Behaviour is removed
 
 #### Scenario: Clear peer
-- **WHEN** the Script Peer handle on an Object is cleared
-- **THEN** lifecycle script dispatch for that Object does not run until a new peer is bound
+- **WHEN** the Script Peer handle on a Behaviour is cleared
+- **THEN** lifecycle script dispatch skips that Behaviour until a new peer is bound
+
+#### Scenario: Multiple Behaviours allowed
+- **WHEN** two Behaviours are added to the same Object
+- **THEN** both remain addressable by distinct BehaviourIds concurrently

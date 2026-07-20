@@ -3,6 +3,9 @@
 #include "EASTL/memory.h"
 #include "EASTL/shared_ptr.h"
 #include "EASTL/string.h"
+
+#include <filesystem>
+
 #include "runtime/core/memory/memory_system.h"
 
 namespace Blunder {
@@ -32,6 +35,7 @@ class RenderSystem;
 class SceneSystem;
 class WindowSystem;
 class LayerStack;
+class DotNetHost;
 // class ParticleManager;
 
 struct EngineInitParams;
@@ -40,7 +44,8 @@ struct EngineInitParams;
 class RuntimeGlobalContext {
  public:
   // create all global systems and initialize these systems
-  void startSystems();
+  void startSystems(
+      const std::filesystem::path& project_root = std::filesystem::path{});
   // destroy all global systems
   void shutdownSystems();
 
@@ -71,6 +76,9 @@ class RuntimeGlobalContext {
   eastl::unique_ptr<IViewportSink> m_viewport_sink;
   eastl::unique_ptr<UIViewportBridge> m_viewport_bridge;
   eastl::shared_ptr<LayerStack> m_layer_stack;
+  /// In-process CoreCLR host. Owned here; started lazily from startSystems when
+  /// gated (see docs/agents/testing.md). Null or !isRunning() is normal.
+  eastl::unique_ptr<DotNetHost> m_dotnet_host;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
 };
 

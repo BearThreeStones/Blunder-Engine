@@ -1,4 +1,5 @@
 #include <exception>
+#include <filesystem>
 #include <iostream>
 
 #include <SDL3/SDL.h>
@@ -6,30 +7,47 @@
 #include <SDL3/SDL_main.h>
 
 #include "runtime/engine.h"
+#include "runtime/project/editor_launch.h"
 
 namespace {
 
 Blunder::BlunderEngine* g_engine = nullptr;
 
+std::filesystem::path compiledProjectRoot() {
+#ifdef BLUNDER_PROJECT_ROOT
+  return std::filesystem::path(BLUNDER_PROJECT_ROOT);
+#else
+  return {};
+#endif
+}
+
+bool isDebugLaunchBuild() {
+#ifdef BLUNDER_PROJECT_ROOT
+  return true;
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
-  (void)argc;
-  (void)argv;
   try {
+    const Blunder::EditorSessionLaunch launch =
+        Blunder::resolveEditorSessionLaunch(argc, argv, isDebugLaunchBuild(),
+                                            compiledProjectRoot());
+    if (!launch.ok) {
+      std::cerr << launch.error.c_str() << '\n';
+      return SDL_APP_FAILURE;
+    }
+
     g_engine = new Blunder::BlunderEngine();
     *appstate = g_engine;
-    g_engine->startEngine();
+    g_engine->startEngine(launch.project_root);
     g_engine->initialize();
     return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {
     std::cerr << "SDL_AppInit failed: " << e.what() << std::endl;
-    // Do NOT delete g_engine here.  SDL always calls SDL_AppQuit after
-    // SDL_AppInit returns (even on failure).  SDL_AppQuit performs orderly
-    // shutdown (shutdownEngine → shutdownSystems) and then deletes the
-    // engine.  Deleting here would skip shutdownSystems(), leaving the
-    // global context with live shared_ptrs that crash during static
-    // destruction.
     return SDL_APP_FAILURE;
   } catch (...) {
     std::cerr << "SDL_AppInit failed: unknown exception" << std::endl;
@@ -58,12 +76,16 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 }
 
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
-  auto* engine = static_cast<Blunder::BlunderEngine*>(appstate);
-  if (!engine || !event) {
+  if (!event) {
     return SDL_APP_CONTINUE;
   }
   if (event->type == SDL_EVENT_QUIT) {
     return SDL_APP_SUCCESS;
+  }
+
+  auto* engine = static_cast<Blunder::BlunderEngine*>(appstate);
+  if (!engine) {
+    return SDL_APP_CONTINUE;
   }
   try {
     engine->processSdlEvent(*event);

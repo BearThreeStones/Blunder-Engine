@@ -7,6 +7,8 @@ namespace Blunder {
 using LifecycleTickFn = void (*)(void* script_peer, float delta_time);
 using LifecycleReadyFn = void (*)(void* script_peer);
 
+// Dispatches Ready/Tick hooks once per non-null Behaviour Script Peer in list
+// order. Ready is gated by BehaviourSlot::ready_invoked (reset on peer set/clear).
 class LifecycleDispatch {
  public:
   static void clear();

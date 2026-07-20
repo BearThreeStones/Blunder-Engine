@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 
+#include "runtime/core/base/macro.h"
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/reflection/class_db.h"
@@ -9,6 +10,8 @@
 // #include "runtime/function/framework/world/world_manager.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/script/dotnet_host.h"
+#include "runtime/core/reflection/engine_c_abi.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/function/ui/editor_service_handles.h"
 #include "runtime/function/ui/ui_host.h"
@@ -35,9 +38,94 @@
 // #include "runtime/resource/config_manager/config_manager.h"
 
 namespace Blunder {
+namespace {
+
+bool envFlagEnabled(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+  return value[0] == '1' || value[0] == 't' || value[0] == 'T' ||
+         value[0] == 'y' || value[0] == 'Y';
+}
+
+std::filesystem::path findProjectGameAssembly(
+    const std::filesystem::path& project_root) {
+  namespace fs = std::filesystem;
+  const fs::path out_dir = project_root / ".blunder" / "scripts_bin";
+  std::error_code ec;
+  if (!fs::is_directory(out_dir, ec)) {
+    return {};
+  }
+  for (const fs::directory_entry& entry : fs::directory_iterator(out_dir, ec)) {
+    if (ec || !entry.is_regular_file(ec)) {
+      continue;
+    }
+    if (entry.path().extension() != ".dll") {
+      continue;
+    }
+    const std::string name = entry.path().filename().string();
+    if (name == "Blunder.Api.dll" || name == "Blunder.ScriptHost.dll") {
+      continue;
+    }
+    return entry.path();
+  }
+  return {};
+}
+
+void tryStartDotNetHost(RuntimeGlobalContext& ctx) {
+  // MVP Play gate: full Play UI is not wired yet. Opt in with
+  // BLUNDER_DOTNET_SCRIPTS=1 (documented in docs/agents/testing.md).
+  if (!envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
+    return;
+  }
+  if (!ctx.m_file_system) {
+    return;
+  }
+
+  const std::filesystem::path exe_dir = ctx.m_file_system->getExecutableDir();
+  const std::filesystem::path script_host_dll =
+      exe_dir / "Blunder.ScriptHost.dll";
+  const std::filesystem::path runtimeconfig =
+      exe_dir / "Blunder.ScriptHost.runtimeconfig.json";
+
+  ctx.m_dotnet_host = eastl::make_unique<DotNetHost>();
+  eastl::string error;
+  BlunderNativeAbi native_abi{};
+  blunder_native_abi_fill_from_process(&native_abi);
+  if (!ctx.m_dotnet_host->start(script_host_dll, runtimeconfig, native_abi,
+                                error)) {
+    LOG_WARN("[DotNetHost] start failed (non-fatal): {}", error.c_str());
+    ctx.m_dotnet_host.reset();
+    return;
+  }
+  LOG_INFO("[DotNetHost] ScriptHost running");
+
+  // Single ObjectDB: ScriptHost uses the process-registered C-ABI table
+  // (fill_from_process above). Host start remains gated by BLUNDER_DOTNET_SCRIPTS
+  // until Play UI exists; load project Scripts when present.
+  const std::filesystem::path game_dll =
+      findProjectGameAssembly(ctx.m_file_system->getProjectRoot());
+  if (game_dll.empty()) {
+    LOG_INFO(
+        "[DotNetHost] no game DLL under .blunder/scripts_bin (host only)");
+    return;
+  }
+  if (!ctx.m_dotnet_host->loadGameAssembly(game_dll, error)) {
+    LOG_WARN("[DotNetHost] loadGameAssembly failed (non-fatal): {}",
+             error.c_str());
+  } else {
+    LOG_INFO("[DotNetHost] loaded game assembly {}",
+             game_dll.generic_string().c_str());
+  }
+}
+
+}  // namespace
+
 RuntimeGlobalContext g_runtime_global_context;
 
-void RuntimeGlobalContext::startSystems() {
+void RuntimeGlobalContext::startSystems(
+    const std::filesystem::path& project_root) {
   m_memory_system.initialize();
 
   ClassDB::initialize();
@@ -50,7 +138,13 @@ void RuntimeGlobalContext::startSystems() {
   // FileSystem must be live before any system that touches disk (asset
   // loading, shader compilation, configs, ...).
   m_file_system = eastl::make_shared<FileSystem>();
-  m_file_system->initialize();
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project_root;
+  m_file_system->initialize(fs_init);
+
+  // CoreCLR host: after logger + FileSystem only. Failure is non-fatal and
+  // must not wait on Vulkan/Slint (see docs/agents/testing.md gates).
+  tryStartDotNetHost(*this);
 
   m_asset_registry = eastl::make_shared<AssetRegistry>();
   m_asset_registry->initialize(m_file_system.get());
@@ -211,6 +305,12 @@ void RuntimeGlobalContext::startSystems() {
 }
 
 void RuntimeGlobalContext::shutdownSystems() {
+  // Tear down CoreCLR before other systems that scripts may have touched.
+  if (m_dotnet_host) {
+    m_dotnet_host->shutdown();
+    m_dotnet_host.reset();
+  }
+
   m_layer_stack.reset();
 
   if (m_viewport_bridge) {

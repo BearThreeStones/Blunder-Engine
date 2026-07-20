@@ -37,7 +37,7 @@ void LifecycleDispatch::setReadyHook(const char* class_name,
 }
 
 void LifecycleDispatch::invokeTick(Object* object, float delta_time) {
-  if (object == nullptr || object->getScriptPeer() == nullptr) {
+  if (object == nullptr) {
     return;
   }
   // Pilot: all Objects use the "Object" type hook table.
@@ -45,18 +45,38 @@ void LifecycleDispatch::invokeTick(Object* object, float delta_time) {
   if (it == hooks().end() || it->second.tick == nullptr) {
     return;
   }
-  it->second.tick(object->getScriptPeer(), delta_time);
+  const size_t n = object->getBehaviourCount();
+  for (size_t i = 0; i < n; ++i) {
+    const BehaviourId id = object->getBehaviourIdAt(i);
+    void* peer = object->getBehaviourScriptPeer(id);
+    if (peer == nullptr) {
+      continue;
+    }
+    it->second.tick(peer, delta_time);
+  }
 }
 
 void LifecycleDispatch::invokeReady(Object* object) {
-  if (object == nullptr || object->getScriptPeer() == nullptr) {
+  if (object == nullptr) {
     return;
   }
   const auto it = hooks().find("Object");
   if (it == hooks().end() || it->second.ready == nullptr) {
     return;
   }
-  it->second.ready(object->getScriptPeer());
+  const size_t n = object->getBehaviourCount();
+  for (size_t i = 0; i < n; ++i) {
+    const BehaviourId id = object->getBehaviourIdAt(i);
+    void* peer = object->getBehaviourScriptPeer(id);
+    if (peer == nullptr) {
+      continue;
+    }
+    if (object->isBehaviourReadyInvoked(id)) {
+      continue;
+    }
+    it->second.ready(peer);
+    object->markBehaviourReadyInvoked(id);
+  }
 }
 
 }  // namespace Blunder

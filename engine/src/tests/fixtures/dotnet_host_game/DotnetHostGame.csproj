@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <AssemblyName>DotnetHostGame</AssemblyName>
+    <RootNamespace>DotnetHostGame</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Same Blunder.Api as ScriptHost (staged beside bin/<Config>/). Do not
+         Private=true a second copy — that breaks Behaviour type identity. -->
+    <Reference Include="Blunder.Api">
+      <HintPath>..\..\..\..\managed\Blunder.Api\bin\$(Configuration)\net10.0\Blunder.Api.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

@@ -3,7 +3,9 @@ add_executable(engine_editor
 )
 
 target_link_libraries(engine_editor
-    PRIVATE engine_runtime
+    PRIVATE
+        engine_runtime
+        blunder_engine_c_static
 )
 
 # When ON, link to profile/engine_editor_profile.exe so a locked Debug/engine_editor.exe
@@ -54,5 +56,24 @@ if(WIN32)
             $<TARGET_FILE_DIR:engine_editor>
         COMMAND_EXPAND_LISTS
         COMMENT "Copying runtime DLLs to output directory"
+    )
+endif()
+
+
+# Stage Blunder.Api.dll (+ blunder_engine_c.dll) beside bin/<Config>/.
+if(TARGET blunder_api)
+    add_dependencies(engine_editor blunder_api)
+endif()
+if(TARGET blunder_script_host)
+    add_dependencies(engine_editor blunder_script_host)
+endif()
+
+# nethost.dll must sit beside the editor for DotNetHost (linked via nethost.lib).
+if(WIN32 AND BLUNDER_HAS_NETHOST AND EXISTS "${BLUNDER_NETHOST_DIR}/nethost.dll")
+    add_custom_command(TARGET engine_editor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${BLUNDER_NETHOST_DIR}/nethost.dll"
+            "$<TARGET_FILE_DIR:engine_editor>/nethost.dll"
+        COMMENT "Copying nethost.dll beside engine_editor"
     )
 endif()

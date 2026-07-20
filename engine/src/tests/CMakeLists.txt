@@ -130,6 +130,25 @@ target_precompile_headers(object_db_test
 add_test(NAME object_db_test
          COMMAND object_db_test)
 
+add_executable(behaviour_list_test
+    "behaviour_list_test.cpp"
+)
+
+target_link_libraries(behaviour_list_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(behaviour_list_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(behaviour_list_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME behaviour_list_test
+         COMMAND behaviour_list_test)
+
 add_executable(ptrcall_lifecycle_test
     "ptrcall_lifecycle_test.cpp"
 )
@@ -154,7 +173,7 @@ add_executable(engine_c_abi_test
 )
 
 target_link_libraries(engine_c_abi_test
-    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
@@ -167,6 +186,165 @@ target_precompile_headers(engine_c_abi_test
 
 add_test(NAME engine_c_abi_test
          COMMAND engine_c_abi_test)
+
+# Native ABI fill helpers: process-linked symbols + LoadLibrary SHARED module.
+add_executable(native_abi_test
+    "native_abi_test.cpp"
+)
+
+target_link_libraries(native_abi_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_compile_definitions(native_abi_test
+    PRIVATE
+        "BLUNDER_ENGINE_C_SHARED_PATH=R\"($<TARGET_FILE:blunder_engine_c>)\""
+)
+
+if(MSVC)
+    target_compile_options(native_abi_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(native_abi_test
+    REUSE_FROM engine_runtime
+)
+
+add_dependencies(native_abi_test blunder_engine_c)
+
+add_test(NAME native_abi_test
+         COMMAND native_abi_test)
+
+# DotNetHost e2e: fixture game + managed Tick via SHARED blunder_engine_c
+# (Approach A — one ObjectDB: create/lifecycle only through the ScriptHost-
+# staged C-ABI DLL, loaded via LoadLibrary — do not link the import lib or a
+# second copy next to the test exe).
+# Requires .NET 10 SDK/runtime (DOTNET_ROOT) and nethost from the host pack.
+add_executable(dotnet_host_test
+    "dotnet_host_test.cpp"
+)
+
+# engine_runtime provides DotNetHost only. Object traffic uses LoadLibrary on
+# the staged SHARED blunder_engine_c; RegisterNativeAbi fills from that module
+# (Approach A / single-image host). In-process CoreCLR uses registered
+# BlunderNativeAbi pointers — Api does not DllImport SHARED.
+target_link_libraries(dotnet_host_test
+    PRIVATE
+        engine_runtime
+)
+
+set(BLUNDER_DOTNET_HOST_GAME_CSPROJ
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dotnet_host_game/DotnetHostGame.csproj")
+set(BLUNDER_DOTNET_HOST_GAME_OUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dotnet_host_game/bin/$<CONFIG>/net10.0")
+set(BLUNDER_DOTNET_HOST_GAME_STAGE
+    "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+target_compile_definitions(dotnet_host_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
+)
+
+if(MSVC)
+    target_compile_options(dotnet_host_test PRIVATE /Zc:preprocessor)
+endif()
+
+# Do not REUSE_FROM engine_runtime PCH -- keeps the link graph minimal
+# (DotNetHost must not pull Slint/ProjectManager via global_context).
+
+# Build fixture game assembly and stage beside ScriptHost + test exe.
+if(NOT BLUNDER_DOTNET_EXE)
+    find_program(BLUNDER_DOTNET_EXE NAMES dotnet)
+endif()
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET dotnet_host_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for dotnet_host_test"
+        VERBATIM
+    )
+endif()
+
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET dotnet_host_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:dotnet_host_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(dotnet_host_test blunder_script_host)
+endif()
+if(TARGET blunder_api)
+    add_dependencies(dotnet_host_test blunder_api)
+endif()
+add_dependencies(dotnet_host_test blunder_engine_c)
+
+add_test(NAME dotnet_host_test
+         COMMAND dotnet_host_test)
+
+# Editor-style single ObjectDB: process ObjectDB + fill_from_process + managed
+# Tick. Links engine_runtime + blunder_engine_c_static; does NOT LoadLibrary
+# SHARED blunder_engine_c for Object create/Tick.
+add_executable(editor_dotnet_host_test
+    "editor_dotnet_host_test.cpp"
+)
+
+target_link_libraries(editor_dotnet_host_test
+    PRIVATE
+        blunder_engine_c_static
+)
+
+target_compile_definitions(editor_dotnet_host_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
+)
+
+if(MSVC)
+    target_compile_options(editor_dotnet_host_test PRIVATE /Zc:preprocessor)
+endif()
+
+# Same fixture staging as dotnet_host_test (reuse game csproj / stage paths).
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET editor_dotnet_host_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for editor_dotnet_host_test"
+        VERBATIM
+    )
+endif()
+
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET editor_dotnet_host_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:editor_dotnet_host_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(editor_dotnet_host_test blunder_script_host)
+endif()
+if(TARGET blunder_api)
+    add_dependencies(editor_dotnet_host_test blunder_api)
+endif()
+
+add_test(NAME editor_dotnet_host_test
+         COMMAND editor_dotnet_host_test)
 
 add_executable(editor_history_test
     "editor_history_test.cpp"
@@ -232,6 +410,26 @@ target_precompile_headers(editor_commands_test
 
 add_test(NAME editor_commands_test
          COMMAND editor_commands_test)
+
+
+add_executable(project_create_test
+    "project_create_test.cpp"
+)
+
+target_link_libraries(project_create_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(project_create_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(project_create_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME project_create_test
+         COMMAND project_create_test)
 
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"
