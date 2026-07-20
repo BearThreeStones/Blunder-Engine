@@ -3,6 +3,7 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/asset_watch_path.h"
+#include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_dependency/asset_dependency_graph.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -62,6 +63,12 @@ void writeTextFile(const fs::path& path, const std::string& text) {
   fs::create_directories(path.parent_path());
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out << text;
+}
+
+void writeBinaryFile(const fs::path& path, const char* bytes, size_t size) {
+  fs::create_directories(path.parent_path());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out.write(bytes, static_cast<std::streamsize>(size));
 }
 
 void classifyPaths() {
@@ -260,6 +267,233 @@ void archivedSourcePathToGuids() {
   fs::remove_all(project);
 }
 
+void intermediateTextureChangeInvalidatesMeshFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "11111111-1111-4111-8111-111111111111";
+  const char* kTexGuid = "22222222-2222-4222-8222-222222222222";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Textures" / "albedo.texture.yaml",
+                std::string("type: Texture2D\n") + "guid: " + kTexGuid + "\n" +
+                    "source: resources/Textures/albedo.png\n" +
+                    "import:\n"
+                    "  srgb: true\n"
+                    "  generate_mips: false\n");
+  writeTextFile(project / "Resources" / "Textures" / "albedo.png", "png");
+  writeTextFile(project / "Assets" / "Meshes" / "cube.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/cube/cube.gltf\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n"
+                    "texture_guids:\n"
+                    "  - " +
+                    kTexGuid + "\n");
+  writeTextFile(project / "Resources" / "Models" / "cube" / "cube.gltf",
+                "gltf");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+  compiler.rebuildDependencyGraph();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(kMeshGuid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(kMeshGuid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+
+  const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+      AssetWatchPathClass::IntermediateResource,
+      resources / "Textures" / "albedo.png", assets, resources, registry,
+      graph);
+  expect_true("Intermediate texture maps to texture guid",
+              containsGuid(guids, kTexGuid));
+
+  for (const eastl::string& guid : guids) {
+    compiler.invalidateAssetAndDependents(guid);
+  }
+
+  expect_true("texture Intermediate change invalidates dependent mesh Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("texture Intermediate change invalidates dependent mesh meta",
+              !file_system.exists(mesh_meta));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void descriptorChangeInvalidatesFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "33333333-3333-4333-8333-333333333333";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "solo.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/solo/solo.gltf\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.gltf",
+                "gltf");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+  compiler.rebuildDependencyGraph();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(kMeshGuid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(kMeshGuid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+
+  const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+      AssetWatchPathClass::AssetsTree,
+      assets / "Meshes" / "solo.mesh.yaml", assets, resources, registry,
+      graph);
+  expect_true("descriptor path maps to mesh guid",
+              containsGuid(guids, kMeshGuid));
+
+  for (const eastl::string& guid : guids) {
+    compiler.invalidateAssetAndDependents(guid);
+  }
+
+  expect_true("descriptor change invalidates own Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("descriptor change invalidates own meta",
+              !file_system.exists(mesh_meta));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void sourceChangeTriggersReimportInvalidatesFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "44444444-4444-4444-8444-444444444444";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "hero.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/hero/hero.gltf\n" +
+                    "archived_source: Source/Models/hero.fbx\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.gltf",
+                "gltf");
+  writeTextFile(project / "Resources" / "Source" / "Models" / "hero.fbx",
+                "fbx");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path hero_source = resources / "Source" / "Models" / "hero.fbx";
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(kMeshGuid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(kMeshGuid));
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+
+  const eastl::vector<eastl::string> guids =
+      import_service.findGuidsByArchivedSource(hero_source);
+  expect_true("Source change maps to owning mesh guid via archived_source",
+              containsGuid(guids, kMeshGuid));
+
+  expect_true("Reimport hook succeeds for Source-mapped guid",
+              import_service.requestReimports(guids));
+  expect_true("Source Reimport hook invalidates mesh Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("Source Reimport hook invalidates mesh meta",
+              !file_system.exists(mesh_meta));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void reimportBatchRebuildsGraphOnce() {
   using namespace Blunder;
   ensureLogger();
@@ -339,6 +573,9 @@ int main() {
   classifyPaths();
   pathToGuidMapping();
   archivedSourcePathToGuids();
+  intermediateTextureChangeInvalidatesMeshFinal();
+  descriptorChangeInvalidatesFinal();
+  sourceChangeTriggersReimportInvalidatesFinal();
   reimportBatchRebuildsGraphOnce();
 
   if (g_failures != 0) {

@@ -2,7 +2,9 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
+#include "runtime/resource/asset_cook/asset_watch_path.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
+#include "runtime/resource/asset_dependency/asset_dependency_graph.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
@@ -305,12 +307,141 @@ void cookDependentsRecooksMeshAfterTextureInvalidate() {
   fs::remove_all(fixture.project);
 }
 
+// Task 4.5 theme 1: Intermediate texture body change → map GUID → invalidate
+// dependents → mesh Final stale.
+void textureIntermediateChangeInvalidatesMeshFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const GraphFixture fixture = writeTextureMeshSceneFixture();
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = fixture.project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+  compiler.rebuildDependencyGraph();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path mesh_cooked =
+      cookedMeshPath(file_system, eastl::string(fixture.mesh_guid));
+  const fs::path mesh_meta =
+      cookedMeshMetaPath(file_system, eastl::string(fixture.mesh_guid));
+  const fs::path tex_cooked =
+      cookedTexturePath(file_system, eastl::string(fixture.tex_guid));
+  writeBinaryFile(tex_cooked, "TEXB", 4);
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+  writeTextFile(mesh_meta, "source_mtime: 3\ndescriptor_mtime: 4\n");
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path intermediate_tex = resources / "Textures" / "albedo.png";
+
+  const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+      AssetWatchPathClass::IntermediateResource, intermediate_tex, assets,
+      resources, registry, graph);
+  expect_true("intermediate texture maps to texture guid",
+              !guids.empty() && guids[0] == fixture.tex_guid);
+
+  for (const eastl::string& guid : guids) {
+    compiler.invalidateAssetAndDependents(guid);
+  }
+
+  expect_true("texture Intermediate change removes dependent mesh Final",
+              !file_system.exists(mesh_cooked));
+  expect_true("texture Intermediate change removes dependent mesh meta",
+              !file_system.exists(mesh_meta));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(fixture.project);
+}
+
+// Task 4.5 theme 2: descriptor change → map GUID → invalidate → Final stale.
+void descriptorChangeInvalidatesOwnFinal() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const GraphFixture fixture = writeTextureMeshSceneFixture();
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = fixture.project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+  compiler.rebuildDependencyGraph();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path tex_cooked =
+      cookedTexturePath(file_system, eastl::string(fixture.tex_guid));
+  const fs::path tex_meta =
+      cookedTextureMetaPath(file_system, eastl::string(fixture.tex_guid));
+  writeBinaryFile(tex_cooked, "TEXB", 4);
+  writeTextFile(tex_meta, "source_mtime: 1\ndescriptor_mtime: 2\n");
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path descriptor =
+      assets / "Textures" / "albedo.texture.yaml";
+
+  const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+      AssetWatchPathClass::AssetsTree, descriptor, assets, resources, registry,
+      graph);
+  expect_true("descriptor path maps to texture guid",
+              !guids.empty() && guids[0] == fixture.tex_guid);
+
+  for (const eastl::string& guid : guids) {
+    compiler.invalidateAssetAndDependents(guid);
+  }
+
+  expect_true("descriptor change removes own Final",
+              !file_system.exists(tex_cooked));
+  expect_true("descriptor change removes own meta",
+              !file_system.exists(tex_meta));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(fixture.project);
+}
+
 }  // namespace
 
 int main() {
   invalidateMarksSelfAndDependents();
   invalidateWithoutDependentsOnlyMarksSelf();
   cookDependentsRecooksMeshAfterTextureInvalidate();
+  textureIntermediateChangeInvalidatesMeshFinal();
+  descriptorChangeInvalidatesOwnFinal();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

@@ -23,7 +23,7 @@
 - [x] 4.2 Propagate Final invalidation along reverse edges
 - [x] 4.3 Extend file watch to Intermediate Resources (exclude Source for Intermediate invalidation; debounce; suppress self-writes)
 - [x] 4.4 Watch Source root: debounced auto-Reimport for Assets archiving that Source
-- [ ] 4.5 Tests: texture change invalidates mesh Final; descriptor change invalidates; Source change triggers Reimport hook
+- [x] 4.5 Tests: texture change invalidates mesh Final; descriptor change invalidates; Source change triggers Reimport hook
 
 ## 5. Import & Source Export
 
