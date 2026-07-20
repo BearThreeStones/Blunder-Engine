@@ -49,11 +49,15 @@ The C-ABI version constant SHALL be greater than or equal to 2 when Behaviour an
 - **THEN** the returned value is >= 2
 
 ### Requirement: Shared library export for DllImport
-The build SHALL provide a SHARED library target (`blunder_engine_c`) that exports the C-ABI entry points for managed `DllImport` consumers.
+The build SHALL provide a SHARED library target (`blunder_engine_c`) that exports the C-ABI entry points for consumers that intentionally use that image as their sole ObjectDB owner (for example Approach A `dotnet_host_test`). In-process CoreCLR alongside a statically linked `engine_runtime` SHALL NOT rely on default `DllImport("blunder_engine_c")` for ObjectDB traffic.
 
 #### Scenario: SHARED target builds
 - **WHEN** the `blunder_engine_c` target is built
 - **THEN** a shared library binary is produced that exports the versioned C-ABI symbols
+
+#### Scenario: SHARED remains valid for single-image hosts
+- **WHEN** a host process uses SHARED `blunder_engine_c` as its only ObjectDB image and registers that module’s exports into ScriptHost
+- **THEN** managed Behaviour Tick works against Objects created through that image’s C-ABI
 
 ### Requirement: Lifecycle hooks registerable through C-ABI
 The C-ABI SHALL expose register/clear entry points for type-level Ready and Tick hooks without requiring a managed host. When hooks are registered and an Object has Behaviour Script Peers, invokeReady/invokeTick SHALL call the hook once per non-null peer.
@@ -72,3 +76,10 @@ The Reflection kernel build SHALL compile and link the C-ABI without requiring a
 #### Scenario: Engine starts without script host
 - **WHEN** the engine starts with ClassDB and C-ABI registered but no script host loaded
 - **THEN** startup succeeds and Objects can still be created and have properties set through native/C-ABI APIs
+
+### Requirement: In-process CoreCLR must not dual-load ObjectDB
+When a process already links `engine_runtime` (editor, runtime, or tests that own a process ObjectDB) and hosts CoreCLR, managed C-ABI traffic SHALL use the process-linked ObjectDB. Loading SHARED `blunder_engine_c` as an additional ObjectDB owner in that process for ScriptHost/Api calls is forbidden.
+
+#### Scenario: No second ObjectDB for managed calls in editor
+- **WHEN** the editor hosts ScriptHost and Blunder.Api performs Object/Behaviour C-ABI operations
+- **THEN** those operations resolve through the process-linked C-ABI (registered pointers) and MUST NOT create Objects only visible inside a separately loaded SHARED `blunder_engine_c` image
