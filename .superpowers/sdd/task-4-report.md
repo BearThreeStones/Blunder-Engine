@@ -1,93 +1,53 @@
-# Task 4 Report — OpenSpec 2.2 Scene registration in AssetRegistry
+# Task 4 Report: Export Behaviours from bound Objects
 
-**Status:** done  
-**Branch:** `feat/asset-pipeline-pull`  
-**Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** `9714006` — feat: register scene assets in AssetRegistry
+## Status
+
+**DONE**
 
 ## Summary
 
-`AssetRegistry::rebuildFromScan` now registers `*.scene.asset` files that already contain a valid `guid` (JSON parsed via yaml-cpp, same as YAML descriptors). Added `ensureSceneAssetRegistered` to allocate+persist a guid for legacy scenes and register scenes that already have one.
+`SceneInstance::exportToScene` now writes each entity’s Behaviour list (type + id; empty property bag) from the SceneInstance-tracked bound Object. Soft-deleted entities remain omitted, so their behaviours are not written. OpenSpec 4.1–4.3 marked `[x]`.
+
+## Commits
+
+- (pending) `feat(scene): export Behaviours from bound Objects`
+
+## Files changed
+
+| Path | Action |
+|------|--------|
+| `engine/src/runtime/function/scene/scene_instance.cpp` | Modified — export behaviours via `m_bound_object_ids` |
+| `engine/src/tests/scene_behaviour_export_test.cpp` | Created — live Object source + tombstone omission |
+| `engine/src/tests/CMakeLists.txt` | Modified — register `scene_behaviour_export_test` |
+| `openspec/changes/behaviour-serialization/tasks.md` | Modified — 4.1–4.3 `[x]` |
 
 ## TDD evidence
 
-### RED (feature missing)
-
-Test `asset_registry_test` called `AssetRegistry::ensureSceneAssetRegistered` before the API existed.
-
-Build failed with MSVC `C2039` (member not found), e.g.:
-
-```
-asset_registry_test.cpp(108,24): error C2039: "ensureSceneAssetRegistered": 不是 "Blunder::AssetRegistry" 的成员
-asset_registry_test.cpp(155,16): error C2039: "ensureSceneAssetRegistered": 不是 "Blunder::AssetRegistry" 的成员
-```
-
-Full log: `.superpowers/sdd/task-4-red-build.txt`  
-Excerpt: `.superpowers/sdd/task-4-red-excerpt.txt`
-
-### GREEN (implementation)
-
-Minimal production changes:
-
-- `asset_registry.h` — document scene scan; declare `ensureSceneAssetRegistered`
-- `asset_registry.cpp` — scan `.scene.asset`; parse guid from JSON/YAML; ensure helper allocates/persists/registers
-- `engine/src/tests/asset_registry_test.cpp` + CMake wiring
-
-Build: `cmake --build build/vs2026-debug --config Debug --target asset_registry_test` → succeeded  
-Run (with slang/slint DLLs on PATH): `asset_registry_test.exe` → **exit 0** (`asset_registry_test: all passed`)
-
-Log: `.superpowers/sdd/task-4-green-build.txt`, `.superpowers/sdd/task-4-green-run.txt`
-
-## Test coverage
-
-| Case | Result |
-|------|--------|
-| `rebuildFromScan` registers `.scene.asset` that already has guid | pass |
-| `ensureSceneAssetRegistered` allocates guid for legacy scene, persists file, registry resolves | pass |
-| `ensureSceneAssetRegistered` registers scene that already has guid when missing from registry | pass |
-
-## OpenSpec tasks
-
-- [x] 2.2 in `openspec/changes/asset-pipeline-pull/tasks.md`
-
-## Concerns / notes
-
-1. Guid insert into legacy scene JSON is a string splice after `"type"` (preserves entities/childScenes); full SceneSerializer guid read/write is task 2.3.
-2. Scan still skips scenes without a valid guid (upgrade is explicit via `ensureSceneAssetRegistered`).
-3. Tests need a `LogSystem` on `g_runtime_global_context` because `FileSystem::initialize` logs; logger is reset before exit to avoid spdlog async teardown ACCESS_VIOLATION.
-4. Runtime-linked tests need `slang.dll` and `slint_cpp.dll` on `PATH`.
-5. Did not implement mesh GUID migration (2.3). Did not push.
-
----
-
-## Review fix — invalid guid rewrite
-
-**Finding:** `insertGuidIntoSceneJson` returned true when a `"guid"` key already existed (even if invalid), so `ensureSceneAssetRegistered` registered a new GUID while disk kept the bad value.
-
-**Fix commit:** `906526a` — fix: rewrite invalid scene guid on ensure register
-
 ### RED
 
-Regression `ensureRewritesInvalidGuidOnDisk` with `"guid": "not-a-valid-guid"`:
-
-```
-FAIL disk no longer contains invalid guid
-FAIL disk contains recovered guid matching registry
-2 failure(s)
+```text
+.\build\vs2026-debug\tests\Debug\scene_behaviour_export_test.exe
+FAIL Actor behaviours from Object (3 slots)
+1 failure(s)
 ```
 
-Log: `.superpowers/sdd/task-4-fix-red-run.txt`
+Expected: export still dropped behaviours (empty list) despite bound Object slots + live `addBehaviour`.
 
 ### GREEN
 
-Renamed helper to `upsertGuidIntoSceneJson`: replaces existing `"guid"` string value when present; inserts when absent. `ensureSceneAssetRegistered` still allocates on parse failure and writes the upserted document.
+```text
+cmake --build build/vs2026-debug --config Debug --target scene_behaviour_export_test
+.\build\vs2026-debug\tests\Debug\scene_behaviour_export_test.exe  → exit 0
+scene_behaviour_export_test: all passed
 
-`asset_registry_test.exe` → **exit 0** (`asset_registry_test: all passed`)
+.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe  → exit 0
+.\build\vs2026-debug\tests\Debug\scene_serializer_test.exe  → exit 0
+```
 
-Logs: `.superpowers/sdd/task-4-fix-green-build.txt`, `.superpowers/sdd/task-4-fix-green-run.txt`
+Covers: export reads Object slots (ids 1,3 + live-added id 4); Prop has no behaviours; soft-deleted Actor omitted entirely.
 
-### Test coverage (added)
+## Concerns
 
-| Case | Result |
-|------|--------|
-| `ensureSceneAssetRegistered` rewrites invalid on-disk guid; disk matches registry | pass |
+1. **Property bag not on Object** — export writes empty `properties`; round-trip of bag values still depends on Task 3 mount applying declarations at load, not Object storage. Full Object→property export is out of this slice.
+2. **`scene_soft_delete_test` link** — rebuild failed (`blunder_native_abi_fill_from_process` unresolved) because that target does not link `blunder_engine_c_static`; pre-existing vs current `global_context`. Tombstone+behaviour omission is covered by `scene_behaviour_export_test`.
+3. **Dirty working tree** — unrelated WIP left uncommitted; commit scoped to export + test + OpenSpec tasks.
