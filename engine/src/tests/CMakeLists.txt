@@ -327,3 +327,26 @@ target_precompile_headers(asset_manager_guid_test
 
 add_test(NAME asset_manager_guid_test
          COMMAND asset_manager_guid_test)
+
+add_executable(asset_compiler_freshness_test
+    "asset_compiler_freshness_test.cpp"
+)
+
+target_link_libraries(asset_compiler_freshness_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_compiler_freshness_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_compiler_freshness_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_compiler_freshness_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_compiler_freshness_test
+         COMMAND asset_compiler_freshness_test)

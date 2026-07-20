@@ -24,7 +24,25 @@ class AssetCompilerService final {
   void shutdown();
 
   AssetCompilerStats cookAll(bool force = false);
+
+  /// Optional startup / packaging warm-up: cooks every stale Asset under Assets/.
+  /// Pull freshness is defined by markFinalStale / cookAsset / cookDependents,
+  /// not by this scan.
   AssetCompilerStats cookIfStale();
+
+  /// Delete Final artifacts (mesh/texture bin + meta) for `guid` so the next
+  /// cookAsset / load Fast Path treats the Asset as stale.
+  void markFinalStale(const eastl::string& guid);
+
+  /// Resolve `guid` via AssetRegistry and cook that one Mesh/Texture descriptor.
+  /// Returns true when a new Final was written; false when skipped (fresh),
+  /// unknown, or cook failed.
+  bool cookAsset(const eastl::string& guid, bool force = false);
+
+  /// Stub until the Asset Dependency Graph (OpenSpec 4.x) lands. Currently a
+  /// no-op; callers may invoke it after cookAsset / markFinalStale without
+  /// fan-out. Do not treat this as cooking dependents yet.
+  void cookDependents(const eastl::string& guid);
 
  private:
   bool cookMeshDescriptor(const eastl::string& descriptor_virtual_path,

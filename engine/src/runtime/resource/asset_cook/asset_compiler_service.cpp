@@ -64,6 +64,18 @@ bool isCookFresh(FileSystem& file_system, const fs::path& cooked_path,
          meta.descriptor_mtime == descriptor_mtime;
 }
 
+void removeIfExists(FileSystem& file_system, const fs::path& path) {
+  if (!file_system.exists(path)) {
+    return;
+  }
+  std::error_code ec;
+  fs::remove(path, ec);
+  if (ec) {
+    LOG_WARN("[AssetCompiler] failed to remove {}: {}", path.generic_string(),
+             ec.message());
+  }
+}
+
 }  // namespace
 
 void AssetCompilerService::initialize(FileSystem* file_system,
@@ -132,7 +144,49 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
 }
 
 AssetCompilerStats AssetCompilerService::cookIfStale() {
+  // Warm-up only: full Assets/ scan of stale Finals. Prefer cookAsset /
+  // markFinalStale for Pull freshness.
   return cookAll(false);
+}
+
+void AssetCompilerService::markFinalStale(const eastl::string& guid) {
+  if (!m_is_initialized || guid.empty()) {
+    return;
+  }
+
+  removeIfExists(*m_file_system, cookedMeshPath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedMeshMetaPath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedTexturePath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedTextureMetaPath(*m_file_system, guid));
+}
+
+bool AssetCompilerService::cookAsset(const eastl::string& guid, bool force) {
+  if (!m_is_initialized || guid.empty()) {
+    return false;
+  }
+
+  const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
+  if (descriptor_path.empty()) {
+    LOG_WARN("[AssetCompiler] cookAsset: unknown guid {}", guid.c_str());
+    return false;
+  }
+
+  if (endsWith(descriptor_path, ".mesh.yaml")) {
+    return cookMeshDescriptor(descriptor_path, force);
+  }
+  if (endsWith(descriptor_path, ".texture.yaml")) {
+    return cookTextureDescriptor(descriptor_path, force);
+  }
+
+  LOG_WARN("[AssetCompiler] cookAsset: unsupported descriptor {}",
+           descriptor_path.c_str());
+  return false;
+}
+
+void AssetCompilerService::cookDependents(const eastl::string& guid) {
+  // Stub: Asset Dependency Graph (OpenSpec task 4.x) owns reverse-edge fan-out.
+  // Until then this is intentionally a no-op so Pull callers can wire the hook.
+  (void)guid;
 }
 
 bool AssetCompilerService::cookMeshDescriptor(
