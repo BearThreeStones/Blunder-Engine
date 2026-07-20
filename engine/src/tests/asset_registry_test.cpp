@@ -182,12 +182,57 @@ void ensureRegistersExistingGuidWhenMissingFromRegistry() {
   fs::remove_all(project);
 }
 
+void ensureRewritesInvalidGuidOnDisk() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kBadGuid = "not-a-valid-guid";
+  const std::string bad_json =
+      std::string("{\n") + "  \"type\": \"Scene\",\n" + "  \"guid\": \"" +
+      kBadGuid + "\",\n" + "  \"entities\": [],\n" + "  \"childScenes\": []\n" +
+      "}\n";
+  const fs::path scene_path =
+      project / "Assets" / "Scenes" / "bad_guid.scene.asset";
+  writeTextFile(scene_path, bad_json);
+
+  FileSystem file_system;
+  FileSystemInitInfo init;
+  init.project_root = project;
+  file_system.initialize(init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  expect_true(
+      "ensure recovers from invalid guid",
+      registry.ensureSceneAssetRegistered("assets/Scenes/bad_guid.scene.asset"));
+
+  const eastl::string guid =
+      registry.findGuidForPath("assets/Scenes/bad_guid.scene.asset");
+  expect_true("recovered guid is valid", isValidGuidFormat(guid));
+  expect_true("registry resolves recovered guid",
+              registry.resolveGuid(guid) ==
+                  "assets/Scenes/bad_guid.scene.asset");
+
+  const std::string on_disk = readTextFile(scene_path);
+  expect_true("disk no longer contains invalid guid",
+              on_disk.find(kBadGuid) == std::string::npos);
+  expect_true("disk contains recovered guid matching registry",
+              on_disk.find(guid.c_str()) != std::string::npos);
+
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
   rebuildFromScanRegistersSceneWithGuid();
   ensureUpgradesLegacySceneWithoutGuid();
   ensureRegistersExistingGuidWhenMissingFromRegistry();
+  ensureRewritesInvalidGuidOnDisk();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

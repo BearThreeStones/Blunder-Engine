@@ -52,10 +52,25 @@ bool parseGuidFromDocument(const eastl::string& text, eastl::string& out_guid) {
   return !out_guid.empty() && isValidGuidFormat(out_guid);
 }
 
-/// Inserts `"guid": "<guid>"` into a Scene JSON document that lacks one.
-bool insertGuidIntoSceneJson(eastl::string& json_text,
+/// Inserts or replaces the Scene JSON `"guid"` field with `guid`.
+bool upsertGuidIntoSceneJson(eastl::string& json_text,
                              const eastl::string& guid) {
-  if (json_text.find("\"guid\"") != eastl::string::npos) {
+  const char* guid_key = "\"guid\"";
+  const size_t guid_key_pos = json_text.find(guid_key);
+  if (guid_key_pos != eastl::string::npos) {
+    const size_t colon = json_text.find(':', guid_key_pos + std::strlen(guid_key));
+    if (colon == eastl::string::npos) {
+      return false;
+    }
+    const size_t quote_start = json_text.find('"', colon + 1);
+    if (quote_start == eastl::string::npos) {
+      return false;
+    }
+    const size_t quote_end = json_text.find('"', quote_start + 1);
+    if (quote_end == eastl::string::npos) {
+      return false;
+    }
+    json_text.replace(quote_start + 1, quote_end - quote_start - 1, guid);
     return true;
   }
 
@@ -258,7 +273,7 @@ bool AssetRegistry::ensureSceneAssetRegistered(
   eastl::string guid;
   if (!parseGuidFromDocument(text, guid)) {
     guid = allocateGuid();
-    if (!insertGuidIntoSceneJson(text, guid)) {
+    if (!upsertGuidIntoSceneJson(text, guid)) {
       return false;
     }
     if (!m_file_system->writeText(absolute, text)) {
