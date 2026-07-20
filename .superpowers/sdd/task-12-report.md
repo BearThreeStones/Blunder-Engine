@@ -3,7 +3,7 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
-**Commit:** *(pending — filled after commit)*
+**Commit:** `7ad5e12` — feat: add minimal Asset Dependency Graph (Scene/Mesh/Texture)
 
 ## Summary
 
