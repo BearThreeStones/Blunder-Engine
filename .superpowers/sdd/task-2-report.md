@@ -1,4 +1,4 @@
-# Task 2 Report: Managed registration path for unify-script-objectdb
+# Task 2 Report: Instantiate Object bind + Behaviour slots
 
 ## Status
 
@@ -6,62 +6,59 @@
 
 ## Summary
 
-Wired ScriptHost `RegisterNativeAbi` and Blunder.Api `Native` through the `BlunderNativeAbi` function-pointer table. Calls before registration throw `InvalidOperationException` (no `DllImport` fallback). Shared ScriptHost ALC for Blunder.Api preserved so game assemblies see the same registered table. OpenSpec 2.1–2.3 marked `[x]`.
+On `SceneInstance::instantiate`, entities with a non-empty `behaviours` list get an ObjectDB Object bound via `setEntityId`, with slots restored at persisted BehaviourIds and null peers (no DotNetHost Attach). `Object::restoreBehaviour` advances `m_next_behaviour_id` past the max restored id. Empty-behaviour entities do not create Objects. OpenSpec 2.1–2.3 marked `[x]`.
 
 ## Commits
 
-- `e0d7127bc122b269c2de46b9c4594345dafbac42` — `feat(script): register native C-ABI table into Blunder.Api`
+- `0f2864f424126a0253f31ea024f9636bba4bdd25` — `feat(scene): bind Objects and restore Behaviour slots on load`
 
 ## Files changed
 
 | Path | Action |
 |------|--------|
-| `engine/managed/Blunder.Api/NativeAbi.cs` | Created — managed POD mirror of C `BlunderNativeAbi` |
-| `engine/managed/Blunder.Api/Native.cs` | Rewritten — register + call through pointers |
-| `engine/managed/Blunder.Api/Blunder.Api.csproj` | Modified — `AllowUnsafeBlocks`; InternalsVisibleTo tests |
-| `engine/managed/Blunder.ScriptHost/HostExports.cs` | Modified — `RegisterNativeAbi` export; ALC comment |
-| `engine/managed/Blunder.Api.NativeAbiTests/*` | Created — TDD harness (stub ABI) |
-| `openspec/changes/unify-script-objectdb/tasks.md` | Modified — 2.1–2.3 `[x]` |
-
-## API delivered
-
-- `BlunderNativeAbi` (C# sequential struct, 17 cdecl function pointers)
-- `Native.Register(in BlunderNativeAbi)` — rejects incomplete tables
-- `Native.ClearRegistrationForTests()` — test seam
-- `HostExports.RegisterNativeAbi(BlunderNativeAbi*)` — `UnmanagedCallersOnly` / cdecl; returns Ok/Error
-- All former `DllImport` Native methods now invoke registered pointers (UTF-8 string marshal)
+| `engine/src/runtime/core/object/object.h` | Modified — `restoreBehaviour` |
+| `engine/src/runtime/core/object/object.cpp` | Modified — restore slot + advance next id |
+| `engine/src/runtime/core/object/object_db.h` | Modified — `findByEntityId` |
+| `engine/src/runtime/core/object/object_db.cpp` | Modified — EntityId scan |
+| `engine/src/runtime/function/scene/scene_instance.cpp` | Modified — bind Object + restore on instantiate |
+| `engine/src/tests/scene_behaviour_instantiate_test.cpp` | Created — load JSON → instantiate without host |
+| `engine/src/tests/CMakeLists.txt` | Modified — register test target |
+| `openspec/changes/behaviour-serialization/tasks.md` | Modified — 2.1–2.3 `[x]` |
 
 ## TDD evidence
 
 ### RED
 
-Added `Blunder.Api.NativeAbiTests` before production types existed.
+Added `scene_behaviour_instantiate_test` before instantiate bind existed.
 
 ```text
-dotnet build engine/managed/Blunder.Api.NativeAbiTests -c Debug
+.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe
+FAIL actor has bound Object
+1 failure(s)
 ```
 
-**Result:** exit 1 — `CS0246` (`BlunderNativeAbi` missing), `CS0122` (`Native` inaccessible / no Register). Expected red.
+Expected red (no Object for entity with behaviours).
 
 ### GREEN
 
-Implemented `NativeAbi.cs`, pointer-table `Native.cs`, `RegisterNativeAbi`, InternalsVisibleTo.
+Implemented `restoreBehaviour`, `ObjectDB::findByEntityId`, and instantiate bind/restore.
 
 ```text
-dotnet run --project engine/managed/Blunder.Api.NativeAbiTests -c Debug  → exit 0
-dotnet build engine/managed/Blunder.ScriptHost -c Debug                 → exit 0
+cmake --build build/vs2026-debug --config Debug --target scene_behaviour_instantiate_test
+.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe  → exit 0
+scene_behaviour_instantiate_test: all passed
 ```
 
-Checks: throw before register; stub table succeeds; incomplete register rejected; layout size 136 (17×8).
+Covers: Object bound to Actor EntityId; slots ids 1 and 3 with types; peers null; next id → 4 via `addBehaviour`; Prop without behaviours has no Object.
 
 ## Self-review
 
-- **Correctness:** Hard-fail unregistered; no DllImport path remains in Api.
-- **Scope:** No DotNetHost wiring / gate removal (Task 3–4).
-- **ALC (2.3):** Existing `GameAssemblyLoadContext` still returns ScriptHost’s Blunder.Api; comment notes registration visibility.
+- **Correctness:** Restored ids preserved (not renumbered); invalid/duplicate ids skipped with warn; property bag not applied (Task 3).
+- **Scope:** No DotNetHost Attach / mount (Task 3); no export (Task 4).
+- **Teardown:** Test resets logger + ObjectDB before exit to avoid spdlog async-flush AV on process exit.
 
 ## Concerns
 
-1. **`dotnet_host_test` will fail until Task 3** — ScriptHost/Api no longer DllImport SHARED `blunder_engine_c`; DotNetHost must call `RegisterNativeAbi` before hooks / game load.
-2. **Managed test not in CTest** — run via `dotnet run --project engine/managed/Blunder.Api.NativeAbiTests`.
-3. **Dirty working tree** — unrelated WIP left uncommitted (Assets/PM/etc.); commit scoped to managed + OpenSpec tasks only.
+1. **EntityId is SceneInstance-local** — `ObjectDB::findByEntityId` is a process-global scan; multiple loaded SceneInstances can collide on EntityId values (pre-existing id scheme).
+2. **No Object cleanup on `SceneInstance::clear()`** — re-instantiate can leave stale Objects in ObjectDB until an explicit clear (export path / Task 4 may need ownership tracking).
+3. **Dirty working tree** — unrelated WIP left uncommitted; commit scoped to Object/scene instantiate + test + OpenSpec tasks.
