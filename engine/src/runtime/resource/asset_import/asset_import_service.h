@@ -69,12 +69,12 @@ class AssetImportService final {
   /// each GUID. Prefer this over N× requestReimport for watch debounce flush.
   bool requestReimports(const eastl::vector<eastl::string>& guids);
 
-  /// glTF/GLB Intermediate exchange extensions (not Source Assets).
+  /// COLLADA Intermediate exchange extension (not Source Assets).
   static bool isMeshIntermediateExtension(const eastl::string& extension_lower);
   /// Image Intermediate exchange extensions (not Source Assets).
   static bool isTextureIntermediateExtension(
       const eastl::string& extension_lower);
-  /// FBX/OBJ whitelist for Assimp Source Export (v1).
+  /// FBX/OBJ/glTF/GLB whitelist for Assimp Source Export (v1).
   static bool isMeshSourceExportExtension(const eastl::string& extension_lower);
 
   /// Deprecated aliases — prefer Intermediate names above.

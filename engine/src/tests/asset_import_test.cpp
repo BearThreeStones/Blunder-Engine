@@ -82,14 +82,42 @@ bool containsIgnoreCase(const eastl::string& value, const char* needle) {
   return lower.find(needle) != std::string::npos;
 }
 
-// Task 5.1: Import registers Intermediate (not Source) — copy body under
+// Task 1.1 (collada-intermediate): mesh Intermediate = COLLADA; glTF/GLB are
+// Source Export inputs. Images remain Intermediate-direct.
+void meshExtensionRoutingTables() {
+  using namespace Blunder;
+
+  expect_true("dae is mesh Intermediate extension",
+              AssetImportService::isMeshIntermediateExtension(".dae"));
+  expect_true("gltf is not mesh Intermediate extension",
+              !AssetImportService::isMeshIntermediateExtension(".gltf"));
+  expect_true("glb is not mesh Intermediate extension",
+              !AssetImportService::isMeshIntermediateExtension(".glb"));
+  expect_true("gltf is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".gltf"));
+  expect_true("glb is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".glb"));
+  expect_true("obj is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".obj"));
+  expect_true("fbx is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".fbx"));
+  expect_true("blend is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".blend"));
+  expect_true("blend is not mesh Intermediate extension",
+              !AssetImportService::isMeshIntermediateExtension(".blend"));
+  expect_true("png is texture Intermediate extension",
+              AssetImportService::isTextureIntermediateExtension(".png"));
+}
+
+// Task 5.1 / 1.1: Import registers Intermediate (not Source) — copy body under
 // Resources (non-Source) + write Assets descriptor with Intermediate `source`.
+// Mesh Intermediate-direct input is COLLADA (`.dae`).
 void importMeshWritesIntermediateAndDescriptor() {
   using namespace Blunder;
   ensureLogger();
 
-  expect_true("gltf is mesh Intermediate extension",
-              AssetImportService::isMeshIntermediateExtension(".gltf"));
+  expect_true("dae is mesh Intermediate extension",
+              AssetImportService::isMeshIntermediateExtension(".dae"));
   expect_true("png is texture Intermediate extension",
               AssetImportService::isTextureIntermediateExtension(".png"));
 
@@ -99,8 +127,8 @@ void importMeshWritesIntermediateAndDescriptor() {
       ("blunder_import_ext_" +
        std::to_string(static_cast<unsigned long long>(
            std::chrono::steady_clock::now().time_since_epoch().count()))) /
-      "cube.gltf";
-  writeTextFile(external, "gltf-intermediate-body");
+      "cube.dae";
+  writeTextFile(external, "dae-intermediate-body");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -149,7 +177,7 @@ void importMeshWritesIntermediateAndDescriptor() {
               startsWith(parsed.source, "resources/"));
   expect_true("descriptor source is not Source archive",
               !containsIgnoreCase(parsed.source, "/source/"));
-  expect_true("archived_source empty for glTF Import",
+  expect_true("archived_source empty for COLLADA Import",
               parsed.archived_source.empty());
 
   eastl::string intermediate_rel = parsed.source;
@@ -166,7 +194,9 @@ void importMeshWritesIntermediateAndDescriptor() {
                   intermediate_absolute.generic_string().find("\\Source\\") ==
                       std::string::npos);
   expect_true("Intermediate body content copied",
-              readTextFile(intermediate_absolute) == "gltf-intermediate-body");
+              readTextFile(intermediate_absolute) == "dae-intermediate-body");
+  expect_true("Intermediate body is COLLADA",
+              containsIgnoreCase(parsed.source, ".dae"));
   expect_true("registry maps guid to descriptor",
               registry.resolveGuid(result.guid) ==
                   result.descriptor_virtual_path);
@@ -197,8 +227,10 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
               AssetImportService::isMeshSourceExportExtension(".obj"));
   expect_true("fbx is Source Export extension",
               AssetImportService::isMeshSourceExportExtension(".fbx"));
-  expect_true("gltf is not Source Export extension",
-              !AssetImportService::isMeshSourceExportExtension(".gltf"));
+  expect_true("gltf is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".gltf"));
+  expect_true("glb is Source Export extension",
+              AssetImportService::isMeshSourceExportExtension(".glb"));
   expect_true("blend is not Source Export extension",
               !AssetImportService::isMeshSourceExportExtension(".blend"));
 
@@ -474,11 +506,11 @@ void reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal() {
   fs::create_directories(project / ".blunder" / "cooked");
   const fs::path external =
       fs::temp_directory_path() /
-      ("blunder_reimport_gltf_" +
+      ("blunder_reimport_dae_" +
        std::to_string(static_cast<unsigned long long>(
            std::chrono::steady_clock::now().time_since_epoch().count()))) /
-      "cube.gltf";
-  writeTextFile(external, "gltf-intermediate-body");
+      "cube.dae";
+  writeTextFile(external, "dae-intermediate-body");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -506,7 +538,7 @@ void reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal() {
   MeshImportSettings settings{};
   const ImportResult imported =
       import_service.importMesh(external, "assets/Meshes", settings);
-  expect_true("glTF Reimport fixture import succeeds", imported.success);
+  expect_true("COLLADA Reimport fixture import succeeds", imported.success);
   const eastl::string original_guid = imported.guid;
 
   const fs::path mesh_cooked = cookedMeshPath(file_system, original_guid);
@@ -581,7 +613,8 @@ void importUnsupportedSourceExportRejected() {
               !fs::exists(project / "Resources" / "Source" / "Models" /
                           "cube"));
   expect_true("blend reject writes no Intermediate under Models",
-              !fs::exists(project / "Resources" / "Models" / "cube.gltf") &&
+              !fs::exists(project / "Resources" / "Models" / "cube.dae") &&
+                  !fs::exists(project / "Resources" / "Models" / "cube.gltf") &&
                   !fs::exists(project / "Resources" / "Models" / "cube.glb"));
 
   import_service.shutdown();
@@ -669,6 +702,7 @@ void importTextureWritesIntermediateAndDescriptor() {
 }  // namespace
 
 int main() {
+  meshExtensionRoutingTables();
   importMeshWritesIntermediateAndDescriptor();
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
