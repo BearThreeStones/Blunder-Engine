@@ -3,6 +3,8 @@
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
 **Worktree:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
+**Feature commit:** `a274fa6` — test: add asset pipeline smoke for OpenSpec 6.2  
+**Docs commit:** `f09cebe` — docs: mark OpenSpec 6.2 smoke complete  
 **OpenSpec:** `- [x] 6.2 Manual smoke: Import FBX → preview Fast Path → Cook Final → edit Source → auto-Reimport → scene GUID mesh reference`
 
 ## Summary
