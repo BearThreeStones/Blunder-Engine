@@ -461,3 +461,26 @@ target_precompile_headers(asset_import_test
 
 add_test(NAME asset_import_test
          COMMAND asset_import_test)
+
+add_executable(asset_pipeline_smoke_test
+    "asset_pipeline_smoke_test.cpp"
+)
+
+target_link_libraries(asset_pipeline_smoke_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_pipeline_smoke_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_pipeline_smoke_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_pipeline_smoke_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_pipeline_smoke_test
+         COMMAND asset_pipeline_smoke_test)
