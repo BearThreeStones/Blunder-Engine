@@ -130,6 +130,25 @@ target_precompile_headers(object_db_test
 add_test(NAME object_db_test
          COMMAND object_db_test)
 
+add_executable(behaviour_list_test
+    "behaviour_list_test.cpp"
+)
+
+target_link_libraries(behaviour_list_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(behaviour_list_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(behaviour_list_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME behaviour_list_test
+         COMMAND behaviour_list_test)
+
 add_executable(ptrcall_lifecycle_test
     "ptrcall_lifecycle_test.cpp"
 )

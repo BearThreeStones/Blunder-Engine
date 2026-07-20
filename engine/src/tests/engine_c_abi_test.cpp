@@ -1,5 +1,6 @@
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/engine_c_abi.h"
+#include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/object/object_db.h"
 
 #include <cstdio>
@@ -46,6 +47,21 @@ int main() {
                   BLUNDER_ENGINE_OK);
   Object* object = ObjectDB::get(static_cast<ObjectId>(id));
   expect_true("name set", object != nullptr && object->getName() == "ViaCAbi");
+
+  int ready_peer_hits = 0;
+  auto ready_hook = [](void* peer) {
+    *static_cast<int*>(peer) += 1;
+  };
+  expect_true("set ready hook",
+              blunder_lifecycle_set_ready_hook("Object", ready_hook) ==
+                  BLUNDER_ENGINE_OK);
+  if (object != nullptr) {
+    object->addBehaviour("Object");
+    object->setBehaviourScriptPeer(object->getBehaviourIdAt(0),
+                                   &ready_peer_hits);
+    LifecycleDispatch::invokeReady(object);
+    expect_true("ready invoked", ready_peer_hits == 1);
+  }
 
   expect_true("destroy", blunder_object_destroy(id) == BLUNDER_ENGINE_OK);
   expect_true("invalid after destroy", blunder_object_is_valid(id) == 0);

@@ -91,6 +91,7 @@ add_library(engine_runtime STATIC
     "core/reflection/generated/register_generated.h"
     "core/reflection/generated/object.gen.cpp"
     "core/object/object_id.h"
+    "core/object/behaviour_id.h"
     "core/object/entity_store.h"
     "core/object/object.h"
     "core/object/object.cpp"

@@ -37,6 +37,94 @@ ObjectId Object::getChildId(size_t index) const {
   return m_children[index];
 }
 
+Object::BehaviourSlot* Object::findBehaviourSlot(BehaviourId id) {
+  for (BehaviourSlot& slot : m_behaviours) {
+    if (slot.id == id) {
+      return &slot;
+    }
+  }
+  return nullptr;
+}
+
+const Object::BehaviourSlot* Object::findBehaviourSlot(BehaviourId id) const {
+  for (const BehaviourSlot& slot : m_behaviours) {
+    if (slot.id == id) {
+      return &slot;
+    }
+  }
+  return nullptr;
+}
+
+BehaviourId Object::addBehaviour(eastl::string type_name) {
+  BehaviourSlot slot;
+  slot.id = m_next_behaviour_id++;
+  slot.type_name = eastl::move(type_name);
+  slot.script_peer = nullptr;
+  m_behaviours.push_back(eastl::move(slot));
+  return m_behaviours.back().id;
+}
+
+bool Object::removeBehaviour(BehaviourId id) {
+  for (size_t i = 0; i < m_behaviours.size(); ++i) {
+    if (m_behaviours[i].id == id) {
+      m_behaviours.erase(m_behaviours.begin() + static_cast<ptrdiff_t>(i));
+      return true;
+    }
+  }
+  return false;
+}
+
+BehaviourId Object::getBehaviourIdAt(size_t index) const {
+  if (index >= m_behaviours.size()) {
+    return k_invalid_behaviour_id;
+  }
+  return m_behaviours[index].id;
+}
+
+const char* Object::getBehaviourTypeName(BehaviourId id) const {
+  const BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot == nullptr) {
+    return nullptr;
+  }
+  return slot->type_name.c_str();
+}
+
+void Object::setBehaviourScriptPeer(BehaviourId id, void* peer) {
+  BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot != nullptr) {
+    slot->script_peer = peer;
+  }
+}
+
+void* Object::getBehaviourScriptPeer(BehaviourId id) const {
+  const BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot == nullptr) {
+    return nullptr;
+  }
+  return slot->script_peer;
+}
+
+void* Object::getScriptPeer() const {
+  if (m_behaviours.empty()) {
+    return nullptr;
+  }
+  return m_behaviours[0].script_peer;
+}
+
+void Object::setScriptPeer(void* peer) {
+  if (m_behaviours.empty()) {
+    return;
+  }
+  m_behaviours[0].script_peer = peer;
+}
+
+void Object::clearScriptPeer() {
+  if (m_behaviours.empty()) {
+    return;
+  }
+  m_behaviours[0].script_peer = nullptr;
+}
+
 Vec3 Object::getPosition() const {
   if (hasEntity()) {
     IEntityStore* store = ObjectDB::getEntityStore();

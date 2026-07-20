@@ -4,6 +4,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
 #include "runtime/core/reflection/export_macros.h"
 #include "runtime/function/scene/entity_id.h"
@@ -34,9 +35,18 @@ class Object {
   void setEntityId(EntityId entity_id) { m_entity_id = entity_id; }
   bool hasEntity() const { return isValid(m_entity_id); }
 
-  void* getScriptPeer() const { return m_script_peer; }
-  void setScriptPeer(void* peer) { m_script_peer = peer; }
-  void clearScriptPeer() { m_script_peer = nullptr; }
+  BehaviourId addBehaviour(eastl::string type_name);
+  bool removeBehaviour(BehaviourId id);
+  size_t getBehaviourCount() const { return m_behaviours.size(); }
+  BehaviourId getBehaviourIdAt(size_t index) const;
+  const char* getBehaviourTypeName(BehaviourId id) const;
+  void setBehaviourScriptPeer(BehaviourId id, void* peer);
+  void* getBehaviourScriptPeer(BehaviourId id) const;
+
+  // Compatibility: operate on Behaviour index 0 only (no-op if empty).
+  void* getScriptPeer() const;
+  void setScriptPeer(void* peer);
+  void clearScriptPeer();
 
   BLUNDER_PROPERTY()
   Vec3 getPosition() const;
@@ -53,6 +63,15 @@ class Object {
  private:
   friend class ObjectDB;
 
+  struct BehaviourSlot {
+    BehaviourId id{k_invalid_behaviour_id};
+    eastl::string type_name;
+    void* script_peer{nullptr};
+  };
+
+  BehaviourSlot* findBehaviourSlot(BehaviourId id);
+  const BehaviourSlot* findBehaviourSlot(BehaviourId id) const;
+
   void materializeEntityIfNeeded();
   void syncLocalTransformFromStore();
 
@@ -62,7 +81,8 @@ class Object {
   ObjectId m_parent_id{k_invalid_object_id};
   eastl::vector<ObjectId> m_children;
   EntityId m_entity_id{k_invalid_entity_id};
-  void* m_script_peer{nullptr};
+  eastl::vector<BehaviourSlot> m_behaviours;
+  BehaviourId m_next_behaviour_id{1};
 
   // Local façade until full ECS World lands (lazy TRS before Entity exists).
   Vec3 m_local_position{0.0f};

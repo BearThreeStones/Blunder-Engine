@@ -110,11 +110,17 @@ int main() {
 
   if (obj != nullptr) {
     int peer_token = 42;
-    expect_true("no peer by default", obj->getScriptPeer() == nullptr);
-    obj->setScriptPeer(&peer_token);
-    expect_true("peer set", obj->getScriptPeer() == &peer_token);
-    obj->clearScriptPeer();
-    expect_true("peer cleared", obj->getScriptPeer() == nullptr);
+    expect_true("no behaviours by default", obj->getBehaviourCount() == 0);
+    BehaviourId bid = obj->addBehaviour("TestPeer");
+    expect_true("behaviour added", isValidBehaviourId(bid));
+    expect_true("no peer by default",
+                obj->getBehaviourScriptPeer(bid) == nullptr);
+    obj->setBehaviourScriptPeer(bid, &peer_token);
+    expect_true("peer set",
+                obj->getBehaviourScriptPeer(bid) == &peer_token);
+    obj->setBehaviourScriptPeer(bid, nullptr);
+    expect_true("peer cleared",
+                obj->getBehaviourScriptPeer(bid) == nullptr);
   }
 
   FakeEntityStore store;

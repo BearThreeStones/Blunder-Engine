@@ -86,7 +86,8 @@ int main() {
     LifecycleDispatch::invokeTick(object, 0.016f);
     expect_true("skip tick without peer", g_tick_calls == 0);
 
-    object->setScriptPeer(&peer);
+    object->addBehaviour("Object");
+    object->setBehaviourScriptPeer(object->getBehaviourIdAt(0), &peer);
     LifecycleDispatch::invokeTick(object, 0.016f);
     expect_true("tick with peer", g_tick_calls == 1);
     expect_true("dt forwarded", g_last_dt == 0.016f);
