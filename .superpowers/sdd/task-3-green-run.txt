@@ -1,0 +1,1 @@
+﻿GREEN: asset_yaml_test exit 0

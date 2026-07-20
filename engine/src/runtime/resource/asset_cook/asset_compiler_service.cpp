@@ -3,6 +3,9 @@
 #include <cstring>
 #include <filesystem>
 
+#include "EASTL/hash_set.h"
+#include "EASTL/vector.h"
+
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
@@ -10,6 +13,7 @@
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
@@ -64,6 +68,18 @@ bool isCookFresh(FileSystem& file_system, const fs::path& cooked_path,
          meta.descriptor_mtime == descriptor_mtime;
 }
 
+void removeIfExists(FileSystem& file_system, const fs::path& path) {
+  if (!file_system.exists(path)) {
+    return;
+  }
+  std::error_code ec;
+  fs::remove(path, ec);
+  if (ec) {
+    LOG_WARN("[AssetCompiler] failed to remove {}: {}", path.generic_string(),
+             ec.message());
+  }
+}
+
 }  // namespace
 
 void AssetCompilerService::initialize(FileSystem* file_system,
@@ -72,15 +88,32 @@ void AssetCompilerService::initialize(FileSystem* file_system,
   m_file_system = file_system;
   m_asset_manager = asset_manager;
   m_asset_registry = asset_registry;
+  m_dependency_graph_rebuild_count = 0;
   m_is_initialized =
       file_system != nullptr && asset_manager != nullptr && asset_registry != nullptr;
 }
 
 void AssetCompilerService::shutdown() {
+  m_dependency_graph.clear();
+  m_dependency_graph_rebuild_count = 0;
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_asset_registry = nullptr;
+  m_asset_import = nullptr;
   m_is_initialized = false;
+}
+
+void AssetCompilerService::setAssetImportService(
+    AssetImportService* asset_import) {
+  m_asset_import = asset_import;
+}
+
+void AssetCompilerService::rebuildDependencyGraph() {
+  if (!m_is_initialized) {
+    return;
+  }
+  m_dependency_graph.rebuildFromProject(*m_file_system, *m_asset_registry);
+  ++m_dependency_graph_rebuild_count;
 }
 
 AssetCompilerStats AssetCompilerService::cookAll(bool force) {
@@ -90,6 +123,10 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
   }
 
   m_asset_registry->rebuildFromScan();
+  // Registry scan / project warm-up: upgrade legacy glTF Intermediate → .dae.
+  if (m_asset_import) {
+    m_asset_import->upgradeLegacyMeshIntermediates();
+  }
 
   const fs::path asset_root = m_file_system->getAssetRoot();
   const eastl::vector<DirectoryEntry> entries =
@@ -132,7 +169,82 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
 }
 
 AssetCompilerStats AssetCompilerService::cookIfStale() {
+  // Warm-up only: full Assets/ scan of stale Finals. Prefer cookAsset /
+  // markFinalStale for Pull freshness.
   return cookAll(false);
+}
+
+void AssetCompilerService::markFinalStale(const eastl::string& guid) {
+  if (!m_is_initialized || guid.empty()) {
+    return;
+  }
+
+  removeIfExists(*m_file_system, cookedMeshPath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedMeshMetaPath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedTexturePath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedTextureMetaPath(*m_file_system, guid));
+}
+
+void AssetCompilerService::invalidateAssetAndDependents(
+    const eastl::string& guid) {
+  if (!m_is_initialized || guid.empty()) {
+    return;
+  }
+
+  eastl::hash_set<eastl::string> visited;
+  eastl::vector<eastl::string> queue;
+  queue.push_back(guid);
+
+  while (!queue.empty()) {
+    const eastl::string current = queue.back();
+    queue.pop_back();
+    if (current.empty() || !visited.insert(current).second) {
+      continue;
+    }
+
+    markFinalStale(current);
+
+    const eastl::vector<eastl::string> dependents =
+        m_dependency_graph.dependentsOf(current);
+    for (const eastl::string& dependent : dependents) {
+      queue.push_back(dependent);
+    }
+  }
+}
+
+bool AssetCompilerService::cookAsset(const eastl::string& guid, bool force) {
+  if (!m_is_initialized || guid.empty()) {
+    return false;
+  }
+
+  const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
+  if (descriptor_path.empty()) {
+    LOG_WARN("[AssetCompiler] cookAsset: unknown guid {}", guid.c_str());
+    return false;
+  }
+
+  if (endsWith(descriptor_path, ".mesh.yaml")) {
+    return cookMeshDescriptor(descriptor_path, force);
+  }
+  if (endsWith(descriptor_path, ".texture.yaml")) {
+    return cookTextureDescriptor(descriptor_path, force);
+  }
+
+  LOG_WARN("[AssetCompiler] cookAsset: unsupported descriptor {}",
+           descriptor_path.c_str());
+  return false;
+}
+
+void AssetCompilerService::cookDependents(const eastl::string& guid) {
+  if (!m_is_initialized || guid.empty()) {
+    return;
+  }
+
+  const eastl::vector<eastl::string> dependents =
+      m_dependency_graph.dependentsOf(guid);
+  for (const eastl::string& dependent : dependents) {
+    cookAsset(dependent);
+  }
 }
 
 bool AssetCompilerService::cookMeshDescriptor(

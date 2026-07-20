@@ -10,6 +10,8 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/resource/asset/guid.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
 
@@ -298,8 +300,34 @@ void appendFloat3(eastl::string& out, const Vec3& v) {
   out.append(buffer);
 }
 
+eastl::string meshReferenceForSerialize(const eastl::string& mesh_ref,
+                                        const AssetRegistry* registry) {
+  if (mesh_ref.empty() || isValidGuidFormat(mesh_ref) || registry == nullptr) {
+    return mesh_ref;
+  }
+  const eastl::string guid = registry->findGuidForPath(mesh_ref);
+  return guid.empty() ? mesh_ref : guid;
+}
+
+void migrateLegacyMeshReferences(Scene& scene, const AssetRegistry* registry) {
+  if (registry == nullptr) {
+    return;
+  }
+  for (SceneEntityDefinition& entity : scene.getEntities()) {
+    if (entity.mesh_virtual_path.empty() ||
+        isValidGuidFormat(entity.mesh_virtual_path)) {
+      continue;
+    }
+    const eastl::string guid =
+        registry->findGuidForPath(entity.mesh_virtual_path);
+    if (!guid.empty()) {
+      entity.mesh_virtual_path = guid;
+    }
+  }
+}
+
 void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
-                      bool is_last) {
+                      bool is_last, const AssetRegistry* registry) {
   out.append("    {\n");
   out.append("      \"name\": \"");
   out.append(entity.name);
@@ -327,8 +355,10 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
   }
 
   if (!entity.mesh_virtual_path.empty()) {
+    const eastl::string mesh_ref =
+        meshReferenceForSerialize(entity.mesh_virtual_path, registry);
     out.append(",\n      \"mesh\": \"");
-    out.append(entity.mesh_virtual_path);
+    out.append(mesh_ref);
     out.append("\"");
   }
 
@@ -353,13 +383,22 @@ void appendChildSceneJson(eastl::string& out, const SceneChildReference& child,
 
 }  // namespace
 
-bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_scene) {
+bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_scene,
+                                  const AssetRegistry* registry) {
   out_scene.getEntities().clear();
   out_scene.getChildScenes().clear();
+  out_scene.setGuid(eastl::string());
 
   if (json_text.empty()) {
     LOG_ERROR("[SceneSerializer] empty JSON text");
     return false;
+  }
+
+  eastl::string guid;
+  if (parseStringField(json_text.c_str(), json_text.c_str() + json_text.size(),
+                       "\"guid\"", guid) &&
+      isValidGuidFormat(guid)) {
+    out_scene.setGuid(eastl::move(guid));
   }
 
   EntityParseContext entity_ctx{&out_scene};
@@ -376,6 +415,7 @@ bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_sce
     return false;
   }
 
+  migrateLegacyMeshReferences(out_scene, registry);
   return true;
 }
 
@@ -387,16 +427,23 @@ Vec3 SceneSerializer::rotationToEulerDegrees(const Quat& rotation) {
   return rotationToEulerDegreesImpl(rotation);
 }
 
-bool SceneSerializer::serialize(const Scene& scene, eastl::string& out_json) {
+bool SceneSerializer::serialize(const Scene& scene, eastl::string& out_json,
+                                const AssetRegistry* registry) {
   out_json.clear();
   out_json.append("{\n");
   out_json.append("  \"type\": \"Scene\"");
+
+  if (!scene.getGuid().empty()) {
+    out_json.append(",\n  \"guid\": \"");
+    out_json.append(scene.getGuid());
+    out_json.append("\"");
+  }
 
   const eastl::vector<SceneEntityDefinition>& entities = scene.getEntities();
   if (!entities.empty()) {
     out_json.append(",\n  \"entities\": [\n");
     for (size_t i = 0; i < entities.size(); ++i) {
-      appendEntityJson(out_json, entities[i], i + 1 == entities.size());
+      appendEntityJson(out_json, entities[i], i + 1 == entities.size(), registry);
     }
     out_json.append("  ]");
   }

@@ -11,7 +11,7 @@
 | Linux build flags or paths | [docs/agents/cursor-cloud.md](agents/cursor-cloud.md) |
 | Viewport / render / Slint integration | [docs/agents/render-pipeline.md](agents/render-pipeline.md) |
 | Coordinates or glTF import | [docs/agents/coordinate-system.md](agents/coordinate-system.md), [CONTENT_LAYOUT.md](../CONTENT_LAYOUT.md) |
-| Assets / Resources / cook pipeline | [CONTENT_LAYOUT.md](../CONTENT_LAYOUT.md), [docs/agents/structure.md](agents/structure.md) |
+| Assets / Resources / cook pipeline | [CONTENT_LAYOUT.md](../CONTENT_LAYOUT.md), [CONTEXT.md — Asset pipeline](../CONTEXT.md#asset-pipeline), [docs/adr/0012-pull-asset-pipeline.md](adr/0012-pull-asset-pipeline.md), [docs/agents/structure.md](agents/structure.md) |
 | New top-level module or layer boundary | [docs/design-docs/architecture.md](design-docs/architecture.md), [docs/golden-principles.md](golden-principles.md) if new invariant |
 | Slint fork branch or bump procedure | [docs/agents/slint-fork.md](agents/slint-fork.md) |
 | New recurring agent rule | [docs/golden-principles.md](golden-principles.md) (one line + link) |

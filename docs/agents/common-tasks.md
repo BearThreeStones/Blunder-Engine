@@ -9,7 +9,7 @@
 | Build on Linux / Cursor Cloud | [cursor-cloud.md](cursor-cloud.md) | [build.md](build.md) |
 | Change viewport / rendering | [render-pipeline.md](render-pipeline.md) | [coordinate-system.md](coordinate-system.md), [slint-fork.md](slint-fork.md) |
 | Change coordinates / glTF import | [coordinate-system.md](coordinate-system.md) | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) |
-| Content Browser / assets / cook | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) | [structure.md](structure.md) |
+| Content Browser / assets / cook | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) | [structure.md](structure.md), [CONTEXT.md — Asset pipeline](../../CONTEXT.md#asset-pipeline), [ADR 0012](../adr/0012-pull-asset-pipeline.md) |
 | Add CMake target or runtime system | [cmake.md](cmake.md) | [structure.md](structure.md), [golden-principles.md](../golden-principles.md) |
 | Slint submodule / UI renderer | [slint-fork.md](slint-fork.md) | [render-pipeline.md](render-pipeline.md) |
 | New feature (multi-file) | [design-docs/architecture.md](../design-docs/architecture.md) | [exec-plans/README.md](../exec-plans/README.md), [AGENTS.md workflow routing](../../AGENTS.md#workflow-routing-openspec--superpowers--gstack), [golden-principles.md](../golden-principles.md) |

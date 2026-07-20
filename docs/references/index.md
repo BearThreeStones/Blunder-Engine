@@ -9,7 +9,7 @@
 | Windows build | [docs/agents/build.md](../agents/build.md) |
 | Linux / Cursor Cloud | [docs/agents/cursor-cloud.md](../agents/cursor-cloud.md) |
 | CMake presets | [CMakePresets.json](../../CMakePresets.json) |
-| Content paths | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) |
+| Content paths / Pull pipeline | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md), [CONTEXT.md — Asset pipeline](../../CONTEXT.md#asset-pipeline), [ADR 0012](../adr/0012-pull-asset-pipeline.md) |
 
 ## Toolchain (when you need upstream detail)
 

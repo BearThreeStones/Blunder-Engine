@@ -247,3 +247,240 @@ endif()
 
 add_test(NAME godot_editor_icons_test
          COMMAND godot_editor_icons_test)
+
+add_executable(asset_yaml_test
+    "asset_yaml_test.cpp"
+)
+
+target_link_libraries(asset_yaml_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_yaml_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_yaml_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_yaml_test
+         COMMAND asset_yaml_test)
+
+add_executable(asset_registry_test
+    "asset_registry_test.cpp"
+)
+
+target_link_libraries(asset_registry_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_registry_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_registry_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_registry_test
+         COMMAND asset_registry_test)
+
+add_executable(scene_serializer_test
+    "scene_serializer_test.cpp"
+)
+
+target_link_libraries(scene_serializer_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(scene_serializer_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_serializer_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_serializer_test
+         COMMAND scene_serializer_test)
+
+add_executable(asset_manager_guid_test
+    "asset_manager_guid_test.cpp"
+)
+
+target_link_libraries(asset_manager_guid_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_manager_guid_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_manager_guid_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_manager_guid_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_manager_guid_test
+         COMMAND asset_manager_guid_test)
+
+add_executable(asset_compiler_freshness_test
+    "asset_compiler_freshness_test.cpp"
+)
+
+target_link_libraries(asset_compiler_freshness_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_compiler_freshness_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_compiler_freshness_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_compiler_freshness_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_compiler_freshness_test
+         COMMAND asset_compiler_freshness_test)
+
+add_executable(asset_manager_fast_path_test
+    "asset_manager_fast_path_test.cpp"
+)
+
+target_link_libraries(asset_manager_fast_path_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_manager_fast_path_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_manager_fast_path_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_manager_fast_path_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_manager_fast_path_test
+         COMMAND asset_manager_fast_path_test)
+
+add_executable(asset_dependency_graph_test
+    "asset_dependency_graph_test.cpp"
+)
+
+target_link_libraries(asset_dependency_graph_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_dependency_graph_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_dependency_graph_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_dependency_graph_test
+         COMMAND asset_dependency_graph_test)
+
+add_executable(asset_compiler_invalidate_test
+    "asset_compiler_invalidate_test.cpp"
+)
+
+target_link_libraries(asset_compiler_invalidate_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_compiler_invalidate_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_compiler_invalidate_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_compiler_invalidate_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_compiler_invalidate_test
+         COMMAND asset_compiler_invalidate_test)
+
+add_executable(asset_watch_path_test
+    "asset_watch_path_test.cpp"
+)
+
+target_link_libraries(asset_watch_path_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_watch_path_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_watch_path_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_watch_path_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_watch_path_test
+         COMMAND asset_watch_path_test)
+
+add_executable(asset_import_test
+    "asset_import_test.cpp"
+)
+
+target_link_libraries(asset_import_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_import_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_import_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_import_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_import_test
+         COMMAND asset_import_test)
+
+add_executable(asset_pipeline_smoke_test
+    "asset_pipeline_smoke_test.cpp"
+)
+
+target_link_libraries(asset_pipeline_smoke_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(asset_pipeline_smoke_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(asset_pipeline_smoke_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_pipeline_smoke_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_pipeline_smoke_test
+         COMMAND asset_pipeline_smoke_test)

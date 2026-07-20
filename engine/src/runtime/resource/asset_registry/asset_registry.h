@@ -23,8 +23,17 @@ class AssetRegistry final {
   eastl::string findGuidForPath(
       const eastl::string& descriptor_virtual_path) const;
 
-  /// Rescans Assets/ for *.mesh.yaml and *.texture.yaml and rebuilds the map.
+  /// Rescans Assets/ for *.mesh.yaml, *.texture.yaml, and *.scene.asset and
+  /// rebuilds the map (only files with a valid guid field).
   void rebuildFromScan();
+
+  /// Ensures a `.scene.asset` has a guid on disk and is registered.
+  /// Allocates + persists guid when missing; registers when already present.
+  bool ensureSceneAssetRegistered(const eastl::string& scene_virtual_path);
+
+  /// Snapshot of registered GUID → descriptor virtual path entries.
+  eastl::vector<eastl::pair<eastl::string, eastl::string>>
+  registeredEntries() const;
 
   bool save() const;
   bool load();

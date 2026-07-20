@@ -1,0 +1,57 @@
+﻿[
+    {
+        "Target":  "asset_yaml_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_registry_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "scene_serializer_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_manager_guid_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_manager_fast_path_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_compiler_freshness_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_compiler_invalidate_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_dependency_graph_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_watch_path_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "asset_import_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    },
+    {
+        "Target":  "scene_soft_delete_test",
+        "Exit":  0,
+        "Result":  "PASS"
+    }
+]

@@ -18,6 +18,16 @@ bool readStringField(const YAML::Node& root, const char* key,
   return !out_value.empty();
 }
 
+void readOptionalStringField(const YAML::Node& root, const char* key,
+                             eastl::string& out_value) {
+  const YAML::Node node = root[key];
+  if (!node || !node.IsScalar()) {
+    out_value.clear();
+    return;
+  }
+  out_value = node.as<std::string>().c_str();
+}
+
 bool readBoolField(const YAML::Node& root, const char* key, bool default_value,
                    bool& out_value) {
   const YAML::Node node = root[key];
@@ -65,6 +75,22 @@ bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
     if (!readStringField(root, "source", out_descriptor.source)) {
       return false;
     }
+    readOptionalStringField(root, "archived_source",
+                            out_descriptor.archived_source);
+
+    out_descriptor.texture_guids.clear();
+    const YAML::Node texture_guids = root["texture_guids"];
+    if (texture_guids && texture_guids.IsSequence()) {
+      for (const auto& item : texture_guids) {
+        if (!item || !item.IsScalar()) {
+          continue;
+        }
+        const eastl::string guid = item.as<std::string>().c_str();
+        if (!guid.empty()) {
+          out_descriptor.texture_guids.push_back(guid);
+        }
+      }
+    }
 
     const YAML::Node import = root["import"];
     if (import && import.IsMap()) {
@@ -100,6 +126,8 @@ bool AssetYaml::parseTextureDescriptor(const eastl::string& yaml_text,
     if (!readStringField(root, "source", out_descriptor.source)) {
       return false;
     }
+    readOptionalStringField(root, "archived_source",
+                            out_descriptor.archived_source);
 
     const YAML::Node import = root["import"];
     if (import && import.IsMap()) {
@@ -121,6 +149,17 @@ eastl::string AssetYaml::serializeMeshDescriptor(
   emitter << YAML::Key << "type" << YAML::Value << "Mesh";
   emitter << YAML::Key << "guid" << YAML::Value << descriptor.guid.c_str();
   emitter << YAML::Key << "source" << YAML::Value << descriptor.source.c_str();
+  if (!descriptor.archived_source.empty()) {
+    emitter << YAML::Key << "archived_source" << YAML::Value
+            << descriptor.archived_source.c_str();
+  }
+  if (!descriptor.texture_guids.empty()) {
+    emitter << YAML::Key << "texture_guids" << YAML::Value << YAML::BeginSeq;
+    for (const eastl::string& guid : descriptor.texture_guids) {
+      emitter << guid.c_str();
+    }
+    emitter << YAML::EndSeq;
+  }
   emitter << YAML::Key << "import" << YAML::Value << YAML::BeginMap;
   emitter << YAML::Key << "materials" << YAML::Value
           << descriptor.import.materials;
@@ -139,6 +178,10 @@ eastl::string AssetYaml::serializeTextureDescriptor(
   emitter << YAML::Key << "type" << YAML::Value << "Texture2D";
   emitter << YAML::Key << "guid" << YAML::Value << descriptor.guid.c_str();
   emitter << YAML::Key << "source" << YAML::Value << descriptor.source.c_str();
+  if (!descriptor.archived_source.empty()) {
+    emitter << YAML::Key << "archived_source" << YAML::Value
+            << descriptor.archived_source.c_str();
+  }
   emitter << YAML::Key << "import" << YAML::Value << YAML::BeginMap;
   emitter << YAML::Key << "srgb" << YAML::Value << descriptor.import.srgb;
   emitter << YAML::Key << "generate_mips" << YAML::Value

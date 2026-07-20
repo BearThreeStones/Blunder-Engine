@@ -1,6 +1,7 @@
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { InspectorPanel } from "inspector_panel.slint";
-import { ContentBrowser, BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
+import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
+import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { DockChromeBar, DockChromeMetrics, DockTab } from "docking_panel.slint";
 
 export component FloatingPanelWindow inherits Window {
@@ -72,6 +73,10 @@ export component FloatingPanelWindow inherits Window {
     in property <bool> browser-viewport-drop-active: false;
     in property <string> browser-status-text: "0 items";
     in property <string> browser-selected-folder-path: "";
+    in-out property <[HistoryRow]> history-rows: [];
+    in-out property <bool> history-filter-scene: true;
+    in-out property <bool> history-filter-global: true;
+    in-out property <int> filesystem-history-subtab: 0;
 
     callback close-pressed();
     callback title-move-pressed(float, float);
@@ -101,6 +106,8 @@ export component FloatingPanelWindow inherits Window {
     callback browser-item-release(string, float, float);
     callback browser-search-changed(string);
     callback browser-path-segment-clicked(string);
+    callback history-filter-changed();
+    callback history-entry-clicked(int);
 
     preferred-width: 320px;
     preferred-height: 240px;
@@ -225,7 +232,7 @@ export component FloatingPanelWindow inherits Window {
                 multi-edit-mode-changed(absolute) => { root.inspector-multi-edit-mode-changed(absolute); }
             }
 
-            if root.panel-kind == 4 : ContentBrowser {
+            if root.panel-kind == 4 : FilesystemHistoryHost {
                 width: 100%;
                 height: 100%;
                 tree-rows: root.browser-tree-rows;
@@ -237,6 +244,10 @@ export component FloatingPanelWindow inherits Window {
                 viewport-drop-active: root.browser-viewport-drop-active;
                 status-text: root.browser-status-text;
                 selected-folder-path: root.browser-selected-folder-path;
+                history-rows <=> root.history-rows;
+                history-filter-scene <=> root.history-filter-scene;
+                history-filter-global <=> root.history-filter-global;
+                active-subtab <=> root.filesystem-history-subtab;
                 folder-selected(path) => { root.browser-folder-selected(path); }
                 folder-toggle(path) => { root.browser-folder-toggle(path); }
                 refresh-requested => { root.browser-refresh-requested(); }
@@ -246,6 +257,8 @@ export component FloatingPanelWindow inherits Window {
                 item-release(path, x, y) => { root.browser-item-release(path, x, y); }
                 search-changed(text) => { root.browser-search-changed(text); }
                 path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+                history-filter-changed => { root.history-filter-changed(); }
+                history-entry-clicked(index) => { root.history-entry-clicked(index); }
             }
 
             grip := Rectangle {

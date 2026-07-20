@@ -25,6 +25,7 @@
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 #include <filesystem>
 
 namespace Blunder {
@@ -129,6 +130,11 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
     return false;
   }
 
+  if (g_runtime_global_context.m_asset_registry) {
+    (void)g_runtime_global_context.m_asset_registry->ensureSceneAssetRegistered(
+        virtual_path);
+  }
+
   SceneInstance* active = m_scene_system->getActiveInstance();
   if (active != nullptr && active->getSourcePath() == virtual_path) {
     if (m_asset_manager) {
@@ -203,6 +209,9 @@ bool EditorSceneEditSystem::saveActiveScene() {
         m_asset_manager->loadScene(m_active_scene_virtual_path);
     if (asset) {
       scene.getChildScenes() = asset->getScene().getChildScenes();
+      if (scene.getGuid().empty()) {
+        scene.setGuid(asset->getScene().getGuid());
+      }
       if (!scene.getName().empty()) {
         scene.setName(asset->getScene().getName());
       } else if (!asset->getScene().getName().empty()) {
@@ -211,8 +220,16 @@ bool EditorSceneEditSystem::saveActiveScene() {
     }
   }
 
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry != nullptr) {
+    (void)registry->ensureSceneAssetRegistered(m_active_scene_virtual_path);
+    if (scene.getGuid().empty()) {
+      scene.setGuid(registry->findGuidForPath(m_active_scene_virtual_path));
+    }
+  }
+
   eastl::string json_text;
-  if (!SceneSerializer::serialize(scene, json_text)) {
+  if (!SceneSerializer::serialize(scene, json_text, registry)) {
     LOG_ERROR("[EditorSceneEdit] serialize failed");
     return false;
   }
@@ -265,6 +282,9 @@ SpawnAssetResult EditorSceneEditSystem::spawnMeshAsset(
       makeUniqueEntityName(*instance, entityStemFromAssetPath(asset_virtual_path));
   const EntityId entity_id = instance->createEntity(
       entity_name, position, glm::identity<Quat>(), Vec3(1.0f));
+  if (Entity* spawned = instance->getEntity(entity_id)) {
+    spawned->setMeshVirtualPath(asset_virtual_path);
+  }
 
   MeshRendererComponent renderer{};
   renderer.mesh = mesh;

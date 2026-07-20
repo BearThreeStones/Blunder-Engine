@@ -1,0 +1,68 @@
+﻿閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.7.1+024f5b037
+
+  Checking File Globs
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.40s
+  Copying byproducts `slint-compiler.exe` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_compiler.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.57s
+  Copying byproducts `slint_cpp.dll.lib` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.dll` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  Detour.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Detour\Debug\Detour-d.lib
+  DetourCrowd.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourCrowd\Debug\DetourCrowd-d.lib
+  DetourTileCache.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourTileCache\Debug\DetourTileCache-d.lib
+  EASTL.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\EASTL\Debug\EASTLd.lib
+  Recast.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Recast\Debug\Recast-d.lib
+  SDL3-static.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\SDL\Debug\SDL3-staticd.lib
+  cgltf.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\cgltfd.lib
+  efsw.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\efsw\Debug\efswd.lib
+  spdlog.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\spdlog\Debug\spdlogd.lib
+  stb.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\stbd.lib
+  yaml-cpp.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.cmake_deps\yaml-cpp-build\Debug\yaml-cppd.lib
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+  engine_runtime.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\runtime\Debug\engine_runtimed.lib
+閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.7.1+024f5b037
+
+  Checking File Globs
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.59s
+  Copying byproducts `slint_cpp.dll.lib` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.dll` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  Detour.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Detour\Debug\Detour-d.lib
+  DetourCrowd.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourCrowd\Debug\DetourCrowd-d.lib
+  DetourTileCache.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourTileCache\Debug\DetourTileCache-d.lib
+  EASTL.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\EASTL\Debug\EASTLd.lib
+  Recast.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Recast\Debug\Recast-d.lib
+  SDL3-static.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\SDL\Debug\SDL3-staticd.lib
+  cgltf.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\cgltfd.lib
+  efsw.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\efsw\Debug\efswd.lib
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.50s
+  Copying byproducts `slint-compiler.exe` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_compiler.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  spdlog.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\spdlog\Debug\spdlogd.lib
+  stb.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\stbd.lib
+  yaml-cpp.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.cmake_deps\yaml-cpp-build\Debug\yaml-cppd.lib
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+  engine_runtime.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\runtime\Debug\engine_runtimed.lib
+  Copying PDB for PCH reuse from engine_runtime for asset_compiler_invalidate_test
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+LINK : warning LNK4098: 榛樿搴撯€淟IBCMT鈥濅笌鍏朵粬搴撶殑浣跨敤鍐茬獊锛涜浣跨敤 /NODEFAULTLIB:library [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_compiler_invalidate_test.vcxproj]
+  asset_compiler_invalidate_test.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\Debug\asset_compiler_invalidate_test.exe
+閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.7.1+024f5b037
+
+  Checking File Globs
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.51s
+  Copying byproducts `slint_cpp.dll.lib` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.dll` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  Detour.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Detour\Debug\Detour-d.lib
+  DetourCrowd.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourCrowd\Debug\DetourCrowd-d.lib
+  DetourTileCache.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourTileCache\Debug\DetourTileCache-d.lib
+  EASTL.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\EASTL\Debug\EASTLd.lib
+  Recast.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Recast\Debug\Recast-d.lib
+  SDL3-static.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\SDL\Debug\SDL3-staticd.lib
+  cgltf.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\cgltfd.lib
+  efsw.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\efsw\Debug\efswd.lib
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
+  Copying byproducts `slint-compiler.exe` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_compiler.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  spdlog.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\spdlog\Debug\spdlogd.lib
+  stb.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\stbd.lib
+  yaml-cpp.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.cmake_deps\yaml-cpp-build\Debug\yaml-cppd.lib
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+  engine_runtime.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\runtime\Debug\engine_runtimed.lib
+  Copying PDB for PCH reuse from engine_runtime for asset_dependency_graph_test
+  姝ｅ湪鎵弿婧愪互鏌ユ壘妯″潡渚濊禆椤?..
+LINK : warning LNK4098: 榛樿搴撯€淟IBCMT鈥濅笌鍏朵粬搴撶殑浣跨敤鍐茬獊锛涜浣跨敤 /NODEFAULTLIB:library [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_dependency_graph_test.vcxproj]
+  asset_dependency_graph_test.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\Debug\asset_dependency_graph_test.exe

@@ -14,13 +14,18 @@
 
 namespace Blunder {
 
+class AssetCompilerService;
+class AssetImportService;
 class AssetManager;
+class AssetRegistry;
 class ThumbnailGenerator;
 
 struct ContentBrowserInit {
   FileSystem* file_system{nullptr};
   AssetManager* asset_manager{nullptr};
   ThumbnailGenerator* thumbnail_generator{nullptr};
+  AssetCompilerService* asset_compiler{nullptr};
+  AssetRegistry* asset_registry{nullptr};
 };
 
 class ContentBrowserSystem final {
@@ -28,11 +33,15 @@ class ContentBrowserSystem final {
   void initialize(const ContentBrowserInit& init);
   void shutdown();
 
-  /// Starts efsw watch on Assets/ (no-op if efsw unavailable).
+  /// Starts efsw watch on Assets/ + Resources/ (no-op if efsw unavailable).
   void startFileWatch();
   void stopFileWatch();
 
-  /// Debounced refresh after filesystem changes; call once per frame on the main thread.
+  /// Wire AssetImportService for SourceArchive auto-Reimport (task 4.4).
+  void setReimportTarget(AssetImportService* asset_import);
+
+  /// Debounced refresh / Intermediate invalidation / Source Reimport;
+  /// call once per frame on the main thread.
   bool tickFileWatch();
 
   ContentBrowserRefreshStats refresh();

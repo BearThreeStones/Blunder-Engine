@@ -1,0 +1,254 @@
+﻿-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.22631.
+-- [Slang] Reusing local SDK: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slang_sdk-src
+-- Slang SDK: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slang_sdk-src
+--   DLL: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slang_sdk-src/bin/slang.dll
+--   LIB: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slang_sdk-src/lib/slang.lib
+--   INC: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slang_sdk-src/include
+-- [Slint] Using Blunder fork branch blunder/v1.16.1 (based on v1.16.1)
+-- Populating corrosion
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.22631.
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/corrosion-subbuild
+閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.7.1+024f5b037
+
+  Performing update step for 'corrosion-populate'
+  -- Already at requested tag: v0.6.1
+  No patch step for 'corrosion-populate'
+  No configure step for 'corrosion-populate'
+  No build step for 'corrosion-populate'
+  No install step for 'corrosion-populate'
+  No test step for 'corrosion-populate'
+  Completed 'corrosion-populate'
+-- Rust Toolchain: stable-x86_64-pc-windows-msvc
+-- Rust Target: x86_64-pc-windows-msvc
+-- Found Rust: C:/Users/EDY/.cargo/bin/rustc.exe (found version "1.95.0")
+-- Rust Toolchain: stable-x86_64-pc-windows-msvc
+-- Rust Target: x86_64-pc-windows-msvc
+-- Found Rust: C:/Users/EDY/.cargo/bin/rustc.exe (found suitable version "1.95.0", minimum required is "1.88")
+-- [Slint] Using custom SKIA_BINARIES_URL template: file://E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/skia-binaries-cache/skia-binaries-da4579b39b75fa2187c5-x86_64-pc-windows-msvc-d3d-gl-pdf-svg-textlayout-vulkan.tar.gz
+-- [Slint] Using LLVM_HOME: C:/Program Files/LLVM
+-- [Slint] Using LIBCLANG_PATH: C:/Program Files/LLVM/bin
+-- [Slint] Using Skia ninja: C:/Program Files/Microsoft Visual Studio/18/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe
+-- [Slint] Source build tag: v1.16.1
+-- [Slint] rustc: rustc 1.95.0 (59807616e 2026-04-14)
+-- [Slint] cargo: cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+-- [Slint] Enabled features: INTERPRETER;BACKEND_WINIT;RENDERER_FEMTOVG;RENDERER_SKIA;RENDERER_SKIA_VULKAN;RENDERER_SOFTWARE;ACCESSIBILITY;TESTING
+-- [Slint] Disabled features: FREESTANDING;LIVE_PREVIEW;BACKEND_WINIT_X11;BACKEND_WINIT_WAYLAND;RENDERER_FEMTOVG_WGPU;RENDERER_SKIA_OPENGL;SOFTWARE_RENDERER_PATH;BACKEND_QT;BACKEND_LINUXKMS;BACKEND_LINUXKMS_NOSEAT;GETTEXT;EXPERIMENTAL;SYSTEM_TESTING
+-- GLM: Version 1.1.0
+-- GLM: Build with C++ features auto detection
+-- Build spdlog: 1.17.0
+-- Build type: 
+-- Populating eabase
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.22631.
+-- Configuring done (0.1s)
+-- Generating done (0.1s)
+-- Build files have been written to: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/eabase-subbuild
+閫傜敤浜?.NET Framework MSBuild 鐗堟湰 18.7.1+024f5b037
+
+  Performing update step for 'eabase-populate'
+  -- Already at requested ref: 0699a15efdfd20b6cecf02153bfa5663decb653c
+  No patch step for 'eabase-populate'
+  No configure step for 'eabase-populate'
+  No build step for 'eabase-populate'
+  No install step for 'eabase-populate'
+  No test step for 'eabase-populate'
+  Completed 'eabase-populate'
+-- Shared libraries disabled
+-- compiling zlib from sources
+-- VRML disabled
+-- tinyusdz disabled
+-- Enabled importer formats: AMF 3DS AC ASE ASSBIN B3D BVH COLLADA DXF CSM HMP IRRMESH IQM IRR LWO LWS MD2 MD3 MD5 MDC MDL NFF NDO OFF OBJ OGRE OPENGEX PLY MS3D COB BLEND IFC XGL FBX Q3D Q3BSP RAW SIB SMD STL TERRAGEN 3D X X3D GLTF 3MF MMD
+-- Disabled importer formats: USD
+-- Enabled exporter formats: OBJ OPENGEX PLY 3DS ASSBIN ASSXML COLLADA FBX STL X X3D GLTF 3MF PBRT ASSJSON STEP
+-- Disabled exporter formats:
+-- Treating all warnings as errors (for assimp library only)
+-- Could NOT find PkgConfig (missing: PKG_CONFIG_EXECUTABLE) 
+-- Could NOT find LibUSB (missing: LibUSB_LIBRARY LibUSB_INCLUDE_PATH) (found version "LibUSB_VERSION-NOTFOUND")
+-- 
+-- SDL3 was configured with the following options:
+-- 
+-- Platform: Windows-10.0.22631
+-- 64-bit:   TRUE
+-- Compiler: C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/cl.exe
+-- Revision: SDL-3.5.0-release-3.4.0-650-gc677c913a
+-- Vendor:   
+-- 
+-- Subsystems:
+--   Audio:    ON
+--   Video:    ON
+--   GPU:      ON
+--   Render:   ON
+--   Camera:   ON
+--   Joystick: ON
+--   Haptic:   ON
+--   Hidapi:   ON
+--   Power:    ON
+--   Sensor:   ON
+--   Dialog:   ON
+--   Tray:     ON
+-- 
+-- Options:
+--   SDL_ALSA                    (Wanted: OFF): OFF
+--   SDL_ALSA_SHARED             (Wanted: OFF): OFF
+--   SDL_ALTIVEC                 (Wanted: OFF): OFF
+--   SDL_ARMNEON                 (Wanted: OFF): OFF
+--   SDL_ASAN                    (Wanted: OFF): OFF
+--   SDL_ASSEMBLY                (Wanted: ON): ON
+--   SDL_ASSERTIONS              (Wanted: auto): auto
+--   SDL_AVX                     (Wanted: ON): ON
+--   SDL_AVX2                    (Wanted: ON): ON
+--   SDL_AVX512F                 (Wanted: ON): ON
+--   SDL_BACKGROUNDING_SIGNAL    (Wanted: OFF): OFF
+--   SDL_CCACHE                  (Wanted: OFF): OFF
+--   SDL_CLANG_TIDY              (Wanted: OFF): OFF
+--   SDL_CLOCK_GETTIME           (Wanted: OFF): OFF
+--   SDL_COCOA                   (Wanted: OFF): OFF
+--   SDL_DBUS                    (Wanted: OFF): OFF
+--   SDL_DEPS_SHARED             (Wanted: ON): OFF
+--   SDL_DIRECTX                 (Wanted: ON): ON
+--   SDL_DISKAUDIO               (Wanted: ON): ON
+--   SDL_DLOPEN_NOTES            (Wanted: OFF): OFF
+--   SDL_DUMMYAUDIO              (Wanted: ON): ON
+--   SDL_DUMMYCAMERA             (Wanted: ON): ON
+--   SDL_DUMMYVIDEO              (Wanted: ON): ON
+--   SDL_EXAMPLES                (Wanted: OFF): OFF
+--   SDL_EXAMPLES_LINK_SHARED    (Wanted: OFF): OFF
+--   SDL_FOREGROUNDING_SIGNAL    (Wanted: OFF): OFF
+--   SDL_FRIBIDI                 (Wanted: OFF): OFF
+--   SDL_FRIBIDI_SHARED          (Wanted: OFF): OFF
+--   SDL_GCC_ATOMICS             (Wanted: OFF): OFF
+--   SDL_GPU_OPENXR              (Wanted: ON): ON
+--   SDL_HIDAPI                  (Wanted: ON): ON
+--   SDL_HIDAPI_JOYSTICK         (Wanted: ON): ON
+--   SDL_HIDAPI_LIBUSB           (Wanted: ON): OFF
+--   SDL_HIDAPI_LIBUSB_SHARED    (Wanted: ON): OFF
+--   SDL_IBUS                    (Wanted: OFF): OFF
+--   SDL_INSTALL                 (Wanted: OFF): OFF
+--   SDL_INSTALL_TESTS           (Wanted: OFF): OFF
+--   SDL_JACK                    (Wanted: OFF): OFF
+--   SDL_JACK_SHARED             (Wanted: OFF): OFF
+--   SDL_KMSDRM                  (Wanted: OFF): OFF
+--   SDL_KMSDRM_SHARED           (Wanted: OFF): OFF
+--   SDL_LASX                    (Wanted: OFF): OFF
+--   SDL_LIBC                    (Wanted: ON): ON
+--   SDL_LIBICONV                (Wanted: OFF): OFF
+--   SDL_LIBTHAI                 (Wanted: OFF): OFF
+--   SDL_LIBTHAI_SHARED          (Wanted: OFF): OFF
+--   SDL_LIBUDEV                 (Wanted: ON): OFF
+--   SDL_LIBURING                (Wanted: OFF): OFF
+--   SDL_LSX                     (Wanted: OFF): OFF
+--   SDL_METAL                   (Wanted: OFF): OFF
+--   SDL_MMX                     (Wanted: ON): OFF
+--   SDL_OFFSCREEN               (Wanted: ON): ON
+--   SDL_OPENGL                  (Wanted: ON): ON
+--   SDL_OPENGLES                (Wanted: ON): ON
+--   SDL_OPENVR                  (Wanted: OFF): OFF
+--   SDL_OSS                     (Wanted: OFF): OFF
+--   SDL_PIPEWIRE                (Wanted: OFF): OFF
+--   SDL_PIPEWIRE_SHARED         (Wanted: OFF): OFF
+--   SDL_PTHREADS                (Wanted: OFF): OFF
+--   SDL_PTHREADS_SEM            (Wanted: OFF): OFF
+--   SDL_PULSEAUDIO              (Wanted: OFF): OFF
+--   SDL_PULSEAUDIO_SHARED       (Wanted: OFF): OFF
+--   SDL_RENDER_D3D              (Wanted: ON): ON
+--   SDL_RENDER_D3D11            (Wanted: ON): ON
+--   SDL_RENDER_D3D12            (Wanted: ON): ON
+--   SDL_RENDER_GPU              (Wanted: ON): ON
+--   SDL_RENDER_METAL            (Wanted: OFF): OFF
+--   SDL_RENDER_VULKAN           (Wanted: ON): ON
+--   SDL_ROCKCHIP                (Wanted: OFF): OFF
+--   SDL_RPATH                   (Wanted: OFF): OFF
+--   SDL_RPI                     (Wanted: OFF): OFF
+--   SDL_SNDIO                   (Wanted: OFF): OFF
+--   SDL_SNDIO_SHARED            (Wanted: OFF): OFF
+--   SDL_SSE                     (Wanted: ON): ON
+--   SDL_SSE2                    (Wanted: ON): ON
+--   SDL_SSE3                    (Wanted: ON): ON
+--   SDL_SSE4_1                  (Wanted: ON): ON
+--   SDL_SSE4_2                  (Wanted: ON): ON
+--   SDL_SYSTEM_ICONV            (Wanted: OFF): OFF
+--   SDL_TESTS                   (Wanted: OFF): OFF
+--   SDL_TESTS_LINK_SHARED       (Wanted: OFF): OFF
+--   SDL_UNINSTALL               (Wanted: OFF): OFF
+--   SDL_VIRTUAL_JOYSTICK        (Wanted: ON): ON
+--   SDL_VIVANTE                 (Wanted: OFF): OFF
+--   SDL_VULKAN                  (Wanted: ON): ON
+--   SDL_WASAPI                  (Wanted: ON): ON
+--   SDL_WAYLAND                 (Wanted: OFF): OFF
+--   SDL_WAYLAND_LIBDECOR        (Wanted: OFF): OFF
+--   SDL_WAYLAND_LIBDECOR_SHARED (Wanted: OFF): OFF
+--   SDL_WAYLAND_SHARED          (Wanted: OFF): OFF
+--   SDL_X11                     (Wanted: OFF): OFF
+--   SDL_X11_SHARED              (Wanted: OFF): OFF
+--   SDL_X11_XCURSOR             (Wanted: OFF): OFF
+--   SDL_X11_XDBE                (Wanted: OFF): OFF
+--   SDL_X11_XFIXES              (Wanted: OFF): OFF
+--   SDL_X11_XINPUT              (Wanted: OFF): OFF
+--   SDL_X11_XRANDR              (Wanted: OFF): OFF
+--   SDL_X11_XSCRNSAVER          (Wanted: OFF): OFF
+--   SDL_X11_XSHAPE              (Wanted: OFF): OFF
+--   SDL_X11_XSYNC               (Wanted: OFF): OFF
+--   SDL_X11_XTEST               (Wanted: OFF): OFF
+--   SDL_XINPUT                  (Wanted: ON): ON
+-- 
+--  Build Shared Library: OFF
+--  Build Static Library: ON
+-- 
+-- Enabled backends:
+--   Video drivers: dummy offscreen windows
+--   Render drivers: d3d d3d11 d3d12 gpu ogl ogl_es2 vulkan
+--   GPU drivers: d3d12 openxr vulkan
+--   Audio drivers: disk dsound dummy wasapi
+--   Joystick drivers: dinput gameinput hidapi rawinput virtual wgi xinput
+--   Camera drivers: dummy mediafoundation
+-- 
+cmake : Initial BASISU_BUILD_X64=1
+所在位置 C:\Users\EDY\AppData\Local\Temp\ps-script-ef873ada-2df3-4d1e-ba82-8a3f50c182ff.ps1:79 字符: 1
++ cmake -S . -B build/vs2026-debug 2>&1 | Out-File -FilePath ".superpow ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Initial BASISU_BUILD_X64=1:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Initial CMAKE_BUILD_TYPE=
+Initial BASISU_SSE=ON
+Initial BASISU_ZSTD=TRUE
+Initial BASISU_OPENCL=OFF
+Initial BASISU_SAN=OFF
+initial BASISU_TOOL=FALSE
+initial BASISU_EXAMPLES=FALSE
+basisu build type: Release
+Building 64-bit
+SSE enabled
+Zstandard enabled
+-- Could NOT find Perl (missing: PERL_EXECUTABLE) 
+-- Perl NOT found 鈥?using pre-existing inline switches.
+-- Arm backend options
+--   SVE 256b backend     - OFF
+--   SVE 128b backend     - OFF
+--   NEON backend         - OFF
+-- x86-64 backend options
+--   AVX2 backend         - ON
+--   SSE4.1 backend       - OFF
+--   SSE2 backend         - OFF
+--   Use native gathers   - ON
+-- Agnostic backend options
+--   NONE backend         - OFF
+--   NATIVE backend       - OFF
+-- Build options
+--   Invariance           - ON
+--   Shared libs          - OFF
+--   Decompressor         - OFF
+-- Developer options
+--   Diagnostics          - OFF
+--   ASAN                 - OFF
+--   UBSAN                - OFF
+--   Unit tests           - OFF
+CMake Warning at engine/shaders/CMakeLists.txt:28 (message):
+  Skipping missing shader source:
+  E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/shaders/ui_overlay.slang
+
+
+-- Configuring done (4.2s)
+-- Generating done (3.7s)
+-- Build files have been written to: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug

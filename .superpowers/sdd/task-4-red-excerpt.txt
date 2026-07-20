@@ -1,0 +1,20 @@
+﻿  asset_registry_test.cpp
+  asset_registry_test.cpp
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DBLUNDER_HAS_EFSW=1鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DBLUNDER_PROJECT_ROOT="E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull"鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DBLUNDER_RENDER_BACKEND_VULKAN=1鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(1,1): warning C4651: 涓洪缂栬瘧澶达紝鑰岄潪涓哄綋鍓嶇紪璇戞寚瀹氣€?DYAML_CPP_STATIC_DEFINE鈥?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(108,24): error C2039: "ensureSceneAssetRegistered": 涓嶆槸 "Blunder::AssetRegistry" 鐨勬垚鍛?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(107,3): error C2660: 鈥渀anonymous-namespace'::expect_true鈥? 鍑芥暟涓嶆帴鍙?1 涓弬鏁?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+      E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(17,6):
+      E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(107,3):
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(155,16): error C2039: "ensureSceneAssetRegistered": 涓嶆槸 "Blunder::AssetRegistry" 鐨勬垚鍛?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_registry_test.cpp(153,3): error C2660: 鈥渀anonymous-namespace'::expect_true鈥? 鍑芥暟涓嶆帴鍙?1 涓弬鏁?[E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_registry_test.vcxproj]
+  (缂栬瘧婧愭枃浠垛€?./../../../../engine/src/tests/asset_registry_test.cpp鈥?

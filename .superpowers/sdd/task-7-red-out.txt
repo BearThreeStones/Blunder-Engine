@@ -1,0 +1,103 @@
+适用于 .NET Framework MSBuild 版本 18.7.1+024f5b037
+
+  Checking File Globs
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.66s
+  Copying byproducts `slint_cpp.dll.lib` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.dll` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_cpp.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  Detour.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Detour\Debug\Detour-d.lib
+  DetourCrowd.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourCrowd\Debug\DetourCrowd-d.lib
+  DetourTileCache.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\DetourTileCache\Debug\DetourTileCache-d.lib
+  EASTL.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\EASTL\Debug\EASTLd.lib
+  Recast.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\recastnavigation\Recast\Debug\Recast-d.lib
+  SDL3-static.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\SDL\Debug\SDL3-staticd.lib
+  cgltf_impl.c
+  cgltf.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\cgltfd.lib
+  efsw.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\efsw\Debug\efswd.lib
+      Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.49s
+  Copying byproducts `slint-compiler.exe` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build	Copying byproducts `slint_compiler.pdb` to E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/.cmake_deps/slint-build
+  spdlog.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\spdlog\Debug\spdlogd.lib
+  stb_impl.c
+  stb.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\3rdparty\Debug\stbd.lib
+  yaml-cpp.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.cmake_deps\yaml-cpp-build\Debug\yaml-cppd.lib
+  Generating content_browser.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'ContentBrowser' doesn't inherit Window. This is deprecated[0m
+    [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/content_browser.slint:31:18
+     [1m[96m|[0m
+  [1m[96m31[0m [1m[96m|[0m export component ContentBrowser {
+     [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^[0m
+  Generating import_mesh_dialog.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'ImportMeshDialog' doesn't inherit Window. This is deprecated[0m
+   [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/import_mesh_dialog.slint:3:18
+    [1m[96m|[0m
+  [1m[96m3[0m [1m[96m|[0m export component ImportMeshDialog inherits Rectangle {
+    [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^^^[0m
+  Generating piercing_menu.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'PiercingMenu' doesn't inherit Window. This is deprecated[0m
+   [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/piercing_menu.slint:6:18
+    [1m[96m|[0m
+  [1m[96m6[0m [1m[96m|[0m export component PiercingMenu inherits Rectangle {
+    [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^[0m
+  Generating hierarchy.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'HierarchyPanel' doesn't inherit Window. This is deprecated[0m
+    [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/hierarchy.slint:22:18
+     [1m[96m|[0m
+  [1m[96m22[0m [1m[96m|[0m export component HierarchyPanel {
+     [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^[0m
+  Generating inspector_panel.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'InspectorPanel' doesn't inherit Window. This is deprecated[0m
+    [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/inspector_panel.slint:47:18
+     [1m[96m|[0m
+  [1m[96m47[0m [1m[96m|[0m export component InspectorPanel inherits Rectangle {
+     [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^[0m
+     [1m[96m|[0m
+  [1m[93mwarning[0m[1m[97m: Exported component 'ShadingSlider' doesn't inherit Window. No code will be generated for it[0m
+    [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/inspector_panel.slint:10:18
+     [1m[96m|[0m
+  [1m[96m10[0m [1m[96m|[0m export component ShadingSlider inherits VerticalBox {
+     [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^[0m
+  Generating axis_number_field.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'AxisNumberField' doesn't inherit Window. This is deprecated[0m
+   [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/axis_number_field.slint:3:18
+    [1m[96m|[0m
+  [1m[96m3[0m [1m[96m|[0m export component AxisNumberField inherits Rectangle {
+    [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^^[0m
+  Generating viewport_projection_toggle.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'ViewportProjectionToggle' doesn't inherit Window. This is deprecated[0m
+   [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/viewport_projection_toggle.slint:5:18
+    [1m[96m|[0m
+  [1m[96m5[0m [1m[96m|[0m export component ViewportProjectionToggle inherits TouchArea {
+    [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  Generating editor_window.h
+  Generating transform_toolbar.h
+  [1m[93mwarning[0m[1m[97m: Exported component 'TransformToolbar' doesn't inherit Window. This is deprecated[0m
+   [1m[96m--> [0mE:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/runtime/function/slint/transform_toolbar.slint:3:18
+    [1m[96m|[0m
+  [1m[96m3[0m [1m[96m|[0m export component TransformToolbar inherits Rectangle {
+    [1m[96m|[0m                  [1m[93m^^^^^^^^^^^^^^^^[0m
+  正在扫描源以查找模块依赖项...
+  engine_runtime.vcxproj -> E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\runtime\Debug\engine_runtimed.lib
+  Copying PDB for PCH reuse from engine_runtime for asset_manager_guid_test
+  Building Custom Rule E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/engine/src/tests/CMakeLists.txt
+  正在扫描源以查找模块依赖项...
+  asset_manager_guid_test.cpp
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\runtime/resource/asset/material_asset.h(8,1): fatal  error C1083: 鏃犳硶鎵撳紑鍖呮嫭鏂囦欢: 鈥渃gltf.h鈥? No such file or directory [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\runtime\resource\asset\material_asset.h(8,1): error C1083: 无法打开包括文件: “cgltf.h”: No such file or directory [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  (编译源文件“../../../../../engine/src/tests/asset_manager_guid_test.cpp”)
+  
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(534,5): warning MSB8074: 无法读取模块依赖项文件 asset_manager_guid_test.dir\Debug\asset_manager_guid_test.cpp.module.json: 应为来自命名空间“”的元素“root”。。遇到名称为“”、命名空间为“”的“None”。 生成顺序可能不正确。 [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  正在编译...
+  asset_manager_guid_test.cpp
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_manager_guid_test.cpp(1,1): warning C4651: 为预编译头，而非为当前编译指定“/DBLUNDER_HAS_EFSW=1” [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  (编译源文件“../../../../../engine/src/tests/asset_manager_guid_test.cpp”)
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_manager_guid_test.cpp(1,1): warning C4651: 为预编译头，而非为当前编译指定“/DBLUNDER_PROJECT_ROOT="E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull"” [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  (编译源文件“../../../../../engine/src/tests/asset_manager_guid_test.cpp”)
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_manager_guid_test.cpp(1,1): warning C4651: 为预编译头，而非为当前编译指定“/DBLUNDER_RENDER_BACKEND_VULKAN=1” [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  (编译源文件“../../../../../engine/src/tests/asset_manager_guid_test.cpp”)
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\tests\asset_manager_guid_test.cpp(1,1): warning C4651: 为预编译头，而非为当前编译指定“/DYAML_CPP_STATIC_DEFINE” [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  (编译源文件“../../../../../engine/src/tests/asset_manager_guid_test.cpp”)
+  
+E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\engine\src\runtime\resource\asset\material_asset.h(8,1): error C1083: 无法打开包括文件: “cgltf.h”: No such file or directory [E:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\build\vs2026-debug\engine\src\tests\asset_manager_guid_test.vcxproj]
+  (编译源文件“../../../../../engine/src/tests/asset_manager_guid_test.cpp”)
+  

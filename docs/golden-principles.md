@@ -6,8 +6,8 @@
 1. **World space is Z-up.** Right-handed engine space (+X right, +Y forward, +Z up). glTF sources are Y-up on disk; import applies a fixed basis change. Scene `.scene.asset` transforms are authored in engine space.  
    → [docs/agents/coordinate-system.md](agents/coordinate-system.md)
 
-2. **Content uses virtual paths.** Descriptors live under `Assets/` (`assets/…`); raw importer input under `Resources/` (`resources/…`). Built-in shaders are under `engine/shaders/`, not project content.  
-   → [CONTENT_LAYOUT.md](../CONTENT_LAYOUT.md)
+2. **Content uses virtual paths.** Descriptors live under `Assets/` (`assets/…`); Intermediate data under `Resources/` (`resources/…`); Source Assets under `Resources/Source/`. Built-in shaders are under `engine/shaders/`, not project content.  
+   → [CONTENT_LAYOUT.md](../CONTENT_LAYOUT.md), [CONTEXT.md — Asset pipeline](../CONTEXT.md#asset-pipeline), [docs/adr/0012-pull-asset-pipeline.md](adr/0012-pull-asset-pipeline.md)
 
 3. **The 3D viewport is offscreen Vulkan + readback into Slint.** The engine does not present the 3D scene to the HWND; `SlintSystem` + `SkiaRenderer` own window composition and Present. Do not assume Slint renders the scene directly.  
    → [docs/agents/render-pipeline.md](agents/render-pipeline.md)

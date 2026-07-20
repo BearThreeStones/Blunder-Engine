@@ -1,0 +1,76 @@
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086542671900
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086542671900/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086542671900/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086542671900/engine/shaders
+[info] [AssetImport] mesh C:/Users/EDY/AppData/Local/Temp/blunder_import_ext_36086546387200/cube.dae -> assets/Meshes/cube.mesh.yaml (Intermediate: resources/Models/cube/cube.dae)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086556928500
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086556928500/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086556928500/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086556928500/engine/shaders
+[info] [AssetImport] texture C:/Users/EDY/AppData/Local/Temp/blunder_import_tex_36086559794200/albedo.png -> assets/Textures/albedo.texture.yaml (Intermediate: resources/Textures/albedo/albedo.png)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086568825100
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086568825100/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086568825100/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086568825100/engine/shaders
+[info] [AssetImport] Source Export C:/Users/EDY/AppData/Local/Temp/blunder_import_obj_36086572342900/triangle.obj -> assets/Meshes/triangle.mesh.yaml (Intermediate: resources/Models/triangle/triangle.dae, archived: resources/Source/Models/triangle/triangle.obj)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086590241200
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086590241200/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086590241200/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086590241200/engine/shaders
+[info] [AssetImport] Source Export C:/Users/EDY/AppData/Local/Temp/blunder_import_gltf_36086594392500/triangle.gltf -> assets/Meshes/triangle.mesh.yaml (Intermediate: resources/Models/triangle/triangle.dae, archived: resources/Source/Models/triangle/triangle.gltf)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086608231300
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086608231300/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086608231300/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086608231300/engine/shaders
+[warning] [AssetImport] unsupported mesh input C:/Users/EDY/AppData/Local/Temp/blunder_import_blend_36086611087900/cube.blend (v1 Source Export whitelist is .fbx/.obj/.gltf/.glb; Intermediate direct is .dae; .blend automatic export is not supported)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086616838500
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086616838500/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086616838500/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086616838500/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086616838500/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086616838500/Resources)
+[info] [AssetImport] Source Export C:/Users/EDY/AppData/Local/Temp/blunder_reimport_obj_36086620112700/triangle.obj -> assets/Meshes/triangle.mesh.yaml (Intermediate: resources/Models/triangle/triangle.dae, archived: resources/Source/Models/triangle/triangle.obj)
+[info] [AssetImport] Reimport refreshed Intermediate resources/Models/triangle/triangle.dae from archived resources/Source/Models/triangle/triangle.obj
+[info] [AssetImport] requestReimport guid=218340d6-22f1-47b4-be90-ce82ac18f557 descriptor=assets/Meshes/triangle.mesh.yaml
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086651348800
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086651348800/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086651348800/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086651348800/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086651348800/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086651348800/Resources)
+[info] [AssetImport] mesh C:/Users/EDY/AppData/Local/Temp/blunder_reimport_dae_36086654983700/cube.dae -> assets/Meshes/cube.mesh.yaml (Intermediate: resources/Models/cube/cube.dae)
+[info] [AssetImport] requestReimport guid=c1e782e9-6ad5-47c6-99dd-d3d0f32a7c19 descriptor=assets/Meshes/cube.mesh.yaml
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086665132800
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086665132800/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086665132800/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086665132800/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086665132800/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086665132800/Resources)
+[info] [AssetImport] Intermediate Upgrade guid=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee resources/Models/legacy/hero.gltf -> resources/Models/legacy/hero.dae (archived=resources/Source/Models/hero/hero.gltf)
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/Resources)
+[warning] [AssetImport] Intermediate Upgrade failed for guid=bbbbbbbb-cccc-4ddd-8eee-ffffffffffff source=resources/Models/legacy/hero.gltf (leaving legacy glTF/GLB source unchanged)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/hero.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/legacy/hero.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/Resources/Models/legacy/hero.gltf, mesh_index=0, primitive_index=0)
+[warning] [AssetManager] cooked mesh missing/stale for assets/Meshes/hero.mesh.yaml, Fast Path Intermediate + request Cook
+[info] [AssetManager] loaded Mesh resources/Models/legacy/hero.gltf (resolved: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/Resources/Models/legacy/hero.gltf, mesh_index=0, primitive_index=0)
+[info] [AssetCompiler] cooked mesh assets/Meshes/hero.mesh.yaml -> C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086687074200/.blunder/cooked/bbbbbbbb-cccc-4ddd-8eee-ffffffffffff.meshbin
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/asset-pipeline-pull/build/vs2026-debug/engine/src/tests/Debug
+[info] [FileSystem] project root  : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086707051000
+[info] [FileSystem] assets root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086707051000/Assets
+[info] [FileSystem] resources root: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086707051000/Resources
+[info] [FileSystem] shader root   : C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086707051000/engine/shaders
+[info] [AssetManager] initialized (assets: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086707051000/Assets, resources: C:/Users/EDY/AppData/Local/Temp/blunder_asset_import_test_36086707051000/Resources)
+[info] [AssetImport] Intermediate Upgrade guid=cccccccc-dddd-4eee-8fff-000000000000 resources/Models/legacy/hero.gltf -> resources/Models/legacy/hero.dae (archived=resources/Source/Models/hero/hero.gltf)
+[info] [AssetImport] Reimport refreshed Intermediate resources/Models/legacy/hero.dae from archived resources/Source/Models/hero/hero.gltf
+[info] [AssetImport] requestReimport guid=cccccccc-dddd-4eee-8fff-000000000000 descriptor=assets/Meshes/hero.mesh.yaml
+asset_import_test: all passed

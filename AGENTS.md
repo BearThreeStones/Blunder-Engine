@@ -117,5 +117,7 @@ Three layers — pick one primary tool per phase; do not run duplicate planning 
 
 ## Related project docs
 
-- [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md) — virtual paths, assets, Content Browser
-- [Resources/README.md](Resources/README.md) — raw source files layout
+- [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md) — virtual paths, assets, Content Browser, Pull/Cook
+- [CONTEXT.md — Asset pipeline](CONTEXT.md#asset-pipeline) — Source / Intermediate / Final vocabulary
+- [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) — Pull pipeline decision
+- [Resources/README.md](Resources/README.md) — Resources tree notes

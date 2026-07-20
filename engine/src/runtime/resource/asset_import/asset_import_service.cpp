@@ -4,15 +4,31 @@
 #include <cctype>
 #include <cstring>
 
+#include <assimp/Exporter.hpp>
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
+#include "runtime/resource/asset_cook/asset_watch_path.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 
 namespace Blunder {
 
 namespace fs = std::filesystem;
+
+namespace {
+// Test seam for Intermediate Upgrade fail-soft (Task 3.2).
+bool g_force_upgrade_convert_failure_for_test = false;
+}  // namespace
+
+void AssetImportService::setForceUpgradeConvertFailureForTest(bool force) {
+  g_force_upgrade_convert_failure_for_test = force;
+}
 
 namespace {
 
@@ -57,16 +73,365 @@ bool relativePathEscapesRoot(const std::filesystem::path& relative_path) {
   return false;
 }
 
-eastl::string resolveSourceVirtualPath(FileSystem* file_system, const fs::path& source_absolute) {
+eastl::string toLowerAscii(eastl::string value) {
+  for (char& c : value) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return value;
+}
+
+/// Map an absolute path under Resources/ to resources/... virtual path.
+/// Returns empty when the path is outside Resources/.
+eastl::string resolveIntermediateVirtualPath(FileSystem* file_system,
+                                             const fs::path& absolute_path) {
   std::error_code ec;
   const fs::path resources_root = file_system->getResourcesRoot();
-  const fs::path relative = fs::relative(source_absolute, resources_root, ec);
+  const fs::path relative = fs::relative(absolute_path, resources_root, ec);
   if (!ec && !relative.empty() && !relativePathEscapesRoot(relative)) {
     eastl::string virtual_path("resources/");
     virtual_path.append(relative.generic_string().c_str());
     return virtual_path;
   }
-  return eastl::string(source_absolute.generic_string().c_str());
+  return eastl::string();
+}
+
+bool isSourceArchiveVirtualPath(const eastl::string& resources_virtual) {
+  // resources/Source/... is Source archive, not Intermediate data.
+  const eastl::string lower = toLowerAscii(resources_virtual);
+  return lower.compare(0, 17, "resources/source/") == 0 ||
+         lower == "resources/source";
+}
+
+bool isUsableIntermediateVirtualPath(const eastl::string& resources_virtual) {
+  return !resources_virtual.empty() &&
+         !isSourceArchiveVirtualPath(resources_virtual);
+}
+
+/// Ensure Intermediate body lives under Resources (non-Source). Copies when the
+/// input is external or under Resources/Source/.
+eastl::string registerIntermediateBody(FileSystem* file_system,
+                                       const fs::path& input_absolute,
+                                       const char* resources_subdir) {
+  const eastl::string existing =
+      resolveIntermediateVirtualPath(file_system, input_absolute);
+  if (isUsableIntermediateVirtualPath(existing)) {
+    return existing;
+  }
+
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
+  const eastl::string file_name(
+      input_absolute.filename().generic_string().c_str());
+
+  auto try_dest = [&](const eastl::string& folder_stem) -> eastl::string {
+    const fs::path relative =
+        fs::path(resources_subdir) / folder_stem.c_str() / file_name.c_str();
+    const fs::path absolute = file_system->resolveResource(relative);
+    if (file_system->exists(absolute)) {
+      return eastl::string();
+    }
+    if (!file_system->copyFile(input_absolute, absolute, false)) {
+      return eastl::string();
+    }
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
+  };
+
+  eastl::string virtual_path = try_dest(stem);
+  if (!virtual_path.empty()) {
+    return virtual_path;
+  }
+
+  for (uint32_t index = 1; index < 10000; ++index) {
+    char alt[128];
+    std::snprintf(alt, sizeof(alt), "%s_%u", stem.c_str(), index);
+    virtual_path = try_dest(eastl::string(alt));
+    if (!virtual_path.empty()) {
+      return virtual_path;
+    }
+  }
+  return eastl::string();
+}
+
+/// Copy Source Asset under Resources/Source/{subdir}/{stem}/filename.
+eastl::string archiveSourceAsset(FileSystem* file_system,
+                                 const fs::path& input_absolute,
+                                 const char* resources_subdir) {
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
+  const eastl::string file_name(
+      input_absolute.filename().generic_string().c_str());
+
+  auto try_dest = [&](const eastl::string& folder_stem) -> eastl::string {
+    const fs::path relative = fs::path("Source") / resources_subdir /
+                              folder_stem.c_str() / file_name.c_str();
+    const fs::path absolute = file_system->resolveResource(relative);
+    if (file_system->exists(absolute)) {
+      return eastl::string();
+    }
+    if (!file_system->copyFile(input_absolute, absolute, false)) {
+      return eastl::string();
+    }
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
+  };
+
+  eastl::string virtual_path = try_dest(stem);
+  if (!virtual_path.empty()) {
+    return virtual_path;
+  }
+
+  for (uint32_t index = 1; index < 10000; ++index) {
+    char alt[128];
+    std::snprintf(alt, sizeof(alt), "%s_%u", stem.c_str(), index);
+    virtual_path = try_dest(eastl::string(alt));
+    if (!virtual_path.empty()) {
+      return virtual_path;
+    }
+  }
+  return eastl::string();
+}
+
+/// Assimp Import. Returns nullptr on failure (importer owns the scene).
+const aiScene* readSourceScene(Assimp::Importer& importer,
+                               const fs::path& input_absolute) {
+  const aiScene* scene = importer.ReadFile(
+      input_absolute.string(),
+      aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
+          aiProcess_GenNormals);
+  if (!scene || !scene->mRootNode ||
+      (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0u) {
+    LOG_WARN("[AssetImport] Assimp failed to read {}: {}",
+             input_absolute.generic_string(), importer.GetErrorString());
+    return nullptr;
+  }
+  return scene;
+}
+
+/// Assimp Export to an absolute Intermediate COLLADA path (overwrites).
+bool exportSceneToColladaFile(const aiScene* scene, FileSystem* file_system,
+                              const fs::path& output_absolute) {
+  if (!scene || !file_system) {
+    return false;
+  }
+  if (!file_system->ensureParentDirectory(output_absolute)) {
+    return false;
+  }
+  Assimp::Exporter exporter;
+  const aiReturn status =
+      exporter.Export(scene, "collada", output_absolute.string());
+  if (status != aiReturn_SUCCESS) {
+    LOG_WARN("[AssetImport] Assimp collada export failed for {}: {}",
+             output_absolute.generic_string(), exporter.GetErrorString());
+    return false;
+  }
+  return file_system->exists(output_absolute);
+}
+
+/// Assimp Import + Export to Intermediate COLLADA under Resources/Models/{stem}/.
+eastl::string exportSourceToIntermediateCollada(FileSystem* file_system,
+                                                const fs::path& input_absolute) {
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, input_absolute);
+  if (!scene) {
+    return eastl::string();
+  }
+
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
+
+  auto try_export = [&](const eastl::string& folder_stem) -> eastl::string {
+    const eastl::string file_name = folder_stem + ".dae";
+    const fs::path relative =
+        fs::path("Models") / folder_stem.c_str() / file_name.c_str();
+    const fs::path absolute = file_system->resolveResource(relative);
+    if (file_system->exists(absolute)) {
+      return eastl::string();
+    }
+    if (!exportSceneToColladaFile(scene, file_system, absolute)) {
+      return eastl::string();
+    }
+
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
+  };
+
+  eastl::string virtual_path = try_export(stem);
+  if (!virtual_path.empty()) {
+    return virtual_path;
+  }
+
+  for (uint32_t index = 1; index < 10000; ++index) {
+    char alt[128];
+    std::snprintf(alt, sizeof(alt), "%s_%u", stem.c_str(), index);
+    virtual_path = try_export(eastl::string(alt));
+    if (!virtual_path.empty()) {
+      return virtual_path;
+    }
+  }
+  return eastl::string();
+}
+
+/// Re-export archived Source over an existing Intermediate COLLADA (overwrite).
+bool reexportArchivedSourceToIntermediate(FileSystem* file_system,
+                                          const fs::path& archived_absolute,
+                                          const fs::path& intermediate_absolute) {
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, archived_absolute);
+  if (!scene) {
+    return false;
+  }
+  return exportSceneToColladaFile(scene, file_system, intermediate_absolute);
+}
+
+bool endsWithIgnoreCase(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  for (size_t i = 0; i < suffix_length; ++i) {
+    char a = value[value.size() - suffix_length + i];
+    char b = suffix[i];
+    if (a >= 'A' && a <= 'Z') {
+      a = static_cast<char>(a - 'A' + 'a');
+    }
+    if (b >= 'A' && b <= 'Z') {
+      b = static_cast<char>(b - 'A' + 'a');
+    }
+    if (a != b) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isLegacyGltfIntermediateSource(const eastl::string& source) {
+  return endsWithIgnoreCase(source, ".gltf") ||
+         endsWithIgnoreCase(source, ".glb");
+}
+
+eastl::string replaceExtensionWithDae(const eastl::string& virtual_path) {
+  const size_t dot = virtual_path.find_last_of('.');
+  if (dot == eastl::string::npos) {
+    return virtual_path + ".dae";
+  }
+  eastl::string result = virtual_path;
+  result.replace(dot, eastl::string::npos, ".dae");
+  return result;
+}
+
+fs::path resolveResourcesVirtualPath(FileSystem* file_system,
+                                     const eastl::string& virtual_path) {
+  eastl::string relative = virtual_path;
+  if (relative.compare(0, 10, "resources/") == 0) {
+    relative.erase(0, 10);
+  }
+  return file_system->resolveResource(fs::path(relative.c_str()));
+}
+
+/// Convert Intermediate glTF/GLB to sibling `.dae`. Empty on failure.
+eastl::string convertLegacyGltfToSiblingCollada(
+    FileSystem* file_system, const eastl::string& source_virtual,
+    const fs::path& source_absolute) {
+  if (g_force_upgrade_convert_failure_for_test) {
+    // Injected Assimp convert failure: leave any pre-existing sibling `.dae`
+    // for the upgrade caller to clean (fail-soft partial cleanup).
+    return eastl::string();
+  }
+
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, source_absolute);
+  if (!scene) {
+    return eastl::string();
+  }
+
+  const eastl::string dae_virtual = replaceExtensionWithDae(source_virtual);
+  const fs::path dae_absolute =
+      resolveResourcesVirtualPath(file_system, dae_virtual);
+  if (!exportSceneToColladaFile(scene, file_system, dae_absolute)) {
+    if (file_system->exists(dae_absolute)) {
+      std::error_code ec;
+      fs::remove(dae_absolute, ec);
+    }
+    return eastl::string();
+  }
+  return dae_virtual;
+}
+
+fs::path resolveDescriptorAbsolute(FileSystem* file_system,
+                                   const eastl::string& descriptor_virtual) {
+  eastl::string relative = descriptor_virtual;
+  if (relative.compare(0, 7, "assets/") == 0) {
+    relative.erase(0, 7);
+  }
+  return file_system->resolveAsset(fs::path(relative.c_str()));
+}
+
+/// When archived_source is Source Export whitelist, overwrite Intermediate via
+/// Assimp. GUID / descriptor paths are left unchanged. Returns false only on
+/// hard failure of an attempted Source Export re-run.
+bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
+                                           const eastl::string& descriptor_virtual,
+                                           const eastl::string& yaml_text) {
+  const bool is_mesh = descriptor_virtual.size() >= 10 &&
+                       descriptor_virtual.compare(
+                           descriptor_virtual.size() - 10, 10, ".mesh.yaml") == 0;
+  if (!is_mesh) {
+    return true;  // textures / other: invalidate-only path
+  }
+
+  MeshAssetDescriptor descriptor{};
+  if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+    LOG_WARN("[AssetImport] Reimport: failed to parse mesh {}",
+             descriptor_virtual.c_str());
+    return false;
+  }
+
+  if (descriptor.archived_source.empty()) {
+    // Intermediate-only Asset: keep GUID; Finals invalidation is enough.
+    return true;
+  }
+
+  const fs::path archived_absolute =
+      resolveResourcesVirtualPath(file_system, descriptor.archived_source);
+  const eastl::string archived_ext = extensionLower(archived_absolute);
+  if (!AssetImportService::isMeshSourceExportExtension(archived_ext)) {
+    LOG_WARN(
+        "[AssetImport] Reimport: archived_source {} is not Source Export "
+        "whitelist; invalidating Finals only",
+        descriptor.archived_source.c_str());
+    return true;
+  }
+
+  if (!file_system->exists(archived_absolute)) {
+    LOG_WARN("[AssetImport] Reimport: archived Source missing {}",
+             archived_absolute.generic_string());
+    return false;
+  }
+
+  if (descriptor.source.empty()) {
+    LOG_WARN("[AssetImport] Reimport: mesh {} has empty Intermediate source",
+             descriptor_virtual.c_str());
+    return false;
+  }
+
+  const fs::path intermediate_absolute =
+      resolveResourcesVirtualPath(file_system, descriptor.source);
+  if (!reexportArchivedSourceToIntermediate(file_system, archived_absolute,
+                                            intermediate_absolute)) {
+    LOG_WARN(
+        "[AssetImport] Reimport: Assimp re-export failed for {} -> {}",
+        archived_absolute.generic_string(),
+        intermediate_absolute.generic_string());
+    return false;
+  }
+
+  LOG_INFO(
+      "[AssetImport] Reimport refreshed Intermediate {} from archived {}",
+      descriptor.source.c_str(), descriptor.archived_source.c_str());
+  return true;
 }
 
 }  // namespace
@@ -75,6 +440,7 @@ void AssetImportService::initialize(const AssetImportServiceInit& init) {
   m_file_system = init.file_system;
   m_asset_registry = init.asset_registry;
   m_content_browser = init.content_browser;
+  m_asset_compiler = init.asset_compiler;
   m_is_initialized = m_file_system != nullptr && m_asset_registry != nullptr;
 }
 
@@ -82,19 +448,26 @@ void AssetImportService::shutdown() {
   m_file_system = nullptr;
   m_asset_registry = nullptr;
   m_content_browser = nullptr;
+  m_asset_compiler = nullptr;
   m_is_initialized = false;
 }
 
-bool AssetImportService::isMeshSourceExtension(
+bool AssetImportService::isMeshIntermediateExtension(
     const eastl::string& extension_lower) {
-  return extension_lower == ".gltf" || extension_lower == ".glb";
+  return extension_lower == ".dae";
 }
 
-bool AssetImportService::isTextureSourceExtension(
+bool AssetImportService::isTextureIntermediateExtension(
     const eastl::string& extension_lower) {
   return extension_lower == ".png" || extension_lower == ".jpg" ||
          extension_lower == ".jpeg" || extension_lower == ".bmp" ||
          extension_lower == ".tga";
+}
+
+bool AssetImportService::isMeshSourceExportExtension(
+    const eastl::string& extension_lower) {
+  return extension_lower == ".fbx" || extension_lower == ".obj" ||
+         extension_lower == ".gltf" || extension_lower == ".glb";
 }
 
 eastl::string AssetImportService::makeUniqueDescriptorName(
@@ -131,23 +504,49 @@ eastl::string AssetImportService::makeUniqueDescriptorName(
 }
 
 ImportResult AssetImportService::importMesh(
-    const fs::path& source_absolute, const eastl::string& assets_folder_virtual,
+    const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
     const MeshImportSettings& settings) {
   ImportResult result{};
   if (!m_is_initialized || assets_folder_virtual.empty()) {
     return result;
   }
 
-  const eastl::string ext = extensionLower(source_absolute);
-  if (!isMeshSourceExtension(ext)) {
-    LOG_WARN("[AssetImport] unsupported mesh source {}", source_absolute.generic_string());
+  const eastl::string ext = extensionLower(input_absolute);
+  if (isMeshSourceExportExtension(ext)) {
+    return importMeshSourceExport(input_absolute, assets_folder_virtual,
+                                  settings);
+  }
+  if (isMeshIntermediateExtension(ext)) {
+    return importMeshIntermediate(input_absolute, assets_folder_virtual,
+                                  settings);
+  }
+
+  // v1: FBX/OBJ/glTF/GLB Source Export; COLLADA Intermediate-direct;
+  // .blend / others are a clear reject (success=false), not copy-to-Source
+  // and not silent success.
+  LOG_WARN(
+      "[AssetImport] unsupported mesh input {} "
+      "(v1 Source Export whitelist is .fbx/.obj/.gltf/.glb; Intermediate "
+      "direct is .dae; .blend automatic export is not supported)",
+      input_absolute.generic_string());
+  return result;
+}
+
+ImportResult AssetImportService::importMeshIntermediate(
+    const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
+    const MeshImportSettings& settings) {
+  ImportResult result{};
+
+  const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
+  const eastl::string resource_virtual_path =
+      registerIntermediateBody(m_file_system, input_absolute, "Models");
+  if (resource_virtual_path.empty()) {
+    LOG_WARN("[AssetImport] failed to place mesh Intermediate {}",
+             input_absolute.generic_string());
     return result;
   }
 
-  const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
-  const eastl::string resource_virtual_path = resolveSourceVirtualPath(m_file_system, source_absolute);
-
-  const eastl::string stem(source_absolute.stem().generic_string().c_str());
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
   const eastl::string descriptor_name =
       makeUniqueDescriptorName(assets_folder, stem, ".mesh.yaml");
   if (descriptor_name.empty()) {
@@ -157,6 +556,7 @@ ImportResult AssetImportService::importMesh(
 
   MeshAssetDescriptor descriptor{};
   descriptor.guid = m_asset_registry->allocateGuid();
+  // Descriptor field `source` = Intermediate path (glossary), not Source Asset.
   descriptor.source = resource_virtual_path;
   descriptor.import = settings;
 
@@ -179,31 +579,100 @@ ImportResult AssetImportService::importMesh(
   result.guid = descriptor.guid;
   result.success = true;
 
-  LOG_INFO("[AssetImport] mesh {} -> {} (source: {})",
-           source_absolute.generic_string(), descriptor_virtual.c_str(),
+  LOG_INFO("[AssetImport] mesh {} -> {} (Intermediate: {})",
+           input_absolute.generic_string(), descriptor_virtual.c_str(),
            resource_virtual_path.c_str());
   return result;
 }
 
+ImportResult AssetImportService::importMeshSourceExport(
+    const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
+    const MeshImportSettings& settings) {
+  ImportResult result{};
+
+  const eastl::string archived_virtual =
+      archiveSourceAsset(m_file_system, input_absolute, "Models");
+  if (archived_virtual.empty()) {
+    LOG_WARN("[AssetImport] failed to archive Source Asset {}",
+             input_absolute.generic_string());
+    return result;
+  }
+
+  const eastl::string intermediate_virtual =
+      exportSourceToIntermediateCollada(m_file_system, input_absolute);
+  if (intermediate_virtual.empty()) {
+    LOG_WARN("[AssetImport] Source Export to Intermediate COLLADA failed for {}",
+             input_absolute.generic_string());
+    return result;
+  }
+
+  const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
+  const eastl::string descriptor_name =
+      makeUniqueDescriptorName(assets_folder, stem, ".mesh.yaml");
+  if (descriptor_name.empty()) {
+    LOG_WARN("[AssetImport] descriptor already exists for Source Export {}",
+             stem.c_str());
+    return result;
+  }
+
+  MeshAssetDescriptor descriptor{};
+  descriptor.guid = m_asset_registry->allocateGuid();
+  descriptor.source = intermediate_virtual;
+  descriptor.archived_source = archived_virtual;
+  descriptor.import = settings;
+
+  const eastl::string descriptor_virtual =
+      joinVirtualPath(assets_folder, descriptor_name);
+  eastl::string relative = descriptor_virtual;
+  relative.erase(0, 7);
+  const fs::path descriptor_absolute =
+      m_file_system->resolveAsset(fs::path(relative.c_str()));
+
+  m_file_system->ensureParentDirectory(descriptor_absolute);
+  if (!m_file_system->writeText(descriptor_absolute,
+                                AssetYaml::serializeMeshDescriptor(descriptor))) {
+    return result;
+  }
+
+  m_asset_registry->registerAsset(descriptor.guid, descriptor_virtual);
+
+  result.descriptor_virtual_path = descriptor_virtual;
+  result.guid = descriptor.guid;
+  result.success = true;
+
+  LOG_INFO(
+      "[AssetImport] Source Export {} -> {} (Intermediate: {}, archived: {})",
+      input_absolute.generic_string(), descriptor_virtual.c_str(),
+      intermediate_virtual.c_str(), archived_virtual.c_str());
+  return result;
+}
+
 ImportResult AssetImportService::importTexture(
-    const fs::path& source_absolute, const eastl::string& assets_folder_virtual,
+    const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
     const TextureImportSettings& settings) {
   ImportResult result{};
   if (!m_is_initialized || assets_folder_virtual.empty()) {
     return result;
   }
 
-  const eastl::string ext = extensionLower(source_absolute);
-  if (!isTextureSourceExtension(ext)) {
-    LOG_WARN("[AssetImport] unsupported texture source {}",
-             source_absolute.generic_string());
+  const eastl::string ext = extensionLower(input_absolute);
+  if (!isTextureIntermediateExtension(ext)) {
+    LOG_WARN("[AssetImport] unsupported texture Intermediate {}",
+             input_absolute.generic_string());
     return result;
   }
 
   const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
-  const eastl::string resource_virtual_path = resolveSourceVirtualPath(m_file_system, source_absolute);
+  const eastl::string resource_virtual_path =
+      registerIntermediateBody(m_file_system, input_absolute, "Textures");
+  if (resource_virtual_path.empty()) {
+    LOG_WARN("[AssetImport] failed to place texture Intermediate {}",
+             input_absolute.generic_string());
+    return result;
+  }
 
-  const eastl::string stem(source_absolute.stem().generic_string().c_str());
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
   const eastl::string descriptor_name =
       makeUniqueDescriptorName(assets_folder, stem, ".texture.yaml");
   if (descriptor_name.empty()) {
@@ -212,6 +681,7 @@ ImportResult AssetImportService::importTexture(
 
   TextureAssetDescriptor descriptor{};
   descriptor.guid = m_asset_registry->allocateGuid();
+  // Descriptor field `source` = Intermediate path (glossary), not Source Asset.
   descriptor.source = resource_virtual_path;
   descriptor.import = settings;
 
@@ -234,8 +704,8 @@ ImportResult AssetImportService::importTexture(
   result.guid = descriptor.guid;
   result.success = true;
 
-  LOG_INFO("[AssetImport] texture {} -> {} (source: {})",
-           source_absolute.generic_string(), descriptor_virtual.c_str(),
+  LOG_INFO("[AssetImport] texture {} -> {} (Intermediate: {})",
+           input_absolute.generic_string(), descriptor_virtual.c_str(),
            resource_virtual_path.c_str());
   return result;
 }
@@ -253,11 +723,11 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
   for (const eastl::string& absolute_path : absolute_paths) {
     const fs::path src(absolute_path.c_str());
     const eastl::string ext = extensionLower(src);
-    if (isMeshSourceExtension(ext)) {
+    if (isMeshIntermediateExtension(ext) || isMeshSourceExportExtension(ext)) {
       pending_meshes.push_back(absolute_path);
       continue;
     }
-    if (isTextureSourceExtension(ext)) {
+    if (isTextureIntermediateExtension(ext)) {
       TextureImportSettings texture_settings{};
       ImportResult imported =
           importTexture(src, assets_folder_virtual, texture_settings);
@@ -280,6 +750,220 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
     m_content_browser->refresh();
   }
   return results;
+}
+
+eastl::vector<eastl::string> AssetImportService::findGuidsByArchivedSource(
+    const fs::path& absolute_source_path) const {
+  if (!m_is_initialized) {
+    return {};
+  }
+  return guidsForArchivedSourcePath(absolute_source_path,
+                                    m_file_system->getResourcesRoot(),
+                                    *m_asset_registry, *m_file_system);
+}
+
+bool AssetImportService::requestReimport(const eastl::string& guid) {
+  eastl::vector<eastl::string> guids;
+  guids.push_back(guid);
+  return requestReimports(guids);
+}
+
+bool AssetImportService::requestReimports(
+    const eastl::vector<eastl::string>& guids) {
+  if (!m_is_initialized || guids.empty()) {
+    return false;
+  }
+
+  eastl::vector<eastl::string> valid;
+  valid.reserve(guids.size());
+  for (const eastl::string& guid : guids) {
+    if (guid.empty()) {
+      continue;
+    }
+    const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
+    if (descriptor_path.empty()) {
+      LOG_WARN("[AssetImport] requestReimport: unknown guid {}", guid.c_str());
+      continue;
+    }
+    valid.push_back(guid);
+  }
+  if (valid.empty()) {
+    return false;
+  }
+
+  // One rebuildDependencyGraph, then per-GUID Source Export refresh + invalidate.
+  // GUID is never reallocated: descriptor paths and registry entries stay put.
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+  }
+
+  bool any_ok = false;
+  for (const eastl::string& guid : valid) {
+    const eastl::string descriptor_virtual =
+        m_asset_registry->resolveGuid(guid);
+    const fs::path descriptor_absolute =
+        resolveDescriptorAbsolute(m_file_system, descriptor_virtual);
+
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
+      LOG_WARN("[AssetImport] requestReimport: failed to read {}",
+               descriptor_virtual.c_str());
+      continue;
+    }
+
+    if (!refreshIntermediateFromArchivedSource(m_file_system,
+                                               descriptor_virtual, yaml_text)) {
+      LOG_WARN(
+          "[AssetImport] requestReimport: Intermediate refresh failed for "
+          "guid={} (GUID preserved; still invalidating Finals)",
+          guid.c_str());
+    }
+
+    LOG_INFO("[AssetImport] requestReimport guid={} descriptor={}",
+             guid.c_str(), descriptor_virtual.c_str());
+    if (m_asset_compiler) {
+      m_asset_compiler->invalidateAssetAndDependents(guid);
+    }
+    any_ok = true;
+  }
+  return any_ok;
+}
+
+uint32_t AssetImportService::upgradeLegacyMeshIntermediates() {
+  if (!m_is_initialized) {
+    return 0;
+  }
+
+  const auto entries = m_asset_registry->registeredEntries();
+  eastl::vector<eastl::pair<eastl::string, eastl::string>> mesh_candidates;
+  mesh_candidates.reserve(entries.size());
+  for (const auto& entry : entries) {
+    const eastl::string& descriptor_virtual = entry.second;
+    if (descriptor_virtual.size() < 10 ||
+        descriptor_virtual.compare(descriptor_virtual.size() - 10, 10,
+                                   ".mesh.yaml") != 0) {
+      continue;
+    }
+    mesh_candidates.push_back(entry);
+  }
+  if (mesh_candidates.empty()) {
+    return 0;
+  }
+
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+  }
+
+  uint32_t upgraded = 0;
+  for (const auto& entry : mesh_candidates) {
+    const eastl::string& guid = entry.first;
+    const eastl::string& descriptor_virtual = entry.second;
+    const fs::path descriptor_absolute =
+        resolveDescriptorAbsolute(m_file_system, descriptor_virtual);
+
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
+      continue;
+    }
+
+    MeshAssetDescriptor descriptor{};
+    if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+      continue;
+    }
+    if (!isLegacyGltfIntermediateSource(descriptor.source)) {
+      continue;
+    }
+
+    const fs::path source_absolute =
+        resolveResourcesVirtualPath(m_file_system, descriptor.source);
+    if (!m_file_system->exists(source_absolute)) {
+      LOG_WARN(
+          "[AssetImport] Intermediate Upgrade skipped: missing source {} "
+          "(guid={})",
+          descriptor.source.c_str(), guid.c_str());
+      continue;
+    }
+
+    const eastl::string dae_virtual = convertLegacyGltfToSiblingCollada(
+        m_file_system, descriptor.source, source_absolute);
+    if (dae_virtual.empty()) {
+      // Fail-soft: never rewrite descriptor; remove any leftover sibling `.dae`
+      // so `source` cannot be confused with a partial Intermediate.
+      const eastl::string sibling_dae =
+          replaceExtensionWithDae(descriptor.source);
+      const fs::path sibling_dae_absolute =
+          resolveResourcesVirtualPath(m_file_system, sibling_dae);
+      if (m_file_system->exists(sibling_dae_absolute)) {
+        std::error_code ec;
+        fs::remove(sibling_dae_absolute, ec);
+      }
+      LOG_WARN(
+          "[AssetImport] Intermediate Upgrade failed for guid={} source={} "
+          "(leaving legacy glTF/GLB source unchanged)",
+          guid.c_str(), descriptor.source.c_str());
+      continue;
+    }
+
+    const eastl::string previous_source = descriptor.source;
+    if (descriptor.archived_source.empty()) {
+      const eastl::string archived =
+          archiveSourceAsset(m_file_system, source_absolute, "Models");
+      if (archived.empty()) {
+        LOG_WARN(
+            "[AssetImport] Intermediate Upgrade: archive failed for {} "
+            "(guid={}); leaving descriptor unchanged",
+            previous_source.c_str(), guid.c_str());
+        const fs::path dae_absolute =
+            resolveResourcesVirtualPath(m_file_system, dae_virtual);
+        if (m_file_system->exists(dae_absolute)) {
+          std::error_code ec;
+          fs::remove(dae_absolute, ec);
+        }
+        continue;
+      }
+      descriptor.archived_source = archived;
+    }
+
+    descriptor.source = dae_virtual;
+    // GUID must stay stable across Intermediate Upgrade.
+    descriptor.guid = guid;
+
+    if (!m_file_system->writeText(
+            descriptor_absolute,
+            AssetYaml::serializeMeshDescriptor(descriptor))) {
+      LOG_WARN(
+          "[AssetImport] Intermediate Upgrade: failed to write descriptor {} "
+          "(guid={}); leaving legacy source unchanged",
+          descriptor_virtual.c_str(), guid.c_str());
+      const fs::path dae_absolute =
+          resolveResourcesVirtualPath(m_file_system, dae_virtual);
+      if (m_file_system->exists(dae_absolute)) {
+        std::error_code ec;
+        fs::remove(dae_absolute, ec);
+      }
+      continue;
+    }
+
+    LOG_INFO(
+        "[AssetImport] Intermediate Upgrade guid={} {} -> {} (archived={})",
+        guid.c_str(), previous_source.c_str(), descriptor.source.c_str(),
+        descriptor.archived_source.c_str());
+
+    if (m_asset_compiler) {
+      m_asset_compiler->invalidateAssetAndDependents(guid);
+    }
+    ++upgraded;
+  }
+
+  return upgraded;
+}
+
+uint32_t AssetImportService::scanAndUpgradeLegacyIntermediates() {
+  if (!m_is_initialized) {
+    return 0;
+  }
+  m_asset_registry->rebuildFromScan();
+  return upgradeLegacyMeshIntermediates();
 }
 
 }  // namespace Blunder

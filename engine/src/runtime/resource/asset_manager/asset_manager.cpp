@@ -3,9 +3,13 @@
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
 
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 #include <cgltf.h>
 #include <spdlog/fmt/fmt.h>
 #include <stb_image.h>
@@ -16,10 +20,14 @@
 #include <limits>
 
 #include <algorithm>
+#include <glm/glm.hpp>
 
 #include "EASTL/utility.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/coordinate_system.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
 
@@ -58,6 +66,110 @@ const char* cgltfResultToString(cgltf_result result) {
     default:
       return "unknown";
   }
+}
+
+/// Fast Path / Cook: load Intermediate COLLADA via Assimp (Y-up → engine Z-up).
+eastl::shared_ptr<MeshAsset> loadMeshFromColladaAssimp(
+    const std::filesystem::path& absolute, const eastl::string& cache_key) {
+  Assimp::Importer importer;
+  const aiScene* scene = importer.ReadFile(
+      absolute.string(),
+      aiProcess_Triangulate | aiProcess_JoinIdenticalVertices |
+          aiProcess_GenNormals | aiProcess_CalcTangentSpace |
+          aiProcess_PreTransformVertices);
+  if (!scene || !scene->mRootNode ||
+      (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0u ||
+      scene->mNumMeshes == 0) {
+    LOG_ERROR(
+        "[AssetManager] loadMesh: Assimp failed to read COLLADA {}: {}",
+        absolute.generic_string(), importer.GetErrorString());
+    return nullptr;
+  }
+
+  const aiMesh* mesh = nullptr;
+  for (unsigned int mesh_index = 0; mesh_index < scene->mNumMeshes;
+       ++mesh_index) {
+    const aiMesh* candidate = scene->mMeshes[mesh_index];
+    if (candidate != nullptr && candidate->HasPositions() &&
+        candidate->mNumFaces > 0 && candidate->mNumVertices > 0) {
+      mesh = candidate;
+      break;
+    }
+  }
+  if (mesh == nullptr) {
+    LOG_ERROR("[AssetManager] loadMesh: no usable mesh in COLLADA {}",
+              absolute.generic_string());
+    return nullptr;
+  }
+
+  eastl::vector<MeshVertex> vertices(mesh->mNumVertices);
+  for (unsigned int vertex_index = 0; vertex_index < mesh->mNumVertices;
+       ++vertex_index) {
+    const aiVector3D& position = mesh->mVertices[vertex_index];
+    vertices[vertex_index].position = transformPointGltfToEngine(
+        glm::vec3(position.x, position.y, position.z));
+
+    if (mesh->HasNormals()) {
+      const aiVector3D& normal = mesh->mNormals[vertex_index];
+      const Vec3 transformed_normal = transformDirectionGltfToEngine(
+          glm::vec3(normal.x, normal.y, normal.z));
+      const float normal_length = glm::length(transformed_normal);
+      if (normal_length > 1e-6f) {
+        vertices[vertex_index].normal = transformed_normal / normal_length;
+      }
+    }
+
+    if (mesh->HasTextureCoords(0)) {
+      const aiVector3D& uv = mesh->mTextureCoords[0][vertex_index];
+      vertices[vertex_index].uv = glm::vec2(uv.x, uv.y);
+    }
+
+    if (mesh->HasTangentsAndBitangents()) {
+      const aiVector3D& tangent = mesh->mTangents[vertex_index];
+      const Vec3 tangent_xyz = transformDirectionGltfToEngine(
+          glm::vec3(tangent.x, tangent.y, tangent.z));
+      float handedness = 1.0f;
+      if (mesh->HasNormals()) {
+        const aiVector3D& bitangent = mesh->mBitangents[vertex_index];
+        const Vec3 bitangent_xyz = transformDirectionGltfToEngine(
+            glm::vec3(bitangent.x, bitangent.y, bitangent.z));
+        const Vec3 normal_xyz = vertices[vertex_index].normal;
+        if (glm::dot(glm::cross(normal_xyz, tangent_xyz), bitangent_xyz) <
+            0.0f) {
+          handedness = -1.0f;
+        }
+      }
+      const float tangent_length = glm::length(tangent_xyz);
+      if (tangent_length > 1e-6f) {
+        vertices[vertex_index].tangent =
+            glm::vec4(tangent_xyz / tangent_length, handedness);
+      }
+    }
+  }
+
+  eastl::vector<uint32_t> indices;
+  indices.reserve(static_cast<size_t>(mesh->mNumFaces) * 3u);
+  for (unsigned int face_index = 0; face_index < mesh->mNumFaces; ++face_index) {
+    const aiFace& face = mesh->mFaces[face_index];
+    if (face.mNumIndices != 3) {
+      continue;
+    }
+    indices.push_back(face.mIndices[0]);
+    indices.push_back(face.mIndices[1]);
+    indices.push_back(face.mIndices[2]);
+  }
+  if (indices.empty()) {
+    LOG_ERROR("[AssetManager] loadMesh: no triangle faces in COLLADA {}",
+              absolute.generic_string());
+    return nullptr;
+  }
+
+  Asset::Meta meta;
+  meta.virtual_path = cache_key;
+  meta.absolute_path = absolute;
+  meta.source_timestamp = querySourceTimestamp(absolute);
+  return eastl::make_shared<MeshAsset>(
+      eastl::move(meta), eastl::move(vertices), eastl::move(indices));
 }
 
 bool relativePathEscapesRoot(const std::filesystem::path& relative_path) {
@@ -297,8 +409,31 @@ void AssetManager::shutdown() {
     return;
   }
   clearCache();
+  m_asset_compiler.reset();
+  m_inside_cook_request = false;
   m_file_system = nullptr;
   m_is_initialized = false;
+}
+
+void AssetManager::setAssetCompiler(
+    eastl::weak_ptr<AssetCompilerService> compiler) {
+  m_asset_compiler = eastl::move(compiler);
+}
+
+void AssetManager::requestCookAfterFastPath(const eastl::string& guid) {
+  if (guid.empty() || m_inside_cook_request) {
+    return;
+  }
+  auto compiler = m_asset_compiler.lock();
+  if (!compiler) {
+    return;
+  }
+  // Sync cook for v1 is intentional: Intermediate is already loaded and will
+  // be returned to the caller; the next load can prefer Final. Guard against
+  // re-entrancy when cookMeshDescriptor loads the same descriptor path.
+  m_inside_cook_request = true;
+  (void)compiler->cookAsset(guid);
+  m_inside_cook_request = false;
 }
 
 eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
@@ -365,9 +500,15 @@ eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
     }
 
     LOG_WARN(
-        "[AssetManager] cooked texture missing/stale for {}, falling back to source",
+        "[AssetManager] cooked texture missing/stale for {}, Fast Path "
+        "Intermediate + request Cook",
         key.c_str());
-    return loadTexture2D(descriptor.source);
+    eastl::shared_ptr<Texture2DAsset> intermediate =
+        loadTexture2D(descriptor.source);
+    if (intermediate) {
+      requestCookAfterFastPath(descriptor.guid);
+    }
+    return intermediate;
   }
 
   const ResolvedContentPath resolved =
@@ -500,6 +641,11 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   }
 
   const auto& absolute = resolved.absolute;
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry != nullptr) {
+    (void)registry->ensureSceneAssetRegistered(key);
+  }
+
   eastl::string json_text;
   if (!m_file_system->readText(absolute, json_text)) {
     LOG_ERROR("[AssetManager] loadScene: cannot read {}",
@@ -508,7 +654,7 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   }
 
   Scene scene;
-  if (!SceneSerializer::deserialize(json_text, scene)) {
+  if (!SceneSerializer::deserialize(json_text, scene, registry)) {
     LOG_ERROR("[AssetManager] loadScene: deserialize failed for {}",
               absolute.generic_string());
     return nullptr;
@@ -527,6 +673,45 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
            key.c_str(), absolute.generic_string(), asset->getScene().getEntities().size(),
            asset->getScene().getChildScenes().size());
   return asset;
+}
+
+eastl::string AssetManager::resolveGuidPath(
+    const eastl::string& guid, const AssetRegistry& registry) const {
+  if (guid.empty()) {
+    return eastl::string();
+  }
+  return registry.resolveGuid(guid);
+}
+
+eastl::shared_ptr<MeshAsset> AssetManager::loadMeshByGuid(
+    const eastl::string& guid, const AssetRegistry& registry) {
+  const eastl::string path = resolveGuidPath(guid, registry);
+  if (path.empty()) {
+    LOG_ERROR("[AssetManager] loadMeshByGuid: unknown guid {}", guid.c_str());
+    return nullptr;
+  }
+  return loadMesh(path);
+}
+
+eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2DByGuid(
+    const eastl::string& guid, const AssetRegistry& registry) {
+  const eastl::string path = resolveGuidPath(guid, registry);
+  if (path.empty()) {
+    LOG_ERROR("[AssetManager] loadTexture2DByGuid: unknown guid {}",
+              guid.c_str());
+    return nullptr;
+  }
+  return loadTexture2D(path);
+}
+
+eastl::shared_ptr<SceneAsset> AssetManager::loadSceneByGuid(
+    const eastl::string& guid, const AssetRegistry& registry) {
+  const eastl::string path = resolveGuidPath(guid, registry);
+  if (path.empty()) {
+    LOG_ERROR("[AssetManager] loadSceneByGuid: unknown guid {}", guid.c_str());
+    return nullptr;
+  }
+  return loadScene(path);
 }
 
 bool AssetManager::resolveGltfSourcePath(const eastl::string& virtual_path,
@@ -692,10 +877,15 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
     }
 
     LOG_WARN(
-        "[AssetManager] cooked mesh missing/stale for {}, falling back to source",
+        "[AssetManager] cooked mesh missing/stale for {}, Fast Path "
+        "Intermediate + request Cook",
         key.c_str());
     (void)descriptor.import;
-    return loadMesh(descriptor.source);
+    eastl::shared_ptr<MeshAsset> intermediate = loadMesh(descriptor.source);
+    if (intermediate) {
+      requestCookAfterFastPath(descriptor.guid);
+    }
+    return intermediate;
   }
   if (endsWithSuffix(request_key, ".mesh.asset")) {
     const ResolvedContentPath descriptor_path =
@@ -730,14 +920,27 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
   }
 
   const auto& absolute = resolved.absolute;
+  const eastl::string mesh_extension(
+      absolute.extension().generic_string().c_str());
+
+  // Intermediate COLLADA: Assimp. Legacy glTF/GLB Intermediate: cgltf only.
+  if (mesh_extension == ".dae") {
+    eastl::shared_ptr<MeshAsset> loaded =
+        loadMeshFromColladaAssimp(absolute, key);
+    if (loaded) {
+      m_mesh_cache[key] = loaded;
+      LOG_INFO("[AssetManager] loaded Mesh {} (COLLADA Assimp: {})",
+               key.c_str(), absolute.generic_string());
+    }
+    return loaded;
+  }
+
   eastl::vector<uint8_t> bytes;
   if (!m_file_system->readBinary(absolute, bytes)) {
     LOG_ERROR("[AssetManager] loadMesh: cannot read {}", absolute.generic_string());
     return nullptr;
   }
 
-  const eastl::string mesh_extension(
-      absolute.extension().generic_string().c_str());
   if (mesh_extension != ".gltf" && mesh_extension != ".glb") {
     LOG_ERROR("[AssetManager] loadMesh: unsupported mesh format {} for {}",
               mesh_extension.c_str(), absolute.generic_string());

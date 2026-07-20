@@ -36,7 +36,8 @@ struct FileSystemInitInfo {
   // Subdirectory (relative to project_root) for engine asset configuration.
   std::filesystem::path assets_subdir{"Assets"};
 
-  // Subdirectory (relative to project_root) for raw source files.
+  // Subdirectory (relative to project_root) for Intermediate data bodies
+  // (glTF, images, …) and optional Source Assets under Source/.
   std::filesystem::path resources_subdir{"Resources"};
 
   // Subdirectory (relative to project_root) that contains built-in shader sources.
