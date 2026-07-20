@@ -117,7 +117,7 @@ Output cache:
 | **Import Asset** button | Opens a file dialog; images and glTF register as Intermediate Assets; FBX/OBJ run Source Export first |
 | **OS drag & drop** | Drop onto the Content Browser panel; same rules as the menu |
 | **glTF / images** | Copy Intermediate data → `Resources/Models/{name}/` or `Resources/Textures/{name}/`; write descriptor → selected `Assets/` folder; allocate GUID and register. These are **not** Source Assets. |
-| **Source Export (v1)** | Whitelist (Assimp): FBX/OBJ → Intermediate glTF under Resources; **dual-write** archives the original under `Resources/Source/`; descriptor records Intermediate `source` plus optional archived Source path |
+| **Source Export (v1)** | Whitelist (Assimp): FBX/OBJ → Intermediate glTF under `Resources/Models/{name}/`; **dual-write** archives the original under `Resources/Source/Models/{name}/`; descriptor `source` = Intermediate path, `archived_source` = Source archive path (`resources/Source/...`) |
 | **Reimport** | Re-runs Import / Source Export for an existing Asset; **preserves GUID**; refreshes Intermediate; invalidates Finals and dependents. Distinct from Cook. |
 
 `.blend` / `.psd` automatic export is out of v1 (files may still live under the Source root
