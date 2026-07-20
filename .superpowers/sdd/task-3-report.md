@@ -10,7 +10,7 @@ When DotNetHost is running with a game assembly loaded, `mountSceneBehaviours` a
 
 ## Commits
 
-- (pending) `feat(script): mount scene Behaviours when DotNetHost running`
+- `ce81f1787b23b6a2cf14e2c570baf5573dfa0af8` — `feat(script): mount scene Behaviours when DotNetHost running`
 
 ## Files changed
 
