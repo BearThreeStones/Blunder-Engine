@@ -3,6 +3,7 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
+#include "runtime/resource/asset_cook/asset_cook_types.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -232,11 +233,159 @@ void loadTextureMissingFinalFastPathRequestsCook() {
   fs::remove_all(project);
 }
 
+bool pathContains(const fs::path& path, const char* needle) {
+  const std::string s = path.generic_string();
+  return s.find(needle) != std::string::npos;
+}
+
+void loadMeshStaleMetaFastPathRequestsCook() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "cccccccc-dddd-4eee-8fff-aaaaaaaaaa03";
+  const char* kDescriptorPath = "assets/Meshes/stale.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "stale.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "stale.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/stale.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  expect_true("register mesh for stale meta",
+              registry.registerAsset(eastl::string(kGuid),
+                                     eastl::string(kDescriptorPath)));
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  auto compiler = eastl::make_shared<AssetCompilerService>();
+  compiler->initialize(&file_system, &manager, &registry);
+  manager.setAssetCompiler(compiler);
+
+  expect_true("precondition: initial cook writes Final",
+              compiler->cookAsset(eastl::string(kGuid)));
+  expect_true(
+      "precondition: Final exists before stale meta",
+      file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
+
+  CookedAssetMeta stale_meta{};
+  stale_meta.source_mtime = 1;
+  stale_meta.descriptor_mtime = 1;
+  expect_true(
+      "precondition: write stale meta",
+      writeCookMetaFile(cookedMeshMetaPath(file_system, eastl::string(kGuid)),
+                        stale_meta));
+
+  manager.clearCache();
+
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string(kDescriptorPath));
+  expect_true("stale meta Fast Path returns mesh", mesh != nullptr);
+  expect_true("stale meta Fast Path uses Intermediate glTF",
+              mesh && pathContains(mesh->getAbsolutePath(), ".gltf"));
+  expect_true("stale meta Fast Path does not use descriptor as absolute",
+              mesh && !pathContains(mesh->getAbsolutePath(), ".mesh.yaml"));
+
+  CookedAssetMeta refreshed{};
+  expect_true(
+      "stale meta Fast Path requested cook (meta readable)",
+      readCookMetaFile(cookedMeshMetaPath(file_system, eastl::string(kGuid)),
+                       refreshed));
+  expect_true("stale meta Fast Path cook refreshed meta",
+              refreshed.source_mtime != 1 || refreshed.descriptor_mtime != 1);
+
+  manager.setAssetCompiler({});
+  compiler->shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void loadMeshFreshFinalPreferred() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "dddddddd-eeee-4fff-8000-bbbbbbbbbb04";
+  const char* kDescriptorPath = "assets/Meshes/fresh.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "fresh.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "fresh.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/fresh.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  expect_true("register mesh for fresh Final",
+              registry.registerAsset(eastl::string(kGuid),
+                                     eastl::string(kDescriptorPath)));
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  auto compiler = eastl::make_shared<AssetCompilerService>();
+  compiler->initialize(&file_system, &manager, &registry);
+
+  expect_true("precondition: cook fresh Final",
+              compiler->cookAsset(eastl::string(kGuid)));
+  expect_true(
+      "precondition: fresh Final bin exists",
+      file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
+  expect_true(
+      "precondition: fresh Final meta exists",
+      file_system.exists(cookedMeshMetaPath(file_system, eastl::string(kGuid))));
+
+  // No compiler on manager: if load wrongly took Fast Path it would still
+  // return Intermediate, but must not need a cook request to succeed.
+  manager.clearCache();
+
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string(kDescriptorPath));
+  expect_true("fresh Final preferred returns mesh", mesh != nullptr);
+  expect_true("fresh Final preferred uses descriptor absolute path",
+              mesh && pathContains(mesh->getAbsolutePath(), ".mesh.yaml"));
+  expect_true("fresh Final preferred does not use Intermediate glTF",
+              mesh && !pathContains(mesh->getAbsolutePath(), ".gltf"));
+  expect_true("fresh Final preferred has vertices",
+              mesh && mesh->getVertexCount() == 3);
+
+  compiler->shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
   loadMeshMissingFinalFastPathRequestsCook();
   loadTextureMissingFinalFastPathRequestsCook();
+  loadMeshStaleMetaFastPathRequestsCook();
+  loadMeshFreshFinalPreferred();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

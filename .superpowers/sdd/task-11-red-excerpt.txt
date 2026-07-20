@@ -1,0 +1,5 @@
+asset_manager_fast_path_test.exe : FAIL stale meta Fast Path uses Intermediate glTF
+    + CategoryInfo          : NotSpecified: (FAIL stale meta...termediate glTF:String) [], RemoteException
+FAIL stale meta Fast Path does not use descriptor as absolute
+FAIL stale meta Fast Path cook refreshed meta
+3 failure(s)
