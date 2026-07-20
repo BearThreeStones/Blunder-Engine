@@ -59,43 +59,46 @@ void writeBinaryFile(const fs::path& path, const char* bytes, size_t size) {
   out.write(bytes, static_cast<std::streamsize>(size));
 }
 
-// Minimal single-triangle glTF with embedded buffer (no external .bin).
-constexpr char kMinimalTriangleGltf[] = R"({
-  "asset": { "version": "2.0" },
-  "scene": 0,
-  "scenes": [{ "nodes": [0] }],
-  "nodes": [{ "mesh": 0 }],
-  "meshes": [{
-    "primitives": [{
-      "attributes": { "POSITION": 1 },
-      "indices": 0
-    }]
-  }],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5123,
-      "count": 3,
-      "type": "SCALAR"
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC3",
-      "max": [1.0, 1.0, 0.0],
-      "min": [0.0, 0.0, 0.0]
-    }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
-    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
-  ],
-  "buffers": [{
-    "byteLength": 44,
-    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
-  }]
-}
+// Minimal single-triangle COLLADA Intermediate (Assimp-readable).
+constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Y_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="tri-mesh" name="tri">
+      <mesh>
+        <source id="tri-positions">
+          <float_array id="tri-positions-array" count="9">0 0 0 1 0 0 0 1 0</float_array>
+          <technique_common>
+            <accessor source="#tri-positions-array" count="3" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="tri-vertices">
+          <input semantic="POSITION" source="#tri-positions"/>
+        </vertices>
+        <triangles count="1">
+          <input semantic="VERTEX" source="#tri-vertices" offset="0"/>
+          <p>0 1 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="tri-node" name="tri">
+        <instance_geometry url="#tri-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>
 )";
 
 void markFinalStaleDeletesMeshCookedArtifacts() {
@@ -190,11 +193,11 @@ void cookAssetCooksRegisteredMeshAndSkipsWhenFresh() {
   const char* kGuid = "cccccccc-dddd-4eee-8fff-000000000001";
   const char* kDescriptorPath = "assets/Meshes/tri.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "tri.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "tri.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "tri.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/tri.gltf\n" +
+                    "source: resources/Models/tri.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -244,11 +247,11 @@ void markFinalStaleForcesRecook() {
   const char* kGuid = "dddddddd-eeee-4fff-8000-111111111111";
   const char* kDescriptorPath = "assets/Meshes/tri2.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "tri2.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "tri2.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "tri2.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/tri2.gltf\n" +
+                    "source: resources/Models/tri2.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -304,11 +307,11 @@ void cookAssetForceRecooksFreshFinal() {
   const char* kGuid = "eeeeeeee-ffff-4000-8000-222222222222";
   const char* kDescriptorPath = "assets/Meshes/tri3.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "tri3.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "tri3.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "tri3.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/tri3.gltf\n" +
+                    "source: resources/Models/tri3.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
