@@ -27,15 +27,24 @@ struct AssetImportServiceInit {
   AssetCompilerService* asset_compiler{nullptr};
 };
 
+/// Registers Intermediate exchange files (glTF / images) as Assets.
+/// Copies Intermediate bodies under Resources (non-Source) and writes Assets
+/// descriptors. Descriptor field `source` stores the Intermediate virtual path.
+/// Source Export (FBX/OBJ → Assimp) is owned by later tasks.
 class AssetImportService final {
  public:
   void initialize(const AssetImportServiceInit& init);
   void shutdown();
 
-  ImportResult importMesh(const std::filesystem::path& source_absolute,
+  /// Import a glTF/GLB Intermediate file: copy under Resources/Models/{name}/
+  /// (when not already a non-Source Resources path) and write a .mesh.yaml.
+  ImportResult importMesh(const std::filesystem::path& input_absolute,
                           const eastl::string& assets_folder_virtual,
                           const MeshImportSettings& settings);
-  ImportResult importTexture(const std::filesystem::path& source_absolute,
+
+  /// Import an image Intermediate file: copy under Resources/Textures/{name}/
+  /// (when not already a non-Source Resources path) and write a .texture.yaml.
+  ImportResult importTexture(const std::filesystem::path& input_absolute,
                              const eastl::string& assets_folder_virtual,
                              const TextureImportSettings& settings);
 
@@ -59,13 +68,25 @@ class AssetImportService final {
   /// Prefer this over N× requestReimport when applying a watch debounce flush.
   bool requestReimports(const eastl::vector<eastl::string>& guids);
 
-  static bool isMeshSourceExtension(const eastl::string& extension_lower);
-  static bool isTextureSourceExtension(const eastl::string& extension_lower);
+  /// glTF/GLB Intermediate exchange extensions (not Source Assets).
+  static bool isMeshIntermediateExtension(const eastl::string& extension_lower);
+  /// Image Intermediate exchange extensions (not Source Assets).
+  static bool isTextureIntermediateExtension(
+      const eastl::string& extension_lower);
+
+  /// Deprecated aliases — prefer Intermediate names above.
+  static bool isMeshSourceExtension(const eastl::string& extension_lower) {
+    return isMeshIntermediateExtension(extension_lower);
+  }
+  static bool isTextureSourceExtension(const eastl::string& extension_lower) {
+    return isTextureIntermediateExtension(extension_lower);
+  }
 
  private:
   eastl::string makeUniqueDescriptorName(const eastl::string& folder,
                                          const eastl::string& stem,
                                          const char* suffix) const;
+
   FileSystem* m_file_system{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
   ContentBrowserSystem* m_content_browser{nullptr};

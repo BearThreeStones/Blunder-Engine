@@ -2489,9 +2489,9 @@ void SlintSystem::processPendingAssetImports() {
   eastl::vector<eastl::string> direct_paths;
   for (const eastl::string& path : paths) {
     const eastl::string ext = extensionLowerFromPath(path);
-    if (AssetImportService::isMeshSourceExtension(ext)) {
+    if (AssetImportService::isMeshIntermediateExtension(ext)) {
       mesh_paths.push_back(path);
-    } else if (AssetImportService::isTextureSourceExtension(ext)) {
+    } else if (AssetImportService::isTextureIntermediateExtension(ext)) {
       direct_paths.push_back(path);
     }
   }
@@ -5034,9 +5034,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
           eastl::vector<eastl::string> direct_paths;
           for (const eastl::string& path : m_pending_os_drop_files) {
             const eastl::string ext = extensionLowerFromPath(path);
-            if (AssetImportService::isMeshSourceExtension(ext)) {
+            if (AssetImportService::isMeshIntermediateExtension(ext)) {
               mesh_paths.push_back(path);
-            } else if (AssetImportService::isTextureSourceExtension(ext)) {
+            } else if (AssetImportService::isTextureIntermediateExtension(ext)) {
               direct_paths.push_back(path);
             }
           }

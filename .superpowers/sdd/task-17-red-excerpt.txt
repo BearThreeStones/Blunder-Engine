@@ -1,0 +1,3 @@
+﻿RED: isMeshIntermediateExtension / isTextureIntermediateExtension undeclared (C2039/C3861)
+asset_import_test.cpp(82): error C2039: isMeshIntermediateExtension
+asset_import_test.cpp(84): error C2039: isTextureIntermediateExtension

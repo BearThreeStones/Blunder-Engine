@@ -438,3 +438,22 @@ target_precompile_headers(asset_watch_path_test
 
 add_test(NAME asset_watch_path_test
          COMMAND asset_watch_path_test)
+
+add_executable(asset_import_test
+    "asset_import_test.cpp"
+)
+
+target_link_libraries(asset_import_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_import_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_import_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_import_test
+         COMMAND asset_import_test)

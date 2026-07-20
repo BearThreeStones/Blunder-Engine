@@ -1,0 +1,4 @@
+﻿[info] [AssetImport] mesh ... -> assets/Meshes/cube.mesh.yaml (Intermediate: resources/Models/cube/cube.gltf)
+[info] [AssetImport] texture ... -> assets/Textures/albedo.texture.yaml (Intermediate: resources/Textures/albedo/albedo.png)
+asset_import_test: all passed
+exit=0

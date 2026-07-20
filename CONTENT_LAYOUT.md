@@ -53,7 +53,8 @@ DCC-native files under `Resources/Source/`.
 ## Mesh descriptor (`.mesh.yaml`)
 
 YAML metadata (`type`, `guid`, `source`, `import`) pointing at Intermediate glTF under
-Resources (non-Source). May also record an archived Source path when Import used
+Resources (non-Source). The descriptor field `source` is the Intermediate data path
+(glossary), not a Source Asset. May also record an archived Source path when Import used
 Source Export.
 
 Load prefers a fresh Final under `.blunder/cooked/{guid}.meshbin`; otherwise **Fast Path**
@@ -64,7 +65,8 @@ Legacy JSON `.mesh.asset` files are still accepted with a migration warning.
 ## Texture descriptor (`.texture.yaml`)
 
 YAML metadata (`type`, `guid`, `source`, `import`) pointing at an Intermediate image under
-Resources. Load prefers `.blunder/cooked/{guid}.texbin` when fresh; otherwise Fast Path.
+Resources. The descriptor field `source` is the Intermediate data path (glossary), not a
+Source Asset. Load prefers `.blunder/cooked/{guid}.texbin` when fresh; otherwise Fast Path.
 
 ## Scene descriptor (`.scene.asset`)
 

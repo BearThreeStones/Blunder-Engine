@@ -59,16 +59,40 @@ bool relativePathEscapesRoot(const std::filesystem::path& relative_path) {
   return false;
 }
 
-eastl::string resolveSourceVirtualPath(FileSystem* file_system, const fs::path& source_absolute) {
+eastl::string toLowerAscii(eastl::string value) {
+  for (char& c : value) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return value;
+}
+
+/// Map an absolute path under Resources/ to resources/... virtual path.
+/// Returns empty when the path is outside Resources/.
+eastl::string resolveIntermediateVirtualPath(FileSystem* file_system,
+                                             const fs::path& absolute_path) {
   std::error_code ec;
   const fs::path resources_root = file_system->getResourcesRoot();
-  const fs::path relative = fs::relative(source_absolute, resources_root, ec);
+  const fs::path relative = fs::relative(absolute_path, resources_root, ec);
   if (!ec && !relative.empty() && !relativePathEscapesRoot(relative)) {
     eastl::string virtual_path("resources/");
     virtual_path.append(relative.generic_string().c_str());
     return virtual_path;
   }
-  return eastl::string(source_absolute.generic_string().c_str());
+  return eastl::string();
+}
+
+bool isSourceArchiveVirtualPath(const eastl::string& resources_virtual) {
+  // resources/Source/... is Source archive, not Intermediate data.
+  const eastl::string lower = toLowerAscii(resources_virtual);
+  return lower.compare(0, 17, "resources/source/") == 0 ||
+         lower == "resources/source";
+}
+
+bool isUsableIntermediateVirtualPath(const eastl::string& resources_virtual) {
+  return !resources_virtual.empty() &&
+         !isSourceArchiveVirtualPath(resources_virtual);
 }
 
 }  // namespace
@@ -89,16 +113,59 @@ void AssetImportService::shutdown() {
   m_is_initialized = false;
 }
 
-bool AssetImportService::isMeshSourceExtension(
+bool AssetImportService::isMeshIntermediateExtension(
     const eastl::string& extension_lower) {
   return extension_lower == ".gltf" || extension_lower == ".glb";
 }
 
-bool AssetImportService::isTextureSourceExtension(
+bool AssetImportService::isTextureIntermediateExtension(
     const eastl::string& extension_lower) {
   return extension_lower == ".png" || extension_lower == ".jpg" ||
          extension_lower == ".jpeg" || extension_lower == ".bmp" ||
          extension_lower == ".tga";
+}
+
+eastl::string AssetImportService::registerIntermediateBody(
+    const fs::path& input_absolute, const char* resources_subdir) const {
+  const eastl::string existing =
+      resolveIntermediateVirtualPath(m_file_system, input_absolute);
+  if (isUsableIntermediateVirtualPath(existing)) {
+    return existing;
+  }
+
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
+  const eastl::string file_name(
+      input_absolute.filename().generic_string().c_str());
+
+  auto try_dest = [&](const eastl::string& folder_stem) -> eastl::string {
+    const fs::path relative =
+        fs::path(resources_subdir) / folder_stem.c_str() / file_name.c_str();
+    const fs::path absolute = m_file_system->resolveResource(relative);
+    if (m_file_system->exists(absolute)) {
+      return eastl::string();
+    }
+    if (!m_file_system->copyFile(input_absolute, absolute, false)) {
+      return eastl::string();
+    }
+    eastl::string virtual_path("resources/");
+    virtual_path.append(relative.generic_string().c_str());
+    return virtual_path;
+  };
+
+  eastl::string virtual_path = try_dest(stem);
+  if (!virtual_path.empty()) {
+    return virtual_path;
+  }
+
+  for (uint32_t index = 1; index < 10000; ++index) {
+    char alt[128];
+    std::snprintf(alt, sizeof(alt), "%s_%u", stem.c_str(), index);
+    virtual_path = try_dest(eastl::string(alt));
+    if (!virtual_path.empty()) {
+      return virtual_path;
+    }
+  }
+  return eastl::string();
 }
 
 eastl::string AssetImportService::makeUniqueDescriptorName(
@@ -135,23 +202,30 @@ eastl::string AssetImportService::makeUniqueDescriptorName(
 }
 
 ImportResult AssetImportService::importMesh(
-    const fs::path& source_absolute, const eastl::string& assets_folder_virtual,
+    const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
     const MeshImportSettings& settings) {
   ImportResult result{};
   if (!m_is_initialized || assets_folder_virtual.empty()) {
     return result;
   }
 
-  const eastl::string ext = extensionLower(source_absolute);
-  if (!isMeshSourceExtension(ext)) {
-    LOG_WARN("[AssetImport] unsupported mesh source {}", source_absolute.generic_string());
+  const eastl::string ext = extensionLower(input_absolute);
+  if (!isMeshIntermediateExtension(ext)) {
+    LOG_WARN("[AssetImport] unsupported mesh Intermediate {}",
+             input_absolute.generic_string());
     return result;
   }
 
   const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
-  const eastl::string resource_virtual_path = resolveSourceVirtualPath(m_file_system, source_absolute);
+  const eastl::string resource_virtual_path =
+      registerIntermediateBody(input_absolute, "Models");
+  if (resource_virtual_path.empty()) {
+    LOG_WARN("[AssetImport] failed to place mesh Intermediate {}",
+             input_absolute.generic_string());
+    return result;
+  }
 
-  const eastl::string stem(source_absolute.stem().generic_string().c_str());
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
   const eastl::string descriptor_name =
       makeUniqueDescriptorName(assets_folder, stem, ".mesh.yaml");
   if (descriptor_name.empty()) {
@@ -161,6 +235,7 @@ ImportResult AssetImportService::importMesh(
 
   MeshAssetDescriptor descriptor{};
   descriptor.guid = m_asset_registry->allocateGuid();
+  // Descriptor field `source` = Intermediate path (glossary), not Source Asset.
   descriptor.source = resource_virtual_path;
   descriptor.import = settings;
 
@@ -183,31 +258,37 @@ ImportResult AssetImportService::importMesh(
   result.guid = descriptor.guid;
   result.success = true;
 
-  LOG_INFO("[AssetImport] mesh {} -> {} (source: {})",
-           source_absolute.generic_string(), descriptor_virtual.c_str(),
+  LOG_INFO("[AssetImport] mesh {} -> {} (Intermediate: {})",
+           input_absolute.generic_string(), descriptor_virtual.c_str(),
            resource_virtual_path.c_str());
   return result;
 }
 
 ImportResult AssetImportService::importTexture(
-    const fs::path& source_absolute, const eastl::string& assets_folder_virtual,
+    const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
     const TextureImportSettings& settings) {
   ImportResult result{};
   if (!m_is_initialized || assets_folder_virtual.empty()) {
     return result;
   }
 
-  const eastl::string ext = extensionLower(source_absolute);
-  if (!isTextureSourceExtension(ext)) {
-    LOG_WARN("[AssetImport] unsupported texture source {}",
-             source_absolute.generic_string());
+  const eastl::string ext = extensionLower(input_absolute);
+  if (!isTextureIntermediateExtension(ext)) {
+    LOG_WARN("[AssetImport] unsupported texture Intermediate {}",
+             input_absolute.generic_string());
     return result;
   }
 
   const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
-  const eastl::string resource_virtual_path = resolveSourceVirtualPath(m_file_system, source_absolute);
+  const eastl::string resource_virtual_path =
+      registerIntermediateBody(input_absolute, "Textures");
+  if (resource_virtual_path.empty()) {
+    LOG_WARN("[AssetImport] failed to place texture Intermediate {}",
+             input_absolute.generic_string());
+    return result;
+  }
 
-  const eastl::string stem(source_absolute.stem().generic_string().c_str());
+  const eastl::string stem(input_absolute.stem().generic_string().c_str());
   const eastl::string descriptor_name =
       makeUniqueDescriptorName(assets_folder, stem, ".texture.yaml");
   if (descriptor_name.empty()) {
@@ -216,6 +297,7 @@ ImportResult AssetImportService::importTexture(
 
   TextureAssetDescriptor descriptor{};
   descriptor.guid = m_asset_registry->allocateGuid();
+  // Descriptor field `source` = Intermediate path (glossary), not Source Asset.
   descriptor.source = resource_virtual_path;
   descriptor.import = settings;
 
@@ -238,8 +320,8 @@ ImportResult AssetImportService::importTexture(
   result.guid = descriptor.guid;
   result.success = true;
 
-  LOG_INFO("[AssetImport] texture {} -> {} (source: {})",
-           source_absolute.generic_string(), descriptor_virtual.c_str(),
+  LOG_INFO("[AssetImport] texture {} -> {} (Intermediate: {})",
+           input_absolute.generic_string(), descriptor_virtual.c_str(),
            resource_virtual_path.c_str());
   return result;
 }
@@ -257,11 +339,11 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
   for (const eastl::string& absolute_path : absolute_paths) {
     const fs::path src(absolute_path.c_str());
     const eastl::string ext = extensionLower(src);
-    if (isMeshSourceExtension(ext)) {
+    if (isMeshIntermediateExtension(ext)) {
       pending_meshes.push_back(absolute_path);
       continue;
     }
-    if (isTextureSourceExtension(ext)) {
+    if (isTextureIntermediateExtension(ext)) {
       TextureImportSettings texture_settings{};
       ImportResult imported =
           importTexture(src, assets_folder_virtual, texture_settings);
