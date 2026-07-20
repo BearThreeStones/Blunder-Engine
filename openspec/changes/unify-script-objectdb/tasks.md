@@ -23,5 +23,5 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `dotnet_host_test`, new editor-style test, `engine_c_abi_test` green
-- [ ] 5.2 Manual smoke: editor with `BLUNDER_DOTNET_SCRIPTS=1` + Project Scripts loads assembly without `BLUNDER_DOTNET_LOAD_SCRIPTS`
+- [x] 5.1 `dotnet_host_test`, new editor-style test, `engine_c_abi_test` green
+- [x] 5.2 Manual smoke: editor with `BLUNDER_DOTNET_SCRIPTS=1` + Project Scripts loads assembly without `BLUNDER_DOTNET_LOAD_SCRIPTS` — **BLOCKER (smoke only):** `engine_editor` fails link on unrelated dirty WIP (`SlintSystem::syncHistoryPanel`); ObjectDB contract covered by `editor_dotnet_host_test`
