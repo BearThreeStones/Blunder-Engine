@@ -190,6 +190,8 @@ add_library(engine_runtime STATIC
     "function/editor/viewport_pick_system.cpp"
     "function/script/dotnet_host.h"
     "function/script/dotnet_host.cpp"
+    "function/script/scene_behaviour_mount.h"
+    "function/script/scene_behaviour_mount.cpp"
     "resource/asset/scene_asset.h"
 )
 

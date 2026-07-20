@@ -12,9 +12,9 @@
 
 ## 3. Mount when host running
 
-- [ ] 3.1 After load (or when host starts with scene already loaded): AttachBehaviour for each slot in order
-- [ ] 3.2 Apply minimal property bag after attach (bool/number/string) or document skip if type has no bag
-- [ ] 3.3 Test: load + host + fixture type → managed Tick / peer non-null (`editor_dotnet_host_test` style)
+- [x] 3.1 After load (or when host starts with scene already loaded): AttachBehaviour for each slot in order
+- [x] 3.2 Apply minimal property bag after attach (bool/number/string) or document skip if type has no bag
+- [x] 3.3 Test: load + host + fixture type → managed Tick / peer non-null (`editor_dotnet_host_test` style)
 
 ## 4. Export / save
 

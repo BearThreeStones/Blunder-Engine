@@ -38,7 +38,7 @@ void SceneInstance::instantiate(const Scene& scene) {
       }
     }
     // Bind Object + restore Behaviour slots only when the list is non-empty.
-    // Peers stay null here; DotNetHost Attach is Task 3.
+    // Peers stay null here; mountSceneBehaviours attaches when DotNetHost runs.
     if (!definition.behaviours.empty()) {
       const ObjectId object_id = ObjectDB::create();
       Object* object = ObjectDB::get(object_id);

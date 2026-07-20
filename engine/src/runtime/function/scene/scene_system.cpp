@@ -7,6 +7,8 @@
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/script/dotnet_host.h"
+#include "runtime/function/script/scene_behaviour_mount.h"
 #include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -91,6 +93,11 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
   auto instance = eastl::make_shared<SceneInstance>();
   instance->setSourcePath(virtual_path);
   instance->instantiate(scene_asset->getScene());
+
+  if (g_runtime_global_context.m_dotnet_host != nullptr) {
+    mountSceneBehaviours(*instance, *g_runtime_global_context.m_dotnet_host,
+                         &scene_asset->getScene());
+  }
 
   if (child_reference != nullptr) {
     instance->setRootTransform(child_reference->position, child_reference->rotation,
