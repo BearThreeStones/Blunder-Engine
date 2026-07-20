@@ -2,6 +2,7 @@
 
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
+**Feature commit:** `a0190e1` — feat: Import glTF/images as Intermediate register  
 **OpenSpec:** `- [x] 5.1 Keep glTF/image Import as Intermediate register + Resources copy`
 
 ## Summary
