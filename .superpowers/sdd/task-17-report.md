@@ -2,8 +2,7 @@
 
 **Status:** done  
 **Branch:** `feat/asset-pipeline-pull`  
-**Feature commit:** `a0190e1` — feat: Import glTF/images as Intermediate register  
-**Report pin:** `0c5d296` — docs: pin task 5.1 report to Import Intermediate commit  
+**Feature commits:** `a0190e1` (feat) .. `79b40ba` (fix free helper)  
 **OpenSpec:** `- [x] 5.1 Keep glTF/image Import as Intermediate register + Resources copy`
 
 ## Summary
