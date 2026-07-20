@@ -171,6 +171,24 @@ int blunder_lifecycle_clear_hooks(void) {
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_lifecycle_invoke_ready(BlunderObjectId id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  LifecycleDispatch::invokeReady(object);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_lifecycle_invoke_tick(BlunderObjectId id, float delta_time) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  LifecycleDispatch::invokeTick(object, delta_time);
+  return BLUNDER_ENGINE_OK;
+}
+
 int blunder_ptrcall(const char* class_name, const char* method_name,
                     BlunderObjectId id, const void** args, void* ret) {
   Object* object = ObjectDB::get(static_cast<ObjectId>(id));

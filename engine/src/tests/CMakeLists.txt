@@ -187,30 +187,60 @@ target_precompile_headers(engine_c_abi_test
 add_test(NAME engine_c_abi_test
          COMMAND engine_c_abi_test)
 
-# DotNetHost smoke: start CoreCLR against staged Blunder.ScriptHost.
+# DotNetHost e2e: fixture game + managed Tick via SHARED blunder_engine_c
+# (Approach A — one ObjectDB: create/lifecycle only through the ScriptHost-
+# staged C-ABI DLL, loaded via LoadLibrary — do not link the import lib or a
+# second copy next to the test exe).
 # Requires .NET 10 SDK/runtime (DOTNET_ROOT) and nethost from the host pack.
 add_executable(dotnet_host_test
     "dotnet_host_test.cpp"
 )
 
+# engine_runtime provides DotNetHost only. Object traffic uses LoadLibrary on
+# the staged SHARED blunder_engine_c (same image ScriptHost DllImports).
 target_link_libraries(dotnet_host_test
-    PRIVATE engine_runtime
+    PRIVATE
+        engine_runtime
 )
+
+set(BLUNDER_DOTNET_HOST_GAME_CSPROJ
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dotnet_host_game/DotnetHostGame.csproj")
+set(BLUNDER_DOTNET_HOST_GAME_OUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dotnet_host_game/bin/$<CONFIG>/net10.0")
+set(BLUNDER_DOTNET_HOST_GAME_STAGE
+    "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 
 target_compile_definitions(dotnet_host_test
     PRIVATE
         "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
 )
 
 if(MSVC)
     target_compile_options(dotnet_host_test PRIVATE /Zc:preprocessor)
 endif()
 
-# Do not REUSE_FROM engine_runtime PCH ? keeps the link graph minimal
+# Do not REUSE_FROM engine_runtime PCH -- keeps the link graph minimal
 # (DotNetHost must not pull Slint/ProjectManager via global_context).
 
-# Copy nethost.dll next to the test exe (engine_runtime POST_BUILD only
-# covers the static lib output dir, which is not where the .exe lands).
+# Build fixture game assembly and stage beside ScriptHost + test exe.
+if(NOT BLUNDER_DOTNET_EXE)
+    find_program(BLUNDER_DOTNET_EXE NAMES dotnet)
+endif()
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET dotnet_host_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for dotnet_host_test"
+        VERBATIM
+    )
+endif()
+
 if(BLUNDER_HAS_NETHOST AND WIN32)
     add_custom_command(TARGET dotnet_host_test POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -223,6 +253,10 @@ endif()
 if(TARGET blunder_script_host)
     add_dependencies(dotnet_host_test blunder_script_host)
 endif()
+if(TARGET blunder_api)
+    add_dependencies(dotnet_host_test blunder_api)
+endif()
+add_dependencies(dotnet_host_test blunder_engine_c)
 
 add_test(NAME dotnet_host_test
          COMMAND dotnet_host_test)

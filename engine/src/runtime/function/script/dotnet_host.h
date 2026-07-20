@@ -29,6 +29,12 @@ class DotNetHost {
   bool attachBehaviour(ObjectId object, const char* clr_type_name,
                        BehaviourId* out_id, eastl::string& out_error);
 
+  /// Test seam: resolve `HostExports.GetProbeTickCount` (reads fixture
+  /// TickCount via reflection on the already-loaded game assembly).
+  bool resolveProbeTickCount(const std::filesystem::path& script_host_dll,
+                             eastl::string& out_error);
+  int getProbeTickCount() const;
+
   void shutdown();
   bool isRunning() const { return m_running; }
 
@@ -46,10 +52,12 @@ class DotNetHost {
   using AttachBehaviourFn = int (*)(uint64_t object_id, const char* utf8_type,
                                     uint64_t* out_behaviour_id);
   using RegisterLifecycleHooksFn = void (*)();
+  using GetProbeTickCountFn = int (*)();
 
   LoadGameAssemblyFn m_load_game{nullptr};
   AttachBehaviourFn m_attach{nullptr};
   RegisterLifecycleHooksFn m_register_hooks{nullptr};
+  GetProbeTickCountFn m_get_probe_tick{nullptr};
 };
 
 }  // namespace Blunder

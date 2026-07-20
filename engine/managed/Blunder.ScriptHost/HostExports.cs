@@ -11,23 +11,53 @@ namespace Blunder.ScriptHost;
 public static class HostExports
 {
     static Assembly? s_gameAssembly;
+    static bool s_resolverRegistered;
+
+    static void EnsureApiResolver()
+    {
+        if (s_resolverRegistered)
+        {
+            return;
+        }
+
+        s_resolverRegistered = true;
+        System.Runtime.Loader.AssemblyLoadContext.Default.Resolving +=
+            static (_, name) =>
+            {
+                if (name.Name == "Blunder.Api")
+                {
+                    return typeof(Behaviour).Assembly;
+                }
+
+                return null;
+            };
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     public static int LoadGameAssembly(IntPtr utf8Path)
     {
         try
         {
+            EnsureApiResolver();
+
             string? path = Utf8ToString(utf8Path);
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
                 return Native.Error;
             }
 
-            s_gameAssembly = Assembly.LoadFrom(path);
+            // Load into the default ALC so Blunder.Api matches ScriptHost's
+            // already-loaded copy (Assembly.LoadFrom can duplicate deps and
+            // break Behaviour type identity).
+            string fullPath = Path.GetFullPath(path);
+            s_gameAssembly =
+                System.Runtime.Loader.AssemblyLoadContext.Default
+                    .LoadFromAssemblyPath(fullPath);
             return Native.Ok;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"LoadGameAssembly exception: {ex}");
             return Native.Error;
         }
     }
@@ -52,21 +82,35 @@ public static class HostExports
             }
 
             Type? type = ResolveBehaviourType(typeName);
-            if (type == null || !typeof(Behaviour).IsAssignableFrom(type) ||
-                type.IsAbstract)
+            if (type == null)
             {
+                Console.Error.WriteLine(
+                    $"AttachBehaviour: type not found: {typeName}");
+                return Native.Error;
+            }
+
+            if (!typeof(Behaviour).IsAssignableFrom(type) || type.IsAbstract)
+            {
+                Console.Error.WriteLine(
+                    $"AttachBehaviour: not a Behaviour: {type.FullName} " +
+                    $"(base={type.BaseType?.AssemblyQualifiedName}; " +
+                    $"expected={typeof(Behaviour).AssemblyQualifiedName})");
                 return Native.Error;
             }
 
             ulong id = Native.blunder_object_add_behaviour(objectId, typeName);
             if (id == 0)
             {
+                Console.Error.WriteLine(
+                    $"AttachBehaviour: add_behaviour failed for object {objectId}");
                 return Native.Error;
             }
 
             object? instance = Activator.CreateInstance(type);
             if (instance is not Behaviour behaviour)
             {
+                Console.Error.WriteLine(
+                    $"AttachBehaviour: CreateInstance type mismatch: {instance?.GetType().FullName}");
                 Native.blunder_object_remove_behaviour(objectId, id);
                 return Native.Error;
             }
@@ -79,6 +123,7 @@ public static class HostExports
             if (Native.blunder_object_set_behaviour_peer(objectId, id, peer) !=
                 Native.Ok)
             {
+                Console.Error.WriteLine("AttachBehaviour: set_behaviour_peer failed");
                 handle.Free();
                 Native.blunder_object_remove_behaviour(objectId, id);
                 return Native.Error;
@@ -88,8 +133,9 @@ public static class HostExports
             *behaviourId = id;
             return Native.Ok;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"AttachBehaviour exception: {ex}");
             return Native.Error;
         }
     }
@@ -103,6 +149,44 @@ public static class HostExports
             delegate* unmanaged[Cdecl]<IntPtr, void> ready = &OnReady;
             Native.blunder_lifecycle_set_tick_hook("Object", (IntPtr)tick);
             Native.blunder_lifecycle_set_ready_hook("Object", (IntPtr)ready);
+        }
+    }
+
+    /// <summary>
+    /// Test seam: read fixture <c>ProbeBehaviour.TickCount</c> from the game
+    /// assembly already loaded by <see cref="LoadGameAssembly"/> (avoid a
+    /// second hostfxr load that would duplicate statics).
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static int GetProbeTickCount()
+    {
+        try
+        {
+            if (s_gameAssembly == null)
+            {
+                return -1;
+            }
+
+            Type? type = s_gameAssembly.GetType("DotnetHostGame.ProbeBehaviour",
+                                                throwOnError: false);
+            if (type == null)
+            {
+                return -1;
+            }
+
+            FieldInfo? field = type.GetField(
+                "TickCount", BindingFlags.Public | BindingFlags.Static);
+            if (field == null || field.FieldType != typeof(int))
+            {
+                return -1;
+            }
+
+            object? value = field.GetValue(null);
+            return value is int count ? count : -1;
+        }
+        catch
+        {
+            return -1;
         }
     }
 

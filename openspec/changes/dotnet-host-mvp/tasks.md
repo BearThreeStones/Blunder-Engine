@@ -33,9 +33,9 @@
 
 ## 6. End-to-end Tick smoke
 
-- [ ] 6.1 Add fixture game project `engine/src/tests/fixtures/dotnet_host_game` with `ProbeBehaviour`
-- [ ] 6.2 Add `dotnet_host_test`: start host, load fixture, attach Behaviour, invoke Tick, assert managed side effect
-- [ ] 6.3 Document .NET 10 SDK/runtime prerequisite in `docs/agents/testing.md`
+- [x] 6.1 Add fixture game project `engine/src/tests/fixtures/dotnet_host_game` with `ProbeBehaviour`
+- [x] 6.2 Add `dotnet_host_test`: start host, load fixture, attach Behaviour, invoke Tick, assert managed side effect
+- [x] 6.3 Document .NET 10 SDK/runtime prerequisite in `docs/agents/testing.md`
 
 ## 7. Project Scripts scaffold and build
 

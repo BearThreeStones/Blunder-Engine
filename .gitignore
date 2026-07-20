@@ -89,3 +89,8 @@ skia-*.tar.gz
 
 # Git worktrees (superpowers / local agent isolation)
 .worktrees/
+
+# Fixture .NET build outputs
+engine/src/tests/fixtures/**/bin/
+engine/src/tests/fixtures/**/obj/
+
