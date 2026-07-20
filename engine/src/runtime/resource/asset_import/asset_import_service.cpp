@@ -201,9 +201,9 @@ const aiScene* readSourceScene(Assimp::Importer& importer,
   return scene;
 }
 
-/// Assimp Export to an absolute Intermediate glTF path (overwrites).
-bool exportSceneToGltfFile(const aiScene* scene, FileSystem* file_system,
-                           const fs::path& output_absolute) {
+/// Assimp Export to an absolute Intermediate COLLADA path (overwrites).
+bool exportSceneToColladaFile(const aiScene* scene, FileSystem* file_system,
+                              const fs::path& output_absolute) {
   if (!scene || !file_system) {
     return false;
   }
@@ -212,18 +212,18 @@ bool exportSceneToGltfFile(const aiScene* scene, FileSystem* file_system,
   }
   Assimp::Exporter exporter;
   const aiReturn status =
-      exporter.Export(scene, "gltf2", output_absolute.string());
+      exporter.Export(scene, "collada", output_absolute.string());
   if (status != aiReturn_SUCCESS) {
-    LOG_WARN("[AssetImport] Assimp gltf2 export failed for {}: {}",
+    LOG_WARN("[AssetImport] Assimp collada export failed for {}: {}",
              output_absolute.generic_string(), exporter.GetErrorString());
     return false;
   }
   return file_system->exists(output_absolute);
 }
 
-/// Assimp Import + Export to Intermediate glTF under Resources/Models/{stem}/.
-eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
-                                             const fs::path& input_absolute) {
+/// Assimp Import + Export to Intermediate COLLADA under Resources/Models/{stem}/.
+eastl::string exportSourceToIntermediateCollada(FileSystem* file_system,
+                                                const fs::path& input_absolute) {
   Assimp::Importer importer;
   const aiScene* scene = readSourceScene(importer, input_absolute);
   if (!scene) {
@@ -233,14 +233,14 @@ eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
   const eastl::string stem(input_absolute.stem().generic_string().c_str());
 
   auto try_export = [&](const eastl::string& folder_stem) -> eastl::string {
-    const eastl::string file_name = folder_stem + ".gltf";
+    const eastl::string file_name = folder_stem + ".dae";
     const fs::path relative =
         fs::path("Models") / folder_stem.c_str() / file_name.c_str();
     const fs::path absolute = file_system->resolveResource(relative);
     if (file_system->exists(absolute)) {
       return eastl::string();
     }
-    if (!exportSceneToGltfFile(scene, file_system, absolute)) {
+    if (!exportSceneToColladaFile(scene, file_system, absolute)) {
       return eastl::string();
     }
 
@@ -265,7 +265,7 @@ eastl::string exportSourceToIntermediateGltf(FileSystem* file_system,
   return eastl::string();
 }
 
-/// Re-export archived FBX/OBJ over an existing Intermediate glTF (overwrite).
+/// Re-export archived Source over an existing Intermediate COLLADA (overwrite).
 bool reexportArchivedSourceToIntermediate(FileSystem* file_system,
                                           const fs::path& archived_absolute,
                                           const fs::path& intermediate_absolute) {
@@ -274,7 +274,7 @@ bool reexportArchivedSourceToIntermediate(FileSystem* file_system,
   if (!scene) {
     return false;
   }
-  return exportSceneToGltfFile(scene, file_system, intermediate_absolute);
+  return exportSceneToColladaFile(scene, file_system, intermediate_absolute);
 }
 
 fs::path resolveResourcesVirtualPath(FileSystem* file_system,
@@ -295,8 +295,8 @@ fs::path resolveDescriptorAbsolute(FileSystem* file_system,
   return file_system->resolveAsset(fs::path(relative.c_str()));
 }
 
-/// When archived_source is FBX/OBJ, overwrite Intermediate via Assimp.
-/// GUID / descriptor paths are left unchanged. Returns false only on
+/// When archived_source is Source Export whitelist, overwrite Intermediate via
+/// Assimp. GUID / descriptor paths are left unchanged. Returns false only on
 /// hard failure of an attempted Source Export re-run.
 bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
                                            const eastl::string& descriptor_virtual,
@@ -325,8 +325,8 @@ bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
   const eastl::string archived_ext = extensionLower(archived_absolute);
   if (!AssetImportService::isMeshSourceExportExtension(archived_ext)) {
     LOG_WARN(
-        "[AssetImport] Reimport: archived_source {} is not FBX/OBJ; "
-        "invalidating Finals only",
+        "[AssetImport] Reimport: archived_source {} is not Source Export "
+        "whitelist; invalidating Finals only",
         descriptor.archived_source.c_str());
     return true;
   }
@@ -525,9 +525,9 @@ ImportResult AssetImportService::importMeshSourceExport(
   }
 
   const eastl::string intermediate_virtual =
-      exportSourceToIntermediateGltf(m_file_system, input_absolute);
+      exportSourceToIntermediateCollada(m_file_system, input_absolute);
   if (intermediate_virtual.empty()) {
-    LOG_WARN("[AssetImport] Source Export to Intermediate glTF failed for {}",
+    LOG_WARN("[AssetImport] Source Export to Intermediate COLLADA failed for {}",
              input_absolute.generic_string());
     return result;
   }

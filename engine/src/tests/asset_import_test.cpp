@@ -218,7 +218,45 @@ v 0.0 1.0 0.0
 f 1 2 3
 )";
 
-// Task 5.2: FBX/OBJ Source Export dual-writes Source archive + Intermediate glTF.
+// Minimal glTF 2.0 triangle (Source Export input → Intermediate COLLADA).
+constexpr const char* kTriangleGltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 0 },
+      "indices": 1
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+  ],
+  "buffers": [{
+    "byteLength": 42,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA"
+  }]
+})";
+
+// Task 1.2: Source Export dual-writes Source archive + Intermediate COLLADA (.dae).
 void importObjSourceExportDualWritesArchiveAndIntermediate() {
   using namespace Blunder;
   ensureLogger();
@@ -288,9 +326,11 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
   expect_true("OBJ descriptor guid matches result", parsed.guid == result.guid);
   expect_true("OBJ source is Intermediate resources/ path",
               startsWith(parsed.source, "resources/"));
-  expect_true("OBJ source is Intermediate glTF",
-              containsIgnoreCase(parsed.source, ".gltf") ||
-                  containsIgnoreCase(parsed.source, ".glb"));
+  expect_true("OBJ source is Intermediate COLLADA .dae",
+              containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("OBJ source is not glTF Intermediate",
+              !containsIgnoreCase(parsed.source, ".gltf") &&
+                  !containsIgnoreCase(parsed.source, ".glb"));
   expect_true("OBJ source is not under Source archive",
               !containsIgnoreCase(parsed.source, "/source/"));
   expect_true("OBJ archived_source set", !parsed.archived_source.empty());
@@ -308,9 +348,9 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
   };
 
   const fs::path intermediate_absolute = resolveResourcesVirtual(parsed.source);
-  expect_true("Intermediate glTF exists under Resources",
+  expect_true("Intermediate COLLADA exists under Resources",
               file_system.exists(intermediate_absolute));
-  expect_true("Intermediate glTF not under Resources/Source",
+  expect_true("Intermediate COLLADA not under Resources/Source",
               intermediate_absolute.generic_string().find("/Source/") ==
                       std::string::npos &&
                   intermediate_absolute.generic_string().find("\\Source\\") ==
@@ -321,6 +361,10 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
                   containsIgnoreCase(
                       eastl::string(intermediate_absolute.generic_string().c_str()),
                       "\\models\\"));
+  const std::string intermediate_body = readTextFile(intermediate_absolute);
+  expect_true("Intermediate body looks like COLLADA",
+              intermediate_body.find("COLLADA") != std::string::npos ||
+                  intermediate_body.find("collada") != std::string::npos);
 
   eastl::string archived_rel = parsed.archived_source;
   if (startsWith(archived_rel, "resources/")) {
@@ -341,6 +385,94 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
   expect_true("registry maps OBJ guid to descriptor",
               registry.resolveGuid(result.guid) ==
                   result.descriptor_virtual_path);
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
+// Task 1.2: glTF Source Export dual-writes archive + Intermediate COLLADA (.dae).
+void importGltfSourceExportDualWritesArchiveAndIntermediate() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_import_gltf_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "triangle.gltf";
+  writeTextFile(external, kTriangleGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  const ImportResult result =
+      import_service.importMesh(external, "assets/Meshes", settings);
+
+  expect_true("glTF Source Export succeeds", result.success);
+  expect_true("glTF Source Export returns guid", !result.guid.empty());
+
+  eastl::string desc_rel = result.descriptor_virtual_path;
+  if (startsWith(desc_rel, "assets/")) {
+    desc_rel.erase(0, 7);
+  }
+  const fs::path descriptor_absolute =
+      file_system.resolveAsset(fs::path(desc_rel.c_str()));
+  eastl::string yaml;
+  expect_true("read glTF descriptor yaml",
+              file_system.readText(descriptor_absolute, yaml));
+
+  MeshAssetDescriptor parsed{};
+  expect_true("parse glTF mesh descriptor",
+              AssetYaml::parseMeshDescriptor(yaml, parsed));
+  expect_true("glTF source is Intermediate COLLADA .dae",
+              containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("glTF source is not Intermediate glTF",
+              !containsIgnoreCase(parsed.source, ".gltf") &&
+                  !containsIgnoreCase(parsed.source, ".glb"));
+  expect_true("glTF archived_source set", !parsed.archived_source.empty());
+  expect_true("glTF archived_source keeps .gltf",
+              containsIgnoreCase(parsed.archived_source, ".gltf"));
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  const fs::path intermediate_absolute = resolveResourcesVirtual(parsed.source);
+  expect_true("glTF Intermediate COLLADA file exists",
+              file_system.exists(intermediate_absolute));
+  const std::string intermediate_body = readTextFile(intermediate_absolute);
+  expect_true("glTF Intermediate body looks like COLLADA",
+              intermediate_body.find("COLLADA") != std::string::npos ||
+                  intermediate_body.find("collada") != std::string::npos);
+
+  const fs::path archived_absolute =
+      resolveResourcesVirtual(parsed.archived_source);
+  expect_true("glTF archived Source exists",
+              file_system.exists(archived_absolute));
+  expect_true("glTF archived Source content preserved",
+              readTextFile(archived_absolute) == kTriangleGltf);
 
   import_service.shutdown();
   registry.shutdown();
@@ -477,10 +609,9 @@ void reimportObjPreservesGuidAndRefreshesIntermediate() {
       readTextFile(intermediate_absolute);
   expect_true("Reimport refreshes Intermediate (not stale marker)",
               intermediate_after != "STALE_INTERMEDIATE_MARKER");
-  expect_true("Reimport Intermediate still looks like glTF",
-              intermediate_after.find("\"asset\"") != std::string::npos ||
-                  intermediate_after.find("asset") != std::string::npos ||
-                  intermediate_after.find("meshes") != std::string::npos);
+  expect_true("Reimport Intermediate still looks like COLLADA",
+              intermediate_after.find("COLLADA") != std::string::npos ||
+                  intermediate_after.find("collada") != std::string::npos);
 
   expect_true("Reimport invalidates cooked Final",
               !file_system.exists(mesh_cooked));
@@ -706,6 +837,7 @@ int main() {
   importMeshWritesIntermediateAndDescriptor();
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
+  importGltfSourceExportDualWritesArchiveAndIntermediate();
   importUnsupportedSourceExportRejected();
   reimportObjPreservesGuidAndRefreshesIntermediate();
   reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();

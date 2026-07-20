@@ -1,7 +1,7 @@
 ## 1. Import / Source Export routing
 
 - [x] 1.1 Update Intermediate-direct vs Source Export extension tables: `.dae` + images direct; FBX/OBJ/glTF/GLB → Source Export; keep `.blend` reject
-- [ ] 1.2 Change Assimp Source Export target from glTF to COLLADA (`.dae`); dual-write Source archive + Intermediate; descriptor `source` / `archived_source`
+- [x] 1.2 Change Assimp Source Export target from glTF to COLLADA (`.dae`); dual-write Source archive + Intermediate; descriptor `source` / `archived_source`
 - [ ] 1.3 Tests: Import `.dae` Intermediate-direct; Import OBJ/glTF dual-write to `.dae`; glTF not registered as Intermediate `source`; `.blend` still rejected
 
 ## 2. Fast Path / Cook COLLADA

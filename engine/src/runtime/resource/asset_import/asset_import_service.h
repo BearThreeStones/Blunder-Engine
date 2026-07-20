@@ -27,17 +27,19 @@ struct AssetImportServiceInit {
   AssetCompilerService* asset_compiler{nullptr};
 };
 
-/// Registers Intermediate exchange files (glTF / images) as Assets, and runs
-/// Assimp Source Export for FBX/OBJ (dual-write Source archive + Intermediate).
-/// Descriptor field `source` stores the Intermediate virtual path; Source Export
-/// also sets `archived_source` to the Resources/Source archive path.
+/// Registers Intermediate exchange files (COLLADA / images) as Assets, and runs
+/// Assimp Source Export for FBX/OBJ/glTF/GLB (dual-write Source archive +
+/// Intermediate). Descriptor field `source` stores the Intermediate virtual
+/// path; Source Export also sets `archived_source` to the Resources/Source
+/// archive path.
 class AssetImportService final {
  public:
   void initialize(const AssetImportServiceInit& init);
   void shutdown();
 
-  /// Import a mesh: glTF/GLB Intermediate register, or FBX/OBJ Source Export
-  /// (archive under Resources/Source/, Assimp → Intermediate glTF under Models/).
+  /// Import a mesh: COLLADA Intermediate register, or FBX/OBJ/glTF/GLB Source
+  /// Export (archive under Resources/Source/, Assimp → Intermediate COLLADA
+  /// under Models/).
   ImportResult importMesh(const std::filesystem::path& input_absolute,
                           const eastl::string& assets_folder_virtual,
                           const MeshImportSettings& settings);
@@ -59,10 +61,11 @@ class AssetImportService final {
       const std::filesystem::path& absolute_source_path) const;
 
   /// Request Reimport for an Asset GUID. Preserves GUID always.
-  /// If `archived_source` is FBX/OBJ: Assimp re-exports Intermediate glTF
-  /// (overwrite), then invalidates Finals/dependents. Intermediate-only:
-  /// invalidate Finals (settings refresh optional / no GUID change).
-  /// Rebuilds the dependency graph once (equivalent to requestReimports of one).
+  /// If `archived_source` is Source Export whitelist: Assimp re-exports
+  /// Intermediate COLLADA (overwrite), then invalidates Finals/dependents.
+  /// Intermediate-only: invalidate Finals (settings refresh optional / no
+  /// GUID change). Rebuilds the dependency graph once (equivalent to
+  /// requestReimports of one).
   bool requestReimport(const eastl::string& guid);
 
   /// Batch Reimport: one rebuildDependencyGraph, then refresh + invalidate
