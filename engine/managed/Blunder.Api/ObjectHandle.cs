@@ -1,18 +1,20 @@
 namespace Blunder;
 
 /// <summary>
-/// Managed façade over a native Object id. Sibling Behaviours are tracked in-process
-/// so <see cref="GetBehaviour{T}"/> / <see cref="GetBehaviours{T}"/> work before ScriptHost
-/// owns GCHandle peers (Task 5).
+/// Managed façade over a native Object id. Sibling Behaviours share one
+/// canonical handle per ObjectId so <see cref="GetBehaviour{T}"/> works for
+/// both <see cref="AddBehaviour{T}"/> and ScriptHost AttachBehaviour.
 /// </summary>
 public sealed class ObjectHandle
 {
     const string ObjectClass = "Object";
     const string PositionProperty = "position";
 
+    static readonly Dictionary<ulong, ObjectHandle> s_byId = new();
+
     readonly List<Behaviour> _behaviours = new();
 
-    public ObjectHandle(ulong id)
+    ObjectHandle(ulong id)
     {
         Id = id;
     }
@@ -38,6 +40,50 @@ public sealed class ObjectHandle
     }
 
     /// <summary>
+    /// Returns the canonical handle for <paramref name="id"/>, creating one if
+    /// needed so AttachBehaviour and AddBehaviour share sibling lists.
+    /// </summary>
+    public static ObjectHandle GetOrCreate(ulong id)
+    {
+        if (id == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(id));
+        }
+
+        lock (s_byId)
+        {
+            if (s_byId.TryGetValue(id, out ObjectHandle? existing))
+            {
+                return existing;
+            }
+
+            ObjectHandle created = new(id);
+            s_byId[id] = created;
+            return created;
+        }
+    }
+
+    /// <summary>Registers a managed Behaviour instance for sibling queries.</summary>
+    internal void RegisterBehaviour(Behaviour behaviour)
+    {
+        _behaviours.Add(behaviour);
+    }
+
+    /// <summary>Drops all canonical handles (host shutdown / test teardown).</summary>
+    internal static void ClearRegistry()
+    {
+        lock (s_byId)
+        {
+            foreach (ObjectHandle handle in s_byId.Values)
+            {
+                handle._behaviours.Clear();
+            }
+
+            s_byId.Clear();
+        }
+    }
+
+    /// <summary>
     /// Registers a Behaviour slot natively (type = <see cref="Type.FullName"/>) and
     /// constructs a managed instance for sibling queries.
     /// </summary>
@@ -56,7 +102,7 @@ public sealed class ObjectHandle
             Object = this,
             BehaviourId = behaviourId,
         };
-        _behaviours.Add(behaviour);
+        RegisterBehaviour(behaviour);
         return behaviourId;
     }
 
@@ -87,9 +133,19 @@ public sealed class ObjectHandle
         return matches.ToArray();
     }
 
-    public static ObjectHandle Create() => new(Native.blunder_object_create());
+    public static ObjectHandle Create() => GetOrCreate(Native.blunder_object_create());
 
-    public bool Destroy() => Native.blunder_object_destroy(Id) == Native.Ok;
+    public bool Destroy()
+    {
+        int rc = Native.blunder_object_destroy(Id);
+        lock (s_byId)
+        {
+            s_byId.Remove(Id);
+            _behaviours.Clear();
+        }
+
+        return rc == Native.Ok;
+    }
 
     public bool IsValid => Native.blunder_object_is_valid(Id) != 0;
 }

@@ -179,6 +179,18 @@ int main() {
     expect_true("attach", attached);
     expect_true("behaviour id", static_cast<uint64_t>(bid) != 0);
 
+    BehaviourId sibling_bid{};
+    const bool sibling_attached = host.attachBehaviour(
+        static_cast<ObjectId>(oid), "DotnetHostGame.SiblingProbeBehaviour",
+        &sibling_bid, err);
+    if (!sibling_attached) {
+      std::fprintf(stderr, "attach sibling error: %s\n", err.c_str());
+    }
+    expect_true("attach sibling", sibling_attached);
+    expect_true("sibling behaviour id", static_cast<uint64_t>(sibling_bid) != 0);
+    expect_true("distinct behaviour ids",
+                static_cast<uint64_t>(bid) != static_cast<uint64_t>(sibling_bid));
+
     // LifecycleDispatch must run inside the same SHARED DLL ObjectDB.
     expect_true("invoke ready via c-abi", abi.invoke_ready(oid) == 0);
     expect_true("invoke tick via c-abi", abi.invoke_tick(oid, 0.016f) == 0);
@@ -193,6 +205,14 @@ int main() {
       std::fprintf(stderr, "getProbeTickCount=%d (expected 1)\n", ticks);
     }
     expect_true("managed tick", ticks == 1);
+
+    const int sibling_found = host.getProbeSiblingFound();
+    if (sibling_found != 1) {
+      std::fprintf(stderr, "getProbeSiblingFound=%d (expected 1)\n",
+                   sibling_found);
+    }
+    expect_true("GetBehaviour finds sibling after AttachBehaviour",
+                sibling_found == 1);
   }
 
   expect_true("destroy object via c-abi", abi.object_destroy(oid) == 0);

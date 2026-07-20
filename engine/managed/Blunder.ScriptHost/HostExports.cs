@@ -111,8 +111,10 @@ public static class HostExports
                 return Native.Error;
             }
 
-            behaviour.Object = new ObjectHandle(objectId);
+            ObjectHandle host = ObjectHandle.GetOrCreate(objectId);
+            behaviour.Object = host;
             behaviour.BehaviourId = id;
+            host.RegisterBehaviour(behaviour);
 
             GCHandle handle = GCHandle.Alloc(behaviour, GCHandleType.Normal);
             IntPtr peer = GCHandle.ToIntPtr(handle);
@@ -154,7 +156,29 @@ public static class HostExports
     /// second hostfxr load that would duplicate statics).
     /// </summary>
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    public static int GetProbeTickCount()
+    public static int GetProbeTickCount() =>
+        ReadGameStaticInt("DotnetHostGame.ProbeBehaviour", "TickCount");
+
+    /// <summary>
+    /// Test seam: read <c>SiblingProbeBehaviour.FoundSibling</c> after Ready
+    /// (GetBehaviour sibling lookup via ScriptHost AttachBehaviour).
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static int GetProbeSiblingFound() =>
+        ReadGameStaticInt("DotnetHostGame.SiblingProbeBehaviour", "FoundSibling");
+
+    /// <summary>
+    /// Clears managed peer table and type-level lifecycle hooks (host shutdown).
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static void ShutdownCleanup()
+    {
+        PeerTable.Clear();
+        Native.blunder_lifecycle_clear_hooks();
+        ObjectHandle.ClearRegistry();
+    }
+
+    static int ReadGameStaticInt(string typeName, string fieldName)
     {
         try
         {
@@ -163,15 +187,14 @@ public static class HostExports
                 return -1;
             }
 
-            Type? type = s_gameAssembly.GetType("DotnetHostGame.ProbeBehaviour",
-                                                throwOnError: false);
+            Type? type = s_gameAssembly.GetType(typeName, throwOnError: false);
             if (type == null)
             {
                 return -1;
             }
 
             FieldInfo? field = type.GetField(
-                "TickCount", BindingFlags.Public | BindingFlags.Static);
+                fieldName, BindingFlags.Public | BindingFlags.Static);
             if (field == null || field.FieldType != typeof(int))
             {
                 return -1;

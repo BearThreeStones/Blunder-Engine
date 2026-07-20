@@ -225,11 +225,13 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
   const char_t* load_name = L"LoadGameAssembly";
   const char_t* attach_name = L"AttachBehaviour";
   const char_t* register_name = L"RegisterLifecycleHooks";
+  const char_t* shutdown_name = L"ShutdownCleanup";
 #else
   const char_t* type_name = "Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* load_name = "LoadGameAssembly";
   const char_t* attach_name = "AttachBehaviour";
   const char_t* register_name = "RegisterLifecycleHooks";
+  const char_t* shutdown_name = "ShutdownCleanup";
 #endif
 
   void* fn = nullptr;
@@ -261,6 +263,16 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
     return false;
   }
   m_register_hooks = reinterpret_cast<RegisterLifecycleHooksFn>(fn);
+
+  fn = nullptr;
+  rc = load_and_get(dll_path.c_str(), type_name, shutdown_name,
+                    UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  if (rc != 0 || fn == nullptr) {
+    out_error = "Failed to resolve HostExports.ShutdownCleanup code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
+  m_shutdown_cleanup = reinterpret_cast<ShutdownCleanupFn>(fn);
   return true;
 }
 
@@ -319,6 +331,7 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
                                        eastl::string& out_error) {
   out_error.clear();
   m_get_probe_tick = nullptr;
+  m_get_probe_sibling = nullptr;
   if (!m_running || m_load_assembly_and_get_fn == nullptr) {
     out_error = "DotNetHost is not running";
     return false;
@@ -336,21 +349,33 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
 #ifdef _WIN32
   const char_t* type_name =
       L"Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
-  const char_t* method_name = L"GetProbeTickCount";
+  const char_t* tick_name = L"GetProbeTickCount";
+  const char_t* sibling_name = L"GetProbeSiblingFound";
 #else
   const char_t* type_name = "Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
-  const char_t* method_name = "GetProbeTickCount";
+  const char_t* tick_name = "GetProbeTickCount";
+  const char_t* sibling_name = "GetProbeSiblingFound";
 #endif
 
   void* fn = nullptr;
-  const int rc = load_and_get(dll_path.c_str(), type_name, method_name,
-                              UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  int rc = load_and_get(dll_path.c_str(), type_name, tick_name,
+                        UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
   if (rc != 0 || fn == nullptr) {
     out_error = "Failed to resolve HostExports.GetProbeTickCount code=";
     out_error += intToEastl(rc);
     return false;
   }
   m_get_probe_tick = reinterpret_cast<GetProbeTickCountFn>(fn);
+
+  fn = nullptr;
+  rc = load_and_get(dll_path.c_str(), type_name, sibling_name,
+                    UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  if (rc != 0 || fn == nullptr) {
+    out_error = "Failed to resolve HostExports.GetProbeSiblingFound code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
+  m_get_probe_sibling = reinterpret_cast<GetProbeTickCountFn>(fn);
   return true;
 }
 
@@ -361,15 +386,28 @@ int DotNetHost::getProbeTickCount() const {
   return m_get_probe_tick();
 }
 
+int DotNetHost::getProbeSiblingFound() const {
+  if (m_get_probe_sibling == nullptr) {
+    return -1;
+  }
+  return m_get_probe_sibling();
+}
+
 void DotNetHost::shutdown() {
   if (!m_running && m_host_context == nullptr && m_hostfxr_lib == nullptr) {
     return;
   }
 
+  if (m_shutdown_cleanup != nullptr) {
+    m_shutdown_cleanup();
+  }
+
   m_load_game = nullptr;
   m_attach = nullptr;
   m_register_hooks = nullptr;
+  m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
+  m_get_probe_sibling = nullptr;
   m_load_assembly_and_get_fn = nullptr;
   m_running = false;
 
@@ -395,7 +433,9 @@ void DotNetHost::closeHandles() {
   m_load_game = nullptr;
   m_attach = nullptr;
   m_register_hooks = nullptr;
+  m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
+  m_get_probe_sibling = nullptr;
   m_running = false;
 }
 
@@ -450,6 +490,8 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path&,
 
 int DotNetHost::getProbeTickCount() const { return -1; }
 
+int DotNetHost::getProbeSiblingFound() const { return -1; }
+
 void DotNetHost::shutdown() { closeHandles(); }
 
 void DotNetHost::closeHandles() {
@@ -459,7 +501,9 @@ void DotNetHost::closeHandles() {
   m_load_game = nullptr;
   m_attach = nullptr;
   m_register_hooks = nullptr;
+  m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
+  m_get_probe_sibling = nullptr;
   m_running = false;
 }
 
