@@ -18,12 +18,14 @@ struct TextureImportSettings {
 struct MeshAssetDescriptor {
   eastl::string guid;
   eastl::string source;
+  eastl::string archived_source;
   MeshImportSettings import{};
 };
 
 struct TextureAssetDescriptor {
   eastl::string guid;
   eastl::string source;
+  eastl::string archived_source;
   TextureImportSettings import{};
 };
 

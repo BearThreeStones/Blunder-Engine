@@ -247,3 +247,22 @@ endif()
 
 add_test(NAME godot_editor_icons_test
          COMMAND godot_editor_icons_test)
+
+add_executable(asset_yaml_test
+    "asset_yaml_test.cpp"
+)
+
+target_link_libraries(asset_yaml_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(asset_yaml_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(asset_yaml_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME asset_yaml_test
+         COMMAND asset_yaml_test)
