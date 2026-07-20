@@ -22,25 +22,28 @@ Prerequisite: **.NET 10 SDK + runtime** installed (set `DOTNET_ROOT` if CMake ca
 
 | Target | Focus |
 |--------|--------|
-| `dotnet_host_test` | CoreCLR ScriptHost start, fixture game load, managed `ProbeBehaviour.Tick` via SHARED `blunder_engine_c` |
+| `dotnet_host_test` | Approach A: CoreCLR ScriptHost + fixture game + managed `ProbeBehaviour.Tick` via LoadLibrary’d SHARED `blunder_engine_c` (registered module ABI) |
+| `editor_dotnet_host_test` | Editor-style: process ObjectDB + `blunder_native_abi_fill_from_process` + managed Tick (links `blunder_engine_c_static`; no SHARED Object traffic) |
 
-**Dual-ObjectDB note (tests):** native `engine_runtime` and SHARED `blunder_engine_c` each have their own ObjectDB/ClassDB statics. `dotnet_host_test` uses **Approach A** — Object create and lifecycle invoke go only through the ScriptHost-staged SHARED DLL (`LoadLibrary` of `bin/<Config>/blunder_engine_c.dll`, then `blunder_object_create` / `blunder_lifecycle_invoke_*`). The test does not link the C-ABI import library (avoids a second DLL copy next to the exe). Do not call `ObjectDB` / `LifecycleDispatch` from the test exe against IDs meant for managed ScriptHost.
+**Single-ObjectDB contract:** Editor and managed ScriptHost/Api share one ObjectDB via a native-registered C-ABI function-pointer table (`RegisterNativeAbi`). The editor fills from process-linked symbols (`blunder_native_abi_fill_from_process`); Approach A tests fill from SHARED module exports (`blunder_native_abi_fill_from_module`). Do not link `blunder_engine_c_static` and LoadLibrary SHARED `blunder_engine_c` for Object traffic in the same process.
 
-**Editor / runtime (Task 8):** `RuntimeGlobalContext` owns `DotNetHost`. Frame loop calls `ObjectDB::forEach` → `LifecycleDispatch::invokeReady` / `invokeTick` when the host is running. Play UI is not wired yet, so host start is gated:
+**Approach A note (`dotnet_host_test`):** Object create and lifecycle invoke go only through the ScriptHost-staged SHARED DLL (`LoadLibrary` of `bin/<Config>/blunder_engine_c.dll`). The test does not link the C-ABI import library. Do not call `ObjectDB` / `LifecycleDispatch` from that test exe against IDs meant for the SHARED image.
+
+**Editor / runtime:** `RuntimeGlobalContext` owns `DotNetHost`. Frame loop calls `ObjectDB::forEach` → `LifecycleDispatch::invokeReady` / `invokeTick` when the host is running. Play UI is not wired yet, so **host start** is gated:
 
 | Env | Effect |
 |-----|--------|
-| `BLUNDER_DOTNET_SCRIPTS=1` | Lazy-start ScriptHost from `Blunder.ScriptHost.dll` beside the editor (non-fatal on failure) |
-| `BLUNDER_DOTNET_LOAD_SCRIPTS=1` | Also call `loadGameAssembly` on `.blunder/scripts_bin/*.dll` (**experimental**) |
-
-**Dual-ObjectDB blocker (editor):** ScriptHost/Api still `DllImport("blunder_engine_c")`, which loads a **second** ObjectDB image. Editor scene Objects live in the statically linked `engine_runtime` ObjectDB. Until C-ABI is unified (native-registered function pointers into the editor process, or DllImport resolving to the same image), keep `BLUNDER_DOTNET_LOAD_SCRIPTS` off for normal editor use. Tick wiring still runs safely when only the host is up (no managed peers on editor Objects yet). Automated Tick proof remains `dotnet_host_test`.
+| `BLUNDER_DOTNET_SCRIPTS=1` | Start ScriptHost from `Blunder.ScriptHost.dll` beside the editor; if `.blunder/scripts_bin/*.dll` exists, also `loadGameAssembly` (non-fatal on failure) |
 
 ```powershell
+cmake --build build/vs2026-debug --config Debug --target editor_dotnet_host_test
+.\build\vs2026-debug\tests\Debug\editor_dotnet_host_test.exe
+# or: .\build\vs2026-debug\engine\src\tests\Debug\editor_dotnet_host_test.exe
+
 cmake --build build/vs2026-debug --config Debug --target dotnet_host_test
 .\build\vs2026-debug\tests\Debug\dotnet_host_test.exe
-# or: .\build\vs2026-debug\engine\src\tests\Debug\dotnet_host_test.exe
 
-# Editor smoke (host start, no Scripts load — dual-ObjectDB gated):
+# Editor smoke (host + Scripts load when scripts_bin present):
 $env:BLUNDER_DOTNET_SCRIPTS = "1"
 .\build\vs2026-debug\bin\Debug\engine_editor.exe --project-root "E:/Blunder Projects/Test"
 ```
@@ -50,8 +53,8 @@ $env:BLUNDER_DOTNET_SCRIPTS = "1"
 1. Create/open a Project with `Scripts/` scaffold
 2. `dotnet build` via `ScriptsBuilder` (or `dotnet build` into `.blunder/scripts_bin`)
 3. Start editor with `--project-root` and `BLUNDER_DOTNET_SCRIPTS=1`
-4. Confirm log: `[DotNetHost] ScriptHost running` (or a non-fatal start warning)
-5. Full managed Tick on editor Objects requires dual-ObjectDB unification (see above); until then use `dotnet_host_test`
+4. Confirm log: `[DotNetHost] ScriptHost running` and, when a game DLL exists, `[DotNetHost] loaded game assembly ...`
+5. Managed Tick on process Objects is proven by `editor_dotnet_host_test`; Approach A remains `dotnet_host_test`
 
 ## Reflection kernel coverage
 

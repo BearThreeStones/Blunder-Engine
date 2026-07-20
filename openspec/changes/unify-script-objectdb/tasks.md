@@ -17,9 +17,9 @@
 
 ## 4. Editor ObjectDB proof + gate removal
 
-- [ ] 4.1 Add automated test that links like the editor (process ObjectDB + DotNetHost): create Object, attach Behaviour, invokeTick, assert managed side effect
-- [ ] 4.2 Remove `BLUNDER_DOTNET_LOAD_SCRIPTS` dual-ObjectDB gate from `global_context` Scripts load path
-- [ ] 4.3 Update `docs/agents/testing.md` (and ADR 0011 / CONTEXT note if needed) for single-ObjectDB + remaining Play/host-start gate
+- [x] 4.1 Add automated test that links like the editor (process ObjectDB + DotNetHost): create Object, attach Behaviour, invokeTick, assert managed side effect
+- [x] 4.2 Remove `BLUNDER_DOTNET_LOAD_SCRIPTS` dual-ObjectDB gate from `global_context` Scripts load path
+- [x] 4.3 Update `docs/agents/testing.md` (and ADR 0011 / CONTEXT note if needed) for single-ObjectDB + remaining Play/host-start gate
 
 ## 5. Verification
 

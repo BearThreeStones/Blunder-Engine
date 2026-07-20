@@ -288,6 +288,62 @@ add_dependencies(dotnet_host_test blunder_engine_c)
 add_test(NAME dotnet_host_test
          COMMAND dotnet_host_test)
 
+# Editor-style single ObjectDB: process ObjectDB + fill_from_process + managed
+# Tick. Links engine_runtime + blunder_engine_c_static; does NOT LoadLibrary
+# SHARED blunder_engine_c for Object create/Tick.
+add_executable(editor_dotnet_host_test
+    "editor_dotnet_host_test.cpp"
+)
+
+target_link_libraries(editor_dotnet_host_test
+    PRIVATE
+        blunder_engine_c_static
+)
+
+target_compile_definitions(editor_dotnet_host_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
+)
+
+if(MSVC)
+    target_compile_options(editor_dotnet_host_test PRIVATE /Zc:preprocessor)
+endif()
+
+# Same fixture staging as dotnet_host_test (reuse game csproj / stage paths).
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET editor_dotnet_host_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for editor_dotnet_host_test"
+        VERBATIM
+    )
+endif()
+
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET editor_dotnet_host_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:editor_dotnet_host_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(editor_dotnet_host_test blunder_script_host)
+endif()
+if(TARGET blunder_api)
+    add_dependencies(editor_dotnet_host_test blunder_api)
+endif()
+
+add_test(NAME editor_dotnet_host_test
+         COMMAND editor_dotnet_host_test)
+
 add_executable(editor_history_test
     "editor_history_test.cpp"
 )

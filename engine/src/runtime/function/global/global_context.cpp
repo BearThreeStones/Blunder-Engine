@@ -101,26 +101,14 @@ void tryStartDotNetHost(RuntimeGlobalContext& ctx) {
   }
   LOG_INFO("[DotNetHost] ScriptHost running");
 
-  // TODO(dual-ObjectDB): ScriptHost/Api DllImport("blunder_engine_c") loads a
-  // second SHARED image with its own ObjectDB/ClassDB statics. The editor's
-  // scene Objects live in engine_runtime's ObjectDB. Loading a game assembly
-  // (and attachBehaviour) against that second image will not see editor
-  // Objects. Until native registers C-ABI function pointers into the editor
-  // process (or DllImport resolves to the same image), keep Scripts load
-  // behind BLUNDER_DOTNET_LOAD_SCRIPTS=1 for explicit experiments only.
-  if (!envFlagEnabled("BLUNDER_DOTNET_LOAD_SCRIPTS")) {
-    LOG_INFO(
-        "[DotNetHost] Scripts load gated (set BLUNDER_DOTNET_LOAD_SCRIPTS=1 "
-        "to attempt loadGameAssembly; dual-ObjectDB - see testing.md)");
-    return;
-  }
-
+  // Single ObjectDB: ScriptHost uses the process-registered C-ABI table
+  // (fill_from_process above). Host start remains gated by BLUNDER_DOTNET_SCRIPTS
+  // until Play UI exists; load project Scripts when present.
   const std::filesystem::path game_dll =
       findProjectGameAssembly(ctx.m_file_system->getProjectRoot());
   if (game_dll.empty()) {
-    LOG_WARN(
-        "[DotNetHost] BLUNDER_DOTNET_LOAD_SCRIPTS set but no game DLL under "
-        ".blunder/scripts_bin");
+    LOG_INFO(
+        "[DotNetHost] no game DLL under .blunder/scripts_bin (host only)");
     return;
   }
   if (!ctx.m_dotnet_host->loadGameAssembly(game_dll, error)) {
