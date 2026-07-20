@@ -162,6 +162,11 @@ void smokeObjImportFastPathCookReimportSceneGuid() {
   expect_true("smoke: dual-write Intermediate source",
               startsWith(parsed.source, "resources/") &&
                   !containsIgnoreCase(parsed.source, "/source/"));
+  expect_true("smoke: Intermediate source is COLLADA .dae",
+              containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("smoke: Intermediate source is not glTF",
+              !containsIgnoreCase(parsed.source, ".gltf") &&
+                  !containsIgnoreCase(parsed.source, ".glb"));
   expect_true("smoke: dual-write archived_source under Source",
               !parsed.archived_source.empty() &&
                   containsIgnoreCase(parsed.archived_source, "source/"));
@@ -177,7 +182,7 @@ void smokeObjImportFastPathCookReimportSceneGuid() {
       resolveResourcesVirtual(parsed.source);
   const fs::path archived_absolute =
       resolveResourcesVirtual(parsed.archived_source);
-  expect_true("smoke: Intermediate glTF exists",
+  expect_true("smoke: Intermediate COLLADA exists",
               file_system.exists(intermediate_absolute));
   expect_true("smoke: archived Source exists",
               file_system.exists(archived_absolute));

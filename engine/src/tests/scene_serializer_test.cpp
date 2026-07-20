@@ -118,7 +118,7 @@ void loadLegacyPathMeshMigratesToGuidOnSave() {
 
   writeTextFile(project / "Assets" / "Meshes" / "Cube.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: Resources/Models/Cube.gltf\n" +
+                    "source: Resources/Models/Cube.dae\n" +
                     "import:\n"
                     "  materials: true\n"
                     "  animations: false\n"

@@ -20,7 +20,7 @@ void parseMeshWithArchivedSource() {
   const eastl::string yaml =
       "type: Mesh\n"
       "guid: 11111111-1111-1111-1111-111111111111\n"
-      "source: Resources/Models/Cube.gltf\n"
+      "source: Resources/Models/Cube.dae\n"
       "archived_source: Source/Models/Cube.fbx\n"
       "import:\n"
       "  materials: true\n"
@@ -31,7 +31,7 @@ void parseMeshWithArchivedSource() {
   expect_true("parse mesh with archived_source",
               AssetYaml::parseMeshDescriptor(yaml, desc));
   expect_true("mesh source preserved",
-              desc.source == "Resources/Models/Cube.gltf");
+              desc.source == "Resources/Models/Cube.dae");
   expect_true("mesh archived_source set",
               desc.archived_source == "Source/Models/Cube.fbx");
 }
@@ -41,7 +41,7 @@ void parseMeshWithoutArchivedSourceLegacy() {
   const eastl::string yaml =
       "type: Mesh\n"
       "guid: 22222222-2222-2222-2222-222222222222\n"
-      "source: Resources/Models/Cube.gltf\n"
+      "source: Resources/Models/Cube.dae\n"
       "import:\n"
       "  materials: true\n"
       "  animations: true\n"
@@ -51,7 +51,7 @@ void parseMeshWithoutArchivedSourceLegacy() {
   expect_true("parse legacy mesh without archived_source",
               AssetYaml::parseMeshDescriptor(yaml, desc));
   expect_true("legacy mesh source set",
-              desc.source == "Resources/Models/Cube.gltf");
+              desc.source == "Resources/Models/Cube.dae");
   expect_true("legacy archived_source empty", desc.archived_source.empty());
 }
 
@@ -59,7 +59,7 @@ void roundTripMeshArchivedSource() {
   using namespace Blunder;
   MeshAssetDescriptor in;
   in.guid = "33333333-3333-3333-3333-333333333333";
-  in.source = "Resources/Models/Hero.gltf";
+  in.source = "Resources/Models/Hero.dae";
   in.archived_source = "Source/Models/Hero.fbx";
   in.import.materials = true;
   in.import.animations = false;
@@ -104,7 +104,7 @@ void omitEmptyArchivedSourceFromSerializedYaml() {
   using namespace Blunder;
   MeshAssetDescriptor mesh;
   mesh.guid = "55555555-5555-5555-5555-555555555555";
-  mesh.source = "Resources/Models/Cube.gltf";
+  mesh.source = "Resources/Models/Cube.dae";
   mesh.archived_source.clear();
 
   const eastl::string mesh_yaml = AssetYaml::serializeMeshDescriptor(mesh);
@@ -126,7 +126,7 @@ void parseMeshWithTextureGuids() {
   const eastl::string yaml =
       "type: Mesh\n"
       "guid: 77777777-7777-7777-7777-777777777777\n"
-      "source: Resources/Models/Hero.gltf\n"
+      "source: Resources/Models/Hero.dae\n"
       "texture_guids:\n"
       "  - aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n"
       "  - bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\n"
@@ -152,7 +152,7 @@ void parseMeshWithoutTextureGuidsLeavesEmpty() {
   const eastl::string yaml =
       "type: Mesh\n"
       "guid: 88888888-8888-8888-8888-888888888888\n"
-      "source: Resources/Models/Cube.gltf\n"
+      "source: Resources/Models/Cube.dae\n"
       "import:\n"
       "  materials: true\n"
       "  animations: true\n"
@@ -169,7 +169,7 @@ void roundTripMeshTextureGuids() {
   using namespace Blunder;
   MeshAssetDescriptor in;
   in.guid = "99999999-9999-9999-9999-999999999999";
-  in.source = "Resources/Models/Hero.gltf";
+  in.source = "Resources/Models/Hero.dae";
   in.texture_guids.push_back("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
   in.texture_guids.push_back("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
 
@@ -192,7 +192,7 @@ void omitEmptyTextureGuidsFromSerializedYaml() {
   using namespace Blunder;
   MeshAssetDescriptor mesh;
   mesh.guid = "abababab-abab-4aba-8bab-abababababab";
-  mesh.source = "Resources/Models/Cube.gltf";
+  mesh.source = "Resources/Models/Cube.dae";
   mesh.texture_guids.clear();
 
   const eastl::string yaml = AssetYaml::serializeMeshDescriptor(mesh);

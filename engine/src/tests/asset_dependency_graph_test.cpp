@@ -81,13 +81,13 @@ void rebuildSceneMeshTextureEdgesAndLeaves() {
   writeTextFile(
       project / "Assets" / "Meshes" / "hero.mesh.yaml",
       std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-          "source: Resources/Models/hero.gltf\n" + "texture_guids:\n" +
+          "source: Resources/Models/hero.dae\n" + "texture_guids:\n" +
           "  - " + kTexGuid + "\n" +
           "import:\n"
           "  materials: true\n"
           "  animations: false\n"
           "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "hero.gltf", "{}");
+  writeTextFile(project / "Resources" / "Models" / "hero.dae", "{}");
 
   writeTextFile(
       project / "Assets" / "Scenes" / "level.scene.asset",
@@ -132,7 +132,7 @@ void rebuildSceneMeshTextureEdgesAndLeaves() {
                   "assets/Meshes/hero.mesh.yaml");
   expect_true("mesh leaf intermediate source",
               mesh_leaves.intermediate_source_path ==
-                  "Resources/Models/hero.gltf");
+                  "Resources/Models/hero.dae");
 
   const AssetDependencyLeaves tex_leaves =
       graph.intermediateLeavesOf(kTexGuid);
@@ -167,12 +167,12 @@ void rebuildClearsPreviousEdges() {
   writeTextFile(
       project / "Assets" / "Meshes" / "cube.mesh.yaml",
       std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-          "source: Resources/Models/cube.gltf\n" +
+          "source: Resources/Models/cube.dae\n" +
           "import:\n"
           "  materials: true\n"
           "  animations: false\n"
           "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "cube.gltf", "{}");
+  writeTextFile(project / "Resources" / "Models" / "cube.dae", "{}");
   writeTextFile(
       project / "Assets" / "Scenes" / "a.scene.asset",
       std::string("{\n") + "  \"type\": \"Scene\",\n" + "  \"guid\": \"" +
@@ -220,7 +220,7 @@ void ignoresLegacyPathMeshRefs() {
   writeTextFile(
       project / "Assets" / "Meshes" / "cube.mesh.yaml",
       std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-          "source: Resources/Models/cube.gltf\n" +
+          "source: Resources/Models/cube.dae\n" +
           "import:\n"
           "  materials: true\n"
           "  animations: false\n"

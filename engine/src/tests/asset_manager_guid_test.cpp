@@ -49,43 +49,46 @@ void writeTextFile(const fs::path& path, const std::string& text) {
   out << text;
 }
 
-// Minimal single-triangle glTF with embedded buffer (no external .bin).
-constexpr char kMinimalTriangleGltf[] = R"({
-  "asset": { "version": "2.0" },
-  "scene": 0,
-  "scenes": [{ "nodes": [0] }],
-  "nodes": [{ "mesh": 0 }],
-  "meshes": [{
-    "primitives": [{
-      "attributes": { "POSITION": 1 },
-      "indices": 0
-    }]
-  }],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5123,
-      "count": 3,
-      "type": "SCALAR"
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC3",
-      "max": [1.0, 1.0, 0.0],
-      "min": [0.0, 0.0, 0.0]
-    }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
-    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
-  ],
-  "buffers": [{
-    "byteLength": 44,
-    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
-  }]
-}
+// Minimal single-triangle COLLADA Intermediate (Assimp-readable).
+constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Y_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="tri-mesh" name="tri">
+      <mesh>
+        <source id="tri-positions">
+          <float_array id="tri-positions-array" count="9">0 0 0 1 0 0 0 1 0</float_array>
+          <technique_common>
+            <accessor source="#tri-positions-array" count="3" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="tri-vertices">
+          <input semantic="POSITION" source="#tri-positions"/>
+        </vertices>
+        <triangles count="1">
+          <input semantic="VERTEX" source="#tri-vertices" offset="0"/>
+          <p>0 1 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="tri-node" name="tri">
+        <instance_geometry url="#tri-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>
 )";
 
 void loadMeshByGuidLoadsRegisteredDescriptor() {
@@ -96,11 +99,11 @@ void loadMeshByGuidLoadsRegisteredDescriptor() {
   const char* kGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
   const char* kDescriptorPath = "assets/Meshes/tri.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "tri.gltf",
-                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "tri.dae",
+                kMinimalTriangleDae);
   writeTextFile(project / "Assets" / "Meshes" / "tri.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/tri.gltf\n" +
+                    "source: resources/Models/tri.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
