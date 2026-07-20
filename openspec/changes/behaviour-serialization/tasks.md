@@ -24,6 +24,6 @@
 
 ## 5. Docs + verify
 
-- [ ] 5.1 Update testing.md / ADR 0011 or CONTEXT milestone note for Behaviour serialization slice
-- [ ] 5.2 Mark dependency: requires `unify-script-objectdb` merged or stacked
-- [ ] 5.3 Run serializer + mount tests green
+- [x] 5.1 Update testing.md / ADR 0011 or CONTEXT milestone note for Behaviour serialization slice
+- [x] 5.2 Mark dependency: requires `unify-script-objectdb` merged or stacked
+- [x] 5.3 Run serializer + mount tests green

@@ -9,7 +9,7 @@ cmake --build build/vs2026-debug --config Debug --target classdb_test
 .\build\vs2026-debug\engine\src\tests\Debug\classdb_test.exe
 
 # Or, from the build tree:
-ctest --test-dir build/vs2026-debug -C Debug -R "classdb|variant|object_db|ptrcall|engine_c_abi|dotnet_host|editor_history|scene_soft_delete|editor_commands" --output-on-failure
+ctest --test-dir build/vs2026-debug -C Debug -R "classdb|variant|object_db|ptrcall|engine_c_abi|dotnet_host|editor_history|scene_soft_delete|editor_commands|scene_serializer|scene_behaviour" --output-on-failure
 ```
 
 Tests that only pull ClassDB/Object (not SceneInstance/Vulkan) stay small and do not need `slang.dll`. Prefer `IEntityStore` fakes over linking `SceneInstance` in unit tests.
@@ -24,6 +24,12 @@ Prerequisite: **.NET 10 SDK + runtime** installed (set `DOTNET_ROOT` if CMake ca
 |--------|--------|
 | `dotnet_host_test` | Approach A: CoreCLR ScriptHost + fixture game + managed `ProbeBehaviour.Tick` via LoadLibrary’d SHARED `blunder_engine_c` (registered module ABI) |
 | `editor_dotnet_host_test` | Editor-style: process ObjectDB + `blunder_native_abi_fill_from_process` + managed Tick (links `blunder_engine_c_static`; no SHARED Object traffic) |
+| `scene_serializer_test` | Scene JSON including entity `behaviours` (type / BehaviourId / optional property bag); legacy scenes without the key remain valid |
+| `scene_behaviour_instantiate_test` | Load with behaviours: bind Object to EntityId, restore slots/ids, null peers when DotNetHost is not running |
+| `scene_behaviour_mount_test` | Load + process ABI + DotNetHost + fixture type → AttachBehaviour / managed Tick (editor-style, like `editor_dotnet_host_test`) |
+| `scene_behaviour_export_test` | Export Scene from live instance writes Behaviour list from bound Objects; tombstoned entities stay omitted |
+
+**Behaviour serialization:** Scene entities may declare an ordered `behaviours` array. Instantiation creates/binds an Object only when the list is non-empty, restores BehaviourIds, and advances next-id. Peers mount only when `DotNetHost` is running; offline load must succeed. Export reads type + id from bound Objects (property bag on export may be empty in this MVP). Requires the single-ObjectDB / NativeAbi contract from `unify-script-objectdb` (already on main).
 
 **Single-ObjectDB contract:** Editor and managed ScriptHost/Api share one ObjectDB via a native-registered C-ABI function-pointer table (`RegisterNativeAbi`). The editor fills from process-linked symbols (`blunder_native_abi_fill_from_process`); Approach A tests fill from SHARED module exports (`blunder_native_abi_fill_from_module`). Do not link `blunder_engine_c_static` and LoadLibrary SHARED `blunder_engine_c` for Object traffic in the same process.
 
