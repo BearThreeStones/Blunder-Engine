@@ -35,6 +35,11 @@ class AssetCompilerService final {
   /// Rebuild the held Asset Dependency Graph from the registry + on-disk docs.
   void rebuildDependencyGraph();
 
+  /// How many times rebuildDependencyGraph() has succeeded since initialize.
+  uint32_t dependencyGraphRebuildCount() const {
+    return m_dependency_graph_rebuild_count;
+  }
+
   /// Delete Final artifacts (mesh/texture bin + meta) for `guid` so the next
   /// cookAsset / load Fast Path treats the Asset as stale.
   void markFinalStale(const eastl::string& guid);
@@ -62,6 +67,7 @@ class AssetCompilerService final {
   AssetManager* m_asset_manager{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
   AssetDependencyGraph m_dependency_graph;
+  uint32_t m_dependency_graph_rebuild_count{0};
   bool m_is_initialized{false};
 };
 

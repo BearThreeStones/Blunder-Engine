@@ -87,12 +87,14 @@ void AssetCompilerService::initialize(FileSystem* file_system,
   m_file_system = file_system;
   m_asset_manager = asset_manager;
   m_asset_registry = asset_registry;
+  m_dependency_graph_rebuild_count = 0;
   m_is_initialized =
       file_system != nullptr && asset_manager != nullptr && asset_registry != nullptr;
 }
 
 void AssetCompilerService::shutdown() {
   m_dependency_graph.clear();
+  m_dependency_graph_rebuild_count = 0;
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_asset_registry = nullptr;
@@ -104,6 +106,7 @@ void AssetCompilerService::rebuildDependencyGraph() {
     return;
   }
   m_dependency_graph.rebuildFromProject(*m_file_system, *m_asset_registry);
+  ++m_dependency_graph_rebuild_count;
 }
 
 AssetCompilerStats AssetCompilerService::cookAll(bool force) {

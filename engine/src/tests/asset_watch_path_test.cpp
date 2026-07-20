@@ -1,9 +1,12 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
-#include "runtime/resource/asset_dependency/asset_dependency_graph.h"
-#include "runtime/resource/asset_registry/asset_registry.h"
+#include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/asset_watch_path.h"
+#include "runtime/resource/asset_dependency/asset_dependency_graph.h"
+#include "runtime/resource/asset_import/asset_import_service.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 #include <algorithm>
 #include <chrono>
@@ -257,12 +260,86 @@ void archivedSourcePathToGuids() {
   fs::remove_all(project);
 }
 
+void reimportBatchRebuildsGraphOnce() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  const char* kOtherGuid = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "hero.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/hero/hero.gltf\n" +
+                    "archived_source: Source/Models/hero.fbx\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Assets" / "Meshes" / "prop.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kOtherGuid + "\n" +
+                    "source: resources/Models/prop/prop.gltf\n" +
+                    "archived_source: Source/Models/prop.fbx\n" +
+                    "import:\n"
+                    "  generate_normals: true\n"
+                    "  generate_tangents: true\n"
+                    "  scale: 1.0\n");
+  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.gltf",
+                "gltf");
+  writeTextFile(project / "Resources" / "Models" / "prop" / "prop.gltf",
+                "gltf");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  eastl::vector<eastl::string> guids;
+  guids.push_back(kMeshGuid);
+  guids.push_back(kOtherGuid);
+
+  const uint32_t before = compiler.dependencyGraphRebuildCount();
+  expect_true("requestReimports succeeds for two guids",
+              import_service.requestReimports(guids));
+  const uint32_t after = compiler.dependencyGraphRebuildCount();
+  expect_true("batch reimport rebuilds dependency graph once (not per GUID)",
+              after == before + 1);
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
   classifyPaths();
   pathToGuidMapping();
   archivedSourcePathToGuids();
+  reimportBatchRebuildsGraphOnce();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

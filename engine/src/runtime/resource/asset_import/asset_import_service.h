@@ -52,7 +52,12 @@ class AssetImportService final {
   /// Request Reimport for an Asset GUID. v1 stub (task 4.4): logs and
   /// invalidateAssetAndDependents when a compiler is wired. Full Assimp
   /// Source Export re-run lands in task 5.3.
+  /// Rebuilds the dependency graph once (equivalent to requestReimports of one).
   bool requestReimport(const eastl::string& guid);
+
+  /// Batch Reimport: one rebuildDependencyGraph, then invalidate each GUID.
+  /// Prefer this over N× requestReimport when applying a watch debounce flush.
+  bool requestReimports(const eastl::vector<eastl::string>& guids);
 
   static bool isMeshSourceExtension(const eastl::string& extension_lower);
   static bool isTextureSourceExtension(const eastl::string& extension_lower);

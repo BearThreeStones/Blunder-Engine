@@ -259,10 +259,8 @@ bool ContentBrowserWatch::consumeReimportRequest() {
   }
 
   bool any = false;
-  for (const eastl::string& guid : guids) {
-    if (m_asset_import->requestReimport(guid)) {
-      any = true;
-    }
+  if (!guids.empty()) {
+    any = m_asset_import->requestReimports(guids);
   }
   return any;
 }

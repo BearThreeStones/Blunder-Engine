@@ -297,26 +297,49 @@ eastl::vector<eastl::string> AssetImportService::findGuidsByArchivedSource(
 }
 
 bool AssetImportService::requestReimport(const eastl::string& guid) {
-  if (!m_is_initialized || guid.empty()) {
+  eastl::vector<eastl::string> guids;
+  guids.push_back(guid);
+  return requestReimports(guids);
+}
+
+bool AssetImportService::requestReimports(
+    const eastl::vector<eastl::string>& guids) {
+  if (!m_is_initialized || guids.empty()) {
     return false;
   }
 
-  const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
-  if (descriptor_path.empty()) {
-    LOG_WARN("[AssetImport] requestReimport: unknown guid {}", guid.c_str());
+  eastl::vector<eastl::string> valid;
+  valid.reserve(guids.size());
+  for (const eastl::string& guid : guids) {
+    if (guid.empty()) {
+      continue;
+    }
+    const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
+    if (descriptor_path.empty()) {
+      LOG_WARN("[AssetImport] requestReimport: unknown guid {}", guid.c_str());
+      continue;
+    }
+    valid.push_back(guid);
+  }
+  if (valid.empty()) {
     return false;
   }
 
-  // Task 4.4 stub: invalidate Finals now; Assimp Source Export dual-write
-  // refresh is owned by task 5.3.
-  LOG_INFO(
-      "[AssetImport] requestReimport guid={} descriptor={} "
-      "(stub: invalidate Finals; full Source Export in 5.3)",
-      guid.c_str(), descriptor_path.c_str());
-
+  // Match Intermediate watch: one rebuildDependencyGraph, then N invalidates.
+  // Full Assimp Source Export dual-write refresh is owned by task 5.3.
   if (m_asset_compiler) {
     m_asset_compiler->rebuildDependencyGraph();
-    m_asset_compiler->invalidateAssetAndDependents(guid);
+  }
+
+  for (const eastl::string& guid : valid) {
+    const eastl::string descriptor_path = m_asset_registry->resolveGuid(guid);
+    LOG_INFO(
+        "[AssetImport] requestReimport guid={} descriptor={} "
+        "(stub: invalidate Finals; full Source Export in 5.3)",
+        guid.c_str(), descriptor_path.c_str());
+    if (m_asset_compiler) {
+      m_asset_compiler->invalidateAssetAndDependents(guid);
+    }
   }
   return true;
 }
