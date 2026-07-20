@@ -285,3 +285,22 @@ target_precompile_headers(asset_registry_test
 
 add_test(NAME asset_registry_test
          COMMAND asset_registry_test)
+
+add_executable(scene_serializer_test
+    "scene_serializer_test.cpp"
+)
+
+target_link_libraries(scene_serializer_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(scene_serializer_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_serializer_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_serializer_test
+         COMMAND scene_serializer_test)

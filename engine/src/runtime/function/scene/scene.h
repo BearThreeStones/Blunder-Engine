@@ -14,7 +14,8 @@ struct SceneEntityDefinition final {
   Quat rotation{glm::identity<Quat>()};
   Vec3 scale{1.0f, 1.0f, 1.0f};
   eastl::string parent_name;
-  /// Virtual path to a `.mesh.yaml` descriptor or a `.gltf` / `.glb` source.
+  /// Mesh Asset Reference: preferred GUID; may briefly hold a legacy
+  /// `assets/...mesh.yaml` path until migration on load/save.
   eastl::string mesh_virtual_path;
 };
 
@@ -45,8 +46,13 @@ class Scene final {
   const eastl::string& getName() const { return m_name; }
   void setName(eastl::string name) { m_name = eastl::move(name); }
 
+  /// Scene Asset GUID (persisted as top-level `"guid"` in `.scene.asset` JSON).
+  const eastl::string& getGuid() const { return m_guid; }
+  void setGuid(eastl::string guid) { m_guid = eastl::move(guid); }
+
  private:
   eastl::string m_name;
+  eastl::string m_guid;
   eastl::vector<SceneEntityDefinition> m_entities;
   eastl::vector<SceneChildReference> m_child_scenes;
 };

@@ -19,7 +19,9 @@
 
 #include "EASTL/utility.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
 
@@ -500,6 +502,11 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   }
 
   const auto& absolute = resolved.absolute;
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry != nullptr) {
+    (void)registry->ensureSceneAssetRegistered(key);
+  }
+
   eastl::string json_text;
   if (!m_file_system->readText(absolute, json_text)) {
     LOG_ERROR("[AssetManager] loadScene: cannot read {}",
@@ -508,7 +515,7 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   }
 
   Scene scene;
-  if (!SceneSerializer::deserialize(json_text, scene)) {
+  if (!SceneSerializer::deserialize(json_text, scene, registry)) {
     LOG_ERROR("[AssetManager] loadScene: deserialize failed for {}",
               absolute.generic_string());
     return nullptr;

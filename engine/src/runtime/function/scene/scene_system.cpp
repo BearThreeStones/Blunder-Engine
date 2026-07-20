@@ -1,13 +1,16 @@
 #include "runtime/function/scene/scene_system.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
 
@@ -139,13 +142,23 @@ void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
       continue;
     }
 
+    // Bridge until 2.4 GUID load APIs: resolve mesh Asset Reference GUID → path.
+    eastl::string mesh_ref = definition.mesh_virtual_path;
+    if (isValidGuidFormat(mesh_ref) &&
+        g_runtime_global_context.m_asset_registry) {
+      const eastl::string path =
+          g_runtime_global_context.m_asset_registry->resolveGuid(mesh_ref);
+      if (!path.empty()) {
+        mesh_ref = path;
+      }
+    }
+
     const GltfSceneImporter::ImportResult import_result =
-        GltfSceneImporter::importUnderEntity(m_asset_manager,
-                                             definition.mesh_virtual_path, instance,
+        GltfSceneImporter::importUnderEntity(m_asset_manager, mesh_ref, instance,
                                              entity_id);
     if (!import_result.success) {
       LOG_ERROR("[SceneSystem] failed to import mesh '{}' for entity '{}': {}",
-                definition.mesh_virtual_path.c_str(), definition.name.c_str(),
+                mesh_ref.c_str(), definition.name.c_str(),
                 import_result.error_message.c_str());
       continue;
     }
