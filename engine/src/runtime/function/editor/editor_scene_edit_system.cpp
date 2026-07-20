@@ -282,6 +282,9 @@ SpawnAssetResult EditorSceneEditSystem::spawnMeshAsset(
       makeUniqueEntityName(*instance, entityStemFromAssetPath(asset_virtual_path));
   const EntityId entity_id = instance->createEntity(
       entity_name, position, glm::identity<Quat>(), Vec3(1.0f));
+  if (Entity* spawned = instance->getEntity(entity_id)) {
+    spawned->setMeshVirtualPath(asset_virtual_path);
+  }
 
   MeshRendererComponent renderer{};
   renderer.mesh = mesh;

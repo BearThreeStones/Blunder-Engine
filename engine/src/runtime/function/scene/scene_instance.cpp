@@ -29,6 +29,11 @@ void SceneInstance::instantiate(const Scene& scene) {
     const EntityId id = createEntity(definition.name, definition.position,
                                      definition.rotation, definition.scale);
     ids.push_back(id);
+    if (!definition.mesh_virtual_path.empty()) {
+      if (Entity* entity = getEntity(id)) {
+        entity->setMeshVirtualPath(definition.mesh_virtual_path);
+      }
+    }
   }
 
   for (size_t i = 0; i < scene.getEntities().size(); ++i) {
@@ -210,6 +215,7 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
     definition.position = entity.getPosition();
     definition.rotation = entity.getRotation();
     definition.scale = entity.getScale();
+    definition.mesh_virtual_path = entity.getMeshVirtualPath();
 
     const EntityId parent_id = entity.getParentId();
     if (isValid(parent_id)) {

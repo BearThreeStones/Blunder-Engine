@@ -33,6 +33,12 @@ class Entity final {
   bool isTombstoned() const { return m_tombstoned; }
   void setTombstoned(bool tombstoned) { m_tombstoned = tombstoned; }
 
+  /// Mesh Asset Reference (GUID preferred; may be a legacy path).
+  const eastl::string& getMeshVirtualPath() const { return m_mesh_virtual_path; }
+  void setMeshVirtualPath(eastl::string path) {
+    m_mesh_virtual_path = eastl::move(path);
+  }
+
   Mat4 getLocalMatrix() const;
 
  private:
@@ -41,6 +47,7 @@ class Entity final {
   Quat m_rotation{glm::identity<Quat>()};
   Vec3 m_scale{1.0f, 1.0f, 1.0f};
   EntityId m_parent_id{k_invalid_entity_id};
+  eastl::string m_mesh_virtual_path;
   bool m_enabled{true};
   bool m_tombstoned{false};
 };
