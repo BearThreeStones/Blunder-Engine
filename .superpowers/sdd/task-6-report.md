@@ -62,3 +62,33 @@ Re-verify: `.superpowers/sdd/task-6-verify-green-build.txt`, `.superpowers/sdd/t
 3. Without a registry pointer, legacy mesh paths are left unchanged (no silent migration).
 4. Runtime-linked tests need `slint_cpp.dll` (and typically `slang.dll`) on `PATH`.
 5. Did not implement 2.4 GUID-based AssetManager load APIs. Did not push.
+
+---
+
+## Review fix — exportToScene preserves mesh Asset Reference
+
+**Finding:** `SceneInstance::exportToScene` never copied `mesh_virtual_path`, so editor `saveActiveScene` dropped mesh GUID/path refs even though SceneSerializer was correct.
+
+**Fix commit:** (pending below) — store mesh ref on `Entity` through instantiate/export; spawn sets it too.
+
+### RED
+
+`scene_soft_delete_test` cases `exportPreservesMeshGuidReference` / `exportPreservesMeshPathReference`:
+
+```
+FAIL export preserves mesh guid
+FAIL export preserves mesh path
+2 failure(s)
+```
+
+Log: `.superpowers/sdd/task-6-fix-red-run.txt`
+
+### GREEN
+
+- `entity.h` — `getMeshVirtualPath` / `setMeshVirtualPath`
+- `scene_instance.cpp` — copy mesh ref on `instantiate` and `exportToScene`
+- `editor_scene_edit_system.cpp` — `spawnMeshAsset` stamps mesh Asset Reference onto the entity
+- `scene_soft_delete_test.cpp` — round-trip coverage
+
+Build/run: `scene_soft_delete_test` → exit 0; `scene_serializer_test` → exit 0  
+Logs: `.superpowers/sdd/task-6-fix-green-build.txt`, `.superpowers/sdd/task-6-fix-green-run.txt`
