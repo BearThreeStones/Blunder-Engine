@@ -3,6 +3,7 @@
 **Status:** DONE  
 **Branch:** `feat/asset-pipeline-pull`  
 **Workdir:** `e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull`  
+**Commits:** `a3dcdcc`  
 **Preset:** `vs2026-debug` / `Debug`  
 **PATH:** `%VULKAN_SDK%\Bin` (slang.dll) + `.cmake_deps\slint-build` (slint_cpp.dll)
 

@@ -30,3 +30,6 @@ Task 3.1: complete (6b8f0ee..0704e8e, review Approved)
 Task 3.2: complete (0704e8e..7518df8, review Approved)
 Task 3.3: complete (a657fc8, upgrade/reimport test gate; see task-ci-9-report.md)
 
+Task 3.3: complete (7518df8..a657fc8, review Approved)
+Task 4.1: complete (83f9886..9467f2d, review Approved)
+Task 4.2: complete (a3dcdcc, all 12 targeted binaries exit 0)
