@@ -1,8 +1,12 @@
 # Content layout (Assets / Resources)
 
-Blunder uses a **Pull** Asset Pipeline with three on-disk tiers. Domain vocabulary lives in
-[CONTEXT.md — Asset pipeline](CONTEXT.md#asset-pipeline); the decision record is
-[docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md).
+Blunder uses a **Pull** Asset Pipeline with three on-disk tiers.
+
+| Role | Doc |
+|------|-----|
+| **On-disk layout & cook mechanics** (this file) | Roots, descriptors, Import, Watch, CLI |
+| **Domain vocabulary** | [CONTEXT.md — Asset pipeline](CONTEXT.md#asset-pipeline) |
+| **Decision record** | [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) |
 
 ## Three-tier roles
 
@@ -147,3 +151,10 @@ show a folder tree + thumbnail grid, and drive `ThumbnailGenerator` cache paths.
 | **Auto refresh** | efsw watches `Assets/` (and, for pipeline freshness, Intermediate Resources + Source — see Asset Watch); debounced re-scan (~300 ms) |
 | **Drag item → folder** | Moves a file within `assets/` |
 | **OS file drop** | Imports via `AssetImportService` (Intermediate under Resources + YAML descriptor; Source Export when applicable) |
+
+## See also
+
+- [CONTEXT.md — Asset pipeline](CONTEXT.md#asset-pipeline) — Source / Intermediate / Final, Asset, Pull, Cook, Fast Path, Import, Reimport
+- [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) — why Pull + three-tier + GUID Asset References
+- [docs/agents/structure.md](docs/agents/structure.md) — repo tree including `Assets/` / `Resources/`
+- [docs/agents/common-tasks.md](docs/agents/common-tasks.md) — task routing for Content Browser / cook

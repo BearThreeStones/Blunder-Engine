@@ -1,7 +1,7 @@
 ## 1. Docs & vocabulary
 
-- [ ] 1.1 Update `CONTENT_LAYOUT.md` for three-tier roles, GUID Asset References, Scene `guid`, Pull/Fast Path, Source Export dual-write, and watch/Reimport
-- [ ] 1.2 Cross-link ADR 0012 and `CONTEXT.md` Asset pipeline section from `CONTENT_LAYOUT.md` / agent docs as needed
+- [x] 1.1 Update `CONTENT_LAYOUT.md` for three-tier roles, GUID Asset References, Scene `guid`, Pull/Fast Path, Source Export dual-write, and watch/Reimport
+- [x] 1.2 Cross-link ADR 0012 and `CONTEXT.md` Asset pipeline section from `CONTENT_LAYOUT.md` / agent docs as needed
 
 ## 2. Asset identity
 

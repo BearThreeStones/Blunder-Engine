@@ -30,8 +30,8 @@ git submodule update --init engine/3rdparty/slint
 1. **Z-up world space** — glTF is converted at import; scenes authored in engine space.  
    → [coordinate-system.md](coordinate-system.md)
 
-2. **Virtual content paths** — `assets/` descriptors, `resources/` raw files.  
-   → [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md)
+2. **Virtual content paths** — `assets/` descriptors, `resources/` Intermediate data (not Source).  
+   → [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md), [CONTEXT.md — Asset pipeline](../../CONTEXT.md#asset-pipeline), [ADR 0012](../adr/0012-pull-asset-pipeline.md)
 
 3. **Offscreen 3D + Slint present** — engine renders to an offscreen target; pixels reach the UI via readback (or optional zero-copy).  
    → [render-pipeline.md](render-pipeline.md)

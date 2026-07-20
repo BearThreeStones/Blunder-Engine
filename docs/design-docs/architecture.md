@@ -27,11 +27,11 @@ engine/src/
 
 Project content (not engine code):
 
-- `Assets/` — descriptors (`assets/…`)
-- `Resources/` — raw sources (`resources/…`)
+- `Assets/` — Intermediate descriptors (`assets/…`)
+- `Resources/` — Intermediate data bodies (`resources/…`); Source under `Resources/Source/`
 - `engine/shaders/` — built-in Slang (engine-owned, not under Assets)
 
-See [docs/agents/structure.md](../agents/structure.md) for the full tree and [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) for virtual paths.
+See [docs/agents/structure.md](../agents/structure.md) for the full tree, [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) for virtual paths and cook, [CONTEXT.md — Asset pipeline](../../CONTEXT.md#asset-pipeline) for vocabulary, and [docs/adr/0012-pull-asset-pipeline.md](../adr/0012-pull-asset-pipeline.md) for the Pull decision.
 
 ## Layer ↔ directory mapping
 

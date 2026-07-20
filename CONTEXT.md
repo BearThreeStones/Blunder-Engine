@@ -384,6 +384,8 @@ _Avoid_: Godot theme skin, restyle entire Inspector
 
 ### Asset pipeline
 
+On-disk layout and cook mechanics: [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md). Decision record: [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md).
+
 **Source Asset**:
 A DCC-native authoring file (e.g. `.blend`, `.psd`, `.fbx`) that holds the full creation data. Source Assets alone must be enough to rebuild Intermediate and Final Assets. They are not loaded by the runtime.
 _Avoid_: Treating glTF/PNG as Source, calling cooked binaries "source", storing only Source under `Assets/`
