@@ -205,8 +205,15 @@ void BlunderEngine::processSdlEvent(const SDL_Event& event) {
   window_system->dispatchApplicationEvent(event, route_to_layers);
 }
 
-void BlunderEngine::startEngine(const std::filesystem::path& project_root) {
-  g_runtime_global_context.startSystems(project_root);
+void BlunderEngine::startEngine(const std::filesystem::path& project_root,
+                                EngineHostMode host_mode) {
+  startEngine(project_root, host_mode, {});
+}
+
+void BlunderEngine::startEngine(const std::filesystem::path& project_root,
+                                EngineHostMode host_mode,
+                                const eastl::string& play_scene) {
+  g_runtime_global_context.startSystems(project_root, host_mode, play_scene);
 
   g_runtime_global_context.m_window_system->setEventCallback(
       [](Event& e) { onEvent(e); });
@@ -269,7 +276,7 @@ void BlunderEngine::shutdownEngine() {
   g_runtime_global_context.shutdownSystems();
 }
 
-void BlunderEngine::initialize() {
+void BlunderEngine::initialize(const eastl::string& play_scene) {
   if (!g_runtime_global_context.m_asset_manager ||
       !g_runtime_global_context.m_render_system) {
     LOG_WARN("[BlunderEngine] initialize skipped startup asset verification because required systems are unavailable");
@@ -291,7 +298,9 @@ void BlunderEngine::initialize() {
   }
 
   if (g_runtime_global_context.m_scene_system) {
-    activateEditorScene(resolveStartupScenePath());
+    const eastl::string scene_path =
+        !play_scene.empty() ? play_scene : eastl::string(resolveStartupScenePath());
+    activateEditorScene(scene_path);
     if (SceneInstance* active =
             g_runtime_global_context.m_scene_system->getActiveInstance()) {
       LOG_INFO("[BlunderEngine] active scene '{}' (entities={})",
@@ -408,6 +417,12 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       m_skip_renderer_after_defer = false;
     }
     slint_system->endFrame();
+  } else if (!defer_heavy && !m_skip_renderer_after_defer) {
+    // Player host: no Slint chrome — still drive the render tick (drawable size).
+    rendererTick(delta_time);
+  }
+  if (!slint_system && m_skip_renderer_after_defer) {
+    m_skip_renderer_after_defer = false;
   }
 
 #ifdef ENABLE_PHYSICS_DEBUG_RENDERER

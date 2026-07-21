@@ -10,6 +10,7 @@
 
 #include "runtime/core/base/high_precision_timer.h"
 #include "runtime/core/event/event.h"
+#include "runtime/function/global/engine_host_mode.h"
 
 namespace Blunder {
 
@@ -25,10 +26,14 @@ class BlunderEngine {
 
  public:
   void startEngine(const std::filesystem::path& project_root =
-                       std::filesystem::path{});
+                       std::filesystem::path{},
+                   EngineHostMode host_mode = EngineHostMode::Editor);
+  void startEngine(const std::filesystem::path& project_root,
+                   EngineHostMode host_mode, const eastl::string& play_scene);
   void shutdownEngine();
 
-  void initialize();
+  /// Editor path uses startup scene env/default. Player passes CLI `--scene`.
+  void initialize(const eastl::string& play_scene = {});
   void clear();
 
   bool isQuit() const { return m_is_quit; }

@@ -136,7 +136,11 @@ void tryStartDotNetHost(RuntimeGlobalContext& ctx) {
 RuntimeGlobalContext g_runtime_global_context;
 
 void RuntimeGlobalContext::startSystems(
-    const std::filesystem::path& project_root) {
+    const std::filesystem::path& project_root, EngineHostMode host_mode,
+    const eastl::string& play_scene) {
+  m_host_mode = host_mode;
+  const bool player_host = host_mode == EngineHostMode::Player;
+
   m_memory_system.initialize();
 
   ClassDB::initialize();
@@ -155,6 +159,7 @@ void RuntimeGlobalContext::startSystems(
 
   // CoreCLR host: after logger + FileSystem only. Failure is non-fatal and
   // must not wait on Vulkan/Slint (see docs/agents/testing.md gates).
+  // Player host start is Task 2; keep editor env gate for Task 1.
   tryStartDotNetHost(*this);
 
   m_asset_registry = eastl::make_shared<AssetRegistry>();
@@ -179,6 +184,23 @@ void RuntimeGlobalContext::startSystems(
   SceneSystemInitInfo scene_init_info{};
   scene_init_info.asset_manager = m_asset_manager.get();
   m_scene_system->initialize(scene_init_info);
+
+  // Player: resolve the Play entry scene before Vulkan/UI so load is confirmed
+  // even if later render init is incomplete on this skeleton.
+  if (player_host && !play_scene.empty()) {
+    const eastl::shared_ptr<SceneInstance> instance =
+        m_scene_system->loadScene(play_scene);
+    if (instance) {
+      m_scene_system->setActiveInstance(instance.get());
+      LOG_INFO(
+          "[RuntimeGlobalContext] Player entry scene '{}' loaded "
+          "(entities={})",
+          instance->getSourcePath().c_str(), instance->getEntityCount());
+    } else {
+      LOG_ERROR("[RuntimeGlobalContext] Player failed to load entry scene '{}'",
+                play_scene.c_str());
+    }
+  }
 
   m_editor_selection = eastl::make_shared<EditorSelectionSystem>();
   m_hierarchy = eastl::make_shared<HierarchySystem>();
@@ -224,7 +246,9 @@ void RuntimeGlobalContext::startSystems(
   // Project open: upgrade legacy glTF Intermediate → COLLADA before watch starts.
   m_asset_import->upgradeLegacyMeshIntermediates();
   m_content_browser->setReimportTarget(m_asset_import.get());
-  m_content_browser->startFileWatch();
+  if (!player_host) {
+    m_content_browser->startFileWatch();
+  }
 
   // m_physics_manager = eastl::make_shared<PhysicsManager>();
   // m_physics_manager->initialize();
@@ -234,28 +258,15 @@ void RuntimeGlobalContext::startSystems(
 
   m_window_system = eastl::make_shared<WindowSystem>();
   WindowCreateInfo window_create_info;
+  if (player_host) {
+    window_create_info.title = "Blunder Player";
+  }
   m_window_system->initialize(window_create_info);
-
-  m_ui_host = eastl::make_shared<UiHost>();
-
-  // Vulkan-unified UI: the engine creates its Vulkan device first and shares it
-  // with Slint's Skia renderer (instead of Slint creating a separate device).
-  // Construct the Slint system now so the render system can reference it, but
-  // initialize it only after the shared device exists.
-  m_slint_system = eastl::make_shared<SlintSystem>();
-
-  m_viewport_sink =
-      eastl::make_unique<SlintViewportSink>(m_slint_system.get());
-  m_viewport_bridge = eastl::make_unique<UIViewportBridge>();
 
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
   render_init_info.asset_manager = m_asset_manager.get();
   render_init_info.window_system = m_window_system.get();
-  render_init_info.viewport_layout_source = m_slint_system.get();
-  render_init_info.preview_settings_source = m_ui_host.get();
-  render_init_info.viewport_bridge = m_viewport_bridge.get();
-  render_init_info.viewport_sink = m_viewport_sink.get();
   // Validation is off by default so the editor can use the shared Vulkan device
   // and zero-copy viewport (Skia cannot adopt an external device with the
   // validation layer loaded). Set BLUNDER_VK_VALIDATION=1 to enable it.
@@ -270,37 +281,63 @@ void RuntimeGlobalContext::startSystems(
     }
   }
 
-  // 1) Create the engine Vulkan device/allocator/sync up front.
-  m_render_system->initializeBackend(render_init_info);
+  if (player_host) {
+    // Player: window + engine loop without editor Slint shell / dock.
+    LOG_INFO(
+        "[RuntimeGlobalContext] Player host mode — skipping Slint editor "
+        "shell");
+    m_render_system->initializeBackend(render_init_info);
+    m_render_system->initialize(render_init_info);
+  } else {
+    m_ui_host = eastl::make_shared<UiHost>();
 
-  // 2) Initialize Slint with the engine's Vulkan handles so its Skia renderer
-  //    composites on the shared device (enables a zero-copy 3D viewport).
-  SlintSystemInitInfo slint_init_info;
-  slint_init_info.window_system = m_window_system.get();
-  slint_init_info.ui_host = m_ui_host;
-  const SharedVulkanHandles shared_vk = m_render_system->getSharedVulkanHandles();
-  if (shared_vk.valid) {
-    slint_init_info.shared_vk_instance = shared_vk.instance;
-    slint_init_info.shared_vk_physical_device = shared_vk.physical_device;
-    slint_init_info.shared_vk_device = shared_vk.device;
-    slint_init_info.shared_vk_queue_family = shared_vk.graphics_queue_family;
+    // Vulkan-unified UI: the engine creates its Vulkan device first and shares it
+    // with Slint's Skia renderer (instead of Slint creating a separate device).
+    // Construct the Slint system now so the render system can reference it, but
+    // initialize it only after the shared device exists.
+    m_slint_system = eastl::make_shared<SlintSystem>();
+
+    m_viewport_sink =
+        eastl::make_unique<SlintViewportSink>(m_slint_system.get());
+    m_viewport_bridge = eastl::make_unique<UIViewportBridge>();
+
+    render_init_info.viewport_layout_source = m_slint_system.get();
+    render_init_info.preview_settings_source = m_ui_host.get();
+    render_init_info.viewport_bridge = m_viewport_bridge.get();
+    render_init_info.viewport_sink = m_viewport_sink.get();
+
+    // 1) Create the engine Vulkan device/allocator/sync up front.
+    m_render_system->initializeBackend(render_init_info);
+
+    // 2) Initialize Slint with the engine's Vulkan handles so its Skia renderer
+    //    composites on the shared device (enables a zero-copy 3D viewport).
+    SlintSystemInitInfo slint_init_info;
+    slint_init_info.window_system = m_window_system.get();
+    slint_init_info.ui_host = m_ui_host;
+    const SharedVulkanHandles shared_vk = m_render_system->getSharedVulkanHandles();
+    if (shared_vk.valid) {
+      slint_init_info.shared_vk_instance = shared_vk.instance;
+      slint_init_info.shared_vk_physical_device = shared_vk.physical_device;
+      slint_init_info.shared_vk_device = shared_vk.device;
+      slint_init_info.shared_vk_queue_family = shared_vk.graphics_queue_family;
+    }
+    m_slint_system->initialize(slint_init_info);
+    m_ui_host->setPresentation(m_slint_system.get());
+
+    // 3) Finish render system init (offscreen target, pipelines, overlays, ...).
+    m_render_system->initialize(render_init_info);
+
+    EditorServiceHandles ui_handles{};
+    ui_handles.selection = m_editor_selection;
+    ui_handles.hierarchy = m_hierarchy;
+    ui_handles.scene = m_scene_system;
+    ui_handles.content_browser = m_content_browser;
+    ui_handles.editor_scene_edit = m_editor_scene_edit;
+    ui_handles.render_system = m_render_system;
+    ui_handles.asset_compiler = m_asset_compiler;
+    ui_handles.asset_import = m_asset_import;
+    m_ui_host->bindEditorServices(ui_handles);
   }
-  m_slint_system->initialize(slint_init_info);
-  m_ui_host->setPresentation(m_slint_system.get());
-
-  // 3) Finish render system init (offscreen target, pipelines, overlays, ...).
-  m_render_system->initialize(render_init_info);
-
-  EditorServiceHandles ui_handles{};
-  ui_handles.selection = m_editor_selection;
-  ui_handles.hierarchy = m_hierarchy;
-  ui_handles.scene = m_scene_system;
-  ui_handles.content_browser = m_content_browser;
-  ui_handles.editor_scene_edit = m_editor_scene_edit;
-  ui_handles.render_system = m_render_system;
-  ui_handles.asset_compiler = m_asset_compiler;
-  ui_handles.asset_import = m_asset_import;
-  m_ui_host->bindEditorServices(ui_handles);
 
   m_input_system = eastl::make_shared<InputSystem>();
   m_input_system->initialize();

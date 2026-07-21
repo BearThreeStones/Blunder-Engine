@@ -7,6 +7,7 @@
 #include <filesystem>
 
 #include "runtime/core/memory/memory_system.h"
+#include "runtime/function/global/engine_host_mode.h"
 
 namespace Blunder {
 class LogSystem;
@@ -45,9 +46,13 @@ class RuntimeGlobalContext {
  public:
   // create all global systems and initialize these systems
   void startSystems(
-      const std::filesystem::path& project_root = std::filesystem::path{});
+      const std::filesystem::path& project_root = std::filesystem::path{},
+      EngineHostMode host_mode = EngineHostMode::Editor,
+      const eastl::string& play_scene = {});
   // destroy all global systems
   void shutdownSystems();
+
+  EngineHostMode hostMode() const { return m_host_mode; }
 
  public:
   MemorySystem m_memory_system;
@@ -80,6 +85,9 @@ class RuntimeGlobalContext {
   /// gated (see docs/agents/testing.md). Null or !isRunning() is normal.
   eastl::unique_ptr<DotNetHost> m_dotnet_host;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
+
+ private:
+  EngineHostMode m_host_mode{EngineHostMode::Editor};
 };
 
 extern RuntimeGlobalContext g_runtime_global_context;

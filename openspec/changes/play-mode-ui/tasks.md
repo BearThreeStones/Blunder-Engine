@@ -1,9 +1,9 @@
 ## 1. Player executable skeleton
 
-- [ ] 1.1 Add `engine_player` CMake target (thin main, link `engine_runtime` / needed deps; stage beside `engine_editor`)
-- [ ] 1.2 Parse CLI: `--project-root`, `--scene`, `--play-ipc` (endpoint)
-- [ ] 1.3 Boot Player without editor Slint shell: window + engine loop + FileSystem project root
-- [ ] 1.4 Load Play entry scene asset and confirm manual run from command line
+- [x] 1.1 Add `engine_player` CMake target (thin main, link `engine_runtime` / needed deps; stage beside `engine_editor`)
+- [x] 1.2 Parse CLI: `--project-root`, `--scene`, `--play-ipc` (endpoint)
+- [x] 1.3 Boot Player without editor Slint shell: window + engine loop + FileSystem project root
+- [x] 1.4 Load Play entry scene asset and confirm manual run from command line
 
 ## 2. Player host + Pause
 

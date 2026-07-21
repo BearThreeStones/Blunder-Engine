@@ -431,6 +431,22 @@ target_precompile_headers(project_create_test
 add_test(NAME project_create_test
          COMMAND project_create_test)
 
+add_executable(player_launch_test
+    "player_launch_test.cpp"
+    "../runtime/project/player_launch.cpp"
+)
+
+target_include_directories(player_launch_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(player_launch_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME player_launch_test
+         COMMAND player_launch_test)
+
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"
 )
