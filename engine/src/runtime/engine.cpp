@@ -9,6 +9,8 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/input/input_system.h"
+#include "runtime/platform/input/gameplay_input.h"
+#include "runtime/function/global/engine_host_mode.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
@@ -380,6 +382,28 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     }
 
     g_runtime_global_context.m_input_system->tick();
+
+    {
+      GameplayInputKeys keys{};
+      keys.player_host =
+          g_runtime_global_context.hostMode() == EngineHostMode::Player;
+      keys.paused = g_runtime_global_context.isPlayPaused();
+      keys.focused = false;
+      if (g_runtime_global_context.m_window_system) {
+        keys.focused =
+            g_runtime_global_context.m_window_system->getFocusMode();
+      }
+      int key_count = 0;
+      const bool* kb = SDL_GetKeyboardState(&key_count);
+      if (kb != nullptr) {
+        keys.w = kb[SDL_SCANCODE_W];
+        keys.a = kb[SDL_SCANCODE_A];
+        keys.s = kb[SDL_SCANCODE_S];
+        keys.d = kb[SDL_SCANCODE_D];
+        keys.space = kb[SDL_SCANCODE_SPACE];
+      }
+      gameplayInputState().sample(keys);
+    }
 
     for (Layer* layer : *g_runtime_global_context.m_layer_stack) {
       layer->onUpdate(delta_time);
