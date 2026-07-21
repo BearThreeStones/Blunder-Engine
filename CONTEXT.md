@@ -11,8 +11,8 @@ C# is the sole first-class language for Project gameplay logic. The engine does 
 _Avoid_: Multi-language official scripting, Lua/GDScript as co-equal product tracks, treating C# as DogWalk-only scaffolding
 
 **.NET script host**:
-The in-process CoreCLR host (`nethost` / hostfxr) that loads Project C# assemblies and owns Script Peers. It talks to the engine only through the C-ABI bridge. Assembly-Load-Context hot reload is a later phase on the same host, not part of the first host milestone.
-_Avoid_: Mono as the product host, out-of-process `dotnet` IPC as the shipping model, bundling ALC hot reload into the first host slice, direct P/Invoke of C++ member layouts
+The in-process CoreCLR host (`nethost` / hostfxr) that loads Project C# assemblies and owns Script Peers. It talks to the engine only through the C-ABI bridge. Assembly-Load-Context hot reload is a later phase on the same host, not part of the first host milestone. For Play Mode, the host runs inside the Player process; Edit Mode does not start it for normal authorship.
+_Avoid_: Mono as the product host, out-of-process `dotnet` IPC as the shipping model, bundling ALC hot reload into the first host slice, direct P/Invoke of C++ member layouts; treating an editor-process host as required for Play Mode
 
 **Engine API assembly**:
 The generated managed library (working name `Blunder.Api`) produced from the API Blueprint. Project game assemblies reference it; for the .NET host MVP it ships beside the editor/runtime and is referenced by path from the Create `.csproj` template. Default target framework is `net10.0` (current .NET LTS). A NuGet package may be added later for distribution without changing the Blueprint → generator source of truth.
@@ -295,8 +295,70 @@ _Avoid_: Assuming Ctrl+Z works for Transform before `editor-history` is applied
 ### Editor history
 
 **Editor History**:
-The editor's authorship undo system: Document History for the active scene, plus Global History for non-document editor actions. It does not record runtime gameplay or Play-mode simulation steps.
+The editor's authorship undo system: Document History for the active scene, plus Global History for non-document editor actions. It does not record runtime gameplay or Play Mode simulation steps.
 _Avoid_: Engine-wide action history shared with gameplay, treating script Tick as undoable, one undifferentiated stack for scene and settings
+
+### Play
+
+**Play Mode**:
+A session in which the open Project runs as a game for the author to try, separate from scene authorship editing. Gameplay simulation does not share the editor's authorship SceneInstance as its live world.
+_Avoid_: In-editor Play that mutates the editable document in place as the product model; treating ScriptHost-on as synonymous with Play Mode
+
+**Edit Mode**:
+The normal editor session for authoring scenes, assets, and project settings — not currently running a Play Mode session.
+_Avoid_: Calling idle editor "stopped Play" without a Play Mode concept
+
+**Play Process**:
+The separate OS process that runs Play Mode for the open Project. It owns the live gameplay world and script host for that session; the editor process remains in Edit Mode and does not host that gameplay ObjectDB.
+_Avoid_: Second editor window in the same process as the product Play boundary; treating env-gated in-editor DotNetHost as Play Mode
+
+**Player**:
+The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI.
+_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play
+
+**Play entry scene**:
+The scene asset the Player loads when Play Mode starts — the editor's active scene as already saved on disk (path/GUID), not a live memory clone of the editable SceneInstance.
+_Avoid_: Play from unsaved buffer without an explicit save step; Play always using a project default scene unrelated to the active document
+
+**Play dirty prompt**:
+When Play is requested and the active scene document is dirty, the editor asks how to proceed: save then Play, Play from the last saved asset, or cancel. Play Mode does not silently discard or silently auto-write authorship edits.
+_Avoid_: Always auto-save on Play with no prompt; blocking Play with save-only and no choice; playing the on-disk asset with no indication when the editor view is dirty
+
+**Play Scripts build**:
+Before starting the Player, the editor builds the Project `Scripts/` output when those sources (or their build inputs) are newer than the last successful scripts output — otherwise it reuses `.blunder/scripts_bin`. A failed build keeps the session in Edit Mode and does not start Play Mode.
+_Avoid_: Building Scripts on every Play with no dirtiness check; requiring the Player process to run `dotnet build`; starting Play against a stale missing assembly with no build attempt when Scripts are dirty
+
+**Play live sync (deferred)**:
+Pushing authorship or Scripts changes into a running Play Process without ending the session is out of the first Play Mode UI slice. Authors Stop and Play again to pick up saved scene and rebuilt Scripts.
+_Avoid_: Treating ALC or asset hot-reload into a live Player as required for the first Play Mode UI; implying Edit Mode edits appear in Play Mode automatically in this slice
+
+**Play session**:
+At most one Play Process for the editor at a time. Stop ends that process (graceful close first, then force if needed). Starting Play while already in Play Mode stops the existing session first.
+_Avoid_: Multiple concurrent Players as the v1 default; Stop that only clears UI state while leaving a live Player running
+
+**Edit Mode scripting**:
+Normal scene authorship does not start a .NET script host in the editor process. Gameplay Behaviour peers and Tick run in the Player during Play Mode. An env-gated editor host remains a debug/test escape hatch, not the product Play path.
+_Avoid_: Requiring `BLUNDER_DOTNET_SCRIPTS` for Play Mode; dual Tick in editor and Player as the default
+
+**Play controls**:
+The editor exposes Play, Pause, and Stop for the Play session. Play starts (or resumes) the single Play Process; Pause freezes gameplay simulation while the Player stays alive; Stop ends the Play Process and returns the author to Edit Mode.
+_Avoid_: Play-only toggle with no Pause; Pause that exits Play Mode; Stop that leaves the Player process running
+
+**Play Pause**:
+While paused, the Player skips gameplay Behaviour Tick (and other gameplay simulation time) but keeps the process and window alive so the author can still view and orbit the frozen world. Resume continues Tick from the paused world state.
+_Avoid_: Pause that tears down the Player; Pause that freezes rendering as the only definition; Pause as a synonym for Stop
+
+**Play control channel**:
+A local IPC link between the editor and the single Play Process used to send session commands (at least pause, resume, and stop). Process exit is also treated as leaving Play Mode. It is not a networked multiplayer protocol.
+_Avoid_: Editor Pause with no way to reach the Player; Stop that only kills without a graceful command path; designing the first channel as internet-facing RPC
+
+**Player window close**:
+Closing the Player's OS window ends the Play Process and therefore ends Play Mode (same outcome as Stop).
+_Avoid_: Closing the window while leaving a headless Player running; tray-minimize as the v1 close behavior
+
+**Edit during Play**:
+While a Play session is running, the author may keep editing the Project in the editor. Those edits do not appear in the live Player until a later Play (after save/build rules). Play Mode does not lock the authorship document.
+_Avoid_: Freezing the editor for the whole Play session as the v1 rule; implying unsaved editor edits stream into the running Player
 
 **Editor Command**:
 A single reversible unit on Editor History (Document or Global). It exposes undo and redo. Continuous interactions (e.g. a Translate Modal Session) become one Command at confirm — not one Command per pointer move.
