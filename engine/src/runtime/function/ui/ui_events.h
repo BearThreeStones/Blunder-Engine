@@ -29,6 +29,9 @@ enum class UiEventKind : uint8_t {
   syncShadingFromAsset,
   undo,
   redo,
+  play,
+  playPause,
+  playStop,
 };
 
 struct UiEvent {

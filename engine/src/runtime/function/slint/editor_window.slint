@@ -138,6 +138,13 @@ export component MainEditorWindow inherits Window {
     in property <bool> edit-can-undo: false;
     in property <bool> edit-can-redo: false;
 
+    callback play-requested();
+    callback play-pause-requested();
+    callback play-stop-requested();
+    in property <bool> play-pause-enabled: false;
+    in property <bool> play-stop-enabled: false;
+    in property <bool> play-session-paused: false;
+
     in-out property <bool> viewport-is-perspective: true;
     in property <bool> viewport-image-ready: false;
     callback viewport-projection-toggled();
@@ -272,7 +279,20 @@ export component MainEditorWindow inherits Window {
                         clicked => { root.edit-redo-requested(); }
                     }
                     Button { text: "View"; }
-                    Button { text: "Play"; }
+                    Button {
+                        text: "Play";
+                        clicked => { root.play-requested(); }
+                    }
+                    Button {
+                        text: root.play-session-paused ? "Resume" : "Pause";
+                        enabled: root.play-pause-enabled;
+                        clicked => { root.play-pause-requested(); }
+                    }
+                    Button {
+                        text: "Stop";
+                        enabled: root.play-stop-enabled;
+                        clicked => { root.play-stop-requested(); }
+                    }
                 }
             }
 

@@ -20,10 +20,10 @@
 
 ## 4. Editor Play session
 
-- [ ] 4.1 `PlaySessionController` (or equivalent): states Stopped / Starting / Playing / Paused; track child process
-- [ ] 4.2 Spawn sibling `engine_player` with project root, active scene saved path/GUID, IPC endpoint
-- [ ] 4.3 Single-session rule: Stop existing before new Play; process exit → Stopped
-- [ ] 4.4 Wire Play / Pause / Stop to Slint (replace stub); Pause enabled only after `ready`
+- [x] 4.1 `PlaySessionController` (or equivalent): states Stopped / Starting / Playing / Paused; track child process
+- [x] 4.2 Spawn sibling `engine_player` with project root, active scene saved path/GUID, IPC endpoint
+- [x] 4.3 Single-session rule: Stop existing before new Play; process exit → Stopped
+- [x] 4.4 Wire Play / Pause / Stop to Slint (replace stub); Pause enabled only after `ready`
 
 ## 5. Preflight gates
 

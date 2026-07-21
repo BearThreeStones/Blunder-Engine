@@ -486,6 +486,27 @@ endif()
 add_test(NAME play_ipc_test
          COMMAND play_ipc_test)
 
+add_executable(play_session_controller_test
+    "play_session_controller_test.cpp"
+    "../runtime/project/play_session_controller.cpp"
+    "../runtime/project/play_ipc.cpp"
+)
+
+target_include_directories(play_session_controller_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(WIN32)
+    target_link_libraries(play_session_controller_test PRIVATE ws2_32)
+endif()
+
+if(MSVC)
+    target_compile_options(play_session_controller_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME play_session_controller_test
+         COMMAND play_session_controller_test)
+
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"
 )

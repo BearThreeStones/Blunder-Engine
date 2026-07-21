@@ -52,6 +52,7 @@
 #include "runtime/function/ui/ui_callback_binder.h"
 #include "runtime/function/ui/ui_events.h"
 #include "runtime/function/ui/ui_host.h"
+#include "runtime/project/play_session_controller.h"
 #include "runtime/function/ui/view_models/editor_panels_view_model.h"
 #include "runtime/function/ui/docking/dock_auto_hide.h"
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
@@ -802,6 +803,19 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::undo)); }));
     component->on_edit_redo_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::redo)); }));
+
+    component->on_play_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::play));
+        }));
+    component->on_play_pause_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::playPause));
+        }));
+    component->on_play_stop_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::playStop));
+        }));
 
     component->on_viewport_projection_toggled([this]() {
       // Slint TouchArea callback intentionally ignored.
@@ -2286,6 +2300,14 @@ void SlintSystem::syncTransformToolbarFromEngine() {
           g_runtime_global_context.m_document_history->canUndo());
       ui->set_edit_can_redo(
           g_runtime_global_context.m_document_history->canRedo());
+    }
+    if (PlaySessionController* session =
+            g_runtime_global_context.m_play_session.get()) {
+      session->poll();
+      ui->set_play_pause_enabled(session->pauseEnabled());
+      ui->set_play_stop_enabled(session->stopEnabled());
+      ui->set_play_session_paused(session->state() ==
+                                  PlaySessionState::Paused);
     }
   } catch (...) {
   }
@@ -4543,6 +4565,22 @@ bool SlintSystem::processSlintAdapterEvent(SlintWindowAdapter* adapter,
 void SlintSystem::beginFrame() {
   if (const auto ui_host = m_ui_host.lock()) {
     ui_host->drainEventQueue();
+  }
+
+  if (PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get()) {
+    session->poll();
+    if (m_window_component) {
+      try {
+        ScopedDispatchGuard guard(m_slint_dispatch_depth);
+        auto& ui = *m_window_component;
+        ui->set_play_pause_enabled(session->pauseEnabled());
+        ui->set_play_stop_enabled(session->stopEnabled());
+        ui->set_play_session_paused(session->state() ==
+                                    PlaySessionState::Paused);
+      } catch (...) {
+      }
+    }
   }
 
   if (m_pending_file_dialog_is_import) {

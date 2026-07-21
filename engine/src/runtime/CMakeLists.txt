@@ -111,6 +111,8 @@ add_library(engine_runtime STATIC
     "project/player_launch.cpp"
     "project/play_ipc.h"
     "project/play_ipc.cpp"
+    "project/play_session_controller.h"
+    "project/play_session_controller.cpp"
     "function/script/scripts_builder.h"
     "function/script/scripts_builder.cpp"
     "resource/asset/asset.h"

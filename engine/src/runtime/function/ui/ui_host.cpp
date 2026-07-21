@@ -11,6 +11,8 @@
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/ui/editor_ui_presentation.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/project/play_session_controller.h"
+#include "runtime/platform/file_system/file_system.h"
 
 namespace Blunder {
 
@@ -132,6 +134,45 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       m_panels.markDirty(EditorPanelDirty::inspector);
       m_panels.markDirty(EditorPanelDirty::hierarchy);
+      break;
+    }
+    case UiEventKind::play: {
+      PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get();
+      FileSystem* fs = g_runtime_global_context.m_file_system.get();
+      if (session == nullptr || fs == nullptr || !services.editor_scene_edit) {
+        break;
+      }
+      PlaySessionRequest req;
+      req.project_root = fs->getProjectRoot();
+      req.scene = services.editor_scene_edit->activeScenePath().c_str();
+      if (req.scene.empty()) {
+        break;
+      }
+      if (!session->play(req) && !session->lastError().empty()) {
+        // Errors stay on the controller; Task 5 may surface a UI toast.
+      }
+      break;
+    }
+    case UiEventKind::playPause: {
+      PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get();
+      if (session == nullptr) {
+        break;
+      }
+      if (session->state() == PlaySessionState::Paused) {
+        session->resume();
+      } else {
+        session->pause();
+      }
+      break;
+    }
+    case UiEventKind::playStop: {
+      PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get();
+      if (session != nullptr) {
+        session->stop();
+      }
       break;
     }
     case UiEventKind::browserRefresh:

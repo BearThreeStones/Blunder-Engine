@@ -37,6 +37,7 @@
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/viewport_pick_system.h"
+#include "runtime/project/play_session_controller.h"
 // #include "runtime/resource/config_manager/config_manager.h"
 
 namespace Blunder {
@@ -343,6 +344,8 @@ void RuntimeGlobalContext::startSystems(
     ui_handles.asset_compiler = m_asset_compiler;
     ui_handles.asset_import = m_asset_import;
     m_ui_host->bindEditorServices(ui_handles);
+
+    m_play_session = eastl::make_unique<PlaySessionController>();
   }
 
   m_input_system = eastl::make_shared<InputSystem>();
@@ -359,6 +362,12 @@ void RuntimeGlobalContext::startSystems(
 }
 
 void RuntimeGlobalContext::shutdownSystems() {
+  // Tear down Play session before UI/render so the child Player exits first.
+  if (m_play_session) {
+    m_play_session->stop();
+    m_play_session.reset();
+  }
+
   // Tear down CoreCLR before other systems that scripts may have touched.
   if (m_dotnet_host) {
     m_dotnet_host->shutdown();

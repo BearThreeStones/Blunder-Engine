@@ -37,6 +37,7 @@ class SceneSystem;
 class WindowSystem;
 class LayerStack;
 class DotNetHost;
+class PlaySessionController;
 // class ParticleManager;
 
 struct EngineInitParams;
@@ -88,6 +89,8 @@ class RuntimeGlobalContext {
   /// In-process CoreCLR host. Owned here; started lazily from startSystems when
   /// gated (see docs/agents/testing.md). Null or !isRunning() is normal.
   eastl::unique_ptr<DotNetHost> m_dotnet_host;
+  /// Editor Play session (spawn engine_player + IPC). Null in Player host mode.
+  eastl::unique_ptr<PlaySessionController> m_play_session;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
 
  private:
