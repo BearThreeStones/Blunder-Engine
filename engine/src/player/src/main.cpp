@@ -1,5 +1,6 @@
 #include <exception>
 #include <iostream>
+#include <memory>
 
 #include <SDL3/SDL.h>
 #define SDL_MAIN_USE_CALLBACKS
@@ -7,12 +8,36 @@
 
 #include "runtime/engine.h"
 #include "runtime/function/global/engine_host_mode.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/platform/window/window_system.h"
+#include "runtime/project/play_ipc.h"
 #include "runtime/project/player_launch.h"
 
 namespace {
 
 Blunder::BlunderEngine* g_engine = nullptr;
 Blunder::PlayerLaunch g_launch{};
+std::unique_ptr<Blunder::PlayIpcServer> g_play_ipc;
+
+void handlePlayIpcCommand(Blunder::PlayIpcCommand command) {
+  using Blunder::PlayIpcCommand;
+  switch (command) {
+    case PlayIpcCommand::Pause:
+      Blunder::g_runtime_global_context.setPlayPaused(true);
+      break;
+    case PlayIpcCommand::Resume:
+      Blunder::g_runtime_global_context.setPlayPaused(false);
+      break;
+    case PlayIpcCommand::Stop:
+      if (Blunder::g_runtime_global_context.m_window_system) {
+        Blunder::g_runtime_global_context.m_window_system->requestClose();
+      }
+      break;
+    case PlayIpcCommand::Unknown:
+    default:
+      break;
+  }
+}
 
 }  // namespace
 
@@ -25,9 +50,23 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     }
 
     if (!g_launch.play_ipc.empty()) {
-      // IPC server is Task 3; accept and log the endpoint for now.
-      std::cerr << "[engine_player] --play-ipc " << g_launch.play_ipc.c_str()
-                << " (deferred until control channel)\n";
+      const Blunder::PlayIpcEndpoint endpoint =
+          Blunder::parsePlayIpcEndpoint(g_launch.play_ipc);
+      if (!endpoint.ok) {
+        std::cerr << "[engine_player] invalid --play-ipc: "
+                  << endpoint.error.c_str() << '\n';
+        return SDL_APP_FAILURE;
+      }
+      g_play_ipc = std::make_unique<Blunder::PlayIpcServer>();
+      if (!g_play_ipc->listen(endpoint)) {
+        std::cerr << "[engine_player] failed to listen on --play-ipc "
+                  << Blunder::formatPlayIpcEndpoint(endpoint).c_str() << '\n';
+        g_play_ipc.reset();
+        return SDL_APP_FAILURE;
+      }
+      g_play_ipc->setCommandHandler(handlePlayIpcCommand);
+      std::cerr << "[engine_player] play IPC listening on " << endpoint.host
+                << ":" << g_play_ipc->boundPort() << '\n';
     }
 
     g_engine = new Blunder::BlunderEngine();
@@ -51,6 +90,9 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     return SDL_APP_FAILURE;
   }
   try {
+    if (g_play_ipc) {
+      g_play_ipc->poll();
+    }
     const float delta_time = engine->calculateDeltaTime();
     if (!engine->tickOneFrame(delta_time)) {
       return SDL_APP_SUCCESS;
@@ -91,6 +133,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
 void SDL_AppQuit(void* appstate, SDL_AppResult result) {
   (void)result;
+  g_play_ipc.reset();
   auto* engine = static_cast<Blunder::BlunderEngine*>(appstate);
   if (!engine) {
     engine = g_engine;

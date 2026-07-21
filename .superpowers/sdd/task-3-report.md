@@ -1,75 +1,62 @@
-# Task 3 Report: Mount scene Behaviours when DotNetHost running
+# Task 3 Report — Play control channel (IPC)
 
-## Status
+**Status:** DONE  
+**Branch:** `feat/play-mode-ui`  
+**Workspace:** `E:/Dev/Blunder-Engine/.worktrees/play-mode-ui`
 
-**DONE**
+## Delivered (OpenSpec 3.1–3.3)
 
-## Summary
+| Item | Result |
+|------|--------|
+| 3.1 Shared IPC helper | Done — `PlayIpcServer` / `PlayIpcClient` localhost TCP; ephemeral port via `listen(0)` |
+| 3.2 Commands + ready | Done — line protocol `pause` / `resume` / `stop`; server emits `ready\n` on accept |
+| 3.3 Loopback test | Done — `play_ipc_test` fake client against in-process server |
+| Player wire | Done — `--play-ipc` starts server; poll each frame; Pause API + `requestClose` on stop |
 
-When DotNetHost is running with a game assembly loaded, `mountSceneBehaviours` attaches managed peers onto restored Behaviour slots (stable BehaviourIds) and applies a minimal bool/number/string property bag. SceneSystem mounts after instantiate; host game-load remounts already-loaded instances (property bags skipped when Scene* is null). OpenSpec 3.1–3.3 marked `[x]`.
+OpenSpec 3.1–3.3 marked `[x]` in `openspec/changes/play-mode-ui/tasks.md`.
 
 ## Commits
 
-- `ce81f1787b23b6a2cf14e2c570baf5573dfa0af8` — `feat(script): mount scene Behaviours when DotNetHost running`
-
-## Files changed
-
-| Path | Action |
-|------|--------|
-| `engine/src/runtime/function/script/scene_behaviour_mount.h` | Created — mount API |
-| `engine/src/runtime/function/script/scene_behaviour_mount.cpp` | Created — Attach + property JSON apply |
-| `engine/src/runtime/function/script/dotnet_host.h` / `.cpp` | Modified — existing-id attach, apply props, `hasGameAssembly`, `getProbePropertyOk` |
-| `engine/managed/Blunder.ScriptHost/HostExports.cs` | Modified — mount onto existing id; `ApplyBehaviourProperties`; `GetProbePropertyOk` |
-| `engine/src/runtime/function/scene/scene_system.cpp` | Modified — mount after instantiate |
-| `engine/src/runtime/function/global/global_context.cpp` | Modified — remount loaded scenes after game load |
-| `engine/src/tests/scene_behaviour_mount_test.cpp` | Created — process ABI + ProbeBehaviour Tick/props |
-| `engine/src/tests/CMakeLists.txt` | Modified — register mount test |
-| `engine/src/runtime/CMakeLists.txt` | Modified — mount sources |
-| `engine/src/tests/fixtures/dotnet_host_game/ProbeBehaviour.cs` | Modified — property-bag fields + Ready capture |
-| `openspec/changes/behaviour-serialization/tasks.md` | Modified — 3.1–3.3 `[x]` |
-
-## API delivered
-
-- `mountSceneBehaviours(SceneInstance&, DotNetHost&, const Scene*)`
-- `DotNetHost::attachBehaviour` — non-zero `*out_id` mounts onto existing slot
-- `DotNetHost::applyBehaviourProperties(object, id, utf8_json)`
-- `DotNetHost::hasGameAssembly()` / `getProbePropertyOk()`
+1. `feat(play): localhost IPC control channel`
 
 ## TDD evidence
 
 ### RED
 
-Stub `mountSceneBehaviours` (no-op). Ran `scene_behaviour_mount_test`:
+Stub `play_ipc.cpp` (no listen / no protocol):
 
 ```text
-FAIL peer non-null after mount
-getProbeTickCount=0 (expected 1)
-FAIL managed Tick after scene mount
-getProbePropertyOk=-1 (expected 1)
-FAIL property bag applied to ProbeBehaviour
-3 failure(s)
-exit=1
+FAIL parse host:port ok
+FAIL listen ephemeral
+FAIL ready handshake
+FAIL send pause
+...
+18 failure(s)
+RED_EXIT=1
 ```
 
 ### GREEN
 
-Implemented Attach existing-id + mount helper + property apply.
-
 ```text
-cmake --build build/vs2026-debug --config Debug --target scene_behaviour_mount_test
-.\build\vs2026-debug\tests\Debug\scene_behaviour_mount_test.exe  → exit 0
-  "scene_behaviour_mount_test OK"
-editor_dotnet_host_test.exe / scene_behaviour_instantiate_test.exe → exit 0
+play_ipc_test: all passed
+GREEN_EXIT=0
 ```
+
+## Protocol
+
+- Endpoint: `host:port` (e.g. `127.0.0.1:54321`); port-only defaults host to `127.0.0.1`
+- Server listens (non-blocking); on accept sends `ready\n`
+- Client sends one command per line: `pause`, `resume`, `stop`
+- Player: `pause`/`resume` → `setPlayPaused`; `stop` → `WindowSystem::requestClose`
 
 ## Self-review
 
-- **Correctness:** Restored BehaviourId preserved (no second `add_behaviour`); peers null until mount; property bag skips unknown keys/types.
-- **Scope:** No Inspector; no export (Task 4). Host not required for offline instantiate (Task 2 unchanged).
-- **Remount:** After `loadGameAssembly`, remounts loaded SceneInstances without Scene* (no property re-apply).
+- Unit test covers parse, ephemeral bind, ready handshake, and command dispatch without launching `engine_player`.
+- Shared helper lives in `engine_runtime` for Task 4 editor client reuse.
+- Player fails startup if `--play-ipc` is invalid or bind fails.
 
 ## Concerns
 
-1. **Property bags on remount-without-Scene** — when host starts after scenes load, peers attach from slot type names only; bag values are not re-applied unless mount is called with `Scene*`.
-2. **Mount test needs `bin/Debug` on PATH** — large `engine_runtime`-linked exe needs staged ScriptHost/nethost DLLs (same as other scene tests).
-3. **Dirty working tree** — unrelated WIP left uncommitted; commit scoped to mount path + test + OpenSpec tasks.
+1. **Single client** — server accepts one editor connection; reconnect after drop is OK, multi-client not supported.
+2. **No command ACKs** — editor must infer pause from Player state / UI; Task 4 may want acks.
+3. **pipe: endpoints** — CLI still accepts non-TCP strings from Task 1 tests; Player rejects anything that is not `host:port`.

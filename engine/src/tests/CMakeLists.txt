@@ -466,6 +466,26 @@ target_precompile_headers(play_pause_tick_gate_test
 add_test(NAME play_pause_tick_gate_test
          COMMAND play_pause_tick_gate_test)
 
+add_executable(play_ipc_test
+    "play_ipc_test.cpp"
+    "../runtime/project/play_ipc.cpp"
+)
+
+target_include_directories(play_ipc_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(WIN32)
+    target_link_libraries(play_ipc_test PRIVATE ws2_32)
+endif()
+
+if(MSVC)
+    target_compile_options(play_ipc_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME play_ipc_test
+         COMMAND play_ipc_test)
+
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"
 )

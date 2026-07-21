@@ -14,9 +14,9 @@
 
 ## 3. Play control channel
 
-- [ ] 3.1 Shared IPC helper (localhost TCP ephemeral port default): listen in Player, connect from editor
-- [ ] 3.2 Commands: `pause`, `resume`, `stop`; Player emits `ready` when accepting commands
-- [ ] 3.3 Unit/smoke test: fake client pause/resume/stop against Player or in-process IPC loopback
+- [x] 3.1 Shared IPC helper (localhost TCP ephemeral port default): listen in Player, connect from editor
+- [x] 3.2 Commands: `pause`, `resume`, `stop`; Player emits `ready` when accepting commands
+- [x] 3.3 Unit/smoke test: fake client pause/resume/stop against Player or in-process IPC loopback
 
 ## 4. Editor Play session
 

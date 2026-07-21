@@ -109,6 +109,8 @@ add_library(engine_runtime STATIC
     "project/editor_launch.cpp"
     "project/player_launch.h"
     "project/player_launch.cpp"
+    "project/play_ipc.h"
+    "project/play_ipc.cpp"
     "function/script/scripts_builder.h"
     "function/script/scripts_builder.cpp"
     "resource/asset/asset.h"
@@ -287,7 +289,7 @@ else()
 endif()
 
 if(WIN32)
-    target_link_libraries(engine_runtime PRIVATE d3d12 dxgi)
+    target_link_libraries(engine_runtime PRIVATE d3d12 dxgi ws2_32)
 endif()
 
 # C-ABI lives outside engine_runtime so SHARED and static consumers do not
