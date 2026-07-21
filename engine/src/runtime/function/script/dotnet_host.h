@@ -33,12 +33,23 @@ class DotNetHost {
   bool attachBehaviour(ObjectId object, const char* clr_type_name,
                        BehaviourId* out_id, eastl::string& out_error);
 
+  /// Apply JSON object of bool/number/string fields onto a mounted Behaviour.
+  /// Unknown keys are skipped by ScriptHost.
+  bool applyBehaviourProperties(ObjectId object, BehaviourId behaviour_id,
+                                const char* utf8_json,
+                                eastl::string& out_error);
+
   /// Test seam: resolve `HostExports.GetProbeTickCount` / sibling FoundSibling
-  /// via reflection on the already-loaded game assembly.
+  /// / GetProbePropertyOk via reflection on the already-loaded game assembly.
   bool resolveProbeTickCount(const std::filesystem::path& script_host_dll,
                              eastl::string& out_error);
   int getProbeTickCount() const;
   int getProbeSiblingFound() const;
+  /// 1 when ProbeBehaviour Ready captured expected property-bag values.
+  int getProbePropertyOk() const;
+
+  /// True after a successful `loadGameAssembly`.
+  bool hasGameAssembly() const { return m_game_assembly_loaded; }
 
   void shutdown();
   bool isRunning() const { return m_running; }
@@ -57,6 +68,9 @@ class DotNetHost {
   using LoadGameAssemblyFn = int (*)(const char* utf8_path);
   using AttachBehaviourFn = int (*)(uint64_t object_id, const char* utf8_type,
                                     uint64_t* out_behaviour_id);
+  using ApplyBehaviourPropertiesFn = int (*)(uint64_t object_id,
+                                             uint64_t behaviour_id,
+                                             const char* utf8_json);
   using RegisterNativeAbiFn = int (*)(const BlunderNativeAbi* abi);
   using RegisterLifecycleHooksFn = void (*)();
   using ShutdownCleanupFn = void (*)();
@@ -64,11 +78,14 @@ class DotNetHost {
 
   LoadGameAssemblyFn m_load_game{nullptr};
   AttachBehaviourFn m_attach{nullptr};
+  ApplyBehaviourPropertiesFn m_apply_props{nullptr};
   RegisterNativeAbiFn m_register_abi{nullptr};
   RegisterLifecycleHooksFn m_register_hooks{nullptr};
   ShutdownCleanupFn m_shutdown_cleanup{nullptr};
   GetProbeTickCountFn m_get_probe_tick{nullptr};
   GetProbeTickCountFn m_get_probe_sibling{nullptr};
+  GetProbeTickCountFn m_get_probe_property_ok{nullptr};
+  bool m_game_assembly_loaded{false};
 };
 
 }  // namespace Blunder

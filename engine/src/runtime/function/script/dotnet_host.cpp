@@ -233,6 +233,7 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
   const char_t* type_name = L"Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* load_name = L"LoadGameAssembly";
   const char_t* attach_name = L"AttachBehaviour";
+  const char_t* apply_props_name = L"ApplyBehaviourProperties";
   const char_t* register_abi_name = L"RegisterNativeAbi";
   const char_t* register_name = L"RegisterLifecycleHooks";
   const char_t* shutdown_name = L"ShutdownCleanup";
@@ -240,6 +241,7 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
   const char_t* type_name = "Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* load_name = "LoadGameAssembly";
   const char_t* attach_name = "AttachBehaviour";
+  const char_t* apply_props_name = "ApplyBehaviourProperties";
   const char_t* register_abi_name = "RegisterNativeAbi";
   const char_t* register_name = "RegisterLifecycleHooks";
   const char_t* shutdown_name = "ShutdownCleanup";
@@ -264,6 +266,16 @@ bool DotNetHost::resolveExports(const std::filesystem::path& script_host_dll,
     return false;
   }
   m_attach = reinterpret_cast<AttachBehaviourFn>(fn);
+
+  fn = nullptr;
+  rc = load_and_get(dll_path.c_str(), type_name, apply_props_name,
+                    UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  if (rc != 0 || fn == nullptr) {
+    out_error = "Failed to resolve HostExports.ApplyBehaviourProperties code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
+  m_apply_props = reinterpret_cast<ApplyBehaviourPropertiesFn>(fn);
 
   fn = nullptr;
   rc = load_and_get(dll_path.c_str(), type_name, register_abi_name,
@@ -332,6 +344,7 @@ bool DotNetHost::loadGameAssembly(const std::filesystem::path& game_dll,
     out_error += intToEastl(rc);
     return false;
   }
+  m_game_assembly_loaded = true;
   return true;
 }
 
@@ -339,9 +352,6 @@ bool DotNetHost::attachBehaviour(ObjectId object, const char* clr_type_name,
                                  BehaviourId* out_id,
                                  eastl::string& out_error) {
   out_error.clear();
-  if (out_id != nullptr) {
-    *out_id = k_invalid_behaviour_id;
-  }
   if (!m_running || m_attach == nullptr) {
     out_error = "DotNetHost is not running";
     return false;
@@ -351,10 +361,14 @@ bool DotNetHost::attachBehaviour(ObjectId object, const char* clr_type_name,
     return false;
   }
 
-  uint64_t behaviour_id = 0;
+  // Non-zero *out_id = mount onto an existing restored slot (in/out).
+  uint64_t behaviour_id = isValidBehaviourId(*out_id)
+                              ? static_cast<uint64_t>(*out_id)
+                              : 0;
   const int rc =
       m_attach(static_cast<uint64_t>(object), clr_type_name, &behaviour_id);
   if (rc != 0 || behaviour_id == 0) {
+    *out_id = k_invalid_behaviour_id;
     out_error = "AttachBehaviour failed for type ";
     out_error += clr_type_name;
     return false;
@@ -363,11 +377,36 @@ bool DotNetHost::attachBehaviour(ObjectId object, const char* clr_type_name,
   return true;
 }
 
+bool DotNetHost::applyBehaviourProperties(ObjectId object, BehaviourId behaviour_id,
+                                          const char* utf8_json,
+                                          eastl::string& out_error) {
+  out_error.clear();
+  if (!m_running || m_apply_props == nullptr) {
+    out_error = "DotNetHost is not running";
+    return false;
+  }
+  if (!isValid(object) || !isValidBehaviourId(behaviour_id)) {
+    out_error = "applyBehaviourProperties requires valid object and behaviour id";
+    return false;
+  }
+  if (utf8_json == nullptr) {
+    utf8_json = "{}";
+  }
+  const int rc = m_apply_props(static_cast<uint64_t>(object),
+                               static_cast<uint64_t>(behaviour_id), utf8_json);
+  if (rc != 0) {
+    out_error = "ApplyBehaviourProperties failed";
+    return false;
+  }
+  return true;
+}
+
 bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_dll,
                                        eastl::string& out_error) {
   out_error.clear();
   m_get_probe_tick = nullptr;
   m_get_probe_sibling = nullptr;
+  m_get_probe_property_ok = nullptr;
   if (!m_running || m_load_assembly_and_get_fn == nullptr) {
     out_error = "DotNetHost is not running";
     return false;
@@ -387,10 +426,12 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
       L"Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* tick_name = L"GetProbeTickCount";
   const char_t* sibling_name = L"GetProbeSiblingFound";
+  const char_t* property_ok_name = L"GetProbePropertyOk";
 #else
   const char_t* type_name = "Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* tick_name = "GetProbeTickCount";
   const char_t* sibling_name = "GetProbeSiblingFound";
+  const char_t* property_ok_name = "GetProbePropertyOk";
 #endif
 
   void* fn = nullptr;
@@ -412,6 +453,16 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
     return false;
   }
   m_get_probe_sibling = reinterpret_cast<GetProbeTickCountFn>(fn);
+
+  fn = nullptr;
+  rc = load_and_get(dll_path.c_str(), type_name, property_ok_name,
+                    UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  if (rc != 0 || fn == nullptr) {
+    out_error = "Failed to resolve HostExports.GetProbePropertyOk code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
+  m_get_probe_property_ok = reinterpret_cast<GetProbeTickCountFn>(fn);
   return true;
 }
 
@@ -429,6 +480,13 @@ int DotNetHost::getProbeSiblingFound() const {
   return m_get_probe_sibling();
 }
 
+int DotNetHost::getProbePropertyOk() const {
+  if (m_get_probe_property_ok == nullptr) {
+    return -1;
+  }
+  return m_get_probe_property_ok();
+}
+
 void DotNetHost::shutdown() {
   if (!m_running && m_host_context == nullptr && m_hostfxr_lib == nullptr) {
     return;
@@ -440,12 +498,15 @@ void DotNetHost::shutdown() {
 
   m_load_game = nullptr;
   m_attach = nullptr;
+  m_apply_props = nullptr;
   m_register_abi = nullptr;
   m_register_hooks = nullptr;
   m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
   m_get_probe_sibling = nullptr;
+  m_get_probe_property_ok = nullptr;
   m_load_assembly_and_get_fn = nullptr;
+  m_game_assembly_loaded = false;
   m_running = false;
 
   if (m_host_context != nullptr && m_hostfxr_lib != nullptr) {
@@ -469,11 +530,14 @@ void DotNetHost::closeHandles() {
   m_load_assembly_and_get_fn = nullptr;
   m_load_game = nullptr;
   m_attach = nullptr;
+  m_apply_props = nullptr;
   m_register_abi = nullptr;
   m_register_hooks = nullptr;
   m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
   m_get_probe_sibling = nullptr;
+  m_get_probe_property_ok = nullptr;
+  m_game_assembly_loaded = false;
   m_running = false;
 }
 
@@ -527,6 +591,12 @@ bool DotNetHost::attachBehaviour(ObjectId, const char*, BehaviourId* out_id,
   return false;
 }
 
+bool DotNetHost::applyBehaviourProperties(ObjectId, BehaviourId, const char*,
+                                          eastl::string& out_error) {
+  out_error = "nethost not available";
+  return false;
+}
+
 bool DotNetHost::resolveProbeTickCount(const std::filesystem::path&,
                                        eastl::string& out_error) {
   out_error = "nethost not available";
@@ -536,6 +606,8 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path&,
 int DotNetHost::getProbeTickCount() const { return -1; }
 
 int DotNetHost::getProbeSiblingFound() const { return -1; }
+
+int DotNetHost::getProbePropertyOk() const { return -1; }
 
 void DotNetHost::shutdown() { closeHandles(); }
 
@@ -549,6 +621,8 @@ void DotNetHost::closeHandles() {
   m_shutdown_cleanup = nullptr;
   m_get_probe_tick = nullptr;
   m_get_probe_sibling = nullptr;
+  m_get_probe_property_ok = nullptr;
+  m_game_assembly_loaded = false;
   m_running = false;
 }
 

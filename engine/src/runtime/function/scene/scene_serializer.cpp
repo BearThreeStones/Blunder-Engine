@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,6 +28,128 @@ const char* skipWhitespace(const char* p) {
 const char* findKey(const char* text, const char* key) {
   const char* pos = std::strstr(text, key);
   return pos;
+}
+
+/// Object-scoped key lookup: match `key` (including quotes) only at the current
+/// object depth, not inside nested objects/arrays or string values. Requires
+/// ':' after the key so value tokens like `"behaviours"` cannot bind.
+const char* findObjectKey(const char* text, const char* limit, const char* key) {
+  if (text == nullptr || limit == nullptr || key == nullptr || text >= limit) {
+    return nullptr;
+  }
+  const size_t key_len = std::strlen(key);
+  if (key_len == 0) {
+    return nullptr;
+  }
+
+  const char* first = skipWhitespace(text);
+  // Content spans (after '{') start already inside the object.
+  int brace_depth = (first < limit && *first == '{') ? 0 : 1;
+  int bracket_depth = 0;
+  bool in_string = false;
+  bool escape = false;
+
+  for (const char* p = text; p < limit; ++p) {
+    const char c = *p;
+    if (in_string) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (c == '\\') {
+        escape = true;
+        continue;
+      }
+      if (c == '"') {
+        in_string = false;
+      }
+      continue;
+    }
+
+    if (c == '"') {
+      if (brace_depth == 1 && bracket_depth == 0 &&
+          static_cast<size_t>(limit - p) >= key_len &&
+          std::strncmp(p, key, key_len) == 0) {
+        const char* after = skipWhitespace(p + key_len);
+        if (after < limit && *after == ':') {
+          return p;
+        }
+      }
+      in_string = true;
+      continue;
+    }
+
+    if (c == '{') {
+      ++brace_depth;
+    } else if (c == '}') {
+      --brace_depth;
+      if (brace_depth < 0) {
+        return nullptr;
+      }
+    } else if (c == '[') {
+      ++bracket_depth;
+    } else if (c == ']') {
+      --bracket_depth;
+    }
+  }
+  return nullptr;
+}
+
+bool parseJsonString(const char* quote_start, const char* limit,
+                     eastl::string& out_value, const char** out_after) {
+  if (quote_start == nullptr || limit == nullptr || quote_start >= limit ||
+      *quote_start != '"') {
+    return false;
+  }
+  out_value.clear();
+  const char* p = quote_start + 1;
+  while (p < limit) {
+    const char c = *p;
+    if (c == '"') {
+      *out_after = p + 1;
+      return true;
+    }
+    if (c == '\\') {
+      ++p;
+      if (p >= limit) {
+        return false;
+      }
+      switch (*p) {
+        case '"':
+          out_value.push_back('"');
+          break;
+        case '\\':
+          out_value.push_back('\\');
+          break;
+        case '/':
+          out_value.push_back('/');
+          break;
+        case 'b':
+          out_value.push_back('\b');
+          break;
+        case 'f':
+          out_value.push_back('\f');
+          break;
+        case 'n':
+          out_value.push_back('\n');
+          break;
+        case 'r':
+          out_value.push_back('\r');
+          break;
+        case 't':
+          out_value.push_back('\t');
+          break;
+        default:
+          out_value.push_back(*p);
+          break;
+      }
+      ++p;
+      continue;
+    }
+    out_value.push_back(c);
+    ++p;
+  }
+  return false;
 }
 
 bool parseFloatArray(const char* start, const char* end, float* out, size_t count) {
@@ -132,20 +255,20 @@ bool parseRotation(const char* object_start, const char* object_end, Quat& out_r
 
 bool parseStringField(const char* object_start, const char* object_end,
                       const char* key, eastl::string& out_value) {
-  const char* key_pos = findKey(object_start, key);
-  if (key_pos == nullptr || key_pos >= object_end) {
+  const char* key_pos = findObjectKey(object_start, object_end, key);
+  if (key_pos == nullptr) {
     return false;
   }
-  const char* quote_start = std::strchr(key_pos + std::strlen(key), '"');
-  if (quote_start == nullptr || quote_start >= object_end) {
+  const char* p = skipWhitespace(key_pos + std::strlen(key));
+  if (p >= object_end || *p != ':') {
     return false;
   }
-  ++quote_start;
-  const char* quote_end = std::strchr(quote_start, '"');
-  if (quote_end == nullptr || quote_end > object_end) {
+  ++p;
+  p = skipWhitespace(p);
+  const char* after = nullptr;
+  if (!parseJsonString(p, object_end, out_value, &after)) {
     return false;
   }
-  out_value.assign(quote_start, static_cast<size_t>(quote_end - quote_start));
   return !out_value.empty();
 }
 
@@ -162,6 +285,262 @@ bool parseVec3Field(const char* object_start, const char* object_end, const char
     return false;
   }
   out_value = Vec3(values[0], values[1], values[2]);
+  return true;
+}
+
+const char* findObjectAfterKeyBounded(const char* text, const char* limit,
+                                      const char* key, const char** out_end) {
+  const char* key_pos = findObjectKey(text, limit, key);
+  if (key_pos == nullptr) {
+    return nullptr;
+  }
+  const char* p = skipWhitespace(key_pos + std::strlen(key));
+  if (p >= limit || *p != ':') {
+    return nullptr;
+  }
+  ++p;
+  p = skipWhitespace(p);
+  if (p >= limit || *p != '{') {
+    return nullptr;
+  }
+  const char* brace = p;
+  p = brace + 1;
+  int depth = 1;
+  while (p < limit && depth > 0) {
+    if (*p == '{') {
+      ++depth;
+    } else if (*p == '}') {
+      --depth;
+    }
+    ++p;
+  }
+  if (depth != 0) {
+    return nullptr;
+  }
+  *out_end = p;
+  return brace + 1;
+}
+
+const char* findArrayAfterKeyBounded(const char* text, const char* limit,
+                                     const char* key, const char** out_end) {
+  const char* key_pos = findObjectKey(text, limit, key);
+  if (key_pos == nullptr) {
+    return nullptr;
+  }
+  const char* p = skipWhitespace(key_pos + std::strlen(key));
+  if (p >= limit || *p != ':') {
+    return nullptr;
+  }
+  ++p;
+  p = skipWhitespace(p);
+  if (p >= limit || *p != '[') {
+    return nullptr;
+  }
+  const char* bracket = p;
+  p = bracket + 1;
+  int depth = 1;
+  while (p < limit && depth > 0) {
+    if (*p == '[') {
+      ++depth;
+    } else if (*p == ']') {
+      --depth;
+    }
+    ++p;
+  }
+  if (depth != 0) {
+    return nullptr;
+  }
+  *out_end = p;
+  return bracket + 1;
+}
+
+bool parseUint64Field(const char* object_start, const char* object_end,
+                      const char* key, uint64_t& out_value) {
+  const char* key_pos = findObjectKey(object_start, object_end, key);
+  if (key_pos == nullptr) {
+    return false;
+  }
+  const char* p = skipWhitespace(key_pos + std::strlen(key));
+  if (p >= object_end || *p != ':') {
+    return false;
+  }
+  ++p;
+  p = skipWhitespace(p);
+  if (p >= object_end) {
+    return false;
+  }
+  char* after = nullptr;
+  const unsigned long long parsed = std::strtoull(p, &after, 10);
+  if (after == p || after > object_end) {
+    return false;
+  }
+  out_value = static_cast<uint64_t>(parsed);
+  return true;
+}
+
+bool parseBehaviourPropertyValue(const char* value_start, const char* limit,
+                                 Variant& out_value, const char** out_after) {
+  const char* p = skipWhitespace(value_start);
+  if (p >= limit) {
+    return false;
+  }
+
+  if (*p == '"') {
+    eastl::string parsed;
+    const char* after = nullptr;
+    if (!parseJsonString(p, limit, parsed, &after)) {
+      return false;
+    }
+    out_value = Variant(eastl::move(parsed));
+    *out_after = after;
+    return true;
+  }
+
+  if (limit - p >= 4 && std::strncmp(p, "true", 4) == 0 &&
+      (p + 4 >= limit || !std::isalnum(static_cast<unsigned char>(p[4])))) {
+    out_value = Variant(true);
+    *out_after = p + 4;
+    return true;
+  }
+  if (limit - p >= 5 && std::strncmp(p, "false", 5) == 0 &&
+      (p + 5 >= limit || !std::isalnum(static_cast<unsigned char>(p[5])))) {
+    out_value = Variant(false);
+    *out_after = p + 5;
+    return true;
+  }
+
+  char* after = nullptr;
+  const double number = std::strtod(p, &after);
+  if (after == p || after > limit) {
+    return false;
+  }
+  // Prefer Int when the token has no fractional / exponent part.
+  bool has_fraction = false;
+  for (const char* c = p; c < after; ++c) {
+    if (*c == '.' || *c == 'e' || *c == 'E') {
+      has_fraction = true;
+      break;
+    }
+  }
+  if (has_fraction) {
+    out_value = Variant(static_cast<float>(number));
+  } else {
+    out_value = Variant(static_cast<int64_t>(number));
+  }
+  *out_after = after;
+  return true;
+}
+
+bool parseBehaviourProperties(const char* object_start, const char* object_end,
+                              eastl::vector<SceneBehaviourProperty>& out_props) {
+  out_props.clear();
+  const char* props_end = nullptr;
+  const char* props_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"properties\"", &props_end);
+  if (props_content == nullptr) {
+    return true;
+  }
+
+  const char* p = props_content;
+  while (p < props_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= props_end - 1 || *p == '}') {
+      break;
+    }
+    if (*p != '"') {
+      return false;
+    }
+    SceneBehaviourProperty prop;
+    const char* after_key = nullptr;
+    if (!parseJsonString(p, props_end, prop.key, &after_key)) {
+      return false;
+    }
+    p = skipWhitespace(after_key);
+    if (p >= props_end || *p != ':') {
+      return false;
+    }
+    ++p;
+    const char* after = nullptr;
+    if (!parseBehaviourPropertyValue(p, props_end, prop.value, &after)) {
+      return false;
+    }
+    out_props.push_back(eastl::move(prop));
+    p = skipWhitespace(after);
+    if (*p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
+bool parseBehaviourObject(const char* object_start, const char* object_end,
+                          SceneBehaviourDeclaration& out_behaviour) {
+  eastl::string type;
+  if (!parseStringField(object_start, object_end, "\"type\"", type)) {
+    return false;
+  }
+  out_behaviour.type = eastl::move(type);
+
+  uint64_t id = 0;
+  if (!parseUint64Field(object_start, object_end, "\"id\"", id) || id == 0) {
+    return false;
+  }
+  out_behaviour.id = static_cast<BehaviourId>(id);
+
+  if (!parseBehaviourProperties(object_start, object_end, out_behaviour.properties)) {
+    return false;
+  }
+  return true;
+}
+
+bool parseBehavioursArray(const char* object_start, const char* object_end,
+                          eastl::vector<SceneBehaviourDeclaration>& out_behaviours) {
+  out_behaviours.clear();
+  const char* array_end = nullptr;
+  const char* array_content =
+      findArrayAfterKeyBounded(object_start, object_end, "\"behaviours\"", &array_end);
+  if (array_content == nullptr) {
+    return true;
+  }
+
+  const char* p = array_content;
+  while (p < array_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= array_end - 1 || *p == ']') {
+      break;
+    }
+    if (*p != '{') {
+      ++p;
+      continue;
+    }
+
+    const char* behaviour_start = p;
+    int depth = 0;
+    do {
+      if (*p == '{') {
+        ++depth;
+      } else if (*p == '}') {
+        --depth;
+      }
+      ++p;
+    } while (p < array_end && depth > 0);
+
+    if (depth != 0) {
+      return false;
+    }
+
+    SceneBehaviourDeclaration behaviour;
+    if (!parseBehaviourObject(behaviour_start, p, behaviour)) {
+      LOG_WARN("[SceneSerializer] skipped malformed behaviour object");
+    } else {
+      out_behaviours.push_back(eastl::move(behaviour));
+    }
+
+    p = skipWhitespace(p);
+    if (*p == ',') {
+      ++p;
+    }
+  }
   return true;
 }
 
@@ -187,6 +566,10 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   eastl::string mesh_path;
   if (parseStringField(object_start, object_end, "\"mesh\"", mesh_path)) {
     out_entity.mesh_virtual_path = eastl::move(mesh_path);
+  }
+
+  if (!parseBehavioursArray(object_start, object_end, out_entity.behaviours)) {
+    return false;
   }
 
   return true;
@@ -300,6 +683,99 @@ void appendFloat3(eastl::string& out, const Vec3& v) {
   out.append(buffer);
 }
 
+void appendJsonString(eastl::string& out, const eastl::string& value) {
+  out.append("\"");
+  for (size_t i = 0; i < value.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(value[i]);
+    switch (c) {
+      case '"':
+        out.append("\\\"");
+        break;
+      case '\\':
+        out.append("\\\\");
+        break;
+      case '\b':
+        out.append("\\b");
+        break;
+      case '\f':
+        out.append("\\f");
+        break;
+      case '\n':
+        out.append("\\n");
+        break;
+      case '\r':
+        out.append("\\r");
+        break;
+      case '\t':
+        out.append("\\t");
+        break;
+      default:
+        if (c < 0x20) {
+          char buf[8];
+          std::snprintf(buf, sizeof(buf), "\\u%04x",
+                        static_cast<unsigned>(c));
+          out.append(buf);
+        } else {
+          out.push_back(static_cast<char>(c));
+        }
+        break;
+    }
+  }
+  out.append("\"");
+}
+
+void appendBehaviourPropertyValue(eastl::string& out, const Variant& value) {
+  char buffer[64];
+  switch (value.getType()) {
+    case VariantType::Bool:
+      out.append(value.asBool() ? "true" : "false");
+      break;
+    case VariantType::Int:
+      std::snprintf(buffer, sizeof(buffer), "%lld",
+                    static_cast<long long>(value.asInt()));
+      out.append(buffer);
+      break;
+    case VariantType::Float:
+      std::snprintf(buffer, sizeof(buffer), "%.6g",
+                    static_cast<double>(value.asFloat()));
+      out.append(buffer);
+      break;
+    case VariantType::String:
+      appendJsonString(out, value.asString());
+      break;
+    default:
+      out.append("null");
+      break;
+  }
+}
+
+void appendBehaviourJson(eastl::string& out, const SceneBehaviourDeclaration& behaviour,
+                         bool is_last) {
+  out.append("        {\n");
+  out.append("          \"type\": ");
+  appendJsonString(out, behaviour.type);
+  out.append(",\n          \"id\": ");
+  char id_buffer[32];
+  std::snprintf(id_buffer, sizeof(id_buffer), "%llu",
+                static_cast<unsigned long long>(behaviour.id));
+  out.append(id_buffer);
+
+  if (!behaviour.properties.empty()) {
+    out.append(",\n          \"properties\": {\n");
+    for (size_t i = 0; i < behaviour.properties.size(); ++i) {
+      const SceneBehaviourProperty& prop = behaviour.properties[i];
+      out.append("            ");
+      appendJsonString(out, prop.key);
+      out.append(": ");
+      appendBehaviourPropertyValue(out, prop.value);
+      out.append(i + 1 == behaviour.properties.size() ? "\n" : ",\n");
+    }
+    out.append("          }");
+  }
+
+  out.append(is_last ? "\n        }\n" : "\n        },\n");
+}
+
 eastl::string meshReferenceForSerialize(const eastl::string& mesh_ref,
                                         const AssetRegistry* registry) {
   if (mesh_ref.empty() || isValidGuidFormat(mesh_ref) || registry == nullptr) {
@@ -360,6 +836,15 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
     out.append(",\n      \"mesh\": \"");
     out.append(mesh_ref);
     out.append("\"");
+  }
+
+  if (!entity.behaviours.empty()) {
+    out.append(",\n      \"behaviours\": [\n");
+    for (size_t i = 0; i < entity.behaviours.size(); ++i) {
+      appendBehaviourJson(out, entity.behaviours[i],
+                          i + 1 == entity.behaviours.size());
+    }
+    out.append("      ]");
   }
 
   out.append(is_last ? "\n    }\n" : "\n    },\n");

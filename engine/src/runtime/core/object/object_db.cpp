@@ -73,6 +73,20 @@ Object* ObjectDB::get(ObjectId id) {
   return slot.object.get();
 }
 
+Object* ObjectDB::findByEntityId(EntityId entity_id) {
+  if (!isValid(entity_id)) {
+    return nullptr;
+  }
+  eastl::vector<Slot>& s = slots();
+  for (Slot& slot : s) {
+    if (slot.occupied && slot.object != nullptr &&
+        slot.object->getEntityId() == entity_id) {
+      return slot.object.get();
+    }
+  }
+  return nullptr;
+}
+
 void ObjectDB::destroy(ObjectId id) {
   Object* object = get(id);
   if (object == nullptr) {

@@ -11,6 +11,8 @@
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/script/dotnet_host.h"
+#include "runtime/function/script/scene_behaviour_mount.h"
+#include "runtime/function/scene/scene_instance.h"
 #include "runtime/core/reflection/engine_c_abi.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/function/ui/editor_service_handles.h"
@@ -117,6 +119,15 @@ void tryStartDotNetHost(RuntimeGlobalContext& ctx) {
   } else {
     LOG_INFO("[DotNetHost] loaded game assembly {}",
              game_dll.generic_string().c_str());
+    // Host may start after scenes are already loaded (or reload game DLL).
+    if (ctx.m_scene_system) {
+      for (const eastl::shared_ptr<SceneInstance>& instance :
+           ctx.m_scene_system->getLoadedInstances()) {
+        if (instance) {
+          mountSceneBehaviours(*instance, *ctx.m_dotnet_host, nullptr);
+        }
+      }
+    }
   }
 }
 

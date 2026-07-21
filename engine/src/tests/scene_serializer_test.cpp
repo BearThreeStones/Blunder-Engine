@@ -1,4 +1,6 @@
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/object/behaviour_id.h"
+#include "runtime/core/reflection/variant.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -163,12 +165,210 @@ void loadLegacyPathMeshMigratesToGuidOnSave() {
   fs::remove_all(project);
 }
 
+/// Round-trip ordered Behaviour declarations (type, id, property bag).
+void serializeAndParseBehaviours() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  scene.setGuid("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+
+  SceneEntityDefinition entity;
+  entity.name = "Actor";
+
+  SceneBehaviourDeclaration motor;
+  motor.type = "Game.Motor";
+  motor.id = static_cast<BehaviourId>(1);
+  motor.properties.push_back({"speed", Variant(1.5f)});
+  motor.properties.push_back({"enabled", Variant(true)});
+  motor.properties.push_back({"tag", Variant(eastl::string("a"))});
+
+  SceneBehaviourDeclaration bark;
+  bark.type = "Game.Bark";
+  bark.id = static_cast<BehaviourId>(2);
+
+  entity.behaviours.push_back(eastl::move(motor));
+  entity.behaviours.push_back(eastl::move(bark));
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize scene with behaviours",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json contains behaviours key",
+              json.find("\"behaviours\"") != eastl::string::npos);
+  expect_true("json contains Motor type",
+              json.find("Game.Motor") != eastl::string::npos);
+  expect_true("json contains Bark type",
+              json.find("Game.Bark") != eastl::string::npos);
+  expect_true("json contains property speed",
+              json.find("\"speed\"") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize scene with behaviours",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("one entity after behaviour deserialize",
+              loaded.getEntities().size() == 1);
+
+  const SceneEntityDefinition& out = loaded.getEntities()[0];
+  expect_true("two behaviours restored", out.behaviours.size() == 2);
+  expect_true("behaviour 0 type", out.behaviours[0].type == "Game.Motor");
+  expect_true("behaviour 0 id", out.behaviours[0].id == static_cast<BehaviourId>(1));
+  expect_true("behaviour 0 property count",
+              out.behaviours[0].properties.size() == 3);
+  expect_true("behaviour 0 speed key",
+              out.behaviours[0].properties[0].key == "speed");
+  expect_true("behaviour 0 speed value",
+              out.behaviours[0].properties[0].value == Variant(1.5f));
+  expect_true("behaviour 0 enabled",
+              out.behaviours[0].properties[1].value == Variant(true));
+  expect_true("behaviour 0 tag",
+              out.behaviours[0].properties[2].value ==
+                  Variant(eastl::string("a")));
+  expect_true("behaviour 1 type", out.behaviours[1].type == "Game.Bark");
+  expect_true("behaviour 1 id", out.behaviours[1].id == static_cast<BehaviourId>(2));
+  expect_true("behaviour 1 empty properties",
+              out.behaviours[1].properties.empty());
+}
+
+/// Legacy entities without a behaviours key deserialize to an empty list.
+void deserializeLegacyEntityWithoutBehaviours() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kLegacy = R"({
+  "type": "Scene",
+  "guid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "Cube",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    }
+  ]
+}
+)";
+
+  Scene loaded;
+  expect_true("deserialize legacy entity without behaviours",
+              SceneSerializer::deserialize(eastl::string(kLegacy), loaded));
+  expect_true("legacy entity present", loaded.getEntities().size() == 1);
+  expect_true("legacy behaviours empty",
+              loaded.getEntities()[0].behaviours.empty());
+}
+
+/// Hand-authored JSON: properties."id" before behaviour "id", and entity name
+/// equal to "behaviours", must not steal first-match findKey hits.
+void deserializeBehavioursScopedKeyLookup() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kJson = R"({
+  "type": "Scene",
+  "guid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "behaviours",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "behaviours": [
+        {
+          "type": "Game.Motor",
+          "properties": { "id": 999, "tag": "nested" },
+          "id": 42
+        }
+      ]
+    }
+  ]
+}
+)";
+
+  Scene loaded;
+  expect_true("deserialize scoped key lookup json",
+              SceneSerializer::deserialize(eastl::string(kJson), loaded));
+  expect_true("scoped: one entity", loaded.getEntities().size() == 1);
+  expect_true("scoped: entity name is behaviours",
+              loaded.getEntities()[0].name == "behaviours");
+  expect_true("scoped: one behaviour",
+              loaded.getEntities()[0].behaviours.size() == 1);
+  if (!loaded.getEntities().empty() &&
+      loaded.getEntities()[0].behaviours.size() == 1) {
+    const SceneBehaviourDeclaration& b = loaded.getEntities()[0].behaviours[0];
+    expect_true("scoped: behaviour id is 42 not nested 999",
+                b.id == static_cast<BehaviourId>(42));
+    expect_true("scoped: type preserved", b.type == "Game.Motor");
+    expect_true("scoped: nested property id kept as property",
+                b.properties.size() == 2 && b.properties[0].key == "id" &&
+                    b.properties[0].value ==
+                        Variant(static_cast<int64_t>(999)));
+  }
+}
+
+/// Quotes / backslashes in type names and string property values must round-trip.
+void serializeAndParseEscapedBehaviourStrings() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  scene.setGuid("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+
+  SceneEntityDefinition entity;
+  entity.name = "Actor";
+
+  SceneBehaviourDeclaration quoted;
+  quoted.type = "Game.\"Quoted\"";
+  quoted.id = static_cast<BehaviourId>(7);
+  quoted.properties.push_back(
+      {"msg", Variant(eastl::string("say \"hi\"\\there"))});
+  quoted.properties.push_back(
+      {"path", Variant(eastl::string("C:\\temp\\file"))});
+  entity.behaviours.push_back(eastl::move(quoted));
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize escaped behaviour strings",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json escapes quote in type",
+              json.find("Game.\\\"Quoted\\\"") != eastl::string::npos);
+  expect_true("json escapes quote in property",
+              json.find("say \\\"hi\\\"") != eastl::string::npos);
+  expect_true("json escapes backslash in property",
+              json.find("C:\\\\temp\\\\file") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize escaped behaviour strings",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("escaped: one entity", loaded.getEntities().size() == 1);
+  expect_true(
+      "escaped: one behaviour",
+      !loaded.getEntities().empty() &&
+          loaded.getEntities()[0].behaviours.size() == 1);
+  if (!loaded.getEntities().empty() &&
+      loaded.getEntities()[0].behaviours.size() == 1) {
+    const SceneBehaviourDeclaration& out = loaded.getEntities()[0].behaviours[0];
+    expect_true("escaped: type unescaped", out.type == "Game.\"Quoted\"");
+    expect_true("escaped: id", out.id == static_cast<BehaviourId>(7));
+    expect_true("escaped: msg property",
+                out.properties.size() >= 2 &&
+                    out.properties[0].value ==
+                        Variant(eastl::string("say \"hi\"\\there")));
+    expect_true("escaped: path property",
+                out.properties[1].value ==
+                    Variant(eastl::string("C:\\temp\\file")));
+  }
+}
+
 }  // namespace
 
 int main() {
   serializeAndParseSceneGuid();
   serializeMeshAsGuid();
   loadLegacyPathMeshMigratesToGuidOnSave();
+  serializeAndParseBehaviours();
+  deserializeLegacyEntityWithoutBehaviours();
+  deserializeBehavioursScopedKeyLookup();
+  serializeAndParseEscapedBehaviourStrings();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

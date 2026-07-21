@@ -2,6 +2,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/object/object_db.h"
 #include "runtime/function/scene/scene_serializer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -19,6 +20,8 @@ Mat4 composeTrs(const Vec3& position, const Quat& rotation, const Vec3& scale) {
 
 }  // namespace
 
+SceneInstance::~SceneInstance() { clear(); }
+
 void SceneInstance::instantiate(const Scene& scene) {
   clear();
 
@@ -32,6 +35,28 @@ void SceneInstance::instantiate(const Scene& scene) {
     if (!definition.mesh_virtual_path.empty()) {
       if (Entity* entity = getEntity(id)) {
         entity->setMeshVirtualPath(definition.mesh_virtual_path);
+      }
+    }
+    // Bind Object + restore Behaviour slots only when the list is non-empty.
+    // Peers stay null here; mountSceneBehaviours attaches when DotNetHost runs.
+    if (!definition.behaviours.empty()) {
+      const ObjectId object_id = ObjectDB::create();
+      Object* object = ObjectDB::get(object_id);
+      if (object == nullptr) {
+        LOG_ERROR("[SceneInstance] failed to create Object for entity '{}'",
+                  definition.name.c_str());
+        continue;
+      }
+      object->setName(definition.name);
+      object->setEntityId(id);
+      m_bound_object_ids.push_back(object_id);
+      for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
+        if (!object->restoreBehaviour(decl.id, decl.type)) {
+          LOG_WARN(
+              "[SceneInstance] skipped Behaviour restore id={} type='{}' on '{}'",
+              static_cast<unsigned long long>(decl.id), decl.type.c_str(),
+              definition.name.c_str());
+        }
       }
     }
   }
@@ -66,6 +91,13 @@ void SceneInstance::instantiate(const Scene& scene) {
 }
 
 void SceneInstance::clear() {
+  // Destroy Objects bound for Behaviour slots so findByEntityId cannot return
+  // stale process-global entries after re-instantiate (EntityId is local).
+  for (ObjectId object_id : m_bound_object_ids) {
+    ObjectDB::destroy(object_id);
+  }
+  m_bound_object_ids.clear();
+
   m_entities.clear();
   m_world_matrices.clear();
   m_name_to_id.clear();
@@ -222,6 +254,30 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
       const Entity* parent = getEntity(parent_id);
       if (parent != nullptr && !parent->isTombstoned()) {
         definition.parent_name = parent->getName();
+      }
+    }
+
+    // Prefer SceneInstance-tracked ObjectIds over a process-global EntityId scan.
+    const EntityId entity_id = indexToId(i);
+    Object* bound = nullptr;
+    for (ObjectId object_id : m_bound_object_ids) {
+      Object* candidate = ObjectDB::get(object_id);
+      if (candidate != nullptr && candidate->getEntityId() == entity_id) {
+        bound = candidate;
+        break;
+      }
+    }
+    if (bound != nullptr) {
+      const size_t behaviour_count = bound->getBehaviourCount();
+      definition.behaviours.reserve(behaviour_count);
+      for (size_t bi = 0; bi < behaviour_count; ++bi) {
+        const BehaviourId behaviour_id = bound->getBehaviourIdAt(bi);
+        const char* type_name = bound->getBehaviourTypeName(behaviour_id);
+        SceneBehaviourDeclaration decl;
+        decl.id = behaviour_id;
+        decl.type = type_name != nullptr ? type_name : "";
+        // Property bag is not stored on Object slots yet; skip empty.
+        definition.behaviours.push_back(eastl::move(decl));
       }
     }
 

@@ -83,7 +83,7 @@ The first script-host deliverable after the Reflection kernel: in-process CoreCL
 _Avoid_: Bundling hot reload, scene-persisted Behaviours, or full binding surface into the host MVP; starting DogWalk gameplay on a C++-only controller as the lasting path; shipping the host before the Reflection kernel contract is stable; requiring authors to build Scripts only outside the editor as the primary loop; save-triggered auto-build as an MVP blocker
 
 **Behaviour serialization slice**:
-The follow-on to the .NET host MVP: persist and restore an Object's ordered Behaviour list (BehaviourId, type, serializable fields) with the scene/document — still without requiring ALC hot reload or full Inspector authoring UX.
+Follow-on to the .NET host MVP (requires single-ObjectDB / NativeAbi from `unify-script-objectdb`): persist and restore an Object's ordered Behaviour list on scene entities (`behaviours`: BehaviourId, type, optional bool/number/string property bag). Load binds Objects and restores slots offline (null peers); mount AttachBehaviour when DotNetHost is running; export writes type + id from bound Objects. Still without ALC hot reload or full Inspector authoring UX.
 _Avoid_: Treating serialization as part of host MVP, requiring hot reload before Behaviours can round-trip
 
 **Scene Tree**:

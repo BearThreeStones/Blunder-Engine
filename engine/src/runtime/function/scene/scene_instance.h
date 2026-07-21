@@ -6,6 +6,7 @@
 
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/object_id.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/entity_id.h"
@@ -17,6 +18,7 @@ namespace Blunder {
 class SceneInstance final {
  public:
   SceneInstance() = default;
+  ~SceneInstance();
 
   void instantiate(const Scene& scene);
   void clear();
@@ -104,6 +106,8 @@ class SceneInstance final {
   eastl::vector<Mat4> m_world_matrices;
   eastl::unordered_map<eastl::string, EntityId> m_name_to_id;
   eastl::unordered_map<EntityId, MeshRendererComponent> m_mesh_renderers;
+  /// Objects created for Behaviour-bearing entities; destroyed on clear().
+  eastl::vector<ObjectId> m_bound_object_ids;
   AABB m_world_bounds{};
   bool m_has_world_bounds{false};
   bool m_world_matrices_dirty{true};

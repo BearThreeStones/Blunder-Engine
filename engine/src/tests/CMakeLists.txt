@@ -215,8 +215,8 @@ add_test(NAME native_abi_test
          COMMAND native_abi_test)
 
 # DotNetHost e2e: fixture game + managed Tick via SHARED blunder_engine_c
-# (Approach A — one ObjectDB: create/lifecycle only through the ScriptHost-
-# staged C-ABI DLL, loaded via LoadLibrary — do not link the import lib or a
+# (Approach A ??one ObjectDB: create/lifecycle only through the ScriptHost-
+# staged C-ABI DLL, loaded via LoadLibrary ??do not link the import lib or a
 # second copy next to the test exe).
 # Requires .NET 10 SDK/runtime (DOTNET_ROOT) and nethost from the host pack.
 add_executable(dotnet_host_test
@@ -226,7 +226,7 @@ add_executable(dotnet_host_test
 # engine_runtime provides DotNetHost only. Object traffic uses LoadLibrary on
 # the staged SHARED blunder_engine_c; RegisterNativeAbi fills from that module
 # (Approach A / single-image host). In-process CoreCLR uses registered
-# BlunderNativeAbi pointers — Api does not DllImport SHARED.
+# BlunderNativeAbi pointers ??Api does not DllImport SHARED.
 target_link_libraries(dotnet_host_test
     PRIVATE
         engine_runtime
@@ -489,7 +489,7 @@ add_executable(scene_serializer_test
 )
 
 target_link_libraries(scene_serializer_test
-    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
@@ -502,6 +502,112 @@ target_precompile_headers(scene_serializer_test
 
 add_test(NAME scene_serializer_test
          COMMAND scene_serializer_test)
+
+add_executable(scene_behaviour_instantiate_test
+    "scene_behaviour_instantiate_test.cpp"
+)
+
+target_link_libraries(scene_behaviour_instantiate_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_behaviour_instantiate_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(scene_behaviour_instantiate_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_behaviour_instantiate_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_behaviour_instantiate_test
+         COMMAND scene_behaviour_instantiate_test)
+
+add_executable(scene_behaviour_export_test
+    "scene_behaviour_export_test.cpp"
+)
+
+target_link_libraries(scene_behaviour_export_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_behaviour_export_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(scene_behaviour_export_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_behaviour_export_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_behaviour_export_test
+         COMMAND scene_behaviour_export_test)
+
+# Scene instantiate + mountSceneBehaviours with process ObjectDB / ProbeBehaviour.
+add_executable(scene_behaviour_mount_test
+    "scene_behaviour_mount_test.cpp"
+)
+
+target_link_libraries(scene_behaviour_mount_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_behaviour_mount_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+target_compile_definitions(scene_behaviour_mount_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
+)
+
+if(MSVC)
+    target_compile_options(scene_behaviour_mount_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_behaviour_mount_test
+    REUSE_FROM engine_runtime
+)
+
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET scene_behaviour_mount_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for scene_behaviour_mount_test"
+        VERBATIM
+    )
+endif()
+
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET scene_behaviour_mount_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:scene_behaviour_mount_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(scene_behaviour_mount_test blunder_script_host)
+endif()
+if(TARGET blunder_api)
+    add_dependencies(scene_behaviour_mount_test blunder_api)
+endif()
+
+add_test(NAME scene_behaviour_mount_test
+         COMMAND scene_behaviour_mount_test)
 
 add_executable(asset_manager_guid_test
     "asset_manager_guid_test.cpp"
