@@ -260,25 +260,40 @@ void PickOverlay::createDescriptorResources() {
   vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr,
                          &m_pipeline_layout);
 
-  VkDescriptorPoolSize pool_sizes[2]{};
+  // Layout uses UBO + COMBINED_IMAGE_SAMPLER + standalone SAMPLER (binding 2).
+  // Omitting SAMPLER makes allocate fail with a null set; the next update AVs.
+  VkDescriptorPoolSize pool_sizes[3]{};
   pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_sizes[0].descriptorCount = 1;
   pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   pool_sizes[1].descriptorCount = 1;
+  pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+  pool_sizes[2].descriptorCount = 1;
 
   VkDescriptorPoolCreateInfo pool_info{};
   pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pool_info.poolSizeCount = 2;
+  pool_info.poolSizeCount = 3;
   pool_info.pPoolSizes = pool_sizes;
   pool_info.maxSets = 1;
-  vkCreateDescriptorPool(device, &pool_info, nullptr, &m_descriptor_pool);
+  const VkResult pool_result =
+      vkCreateDescriptorPool(device, &pool_info, nullptr, &m_descriptor_pool);
+  if (pool_result != VK_SUCCESS) {
+    LOG_FATAL("[PickOverlay] vkCreateDescriptorPool failed: {}",
+              static_cast<int>(pool_result));
+  }
 
   VkDescriptorSetAllocateInfo alloc_info{};
   alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   alloc_info.descriptorPool = m_descriptor_pool;
   alloc_info.descriptorSetCount = 1;
   alloc_info.pSetLayouts = &m_descriptor_layout;
-  vkAllocateDescriptorSets(device, &alloc_info, &m_descriptor_set);
+  const VkResult set_result =
+      vkAllocateDescriptorSets(device, &alloc_info, &m_descriptor_set);
+  if (set_result != VK_SUCCESS) {
+    m_descriptor_set = VK_NULL_HANDLE;
+    LOG_FATAL("[PickOverlay] vkAllocateDescriptorSets failed: {}",
+              static_cast<int>(set_result));
+  }
 
   VkDescriptorBufferInfo ubo_info{};
   ubo_info.buffer = m_uniform_buffer ? m_uniform_buffer->getBuffer() : VK_NULL_HANDLE;
@@ -315,7 +330,8 @@ void PickOverlay::destroyDescriptorResources() {
 }
 
 void PickOverlay::writeDescriptorTexture(VulkanTexture* texture) {
-  if (m_context == nullptr || texture == nullptr) {
+  if (m_context == nullptr || texture == nullptr ||
+      m_descriptor_set == VK_NULL_HANDLE) {
     return;
   }
 
