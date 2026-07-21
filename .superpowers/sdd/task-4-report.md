@@ -15,7 +15,7 @@
 
 ## Commits
 
-1. `feat(editor): PlaySessionController and Play/Pause/Stop UI`
+1. `dbde849` — `feat(editor): PlaySessionController and Play/Pause/Stop UI`
 
 ## TDD evidence
 
