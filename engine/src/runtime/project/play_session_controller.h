@@ -2,6 +2,7 @@
 
 #include "runtime/project/play_ipc.h"
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -49,6 +50,10 @@ struct PlaySessionHooks {
   /// Optional Scripts dirty gate (run before spawn). When unset, gate is skipped.
   std::function<bool()> is_scripts_dirty;
   std::function<bool(std::string& error)> build_scripts;
+  /// Starting to Playing deadline. Default 15s.
+  std::chrono::milliseconds starting_timeout{std::chrono::milliseconds(15000)};
+  /// Optional clock for tests; defaults to steady_clock::now.
+  std::function<std::chrono::steady_clock::time_point()> now;
 };
 
 /// Editor Play session: spawn Player, IPC pause/resume/stop, track exit.
@@ -69,6 +74,10 @@ class PlaySessionController final {
   const PlayIpcEndpoint& endpoint() const { return m_endpoint; }
   const std::string& lastError() const { return m_last_error; }
 
+  /// Surface a non-session error (e.g. Save and Play save failure) without
+  /// starting Play.
+  void setLastError(std::string error);
+
   /// Install Scripts dirty/build hooks used by `play()` before spawn.
   void setScriptsPreflight(std::function<bool()> is_dirty,
                            std::function<bool(std::string& error)> build);
@@ -84,6 +93,8 @@ class PlaySessionController final {
  private:
   void resetToStopped();
   void onProcessGone();
+  void failStarting(std::string error);
+  std::chrono::steady_clock::time_point now() const;
 
   PlaySessionHooks m_hooks;
   PlaySessionState m_state{PlaySessionState::Stopped};
@@ -91,6 +102,8 @@ class PlaySessionController final {
   bool m_ipc_connected{false};
   PlayIpcEndpoint m_endpoint;
   std::string m_last_error;
+  bool m_has_starting_deadline{false};
+  std::chrono::steady_clock::time_point m_starting_deadline{};
 };
 
 }  // namespace Blunder

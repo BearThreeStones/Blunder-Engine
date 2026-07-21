@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -37,6 +38,18 @@ int main() {
     expect_true("parse port-only port", ep.port == 9);
   }
 
+  {
+    const PlayIpcEndpoint ep = parsePlayIpcEndpoint("0.0.0.0:9");
+    expect_true("reject non-loopback parse", !ep.ok);
+    expect_true("reject non-loopback error",
+                ep.error.find("loopback") != std::string::npos);
+  }
+
+  expect_true("loopback 127.0.0.1", isPlayIpcLoopbackHost("127.0.0.1"));
+  expect_true("loopback 127.1.2.3", isPlayIpcLoopbackHost("127.1.2.3"));
+  expect_true("reject 0.0.0.0", !isPlayIpcLoopbackHost("0.0.0.0"));
+  expect_true("reject 8.8.8.8", !isPlayIpcLoopbackHost("8.8.8.8"));
+
   expect_true("cmd pause",
               parsePlayIpcCommandLine("pause") == PlayIpcCommand::Pause);
   expect_true("cmd resume",
@@ -46,42 +59,50 @@ int main() {
   expect_true("cmd trim",
               parsePlayIpcCommandLine("  pause\r") == PlayIpcCommand::Pause);
 
-  PlayIpcServer server;
-  expect_true("listen ephemeral", server.listen(0));
-  expect_true("listening", server.isListening());
-  expect_true("bound port nonzero", server.boundPort() != 0);
+  PlayIpcServer host;
+  expect_true("listen ephemeral", host.listen(0));
+  expect_true("listening", host.isListening());
+  expect_true("bound port nonzero", host.boundPort() != 0);
+
+  {
+    PlayIpcEndpoint bad;
+    bad.ok = true;
+    bad.host = "0.0.0.0";
+    bad.port = 0;
+    PlayIpcServer reject;
+    expect_true("listen rejects non-loopback", !reject.listen(bad));
+  }
 
   std::vector<PlayIpcCommand> received;
-  server.setCommandHandler(
+  PlayIpcClient agent;
+  expect_true("agent connect",
+              agent.connect("127.0.0.1", host.boundPort()));
+  agent.setCommandHandler(
       [&](PlayIpcCommand cmd) { received.push_back(cmd); });
+  expect_true("agent announce ready", agent.announceReady());
 
-  PlayIpcClient client;
-  expect_true("client connect",
-              client.connect("127.0.0.1", server.boundPort()));
-
-  // Drive accept + ready handshake from the server side.
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(2);
   bool ready = false;
   while (std::chrono::steady_clock::now() < deadline) {
-    server.poll();
-    if (client.waitReady(50)) {
+    if (host.waitPeerReady(50)) {
       ready = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  expect_true("ready handshake", ready);
+  expect_true("host saw ready", ready);
+  expect_true("peer ready flag", host.isPeerReady());
 
-  expect_true("send pause", client.sendCommand(PlayIpcCommand::Pause));
-  expect_true("send resume", client.sendCommand(PlayIpcCommand::Resume));
-  expect_true("send stop", client.sendCommand(PlayIpcCommand::Stop));
+  expect_true("send pause", host.sendCommand(PlayIpcCommand::Pause));
+  expect_true("send resume", host.sendCommand(PlayIpcCommand::Resume));
+  expect_true("send stop", host.sendCommand(PlayIpcCommand::Stop));
 
   const auto cmd_deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(2);
   while (received.size() < 3 &&
          std::chrono::steady_clock::now() < cmd_deadline) {
-    server.poll();
+    agent.poll();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
@@ -92,8 +113,8 @@ int main() {
     expect_true("got stop", received[2] == PlayIpcCommand::Stop);
   }
 
-  client.close();
-  server.close();
+  agent.close();
+  host.close();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

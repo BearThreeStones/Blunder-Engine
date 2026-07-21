@@ -209,7 +209,10 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         break;
       }
       if (decision.save_first) {
-        services.editor_scene_edit->saveActiveScene();
+        if (!services.editor_scene_edit->saveActiveScene()) {
+          session->setLastError("failed to save active scene before Play");
+          break;
+        }
       }
       (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
       break;

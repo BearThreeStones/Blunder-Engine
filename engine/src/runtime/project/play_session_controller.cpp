@@ -2,6 +2,7 @@
 
 #include "runtime/project/play_preflight.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -31,6 +32,7 @@
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <spawn.h>
+#include <thread>
 extern char** environ;
 #endif
 
@@ -104,7 +106,7 @@ struct NativePlayProcess {
     }
   }
 
-  bool running() const {
+  bool running() {
     if (process == nullptr) {
       return false;
     }
@@ -115,15 +117,25 @@ struct NativePlayProcess {
     return code == STILL_ACTIVE;
   }
 
+  /// After IPC stop: brief grace wait, then hard kill if needed, then reap.
   void terminate() {
-    if (process != nullptr) {
-      TerminateProcess(process, 1);
+    if (process == nullptr) {
+      return;
     }
+    constexpr DWORD kGraceMs = 500;
+    constexpr DWORD kKillWaitMs = 2000;
+    DWORD wait = WaitForSingleObject(process, kGraceMs);
+    if (wait == WAIT_TIMEOUT) {
+      TerminateProcess(process, 1);
+      WaitForSingleObject(process, kKillWaitMs);
+    }
+    CloseHandle(process);
+    process = nullptr;
   }
 #else
   pid_t pid{0};
 
-  bool running() const {
+  bool running() {
     if (pid <= 0) {
       return false;
     }
@@ -132,13 +144,31 @@ struct NativePlayProcess {
     if (rc == 0) {
       return true;
     }
+    // Reaped or gone - clear so we do not leave a zombie handle.
+    pid = 0;
     return false;
   }
 
   void terminate() {
-    if (pid > 0) {
-      kill(pid, SIGTERM);
+    if (pid <= 0) {
+      return;
     }
+    // Soft stop already requested via IPC; give the child a brief chance.
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < deadline) {
+      int status = 0;
+      const pid_t rc = waitpid(pid, &status, WNOHANG);
+      if (rc == pid || (rc < 0 && errno == ECHILD)) {
+        pid = 0;
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    kill(pid, SIGKILL);
+    int status = 0;
+    (void)waitpid(pid, &status, 0);
+    pid = 0;
   }
 
   void close() { pid = 0; }
@@ -148,7 +178,8 @@ struct NativePlayProcess {
 struct DefaultPlayRuntime {
   std::shared_ptr<NativePlayProcess> process =
       std::make_shared<NativePlayProcess>();
-  std::shared_ptr<PlayIpcClient> client = std::make_shared<PlayIpcClient>();
+  /// Editor holds the listen socket for the whole Starting/Playing session.
+  std::shared_ptr<PlayIpcServer> host = std::make_shared<PlayIpcServer>();
 };
 
 bool spawnPlayerProcess(const PlaySpawnArgs& args,
@@ -211,22 +242,6 @@ bool spawnPlayerProcess(const PlaySpawnArgs& args,
 #endif
 }
 
-PlayIpcEndpoint allocateEphemeralLoopbackEndpoint() {
-  PlayIpcServer probe;
-  PlayIpcEndpoint ep;
-  ep.host = "127.0.0.1";
-  ep.port = 0;
-  ep.ok = true;
-  if (!probe.listen(ep)) {
-    ep.ok = false;
-    ep.error = "failed to allocate ephemeral play-ipc port";
-    return ep;
-  }
-  ep.port = probe.boundPort();
-  probe.close();
-  return ep;
-}
-
 }  // namespace
 
 std::vector<std::string> buildPlayerSpawnArgv(const PlaySpawnArgs& args) {
@@ -276,28 +291,39 @@ PlaySessionHooks PlaySessionController::makeDefaultHooks() {
 
   PlaySessionHooks hooks;
   hooks.resolve_player = []() { return resolvePlayerExecutablePath(); };
-  hooks.allocate_endpoint = []() { return allocateEphemeralLoopbackEndpoint(); };
+  hooks.allocate_endpoint = [runtime]() {
+    // Bind and **hold** the listen socket so the port cannot be stolen before
+    // the Player connects (editor is the TCP host).
+    runtime->host->close();
+    PlayIpcEndpoint ep;
+    ep.host = "127.0.0.1";
+    ep.port = 0;
+    ep.ok = true;
+    if (!runtime->host->listen(ep)) {
+      ep.ok = false;
+      ep.error = "failed to allocate ephemeral play-ipc port";
+      return ep;
+    }
+    ep.port = runtime->host->boundPort();
+    return ep;
+  };
   hooks.spawn = [runtime](const PlaySpawnArgs& args) {
     return spawnPlayerProcess(args, *runtime->process);
   };
   hooks.is_process_running = [runtime]() {
     return runtime->process->running();
   };
-  hooks.terminate_process = [runtime]() {
-    runtime->process->terminate();
-    // Allow the OS a moment; Wait is optional for editor Stop.
-    runtime->process->close();
-  };
-  hooks.ipc_connect = [runtime](const PlayIpcEndpoint& endpoint) {
-    return runtime->client->connect(endpoint);
+  hooks.terminate_process = [runtime]() { runtime->process->terminate(); };
+  hooks.ipc_connect = [runtime](const PlayIpcEndpoint&) {
+    return runtime->host->isListening();
   };
   hooks.ipc_wait_ready = [runtime](int timeout_ms) {
-    return runtime->client->waitReady(timeout_ms);
+    return runtime->host->waitPeerReady(timeout_ms);
   };
   hooks.ipc_send = [runtime](PlayIpcCommand command) {
-    return runtime->client->sendCommand(command);
+    return runtime->host->sendCommand(command);
   };
-  hooks.ipc_close = [runtime]() { runtime->client->close(); };
+  hooks.ipc_close = [runtime]() { runtime->host->close(); };
   // Project-aware Scripts dirty/build hooks are installed by UiHost before Play.
   return hooks;
 }
@@ -319,11 +345,22 @@ bool PlaySessionController::pauseEnabled() const {
                      m_state == PlaySessionState::Paused);
 }
 
+void PlaySessionController::setLastError(std::string error) {
+  m_last_error = std::move(error);
+}
+
 void PlaySessionController::setScriptsPreflight(
     std::function<bool()> is_dirty,
     std::function<bool(std::string& error)> build) {
   m_hooks.is_scripts_dirty = std::move(is_dirty);
   m_hooks.build_scripts = std::move(build);
+}
+
+std::chrono::steady_clock::time_point PlaySessionController::now() const {
+  if (m_hooks.now) {
+    return m_hooks.now();
+  }
+  return std::chrono::steady_clock::now();
 }
 
 void PlaySessionController::resetToStopped() {
@@ -334,11 +371,20 @@ void PlaySessionController::resetToStopped() {
   m_ready = false;
   m_ipc_connected = false;
   m_endpoint = {};
+  m_has_starting_deadline = false;
 }
 
 void PlaySessionController::onProcessGone() {
   resetToStopped();
   m_last_error.clear();
+}
+
+void PlaySessionController::failStarting(std::string error) {
+  if (m_hooks.terminate_process) {
+    m_hooks.terminate_process();
+  }
+  resetToStopped();
+  m_last_error = std::move(error);
 }
 
 bool PlaySessionController::play(const PlaySessionRequest& request) {
@@ -390,6 +436,9 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
   spawn_args.play_ipc = formatPlayIpcEndpoint(endpoint);
 
   if (!m_hooks.spawn(spawn_args)) {
+    if (m_hooks.ipc_close) {
+      m_hooks.ipc_close();
+    }
     m_last_error = "failed to spawn engine_player";
     return false;
   }
@@ -398,6 +447,8 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
   m_ready = false;
   m_ipc_connected = false;
   m_state = PlaySessionState::Starting;
+  m_has_starting_deadline = true;
+  m_starting_deadline = now() + m_hooks.starting_timeout;
   return true;
 }
 
@@ -455,6 +506,11 @@ void PlaySessionController::poll() {
     return;
   }
 
+  if (m_has_starting_deadline && now() >= m_starting_deadline) {
+    failStarting("player failed to become ready before timeout");
+    return;
+  }
+
   if (!m_ipc_connected) {
     if (!m_hooks.ipc_connect || !m_hooks.ipc_connect(m_endpoint)) {
       return;
@@ -467,6 +523,7 @@ void PlaySessionController::poll() {
       return;
     }
     m_ready = true;
+    m_has_starting_deadline = false;
     m_state = PlaySessionState::Playing;
   }
 }

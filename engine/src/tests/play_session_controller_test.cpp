@@ -1,5 +1,6 @@
 #include "runtime/project/play_session_controller.h"
 
+#include <chrono>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -203,6 +204,30 @@ int main() {
     expect_true("still starting", ctrl.state() == PlaySessionState::Starting);
     expect_true("pause rejected before ready", !ctrl.pause());
     expect_true("no pause cmd", fake.sent.empty());
+  }
+
+  {
+    FakeSession fake;
+    fake.wait_ready_ok = false;
+    auto hooks = makeFakeHooks(fake);
+    hooks.starting_timeout = std::chrono::milliseconds(100);
+    const auto t0 = std::chrono::steady_clock::now();
+    auto offset = std::chrono::milliseconds(0);
+    hooks.now = [&]() { return t0 + offset; };
+    PlaySessionController ctrl(std::move(hooks));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play for timeout", ctrl.play(req));
+    expect_true("starting before timeout",
+                ctrl.state() == PlaySessionState::Starting);
+    offset = std::chrono::milliseconds(150);
+    ctrl.poll();
+    expect_true("timeout -> stopped",
+                ctrl.state() == PlaySessionState::Stopped);
+    expect_true("timeout terminated", fake.terminate_count >= 1);
+    expect_true("timeout error set",
+                ctrl.lastError().find("timeout") != std::string::npos);
   }
 
   if (g_failures != 0) {

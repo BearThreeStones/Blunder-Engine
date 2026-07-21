@@ -163,6 +163,18 @@ bool popLine(std::string& buffer, std::string& line) {
 
 }  // namespace
 
+bool isPlayIpcLoopbackHost(const std::string& host) {
+  if (host.empty()) {
+    return false;
+  }
+  in_addr addr{};
+  if (inet_pton(AF_INET, host.c_str(), &addr) != 1) {
+    return false;
+  }
+  const uint32_t n = ntohl(addr.s_addr);
+  return (n & 0xFF000000u) == 0x7F000000u;  // 127.0.0.0/8
+}
+
 PlayIpcEndpoint parsePlayIpcEndpoint(const std::string& endpoint) {
   PlayIpcEndpoint out;
   const std::string trimmed = trimAscii(endpoint);
@@ -192,6 +204,11 @@ PlayIpcEndpoint parsePlayIpcEndpoint(const std::string& endpoint) {
       std::strtoul(port_text.c_str(), &end, 10);
   if (end == port_text.c_str() || (end && *end != '\0') || port > 65535ul) {
     out.error = "invalid port in --play-ipc endpoint";
+    return out;
+  }
+
+  if (!isPlayIpcLoopbackHost(host)) {
+    out.error = "play-ipc host must be IPv4 loopback (127.0.0.0/8)";
     return out;
   }
 
@@ -250,6 +267,9 @@ bool PlayIpcServer::listen(const PlayIpcEndpoint& endpoint) {
   if (!ensureSockets()) {
     return false;
   }
+  if (!isPlayIpcLoopbackHost(endpoint.host)) {
+    return false;
+  }
 
   const SocketHandle fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (fd == kInvalidSocket) {
@@ -303,68 +323,96 @@ bool PlayIpcServer::isListening() const {
   return asSocket(m_listen_fd) != kInvalidSocket;
 }
 
-void PlayIpcServer::setCommandHandler(
-    std::function<void(PlayIpcCommand)> handler) {
-  m_handler = std::move(handler);
-}
-
-void PlayIpcServer::poll() {
+bool PlayIpcServer::tryAccept() {
   const SocketHandle listen_fd = asSocket(m_listen_fd);
   if (listen_fd == kInvalidSocket) {
-    return;
+    return false;
+  }
+  if (asSocket(m_client_fd) != kInvalidSocket) {
+    return true;
   }
 
-  if (asSocket(m_client_fd) == kInvalidSocket) {
-    const SocketHandle client = ::accept(listen_fd, nullptr, nullptr);
-    if (client == kInvalidSocket) {
-      return;
-    }
-    if (!setNonBlocking(client)) {
-      closeSocket(client);
-      return;
-    }
-    m_client_fd = toRaw(client);
-    m_recv_buffer.clear();
-    m_ready_sent = false;
+  const SocketHandle client = ::accept(listen_fd, nullptr, nullptr);
+  if (client == kInvalidSocket) {
+    return false;
   }
+  if (!setNonBlocking(client)) {
+    closeSocket(client);
+    return false;
+  }
+  m_client_fd = toRaw(client);
+  m_recv_buffer.clear();
+  m_ready = false;
+  return true;
+}
 
+bool PlayIpcServer::tryReadReady() {
+  if (m_ready) {
+    return true;
+  }
   const SocketHandle client_fd = asSocket(m_client_fd);
   if (client_fd == kInvalidSocket) {
-    return;
+    return false;
   }
-
-  if (!m_ready_sent) {
-    static const char kReady[] = "ready\n";
-    if (!sendAll(client_fd, kReady, static_cast<int>(sizeof(kReady) - 1))) {
-      closeSocket(client_fd);
-      m_client_fd = 0;
-      return;
-    }
-    m_ready_sent = true;
-  }
-
   if (!recvAppend(client_fd, m_recv_buffer)) {
     closeSocket(client_fd);
     m_client_fd = 0;
     m_recv_buffer.clear();
-    m_ready_sent = false;
-    return;
+    return false;
   }
-
-  processClientBuffer();
-}
-
-void PlayIpcServer::processClientBuffer() {
   std::string line;
   while (popLine(m_recv_buffer, line)) {
-    const PlayIpcCommand cmd = parsePlayIpcCommandLine(line);
-    if (cmd == PlayIpcCommand::Unknown) {
-      continue;
-    }
-    if (m_handler) {
-      m_handler(cmd);
+    if (trimAscii(line) == "ready") {
+      m_ready = true;
+      return true;
     }
   }
+  return false;
+}
+
+bool PlayIpcServer::waitPeerReady(int timeout_ms) {
+  if (m_ready) {
+    return true;
+  }
+  if (!isListening()) {
+    return false;
+  }
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(std::max(0, timeout_ms));
+  for (;;) {
+    (void)tryAccept();
+    if (tryReadReady()) {
+      return true;
+    }
+    if (timeout_ms <= 0 ||
+        std::chrono::steady_clock::now() >= deadline) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+}
+
+bool PlayIpcServer::sendCommand(PlayIpcCommand command) {
+  if (command == PlayIpcCommand::Unknown) {
+    return false;
+  }
+  return sendLine(playIpcCommandName(command));
+}
+
+bool PlayIpcServer::sendLine(const std::string& line) {
+  if (!m_ready) {
+    return false;
+  }
+  const SocketHandle fd = asSocket(m_client_fd);
+  if (fd == kInvalidSocket) {
+    return false;
+  }
+  std::string payload = line;
+  if (payload.empty() || payload.back() != '\n') {
+    payload.push_back('\n');
+  }
+  return sendAll(fd, payload.data(), static_cast<int>(payload.size()));
 }
 
 void PlayIpcServer::close() {
@@ -374,7 +422,7 @@ void PlayIpcServer::close() {
   m_listen_fd = 0;
   m_bound_port = 0;
   m_recv_buffer.clear();
-  m_ready_sent = false;
+  m_ready = false;
 }
 
 PlayIpcClient::PlayIpcClient() = default;
@@ -393,6 +441,9 @@ bool PlayIpcClient::connect(const std::string& host, uint16_t port) {
   if (!ensureSockets()) {
     return false;
   }
+  if (!isPlayIpcLoopbackHost(host)) {
+    return false;
+  }
 
   const SocketHandle fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (fd == kInvalidSocket) {
@@ -407,7 +458,7 @@ bool PlayIpcClient::connect(const std::string& host, uint16_t port) {
     return false;
   }
 
-  // Blocking connect is fine for the editor-side client / unit test.
+  // Blocking connect is fine for the Player / unit test.
   if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
     closeSocket(fd);
     return false;
@@ -420,54 +471,54 @@ bool PlayIpcClient::connect(const std::string& host, uint16_t port) {
 
   m_fd = toRaw(fd);
   m_recv_buffer.clear();
-  m_ready = false;
+  m_ready_sent = false;
   return true;
 }
 
-bool PlayIpcClient::waitReady(int timeout_ms) {
+bool PlayIpcClient::announceReady() {
   const SocketHandle fd = asSocket(m_fd);
   if (fd == kInvalidSocket) {
     return false;
   }
-  if (m_ready) {
+  if (m_ready_sent) {
     return true;
   }
-
-  const auto deadline = std::chrono::steady_clock::now() +
-                        std::chrono::milliseconds(std::max(0, timeout_ms));
-  while (std::chrono::steady_clock::now() <= deadline) {
-    if (!recvAppend(fd, m_recv_buffer)) {
-      return false;
-    }
-    std::string line;
-    while (popLine(m_recv_buffer, line)) {
-      if (trimAscii(line) == "ready") {
-        m_ready = true;
-        return true;
-      }
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
-  return false;
-}
-
-bool PlayIpcClient::sendCommand(PlayIpcCommand command) {
-  if (command == PlayIpcCommand::Unknown) {
+  static const char kReady[] = "ready\n";
+  if (!sendAll(fd, kReady, static_cast<int>(sizeof(kReady) - 1))) {
     return false;
   }
-  return sendLine(playIpcCommandName(command));
+  m_ready_sent = true;
+  return true;
 }
 
-bool PlayIpcClient::sendLine(const std::string& line) {
+void PlayIpcClient::setCommandHandler(
+    std::function<void(PlayIpcCommand)> handler) {
+  m_handler = std::move(handler);
+}
+
+void PlayIpcClient::poll() {
   const SocketHandle fd = asSocket(m_fd);
   if (fd == kInvalidSocket) {
-    return false;
+    return;
   }
-  std::string payload = line;
-  if (payload.empty() || payload.back() != '\n') {
-    payload.push_back('\n');
+  if (!recvAppend(fd, m_recv_buffer)) {
+    close();
+    return;
   }
-  return sendAll(fd, payload.data(), static_cast<int>(payload.size()));
+  processHostBuffer();
+}
+
+void PlayIpcClient::processHostBuffer() {
+  std::string line;
+  while (popLine(m_recv_buffer, line)) {
+    const PlayIpcCommand cmd = parsePlayIpcCommandLine(line);
+    if (cmd == PlayIpcCommand::Unknown) {
+      continue;
+    }
+    if (m_handler) {
+      m_handler(cmd);
+    }
+  }
 }
 
 bool PlayIpcClient::isConnected() const {
@@ -478,7 +529,7 @@ void PlayIpcClient::close() {
   closeSocket(asSocket(m_fd));
   m_fd = 0;
   m_recv_buffer.clear();
-  m_ready = false;
+  m_ready_sent = false;
 }
 
 }  // namespace Blunder

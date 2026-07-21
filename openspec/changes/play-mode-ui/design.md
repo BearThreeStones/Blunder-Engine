@@ -27,9 +27,9 @@ ADR 0014 / CONTEXT **Play** section: Play Mode is a separate **Player** process 
    Player takes at least `--project-root <path>` and `--scene <virtual-or-guid-or-path>` (Play entry scene = editor active scene’s saved asset). Optional `--play-ipc <endpoint>` for the control channel.  
    *Rejected:* Memory-dumping the live SceneInstance across processes.
 
-3. **IPC = localhost TCP or named pipe, JSON line commands**  
-   Minimal verbs: `pause`, `resume`, `stop`; Player may emit `ready` once listening. Prefer a small shared C++ helper used by editor session controller and Player. Windows: named pipe OR `127.0.0.1` port passed on CLI — pick one in implementation; default **localhost TCP with ephemeral port** for easier tests.  
-   *Rejected:* stdin-only; Stop-as-kill without pause channel; internet-facing RPC.
+3. **IPC = localhost TCP control channel**  
+   Minimal verbs: `pause`, `resume`, `stop`; Player emits `ready` after connecting. The **editor binds and holds** the listen socket (ephemeral port), then spawns Player with `--play-ipc host:port`; Player connects as the TCP client. This eliminates the allocate-then-close port TOCTOU. Host must be IPv4 loopback (`127.0.0.0/8`). Starting times out if `ready` never arrives.  
+   *Rejected:* stdin-only; Stop-as-kill without pause channel; internet-facing RPC; Player-as-listen with probe-close-rebind.
 
 4. **Pause = skip Behaviour Tick (Z1)**  
    Player holds `paused` flag; frame loop still renders and accepts camera orbit; `LifecycleDispatch::invokeTick` (and equivalent gameplay sim time) skipped while paused.  
@@ -54,7 +54,7 @@ ADR 0014 / CONTEXT **Play** section: Play Mode is a separate **Player** process 
 ## Risks / Trade-offs
 
 - **[Fat runtime in Player]** → Accept first; document “no editor chrome”; split libs later.
-- **[IPC flaky / port conflict]** → Bind ephemeral; pass port on CLI; timeout Starting state.
+- **[IPC flaky / port conflict]** → Editor binds ephemeral and **holds** the listen socket until the session ends; Player connects as client; Starting times out if `ready` never arrives.
 - **[Scripts dirty heuristic wrong]** → Prefer stamp file or `dotnet build --no-restore` when in doubt; log why build ran.
 - **[Double host if debug env set during Play]** → Document: avoid `BLUNDER_DOTNET_SCRIPTS` while using Player Play; optional warn.
 - **[Pause without IPC up yet]** → Disable Pause until `ready`; Starting state.

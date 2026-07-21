@@ -13,7 +13,7 @@ The editor and the single Play Process SHALL communicate over a local IPC channe
 
 #### Scenario: Endpoint passed at spawn
 - **WHEN** the editor spawns the Player for a session
-- **THEN** the Player receives the IPC endpoint (or equivalent) needed to accept commands for that session
+- **THEN** the Player receives the IPC endpoint needed to connect to the editor-held local listen socket and receive commands for that session
 
 ### Requirement: Ready before Pause
 The editor SHALL NOT treat Pause as successful until the Player has signaled that the control channel is ready (or an equivalent handshake), unless the session has already failed/exited.
