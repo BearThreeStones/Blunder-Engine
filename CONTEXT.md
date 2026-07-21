@@ -316,6 +316,14 @@ _Avoid_: Second editor window in the same process as the product Play boundary; 
 The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI.
 _Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play
 
+**Gameplay Input**:
+The product-facing input state that Project Behaviours read to drive gameplay (e.g. move, jump). Its authoritative source is the Player process during Play Mode. Outside Play Mode — including Edit Mode and the env-gated editor ScriptHost — Gameplay Input is not a product signal (reads as inactive / unavailable). While **Play Pause** is active, Gameplay Input does not accumulate Action edges for later Tick (a Jump pressed only during Pause is discarded); Move reads as idle when simulation is paused. When the Player window does not have OS focus, Gameplay Input is idle (Move zero, Jump false).
+_Avoid_: Treating editor camera shortcuts as Gameplay Input; requiring Edit Mode ScriptHost for gameplay controls; reading the editor window's keys as the product Play path; buffering Pause-time Jump into the first Resume Tick; driving gameplay from global keyboard while the Player is unfocused
+
+**Gameplay Action**:
+A named, gameplay-meaningful control Behaviours poll (e.g. move axes, jump) — not a keyboard scancode and not an Editor Command. The first Gameplay Input slice exposes Actions only; physical key/gamepad binding stays engine-side in the Player. The DogWalk-facing starter set is a 2D **Move** axis plus a **Jump** Action. **Jump** is pressed-edge for the simulation frame: every Behaviour that polls Jump in that Tick sees the same true/false (not one-reader-consumes). Behaviours access Gameplay Input through a static `Input` façade on `Blunder.Api`, not via Object properties. Built-in defaults (not user-remappable in this slice): WASD → Move, Space → Jump; opposing keys cancel; diagonal Move is normalized so length ≤ 1. Move's `(x, y)` maps to world **+X (right)** and **+Y (forward)** on the horizontal plane (Z-up); +Z is not part of Move.
+_Avoid_: GameCommand (collides with Editor Command; legacy native bitfield name), Input Action as a second product synonym, raw KeyCode as the primary Behaviour API; treating Jump as a held level signal in the first slice; latching Jump so only the first reader sees it; hanging Gameplay Input on Object/ClassDB properties; shipping remappable bindings as required for the first Gameplay Input slice; treating Move.y as world +Z
+
 **Play entry scene**:
 The scene asset the Player loads when Play Mode starts — the editor's active scene as already saved on disk (path/GUID), not a live memory clone of the editable SceneInstance.
 _Avoid_: Play from unsaved buffer without an explicit save step; Play always using a project default scene unrelated to the active document

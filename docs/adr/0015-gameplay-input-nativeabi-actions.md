@@ -1,0 +1,3 @@
+# Gameplay Input reaches C# through NativeAbi Actions
+
+Project Behaviours read **Gameplay Input** only in the **Player** (Play Mode). The first slice exposes named **Gameplay Actions** (Move axis + Jump edge), not raw keys, via a static `Blunder.Api` `Input` façade. Those calls go through **new entries on the existing NativeAbi table** (same `RegisterNativeAbi` path as Object/lifecycle), filled by a Player-side sampler distinct from the editor's legacy `GameCommand` bitfield. Rejected for this slice: a second Input-only ABI registration, ClassDB/Object properties for input, Edit Mode as an authoritative input source, Pause-time edge buffering, and remappable bindings.
