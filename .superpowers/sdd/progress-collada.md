@@ -33,3 +33,10 @@ Task 3.3: complete (a657fc8, upgrade/reimport test gate; see task-ci-9-report.md
 Task 3.3: complete (7518df8..a657fc8, review Approved)
 Task 4.1: complete (83f9886..9467f2d, review Approved)
 Task 4.2: complete (a3dcdcc, all 12 targeted binaries exit 0)
+Task 4.2: complete (12/12 green; a3dcdcc)
+
+Task 4.2: complete (12/12 green, review Approved)
+Task 4.3: complete (docs match; 8ab6233)
+
+## collada-intermediate
+All tasks 1.1–4.3 checked. Branch feat/asset-pipeline-pull (not pushed).

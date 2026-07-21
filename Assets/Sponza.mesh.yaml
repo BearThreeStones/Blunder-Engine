@@ -1,6 +1,7 @@
 type: Mesh
 guid: 890591aa-8203-47ee-8572-9b606128101f
-source: resources/Models/Sponza/glTF/Sponza.gltf
+source: resources/Models/Sponza/glTF/Sponza.dae
+archived_source: resources/Source/Models/Sponza/Sponza.gltf
 import:
   materials: true
   animations: true

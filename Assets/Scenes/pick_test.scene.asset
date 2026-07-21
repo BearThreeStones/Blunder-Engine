@@ -1,5 +1,6 @@
 {
   "type": "Scene",
+  "guid": "a27eb4b2-6596-4d6c-acd1-33f15e355631",
   "entities": [
     {
       "name": "Sun",
