@@ -1,103 +1,62 @@
-# Task 2 Report: Instantiate Object bind + Behaviour slots
+# Task 2 Report — Player host + Pause
 
-## Status
+**Status:** DONE  
+**Branch:** `feat/play-mode-ui`  
+**Workspace:** `E:/Dev/Blunder-Engine/.worktrees/play-mode-ui`
 
-**DONE** (Important review findings fixed)
+## Delivered (OpenSpec 2.1–2.4)
 
-## Summary
-
-On `SceneInstance::instantiate`, entities with a non-empty `behaviours` list get an ObjectDB Object bound via `setEntityId`, with slots restored at persisted BehaviourIds and null peers (no DotNetHost Attach). `Object::restoreBehaviour` advances `m_next_behaviour_id` past the max restored id. Empty-behaviour entities do not create Objects. OpenSpec 2.1–2.3 marked `[x]`.
-
-Bound ObjectIds are tracked on `SceneInstance` and destroyed in `clear()` / destructor so re-instantiate cannot leave stale process-global Objects for `findByEntityId`.
-
-## Commits
-
-- `0f2864f424126a0253f31ea024f9636bba4bdd25` — `feat(scene): bind Objects and restore Behaviour slots on load`
-- _(pending)_ — `fix(scene): destroy bound Objects on SceneInstance clear`
-
-## Files changed
-
-| Path | Action |
+| Item | Result |
 |------|--------|
-| `engine/src/runtime/core/object/object.h` | Modified — `restoreBehaviour` |
-| `engine/src/runtime/core/object/object.cpp` | Modified — restore slot + advance next id |
-| `engine/src/runtime/core/object/object_db.h` | Modified — `findByEntityId` |
-| `engine/src/runtime/core/object/object_db.cpp` | Modified — EntityId scan |
-| `engine/src/runtime/function/scene/scene_instance.cpp` | Modified — bind Object + restore on instantiate |
-| `engine/src/tests/scene_behaviour_instantiate_test.cpp` | Created — load JSON → instantiate without host |
-| `engine/src/tests/CMakeLists.txt` | Modified — register test target |
-| `openspec/changes/behaviour-serialization/tasks.md` | Modified — 2.1–2.3 `[x]` |
+| Prerequisite: Player Vulkan AV | Fixed — `PickOverlay` descriptor pool includes standalone `SAMPLER` (binding 2); allocate/update no longer hit `VK_NULL_HANDLE` |
+| 2.1 DotNetHost in Player | Done — Player `force_start`; stage ScriptHost/Api beside `engine_player`; load `.blunder/scripts_bin` game DLL when present |
+| 2.2 Mount after scene load | Done — `mountSceneBehaviours` after Player entry scene load when host running |
+| 2.3 Pause tick gate | Done — `shouldAdvanceBehaviourTick` / `dispatchObjectLifecycle`; `RuntimeGlobalContext::{is,set}PlayPaused`; engine tick uses gate |
+| 2.4 Window close exit | Done — `tickOneFrame` returns false on `shouldClose`; SDL quit path; smoke exit 0 (also `BLUNDER_PLAYER_MAX_FRAMES`) |
+
+OpenSpec checkboxes 2.1–2.4 marked in `openspec/changes/play-mode-ui/tasks.md`.
 
 ## TDD evidence
 
 ### RED
 
-Added `scene_behaviour_instantiate_test` before instantiate bind existed.
+Stub `shouldAdvanceBehaviourTick` always returned `true`.
 
 ```text
-.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe
-FAIL actor has bound Object
-1 failure(s)
+FAIL gate blocks when paused
+FAIL tick skipped while paused
+FAIL tick resumes after pause
+3 failure(s)
+RED_EXIT=1
 ```
-
-Expected red (no Object for entity with behaviours).
 
 ### GREEN
 
-Implemented `restoreBehaviour`, `ObjectDB::findByEntityId`, and instantiate bind/restore.
-
 ```text
-cmake --build build/vs2026-debug --config Debug --target scene_behaviour_instantiate_test
-.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe  → exit 0
-scene_behaviour_instantiate_test: all passed
+play_pause_tick_gate_test: all passed
+GREEN_EXIT=0
 ```
 
-Covers: Object bound to Actor EntityId; slots ids 1 and 3 with types; peers null; next id → 4 via `addBehaviour`; Prop without behaviours has no Object.
+## Player smoke (AV + host + exit)
 
-## Self-review
+```text
+[info] [DotNetHost] ScriptHost running
+[info] [DotNetHost] no game DLL under .blunder/scripts_bin (host only)
+[info] engine start
+[info] [BlunderEngine] Player smoke exit after 30 frames
+EXIT=0x00000000
+```
 
-- **Correctness:** Restored ids preserved (not renumbered); invalid/duplicate ids skipped with warn; property bag not applied (Task 3).
-- **Scope:** No DotNetHost Attach / mount (Task 3); no export (Task 4).
-- **Teardown:** Test resets logger + ObjectDB before exit to avoid spdlog async-flush AV on process exit.
+Also: process stayed alive ≥8s; `taskkill` (WM_CLOSE) → exit 0. No `dstSet is VK_NULL_HANDLE` / `0xC0000005`.
+
+## Commits
+
+1. `fix(player): avoid Vulkan overlay AV in Player host mode`
+2. `feat(player): DotNetHost mount and Pause tick gate`
 
 ## Concerns
 
-1. **EntityId is SceneInstance-local** — `ObjectDB::findByEntityId` remains a process-global scan; multiple *concurrently live* SceneInstances can still collide on EntityId values (pre-existing id scheme). Re-instantiate / clear paths are safe via per-instance ObjectId tracking. Multi-instance keying (`SceneInstance*` + EntityId) still deferred if needed.
-2. ~~**No Object cleanup on `SceneInstance::clear()`**~~ — **Fixed** (see Review follow-up below).
-3. **Dirty working tree** — unrelated WIP left uncommitted; commit scoped to Object/scene instantiate + test + OpenSpec tasks.
-
-## Review follow-up (Important findings)
-
-Addressed Task 2 review Important items:
-
-1. `SceneInstance::clear()` (and destructor) destroys Objects tracked in `m_bound_object_ids`.
-2. Instantiate records each created ObjectId; re-instantiate cannot leave stale bindings for `findByEntityId`.
-
-### TDD evidence
-
-**RED** (test only, before clear destroys Objects):
-
-```text
-.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe
-FAIL reinst clear destroys bound Object
-FAIL reinst findByEntityId empty after clear
-FAIL reinst first ObjectId invalidated after clear
-FAIL reinst exactly one Object for EntityId
-FAIL reinst one occupied Object after second instantiate
-FAIL reinst second ObjectId differs from destroyed first
-FAIL reinst third pass still one Object
-FAIL reinst third pass one binding
-8 failure(s)
-exit=1
-```
-
-**GREEN** (track `m_bound_object_ids` + destroy on clear/dtor):
-
-```text
-cmake --build build/vs2026-debug --config Debug --target scene_behaviour_instantiate_test
-.\build\vs2026-debug\tests\Debug\scene_behaviour_instantiate_test.exe  → exit 0
-scene_behaviour_instantiate_test: all passed
-```
-
-Covers: instantiate → clear → instantiate → instantiate again; zero occupied Objects after clear; exactly one Object per EntityId; `findByEntityId` returns the live Object (not the destroyed id).
-
+1. No project game DLL under `.blunder/scripts_bin` in this worktree — host-only path verified; mount with real Behaviours needs a built Scripts assembly.
+2. Player still constructs editor subsystems (content browser, scene-edit); thumbnail/content teardown order fixed so VMA does not assert on Player exit.
+3. `BLUNDER_PLAYER_MAX_FRAMES` is a smoke helper, not product UI Pause.
+4. Mesh import for `pick_test` still fails on `.dae` in this worktree (pre-existing asset path issue); does not block loop/host.
