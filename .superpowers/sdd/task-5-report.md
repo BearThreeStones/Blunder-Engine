@@ -14,7 +14,7 @@
 
 ## Commits
 
-1. _(pending)_ — `feat(editor): Play dirty-scene and Scripts build preflight`
+1. `5fbbe32` — `feat(editor): Play dirty-scene and Scripts build preflight`
 
 ## TDD evidence
 
