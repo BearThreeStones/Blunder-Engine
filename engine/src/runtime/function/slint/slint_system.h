@@ -186,6 +186,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncBlinnPhongFromMaterialSource() override;
   void tickContentBrowserTreePointerPoll() override;
 
+  void showPlayDirtySceneDialog() override;
+  void hidePlayDirtySceneDialog() override;
+
   BrowserLogicalRect getBrowserLogicalRect() const;
   BrowserLogicalRect getHierarchyLogicalRect() const;
   bool isContentBrowserDragActive() const;

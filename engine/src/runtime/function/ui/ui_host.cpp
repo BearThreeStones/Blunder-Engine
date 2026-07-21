@@ -12,9 +12,48 @@
 #include "runtime/function/ui/editor_ui_presentation.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/project/play_session_controller.h"
+#include "runtime/project/play_preflight.h"
+#include "runtime/function/script/scripts_builder.h"
 #include "runtime/platform/file_system/file_system.h"
 
+#include <filesystem>
+#include <string>
+
 namespace Blunder {
+namespace {
+
+void installScriptsPreflight(PlaySessionController& session,
+                             const std::filesystem::path& project_root) {
+  session.setScriptsPreflight(
+      [project_root]() { return areProjectScriptsDirty(project_root); },
+      [project_root](std::string& error) {
+        const ScriptsBuildResult built = buildProjectScripts(project_root);
+        if (!built.ok) {
+          error = built.error.empty() ? "scripts build failed"
+                                      : built.error.c_str();
+          return false;
+        }
+        return true;
+      });
+}
+
+bool startPlaySession(PlaySessionController& session, FileSystem& fs,
+                      EditorSceneEditSystem& scene_edit) {
+  PlaySessionRequest req;
+  req.project_root = fs.getProjectRoot();
+  req.scene = scene_edit.activeScenePath().c_str();
+  if (req.scene.empty()) {
+    return false;
+  }
+  installScriptsPreflight(session, req.project_root);
+  if (!session.play(req) && !session.lastError().empty()) {
+    // Errors stay on the controller; toast surfacing is out of Task 5 scope.
+    return false;
+  }
+  return session.state() != PlaySessionState::Stopped;
+}
+
+}  // namespace
 
 UiHost::UiHost() = default;
 
@@ -143,14 +182,59 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (session == nullptr || fs == nullptr || !services.editor_scene_edit) {
         break;
       }
-      PlaySessionRequest req;
-      req.project_root = fs->getProjectRoot();
-      req.scene = services.editor_scene_edit->activeScenePath().c_str();
-      if (req.scene.empty()) {
+      const PlayDirtySceneDecision decision = decidePlayDirtyScene(
+          services.editor_scene_edit->isDirty(), std::nullopt);
+      if (decision.needs_prompt) {
+        if (m_presentation) {
+          m_presentation->showPlayDirtySceneDialog();
+        }
         break;
       }
-      if (!session->play(req) && !session->lastError().empty()) {
-        // Errors stay on the controller; Task 5 may surface a UI toast.
+      (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      break;
+    }
+    case UiEventKind::playDirtySaveAndPlay: {
+      PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get();
+      FileSystem* fs = g_runtime_global_context.m_file_system.get();
+      if (m_presentation) {
+        m_presentation->hidePlayDirtySceneDialog();
+      }
+      if (session == nullptr || fs == nullptr || !services.editor_scene_edit) {
+        break;
+      }
+      const PlayDirtySceneDecision decision = decidePlayDirtyScene(
+          true, PlayDirtySceneChoice::SaveAndPlay);
+      if (!decision.proceed) {
+        break;
+      }
+      if (decision.save_first) {
+        services.editor_scene_edit->saveActiveScene();
+      }
+      (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      break;
+    }
+    case UiEventKind::playDirtyPlayLastSaved: {
+      PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get();
+      FileSystem* fs = g_runtime_global_context.m_file_system.get();
+      if (m_presentation) {
+        m_presentation->hidePlayDirtySceneDialog();
+      }
+      if (session == nullptr || fs == nullptr || !services.editor_scene_edit) {
+        break;
+      }
+      const PlayDirtySceneDecision decision = decidePlayDirtyScene(
+          true, PlayDirtySceneChoice::PlayLastSaved);
+      if (!decision.proceed) {
+        break;
+      }
+      (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      break;
+    }
+    case UiEventKind::playDirtyCancel: {
+      if (m_presentation) {
+        m_presentation->hidePlayDirtySceneDialog();
       }
       break;
     }

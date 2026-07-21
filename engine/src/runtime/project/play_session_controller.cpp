@@ -1,5 +1,8 @@
 #include "runtime/project/play_session_controller.h"
 
+#include "runtime/project/play_preflight.h"
+
+#include <functional>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -295,6 +298,7 @@ PlaySessionHooks PlaySessionController::makeDefaultHooks() {
     return runtime->client->sendCommand(command);
   };
   hooks.ipc_close = [runtime]() { runtime->client->close(); };
+  // Project-aware Scripts dirty/build hooks are installed by UiHost before Play.
   return hooks;
 }
 
@@ -313,6 +317,13 @@ PlaySessionController::~PlaySessionController() {
 bool PlaySessionController::pauseEnabled() const {
   return m_ready && (m_state == PlaySessionState::Playing ||
                      m_state == PlaySessionState::Paused);
+}
+
+void PlaySessionController::setScriptsPreflight(
+    std::function<bool()> is_dirty,
+    std::function<bool(std::string& error)> build) {
+  m_hooks.is_scripts_dirty = std::move(is_dirty);
+  m_hooks.build_scripts = std::move(build);
 }
 
 void PlaySessionController::resetToStopped() {
@@ -344,6 +355,19 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
   if (!m_hooks.resolve_player || !m_hooks.allocate_endpoint || !m_hooks.spawn) {
     m_last_error = "play session hooks incomplete";
     return false;
+  }
+
+  if (m_hooks.is_scripts_dirty) {
+    PlayScriptsGateHooks gate;
+    gate.is_dirty = m_hooks.is_scripts_dirty;
+    gate.build = m_hooks.build_scripts;
+    const PlayScriptsGateResult scripts = runPlayScriptsGate(gate);
+    if (!scripts.ok) {
+      m_last_error =
+          scripts.error.empty() ? "scripts build failed" : scripts.error;
+      m_state = PlaySessionState::Stopped;
+      return false;
+    }
   }
 
   const std::filesystem::path exe = m_hooks.resolve_player();

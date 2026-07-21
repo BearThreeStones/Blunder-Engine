@@ -13,3 +13,9 @@ Task 3: complete (e6b6dc6..d87f595, review Approved)
 
 Task 4: complete — PlaySessionController + Play/Pause/Stop Slint; OpenSpec 4.1–4.4
 
+
+Task 4: complete (d87f595..9cbb1f3, review Approved; Important: port race, Starting timeout, hard terminate)
+
+
+Task 4: complete (d87f595..9cbb1f3, review Approved; Important: port race, Starting timeout, hard terminate)
+

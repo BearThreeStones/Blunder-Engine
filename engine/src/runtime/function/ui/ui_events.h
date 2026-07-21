@@ -32,6 +32,9 @@ enum class UiEventKind : uint8_t {
   play,
   playPause,
   playStop,
+  playDirtySaveAndPlay,
+  playDirtyPlayLastSaved,
+  playDirtyCancel,
 };
 
 struct UiEvent {

@@ -1,0 +1,62 @@
+import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+
+export component PlayDirtySceneDialog inherits Rectangle {
+    in property <bool> show-dialog: false;
+
+    callback save-and-play();
+    callback play-last-saved();
+    callback cancelled();
+
+    visible: root.show-dialog;
+    background: #000000aa;
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    dialog-panel := Rectangle {
+        width: 420px;
+        height: 180px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: #252525;
+        border-color: #444444;
+        border-width: 1px;
+        border-radius: 6px;
+
+        VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+
+            Text {
+                text: "Scene has unsaved changes";
+                color: #f0f0f0;
+                font-size: 14px;
+            }
+
+            Text {
+                text: "Save before Play, play the last saved asset, or cancel.";
+                color: #c0c0c0;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                Button {
+                    text: "Cancel";
+                    clicked => { root.cancelled(); }
+                }
+                Button {
+                    text: "Play Last Saved";
+                    clicked => { root.play-last-saved(); }
+                }
+                Button {
+                    text: "Save and Play";
+                    clicked => { root.save-and-play(); }
+                }
+            }
+        }
+    }
+}

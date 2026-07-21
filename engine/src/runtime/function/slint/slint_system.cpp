@@ -816,6 +816,18 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playStop));
         }));
+    component->on_play_dirty_save_and_play(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::playDirtySaveAndPlay));
+        }));
+    component->on_play_dirty_play_last_saved(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::playDirtyPlayLastSaved));
+        }));
+    component->on_play_dirty_cancelled(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::playDirtyCancel));
+        }));
 
     component->on_viewport_projection_toggled([this]() {
       // Slint TouchArea callback intentionally ignored.
@@ -2385,6 +2397,20 @@ void SlintSystem::showImportMeshDialogForPendingPaths() {
   m_window_component->operator->()->set_import_mesh_scale(1.0f);
 }
 
+void SlintSystem::showPlayDirtySceneDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_play_dirty_dialog_visible(true);
+}
+
+void SlintSystem::hidePlayDirtySceneDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_play_dirty_dialog_visible(false);
+}
+
 void SlintSystem::showPiercingMenu(const eastl::vector<PiercingMenuItem>& items,
                                    const float window_x, const float window_y,
                                    const bool add_mode) {
@@ -2838,7 +2864,8 @@ bool SlintSystem::shouldDeferHeavyFrameWork() const {
 bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
   // Block input layers (camera orbit etc.) while a modal dialog is open.
   if (m_window_component &&
-      m_window_component->operator->()->get_import_mesh_dialog_visible()) {
+      (m_window_component->operator->()->get_import_mesh_dialog_visible() ||
+       m_window_component->operator->()->get_play_dirty_dialog_visible())) {
     return false;
   }
   if (isPiercingMenuVisible()) {
@@ -4941,7 +4968,8 @@ void SlintSystem::processEvent(const SDL_Event& event) {
             cacheLayoutRects();
           }
           const bool modal_dialog_open = m_window_component &&
-              m_window_component->operator->()->get_import_mesh_dialog_visible();
+              (m_window_component->operator->()->get_import_mesh_dialog_visible() ||
+               m_window_component->operator->()->get_play_dirty_dialog_visible());
           if (event.button.button == SDL_BUTTON_LEFT && !modal_dialog_open) {
             const bool proj_hit =
                 probeProjectionButtonAtLogical(logical_ptr.x, logical_ptr.y);

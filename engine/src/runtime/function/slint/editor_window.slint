@@ -2,6 +2,7 @@ import { Button, CheckBox, HorizontalBox, Slider, VerticalBox } from "std-widget
 import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
+import { PlayDirtySceneDialog } from "play_dirty_scene_dialog.slint";
 import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
@@ -144,6 +145,10 @@ export component MainEditorWindow inherits Window {
     in property <bool> play-pause-enabled: false;
     in property <bool> play-stop-enabled: false;
     in property <bool> play-session-paused: false;
+    in-out property <bool> play-dirty-dialog-visible: false;
+    callback play-dirty-save-and-play();
+    callback play-dirty-play-last-saved();
+    callback play-dirty-cancelled();
 
     in-out property <bool> viewport-is-perspective: true;
     in property <bool> viewport-image-ready: false;
@@ -743,7 +748,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible || root.piercing-menu-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.piercing-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -764,6 +769,16 @@ export component MainEditorWindow inherits Window {
             import-scale <=> root.import-mesh-scale;
             confirmed => { root.import-mesh-confirmed(); }
             cancelled => { root.import-mesh-cancelled(); }
+        }
+
+        play_dirty_scene_dialog := PlayDirtySceneDialog {
+            z: 3100;
+            width: parent.width;
+            height: parent.height;
+            show-dialog: root.play-dirty-dialog-visible;
+            save-and-play => { root.play-dirty-save-and-play(); }
+            play-last-saved => { root.play-dirty-play-last-saved(); }
+            cancelled => { root.play-dirty-cancelled(); }
         }
 
         PiercingMenu {

@@ -46,6 +46,9 @@ struct PlaySessionHooks {
   std::function<bool(int timeout_ms)> ipc_wait_ready;
   std::function<bool(PlayIpcCommand)> ipc_send;
   std::function<void()> ipc_close;
+  /// Optional Scripts dirty gate (run before spawn). When unset, gate is skipped.
+  std::function<bool()> is_scripts_dirty;
+  std::function<bool(std::string& error)> build_scripts;
 };
 
 /// Editor Play session: spawn Player, IPC pause/resume/stop, track exit.
@@ -65,6 +68,10 @@ class PlaySessionController final {
 
   const PlayIpcEndpoint& endpoint() const { return m_endpoint; }
   const std::string& lastError() const { return m_last_error; }
+
+  /// Install Scripts dirty/build hooks used by `play()` before spawn.
+  void setScriptsPreflight(std::function<bool()> is_dirty,
+                           std::function<bool(std::string& error)> build);
 
   bool play(const PlaySessionRequest& request);
   bool pause();

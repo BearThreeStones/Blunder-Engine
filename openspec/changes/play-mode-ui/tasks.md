@@ -27,9 +27,9 @@
 
 ## 5. Preflight gates
 
-- [ ] 5.1 Dirty scene prompt: Save and Play / Play last saved / Cancel
-- [ ] 5.2 Scripts dirty detection + `ScriptsBuilder`/`dotnet build` before spawn; fail → stay Stopped
-- [ ] 5.3 Tests for dirty prompt decision paths and scripts-dirty build gate (fakes OK)
+- [x] 5.1 Dirty scene prompt: Save and Play / Play last saved / Cancel
+- [x] 5.2 Scripts dirty detection + `ScriptsBuilder`/`dotnet build` before spawn; fail → stay Stopped
+- [x] 5.3 Tests for dirty prompt decision paths and scripts-dirty build gate (fakes OK)
 
 ## 6. Edit Mode host policy + docs
 

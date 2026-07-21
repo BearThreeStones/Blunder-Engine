@@ -113,6 +113,8 @@ add_library(engine_runtime STATIC
     "project/play_ipc.cpp"
     "project/play_session_controller.h"
     "project/play_session_controller.cpp"
+    "project/play_preflight.h"
+    "project/play_preflight.cpp"
     "function/script/scripts_builder.h"
     "function/script/scripts_builder.cpp"
     "resource/asset/asset.h"
@@ -207,6 +209,7 @@ add_subdirectory(function/render)
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
     "function/slint/import_mesh_dialog.slint"
+    "function/slint/play_dirty_scene_dialog.slint"
     "function/slint/piercing_menu.slint"
     "function/slint/hierarchy.slint"
     "function/slint/inspector_panel.slint"

@@ -27,6 +27,9 @@ class IEditorUiPresentation {
   virtual void pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) = 0;
 
   virtual void tickContentBrowserTreePointerPoll() = 0;
+
+  virtual void showPlayDirtySceneDialog() = 0;
+  virtual void hidePlayDirtySceneDialog() = 0;
 };
 
 }  // namespace Blunder
