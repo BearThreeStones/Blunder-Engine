@@ -75,10 +75,10 @@ std::filesystem::path findProjectGameAssembly(
   return {};
 }
 
-void tryStartDotNetHost(RuntimeGlobalContext& ctx) {
-  // MVP Play gate: full Play UI is not wired yet. Opt in with
-  // BLUNDER_DOTNET_SCRIPTS=1 (documented in docs/agents/testing.md).
-  if (!envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
+void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
+  // Editor: opt in with BLUNDER_DOTNET_SCRIPTS=1 until Play UI owns the host.
+  // Player: always start for the Play session (OpenSpec play-player).
+  if (!force_start && !envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
     return;
   }
   if (!ctx.m_file_system) {
@@ -140,6 +140,7 @@ void RuntimeGlobalContext::startSystems(
     const eastl::string& play_scene) {
   m_host_mode = host_mode;
   const bool player_host = host_mode == EngineHostMode::Player;
+  m_play_paused = false;
 
   m_memory_system.initialize();
 
@@ -159,8 +160,8 @@ void RuntimeGlobalContext::startSystems(
 
   // CoreCLR host: after logger + FileSystem only. Failure is non-fatal and
   // must not wait on Vulkan/Slint (see docs/agents/testing.md gates).
-  // Player host start is Task 2; keep editor env gate for Task 1.
-  tryStartDotNetHost(*this);
+  // Player always starts the host so scene instantiate can mount Behaviours.
+  tryStartDotNetHost(*this, player_host);
 
   m_asset_registry = eastl::make_shared<AssetRegistry>();
   m_asset_registry->initialize(m_file_system.get());
@@ -186,7 +187,9 @@ void RuntimeGlobalContext::startSystems(
   m_scene_system->initialize(scene_init_info);
 
   // Player: resolve the Play entry scene before Vulkan/UI so load is confirmed
-  // even if later render init is incomplete on this skeleton.
+  // even if later render init is incomplete on this skeleton. Mount Behaviours
+  // after load when DotNetHost + game assembly are already running (host starts
+  // before SceneSystem, so tryStartDotNetHost cannot mount this instance).
   if (player_host && !play_scene.empty()) {
     const eastl::shared_ptr<SceneInstance> instance =
         m_scene_system->loadScene(play_scene);
@@ -196,6 +199,9 @@ void RuntimeGlobalContext::startSystems(
           "[RuntimeGlobalContext] Player entry scene '{}' loaded "
           "(entities={})",
           instance->getSourcePath().c_str(), instance->getEntityCount());
+      if (m_dotnet_host && m_dotnet_host->isRunning()) {
+        mountSceneBehaviours(*instance, *m_dotnet_host, nullptr);
+      }
     } else {
       LOG_ERROR("[RuntimeGlobalContext] Player failed to load entry scene '{}'",
                 play_scene.c_str());
@@ -381,6 +387,18 @@ void RuntimeGlobalContext::shutdownSystems() {
     m_ui_host.reset();
   }
 
+  // GPU consumers that allocate through the render VMA must shut down before
+  // the render system / VulkanAllocator (otherwise VMA asserts on leftover blocks).
+  if (m_content_browser) {
+    m_content_browser->shutdown();
+    m_content_browser.reset();
+  }
+
+  if (m_thumbnail_generator) {
+    m_thumbnail_generator->shutdown();
+    m_thumbnail_generator.reset();
+  }
+
   if (m_render_system) {
     m_render_system->shutdown();
     m_render_system.reset();
@@ -399,11 +417,6 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_physics_manager->clear();
   // m_physics_manager.reset();
 
-  if (m_content_browser) {
-    m_content_browser->shutdown();
-    m_content_browser.reset();
-  }
-
   if (m_asset_import) {
     m_asset_import->shutdown();
     m_asset_import.reset();
@@ -416,11 +429,6 @@ void RuntimeGlobalContext::shutdownSystems() {
   if (m_asset_compiler) {
     m_asset_compiler->shutdown();
     m_asset_compiler.reset();
-  }
-
-  if (m_thumbnail_generator) {
-    m_thumbnail_generator->shutdown();
-    m_thumbnail_generator.reset();
   }
 
   m_viewport_pick.reset();

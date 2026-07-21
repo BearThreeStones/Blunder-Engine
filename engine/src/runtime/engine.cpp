@@ -23,6 +23,7 @@
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/lifecycle.h"
+#include "runtime/function/script/play_tick_gate.h"
 
 #include <SDL3/SDL.h>
 #if defined(_WIN32)
@@ -283,7 +284,8 @@ void BlunderEngine::initialize(const eastl::string& play_scene) {
     return;
   }
 
-  if (g_runtime_global_context.m_content_browser) {
+  if (g_runtime_global_context.m_content_browser &&
+      g_runtime_global_context.hostMode() != EngineHostMode::Player) {
     const ContentBrowserRefreshStats stats =
         g_runtime_global_context.m_content_browser->refresh();
     LOG_INFO(
@@ -393,17 +395,19 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     }
 
     // Drive Behaviour Ready/Tick when CoreCLR ScriptHost is running.
-    // Ready is once-per-peer (BehaviourSlot::ready_invoked).
+    // Ready is once-per-peer (BehaviourSlot::ready_invoked). Pause skips Tick.
     if (g_runtime_global_context.m_dotnet_host &&
         g_runtime_global_context.m_dotnet_host->isRunning()) {
-      float tick_dt = delta_time;
+      struct TickArgs {
+        float dt;
+        bool paused;
+      } tick_args{delta_time, g_runtime_global_context.isPlayPaused()};
       ObjectDB::forEach(
           [](Object* object, void* user) {
-            const float dt = *static_cast<const float*>(user);
-            LifecycleDispatch::invokeReady(object);
-            LifecycleDispatch::invokeTick(object, dt);
+            const auto* args = static_cast<const TickArgs*>(user);
+            dispatchObjectLifecycle(object, args->dt, args->paused);
           },
-          &tick_dt);
+          &tick_args);
     }
   }
 
@@ -434,6 +438,23 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   if (!defer_heavy) {
     g_runtime_global_context.m_window_system->setTitle(
         std::string("Blunder - " + std::to_string(getFPS()) + " FPS").c_str());
+  }
+
+  // Smoke / automated exit: BLUNDER_PLAYER_MAX_FRAMES=N leaves after N frames
+  // without requiring a GUI close (proves Player loop stays up past init).
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    if (const char* max_frames_env = std::getenv("BLUNDER_PLAYER_MAX_FRAMES")) {
+      const int max_frames = std::atoi(max_frames_env);
+      if (max_frames > 0) {
+        static int s_player_frames = 0;
+        ++s_player_frames;
+        if (s_player_frames >= max_frames) {
+          LOG_INFO("[BlunderEngine] Player smoke exit after {} frames",
+                   s_player_frames);
+          return false;
+        }
+      }
+    }
   }
 
   const bool should_window_close =

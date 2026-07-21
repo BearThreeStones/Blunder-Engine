@@ -54,6 +54,10 @@ class RuntimeGlobalContext {
 
   EngineHostMode hostMode() const { return m_host_mode; }
 
+  /// Player Pause: skip Behaviour Tick while keeping render/orbit alive.
+  bool isPlayPaused() const { return m_play_paused; }
+  void setPlayPaused(bool paused) { m_play_paused = paused; }
+
  public:
   MemorySystem m_memory_system;
   eastl::shared_ptr<LogSystem> m_logger_system;
@@ -88,6 +92,7 @@ class RuntimeGlobalContext {
 
  private:
   EngineHostMode m_host_mode{EngineHostMode::Editor};
+  bool m_play_paused{false};
 };
 
 extern RuntimeGlobalContext g_runtime_global_context;

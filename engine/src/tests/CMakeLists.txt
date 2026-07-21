@@ -447,6 +447,25 @@ endif()
 add_test(NAME player_launch_test
          COMMAND player_launch_test)
 
+add_executable(play_pause_tick_gate_test
+    "play_pause_tick_gate_test.cpp"
+)
+
+target_link_libraries(play_pause_tick_gate_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(play_pause_tick_gate_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(play_pause_tick_gate_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME play_pause_tick_gate_test
+         COMMAND play_pause_tick_gate_test)
+
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"
 )

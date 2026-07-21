@@ -7,10 +7,10 @@
 
 ## 2. Player host + Pause
 
-- [ ] 2.1 Start DotNetHost in Player (process NativeAbi); load `.blunder/scripts_bin` game DLL when present
-- [ ] 2.2 Mount scene Behaviours after load when host + assembly ready
-- [ ] 2.3 Implement Pause flag: skip Behaviour Tick while rendering/orbit still work; Resume clears flag
-- [ ] 2.4 Window close exits process cleanly
+- [x] 2.1 Start DotNetHost in Player (process NativeAbi); load `.blunder/scripts_bin` game DLL when present
+- [x] 2.2 Mount scene Behaviours after load when host + assembly ready
+- [x] 2.3 Implement Pause flag: skip Behaviour Tick while rendering/orbit still work; Resume clears flag
+- [x] 2.4 Window close exits process cleanly
 
 ## 3. Play control channel
 

@@ -55,6 +55,21 @@ if(TARGET blunder_script_host)
     add_dependencies(engine_player blunder_script_host)
 endif()
 
+# DotNetHost loads ScriptHost from the executable directory (Player OpenSpec 2.1).
+set(BLUNDER_PLAYER_SCRIPTHOST_STAGE "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+add_custom_command(TARGET engine_player POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${BLUNDER_PLAYER_SCRIPTHOST_STAGE}/Blunder.ScriptHost.dll"
+        "$<TARGET_FILE_DIR:engine_player>/Blunder.ScriptHost.dll"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${BLUNDER_PLAYER_SCRIPTHOST_STAGE}/Blunder.ScriptHost.runtimeconfig.json"
+        "$<TARGET_FILE_DIR:engine_player>/Blunder.ScriptHost.runtimeconfig.json"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${BLUNDER_PLAYER_SCRIPTHOST_STAGE}/Blunder.Api.dll"
+        "$<TARGET_FILE_DIR:engine_player>/Blunder.Api.dll"
+    COMMENT "Copying ScriptHost + Api beside engine_player"
+)
+
 # nethost.dll must sit beside the player for DotNetHost (Task 2+).
 if(WIN32 AND BLUNDER_HAS_NETHOST AND EXISTS "${BLUNDER_NETHOST_DIR}/nethost.dll")
     add_custom_command(TARGET engine_player POST_BUILD
