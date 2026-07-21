@@ -5,6 +5,7 @@
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/reflection/variant.h"
+#include "runtime/platform/input/gameplay_input.h"
 
 #include "EASTL/string.h"
 
@@ -209,6 +210,24 @@ int blunder_ptrcall(const char* class_name, const char* method_name,
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_gameplay_input_get_move(float* out_x, float* out_y) {
+  if (out_x == nullptr || out_y == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const GameplayInputSnapshot snap = gameplayInputState().current();
+  *out_x = snap.move_x;
+  *out_y = snap.move_y;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_gameplay_input_was_jump_pressed(int* out_pressed) {
+  if (out_pressed == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_pressed = gameplayInputState().current().jump_pressed ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
 void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   if (out == nullptr) {
     return;
@@ -230,6 +249,9 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->lifecycle_set_tick_hook = &blunder_lifecycle_set_tick_hook;
   out->lifecycle_set_ready_hook = &blunder_lifecycle_set_ready_hook;
   out->lifecycle_clear_hooks = &blunder_lifecycle_clear_hooks;
+  out->gameplay_input_get_move = &blunder_gameplay_input_get_move;
+  out->gameplay_input_was_jump_pressed =
+      &blunder_gameplay_input_was_jump_pressed;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -285,6 +307,10 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_lifecycle_set_ready_hook");
   BLUNDER_NATIVE_ABI_LOAD(lifecycle_clear_hooks,
                           "blunder_lifecycle_clear_hooks");
+  BLUNDER_NATIVE_ABI_LOAD(gameplay_input_get_move,
+                          "blunder_gameplay_input_get_move");
+  BLUNDER_NATIVE_ABI_LOAD(gameplay_input_was_jump_pressed,
+                          "blunder_gameplay_input_was_jump_pressed");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

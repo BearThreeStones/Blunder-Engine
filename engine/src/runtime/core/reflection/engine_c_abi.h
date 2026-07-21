@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 2
+#define BLUNDER_ENGINE_C_ABI_VERSION 3
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -76,13 +76,18 @@ BLUNDER_ENGINE_C_API int blunder_lifecycle_invoke_ready(BlunderObjectId id);
 BLUNDER_ENGINE_C_API int blunder_lifecycle_invoke_tick(BlunderObjectId id,
                                                        float delta_time);
 
+BLUNDER_ENGINE_C_API int blunder_gameplay_input_get_move(float* out_x,
+                                                         float* out_y);
+BLUNDER_ENGINE_C_API int blunder_gameplay_input_was_jump_pressed(
+    int* out_pressed);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
-// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v2 entry points.
+// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v3 entry points.
 // Hosts register this into ScriptHost so managed code shares one ObjectDB image.
 typedef struct BlunderNativeAbi {
   int (*engine_abi_version)(void);
@@ -112,6 +117,8 @@ typedef struct BlunderNativeAbi {
   int (*lifecycle_set_tick_hook)(const char* class_name, BlunderTickHook hook);
   int (*lifecycle_set_ready_hook)(const char* class_name, BlunderReadyHook hook);
   int (*lifecycle_clear_hooks)(void);
+  int (*gameplay_input_get_move)(float* out_x, float* out_y);
+  int (*gameplay_input_was_jump_pressed)(int* out_pressed);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).

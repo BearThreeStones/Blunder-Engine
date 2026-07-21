@@ -1,4 +1,5 @@
 #include "runtime/core/reflection/engine_c_abi.h"
+#include "runtime/platform/input/gameplay_input.h"
 
 #include <cstdio>
 #include <filesystem>
@@ -59,6 +60,10 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.lifecycle_set_ready_hook != nullptr);
   expect_true((std::string(label) + ": lifecycle_clear_hooks").c_str(),
               abi.lifecycle_clear_hooks != nullptr);
+  expect_true((std::string(label) + ": gameplay_input_get_move").c_str(),
+              abi.gameplay_input_get_move != nullptr);
+  expect_true((std::string(label) + ": gameplay_input_was_jump_pressed").c_str(),
+              abi.gameplay_input_was_jump_pressed != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -78,6 +83,19 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
+  expect_true("abi version >= 3", BLUNDER_ENGINE_C_ABI_VERSION >= 3);
+
+  Blunder::gameplayInputState().reset();
+  float mx = 1.f;
+  float my = 1.f;
+  int jump = 1;
+  expect_true("cabi move ok",
+              blunder_gameplay_input_get_move(&mx, &my) == BLUNDER_ENGINE_OK);
+  expect_true("cabi move idle", mx == 0.f && my == 0.f);
+  expect_true("cabi jump ok",
+              blunder_gameplay_input_was_jump_pressed(&jump) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("cabi jump idle", jump == 0);
 
   const std::filesystem::path dll_path = sharedEngineCPath();
   expect_true("shared dll path defined", !dll_path.empty());
