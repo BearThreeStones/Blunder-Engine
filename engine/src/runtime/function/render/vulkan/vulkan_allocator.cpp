@@ -1,10 +1,21 @@
-#define VMA_IMPLEMENTATION
-#include <vk_mem_alloc.h>
-
-#include "runtime/function/render/vulkan/vulkan_allocator.h"
-
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
+#include "runtime/function/render/vulkan/vulkan_allocator.h"
+
+// Prefer logging leftover allocations over aborting the process. Player/editor
+// teardown can still leave transient VMA blocks; crashing on close blocks
+// Play session Stop. OS reclaims GPU memory on process exit.
+#ifndef VMA_ASSERT
+#define VMA_ASSERT(expr)                                                       \
+  do {                                                                         \
+    if (!(expr)) {                                                             \
+      LOG_ERROR("[VMA] assert failed: {}", #expr);                             \
+    }                                                                          \
+  } while (0)
+#endif
+
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 namespace Blunder {
 
