@@ -1,0 +1,81 @@
+[info] [FileSystem] executable dir: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/build/vs2026-debug/engine/src/player/Debug
+[info] [FileSystem] project root  : E:/Dev/Blunder-Engine/.worktrees/play-mode-ui
+[info] [FileSystem] assets root   : E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Assets
+[info] [FileSystem] resources root: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources
+[info] [FileSystem] shader root   : E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/engine/shaders
+[info] [DotNetHost] ScriptHost running
+[info] [DotNetHost] no game DLL under .blunder/scripts_bin (host only)
+[info] [AssetManager] initialized (assets: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Assets, resources: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources)
+[info] [AssetCompiler] cooked meshes=0 textures=0 skipped=2 failed=0
+[info] [AssetManager] loaded Scene assets/Scenes/pick_test.scene.asset (resolved: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Assets/Scenes/pick_test.scene.asset, entities=5, childScenes=0)
+[error] [AssetManager] openGltfImportDocument: unsupported format E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources/Models/PickTest/Cube.dae
+[error] [SceneSystem] failed to import mesh 'assets/Meshes/Cube.mesh.yaml' for entity 'BoxFront': Failed to open glTF document
+[error] [AssetManager] openGltfImportDocument: unsupported format E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources/Models/PickTest/Cube.dae
+[error] [SceneSystem] failed to import mesh 'assets/Meshes/Cube.mesh.yaml' for entity 'BoxMid': Failed to open glTF document
+[error] [AssetManager] openGltfImportDocument: unsupported format E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources/Models/PickTest/Cube.dae
+[error] [SceneSystem] failed to import mesh 'assets/Meshes/Cube.mesh.yaml' for entity 'BoxBack': Failed to open glTF document
+[info] [SceneSystem] loaded scene 'assets/Scenes/pick_test.scene.asset' (entities=5, child_refs=0)
+[info] [SceneSystem] active scene set to 'assets/Scenes/pick_test.scene.asset'
+[info] [RuntimeGlobalContext] Player entry scene 'assets/Scenes/pick_test.scene.asset' loaded (entities=5)
+[info] [RuntimeGlobalContext] Player host mode — skipping Slint editor shell
+[info] [SlangCompiler] initialized Slang shader compiler
+[info] [VulkanContext::initialize] creating Vulkan instance
+[info] [VulkanContext::initialize] setting up debug messenger
+[info] [VulkanContext::initialize] selecting physical device
+[info] [VulkanContext::initialize] creating logical device
+[info] [VulkanContext::initialize] Vulkan context initialized
+[info] [VulkanAllocator::initialize] creating VMA allocator
+[info] [VulkanSync::initialize] creating synchronization objects
+[info] [SlangCompiler] compiled 'engine/shaders/pbr.slang' entry 'vertexMain' -> 3252 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/pbr.slang' entry 'fragmentMain' -> 9832 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/pbr.slang' entry 'vertexMain' -> 3252 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/pbr.slang' entry 'fragmentMain' -> 9832 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/shadow_depth.slang' entry 'vertexMain' -> 1044 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/shadow_depth.slang' entry 'fragmentMain' -> 172 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/outline_prepass.slang' entry 'vertexMain' -> 1172 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/outline_prepass.slang' entry 'fragmentMain' -> 920 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/outline_resolve.slang' entry 'vertexMain' -> 812 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/outline_resolve.slang' entry 'fragmentMain' -> 6100 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/pick_prepass.slang' entry 'vertexMain' -> 1660 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/pick_prepass.slang' entry 'fragmentMain' -> 2860 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/pick_broad_phase.slang' entry 'main' -> 4436 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/grid.slang' entry 'vertexMain' -> 2784 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/grid.slang' entry 'fragmentMain' -> 8452 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/navigate_gizmo.slang' entry 'vertexMain' -> 11748 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/navigate_gizmo.slang' entry 'fragmentMain' -> 9836 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/transform_gizmo.slang' entry 'vertexMain' -> 41904 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/transform_gizmo.slang' entry 'fragmentMain' -> 8372 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/overlay_aa.slang' entry 'vertexMain' -> 952 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/overlay_aa.slang' entry 'fragmentMain' -> 10904 bytes SPIR-V
+[info] [RenderSystem] texture uploaded generated://render/smoke_checkerboard (64x64, 16384 bytes)
+[info] [SlangCompiler] compiled 'engine/shaders/ssao_generate.slang' entry 'vertexMain' -> 952 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/ssao_generate.slang' entry 'fragmentMain' -> 9212 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/ssao_apply.slang' entry 'vertexMain' -> 952 bytes SPIR-V
+[info] [SlangCompiler] compiled 'engine/shaders/ssao_apply.slang' entry 'fragmentMain' -> 2052 bytes SPIR-V
+[info] [RenderSystem] PBR pipelines ready (descriptor layout shared: opaque=0x28d2fd499a8, transparent=0x28d2fd499a8)
+[info] [InputSystem::initialize] SDL3 input system initialized
+[info] [BlunderEngine] Win32 modal resize message hook installed
+[info] engine start
+[info] [AssetManager] loaded Scene assets/Scenes/pick_test.scene.asset (resolved: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Assets/Scenes/pick_test.scene.asset, entities=5, childScenes=0)
+[warning] [EditorSceneEdit] reloading 'assets/Scenes/pick_test.scene.asset' — scene file has mesh descriptors but runtime instance has no mesh renderers
+[info] [SceneSystem] unloaded scene 'assets/Scenes/pick_test.scene.asset'
+[info] [AssetManager] loaded Scene assets/Scenes/pick_test.scene.asset (resolved: E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Assets/Scenes/pick_test.scene.asset, entities=5, childScenes=0)
+[error] [AssetManager] openGltfImportDocument: unsupported format E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources/Models/PickTest/Cube.dae
+[error] [SceneSystem] failed to import mesh 'assets/Meshes/Cube.mesh.yaml' for entity 'BoxFront': Failed to open glTF document
+[error] [AssetManager] openGltfImportDocument: unsupported format E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources/Models/PickTest/Cube.dae
+[error] [SceneSystem] failed to import mesh 'assets/Meshes/Cube.mesh.yaml' for entity 'BoxMid': Failed to open glTF document
+[error] [AssetManager] openGltfImportDocument: unsupported format E:/Dev/Blunder-Engine/.worktrees/play-mode-ui/Resources/Models/PickTest/Cube.dae
+[error] [SceneSystem] failed to import mesh 'assets/Meshes/Cube.mesh.yaml' for entity 'BoxBack': Failed to open glTF document
+[info] [SceneSystem] loaded scene 'assets/Scenes/pick_test.scene.asset' (entities=5, child_refs=0)
+[info] [SceneSystem] active scene set to 'assets/Scenes/pick_test.scene.asset'
+[info] [EditorSceneEdit] opened scene 'assets/Scenes/pick_test.scene.asset'
+[info] [BlunderEngine] active scene 'assets/Scenes/pick_test.scene.asset' (entities=5)
+[info] [BlunderEngine] Player smoke exit after 30 frames
+[info] engine shutdown
+[info] [VulkanSync::shutdown] destroying synchronization objects
+[info] [VulkanAllocator::shutdown] destroying VMA allocator
+[error] [VMA] assert failed: m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!"
+[info] [VulkanContext::shutdown] tearing down Vulkan context
+[info] [SlangCompiler] shutdown
+[info] [InputSystem::shutdown] SDL3 input system shut down
+player_exit=

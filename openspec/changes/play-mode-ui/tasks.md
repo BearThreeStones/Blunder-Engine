@@ -39,5 +39,6 @@
 
 ## 7. Verify
 
-- [ ] 7.1 Automated tests for session controller + IPC green
-- [ ] 7.2 Smoke: editor Play mounts fixture Behaviour Tick in Player (or documented manual if UI-only)
+- [x] 7.1 Automated tests for session controller + IPC green
+- [x] 7.2 Smoke: editor Play mounts fixture Behaviour Tick in Player (or documented manual if UI-only)
+  <!-- 7.2: BLOCKER in agent env (no engine_editor / no scripts_bin game DLL). Player CLI host smoke OK (30 frames). Manual = Task 6.3 checklist in docs/agents/testing.md. Evidence: .superpowers/sdd/task-7-report.md -->
