@@ -15,7 +15,7 @@ OpenSpec 7.1–7.2 marked `[x]` in `openspec/changes/play-mode-ui/tasks.md`.
 
 ## Commits
 
-1. `test(play): verify Play session and IPC` (this task)
+1. `8360270` — `test(play): verify Play session and IPC`
 
 ## 7.1 Evidence
 

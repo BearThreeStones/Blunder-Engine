@@ -17,5 +17,5 @@ Task 6: complete (ee86365..c4b33e5) — Edit Mode host policy + docs; OpenSpec 6
 
 Task 6: complete (ee86365..c4b33e5, docs Approved pending Task 7 smoke)
 
-Task 7: complete — OpenSpec 7.1 green (5 play_* / player_launch tests); 7.2 BLOCKER → Task 6.3 manual checklist (no editor binary / no game DLL)
+Task 7: complete (c4b33e5..8360270) — OpenSpec 7.1 green (5 play_* / player_launch tests); 7.2 BLOCKER → Task 6.3 manual checklist (no editor binary / no game DLL)
 
