@@ -28,4 +28,6 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<byte*, void*, int> lifecycle_set_tick_hook;
     public delegate* unmanaged[Cdecl]<byte*, void*, int> lifecycle_set_ready_hook;
     public delegate* unmanaged[Cdecl]<int> lifecycle_clear_hooks;
+    public delegate* unmanaged[Cdecl]<float*, float*, int> gameplay_input_get_move;
+    public delegate* unmanaged[Cdecl]<int*, int> gameplay_input_was_jump_pressed;
 }

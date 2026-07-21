@@ -56,7 +56,9 @@ internal static unsafe class Native
         abi.object_get_vec3_property != null &&
         abi.lifecycle_set_tick_hook != null &&
         abi.lifecycle_set_ready_hook != null &&
-        abi.lifecycle_clear_hooks != null;
+        abi.lifecycle_clear_hooks != null &&
+        abi.gameplay_input_get_move != null &&
+        abi.gameplay_input_was_jump_pressed != null;
 
     static void EnsureRegistered()
     {
@@ -230,6 +232,18 @@ internal static unsafe class Native
     {
         EnsureRegistered();
         return s_abi.lifecycle_clear_hooks();
+    }
+
+    public static int blunder_gameplay_input_get_move(float* outX, float* outY)
+    {
+        EnsureRegistered();
+        return s_abi.gameplay_input_get_move(outX, outY);
+    }
+
+    public static int blunder_gameplay_input_was_jump_pressed(int* outPressed)
+    {
+        EnsureRegistered();
+        return s_abi.gameplay_input_was_jump_pressed(outPressed);
     }
 
     static byte[] ToUtf8(string value)

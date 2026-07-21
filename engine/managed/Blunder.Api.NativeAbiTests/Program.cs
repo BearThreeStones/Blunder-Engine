@@ -15,8 +15,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 17 * sizeof(nint),
-            "BlunderNativeAbi layout size is 17 pointers");
+            sizeof(BlunderNativeAbi) == 19 * sizeof(nint),
+            "BlunderNativeAbi layout size is 19 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -57,6 +57,8 @@ static unsafe class Program
         abi.lifecycle_set_tick_hook = &StubSetTickHook;
         abi.lifecycle_set_ready_hook = &StubSetReadyHook;
         abi.lifecycle_clear_hooks = &StubClearHooks;
+        abi.gameplay_input_get_move = &StubGetMove;
+        abi.gameplay_input_was_jump_pressed = &StubWasJump;
 
         Native.Register(in abi);
 
@@ -66,6 +68,10 @@ static unsafe class Program
         Expect(
             Native.blunder_object_set_bool_property(1, "Object", "flag", 1) == Native.Ok,
             "set_bool after register");
+
+        Vec2 move = Input.GetMove();
+        Expect(move.X == 0.3f && move.Y == -0.4f, "Input.GetMove via stub");
+        Expect(Input.WasJumpPressed(), "Input.WasJumpPressed via stub");
 
         BlunderNativeAbi incomplete = default;
         incomplete.engine_abi_version = &StubAbiVersion;
@@ -194,4 +200,19 @@ static unsafe class Program
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     static int StubClearHooks() => Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubGetMove(float* x, float* y)
+    {
+        *x = 0.3f;
+        *y = -0.4f;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubWasJump(int* pressed)
+    {
+        *pressed = 1;
+        return Native.Ok;
+    }
 }
