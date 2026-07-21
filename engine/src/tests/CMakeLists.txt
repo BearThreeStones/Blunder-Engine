@@ -214,6 +214,17 @@ add_dependencies(native_abi_test blunder_engine_c)
 add_test(NAME native_abi_test
          COMMAND native_abi_test)
 
+add_executable(gameplay_input_test
+    "gameplay_input_test.cpp"
+    "${CMAKE_SOURCE_DIR}/engine/src/runtime/platform/input/gameplay_input.cpp"
+)
+
+target_include_directories(gameplay_input_test PRIVATE
+    "${CMAKE_SOURCE_DIR}/engine/src"
+)
+
+add_test(NAME gameplay_input_test COMMAND gameplay_input_test)
+
 # DotNetHost e2e: fixture game + managed Tick via SHARED blunder_engine_c
 # (Approach A ??one ObjectDB: create/lifecycle only through the ScriptHost-
 # staged C-ABI DLL, loaded via LoadLibrary ??do not link the import lib or a

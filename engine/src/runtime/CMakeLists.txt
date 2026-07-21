@@ -5,6 +5,8 @@ add_library(engine_runtime STATIC
     engine.h
     "platform/input/input_system.cpp"
     "platform/input/input_system.h"
+    "platform/input/gameplay_input.cpp"
+    "platform/input/gameplay_input.h"
     "function/global/global_context.cpp"
     "function/global/global_context.h"
     "function/global/engine_host_mode.h"
