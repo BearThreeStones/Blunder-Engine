@@ -2,9 +2,7 @@
 
 ## Purpose
 Object / ObjectId identity, Scene Tree ownership, optional Entity binding with lazy materialization, projected property surface, and multi-Behaviour Script Peers (ADR 0011).
-
 ## Requirements
-
 ### Requirement: Object has a stable ObjectId
 Every Object SHALL have an ObjectId that is the public identity for serialization intent, C-ABI, and Script Peer rebinding. ObjectId SHALL be distinct from ECS EntityId.
 
@@ -55,3 +53,11 @@ An Object SHALL host zero or more Behaviours, each with at most one Script Peer 
 #### Scenario: Multiple Behaviours allowed
 - **WHEN** two Behaviours are added to the same Object
 - **THEN** both remain addressable by distinct BehaviourIds concurrently
+
+### Requirement: Behaviour-bearing scene entities bind an Object
+An authored scene entity that declares one or more Behaviours SHALL materialize or reuse a bound Object for that entity’s EntityId so Behaviours have a ClassDB/Object serialization entry. Entities with an empty Behaviour list NEED NOT create an Object solely for scripting.
+
+#### Scenario: Object bound when behaviours present
+- **WHEN** a scene entity with a non-empty Behaviour list is instantiated
+- **THEN** an Object exists with `getEntityId()` equal to that entity’s EntityId and hosts the declared Behaviour slots
+

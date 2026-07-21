@@ -2,9 +2,7 @@
 
 ## Purpose
 MVP Editor Commands for scene editing: transform commits, spawn, soft-delete with stable EntityId, and save-time tombstone filtering.
-
 ## Requirements
-
 ### Requirement: Transform commit is one Editor Command
 Confirming a gizmo drag, confirming a Translate Modal session, or committing an Inspector TRS field SHALL push a single transform Editor Command that can restore the pre-commit local TRS on undo and the post-commit TRS on redo. Intermediate pointer moves or scrub values during the interaction SHALL NOT each push a Command.
 
@@ -43,3 +41,11 @@ MVP Editor Commands SHALL address entities by EntityId within the active SceneIn
 #### Scenario: Transform command uses EntityId
 - **WHEN** a transform Command is recorded
 - **THEN** it identifies the affected entity by EntityId
+
+### Requirement: Soft-deleted entities omit Behaviours on save
+Save and export SHALL omit soft-deleted entities entirely, including any Behaviour declarations they had while tombstoned in the live session.
+
+#### Scenario: Tombstone drops behaviours from disk
+- **WHEN** a user soft-deletes an entity that had Behaviours and saves
+- **THEN** the written scene asset contains neither that entity nor its Behaviours
+

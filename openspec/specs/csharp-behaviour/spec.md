@@ -2,9 +2,7 @@
 
 ## Purpose
 Unity-style ordered Behaviour list on Object, per-Behaviour Script Peers, lifecycle dispatch, and Blunder.Api Behaviour programming surface.
-
 ## Requirements
-
 ### Requirement: Ordered Behaviour list on Object
 An Object SHALL host an ordered list of zero or more Behaviours. Each Behaviour SHALL have a stable BehaviourId distinct from ObjectId and EntityId, a type name string, and at most one Script Peer handle. Duplicate type names on the same Object SHALL be allowed.
 
@@ -40,3 +38,11 @@ When CoreCLR is hosted inside the editor/runtime process, Behaviours attached th
 #### Scenario: Scene Object managed Tick
 - **WHEN** a valid editor/runtime ObjectId receives an attached managed Behaviour and the host is running
 - **THEN** the next native invokeTick on that Object executes the managed Behaviour Tick method
+
+### Requirement: BehaviourId survives scene round-trip
+BehaviourId values written into a scene asset SHALL be restored onto the host Object on load so the same ids remain addressable after deserialize (with the Object’s next-id counter advanced past restored ids).
+
+#### Scenario: Ids stable after load
+- **WHEN** Behaviours with ids 1 and 3 are saved and the scene is reloaded
+- **THEN** the Object exposes BehaviourIds 1 and 3 (not renumbered to 1 and 2 solely by index)
+

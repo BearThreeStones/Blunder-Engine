@@ -2,9 +2,7 @@
 
 ## Purpose
 In-process CoreCLR script host: load Blunder.ScriptHost and one Project game assembly, register managed Ready/Tick hooks through the C-ABI.
-
 ## Requirements
-
 ### Requirement: In-process CoreCLR script host
 The engine SHALL embed CoreCLR using `nethost` / `hostfxr` and load a managed Blunder.ScriptHost assembly without requiring an out-of-process `dotnet` helper as the shipping model.
 
@@ -44,3 +42,11 @@ DotNetHost SHALL register the process-appropriate C-ABI function-pointer table i
 #### Scenario: Test host uses SHARED image table
 - **WHEN** `dotnet_host_test` LoadLibrary’s SHARED `blunder_engine_c` for Approach A
 - **THEN** it fills the registration table from that module’s exports so managed calls and native invoke share one ObjectDB
+
+### Requirement: Scene load can mount Behaviours through ScriptHost
+When DotNetHost is running and a Project game assembly is loaded, scene instantiate SHALL request ScriptHost attachment for each declared Behaviour type on bound Objects so managed peers exist before the first frame Tick that should run them.
+
+#### Scenario: Attach during load
+- **WHEN** scene load finishes with host running and a declared type exists in the game assembly
+- **THEN** AttachBehaviour (or equivalent) has been invoked for that ObjectId and type and the peer is bound
+
