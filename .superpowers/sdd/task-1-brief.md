@@ -1,37 +1,31 @@
-﻿# Task 1.1 — Update CONTENT_LAYOUT.md
+﻿### Task 1: Player executable skeleton (OpenSpec 1.1–1.4)
 
-Update `CONTENT_LAYOUT.md` for three-tier roles, GUID Asset References, Scene `guid`, Pull/Fast Path, Source Export dual-write, and watch/Reimport.
+**Plan:** `docs/superpowers/plans/2026-07-21-play-mode-ui.md`  
+**OpenSpec tasks:** 1.1–1.4  
+**Workspace:** `E:/Dev/Blunder-Engine/.worktrees/play-mode-ui`
 
-## Required content (from grilled model / specs)
+**Requirements (verbatim from plan):**
 
-Three-tier:
-- Source Asset → `Resources/Source/`
-- Intermediate data → `Resources/` (non-Source); Intermediate descriptors → `Assets/`
-- Final → `.blunder/cooked/{guid}.*bin`
+Add `engine_player` CMake target (thin main, link `engine_runtime` / needed deps; stage beside `engine_editor`).
 
-Identity:
-- Asset = GUID; Asset Descriptor YAML under Assets
-- Asset Reference = GUID (scenes store mesh by GUID; path migrates)
-- Scene `.scene.asset` includes `guid`, registered
+Parse CLI: `--project-root`, `--scene`, `--play-ipc` (endpoint).
 
-Pull:
-- On-demand Cook; Fast Path loads Intermediate when Final missing/stale
-- Startup cookIfStale is optional warm-up only
+Boot Player without editor Slint shell: window + engine loop + FileSystem project root.
 
-Import:
-- glTF/images = Intermediate register (do not call them Source)
-- Source Export v1: FBX/OBJ → glTF via Assimp; dual-write archive under Source root
-- Reimport preserves GUID; Source change auto-Reimport
+Load Play entry scene asset and confirm manual run from command line.
 
-Watch:
-- Assets + Intermediate Resources; Source root triggers auto-Reimport
+**TDD (mandatory):**
+1. RED: CLI parse unit test for `--project-root` / `--scene` / `--play-ipc` fails (missing feature).
+2. GREEN: parse helpers + `engine_player` target; boot path loads project + scene (minimal).
+3. Commit: `feat(player): add engine_player skeleton and CLI`
 
-Link ADR 0012 and CONTEXT.md Asset pipeline section where natural (full cross-link is task 1.2 — light mentions OK here).
+Mark OpenSpec checkboxes 1.1–1.4 in `openspec/changes/play-mode-ui/tasks.md`.
 
-## Constraints
-- Docs only for this task (no engine code)
-- Keep existing useful detail (thumbnails, coordinate note) unless it contradicts the new model
-- Workdir: e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull
+**Patterns to follow:**
+- Editor: `engine/src/editor/` thin main + CMake linking `engine_runtime`
+- Launch parse: `runtime/project/editor_launch.h` style (testable without Vulkan if possible)
+- Prefer extractable `PlayerLaunch` / CLI parse in runtime or player lib testable by `player_launch_test`
 
-## Done when
-CONTENT_LAYOUT.md reflects the model above; committed on feat/asset-pipeline-pull.
+**Out of scope for Task 1:** DotNetHost, Pause, IPC server, editor UI.
+
+**Global constraints:** TDD; ADR 0014 separate Player; no unrelated WIP; model commits scoped.
