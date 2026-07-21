@@ -86,8 +86,9 @@ class RuntimeGlobalContext {
   eastl::unique_ptr<IViewportSink> m_viewport_sink;
   eastl::unique_ptr<UIViewportBridge> m_viewport_bridge;
   eastl::shared_ptr<LayerStack> m_layer_stack;
-  /// In-process CoreCLR host. Owned here; started lazily from startSystems when
-  /// gated (see docs/agents/testing.md). Null or !isRunning() is normal.
+  /// In-process CoreCLR host. Player always starts it for the Play session;
+  /// Edit Mode starts only with BLUNDER_DOTNET_SCRIPTS=1 (debug/tests — not product
+  /// Play). Null or !isRunning() is normal in the editor. See docs/agents/testing.md.
   eastl::unique_ptr<DotNetHost> m_dotnet_host;
   /// Editor Play session (spawn engine_player + IPC). Null in Player host mode.
   eastl::unique_ptr<PlaySessionController> m_play_session;

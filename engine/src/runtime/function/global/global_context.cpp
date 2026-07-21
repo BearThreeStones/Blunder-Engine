@@ -77,8 +77,10 @@ std::filesystem::path findProjectGameAssembly(
 }
 
 void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
-  // Editor: opt in with BLUNDER_DOTNET_SCRIPTS=1 until Play UI owns the host.
-  // Player: always start for the Play session (OpenSpec play-player).
+  // Product Play runs DotNetHost in engine_player (force_start). Edit Mode does
+  // not auto-start a host for authorship — BLUNDER_DOTNET_SCRIPTS=1 is debug /
+  // Approach A / editor_dotnet_host_test opt-in only (see docs/agents/testing.md).
+  // Avoid setting that env while using editor Play (would start a second host).
   if (!force_start && !envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
     return;
   }
@@ -105,8 +107,8 @@ void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
   LOG_INFO("[DotNetHost] ScriptHost running");
 
   // Single ObjectDB: ScriptHost uses the process-registered C-ABI table
-  // (fill_from_process above). Host start remains gated by BLUNDER_DOTNET_SCRIPTS
-  // until Play UI exists; load project Scripts when present.
+  // (fill_from_process above). Load project Scripts when present under
+  // .blunder/scripts_bin (non-fatal if missing).
   const std::filesystem::path game_dll =
       findProjectGameAssembly(ctx.m_file_system->getProjectRoot());
   if (game_dll.empty()) {
@@ -160,8 +162,9 @@ void RuntimeGlobalContext::startSystems(
   m_file_system->initialize(fs_init);
 
   // CoreCLR host: after logger + FileSystem only. Failure is non-fatal and
-  // must not wait on Vulkan/Slint (see docs/agents/testing.md gates).
+  // must not wait on Vulkan/Slint (see docs/agents/testing.md).
   // Player always starts the host so scene instantiate can mount Behaviours.
+  // Editor starts only with BLUNDER_DOTNET_SCRIPTS (debug); product Play uses Player.
   tryStartDotNetHost(*this, player_host);
 
   m_asset_registry = eastl::make_shared<AssetRegistry>();

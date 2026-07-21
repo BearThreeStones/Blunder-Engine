@@ -13,8 +13,9 @@ cmake --build build/vs2026-release --config Release
 cmake --build --preset vs2026-debug
 cmake --build --preset vs2026-release
 
-# Build specific target
+# Build specific targets
 cmake --build build/vs2026-debug --config Debug --target engine_editor
+cmake --build build/vs2026-debug --config Debug --target engine_player
 
 # After changing engine/3rdparty/slint (fork branch), rebuild Slint before the editor:
 cmake --build build/vs2026-debug --config Debug --target slint_cpp
@@ -29,6 +30,25 @@ start build/vs2026-debug/BlunderEngine.sln
 # Default scene is `assets/Scenes/pick_test.scene.asset`; override:
 # set BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset
 ```
+
+## Play Mode (`engine_player`)
+
+Product Play Mode is a **separate Player process** (ADR 0014), not an in-editor DotNetHost. The editor’s Play toolbar spawns sibling `engine_player` with `--project-root`, `--scene`, and `--play-ipc`. Edit Mode does not auto-start CoreCLR; `BLUNDER_DOTNET_SCRIPTS=1` is debug/test only (see [testing.md](testing.md)).
+
+```powershell
+# Build Player (POST_BUILD stages ScriptHost / Api / nethost beside the exe)
+cmake --build build/vs2026-debug --config Debug --target engine_player
+
+# Manual run (no editor):
+.\build\vs2026-debug\engine\src\player\Debug\engine_player.exe `
+  --project-root "<ProjectRoot>" `
+  --scene "assets/Scenes/<entry>.scene.asset"
+
+# From the editor: open a Project, use Play / Pause / Stop (requires engine_player
+# next to the editor staging layout the session controller resolves).
+```
+
+Play session automated coverage: `play_ipc_test`, `play_session_controller_test`, `play_preflight_test`, `play_pause_tick_gate_test` (see [testing.md](testing.md)).
 
 ## CPU requirements (Windows)
 

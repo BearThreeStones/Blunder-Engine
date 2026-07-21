@@ -33,9 +33,9 @@
 
 ## 6. Edit Mode host policy + docs
 
-- [ ] 6.1 Stop product auto-start of DotNetHost from editor `startSystems` for Play; keep `BLUNDER_DOTNET_SCRIPTS` as debug opt-in only
-- [ ] 6.2 Update `docs/agents/testing.md` and build docs for `engine_player` + Play session
-- [ ] 6.3 Manual checklist: Play → Pause → Resume → Stop; close window; dirty prompt; Scripts dirty build
+- [x] 6.1 Stop product auto-start of DotNetHost from editor `startSystems` for Play; keep `BLUNDER_DOTNET_SCRIPTS` as debug opt-in only
+- [x] 6.2 Update `docs/agents/testing.md` and build docs for `engine_player` + Play session
+- [x] 6.3 Manual checklist: Play → Pause → Resume → Stop; close window; dirty prompt; Scripts dirty build
 
 ## 7. Verify
 
