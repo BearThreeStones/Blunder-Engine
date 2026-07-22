@@ -149,6 +149,71 @@ target_precompile_headers(behaviour_list_test
 add_test(NAME behaviour_list_test
          COMMAND behaviour_list_test)
 
+add_executable(object_behaviour_bag_test
+    "object_behaviour_bag_test.cpp"
+)
+
+target_link_libraries(object_behaviour_bag_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(object_behaviour_bag_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(object_behaviour_bag_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME object_behaviour_bag_test
+         COMMAND object_behaviour_bag_test)
+
+add_executable(behaviour_type_catalog_test
+    "behaviour_type_catalog_test.cpp"
+)
+
+target_link_libraries(behaviour_type_catalog_test
+    PRIVATE engine_runtime
+)
+
+target_compile_definitions(behaviour_type_catalog_test
+    PRIVATE "BEHAVIOUR_CATALOG_FIXTURE=R\"(${CMAKE_CURRENT_SOURCE_DIR}/fixtures/behaviour_catalog_sample.json)\""
+)
+
+if(MSVC)
+    target_compile_options(behaviour_type_catalog_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(behaviour_type_catalog_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME behaviour_type_catalog_test
+         COMMAND behaviour_type_catalog_test)
+
+add_executable(inspector_behaviour_commands_test
+    "inspector_behaviour_commands_test.cpp"
+)
+
+target_link_libraries(inspector_behaviour_commands_test
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(inspector_behaviour_commands_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(inspector_behaviour_commands_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(inspector_behaviour_commands_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME inspector_behaviour_commands_test
+         COMMAND inspector_behaviour_commands_test)
+
 add_executable(ptrcall_lifecycle_test
     "ptrcall_lifecycle_test.cpp"
 )

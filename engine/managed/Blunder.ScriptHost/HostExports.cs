@@ -279,6 +279,43 @@ public static class HostExports
         ReadGameStaticUInt("DotnetHostGame.MessageProbeBehaviour", "LastId");
 
     /// <summary>
+    /// Test seam: 1 when Ready captured object-slot bag values that override
+    /// scene declaration on mount (see scene_behaviour_mount_test).
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static int GetProbeObjectBagWinsOk()
+    {
+        try
+        {
+            if (s_gameAssembly == null)
+            {
+                return -1;
+            }
+
+            Type? type = s_gameAssembly.GetType(
+                "DotnetHostGame.ProbeBehaviour", throwOnError: false);
+            if (type == null)
+            {
+                return -1;
+            }
+
+            bool flag = ReadStaticBool(type, "LastEnabledFlag");
+            float speed = ReadStaticFloat(type, "LastSpeed");
+            string label = ReadStaticString(type, "LastLabel");
+            if (!flag && Math.Abs(speed - 9.0f) < 0.001f && label == "bag-wins")
+            {
+                return 1;
+            }
+
+            return 0;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>
     /// Test seam: 1 when Ready captured EnabledFlag/Speed/Label from the
     /// property bag (see ProbeBehaviour fixture).
     /// </summary>

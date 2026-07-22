@@ -121,6 +121,8 @@ add_library(engine_runtime STATIC
     "project/play_preflight.cpp"
     "function/script/scripts_builder.h"
     "function/script/scripts_builder.cpp"
+    "function/script/behaviour_type_catalog.h"
+    "function/script/behaviour_type_catalog.cpp"
     "resource/asset/asset.h"
     "resource/asset/guid.h"
     "resource/asset/guid.cpp"
@@ -504,4 +506,43 @@ else()
     message(WARNING
         "dotnet SDK not found on PATH; skipping Blunder.ScriptHost build. "
         "Install .NET 10 SDK (and set DOTNET_ROOT if needed) for CoreCLR hosting.")
+endif()
+
+# ---------------------------------------------------------------------------
+# Blunder.ScriptsCatalog — post-build Behaviour type metadata scanner.
+# Stages beside bin/<Config>/ for ScriptsBuilder invocation.
+# ---------------------------------------------------------------------------
+set(BLUNDER_SCRIPTS_CATALOG_CSPROJ
+    "${CMAKE_SOURCE_DIR}/engine/managed/Blunder.ScriptsCatalog/Blunder.ScriptsCatalog.csproj")
+set(BLUNDER_SCRIPTS_CATALOG_OUT_DIR
+    "${CMAKE_SOURCE_DIR}/engine/managed/Blunder.ScriptsCatalog/bin/$<CONFIG>/net10.0")
+set(BLUNDER_SCRIPTS_CATALOG_STAGE_DIR
+    "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
+if(BLUNDER_DOTNET_EXE)
+    add_custom_target(blunder_scripts_catalog ALL
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_SCRIPTS_CATALOG_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "${BLUNDER_SCRIPTS_CATALOG_STAGE_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_SCRIPTS_CATALOG_OUT_DIR}/Blunder.ScriptsCatalog.dll"
+                "${BLUNDER_SCRIPTS_CATALOG_STAGE_DIR}/Blunder.ScriptsCatalog.dll"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_SCRIPTS_CATALOG_OUT_DIR}/Blunder.ScriptsCatalog.runtimeconfig.json"
+                "${BLUNDER_SCRIPTS_CATALOG_STAGE_DIR}/Blunder.ScriptsCatalog.runtimeconfig.json"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_API_DLL_SRC}"
+                "${BLUNDER_SCRIPTS_CATALOG_STAGE_DIR}/Blunder.Api.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building Blunder.ScriptsCatalog and staging beside bin/<Config>/"
+        VERBATIM
+        SOURCES "${BLUNDER_SCRIPTS_CATALOG_CSPROJ}"
+    )
+    if(TARGET blunder_api)
+        add_dependencies(blunder_scripts_catalog blunder_api)
+    endif()
+else()
+    message(WARNING
+        "dotnet SDK not found on PATH; skipping Blunder.ScriptsCatalog build.")
 endif()

@@ -1,10 +1,15 @@
 #pragma once
 
+#include "EASTL/string.h"
 #include "EASTL/unique_ptr.h"
+#include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/behaviour_id.h"
+#include "runtime/core/reflection/variant.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/scene.h"
 
 namespace Blunder {
 
@@ -23,6 +28,27 @@ eastl::unique_ptr<IEditorCommand> makeSoftDeleteEntityCommand(
 
 eastl::unique_ptr<IEditorCommand> makeSpawnEntityCommand(
     SceneInstance* scene, EntityId entity_id,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeAddBehaviourCommand(
+    SceneInstance* scene, EntityId entity_id, const eastl::string& clr_type,
+    BehaviourId created_id, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeRemoveBehaviourCommand(
+    SceneInstance* scene, EntityId entity_id, BehaviourId behaviour_id,
+    size_t index_at_remove, const eastl::string& type_name,
+    eastl::vector<SceneBehaviourProperty> properties,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeReorderBehavioursCommand(
+    SceneInstance* scene, EntityId entity_id, size_t from_index,
+    size_t to_index, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetBehaviourPropertyCommand(
+    SceneInstance* scene, EntityId entity_id, BehaviourId behaviour_id,
+    const eastl::string& key, Variant before_value, Variant after_value,
     SelectionSnapshot selection_before, SelectionSnapshot selection_after);
 
 }  // namespace Blunder

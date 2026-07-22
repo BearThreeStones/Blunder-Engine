@@ -14,6 +14,8 @@
 
 namespace Blunder {
 
+class Object;
+
 /// Runtime container for entities spawned from a Scene asset (Stride SceneInstance).
 class SceneInstance final {
  public:
@@ -89,6 +91,9 @@ class SceneInstance final {
   void setWorldBounds(const AABB& bounds);
 
   void tick(float delta_time);
+
+  Object* findBoundObject(EntityId entity_id) const;
+  Object* ensureBoundObject(EntityId entity_id);
 
  private:
   EntityId indexToId(size_t index) const;

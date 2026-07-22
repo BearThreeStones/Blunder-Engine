@@ -1,5 +1,5 @@
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
-import { InspectorPanel } from "inspector_panel.slint";
+import { InspectorPanel, BehaviourRow } from "inspector_panel.slint";
 import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { DockChromeBar, DockChromeMetrics, DockTab } from "docking_panel.slint";
@@ -42,6 +42,9 @@ export component FloatingPanelWindow inherits Window {
     in-out property <bool> inspector-scale-link-enabled: true;
     in property <bool> inspector-multi-edit-visible: false;
     in-out property <bool> inspector-multi-edit-absolute: true;
+    in property <[BehaviourRow]> inspector-behaviours: [];
+    in property <[string]> inspector-behaviour-type-choices: [];
+    in-out property <bool> inspector-behaviours-expanded: true;
     in-out property <float> light-dir-x: 0.45;
     in-out property <float> light-dir-y: 0.7;
     in-out property <float> light-dir-z: 0.55;
@@ -97,6 +100,10 @@ export component FloatingPanelWindow inherits Window {
     callback inspector-rotation-mode-changed(bool);
     callback inspector-scale-link-toggled(bool);
     callback inspector-multi-edit-mode-changed(bool);
+    callback inspector-add-behaviour(string);
+    callback inspector-remove-behaviour(int);
+    callback inspector-reorder-behaviour(int, int);
+    callback inspector-commit-behaviour-prop(int, string, string, float, bool);
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
@@ -230,6 +237,15 @@ export component FloatingPanelWindow inherits Window {
                 rotation-mode-changed(euler) => { root.inspector-rotation-mode-changed(euler); }
                 scale-link-toggled(linked) => { root.inspector-scale-link-toggled(linked); }
                 multi-edit-mode-changed(absolute) => { root.inspector-multi-edit-mode-changed(absolute); }
+                behaviours: root.inspector-behaviours;
+                behaviour-type-choices: root.inspector-behaviour-type-choices;
+                behaviours-expanded <=> root.inspector-behaviours-expanded;
+                add-behaviour(type) => { root.inspector-add-behaviour(type); }
+                remove-behaviour(id) => { root.inspector-remove-behaviour(id); }
+                reorder-behaviour(from, to) => { root.inspector-reorder-behaviour(from, to); }
+                commit-behaviour-prop(id, key, text, number, flag) => {
+                    root.inspector-commit-behaviour-prop(id, key, text, number, flag);
+                }
             }
 
             if root.panel-kind == 4 : FilesystemHistoryHost {

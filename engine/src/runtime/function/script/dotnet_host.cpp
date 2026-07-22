@@ -409,6 +409,7 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
   m_get_probe_property_ok = nullptr;
   m_get_message_probe_count = nullptr;
   m_get_message_probe_last_id = nullptr;
+  m_get_probe_object_bag_wins_ok = nullptr;
   if (!m_running || m_load_assembly_and_get_fn == nullptr) {
     out_error = "DotNetHost is not running";
     return false;
@@ -431,6 +432,7 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
   const char_t* property_ok_name = L"GetProbePropertyOk";
   const char_t* message_count_name = L"GetMessageProbeCount";
   const char_t* message_last_id_name = L"GetMessageProbeLastId";
+  const char_t* object_bag_wins_name = L"GetProbeObjectBagWinsOk";
 #else
   const char_t* type_name = "Blunder.ScriptHost.HostExports, Blunder.ScriptHost";
   const char_t* tick_name = "GetProbeTickCount";
@@ -438,6 +440,7 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
   const char_t* property_ok_name = "GetProbePropertyOk";
   const char_t* message_count_name = "GetMessageProbeCount";
   const char_t* message_last_id_name = "GetMessageProbeLastId";
+  const char_t* object_bag_wins_name = "GetProbeObjectBagWinsOk";
 #endif
 
   void* fn = nullptr;
@@ -489,6 +492,16 @@ bool DotNetHost::resolveProbeTickCount(const std::filesystem::path& script_host_
     return false;
   }
   m_get_message_probe_last_id = reinterpret_cast<GetProbeTickCountFn>(fn);
+
+  fn = nullptr;
+  rc = load_and_get(dll_path.c_str(), type_name, object_bag_wins_name,
+                    UNMANAGEDCALLERSONLY_METHOD, nullptr, &fn);
+  if (rc != 0 || fn == nullptr) {
+    out_error = "Failed to resolve HostExports.GetProbeObjectBagWinsOk code=";
+    out_error += intToEastl(rc);
+    return false;
+  }
+  m_get_probe_object_bag_wins_ok = reinterpret_cast<GetProbeTickCountFn>(fn);
   return true;
 }
 
@@ -527,6 +540,13 @@ int DotNetHost::getMessageProbeLastId() const {
   return m_get_message_probe_last_id();
 }
 
+int DotNetHost::getProbeObjectBagWinsOk() const {
+  if (m_get_probe_object_bag_wins_ok == nullptr) {
+    return -1;
+  }
+  return m_get_probe_object_bag_wins_ok();
+}
+
 void DotNetHost::shutdown() {
   if (!m_running && m_host_context == nullptr && m_hostfxr_lib == nullptr) {
     return;
@@ -547,6 +567,7 @@ void DotNetHost::shutdown() {
   m_get_probe_property_ok = nullptr;
   m_get_message_probe_count = nullptr;
   m_get_message_probe_last_id = nullptr;
+  m_get_probe_object_bag_wins_ok = nullptr;
   m_load_assembly_and_get_fn = nullptr;
   m_game_assembly_loaded = false;
   m_running = false;
@@ -581,6 +602,7 @@ void DotNetHost::closeHandles() {
   m_get_probe_property_ok = nullptr;
   m_get_message_probe_count = nullptr;
   m_get_message_probe_last_id = nullptr;
+  m_get_probe_object_bag_wins_ok = nullptr;
   m_game_assembly_loaded = false;
   m_running = false;
 }
@@ -657,6 +679,8 @@ int DotNetHost::getMessageProbeCount() const { return -1; }
 
 int DotNetHost::getMessageProbeLastId() const { return -1; }
 
+int DotNetHost::getProbeObjectBagWinsOk() const { return -1; }
+
 void DotNetHost::shutdown() { closeHandles(); }
 
 void DotNetHost::closeHandles() {
@@ -672,6 +696,7 @@ void DotNetHost::closeHandles() {
   m_get_probe_property_ok = nullptr;
   m_get_message_probe_count = nullptr;
   m_get_message_probe_last_id = nullptr;
+  m_get_probe_object_bag_wins_ok = nullptr;
   m_game_assembly_loaded = false;
   m_running = false;
 }

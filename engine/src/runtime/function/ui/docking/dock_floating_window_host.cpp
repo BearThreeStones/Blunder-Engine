@@ -207,6 +207,35 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_scale_link_enabled(snapshot.inspector_scale_link_enabled);
       ui.set_inspector_multi_edit_visible(snapshot.inspector_multi_edit_visible);
       ui.set_inspector_multi_edit_absolute(snapshot.inspector_multi_edit_absolute);
+      {
+        auto behaviour_model = std::make_shared<slint::VectorModel<BehaviourRow>>();
+        for (const NativeFloatBehaviourRow& row : snapshot.inspector_behaviours) {
+          BehaviourRow slint_row{};
+          slint_row.behaviour_id = row.behaviour_id;
+          slint_row.type_name = toSharedString(row.type_name);
+          slint_row.missing = row.missing;
+          auto prop_model = std::make_shared<slint::VectorModel<BehaviourPropRow>>();
+          for (const NativeFloatBehaviourPropRow& prop : row.props) {
+            BehaviourPropRow slint_prop{};
+            slint_prop.key = toSharedString(prop.key);
+            slint_prop.kind = toSharedString(prop.kind);
+            slint_prop.bool_value = prop.bool_value;
+            slint_prop.number_value = prop.number_value;
+            slint_prop.string_value = toSharedString(prop.string_value);
+            slint_prop.missing_type = prop.missing_type;
+            prop_model->push_back(slint_prop);
+          }
+          slint_row.props = prop_model;
+          behaviour_model->push_back(slint_row);
+        }
+        ui.set_inspector_behaviours(behaviour_model);
+        auto choices_model = std::make_shared<slint::VectorModel<slint::SharedString>>();
+        for (const eastl::string& choice : snapshot.inspector_behaviour_type_choices) {
+          choices_model->push_back(toSharedString(choice));
+        }
+        ui.set_inspector_behaviour_type_choices(choices_model);
+        ui.set_inspector_behaviours_expanded(snapshot.inspector_behaviours_expanded);
+      }
       ui.set_light_dir_x(snapshot.light_dir_x);
       ui.set_light_dir_y(snapshot.light_dir_y);
       ui.set_light_dir_z(snapshot.light_dir_z);
@@ -446,6 +475,29 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_inspector_multi_edit_mode_changed(absolute);
       }
     });
+    component->on_inspector_add_behaviour([this](const slint::SharedString& type) {
+      if (m_callbacks.on_inspector_add_behaviour) {
+        m_callbacks.on_inspector_add_behaviour(type);
+      }
+    });
+    component->on_inspector_remove_behaviour([this](int behaviour_id) {
+      if (m_callbacks.on_inspector_remove_behaviour) {
+        m_callbacks.on_inspector_remove_behaviour(behaviour_id);
+      }
+    });
+    component->on_inspector_reorder_behaviour([this](int from_index, int to_index) {
+      if (m_callbacks.on_inspector_reorder_behaviour) {
+        m_callbacks.on_inspector_reorder_behaviour(from_index, to_index);
+      }
+    });
+    component->on_inspector_commit_behaviour_prop(
+        [this](int behaviour_id, const slint::SharedString& key,
+               const slint::SharedString& text, float number, bool flag) {
+          if (m_callbacks.on_inspector_commit_behaviour_prop) {
+            m_callbacks.on_inspector_commit_behaviour_prop(behaviour_id, key, text,
+                                                             number, flag);
+          }
+        });
     component->on_browser_folder_selected([this](const slint::SharedString& path) {
       if (m_callbacks.on_browser_folder_selected) {
         m_callbacks.on_browser_folder_selected(path);

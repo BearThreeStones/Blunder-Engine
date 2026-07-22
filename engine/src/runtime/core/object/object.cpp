@@ -137,6 +137,50 @@ void Object::markBehaviourReadyInvoked(BehaviourId id) {
   }
 }
 
+const eastl::vector<SceneBehaviourProperty>* Object::getBehaviourProperties(
+    BehaviourId id) const {
+  const BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot == nullptr) {
+    return nullptr;
+  }
+  return &slot->properties;
+}
+
+bool Object::setBehaviourProperties(
+    BehaviourId id, eastl::vector<SceneBehaviourProperty> properties) {
+  BehaviourSlot* slot = findBehaviourSlot(id);
+  if (slot == nullptr) {
+    return false;
+  }
+  slot->properties = eastl::move(properties);
+  return true;
+}
+
+bool Object::moveBehaviour(size_t from_index, size_t to_index) {
+  const size_t count = m_behaviours.size();
+  if (count == 0 || from_index >= count) {
+    return false;
+  }
+  if (to_index > count) {
+    to_index = count;
+  }
+  if (from_index == to_index) {
+    return true;
+  }
+
+  BehaviourSlot slot = eastl::move(m_behaviours[from_index]);
+  m_behaviours.erase(m_behaviours.begin() + static_cast<ptrdiff_t>(from_index));
+  if (from_index < to_index) {
+    --to_index;
+  }
+  if (to_index > m_behaviours.size()) {
+    to_index = m_behaviours.size();
+  }
+  m_behaviours.insert(m_behaviours.begin() + static_cast<ptrdiff_t>(to_index),
+                      eastl::move(slot));
+  return true;
+}
+
 void* Object::getScriptPeer() const {
   if (m_behaviours.empty()) {
     return nullptr;

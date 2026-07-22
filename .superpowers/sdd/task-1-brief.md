@@ -1,198 +1,118 @@
-### Task 1: Native MessageDispatch + unit tests
-
-**Files:**
-- Create: `engine/src/runtime/core/reflection/message_dispatch.h`
-- Create: `engine/src/runtime/core/reflection/message_dispatch.cpp`
-- Create: `engine/src/tests/message_dispatch_test.cpp`
-- Modify: `engine/src/runtime/CMakeLists.txt` (add `core/reflection/message_dispatch.cpp` next to `lifecycle.cpp`)
-- Modify: `engine/src/tests/CMakeLists.txt` (add target after `ptrcall_lifecycle_test` block)
-
-**Interfaces:**
-- Consumes: `ObjectDB`, `Object`, `BehaviourId`
-- Produces:
-  - `using MessageId = uint32_t;` (`0` = invalid)
-  - `enum class MessageArgKind : uint8_t { Nil, Bool, Int, Float, ObjectId };`
-  - `struct MessageArg { MessageArgKind kind; ... union ... };`
-  - `using MessageHookFn = void (*)(void* peer, MessageId id, const MessageArg* args, int argc);`
-  - `class MessageDispatch { static void clear(); static MessageId registerName(const char*); static void setHook(MessageHookFn); static bool send(ObjectId, MessageId, const MessageArg* args, int argc); };`
-  - `send` returns `false` if `argc` not in `0..4` or `id==0`; invalid ObjectId returns `true` (no-op success)
-
-- [ ] **Step 1: Write the failing test**
-
-Create `engine/src/tests/message_dispatch_test.cpp`:
-
-```cpp
-#include "runtime/core/object/object_db.h"
-#include "runtime/core/reflection/message_dispatch.h"
-
-#include <cstdio>
-#include <vector>
-
-namespace {
-int g_failures = 0;
-void expect_true(const char* label, bool ok) {
-  if (!ok) {
-    std::fprintf(stderr, "FAIL %s\n", label);
-    ++g_failures;
-  }
-}
-
-struct Call {
-  void* peer;
-  Blunder::MessageId id;
-  int argc;
-  Blunder::MessageArg args[4];
-};
-std::vector<Call> g_calls;
-
-void Hook(void* peer, Blunder::MessageId id, const Blunder::MessageArg* args,
-          int argc) {
-  Call c{};
-  c.peer = peer;
-  c.id = id;
-  c.argc = argc;
-  for (int i = 0; i < argc && i < 4; ++i) {
-    c.args[i] = args[i];
-  }
-  g_calls.push_back(c);
-}
-}  // namespace
-
-int main() {
-  Blunder::ObjectDB::clear();
-  Blunder::MessageDispatch::clear();
-
-  const Blunder::MessageId hit = Blunder::MessageDispatch::registerName("Hit");
-  const Blunder::MessageId hit2 = Blunder::MessageDispatch::registerName("Hit");
-  const Blunder::MessageId heal = Blunder::MessageDispatch::registerName("Heal");
-  expect_true("register non-zero", hit != 0);
-  expect_true("register stable", hit == hit2);
-  expect_true("distinct names", hit != heal);
-
-  Blunder::MessageDispatch::setHook(&Hook);
-  const Blunder::ObjectId a = Blunder::ObjectDB::create();
-  Blunder::Object* obj = Blunder::ObjectDB::get(a);
-  expect_true("object", obj != nullptr);
-  const Blunder::BehaviourId b0 = obj->addBehaviour("A");
-  const Blunder::BehaviourId b1 = obj->addBehaviour("B");
-  const Blunder::BehaviourId b2 = obj->addBehaviour("C");
-  obj->setBehaviourScriptPeer(b0, reinterpret_cast<void*>(1));
-  obj->setBehaviourScriptPeer(b1, nullptr);
-  obj->setBehaviourScriptPeer(b2, reinterpret_cast<void*>(3));
-
-  Blunder::MessageArg args[2];
-  args[0].kind = Blunder::MessageArgKind::Int;
-  args[0].i = 42;
-  args[1].kind = Blunder::MessageArgKind::ObjectId;
-  args[1].object_id = a;
-
-  g_calls.clear();
-  expect_true("send ok",
-              Blunder::MessageDispatch::send(a, hit, args, 2));
-  expect_true("two peers", g_calls.size() == 2);
-  expect_true("order peer1", g_calls[0].peer == reinterpret_cast<void*>(1));
-  expect_true("order peer3", g_calls[1].peer == reinterpret_cast<void*>(3));
-  expect_true("argc", g_calls[0].argc == 2 && g_calls[0].args[0].i == 42);
-
-  g_calls.clear();
-  expect_true("invalid target ok",
-              Blunder::MessageDispatch::send(0, hit, nullptr, 0));
-  expect_true("invalid no calls", g_calls.empty());
-
-  Blunder::MessageArg too_many[5]{};
-  expect_true("argc 5 fails",
-              !Blunder::MessageDispatch::send(a, hit, too_many, 5));
-  expect_true("zero id fails",
-              !Blunder::MessageDispatch::send(a, 0, nullptr, 0));
-
-  if (g_failures != 0) {
-    std::fprintf(stderr, "%d failure(s)\n", g_failures);
-    return 1;
-  }
-  return 0;
-}
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-```powershell
-cmake --build build/vs2026-debug --config Debug --target message_dispatch_test
-```
-
-Expected: FAIL configure/compile ???`message_dispatch.h` missing (add CMake target first if needed so the missing header is the failure).
-
-- [ ] **Step 3: Minimal MessageDispatch implementation**
-
-`message_dispatch.h`:
-
-```cpp
-#pragma once
-
-#include <cstdint>
-
-#include "runtime/core/object/object_id.h"
-
-namespace Blunder {
-
-using MessageId = uint32_t;
-inline constexpr MessageId k_invalid_message_id = 0;
-
-enum class MessageArgKind : uint8_t {
-  Nil = 0,
-  Bool = 1,
-  Int = 2,
-  Float = 3,
-  ObjectId = 4,
-};
-
-struct MessageArg {
-  MessageArgKind kind{MessageArgKind::Nil};
-  union {
-    bool b;
-    int64_t i;
-    float f;
-    ObjectId object_id;
-  };
-};
-
-using MessageHookFn = void (*)(void* script_peer, MessageId id,
-                               const MessageArg* args, int argc);
-
-class MessageDispatch {
- public:
-  static void clear();
-  static MessageId registerName(const char* name);
-  static void setHook(MessageHookFn fn);
-  /// Returns false if id==0 or argc not in [0,4]. Invalid ObjectId is success no-op.
-  static bool send(ObjectId target, MessageId id, const MessageArg* args,
-                   int argc);
-};
-
-}  // namespace Blunder
-```
-
-`message_dispatch.cpp`: use `eastl::unordered_map<eastl::string, MessageId>`, monotonic id generator starting at 1, static hook pointer. In `send`: if `argc<0||argc>4||id==0` return false; `Object* o = ObjectDB::get(target)`; if null return true; copy `BehaviourId`s into a local `eastl::vector`; for each id re-get object/peer and call hook with args pointer (allow `args==nullptr` when argc==0).
-
-- [ ] **Step 4: Wire CMake and run tests**
-
-Add `core/reflection/message_dispatch.cpp` to `engine_runtime` sources. Add `message_dispatch_test` like `ptrcall_lifecycle_test` (link `engine_runtime`).
-
-```powershell
-cmake --build build/vs2026-debug --config Debug --target message_dispatch_test
-.\build\vs2026-debug\engine\src\tests\Debug\message_dispatch_test.exe
-```
-
-Expected: exit 0.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add engine/src/runtime/core/reflection/message_dispatch.h engine/src/runtime/core/reflection/message_dispatch.cpp engine/src/tests/message_dispatch_test.cpp engine/src/runtime/CMakeLists.txt engine/src/tests/CMakeLists.txt
-git commit -m "$(cat <<'EOF'
-feat: add MessageDispatch registry and sync fan-out
-
-EOF
-)"
-```
-
+﻿# Task 1 brief — extracted from plan
+
+Plan: docs/superpowers/plans/2026-07-22-inspector-behaviour-ux.md
+
+### Task 1: Property bag on Object slots + reorder + tests
+
+**Files:**
+- Modify: `engine/src/runtime/core/object/object.h`
+- Modify: `engine/src/runtime/core/object/object.cpp`
+- Modify: `engine/src/runtime/function/scene/scene_instance.cpp` (instantiate + `exportToScene`)
+- Create: `engine/src/tests/object_behaviour_bag_test.cpp`
+- Modify: `engine/src/tests/CMakeLists.txt`
+
+**Interfaces:**
+- Consumes: `SceneBehaviourProperty`, `Variant` (from `scene.h` / `variant.h`)
+- Produces:
+  - `BehaviourSlot` gains `eastl::vector<SceneBehaviourProperty> properties`
+  - `const eastl::vector<SceneBehaviourProperty>* Object::getBehaviourProperties(BehaviourId) const`
+  - `bool Object::setBehaviourProperties(BehaviourId, eastl::vector<SceneBehaviourProperty>)`
+  - `bool Object::moveBehaviour(size_t from_index, size_t to_index)` 鈥?moves item; `to_index` is insertion index before move adjust (document in code: clamp; no-op if same)
+  - Instantiate copies `decl.properties` after `restoreBehaviour`
+  - `exportToScene` copies slot properties into `SceneBehaviourDeclaration`
+
+- [ ] **Step 1: Write the failing test**
+
+```cpp
+// engine/src/tests/object_behaviour_bag_test.cpp
+#include "runtime/core/object/object_db.h"
+#include "runtime/core/reflection/variant.h"
+#include "runtime/function/scene/scene.h"
+
+#include <cstdio>
+
+namespace {
+int g_failures = 0;
+void expect_true(const char* label, bool ok) {
+  if (!ok) {
+    std::fprintf(stderr, "FAIL %s\n", label);
+    ++g_failures;
+  }
+}
+}  // namespace
+
+int main() {
+  using namespace Blunder;
+  ObjectDB::clear();
+  ObjectId oid = ObjectDB::create();
+  Object* object = ObjectDB::get(oid);
+  expect_true("object", object != nullptr);
+  BehaviourId id = object->addBehaviour("Probe.Motor");
+  expect_true("id", isValid(id));
+
+  eastl::vector<SceneBehaviourProperty> bag;
+  SceneBehaviourProperty p;
+  p.key = "Speed";
+  p.value = Variant(1.5f);
+  bag.push_back(p);
+  expect_true("set bag", object->setBehaviourProperties(id, bag));
+  const auto* got = object->getBehaviourProperties(id);
+  expect_true("get bag", got != nullptr && got->size() == 1 &&
+                             (*got)[0].key == "Speed");
+
+  BehaviourId id2 = object->addBehaviour("Probe.Bark");
+  expect_true("two", object->getBehaviourCount() == 2);
+  expect_true("order0", object->getBehaviourIdAt(0) == id);
+  expect_true("move", object->moveBehaviour(0, 2));  // move first to end
+  expect_true("order after", object->getBehaviourIdAt(0) == id2 &&
+                                 object->getBehaviourIdAt(1) == id);
+
+  if (g_failures) {
+    std::fprintf(stderr, "%d failure(s)\n", g_failures);
+    return 1;
+  }
+  std::printf("object_behaviour_bag_test: OK\n");
+  return 0;
+}
+```
+
+Wire CMake like `behaviour_list_test` (link `engine_runtime` / same PCH pattern).
+
+- [ ] **Step 2: Run test 鈥?expect fail**
+
+```powershell
+cmake --build build/vs2026-debug --config Debug --target object_behaviour_bag_test
+```
+
+Expected: compile error 鈥?missing `setBehaviourProperties` / `moveBehaviour`.
+
+- [ ] **Step 3: Minimal implementation**
+
+In `object.h` `BehaviourSlot`:
+
+```cpp
+    eastl::vector<SceneBehaviourProperty> properties;
+```
+
+Include `runtime/function/scene/scene.h` (or extract `SceneBehaviourProperty` to `behaviour_property_bag.h` if include cycle 鈥?prefer extract if needed).
+
+Implement get/set/move; in `scene_instance.cpp` after successful `restoreBehaviour`, assign `decl.properties` onto the slot via set API; in `exportToScene` copy `*getBehaviourProperties` into `decl.properties`.
+
+- [ ] **Step 4: Run test 鈥?expect pass**
+
+```powershell
+.\build\vs2026-debug\engine\src\tests\Debug\object_behaviour_bag_test.exe
+```
+
+Expected: `object_behaviour_bag_test: OK`
+
+Also extend or run existing `scene_serializer_test` / mount test if bag export covered 鈥?optional follow-up in same task: tiny instantiate鈫抏xport assert in this test via SceneInstance if lightweight.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add engine/src/runtime/core/object/object.h engine/src/runtime/core/object/object.cpp engine/src/runtime/function/scene/scene_instance.cpp engine/src/tests/object_behaviour_bag_test.cpp engine/src/tests/CMakeLists.txt
+git commit -m "feat: store Behaviour property bags on Object slots and support reorder"
+```
+
 ---

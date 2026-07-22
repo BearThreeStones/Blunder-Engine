@@ -2,6 +2,7 @@
 
 #include "runtime/project/project_file.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <system_error>
 
@@ -136,6 +137,33 @@ bool runDotnetBuild(const fs::path& csproj, const fs::path& out_dir,
   }
   return true;
 }
+
+bool runDotnetCatalog(const fs::path& catalog_dll, const fs::path& game_dll,
+                      const fs::path& out_json) {
+  std::wstring command_line = L"dotnet ";
+  command_line += quoteWindowsArg(catalog_dll.wstring());
+  command_line += L" ";
+  command_line += quoteWindowsArg(game_dll.wstring());
+  command_line += L" ";
+  command_line += quoteWindowsArg(out_json.wstring());
+
+  STARTUPINFOW si{};
+  si.cb = sizeof(si);
+  PROCESS_INFORMATION pi{};
+  std::wstring mutable_cmd = command_line;
+  const BOOL ok =
+      CreateProcessW(nullptr, mutable_cmd.data(), nullptr, nullptr, FALSE,
+                     CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+  if (!ok) {
+    return false;
+  }
+  WaitForSingleObject(pi.hProcess, INFINITE);
+  DWORD exit_code = 1;
+  GetExitCodeProcess(pi.hProcess, &exit_code);
+  CloseHandle(pi.hThread);
+  CloseHandle(pi.hProcess);
+  return exit_code == 0;
+}
 #else
 bool runDotnetBuild(const fs::path& csproj, const fs::path& out_dir,
                     const fs::path& engine_dir, eastl::string& out_error) {
@@ -159,7 +187,52 @@ bool runDotnetBuild(const fs::path& csproj, const fs::path& out_dir,
   }
   return true;
 }
+
+bool runDotnetCatalog(const fs::path& catalog_dll, const fs::path& game_dll,
+                      const fs::path& out_json) {
+  eastl::string command = "dotnet \"";
+  command += catalog_dll.string().c_str();
+  command += "\" \"";
+  command += game_dll.string().c_str();
+  command += "\" \"";
+  command += out_json.string().c_str();
+  command += "\"";
+  return std::system(command.c_str()) == 0;
+}
 #endif
+
+void tryRefreshBehaviourCatalog(const fs::path& project_root,
+                                const fs::path& output_dll) {
+  const fs::path engine_dir = queryExecutableDir();
+  if (engine_dir.empty()) {
+    std::fprintf(stderr,
+                 "warning: behaviour catalog skipped (executable dir unknown)\n");
+    return;
+  }
+
+  const fs::path catalog_dll = engine_dir / "Blunder.ScriptsCatalog.dll";
+  std::error_code ec;
+  if (!fs::is_regular_file(catalog_dll, ec)) {
+    std::fprintf(stderr,
+                 "warning: behaviour catalog skipped (ScriptsCatalog missing)\n");
+    return;
+  }
+
+  const fs::path out_json =
+      project_root / ".blunder" / "behaviour_catalog.json";
+  fs::create_directories(out_json.parent_path(), ec);
+  if (ec) {
+    std::fprintf(stderr,
+                 "warning: behaviour catalog skipped (cannot create .blunder)\n");
+    return;
+  }
+
+  if (!runDotnetCatalog(catalog_dll, output_dll, out_json)) {
+    std::fprintf(stderr,
+                 "warning: behaviour catalog refresh failed; keeping prior "
+                 "catalog if present\n");
+  }
+}
 
 }  // namespace
 
@@ -200,6 +273,7 @@ ScriptsBuildResult buildProjectScripts(const fs::path& project_root) {
   }
   result.ok = true;
   result.error.clear();
+  tryRefreshBehaviourCatalog(project_root, result.output_dll);
   return result;
 }
 

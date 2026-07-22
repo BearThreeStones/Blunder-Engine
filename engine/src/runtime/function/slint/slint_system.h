@@ -15,6 +15,7 @@
 #include "project_manager.h"
 
 #include "runtime/platform/window/child_window_registry.h"
+#include "runtime/core/object/behaviour_id.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
@@ -217,8 +218,17 @@ class SlintSystem final : public IEditorUiPresentation {
   void pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) override;
   void syncHierarchy() override;
   void syncInspectorFromSelection() override;
+  void syncInspectorBehavioursFromSelection();
   void syncContentBrowser() override;
   void applyInspectorTransform() override;
+  void applyInspectorAddBehaviour(const eastl::string& clr_type);
+  void applyInspectorRemoveBehaviour(BehaviourId behaviour_id);
+  void applyInspectorReorderBehaviours(size_t from_index, size_t to_index);
+  void applyInspectorBehaviourPropertyCommit(BehaviourId behaviour_id,
+                                             const eastl::string& key,
+                                             const eastl::string& kind,
+                                             const eastl::string& text_value,
+                                             float number_value, bool bool_value);
   void refreshEditorScenePanels() override;
   void syncTransformToolbarFromEngine();
   void setBlinnPhongMaterialSource(const MaterialAsset* material) override;

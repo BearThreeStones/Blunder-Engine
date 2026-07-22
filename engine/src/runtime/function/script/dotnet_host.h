@@ -49,6 +49,8 @@ class DotNetHost {
   int getProbePropertyOk() const;
   int getMessageProbeCount() const;
   int getMessageProbeLastId() const;
+  /// 1 when object-slot bag overrode scene declaration on mount.
+  int getProbeObjectBagWinsOk() const;
 
   /// True after a successful `loadGameAssembly`.
   bool hasGameAssembly() const { return m_game_assembly_loaded; }
@@ -89,6 +91,7 @@ class DotNetHost {
   GetProbeTickCountFn m_get_probe_property_ok{nullptr};
   GetProbeTickCountFn m_get_message_probe_count{nullptr};
   GetProbeTickCountFn m_get_message_probe_last_id{nullptr};
+  GetProbeTickCountFn m_get_probe_object_bag_wins_ok{nullptr};
   bool m_game_assembly_loaded{false};
 };
 
