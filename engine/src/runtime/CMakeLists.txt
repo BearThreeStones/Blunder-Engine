@@ -109,14 +109,6 @@ add_library(engine_runtime STATIC
     "project/project_file.cpp"
     "project/project_create.h"
     "project/project_create.cpp"
-    "project/project_list.h"
-    "project/project_list.cpp"
-    "project/project_relaunch.h"
-    "project/project_relaunch.cpp"
-    "project/project_manager_controller.h"
-    "project/project_manager_controller.cpp"
-    "project/project_manager_app.h"
-    "project/project_manager_app.cpp"
     "project/editor_launch.h"
     "project/editor_launch.cpp"
     "project/player_launch.h"
@@ -218,9 +210,6 @@ add_library(engine_runtime STATIC
 
 add_subdirectory(function/render)
 
-slint_target_sources(engine_runtime NAMESPACE BlunderPm
-    "function/slint/project_manager.slint"
-)
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
     "function/slint/import_mesh_dialog.slint"
