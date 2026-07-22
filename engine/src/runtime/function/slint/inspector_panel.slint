@@ -633,6 +633,13 @@ export component InspectorPanel inherits Rectangle {
                                             behaviour.behaviour-id, prop.key, self.text,
                                             self.text.to-float(), false);
                                     }
+                                    changed has-focus => {
+                                        if (!self.has-focus) {
+                                            root.commit-behaviour-prop(
+                                                behaviour.behaviour-id, prop.key, self.text,
+                                                self.text.to-float(), false);
+                                        }
+                                    }
                                 }
                             }
                             if prop.kind == "string": HorizontalBox {
@@ -644,12 +651,18 @@ export component InspectorPanel inherits Rectangle {
                                     width: 96px;
                                     vertical-alignment: center;
                                 }
-                                LineEdit {
+                                str-input := LineEdit {
                                     horizontal-stretch: 1;
                                     text: prop.string-value;
                                     accepted => {
                                         root.commit-behaviour-prop(
                                             behaviour.behaviour-id, prop.key, self.text, 0.0, false);
+                                    }
+                                    changed has-focus => {
+                                        if (!self.has-focus) {
+                                            root.commit-behaviour-prop(
+                                                behaviour.behaviour-id, prop.key, self.text, 0.0, false);
+                                        }
                                     }
                                 }
                             }
