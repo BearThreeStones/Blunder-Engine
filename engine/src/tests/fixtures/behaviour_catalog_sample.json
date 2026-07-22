@@ -1,0 +1,12 @@
+{
+  "types": [
+    {
+      "clr_name": "Game.Motor",
+      "members": [
+        { "name": "Speed", "kind": "number" },
+        { "name": "Label", "kind": "string" },
+        { "name": "EnabledFlag", "kind": "bool" }
+      ]
+    }
+  ]
+}

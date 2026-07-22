@@ -168,6 +168,29 @@ target_precompile_headers(object_behaviour_bag_test
 add_test(NAME object_behaviour_bag_test
          COMMAND object_behaviour_bag_test)
 
+add_executable(behaviour_type_catalog_test
+    "behaviour_type_catalog_test.cpp"
+)
+
+target_link_libraries(behaviour_type_catalog_test
+    PRIVATE engine_runtime
+)
+
+target_compile_definitions(behaviour_type_catalog_test
+    PRIVATE "BEHAVIOUR_CATALOG_FIXTURE=R\"(${CMAKE_CURRENT_SOURCE_DIR}/fixtures/behaviour_catalog_sample.json)\""
+)
+
+if(MSVC)
+    target_compile_options(behaviour_type_catalog_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(behaviour_type_catalog_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME behaviour_type_catalog_test
+         COMMAND behaviour_type_catalog_test)
+
 add_executable(ptrcall_lifecycle_test
     "ptrcall_lifecycle_test.cpp"
 )
