@@ -2,6 +2,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/function/scene/scene_serializer.h"
 
@@ -309,6 +310,44 @@ void SceneInstance::tick(float delta_time) {
   if (m_world_matrices_dirty) {
     rebuildWorldMatrices();
   }
+}
+
+Object* SceneInstance::findBoundObject(EntityId entity_id) const {
+  if (!isValid(entity_id)) {
+    return nullptr;
+  }
+  for (ObjectId object_id : m_bound_object_ids) {
+    Object* object = ObjectDB::get(object_id);
+    if (object != nullptr && object->getEntityId() == entity_id) {
+      return object;
+    }
+  }
+  return nullptr;
+}
+
+Object* SceneInstance::ensureBoundObject(EntityId entity_id) {
+  if (Object* existing = findBoundObject(entity_id)) {
+    return existing;
+  }
+  if (!isValid(entity_id)) {
+    return nullptr;
+  }
+  Entity* entity = getEntity(entity_id);
+  if (entity == nullptr || entity->isTombstoned()) {
+    return nullptr;
+  }
+
+  const ObjectId object_id = ObjectDB::create();
+  Object* object = ObjectDB::get(object_id);
+  if (object == nullptr) {
+    LOG_ERROR("[SceneInstance] failed to create Object for entity '{}'",
+              entity->getName().c_str());
+    return nullptr;
+  }
+  object->setName(entity->getName());
+  object->setEntityId(entity_id);
+  m_bound_object_ids.push_back(object_id);
+  return object;
 }
 
 EntityId SceneInstance::indexToId(size_t index) const {
