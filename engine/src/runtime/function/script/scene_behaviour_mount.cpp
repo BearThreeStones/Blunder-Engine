@@ -111,6 +111,25 @@ const SceneBehaviourDeclaration* findDeclaration(
   return nullptr;
 }
 
+const eastl::vector<SceneBehaviourProperty>* resolveMountProperties(
+    const Object& object, BehaviourId id, const Scene* scene,
+    const eastl::string& entity_name) {
+  if (const eastl::vector<SceneBehaviourProperty>* object_bag =
+          object.getBehaviourProperties(id);
+      object_bag != nullptr && !object_bag->empty()) {
+    return object_bag;
+  }
+  if (scene == nullptr) {
+    return nullptr;
+  }
+  const SceneBehaviourDeclaration* decl =
+      findDeclaration(*scene, entity_name, id);
+  if (decl == nullptr || decl->properties.empty()) {
+    return nullptr;
+  }
+  return &decl->properties;
+}
+
 void mountObjectBehaviours(Object& object, DotNetHost& host,
                            const Scene* scene) {
   const eastl::string& entity_name = object.getName();
@@ -138,15 +157,12 @@ void mountObjectBehaviours(Object& object, DotNetHost& host,
       continue;
     }
 
-    if (scene == nullptr) {
+    const eastl::vector<SceneBehaviourProperty>* properties =
+        resolveMountProperties(object, id, scene, entity_name);
+    if (properties == nullptr) {
       continue;
     }
-    const SceneBehaviourDeclaration* decl =
-        findDeclaration(*scene, entity_name, id);
-    if (decl == nullptr || decl->properties.empty()) {
-      continue;
-    }
-    const eastl::string json = propertiesToJson(decl->properties);
+    const eastl::string json = propertiesToJson(*properties);
     if (json == "{}") {
       continue;
     }
