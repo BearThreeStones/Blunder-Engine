@@ -1,0 +1,121 @@
+// Godot editor/icons wrappers for Content Browser + Inspector.
+// Paths are relative to this file under function/slint/.
+
+export component EditorIconSearch inherits Rectangle {
+    in property <color> icon-color: #808080;
+    in property <length> icon-size: 12px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Search.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconReload inherits Rectangle {
+    in property <color> icon-color: #b0b0b0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Reload.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconFolder inherits Rectangle {
+    in property <color> icon-color: #d0d0d0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Folder.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconTreeArrowRight inherits Rectangle {
+    in property <color> icon-color: #707070;
+    in property <length> icon-size: 10px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/GuiTreeArrowRight.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconTreeArrowDown inherits Rectangle {
+    in property <color> icon-color: #707070;
+    in property <length> icon-size: 10px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/GuiTreeArrowDown.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconInstance inherits Rectangle {
+    in property <color> icon-color: #e0e0e0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Instance.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconUnlinked inherits Rectangle {
+    in property <color> icon-color: #808080;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Unlinked.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}

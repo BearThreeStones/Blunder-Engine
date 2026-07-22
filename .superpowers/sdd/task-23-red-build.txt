@@ -1,2 +1,0 @@
-﻿MSBUILD : error MSB1009: project file does not exist.
-Switch: asset_pipeline_smoke_test.vcxproj

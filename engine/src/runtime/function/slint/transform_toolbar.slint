@@ -1,0 +1,98 @@
+import { HorizontalBox } from "std-widgets.slint";
+
+export component TransformToolbar inherits Rectangle {
+    in property <int> transform-mode: 0;
+    in property <bool> gizmo-space-global: true;
+
+    callback transform-mode-selected(int);
+    callback gizmo-space-toggled();
+
+    height: 32px;
+    background: #1a1a1acc;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: #3a3a3a;
+
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 4px;
+
+        Rectangle {
+            width: 52px;
+            height: 24px;
+            border-radius: 3px;
+            background: root.transform-mode == 1 ? #3d6b9a : #2a2a2a;
+            border-width: 1px;
+            border-color: root.transform-mode == 1 ? #6ab0ff : #444444;
+            Text {
+                text: "Move";
+                color: root.transform-mode == 1 ? #ffffff : #b0b0b0;
+                font-size: 11px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                clicked => { root.transform-mode-selected(1); }
+            }
+        }
+
+        Rectangle {
+            width: 52px;
+            height: 24px;
+            border-radius: 3px;
+            background: root.transform-mode == 2 ? #3d6b9a : #2a2a2a;
+            border-width: 1px;
+            border-color: root.transform-mode == 2 ? #6ab0ff : #444444;
+            Text {
+                text: "Rotate";
+                color: root.transform-mode == 2 ? #ffffff : #b0b0b0;
+                font-size: 11px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                clicked => { root.transform-mode-selected(2); }
+            }
+        }
+
+        Rectangle {
+            width: 52px;
+            height: 24px;
+            border-radius: 3px;
+            background: root.transform-mode == 3 ? #3d6b9a : #2a2a2a;
+            border-width: 1px;
+            border-color: root.transform-mode == 3 ? #6ab0ff : #444444;
+            Text {
+                text: "Scale";
+                color: root.transform-mode == 3 ? #ffffff : #b0b0b0;
+                font-size: 11px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                clicked => { root.transform-mode-selected(3); }
+            }
+        }
+
+        Rectangle { width: 8px; }
+
+        Rectangle {
+            width: 64px;
+            height: 24px;
+            border-radius: 3px;
+            background: #2a2a2a;
+            border-width: 1px;
+            border-color: #444444;
+            Text {
+                text: root.gizmo-space-global ? "Global" : "Local";
+                color: #bde7ff;
+                font-size: 11px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                clicked => { root.gizmo-space-toggled(); }
+            }
+        }
+    }
+}

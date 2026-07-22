@@ -60,6 +60,7 @@ if(DEFINED CMAKE_GENERATOR_INSTANCE AND NOT CMAKE_GENERATOR_INSTANCE STREQUAL ""
 endif()
 
 include(cmake/compiler.cmake)
+include(cmake/blunder_outputs.cmake)
 
 set(BLUNDER_RENDER_BACKEND "vulkan" CACHE STRING "Engine RHI backend: vulkan | d3d12")
 

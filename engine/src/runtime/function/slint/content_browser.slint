@@ -1,0 +1,522 @@
+import { Button, VerticalBox, HorizontalBox, LineEdit, Slider } from "std-widgets.slint";
+import {
+    EditorIconSearch,
+    EditorIconReload,
+    EditorIconFolder,
+    EditorIconTreeArrowRight,
+    EditorIconTreeArrowDown,
+} from "editor_icons.slint";
+
+export struct BrowserTreeRow {
+    path: string,
+    name: string,
+    depth: int,
+    is-dir: bool,
+    expanded: bool,
+    has-children: bool,
+}
+
+export struct BrowserGridRow {
+    path: string,
+    name: string,
+    thumb: image,
+    is-dir: bool,
+}
+
+export struct BrowserPathSegment {
+    path: string,
+    name: string,
+}
+
+export component ContentBrowser {
+    // --- Data from C++ ---
+    in-out property <[BrowserTreeRow]> tree-rows: [];
+    in-out property <[BrowserGridRow]> grid-rows: [];
+    in-out property <[BrowserPathSegment]> path-segments: [];
+    in property <bool> drag-active: false;
+    in property <string> drag-source-path: "";
+    in property <string> drop-highlight-path: "";
+    in property <bool> viewport-drop-active: false;
+    in property <string> status-text: "0 items";
+    in property <string> selected-folder-path: "";
+
+    // --- Local UI state ---
+    in-out property <length> thumb-size: 80px;
+    in-out property <length> tree-pane-width: 200px;
+    in property <bool> layout-drag-active: false;
+
+    // --- Callbacks ---
+    callback folder-selected(string);
+    callback folder-toggle(string);
+    callback refresh-requested();
+    callback import-requested();
+    callback item-press(string, float, float);
+    callback item-move(string, float, float);
+    callback item-release(string, float, float);
+    callback layout-drag-active-changed(bool);
+    callback search-changed(string);
+    callback path-segment-clicked(string);
+
+    // --- Geometry output for C++ hit-testing ---
+    out property <length> browser-origin-x: browser-root.absolute-position.x;
+    out property <length> browser-origin-y: browser-root.absolute-position.y;
+    out property <length> browser-width: browser-root.width;
+    out property <length> browser-height: browser-root.height;
+    in-out property <length> tree-origin-y: tree-list.absolute-position.y;
+    in-out property <length> tree-panel-height: tree-panel.height;
+
+    min-height: 120px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+
+    // --- Grid layout calculations ---
+    property <length> cell-gap: 8px;
+    property <length> cell-total-w: root.thumb-size + root.cell-gap;
+    property <length> cell-total-h: root.thumb-size + 28px + root.cell-gap;
+    property <int> grid-cols: Math.max(1, Math.floor(grid-area.width / Math.max(1px, root.cell-total-w)));
+
+    browser-root := Rectangle {
+        background: #252525;
+        border-color: #1a1a1a;
+        border-width: 1px;
+        horizontal-stretch: 1;
+
+        VerticalLayout {
+            spacing: 0px;
+
+            // ═══════════════ Toolbar ═══════════════
+            Rectangle {
+                height: 34px;
+                background: #2d2d2d;
+
+                HorizontalLayout {
+                    padding: 5px;
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 6px;
+
+                    // Search box
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: #1a1a1a;
+                        border-radius: 3px;
+                        border-color: #3a3a3a;
+                        border-width: 1px;
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 4px;
+
+                            VerticalLayout {
+                                width: 18px;
+                                alignment: center;
+                                EditorIconSearch {
+                                    icon-size: 12px;
+                                    icon-color: #808080;
+                                }
+                            }
+
+                            search-input := TextInput {
+                                horizontal-stretch: 1;
+                                font-size: 11px;
+                                color: #d8d8d8;
+                                vertical-alignment: center;
+
+                                accepted => {
+                                    root.search-changed(self.text);
+                                }
+                                edited => {
+                                    root.search-changed(self.text);
+                                }
+                            }
+                        }
+                    }
+
+                    // Refresh button
+                    refresh-btn := Rectangle {
+                        width: 26px;
+                        height: 24px;
+                        background: refresh-touch.has-hover ? #444444 : #353535;
+                        border-radius: 3px;
+                        border-color: #4a4a4a;
+                        border-width: 1px;
+
+                        EditorIconReload {
+                            icon-size: 14px;
+                            icon-color: #b0b0b0;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+
+                        refresh-touch := TouchArea {
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.refresh-requested();
+                                }
+                            }
+                        }
+                    }
+
+                    // Import button
+                    import-btn := Rectangle {
+                        width: 68px;
+                        height: 24px;
+                        background: import-touch.has-hover ? #444444 : #353535;
+                        border-radius: 3px;
+                        border-color: #4a4a4a;
+                        border-width: 1px;
+
+                        Text {
+                            text: "+ Import";
+                            color: #d0d0d0;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        import-touch := TouchArea {
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.import-requested();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Toolbar separator
+            Rectangle { height: 1px; background: #1a1a1a; }
+
+            // ═══════════════ Breadcrumb Path Bar ═══════════════
+            Rectangle {
+                height: 24px;
+                background: #2a2a2a;
+
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 0px;
+
+                    for seg[seg-index] in root.path-segments: HorizontalLayout {
+                        spacing: 0px;
+
+                        if seg-index > 0: VerticalLayout {
+                            padding-left: 4px;
+                            padding-right: 4px;
+                            alignment: center;
+                            EditorIconTreeArrowRight {
+                                icon-size: 10px;
+                                icon-color: #505050;
+                            }
+                        }
+
+                        path-seg-touch := TouchArea {
+
+                            Rectangle {
+                                background: path-seg-touch.has-hover ? #383838 : #00000000;
+                                border-radius: 2px;
+
+                                HorizontalLayout {
+                                    padding-left: 4px;
+                                    padding-right: 4px;
+
+                                    Text {
+                                        text: seg.name;
+                                        color: path-seg-touch.has-hover ? #e0e0e0 : #909090;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.path-segment-clicked(seg.path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Path bar separator
+            Rectangle { height: 1px; background: #1a1a1a; }
+
+            // ═══════════════ Main Body: Tree (left) + Grid (right) ═══════════════
+            body := HorizontalLayout {
+                vertical-stretch: 1;
+                spacing: 0px;
+
+                // ─── Left: Folder Tree ───
+                tree-panel := Rectangle {
+                    width: root.tree-pane-width;
+                    background: #252525;
+                    clip: true;
+
+                    tree-scroll := Flickable {
+                        width: parent.width;
+                        height: parent.height;
+                        interactive: true;
+                        viewport-width: parent.width;
+                        viewport-height: tree-list.preferred-height;
+
+                        tree-list := VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 0px;
+                            padding-top: 2px;
+
+                            for row[index] in root.tree-rows: Rectangle {
+                                horizontal-stretch: 1;
+                                height: 22px;
+                                background:
+                                    row.path == root.selected-folder-path
+                                        ? #2c5db8
+                                    : tree-name-touch.has-hover || tree-arrow-touch.has-hover
+                                        ? #333333
+                                    : #00000000;
+
+                                HorizontalLayout {
+                                    horizontal-stretch: 1;
+                                    padding-left: 4px + row.depth * 16px;
+                                    spacing: 0px;
+                                    height: 22px;
+
+                                    // Expand/collapse arrow
+                                    tree-arrow-touch := TouchArea {
+                                        width: 18px;
+                                        height: 22px;
+
+                                        if row.has-children && row.expanded: EditorIconTreeArrowDown {
+                                            icon-size: 10px;
+                                            icon-color: #707070;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+                                        if row.has-children && !row.expanded: EditorIconTreeArrowRight {
+                                            icon-size: 10px;
+                                            icon-color: #707070;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+
+                                        pointer-event(event) => {
+                                            if (row.has-children
+                                                && event.button == PointerEventButton.left
+                                                && event.kind == PointerEventKind.down) {
+                                                root.folder-toggle(row.path);
+                                            }
+                                        }
+                                    }
+
+                                    // Folder icon
+                                    VerticalLayout {
+                                        width: 18px;
+                                        alignment: center;
+                                        EditorIconFolder {
+                                            icon-size: 12px;
+                                            icon-color: #d0d0d0;
+                                        }
+                                    }
+
+                                    // Folder name
+                                    tree-name-touch := TouchArea {
+                                        horizontal-stretch: 1;
+                                        height: 22px;
+
+                                        Text {
+                                            text: row.name;
+                                            color: row.path == root.selected-folder-path
+                                                ? #ffffff : #d0d0d0;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                            overflow: elide;
+                                        }
+
+                                        pointer-event(event) => {
+                                            if (event.button == PointerEventButton.left
+                                                && event.kind == PointerEventKind.down) {
+                                                root.folder-selected(row.path);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Vertical divider (tree ↔ grid)
+                Rectangle {
+                    width: 3px;
+                    background: #1a1a1a;
+                }
+
+                // ─── Right: Asset Grid ───
+                grid-area := Rectangle {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    background: #2a2a2a;
+                    clip: true;
+
+                    // Drag status overlay
+                    if root.drag-active: Rectangle {
+                        z: 10;
+                        height: 26px;
+                        background: #1a3a5acc;
+
+                        Text {
+                            text: root.viewport-drop-active
+                                ? "Release over viewport to place"
+                                : "Dragging: " + root.drag-source-path;
+                            color: #80c0ff;
+                            font-size: 10px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    grid-flickable := Flickable {
+                        width: parent.width;
+                        height: parent.height;
+                        interactive: !root.layout-drag-active;
+                        viewport-width: parent.width;
+                        viewport-height: Math.max(parent.height,
+                            Math.ceil(root.grid-rows.length / Math.max(1, root.grid-cols))
+                            * root.cell-total-h + 8px);
+
+                        for tile[index] in root.grid-rows: Rectangle {
+                            x: Math.mod(index, Math.max(1, root.grid-cols))
+                               * root.cell-total-w + 4px;
+                            y: Math.floor(index / Math.max(1, root.grid-cols))
+                               * root.cell-total-h + 4px;
+                            width: root.thumb-size;
+                            height: root.thumb-size + 24px;
+                            border-radius: 4px;
+                            background:
+                                tile.path == root.drag-source-path
+                                    ? #3a3a5a
+                                : grid-tile-touch.has-hover
+                                    ? #404040
+                                : #333333;
+
+                            VerticalLayout {
+                                spacing: 2px;
+                                padding: 3px;
+
+                                // Thumbnail area
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    vertical-stretch: 1;
+                                    background: tile.is-dir ? #00000000 : #1a1a1a;
+                                    border-radius: 3px;
+
+                                    if tile.is-dir: EditorIconFolder {
+                                        icon-size: root.thumb-size * 0.4;
+                                        icon-color: #d0d0d0;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    if !tile.is-dir: Image {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        source: tile.thumb;
+                                        image-fit: contain;
+                                    }
+                                }
+
+                                // File name
+                                Text {
+                                    text: tile.name;
+                                    color: #c8c8c8;
+                                    font-size: 10px;
+                                    horizontal-alignment: center;
+                                    overflow: elide;
+                                    height: 16px;
+                                }
+                            }
+
+                            grid-tile-touch := TouchArea {
+                                moved => {
+                                    root.item-move(tile.path,
+                                        self.mouse-x / 1px, self.mouse-y / 1px);
+                                }
+                                pointer-event(event) => {
+                                    if (event.button == PointerEventButton.left
+                                        && event.kind == PointerEventKind.down) {
+                                        root.item-press(tile.path,
+                                            self.mouse-x / 1px, self.mouse-y / 1px);
+                                    }
+                                    if (event.button == PointerEventButton.left
+                                        && event.kind == PointerEventKind.up) {
+                                        root.item-release(tile.path,
+                                            self.mouse-x / 1px, self.mouse-y / 1px);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ═══════════════ Status Bar ═══════════════
+            Rectangle {
+                height: 22px;
+                background: #2d2d2d;
+                border-color: #1a1a1a;
+                border-width: 0px;
+
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 8px;
+
+                    // Item count
+                    Text {
+                        text: root.status-text;
+                        color: #707070;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    // Drag status during drag
+                    if root.drag-active: Text {
+                        text: root.viewport-drop-active
+                            ? "Drop on viewport to place"
+                            : "Dragging...";
+                        color: #6090c0;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+
+                    // Thumbnail size slider
+                    VerticalLayout {
+                        width: 16px;
+                        alignment: center;
+                        EditorIconSearch {
+                            icon-size: 10px;
+                            icon-color: #606060;
+                        }
+                    }
+
+                    Slider {
+                        width: 100px;
+                        minimum: 48;
+                        maximum: 128;
+                        value: root.thumb-size / 1px;
+                        changed => {
+                            root.thumb-size = self.value * 1px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

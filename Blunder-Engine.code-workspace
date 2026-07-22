@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../Godot Projects/DogWalk"
+		},
+		{
+			"path": "../blender"
+		},
+		{
+			"path": "../godot"
+		}
+	],
+	"settings": {}
+}

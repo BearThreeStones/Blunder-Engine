@@ -46,3 +46,13 @@ BehaviourId values written into a scene asset SHALL be restored onto the host Ob
 - **WHEN** Behaviours with ids 1 and 3 are saved and the scene is reloaded
 - **THEN** the Object exposes BehaviourIds 1 and 3 (not renumbered to 1 and 2 solely by index)
 
+### Requirement: Behaviour OnMessage lifecycle peer hook
+Alongside Ready and Tick, the ScriptHost SHALL register a process-wide message hook so native MessageDispatch can invoke managed `Behaviour.OnMessage` for each Script Peer. Ready/Tick semantics SHALL remain unchanged.
+
+#### Scenario: Message hook registered with lifecycle hooks
+- **WHEN** ScriptHost RegisterLifecycleHooks (or equivalent startup) runs
+- **THEN** native MessageDispatch has a non-null message hook before game code Sends
+
+#### Scenario: OnMessage does not replace Tick
+- **WHEN** a Behaviour implements both Tick and OnMessage
+- **THEN** frame Tick still runs via LifecycleDispatch and Messages run only through MessageDispatch

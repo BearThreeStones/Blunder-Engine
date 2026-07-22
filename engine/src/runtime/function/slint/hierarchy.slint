@@ -1,0 +1,223 @@
+import {
+    EditorIconTreeArrowRight,
+    EditorIconTreeArrowDown,
+} from "editor_icons.slint";
+
+export struct HierarchyTreeRow {
+
+    entity-id: int,
+
+    name: string,
+
+    depth: int,
+
+    expanded: bool,
+
+    has-children: bool,
+
+    selected: bool,
+
+}
+
+export component HierarchyPanel {
+
+    in-out property <[HierarchyTreeRow]> tree-rows: [];
+
+    in property <int> selected-entity-id: 0;
+    in property <bool> show-title: false;
+
+    callback entity-selected(int);
+
+    callback entity-toggle(int);
+
+
+
+    out property <length> hierarchy-origin-x: hierarchy-root.absolute-position.x;
+
+    out property <length> hierarchy-origin-y: hierarchy-root.absolute-position.y;
+
+    out property <length> hierarchy-width: hierarchy-root.width;
+
+    out property <length> hierarchy-height: hierarchy-root.height;
+
+    in-out property <length> tree-origin-y: tree-list.absolute-position.y;
+
+
+
+    min-height: 80px;
+
+    vertical-stretch: 0;
+
+
+
+    hierarchy-root := Rectangle {
+
+        background: #2d2d2d;
+
+        border-color: #2a2a2a;
+
+        border-width: 1px;
+
+        vertical-stretch: 1;
+
+
+
+        VerticalLayout {
+
+            padding: 8px;
+
+            spacing: 6px;
+
+            if root.show-title: Text {
+                text: "Hierarchy";
+                color: #d0d0d0;
+                font-size: 14px;
+            }
+
+            if root.show-title: Rectangle { background: #2a2a2a; height: 1px; }
+
+            tree-panel := Rectangle {
+
+                horizontal-stretch: 1;
+
+                vertical-stretch: 1;
+
+                clip: true;
+
+
+
+                tree-scroll := Flickable {
+
+                    width: parent.width;
+
+                    height: parent.height;
+
+                    interactive: true;
+
+                    viewport-width: parent.width;
+
+                    viewport-height: tree-list.preferred-height;
+
+
+
+                    tree-list := VerticalLayout {
+
+                        horizontal-stretch: 1;
+
+                        spacing: 2px;
+
+
+
+                        for row[index] in root.tree-rows: Rectangle {
+
+                            horizontal-stretch: 1;
+
+                            height: 22px;
+
+                            background: row.selected ? #3a3a4a : #00000000;
+
+
+
+                            HorizontalLayout {
+
+                                horizontal-stretch: 1;
+
+                                padding-left: row.depth * 12px;
+
+                                spacing: 4px;
+
+                                height: 22px;
+
+
+
+                                arrow-touch := TouchArea {
+
+                                    width: 18px;
+
+                                    height: 22px;
+
+                                    if row.has-children && row.expanded: EditorIconTreeArrowDown {
+                                        icon-size: 10px;
+                                        icon-color: #a0a0a0;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                    if row.has-children && !row.expanded: EditorIconTreeArrowRight {
+                                        icon-size: 10px;
+                                        icon-color: #a0a0a0;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    pointer-event(event) => {
+
+                                        if (row.has-children
+
+                                            && event.button == PointerEventButton.left
+
+                                            && event.kind == PointerEventKind.down) {
+
+                                            root.entity-toggle(row.entity-id);
+
+                                        }
+
+                                    }
+
+                                }
+
+
+
+                                row-touch := TouchArea {
+
+                                    horizontal-stretch: 1;
+
+                                    height: 22px;
+
+
+
+                                    Text {
+
+                                        text: row.name;
+
+                                        color: row.selected ? #bde7ff : #d8d8d8;
+
+                                        font-size: 11px;
+
+                                        vertical-alignment: center;
+
+                                        horizontal-stretch: 1;
+
+                                    }
+
+
+
+                                    pointer-event(event) => {
+
+                                        if (event.button == PointerEventButton.left
+
+                                            && event.kind == PointerEventKind.down) {
+
+                                            root.entity-selected(row.entity-id);
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+    }
+
+}
+

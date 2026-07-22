@@ -4,6 +4,8 @@
 
 #include "editor_window.h"
 
+#include "project_manager.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -755,6 +757,28 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       slint::platform::set_platform(std::move(platform));
     }
 
+    if (init_info.project_manager_mode) {
+      LOG_INFO("[SlintSystem::initialize] creating Project Manager window");
+      m_project_manager_mode = true;
+      auto component = ::BlunderPm::ProjectManagerWindow::create();
+      component->show();
+      m_project_manager_component = component;
+
+      m_window_adapter = g_slint_platform_instance->getWindowAdapter();
+      ASSERT(m_window_adapter);
+      m_window_adapter->setOwner(this);
+
+      m_window_system->setNativeEventCallback(
+          [this](const SDL_Event& event) { processEvent(event); });
+
+      syncWindowChromeSize();
+      m_force_window_commit = true;
+      m_window_adapter->pollDrawableSize();
+      m_window_adapter->commitWindowSize(true);
+      LOG_INFO("[SlintSystem] project manager initialized");
+      return;
+    }
+
     LOG_INFO(
         "[SlintSystem::initialize] creating Slint editor window and Skia renderer");
 
@@ -1248,6 +1272,8 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::initialize] {}", e.what());
     m_window_component.reset();
+    m_project_manager_component.reset();
+    m_project_manager_mode = false;
     m_window_adapter = nullptr;
     if (m_window_system) {
       m_window_system->requestClose();
@@ -1255,6 +1281,8 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
   } catch (...) {
     LOG_ERROR("[SlintSystem::initialize] unknown exception");
     m_window_component.reset();
+    m_project_manager_component.reset();
+    m_project_manager_mode = false;
     m_window_adapter = nullptr;
     if (m_window_system) {
       m_window_system->requestClose();
@@ -1264,6 +1292,11 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
 void SlintSystem::shutdown() {
   m_floating_host.shutdown();
+
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->hide();
+    m_project_manager_component.reset();
+  }
 
   if (m_window_component) {
     m_window_component->operator->()->hide();
@@ -1276,6 +1309,7 @@ void SlintSystem::shutdown() {
 
   m_window_adapter = nullptr;
   m_window_system = nullptr;
+  m_project_manager_mode = false;
 }
 
 void SlintSystem::clearBorrowedViewportImageCache() {
@@ -4590,6 +4624,25 @@ bool SlintSystem::processSlintAdapterEvent(SlintWindowAdapter* adapter,
 }
 
 void SlintSystem::beginFrame() {
+  if (m_project_manager_mode) {
+    try {
+      ScopedDispatchGuard guard(m_slint_dispatch_depth);
+      ++m_frame_counter;
+      slint::platform::update_timers_and_animations();
+      if (m_window_adapter) {
+        m_window_adapter->pollDrawableSize();
+        syncWindowChromeSize();
+        m_window_adapter->commitWindowSize(m_force_window_commit);
+        m_force_window_commit = false;
+      }
+    } catch (const std::exception& e) {
+      LOG_ERROR("[SlintSystem::beginFrame] project manager: {}", e.what());
+    } catch (...) {
+      LOG_ERROR("[SlintSystem::beginFrame] project manager: unknown exception");
+    }
+    return;
+  }
+
   if (const auto ui_host = m_ui_host.lock()) {
     ui_host->drainEventQueue();
   }
@@ -4707,6 +4760,23 @@ void SlintSystem::beginFrame() {
 }
 
 void SlintSystem::endFrame() {
+  if (m_project_manager_mode) {
+    try {
+      ScopedDispatchGuard guard(m_slint_dispatch_depth);
+      // Match editor present gating: Skia Vulkan composite is expensive; typing
+      // in LineEdit must not wait on a full-window render every idle iterate.
+      if (m_window_adapter && m_window_adapter->needsRedraw()) {
+        m_window_adapter->compositeFrame();
+      }
+      m_window_resize_active = false;
+    } catch (const std::exception& e) {
+      LOG_ERROR("[SlintSystem::endFrame] project manager: {}", e.what());
+    } catch (...) {
+      LOG_ERROR("[SlintSystem::endFrame] project manager: unknown exception");
+    }
+    return;
+  }
+
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     if (m_window_adapter) {
@@ -4807,7 +4877,8 @@ void SlintSystem::processEvent(const SDL_Event& event) {
     return;
   }
 
-  if (!m_window_adapter || !m_window_component) {
+  if (!m_window_adapter ||
+      (!m_window_component && !m_project_manager_component)) {
     return;
   }
   try {
@@ -5143,4 +5214,197 @@ void SlintSystem::processEvent(const SDL_Event& event) {
   }
   applyPendingViewportInvalidate();
 }
+bool SlintSystem::projectManagerNeedsRedraw() const {
+  return m_project_manager_mode && m_window_adapter != nullptr &&
+         m_window_adapter->needsRedraw();
+}
+
+void SlintSystem::setProjectManagerRows(
+    const eastl::vector<slint::SharedString>& names,
+    const eastl::vector<slint::SharedString>& paths,
+    const eastl::vector<bool>& missing,
+    const eastl::vector<slint::SharedString>& last_opened) {
+  if (!m_project_manager_component) {
+    return;
+  }
+  auto model = std::make_shared<slint::VectorModel<::BlunderPm::ProjectRow>>();
+  const size_t count = names.size();
+  for (size_t i = 0; i < count; ++i) {
+    ::BlunderPm::ProjectRow row{};
+    row.name = names[i];
+    row.path = i < paths.size() ? paths[i] : slint::SharedString();
+    row.missing = i < missing.size() ? missing[i] : false;
+    row.last_opened =
+        i < last_opened.size() ? last_opened[i] : slint::SharedString("—");
+    model->push_back(row);
+  }
+  m_project_manager_component->operator->()->set_projects(model);
+}
+
+void SlintSystem::setProjectManagerStatus(const slint::SharedString& text) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_status_text(text);
+  }
+}
+
+void SlintSystem::setProjectManagerSelectedIndex(int index) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_selected_index(index);
+  }
+}
+
+int SlintSystem::projectManagerSelectedIndex() const {
+  if (!m_project_manager_component) {
+    return -1;
+  }
+  return m_project_manager_component->operator->()->get_selected_index();
+}
+
+void SlintSystem::setProjectManagerCallbacks(
+    ProjectManagerCallback on_open, ProjectManagerCallback on_remove,
+    ProjectManagerCallback on_show_create, ProjectManagerCallback on_show_import,
+    ProjectManagerCallback on_create_browse,
+    ProjectManagerCallback on_create_confirm,
+    ProjectManagerCallback on_create_cancel,
+    ProjectManagerCallback on_import_browse,
+    ProjectManagerCallback on_import_confirm,
+    ProjectManagerCallback on_import_cancel,
+    ProjectManagerIntCallback on_selection) {
+  if (!m_project_manager_component) {
+    return;
+  }
+  ::BlunderPm::ProjectManagerWindow& ui = *m_project_manager_component->operator->();
+  ui.on_open_requested([on_open]() {
+    if (on_open) {
+      on_open();
+    }
+  });
+  ui.on_remove_requested([on_remove]() {
+    if (on_remove) {
+      on_remove();
+    }
+  });
+  ui.on_show_create_requested([on_show_create]() {
+    if (on_show_create) {
+      on_show_create();
+    }
+  });
+  ui.on_show_import_requested([on_show_import]() {
+    if (on_show_import) {
+      on_show_import();
+    }
+  });
+  ui.on_create_browse_requested([on_create_browse]() {
+    if (on_create_browse) {
+      on_create_browse();
+    }
+  });
+  ui.on_create_confirm_requested([on_create_confirm]() {
+    if (on_create_confirm) {
+      on_create_confirm();
+    }
+  });
+  ui.on_create_cancel_requested([on_create_cancel]() {
+    if (on_create_cancel) {
+      on_create_cancel();
+    }
+  });
+  ui.on_import_browse_requested([on_import_browse]() {
+    if (on_import_browse) {
+      on_import_browse();
+    }
+  });
+  ui.on_import_confirm_requested([on_import_confirm]() {
+    if (on_import_confirm) {
+      on_import_confirm();
+    }
+  });
+  ui.on_import_cancel_requested([on_import_cancel]() {
+    if (on_import_cancel) {
+      on_import_cancel();
+    }
+  });
+  ui.on_selection_changed([on_selection](int index) {
+    if (on_selection) {
+      on_selection(index);
+    }
+  });
+}
+
+bool SlintSystem::projectManagerCreateDialogVisible() const {
+  if (!m_project_manager_component) {
+    return false;
+  }
+  return m_project_manager_component->operator->()
+      ->get_create_dialog_visible();
+}
+
+void SlintSystem::setProjectManagerCreateDialogVisible(bool visible) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_create_dialog_visible(
+        visible);
+  }
+}
+
+slint::SharedString SlintSystem::projectManagerCreateName() const {
+  if (!m_project_manager_component) {
+    return {};
+  }
+  return m_project_manager_component->operator->()->get_create_name();
+}
+
+void SlintSystem::setProjectManagerCreateName(const slint::SharedString& name) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_create_name(name);
+  }
+}
+
+slint::SharedString SlintSystem::projectManagerCreatePath() const {
+  if (!m_project_manager_component) {
+    return {};
+  }
+  return m_project_manager_component->operator->()->get_create_path();
+}
+
+void SlintSystem::setProjectManagerCreatePath(const slint::SharedString& path) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_create_path(path);
+  }
+}
+
+bool SlintSystem::projectManagerCreateFolder() const {
+  if (!m_project_manager_component) {
+    return true;
+  }
+  return m_project_manager_component->operator->()->get_create_folder();
+}
+
+bool SlintSystem::projectManagerImportDialogVisible() const {
+  if (!m_project_manager_component) {
+    return false;
+  }
+  return m_project_manager_component->operator->()
+      ->get_import_dialog_visible();
+}
+
+void SlintSystem::setProjectManagerImportDialogVisible(bool visible) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_import_dialog_visible(
+        visible);
+  }
+}
+
+slint::SharedString SlintSystem::projectManagerImportPath() const {
+  if (!m_project_manager_component) {
+    return {};
+  }
+  return m_project_manager_component->operator->()->get_import_path();
+}
+
+void SlintSystem::setProjectManagerImportPath(const slint::SharedString& path) {
+  if (m_project_manager_component) {
+    m_project_manager_component->operator->()->set_import_path(path);
+  }
+}
+
 }  // namespace Blunder

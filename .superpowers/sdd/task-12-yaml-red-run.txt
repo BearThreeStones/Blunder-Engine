@@ -1,2 +1,0 @@
-FAIL texture_guids size 2
-EXIT=0 

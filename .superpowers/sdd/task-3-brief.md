@@ -1,29 +1,151 @@
-﻿# Task 2.1 — Descriptor archived_source field
+### Task 3: Managed Api + ScriptHost hook
 
-Extend descriptor schema with optional archived Source path field; keep Intermediate `source` as Cook/Fast Path input.
 
-## Field name (locked)
-Use **`archived_source`** (optional string) on both Mesh and Texture Asset Descriptors. Empty/absent means no Source archive. Intermediate path remains **`source`**.
 
-## TDD (mandatory)
-1. RED: Add `asset_yaml_test` (or similar) under `engine/src/tests/` that:
-   - Parses mesh YAML with `source` + `archived_source` and asserts both fields
-   - Parses mesh YAML without `archived_source` (legacy) → empty archived_source, still succeeds
-   - Round-trips serialize → parse for mesh and texture when archived_source is set
-   - Omits `archived_source` key from serialized YAML when empty (keep descriptors clean)
-2. Wire the test target in `engine/src/tests/CMakeLists.txt` like other `engine_runtime` tests
-3. Configure/build in THIS worktree (`cmake --preset vs2026-debug` if needed; build dir `build/vs2026-debug`). Watch the test FAIL for the right reason before implementing.
-4. GREEN: Minimal changes to `asset_descriptor.h` / `asset_yaml.cpp` (+ header) to pass
-5. Re-run the test green; commit
+**Files:**
 
-## Constraints
-- Do not implement Import/Source Export yet (later tasks)
-- Do not rename Intermediate `source`
-- Workdir: e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull
-- Do not push; do not change git config
-- Mark `- [x] 2.1` in openspec/changes/asset-pipeline-pull/tasks.md
+- Create: `engine/managed/Blunder.Api/MessageArg.cs`
 
-## Report
-Write e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.superpowers\sdd\task-3-report.md
-(Note: task-3-report = OpenSpec task 2.1 / SDD sequence task 3)
-Include: RED proof (failure output), GREEN proof (pass output), commits, status.
+- Create: `engine/managed/Blunder.Api/Message.cs`
+
+- Modify: `engine/managed/Blunder.Api/Behaviour.cs`
+
+- Modify: `engine/managed/Blunder.Api/NativeAbi.cs`
+
+- Modify: `engine/managed/Blunder.Api/Native.cs`
+
+- Modify: `engine/managed/Blunder.ScriptHost/HostExports.cs`
+
+- Modify: `engine/managed/Blunder.Api.NativeAbiTests/Program.cs`
+
+
+
+**Interfaces:**
+
+- Consumes: NativeAbi message_* 
+
+- Produces:
+
+  - `public enum MessageArgKind : byte { Nil, Bool, Int, Float, ObjectId }`
+
+  - `public struct MessageArg { ... static MessageArg FromInt(long); FromBool; FromFloat; FromObjectId; }`
+
+  - `public readonly struct MessageId { public uint Value; }`
+
+  - `public static class Message { static MessageId Register(string name); static void Send(ulong objectId, MessageId id, params MessageArg[] args); }`
+
+  - `Behaviour.OnMessage(MessageId id, ReadOnlySpan<MessageArg> args)` virtual empty
+
+  - ScriptHost: `OnMessage` unmanaged caller ???`behaviour.OnMessage`; register in `RegisterLifecycleHooks`; clear hook in `ShutdownCleanup`
+
+
+
+- [ ] **Step 1: Update NativeAbiTests to expect 23 pointers (fails)**
+
+
+
+Change `sizeof(BlunderNativeAbi) == 19 * sizeof(nint)` to `23 * sizeof(nint)`. Add stub function pointers for the four new fields in the complete abi. Build/run NativeAbiTests ???expect size fail until NativeAbi.cs updated.
+
+
+
+- [ ] **Step 2: Extend NativeAbi + Native**
+
+
+
+Add four `delegate* unmanaged[Cdecl]<...>` fields in the same order as C header. Extend `IsComplete`. Add wrappers `blunder_message_register`, `blunder_message_send`, `blunder_message_set_hook`, `blunder_message_clear_hook`.
+
+
+
+- [ ] **Step 3: MessageArg + Message + Behaviour.OnMessage**
+
+
+
+`Message.Register`: call native register, throw on Error. `Message.Send`: if args null treat as 0; if Length>4 throw `ArgumentException`; stackalloc/fixed `BlunderMessageArg` buffer; call send; throw on Error.
+
+
+
+- [ ] **Step 4: ScriptHost hook**
+
+
+
+```csharp
+
+[UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+
+static void OnMessage(IntPtr peer, uint id, BlunderMessageArg* args, int argc)
+
+{
+
+    if (peer == IntPtr.Zero) return;
+
+    GCHandle handle = GCHandle.FromIntPtr(peer);
+
+    if (handle.Target is not Behaviour behaviour) return;
+
+    // copy to MessageArg[argc] then behaviour.OnMessage(new MessageId(id), span);
+
+}
+
+
+
+// In RegisterLifecycleHooks:
+
+Native.blunder_message_set_hook((IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, uint, BlunderMessageArg*, int, void>)&OnMessage);
+
+
+
+// In ShutdownCleanup:
+
+Native.blunder_message_clear_hook();
+
+```
+
+
+
+Define a managed `BlunderMessageArg` struct with `[StructLayout(LayoutKind.Sequential)]` matching C (put shared layout in Api).
+
+
+
+- [ ] **Step 5: Build managed + NativeAbiTests**
+
+
+
+```powershell
+
+dotnet build engine/managed/Blunder.Api/Blunder.Api.csproj -c Debug
+
+dotnet build engine/managed/Blunder.ScriptHost/Blunder.ScriptHost.csproj -c Debug
+
+dotnet run --project engine/managed/Blunder.Api.NativeAbiTests -c Debug
+
+```
+
+
+
+Expected: exit 0.
+
+
+
+- [ ] **Step 6: Commit**
+
+
+
+```bash
+
+git add engine/managed/Blunder.Api engine/managed/Blunder.ScriptHost engine/managed/Blunder.Api.NativeAbiTests
+
+git commit -m "$(cat <<'EOF'
+
+feat: add Message fa??ade and Behaviour.OnMessage hook
+
+
+
+EOF
+
+)"
+
+```
+
+
+
+---

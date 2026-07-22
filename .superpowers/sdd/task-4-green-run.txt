@@ -1,2 +1,0 @@
-play_session_controller_test: all passed
-GREEN_EXIT=!ERRORLEVEL! 

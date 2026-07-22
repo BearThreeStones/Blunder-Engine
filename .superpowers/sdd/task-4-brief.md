@@ -1,26 +1,109 @@
-﻿# Task 2.2 — Register Scene Assets in AssetRegistry
+### Task 4: DotNet integration smoke
 
-Register Scene documents in `AssetRegistry` (scan `*.scene.asset`); allocate/persist `guid` on create/open/upgrade.
 
-## Scope (this task only)
-- `rebuildFromScan` includes `*.scene.asset` under Assets when they have a valid `guid` field (JSON)
-- Provide a helper (e.g. `ensureSceneAssetRegistered` / `upgradeSceneGuidIfNeeded`) that:
-  - If scene JSON lacks `guid`: allocate GUID, write it into the document on disk, register
-  - If scene has guid: register if missing from registry
-- Do NOT yet change mesh field to GUID (that is task 2.3)
 
-## TDD mandatory
-1. RED: `asset_registry_test` (temp project root via FileSystem) asserting:
-   - rebuildFromScan registers a `.scene.asset` that already contains guid
-   - ensure/upgrade allocates guid for a legacy scene without guid, persists file, registry resolves
-2. Watch fail correctly → GREEN minimal code → pass → commit
-3. Mark `- [x] 2.2` in tasks.md
+**Files:**
 
-## Workdir
-e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull
+- Modify: `engine/src/tests/fixtures/dotnet_host_game/` (add `MessageProbeBehaviour.cs` with static counter)
 
-## Report
-e:\Dev\Blunder-Engine\.worktrees\asset-pipeline-pull\.superpowers\sdd\task-4-report.md
-Include RED/GREEN evidence.
+- Modify: `engine/src/tests/editor_dotnet_host_test.cpp` **or** create `object_message_dotnet_test.cpp` mirroring editor host pattern
 
-Do not push. Do not change git config.
+- Modify: `engine/managed/Blunder.ScriptHost/HostExports.cs` (optional test seam `GetMessageProbeCount`)
+
+- Modify: CMake test target as needed
+
+
+
+**Interfaces:**
+
+- Consumes: Tasks 1???
+
+- Produces: e2e assertion that Send from native C-ABI (or managed via host) increments probe OnMessage count on a second Object
+
+
+
+- [ ] **Step 1: Fixture Behaviour**
+
+
+
+```csharp
+
+namespace DotnetHostGame;
+
+public class MessageProbeBehaviour : Behaviour
+
+{
+
+    public static int MessageCount;
+
+    public static uint LastId;
+
+    public override void OnMessage(MessageId id, ReadOnlySpan<MessageArg> args)
+
+    {
+
+        ++MessageCount;
+
+        LastId = id.Value;
+
+    }
+
+}
+
+```
+
+
+
+Reset counter in test setup (static field = 0 before Attach).
+
+
+
+- [ ] **Step 2: Failing e2e test**
+
+
+
+Create two ObjectIds via process ABI, AttachBehaviour MessageProbe on target, Register `"Ping"`, Send from test (C-ABI `blunder_message_send` after hooks registered), assert MessageCount==1.
+
+
+
+- [ ] **Step 3: Implement seams / fix until green**
+
+
+
+```powershell
+
+cmake --build build/vs2026-debug --config Debug --target editor_dotnet_host_test
+
+.\build\vs2026-debug\engine\src\tests\Debug\editor_dotnet_host_test.exe
+
+```
+
+
+
+Expected: PASS (or dedicated `object_message_dotnet_test`).
+
+
+
+- [ ] **Step 4: Commit**
+
+
+
+```bash
+
+git add engine/src/tests engine/managed/Blunder.ScriptHost
+
+git commit -m "$(cat <<'EOF'
+
+test: verify cross-Object Message reaches OnMessage
+
+
+
+EOF
+
+)"
+
+```
+
+
+
+---

@@ -8,9 +8,11 @@
 #include <slint-platform.h>
 
 #include "EASTL/array.h"
+#include "EASTL/functional.h"
 #include "EASTL/vector.h"
 
 #include "editor_window.h"
+#include "project_manager.h"
 
 #include "runtime/platform/window/child_window_registry.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
@@ -49,6 +51,8 @@ struct SlintSystemInitInfo {
   uint64_t shared_vk_physical_device{0};
   uint64_t shared_vk_device{0};
   uint32_t shared_vk_queue_family{0};
+  /// When true, initialize ProjectManagerWindow instead of MainEditorWindow.
+  bool project_manager_mode{false};
 };
 
 class SlintSystem final : public IEditorUiPresentation {
@@ -58,6 +62,41 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void initialize(const SlintSystemInitInfo& init_info);
   void shutdown();
+
+  using ProjectManagerCallback = eastl::function<void()>;
+  using ProjectManagerIntCallback = eastl::function<void(int)>;
+
+  bool isProjectManagerMode() const { return m_project_manager_mode; }
+  bool projectManagerNeedsRedraw() const;
+  void setProjectManagerRows(
+      const eastl::vector<slint::SharedString>& names,
+      const eastl::vector<slint::SharedString>& paths,
+      const eastl::vector<bool>& missing,
+      const eastl::vector<slint::SharedString>& last_opened);
+  void setProjectManagerStatus(const slint::SharedString& text);
+  void setProjectManagerSelectedIndex(int index);
+  int projectManagerSelectedIndex() const;
+  void setProjectManagerCallbacks(
+      ProjectManagerCallback on_open, ProjectManagerCallback on_remove,
+      ProjectManagerCallback on_show_create, ProjectManagerCallback on_show_import,
+      ProjectManagerCallback on_create_browse,
+      ProjectManagerCallback on_create_confirm,
+      ProjectManagerCallback on_create_cancel,
+      ProjectManagerCallback on_import_browse,
+      ProjectManagerCallback on_import_confirm,
+      ProjectManagerCallback on_import_cancel,
+      ProjectManagerIntCallback on_selection);
+  bool projectManagerCreateDialogVisible() const;
+  void setProjectManagerCreateDialogVisible(bool visible);
+  slint::SharedString projectManagerCreateName() const;
+  void setProjectManagerCreateName(const slint::SharedString& name);
+  slint::SharedString projectManagerCreatePath() const;
+  void setProjectManagerCreatePath(const slint::SharedString& path);
+  bool projectManagerCreateFolder() const;
+  bool projectManagerImportDialogVisible() const;
+  void setProjectManagerImportDialogVisible(bool visible);
+  slint::SharedString projectManagerImportPath() const;
+  void setProjectManagerImportPath(const slint::SharedString& path);
   WindowSystem* getWindowSystem() const { return m_window_system; }
   ChildWindowRegistry& childWindowRegistry() { return m_child_window_registry; }
 
@@ -390,6 +429,9 @@ class SlintSystem final : public IEditorUiPresentation {
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
+  std::optional<slint::ComponentHandle<::BlunderPm::ProjectManagerWindow>>
+      m_project_manager_component;
+  bool m_project_manager_mode{false};
   ViewportLogicalRect m_cached_viewport_logical_rect{};
   BrowserLogicalRect m_cached_browser_logical_rect{};
   BrowserLogicalRect m_cached_hierarchy_logical_rect{};

@@ -1,0 +1,252 @@
+/// One Transform axis cell: colored letter, editable value, unit, scrub, optional under-slider.
+/// Godot-style: compact value row; rotation under-slider is a thin bottom track.
+export component AxisNumberField inherits Rectangle {
+    in property <string> axis-label: "x";
+    in property <color> axis-color: #ff3352;
+    in-out property <float> value: 0.0;
+    in property <string> unit: "";
+    in property <bool> show-slider: false;
+    in property <float> slider-min: -180.0;
+    in property <float> slider-max: 180.0;
+    in property <bool> mixed: false;
+    in property <float> scrub-sensitivity: 0.05;
+
+    callback live-edited();
+    callback text-committed(string);
+    callback focus-changed(bool);
+
+    private property <bool> scrubbing: false;
+    private property <float> scrub-start-x: 0;
+    private property <float> scrub-start-value: 0;
+    private property <bool> editing: false;
+    private property <string> draft: "";
+    private property <bool> slider-dragging: false;
+    private property <float> slider-span: Math.max(root.slider-max - root.slider-min, 0.0001);
+    private property <float> slider-t: Math.max(0.0, Math.min(1.0,
+        (root.value - root.slider-min) / root.slider-span));
+
+    background: #252525;
+    border-radius: 3px;
+    horizontal-stretch: 1;
+    vertical-stretch: 0;
+    min-height: root.show-slider ? 32px : 22px;
+    preferred-height: root.show-slider ? 32px : 22px;
+
+    VerticalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 2px;
+        padding-bottom: root.show-slider ? 2px : 2px;
+        spacing: 2px;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: 4px;
+            padding: 0px;
+
+            Text {
+                text: root.axis-label;
+                color: root.axis-color;
+                font-size: 11px;
+                font-weight: 700;
+                vertical-alignment: center;
+                width: 10px;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                preferred-height: 16px;
+                min-height: 16px;
+                background: transparent;
+
+                if !root.editing: HorizontalLayout {
+                    spacing: 2px;
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.mixed ? "—" : (Math.round(root.value * 1000) / 1000);
+                        color: #e0e0e0;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    if root.unit != "": Text {
+                        text: root.unit;
+                        color: #808080;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.editing: TextInput {
+                    width: 100%;
+                    height: 100%;
+                    font-size: 11px;
+                    color: #e0e0e0;
+                    text <=> root.draft;
+                    init => { self.focus(); }
+                    accepted => {
+                        root.editing = false;
+                        root.focus-changed(false);
+                        root.text-committed(self.text);
+                    }
+                    key-pressed(event) => {
+                        if (event.text == Key.Escape) {
+                            root.editing = false;
+                            root.draft = "";
+                            root.focus-changed(false);
+                            return accept;
+                        }
+                        return reject;
+                    }
+                }
+
+                scrub-area := TouchArea {
+                    enabled: !root.editing;
+                    mouse-cursor: ew-resize;
+                    clicked => {
+                        root.draft = root.mixed ? "" : "" + (Math.round(root.value * 1000) / 1000);
+                        root.editing = true;
+                        root.focus-changed(true);
+                    }
+                    moved => {
+                        if (self.pressed) {
+                            if (!root.scrubbing) {
+                                root.scrubbing = true;
+                                root.scrub-start-x = self.mouse-x / 1px;
+                                root.scrub-start-value = root.value;
+                                root.focus-changed(true);
+                            }
+                            root.value = root.scrub-start-value
+                                + ((self.mouse-x / 1px) - root.scrub-start-x) * root.scrub-sensitivity;
+                            root.live-edited();
+                        }
+                    }
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.up && root.scrubbing) {
+                            root.scrubbing = false;
+                            root.focus-changed(false);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Light-gray progress bar + hover ring / square→circle handle.
+        if root.show-slider: slider-row := Rectangle {
+            height: 12px;
+            preferred-height: 12px;
+            background: transparent;
+
+            private property <length> thumb-sz: 4px;
+            private property <length> ring-sz: 10px;
+            private property <length> thumb-x: (self.width - self.thumb-sz) * root.slider-t;
+            private property <length> thumb-y: (self.height - self.thumb-sz) / 2;
+            private property <length> ring-x: self.thumb-x + (self.thumb-sz - self.ring-sz) / 2;
+            private property <length> ring-y: (self.height - self.ring-sz) / 2;
+            private property <bool> bar-hov: slider-touch.has-hover || handle-touch.has-hover;
+            private property <bool> handle-hov: handle-touch.has-hover;
+            private property <bool> show-circle: root.slider-dragging || self.bar-hov;
+            private property <bool> ring-solid: root.slider-dragging || self.handle-hov;
+            private property <float> drag-t: Math.max(0.0, Math.min(1.0,
+                (slider-touch.mouse-x / 1px) / Math.max(self.width / 1px, 1.0)));
+
+            // Empty track
+            Rectangle {
+                x: 0px;
+                y: (parent.height - 1px) / 2;
+                width: parent.width;
+                height: 1px;
+                background: #6a6a6a;
+            }
+            // Filled portion (light gray)
+            Rectangle {
+                x: 0px;
+                y: (parent.height - 1px) / 2;
+                width: parent.width * root.slider-t;
+                height: 1px;
+                background: #c8c8c8;
+            }
+
+            // Hover ring (semi-transparent on bar, solid on handle)
+            if self.show-circle: Rectangle {
+                x: slider-row.ring-x;
+                y: slider-row.ring-y;
+                width: slider-row.ring-sz;
+                height: slider-row.ring-sz;
+                border-radius: slider-row.ring-sz / 2;
+                background: transparent;
+                border-width: 1.5px;
+                border-color: slider-row.ring-solid ? #ffffff : #ffffff80;
+            }
+
+            // Handle: square idle → circle when hovering bar/handle
+            Rectangle {
+                x: slider-row.thumb-x;
+                y: slider-row.thumb-y;
+                width: slider-row.thumb-sz;
+                height: slider-row.thumb-sz;
+                border-radius: slider-row.show-circle ? (slider-row.thumb-sz / 2) : 0px;
+                background: #f0f0f0;
+            }
+
+            slider-touch := TouchArea {
+                mouse-cursor: ew-resize;
+                moved => {
+                    if (self.pressed) {
+                        if (!root.slider-dragging) {
+                            root.slider-dragging = true;
+                            root.focus-changed(true);
+                        }
+                        root.value = root.slider-min + root.slider-span * slider-row.drag-t;
+                        root.live-edited();
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.slider-dragging = true;
+                        root.focus-changed(true);
+                        root.value = root.slider-min + root.slider-span * slider-row.drag-t;
+                        root.live-edited();
+                    }
+                    if (event.kind == PointerEventKind.up && root.slider-dragging) {
+                        root.slider-dragging = false;
+                        root.focus-changed(false);
+                    }
+                }
+            }
+
+            // Handle hit target on top — solid ring when hovered; drag via row coords
+            handle-touch := TouchArea {
+                x: slider-row.thumb-x - 4px;
+                y: 0px;
+                width: slider-row.thumb-sz + 8px;
+                height: parent.height;
+                mouse-cursor: ew-resize;
+                moved => {
+                    if (self.pressed) {
+                        if (!root.slider-dragging) {
+                            root.slider-dragging = true;
+                            root.focus-changed(true);
+                        }
+                        root.value = root.slider-min + root.slider-span * Math.max(0.0, Math.min(1.0,
+                            ((self.x / 1px) + (self.mouse-x / 1px)) / Math.max(slider-row.width / 1px, 1.0)));
+                        root.live-edited();
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.slider-dragging = true;
+                        root.focus-changed(true);
+                        root.value = root.slider-min + root.slider-span * Math.max(0.0, Math.min(1.0,
+                            ((self.x / 1px) + (self.mouse-x / 1px)) / Math.max(slider-row.width / 1px, 1.0)));
+                        root.live-edited();
+                    }
+                    if (event.kind == PointerEventKind.up && root.slider-dragging) {
+                        root.slider-dragging = false;
+                        root.focus-changed(false);
+                    }
+                }
+            }
+        }
+    }
+}

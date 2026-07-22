@@ -1,0 +1,3 @@
+# Debug engine_editor may omit --project-root via BLUNDER_PROJECT_ROOT
+
+Product entry for choosing/creating Projects is **`project_manager.exe`**. **`engine_editor.exe`** requires an explicit project root for a normal Editor Session. Exception for v1: **Debug** builds that compile in `BLUNDER_PROJECT_ROOT` may open that root when no `--project-root` is given so day-to-day engine development can still launch the editor directly. Release/packaged builds do not use the compile-time root as a silent default. Rejected: requiring every Debug run to go through Project Manager first (slows contributors); “reopen last project” as the editor’s no-arg default (surprising on first run / new machines).

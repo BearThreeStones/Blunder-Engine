@@ -12,8 +12,13 @@ target_link_libraries(engine_editor
 # does not block instrumented rebuilds (profiling/nsight/run-group.ps1 sets this).
 option(BLUNDER_EDITOR_PROFILE_EXE "Link editor to engine_editor_profile.exe in profile/" OFF)
 
+# Ship beside project_manager in bin/<Config>/ (ADR 0009 Open via relaunch).
 set_target_properties(engine_editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/bin/RelWithDebInfo"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/bin/MinSizeRel"
 )
 
 if(BLUNDER_EDITOR_PROFILE_EXE)

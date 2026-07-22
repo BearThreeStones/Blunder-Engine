@@ -1,62 +1,62 @@
-# Task 3 Report — Play control channel (IPC)
+# Task 3 Report: Managed Api + ScriptHost hook
 
-**Status:** DONE  
-**Branch:** `feat/play-mode-ui`  
-**Workspace:** `E:/Dev/Blunder-Engine/.worktrees/play-mode-ui`
+## Status: DONE
 
-## Delivered (OpenSpec 3.1–3.3)
+## TDD Evidence
 
-| Item | Result |
+### RED (Step 1)
+
+Updated `NativeAbiTests/Program.cs`: `sizeof(BlunderNativeAbi) == 23 * sizeof(nint)` and four message stub pointers.
+
+```powershell
+dotnet run --project engine/managed/Blunder.Api.NativeAbiTests -c Debug
+```
+
+**Result:** exit 1 — compile errors (`BlunderMessageArg` not found; `message_register` etc. missing on `BlunderNativeAbi`).
+
+### GREEN (Steps 2–5)
+
+Implemented:
+
+- `MessageArg.cs` — `MessageArgKind`, `MessageArg`, `BlunderMessageArg` (Explicit 16-byte layout: kind + 7 pad + union)
+- `Message.cs` — `MessageId`, `Message.Register` / `Message.Send` (max 4 args)
+- `Behaviour.OnMessage` virtual
+- `NativeAbi.cs` / `Native.cs` — four `message_*` fields + wrappers
+- `HostExports.cs` — `OnMessage` hook; `RegisterLifecycleHooks` sets hook; `ShutdownCleanup` clears hook
+
+```powershell
+dotnet build engine/managed/Blunder.Api/Blunder.Api.csproj -c Debug
+dotnet build engine/managed/Blunder.ScriptHost/Blunder.ScriptHost.csproj -c Debug
+dotnet run --project engine/managed/Blunder.Api.NativeAbiTests -c Debug
+```
+
+**Result:** all exit 0. NativeAbiTests output: `Blunder.Api.NativeAbiTests: OK`.
+
+## Commit
+
+```
+feat: add Message façade and Behaviour.OnMessage hook
+```
+
+## Test Summary
+
+| Test | Result |
 |------|--------|
-| 3.1 Shared IPC helper | Done — `PlayIpcServer` / `PlayIpcClient` localhost TCP; ephemeral port via `listen(0)` |
-| 3.2 Commands + ready | Done — line protocol `pause` / `resume` / `stop`; server emits `ready\n` on accept |
-| 3.3 Loopback test | Done — `play_ipc_test` fake client against in-process server |
-| Player wire | Done — `--play-ipc` starts server; poll each frame; Pause API + `requestClose` on stop |
-
-OpenSpec 3.1–3.3 marked `[x]` in `openspec/changes/play-mode-ui/tasks.md`.
-
-## Commits
-
-1. `feat(play): localhost IPC control channel`
-
-## TDD evidence
-
-### RED
-
-Stub `play_ipc.cpp` (no listen / no protocol):
-
-```text
-FAIL parse host:port ok
-FAIL listen ephemeral
-FAIL ready handshake
-FAIL send pause
-...
-18 failure(s)
-RED_EXIT=1
-```
-
-### GREEN
-
-```text
-play_ipc_test: all passed
-GREEN_EXIT=0
-```
-
-## Protocol
-
-- Endpoint: `host:port` (e.g. `127.0.0.1:54321`); port-only defaults host to `127.0.0.1`
-- Server listens (non-blocking); on accept sends `ready\n`
-- Client sends one command per line: `pause`, `resume`, `stop`
-- Player: `pause`/`resume` → `setPlayPaused`; `stop` → `WindowSystem::requestClose`
-
-## Self-review
-
-- Unit test covers parse, ephemeral bind, ready handshake, and command dispatch without launching `engine_player`.
-- Shared helper lives in `engine_runtime` for Task 4 editor client reuse.
-- Player fails startup if `--play-ipc` is invalid or bind fails.
+| `Blunder.Api` build | PASS |
+| `Blunder.ScriptHost` build | PASS |
+| `Blunder.Api.NativeAbiTests` | PASS (23-pointer layout, register/send stubs) |
 
 ## Concerns
 
-1. **Single client** — server accepts one editor connection; reconnect after drop is OK, multi-client not supported.
-2. **No command ACKs** — editor must infer pause from Player state / UI; Task 4 may want acks.
-3. **pipe: endpoints** — CLI still accepts non-TCP strings from Task 1 tests; Player rejects anything that is not `host:port`.
+- No e2e message dispatch test yet (Task 4).
+- `BlunderMessageArg` layout verified by Explicit `Size = 16` matching C header; no cross-language struct-size assertion in managed tests.
+
+## Files Changed
+
+- `engine/managed/Blunder.Api/MessageArg.cs` (new)
+- `engine/managed/Blunder.Api/Message.cs` (new)
+- `engine/managed/Blunder.Api/Behaviour.cs`
+- `engine/managed/Blunder.Api/NativeAbi.cs`
+- `engine/managed/Blunder.Api/Native.cs`
+- `engine/managed/Blunder.ScriptHost/HostExports.cs`
+- `engine/managed/Blunder.Api.NativeAbiTests/Program.cs`

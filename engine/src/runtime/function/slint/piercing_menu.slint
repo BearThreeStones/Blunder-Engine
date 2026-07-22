@@ -1,0 +1,74 @@
+export struct PiercingMenuRow {
+    entity-id: int,
+    name: string,
+}
+
+export component PiercingMenu inherits Rectangle {
+    in property <bool> show-menu: false;
+    in property <length> anchor-x: 0px;
+    in property <length> anchor-y: 0px;
+    in property <[PiercingMenuRow]> rows: [];
+
+    callback entity-selected(int);
+    callback dismissed();
+
+    visible: root.show-menu;
+    background: transparent;
+
+    if root.show-menu: dismiss-layer := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.dismissed(); }
+    }
+
+    if root.show-menu: menu-panel := Rectangle {
+        x: root.anchor-x;
+        y: root.anchor-y;
+        width: 200px;
+        height: root.rows.length * 26px + 8px;
+        background: #252525;
+        border-color: #444444;
+        border-width: 1px;
+        border-radius: 4px;
+
+        panel-touch := TouchArea {
+            width: 100%;
+            height: 100%;
+            clicked => { /* absorb; do not bubble to dismiss-layer */ }
+        }
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 0px;
+
+            for row in root.rows: Rectangle {
+                height: 26px;
+                background: row-touch.has-hover ? #3a3a3a : transparent;
+                border-radius: 2px;
+
+                row-touch := TouchArea {
+                    width: 100%;
+                    height: 100%;
+
+                    Text {
+                        x: 8px;
+                        width: parent.width - 16px;
+                        height: parent.height;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        text: row.name;
+                        color: #e8e8e8;
+                        font-size: 12px;
+                    }
+
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left
+                            && event.kind == PointerEventKind.down) {
+                            root.entity-selected(row.entity-id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

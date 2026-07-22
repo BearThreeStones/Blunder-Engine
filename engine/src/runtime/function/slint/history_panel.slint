@@ -1,0 +1,246 @@
+import { CheckBox } from "std-widgets.slint";
+import {
+    ContentBrowser,
+    BrowserTreeRow,
+    BrowserGridRow,
+    BrowserPathSegment,
+} from "content_browser.slint";
+
+export struct HistoryRow {
+    label: string,
+    index: int,
+    is-applied: bool,
+    is-current: bool,
+}
+
+export component HistoryPanel {
+    in-out property <[HistoryRow]> rows: [];
+    in-out property <bool> filter-scene: true;
+    in-out property <bool> filter-global: true;
+
+    callback filter-changed();
+    callback entry-clicked(int);
+
+    min-height: 120px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    Rectangle {
+        background: #252525;
+        border-color: #1a1a1a;
+        border-width: 1px;
+
+        VerticalLayout {
+            spacing: 0px;
+            padding: 0px;
+
+            Rectangle {
+                height: 34px;
+                background: #2d2d2d;
+
+                HorizontalLayout {
+                    padding: 6px;
+                    padding-left: 10px;
+                    spacing: 14px;
+                    alignment: start;
+
+                    CheckBox {
+                        text: "Scene";
+                        checked <=> root.filter-scene;
+                        toggled => { root.filter-changed(); }
+                    }
+                    CheckBox {
+                        text: "Global";
+                        checked <=> root.filter-global;
+                        toggled => { root.filter-changed(); }
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: #252525;
+                clip: true;
+
+                Flickable {
+                    width: 100%;
+                    height: 100%;
+                    viewport-width: self.width;
+                    viewport-height: history-list.preferred-height;
+
+                    history-list := VerticalLayout {
+                        alignment: start;
+                        spacing: 0px;
+                        width: parent.width;
+
+                        for row[i] in root.rows: Rectangle {
+                            height: 26px;
+                            width: parent.width;
+                            background: row.is-current ? #3a3a3a : transparent;
+
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 8px;
+                                alignment: center;
+
+                                Text {
+                                    text: row.label;
+                                    color: row.is-applied ? #e0e0e0 : #707070;
+                                    font-size: 12px;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            TouchArea {
+                                width: 100%;
+                                height: 100%;
+                                clicked => { root.entry-clicked(row.index); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Sibling File System / History tabs wrapping ContentBrowser + HistoryPanel.
+export component FilesystemHistoryHost {
+    in-out property <[BrowserTreeRow]> tree-rows: [];
+    in-out property <[BrowserGridRow]> grid-rows: [];
+    in-out property <[BrowserPathSegment]> path-segments: [];
+    in property <bool> drag-active: false;
+    in property <string> drag-source-path: "";
+    in property <string> drop-highlight-path: "";
+    in property <bool> viewport-drop-active: false;
+    in property <string> status-text: "0 items";
+    in property <string> selected-folder-path: "";
+    in-out property <length> thumb-size: 80px;
+    in-out property <length> tree-pane-width: 200px;
+    in property <bool> layout-drag-active: false;
+
+    in-out property <[HistoryRow]> history-rows: [];
+    in-out property <bool> history-filter-scene: true;
+    in-out property <bool> history-filter-global: true;
+    in-out property <int> active-subtab: 0;
+
+    callback folder-selected(string);
+    callback folder-toggle(string);
+    callback refresh-requested();
+    callback import-requested();
+    callback item-press(string, float, float);
+    callback item-move(string, float, float);
+    callback item-release(string, float, float);
+    callback layout-drag-active-changed(bool);
+    callback search-changed(string);
+    callback path-segment-clicked(string);
+    callback history-filter-changed();
+    callback history-entry-clicked(int);
+
+    out property <length> browser-origin-x: browser.browser-origin-x;
+    out property <length> browser-origin-y: browser.browser-origin-y;
+    out property <length> browser-width: browser.browser-width;
+    out property <length> browser-height: browser.browser-height;
+    in-out property <length> tree-origin-y <=> browser.tree-origin-y;
+    in-out property <length> tree-panel-height <=> browser.tree-panel-height;
+
+    min-height: 120px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        Rectangle {
+            height: 28px;
+            background: #2a2a2a;
+
+            HorizontalLayout {
+                spacing: 0px;
+                alignment: start;
+
+                TouchArea {
+                    width: fs-tab.preferred-width + 24px;
+                    height: 100%;
+                    clicked => { root.active-subtab = 0; }
+                    Rectangle {
+                        background: root.active-subtab == 0 ? #3a3a3a : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            alignment: center;
+                            fs-tab := Text {
+                                text: "File System";
+                                color: root.active-subtab == 0 ? #ffffff : #a0a0a0;
+                                font-size: 12px;
+                            }
+                        }
+                    }
+                }
+
+                TouchArea {
+                    width: hist-tab.preferred-width + 24px;
+                    height: 100%;
+                    clicked => { root.active-subtab = 1; }
+                    Rectangle {
+                        background: root.active-subtab == 1 ? #3a3a3a : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            alignment: center;
+                            hist-tab := Text {
+                                text: "History";
+                                color: root.active-subtab == 1 ? #ffffff : #a0a0a0;
+                                font-size: 12px;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        browser := ContentBrowser {
+            width: 100%;
+            height: 100%;
+            vertical-stretch: root.active-subtab == 0 ? 1 : 0;
+            visible: root.active-subtab == 0;
+            layout-drag-active: root.layout-drag-active;
+            tree-rows <=> root.tree-rows;
+            grid-rows <=> root.grid-rows;
+            path-segments <=> root.path-segments;
+            drag-active: root.drag-active;
+            drag-source-path: root.drag-source-path;
+            drop-highlight-path: root.drop-highlight-path;
+            viewport-drop-active: root.viewport-drop-active;
+            status-text: root.status-text;
+            selected-folder-path: root.selected-folder-path;
+            tree-pane-width <=> root.tree-pane-width;
+            thumb-size <=> root.thumb-size;
+            folder-selected(path) => { root.folder-selected(path); }
+            folder-toggle(path) => { root.folder-toggle(path); }
+            refresh-requested => { root.refresh-requested(); }
+            import-requested => { root.import-requested(); }
+            item-press(path, x, y) => { root.item-press(path, x, y); }
+            item-move(path, x, y) => { root.item-move(path, x, y); }
+            item-release(path, x, y) => { root.item-release(path, x, y); }
+            layout-drag-active-changed(active) => {
+                root.layout-drag-active-changed(active);
+            }
+            search-changed(text) => { root.search-changed(text); }
+            path-segment-clicked(path) => { root.path-segment-clicked(path); }
+        }
+
+        HistoryPanel {
+            width: 100%;
+            height: 100%;
+            vertical-stretch: root.active-subtab == 1 ? 1 : 0;
+            visible: root.active-subtab == 1;
+            rows <=> root.history-rows;
+            filter-scene <=> root.history-filter-scene;
+            filter-global <=> root.history-filter-global;
+            filter-changed => { root.history-filter-changed(); }
+            entry-clicked(index) => { root.history-entry-clicked(index); }
+        }
+    }
+}

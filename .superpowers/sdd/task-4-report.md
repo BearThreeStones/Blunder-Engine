@@ -1,61 +1,74 @@
-# Task 4 Report — Editor Play session
+# Task 4 Report: DotNet Message e2e smoke
 
-**Status:** DONE  
-**Branch:** `feat/play-mode-ui`  
-**Workspace:** `E:/Dev/Blunder-Engine/.worktrees/play-mode-ui`
+**Branch:** `feat/object-message-communication`  
+**Status:** GREEN  
+**Date:** 2026-07-22
 
-## Delivered (OpenSpec 4.1–4.4)
+## Scope
 
-| Item | Result |
-|------|--------|
-| 4.1 `PlaySessionController` | Done — states Stopped / Starting / Playing / Paused; injectable hooks for process + IPC |
-| 4.2 Spawn `engine_player` | Done — argv builder + sibling/staged resolve; `--project-root`, `--scene`, `--play-ipc` |
-| 4.3 Single-session + exit | Done — Stop before new Play; `poll()` maps process exit → Stopped |
-| 4.4 Slint Play/Pause/Stop | Done — wired callbacks + Pause enabled only after IPC `ready` |
-
-## Commits
-
-1. `dbde849` — `feat(editor): PlaySessionController and Play/Pause/Stop UI`
+End-to-end proof that native C-ABI `blunder_message_send` (process ObjectDB path) delivers to a managed `Behaviour.OnMessage` on a **different** Object via ScriptHost's message hook.
 
 ## TDD evidence
 
-### RED (stub controller)
+### RED (pre-seam / pre-fixture)
 
-```text
-FAIL argv size
-...
-RED_EXIT != 0
-```
+Prior WIP had the test source and fixture Behaviour but no HostExports read seams or DotNetHost resolution. Expected failure modes:
 
-Logged: `.superpowers/sdd/task-4-red-build.txt`, `task-4-red-run.txt`
+1. **Missing fixture** — `attachBehaviour` fails for `DotnetHostGame.MessageProbeBehaviour`.
+2. **Missing `GetMessageProbeCount` export** — `resolveProbeTickCount` fails resolving `HostExports.GetMessageProbeCount`, or `getMessageProbeCount()` returns `-1` → `FAIL OnMessage fired once`.
+
+Simulated RED (logic): with probe seams unwired, assertion `count == 1` fails with `getMessageProbeCount=-1 (expected 1)`.
 
 ### GREEN
 
 ```text
-play_session_controller_test: all passed
-EXIT=0
+> cmake --build build/vs2026-debug --config Debug --target object_message_dotnet_test
+  object_message_dotnet_test.vcxproj -> ...\object_message_dotnet_test.exe
+
+> .\build\vs2026-debug\engine\src\tests\Debug\object_message_dotnet_test.exe
+object_message_dotnet_test OK
 ```
 
-Logged: `.superpowers/sdd/task-4-green-build.txt`, `task-4-green-run.txt`
+## What shipped
 
-Also rebuilt `engine_runtime` (Slint regen + UI wiring) successfully.
+| Area | Change |
+|------|--------|
+| Fixture | `MessageProbeBehaviour.cs` — static `MessageCount` / `LastId`, `OnMessage` increments |
+| Test | `object_message_dotnet_test.cpp` — process ABI, DotNetHost, attach probe on **target**, register `"Ping"`, C-ABI send, assert count/id; second **other** Object gets send without incrementing probe |
+| ScriptHost | `GetMessageProbeCount`, `GetMessageProbeLastId`, `ReadGameStaticUInt` |
+| DotNetHost | Resolve + accessors for message probe exports (mirrors tick probe pattern) |
+| CMake | `object_message_dotnet_test` target (PRE_BUILD DotnetHostGame, nethost copy, script_host deps) |
+| OpenSpec | Tasks 4.1, 4.2 marked complete |
 
-## Design notes
+## Test flow
 
-- Hooks allow fake process/IPC in unit tests without launching Player.
-- Production hooks: ephemeral loopback port probe, `CreateProcessW` / `posix_spawn`, real `PlayIpcClient`.
-- Resolve path: sibling `engine_player` first; fallback to CMake `.../player/<Config>/` when editor lives under `.../editor/<Config>/`.
-- UI: Pause button label flips to Resume while paused; Pause disabled until ready.
+1. `ObjectDB::create()` → `target` + `other`
+2. `blunder_native_abi_fill_from_process` → `message_register` / `message_send`
+3. `DotNetHost::start` → `RegisterLifecycleHooks` sets managed message hook
+4. Load `DotnetHostGame.dll`, attach `MessageProbeBehaviour` on `target`
+5. `blunder_message_register("Ping")` + `blunder_message_send(target, ping_id, …)`
+6. `getMessageProbeCount() == 1`, `getMessageProbeLastId() == ping_id`
+7. `blunder_message_send(other, …)` — count stays `1` (cross-Object addressing)
 
-## Self-review
+## ADR 0017 + CONTEXT.md alignment (4.2)
 
-- State machine covered by fake-hook tests (start/ready/pause/resume/stop/exit/single-session/early-pause).
-- Editor owns one `PlaySessionController` on `RuntimeGlobalContext` (Editor host only).
-- Out of scope left for Task 5: dirty prompt, Scripts build gate, spawn-error toast.
+| Doc term | Shipped API | Match |
+|----------|-------------|-------|
+| `Message.Send` | `Blunder.Message.Send` | yes |
+| `Message.Register` | `Blunder.Message.Register` | yes |
+| `OnMessage` | `Behaviour.OnMessage(MessageId, ReadOnlySpan<MessageArg>)` | yes |
+| Directed to ObjectId, fan-out Behaviours | `MessageDispatch::send` + ScriptHost hook | yes |
+| MVP Send from C#; native same path later | Test uses C-ABI send (delivery path shared) | yes (test exercises native sender) |
+
+No doc drift fixes required.
+
+## Commit
+
+```
+test: verify cross-Object Message reaches OnMessage
+```
 
 ## Concerns
 
-1. **Ephemeral port race** — editor binds port 0 then closes before Player listens; rare collision possible.
-2. **Hard terminate** — Stop sends IPC then `TerminateProcess` without waiting for graceful exit.
-3. **Spawn failures silent in UI** — `lastError()` is set but not surfaced in Slint yet.
-4. **No end-to-end editor→Player smoke** in this task (unit + runtime build only).
+- Static `MessageCount` reset relies on fresh process per test run (same pattern as `ProbeBehaviour.TickCount`).
+- `resolveProbeTickCount` name is overloaded — resolves all probe exports including message probes; rename optional follow-up.
