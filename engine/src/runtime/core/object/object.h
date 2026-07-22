@@ -7,7 +7,7 @@
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
 #include "runtime/core/reflection/export_macros.h"
-#include "runtime/core/object/entity_id.h"
+#include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
 
 namespace Blunder {
