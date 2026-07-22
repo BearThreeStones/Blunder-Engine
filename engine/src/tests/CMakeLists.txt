@@ -149,6 +149,25 @@ target_precompile_headers(behaviour_list_test
 add_test(NAME behaviour_list_test
          COMMAND behaviour_list_test)
 
+add_executable(object_behaviour_bag_test
+    "object_behaviour_bag_test.cpp"
+)
+
+target_link_libraries(object_behaviour_bag_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(object_behaviour_bag_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(object_behaviour_bag_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME object_behaviour_bag_test
+         COMMAND object_behaviour_bag_test)
+
 add_executable(ptrcall_lifecycle_test
     "ptrcall_lifecycle_test.cpp"
 )

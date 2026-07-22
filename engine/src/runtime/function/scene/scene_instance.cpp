@@ -56,7 +56,9 @@ void SceneInstance::instantiate(const Scene& scene) {
               "[SceneInstance] skipped Behaviour restore id={} type='{}' on '{}'",
               static_cast<unsigned long long>(decl.id), decl.type.c_str(),
               definition.name.c_str());
+          continue;
         }
+        object->setBehaviourProperties(decl.id, decl.properties);
       }
     }
   }
@@ -276,7 +278,11 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
         SceneBehaviourDeclaration decl;
         decl.id = behaviour_id;
         decl.type = type_name != nullptr ? type_name : "";
-        // Property bag is not stored on Object slots yet; skip empty.
+        if (const eastl::vector<SceneBehaviourProperty>* properties =
+                bound->getBehaviourProperties(behaviour_id);
+            properties != nullptr) {
+          decl.properties = *properties;
+        }
         definition.behaviours.push_back(eastl::move(decl));
       }
     }

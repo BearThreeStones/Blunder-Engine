@@ -7,7 +7,8 @@
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
 #include "runtime/core/reflection/export_macros.h"
-#include "runtime/function/scene/entity_id.h"
+#include "runtime/core/object/entity_id.h"
+#include "runtime/function/scene/scene.h"
 
 namespace Blunder {
 
@@ -49,6 +50,14 @@ class Object {
   bool isBehaviourReadyInvoked(BehaviourId id) const;
   void markBehaviourReadyInvoked(BehaviourId id);
 
+  const eastl::vector<SceneBehaviourProperty>* getBehaviourProperties(
+      BehaviourId id) const;
+  bool setBehaviourProperties(BehaviourId id,
+                              eastl::vector<SceneBehaviourProperty> properties);
+  /// Reorder a Behaviour slot. `to_index` is the insertion index before the
+  /// move adjustment (clamped to [0, size]); no-op if `from_index == to_index`.
+  bool moveBehaviour(size_t from_index, size_t to_index);
+
   // Compatibility: operate on Behaviour index 0 only (no-op if empty).
   void* getScriptPeer() const;
   void setScriptPeer(void* peer);
@@ -74,6 +83,7 @@ class Object {
     eastl::string type_name;
     void* script_peer{nullptr};
     bool ready_invoked{false};
+    eastl::vector<SceneBehaviourProperty> properties;
   };
 
   BehaviourSlot* findBehaviourSlot(BehaviourId id);
