@@ -64,6 +64,14 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.gameplay_input_get_move != nullptr);
   expect_true((std::string(label) + ": gameplay_input_was_jump_pressed").c_str(),
               abi.gameplay_input_was_jump_pressed != nullptr);
+  expect_true((std::string(label) + ": message_register").c_str(),
+              abi.message_register != nullptr);
+  expect_true((std::string(label) + ": message_send").c_str(),
+              abi.message_send != nullptr);
+  expect_true((std::string(label) + ": message_set_hook").c_str(),
+              abi.message_set_hook != nullptr);
+  expect_true((std::string(label) + ": message_clear_hook").c_str(),
+              abi.message_clear_hook != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -83,7 +91,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 3", BLUNDER_ENGINE_C_ABI_VERSION >= 3);
+  expect_true("abi version >= 4", BLUNDER_ENGINE_C_ABI_VERSION >= 4);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

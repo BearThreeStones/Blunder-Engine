@@ -4,6 +4,7 @@
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
+#include "runtime/core/reflection/message_dispatch.h"
 #include "runtime/core/reflection/variant.h"
 #include "runtime/platform/input/gameplay_input.h"
 
@@ -19,6 +20,71 @@
 #endif
 
 using namespace Blunder;
+
+namespace {
+
+BlunderMessageHook g_blunder_message_hook = nullptr;
+
+BlunderMessageArg toBlunderMessageArg(const MessageArg& arg) {
+  BlunderMessageArg out{};
+  out.kind = static_cast<uint8_t>(arg.kind);
+  switch (arg.kind) {
+    case MessageArgKind::Bool:
+      out.b = arg.b ? 1 : 0;
+      break;
+    case MessageArgKind::Int:
+      out.i = arg.i;
+      break;
+    case MessageArgKind::Float:
+      out.f = arg.f;
+      break;
+    case MessageArgKind::ObjectId:
+      out.object_id = static_cast<BlunderObjectId>(arg.object_id);
+      break;
+    case MessageArgKind::Nil:
+      break;
+  }
+  return out;
+}
+
+MessageArg fromBlunderMessageArg(const BlunderMessageArg& arg) {
+  MessageArg out{};
+  out.kind = static_cast<MessageArgKind>(arg.kind);
+  switch (out.kind) {
+    case MessageArgKind::Bool:
+      out.b = arg.b != 0;
+      break;
+    case MessageArgKind::Int:
+      out.i = arg.i;
+      break;
+    case MessageArgKind::Float:
+      out.f = arg.f;
+      break;
+    case MessageArgKind::ObjectId:
+      out.object_id = static_cast<ObjectId>(arg.object_id);
+      break;
+    case MessageArgKind::Nil:
+      break;
+  }
+  return out;
+}
+
+void message_hook_adapter(void* script_peer, MessageId id, const MessageArg* args,
+                          int argc) {
+  if (g_blunder_message_hook == nullptr) {
+    return;
+  }
+  BlunderMessageArg c_args[4]{};
+  const int n = argc < 0 ? 0 : (argc > 4 ? 4 : argc);
+  if (args != nullptr) {
+    for (int i = 0; i < n; ++i) {
+      c_args[i] = toBlunderMessageArg(args[i]);
+    }
+  }
+  g_blunder_message_hook(script_peer, id, c_args, argc);
+}
+
+}  // namespace
 
 extern "C" {
 
@@ -228,6 +294,45 @@ int blunder_gameplay_input_was_jump_pressed(int* out_pressed) {
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_message_register(const char* name, BlunderMessageId* out_id) {
+  if (out_id == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const MessageId id = MessageDispatch::registerName(name);
+  if (id == k_invalid_message_id) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_id = id;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_message_send(BlunderObjectId target, BlunderMessageId id,
+                         const BlunderMessageArg* args, int argc) {
+  MessageArg native_args[4]{};
+  const int n = argc < 0 ? 0 : (argc > 4 ? 4 : argc);
+  if (args != nullptr) {
+    for (int i = 0; i < n; ++i) {
+      native_args[i] = fromBlunderMessageArg(args[i]);
+    }
+  }
+  return MessageDispatch::send(static_cast<ObjectId>(target), id, native_args,
+                               argc)
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_message_set_hook(BlunderMessageHook hook) {
+  g_blunder_message_hook = hook;
+  MessageDispatch::setHook(hook != nullptr ? &message_hook_adapter : nullptr);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_message_clear_hook(void) {
+  g_blunder_message_hook = nullptr;
+  MessageDispatch::setHook(nullptr);
+  return BLUNDER_ENGINE_OK;
+}
+
 void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   if (out == nullptr) {
     return;
@@ -252,6 +357,10 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->gameplay_input_get_move = &blunder_gameplay_input_get_move;
   out->gameplay_input_was_jump_pressed =
       &blunder_gameplay_input_was_jump_pressed;
+  out->message_register = &blunder_message_register;
+  out->message_send = &blunder_message_send;
+  out->message_set_hook = &blunder_message_set_hook;
+  out->message_clear_hook = &blunder_message_clear_hook;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -311,6 +420,10 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_gameplay_input_get_move");
   BLUNDER_NATIVE_ABI_LOAD(gameplay_input_was_jump_pressed,
                           "blunder_gameplay_input_was_jump_pressed");
+  BLUNDER_NATIVE_ABI_LOAD(message_register, "blunder_message_register");
+  BLUNDER_NATIVE_ABI_LOAD(message_send, "blunder_message_send");
+  BLUNDER_NATIVE_ABI_LOAD(message_set_hook, "blunder_message_set_hook");
+  BLUNDER_NATIVE_ABI_LOAD(message_clear_hook, "blunder_message_clear_hook");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

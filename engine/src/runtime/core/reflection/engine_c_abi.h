@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 3
+#define BLUNDER_ENGINE_C_ABI_VERSION 4
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -81,13 +81,38 @@ BLUNDER_ENGINE_C_API int blunder_gameplay_input_get_move(float* out_x,
 BLUNDER_ENGINE_C_API int blunder_gameplay_input_was_jump_pressed(
     int* out_pressed);
 
+typedef uint32_t BlunderMessageId;
+
+typedef struct BlunderMessageArg {
+  uint8_t kind;
+  uint8_t _padding[7];
+  union {
+    uint8_t b;
+    int64_t i;
+    float f;
+    BlunderObjectId object_id;
+  };
+} BlunderMessageArg;
+
+typedef void (*BlunderMessageHook)(void* peer, BlunderMessageId id,
+                                   const BlunderMessageArg* args, int argc);
+
+BLUNDER_ENGINE_C_API int blunder_message_register(const char* name,
+                                                  BlunderMessageId* out_id);
+BLUNDER_ENGINE_C_API int blunder_message_send(BlunderObjectId target,
+                                              BlunderMessageId id,
+                                              const BlunderMessageArg* args,
+                                              int argc);
+BLUNDER_ENGINE_C_API int blunder_message_set_hook(BlunderMessageHook hook);
+BLUNDER_ENGINE_C_API int blunder_message_clear_hook(void);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
-// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v3 entry points.
+// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v4 entry points.
 // Hosts register this into ScriptHost so managed code shares one ObjectDB image.
 typedef struct BlunderNativeAbi {
   int (*engine_abi_version)(void);
@@ -119,6 +144,11 @@ typedef struct BlunderNativeAbi {
   int (*lifecycle_clear_hooks)(void);
   int (*gameplay_input_get_move)(float* out_x, float* out_y);
   int (*gameplay_input_was_jump_pressed)(int* out_pressed);
+  int (*message_register)(const char* name, BlunderMessageId* out_id);
+  int (*message_send)(BlunderObjectId target, BlunderMessageId id,
+                      const BlunderMessageArg* args, int argc);
+  int (*message_set_hook)(BlunderMessageHook hook);
+  int (*message_clear_hook)(void);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).
