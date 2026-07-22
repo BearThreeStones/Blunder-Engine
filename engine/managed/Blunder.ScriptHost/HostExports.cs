@@ -239,8 +239,11 @@ public static class HostExports
         {
             delegate* unmanaged[Cdecl]<IntPtr, float, void> tick = &OnTick;
             delegate* unmanaged[Cdecl]<IntPtr, void> ready = &OnReady;
+            delegate* unmanaged[Cdecl]<void*, uint, BlunderMessageArg*, int, void> message =
+                &OnMessage;
             Native.blunder_lifecycle_set_tick_hook("Object", (IntPtr)tick);
             Native.blunder_lifecycle_set_ready_hook("Object", (IntPtr)ready);
+            Native.blunder_message_set_hook(message);
         }
     }
 
@@ -306,6 +309,7 @@ public static class HostExports
     {
         PeerTable.Clear();
         Native.blunder_lifecycle_clear_hooks();
+        Native.blunder_message_clear_hook();
         ObjectHandle.ClearRegistry();
     }
 
@@ -479,6 +483,35 @@ public static class HostExports
         {
             behaviour.Ready();
         }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static unsafe void OnMessage(void* peer, uint id, BlunderMessageArg* args, int argc)
+    {
+        if (peer == null)
+        {
+            return;
+        }
+
+        GCHandle handle = GCHandle.FromIntPtr((IntPtr)peer);
+        if (handle.Target is not Behaviour behaviour)
+        {
+            return;
+        }
+
+        if (argc <= 0 || args == null)
+        {
+            behaviour.OnMessage(new MessageId(id), ReadOnlySpan<MessageArg>.Empty);
+            return;
+        }
+
+        Span<MessageArg> managed = stackalloc MessageArg[argc];
+        for (int i = 0; i < argc; ++i)
+        {
+            managed[i] = MessageArg.FromNative(in args[i]);
+        }
+
+        behaviour.OnMessage(new MessageId(id), managed);
     }
 
     static Type? ResolveBehaviourType(string typeName)

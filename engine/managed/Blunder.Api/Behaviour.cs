@@ -14,4 +14,6 @@ public abstract class Behaviour
     public virtual void Ready() { }
 
     public virtual void Tick(float deltaTime) { }
+
+    public virtual void OnMessage(MessageId id, ReadOnlySpan<MessageArg> args) { }
 }

@@ -58,7 +58,11 @@ internal static unsafe class Native
         abi.lifecycle_set_ready_hook != null &&
         abi.lifecycle_clear_hooks != null &&
         abi.gameplay_input_get_move != null &&
-        abi.gameplay_input_was_jump_pressed != null;
+        abi.gameplay_input_was_jump_pressed != null &&
+        abi.message_register != null &&
+        abi.message_send != null &&
+        abi.message_set_hook != null &&
+        abi.message_clear_hook != null;
 
     static void EnsureRegistered()
     {
@@ -244,6 +248,36 @@ internal static unsafe class Native
     {
         EnsureRegistered();
         return s_abi.gameplay_input_was_jump_pressed(outPressed);
+    }
+
+    public static int blunder_message_register(string name, uint* outId)
+    {
+        EnsureRegistered();
+        byte[] nameUtf8 = ToUtf8(name);
+        fixed (byte* namePtr = nameUtf8)
+        {
+            return s_abi.message_register(namePtr, outId);
+        }
+    }
+
+    public static int blunder_message_send(
+        ulong target, uint id, BlunderMessageArg* args, int argc)
+    {
+        EnsureRegistered();
+        return s_abi.message_send(target, id, args, argc);
+    }
+
+    public static int blunder_message_set_hook(
+        delegate* unmanaged[Cdecl]<void*, uint, BlunderMessageArg*, int, void> hook)
+    {
+        EnsureRegistered();
+        return s_abi.message_set_hook(hook);
+    }
+
+    public static int blunder_message_clear_hook()
+    {
+        EnsureRegistered();
+        return s_abi.message_clear_hook();
     }
 
     static byte[] ToUtf8(string value)

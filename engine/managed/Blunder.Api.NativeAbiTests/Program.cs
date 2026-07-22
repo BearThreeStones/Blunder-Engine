@@ -15,8 +15,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 19 * sizeof(nint),
-            "BlunderNativeAbi layout size is 19 pointers");
+            sizeof(BlunderNativeAbi) == 23 * sizeof(nint),
+            "BlunderNativeAbi layout size is 23 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -59,6 +59,10 @@ static unsafe class Program
         abi.lifecycle_clear_hooks = &StubClearHooks;
         abi.gameplay_input_get_move = &StubGetMove;
         abi.gameplay_input_was_jump_pressed = &StubWasJump;
+        abi.message_register = &StubMessageRegister;
+        abi.message_send = &StubMessageSend;
+        abi.message_set_hook = &StubMessageSetHook;
+        abi.message_clear_hook = &StubMessageClearHook;
 
         Native.Register(in abi);
 
@@ -215,4 +219,28 @@ static unsafe class Program
         *pressed = 1;
         return Native.Ok;
     }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubMessageRegister(byte* name, uint* outId)
+    {
+        if (name == null || outId == null)
+        {
+            return Native.Error;
+        }
+
+        *outId = 42;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubMessageSend(ulong target, uint id, BlunderMessageArg* args, int argc) =>
+        target == 0 || id == 0 ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubMessageSetHook(
+        delegate* unmanaged[Cdecl]<void*, uint, BlunderMessageArg*, int, void> hook) =>
+        hook == null ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubMessageClearHook() => Native.Ok;
 }

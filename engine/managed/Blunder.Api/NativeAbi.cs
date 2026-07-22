@@ -30,4 +30,9 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<int> lifecycle_clear_hooks;
     public delegate* unmanaged[Cdecl]<float*, float*, int> gameplay_input_get_move;
     public delegate* unmanaged[Cdecl]<int*, int> gameplay_input_was_jump_pressed;
+    public delegate* unmanaged[Cdecl]<byte*, uint*, int> message_register;
+    public delegate* unmanaged[Cdecl]<ulong, uint, BlunderMessageArg*, int, int> message_send;
+    public delegate* unmanaged[Cdecl]<delegate* unmanaged[Cdecl]<void*, uint, BlunderMessageArg*, int, void>, int>
+        message_set_hook;
+    public delegate* unmanaged[Cdecl]<int> message_clear_hook;
 }
