@@ -265,6 +265,20 @@ public static class HostExports
         ReadGameStaticInt("DotnetHostGame.SiblingProbeBehaviour", "FoundSibling");
 
     /// <summary>
+    /// Test seam: read <c>MessageProbeBehaviour.MessageCount</c> after Send.
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static int GetMessageProbeCount() =>
+        ReadGameStaticInt("DotnetHostGame.MessageProbeBehaviour", "MessageCount");
+
+    /// <summary>
+    /// Test seam: read <c>MessageProbeBehaviour.LastId</c> after Send.
+    /// </summary>
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    public static int GetMessageProbeLastId() =>
+        ReadGameStaticUInt("DotnetHostGame.MessageProbeBehaviour", "LastId");
+
+    /// <summary>
     /// Test seam: 1 when Ready captured EnabledFlag/Speed/Label from the
     /// property bag (see ProbeBehaviour fixture).
     /// </summary>
@@ -423,6 +437,37 @@ public static class HostExports
 
             object? value = field.GetValue(null);
             return value is int count ? count : -1;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    static int ReadGameStaticUInt(string typeName, string fieldName)
+    {
+        try
+        {
+            if (s_gameAssembly == null)
+            {
+                return -1;
+            }
+
+            Type? type = s_gameAssembly.GetType(typeName, throwOnError: false);
+            if (type == null)
+            {
+                return -1;
+            }
+
+            FieldInfo? field = type.GetField(
+                fieldName, BindingFlags.Public | BindingFlags.Static);
+            if (field == null || field.FieldType != typeof(uint))
+            {
+                return -1;
+            }
+
+            object? value = field.GetValue(null);
+            return value is uint id ? unchecked((int)id) : -1;
         }
         catch
         {

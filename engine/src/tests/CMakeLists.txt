@@ -376,6 +376,59 @@ endif()
 add_test(NAME editor_dotnet_host_test
          COMMAND editor_dotnet_host_test)
 
+# Cross-Object Message e2e: process ObjectDB + managed OnMessage via C-ABI Send.
+add_executable(object_message_dotnet_test
+    "object_message_dotnet_test.cpp"
+)
+
+target_link_libraries(object_message_dotnet_test
+    PRIVATE
+        blunder_engine_c_static
+)
+
+target_compile_definitions(object_message_dotnet_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
+)
+
+if(MSVC)
+    target_compile_options(object_message_dotnet_test PRIVATE /Zc:preprocessor)
+endif()
+
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET object_message_dotnet_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for object_message_dotnet_test"
+        VERBATIM
+    )
+endif()
+
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET object_message_dotnet_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:object_message_dotnet_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(object_message_dotnet_test blunder_script_host)
+endif()
+if(TARGET blunder_api)
+    add_dependencies(object_message_dotnet_test blunder_api)
+endif()
+
+add_test(NAME object_message_dotnet_test
+         COMMAND object_message_dotnet_test)
+
 add_executable(editor_history_test
     "editor_history_test.cpp"
 )

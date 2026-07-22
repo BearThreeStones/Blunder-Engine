@@ -47,6 +47,8 @@ class DotNetHost {
   int getProbeSiblingFound() const;
   /// 1 when ProbeBehaviour Ready captured expected property-bag values.
   int getProbePropertyOk() const;
+  int getMessageProbeCount() const;
+  int getMessageProbeLastId() const;
 
   /// True after a successful `loadGameAssembly`.
   bool hasGameAssembly() const { return m_game_assembly_loaded; }
@@ -85,6 +87,8 @@ class DotNetHost {
   GetProbeTickCountFn m_get_probe_tick{nullptr};
   GetProbeTickCountFn m_get_probe_sibling{nullptr};
   GetProbeTickCountFn m_get_probe_property_ok{nullptr};
+  GetProbeTickCountFn m_get_message_probe_count{nullptr};
+  GetProbeTickCountFn m_get_message_probe_last_id{nullptr};
   bool m_game_assembly_loaded{false};
 };
 
