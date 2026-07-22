@@ -50,6 +50,22 @@ struct NativeFloatBrowserPathSegment {
   eastl::string name;
 };
 
+struct NativeFloatBehaviourPropRow {
+  eastl::string key;
+  eastl::string kind;
+  bool bool_value{false};
+  float number_value{0.0f};
+  eastl::string string_value;
+  bool missing_type{false};
+};
+
+struct NativeFloatBehaviourRow {
+  int behaviour_id{0};
+  eastl::string type_name;
+  bool missing{false};
+  eastl::vector<NativeFloatBehaviourPropRow> props;
+};
+
 struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
@@ -83,6 +99,9 @@ struct NativeFloatPanelSnapshot {
   bool inspector_scale_link_enabled{true};
   bool inspector_multi_edit_visible{false};
   bool inspector_multi_edit_absolute{true};
+  eastl::vector<NativeFloatBehaviourRow> inspector_behaviours;
+  eastl::vector<eastl::string> inspector_behaviour_type_choices;
+  bool inspector_behaviours_expanded{true};
   float light_dir_x{0.45f};
   float light_dir_y{0.7f};
   float light_dir_z{0.55f};
@@ -143,6 +162,11 @@ class DockFloatingWindowHost final {
     std::function<void(bool)> on_inspector_rotation_mode_changed;
     std::function<void(bool)> on_inspector_scale_link_toggled;
     std::function<void(bool)> on_inspector_multi_edit_mode_changed;
+    std::function<void(const slint::SharedString&)> on_inspector_add_behaviour;
+    std::function<void(int)> on_inspector_remove_behaviour;
+    std::function<void(int, int)> on_inspector_reorder_behaviour;
+    std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
+        on_inspector_commit_behaviour_prop;
     std::function<void(const slint::SharedString&)> on_browser_folder_selected;
     std::function<void(const slint::SharedString&)> on_browser_folder_toggle;
     std::function<void()> on_browser_refresh_requested;

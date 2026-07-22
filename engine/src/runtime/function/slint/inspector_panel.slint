@@ -1,0 +1,790 @@
+import { Button, CheckBox, HorizontalBox, Slider, VerticalBox, LineEdit } from "std-widgets.slint";
+import { AxisNumberField } from "axis_number_field.slint";
+import {
+    EditorIconInstance,
+    EditorIconUnlinked,
+    EditorIconTreeArrowRight,
+    EditorIconTreeArrowDown,
+} from "editor_icons.slint";
+
+export struct BehaviourPropRow {
+    key: string,
+    kind: string,
+    bool-value: bool,
+    number-value: float,
+    string-value: string,
+    missing-type: bool,
+}
+
+export struct BehaviourRow {
+    behaviour-id: int,
+    type-name: string,
+    missing: bool,
+    props: [BehaviourPropRow],
+}
+
+export component ShadingSlider inherits VerticalBox {
+    spacing: 2px;
+    in property <string> label;
+    in-out property <float> value;
+    in property <float> minimum: 0.0;
+    in property <float> maximum: 1.0;
+
+    min-height: 36px;
+
+    HorizontalBox {
+        spacing: 4px;
+        Text {
+            text: root.label;
+            color: #c0c0c0;
+            font-size: 11px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: Math.round(root.value * 100) / 100;
+            color: #bde7ff;
+            font-size: 11px;
+            width: 44px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Slider {
+        width: 100%;
+        min-height: 22px;
+        minimum: root.minimum;
+        maximum: root.maximum;
+        value <=> root.value;
+    }
+}
+
+export component InspectorPanel inherits Rectangle {
+    in property <bool> has-selection: false;
+    in property <string> entity-name: "";
+    in-out property <float> pos-x;
+    in-out property <float> pos-y;
+    in-out property <float> pos-z;
+    in-out property <float> rot-x;
+    in-out property <float> rot-y;
+    in-out property <float> rot-z;
+    in-out property <float> scale-x;
+    in-out property <float> scale-y;
+    in-out property <float> scale-z;
+    in-out property <float> quat-x: 0.0;
+    in-out property <float> quat-y: 0.0;
+    in-out property <float> quat-z: 0.0;
+    in-out property <float> quat-w: 1.0;
+
+    in property <bool> pos-x-mixed: false;
+    in property <bool> pos-y-mixed: false;
+    in property <bool> pos-z-mixed: false;
+    in property <bool> rot-x-mixed: false;
+    in property <bool> rot-y-mixed: false;
+    in property <bool> rot-z-mixed: false;
+    in property <bool> scale-x-mixed: false;
+    in property <bool> scale-y-mixed: false;
+    in property <bool> scale-z-mixed: false;
+
+    in-out property <bool> transform-expanded: true;
+    in-out property <bool> rotation-edit-mode-euler: true;
+    in-out property <bool> scale-link-enabled: true;
+    in property <bool> multi-edit-visible: false;
+    in-out property <bool> multi-edit-absolute: true;
+
+    in-out property <float> light-dir-x;
+    in-out property <float> light-dir-y;
+    in-out property <float> light-dir-z;
+    in-out property <float> light-color-r;
+    in-out property <float> light-color-g;
+    in-out property <float> light-color-b;
+    in-out property <float> ambient-r;
+    in-out property <float> ambient-g;
+    in-out property <float> ambient-b;
+    in-out property <float> diffuse-r;
+    in-out property <float> diffuse-g;
+    in-out property <float> diffuse-b;
+    in-out property <float> specular-r;
+    in-out property <float> specular-g;
+    in-out property <float> specular-b;
+    in-out property <float> shininess;
+    in-out property <bool> shading-unlit: false;
+    in-out property <bool> ssao-enabled: true;
+    in-out property <float> ssao-radius;
+    in-out property <float> ssao-bias;
+    in-out property <float> ssao-strength;
+    in property <bool> layout-drag-active: false;
+
+    callback transform-edited();
+    callback field-text-committed(int, string);
+    callback field-focus-changed(int, bool);
+    callback rotation-mode-changed(bool);
+    callback scale-link-toggled(bool);
+    callback multi-edit-mode-changed(bool);
+    callback sync-requested();
+    callback reset-requested();
+
+    in property <[BehaviourRow]> behaviours: [];
+    in property <[string]> behaviour-type-choices: [];
+    in-out property <bool> behaviours-expanded: true;
+    callback add-behaviour(string);
+    callback remove-behaviour(int);
+    callback reorder-behaviour(int, int);
+    callback commit-behaviour-prop(int, string, string, float, bool);
+
+    background: #2d2d2d;
+    border-color: #2a2a2a;
+    border-width: 1px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        Flickable {
+            vertical-stretch: 1;
+            interactive: !root.layout-drag-active;
+            viewport-width: parent.width - 20px;
+            viewport-height: 2600px;
+
+            VerticalBox {
+                width: parent.width;
+                spacing: 6px;
+                padding-right: 4px;
+
+                // --- Transform header ---
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.transform-expanded = !root.transform-expanded; }
+                    HorizontalBox {
+                        spacing: 6px;
+                        if root.transform-expanded: EditorIconTreeArrowDown {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        if !root.transform-expanded: EditorIconTreeArrowRight {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        Text {
+                            text: "Transform";
+                            color: #f0f0f0;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.transform-expanded: VerticalBox {
+                    spacing: 6px;
+
+                    Text {
+                        text: root.has-selection ? root.entity-name : "No selection";
+                        color: #a8a8a8;
+                        font-size: 12px;
+                    }
+
+                    if root.multi-edit-visible: HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Multi-edit";
+                            color: #a8a8a8;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.multi-edit-absolute = true;
+                                root.multi-edit-mode-changed(true);
+                            }
+                            Rectangle {
+                                background: root.multi-edit-absolute ? #3a5a7a : #2a2a2a;
+                                border-radius: 3px;
+                                border-width: 1px;
+                                border-color: #4a4a4a;
+                                height: 22px;
+                                width: 72px;
+                                Text {
+                                    text: "Absolute";
+                                    color: #d0d0d0;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.multi-edit-absolute = false;
+                                root.multi-edit-mode-changed(false);
+                            }
+                            Rectangle {
+                                background: !root.multi-edit-absolute ? #3a5a7a : #2a2a2a;
+                                border-radius: 3px;
+                                border-width: 1px;
+                                border-color: #4a4a4a;
+                                height: 22px;
+                                width: 56px;
+                                Text {
+                                    text: "Delta";
+                                    color: #d0d0d0;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    Text { text: "Position"; color: #a8a8a8; font-size: 12px; }
+                    HorizontalBox {
+                        spacing: 4px;
+                        AxisNumberField {
+                            axis-label: "x"; axis-color: #ff3352; unit: "m";
+                            value <=> root.pos-x; mixed: root.pos-x-mixed;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(0, t); }
+                            focus-changed(f) => { root.field-focus-changed(0, f); }
+                        }
+                        AxisNumberField {
+                            axis-label: "y"; axis-color: #8bdc00; unit: "m";
+                            value <=> root.pos-y; mixed: root.pos-y-mixed;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(1, t); }
+                            focus-changed(f) => { root.field-focus-changed(1, f); }
+                        }
+                        AxisNumberField {
+                            axis-label: "z"; axis-color: #2890ff; unit: "m";
+                            value <=> root.pos-z; mixed: root.pos-z-mixed;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(2, t); }
+                            focus-changed(f) => { root.field-focus-changed(2, f); }
+                        }
+                    }
+
+                    Text { text: "Rotation"; color: #a8a8a8; font-size: 12px; }
+                    if root.rotation-edit-mode-euler || root.multi-edit-visible: HorizontalBox {
+                        spacing: 4px;
+                        AxisNumberField {
+                            axis-label: "x"; axis-color: #ff3352; unit: "°";
+                            show-slider: !root.multi-edit-visible;
+                            value <=> root.rot-x; mixed: root.rot-x-mixed;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(3, t); }
+                            focus-changed(f) => { root.field-focus-changed(3, f); }
+                        }
+                        AxisNumberField {
+                            axis-label: "y"; axis-color: #8bdc00; unit: "°";
+                            show-slider: !root.multi-edit-visible;
+                            value <=> root.rot-y; mixed: root.rot-y-mixed;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(4, t); }
+                            focus-changed(f) => { root.field-focus-changed(4, f); }
+                        }
+                        AxisNumberField {
+                            axis-label: "z"; axis-color: #2890ff; unit: "°";
+                            show-slider: !root.multi-edit-visible;
+                            value <=> root.rot-z; mixed: root.rot-z-mixed;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(5, t); }
+                            focus-changed(f) => { root.field-focus-changed(5, f); }
+                        }
+                    }
+                    if !root.rotation-edit-mode-euler && !root.multi-edit-visible: VerticalBox {
+                        spacing: 4px;
+                        HorizontalBox {
+                            spacing: 4px;
+                            AxisNumberField {
+                                axis-label: "x"; axis-color: #ff3352;
+                                value <=> root.quat-x;
+                                live-edited => { root.transform-edited(); }
+                                text-committed(t) => { root.field-text-committed(9, t); }
+                                focus-changed(f) => { root.field-focus-changed(9, f); }
+                            }
+                            AxisNumberField {
+                                axis-label: "y"; axis-color: #8bdc00;
+                                value <=> root.quat-y;
+                                live-edited => { root.transform-edited(); }
+                                text-committed(t) => { root.field-text-committed(10, t); }
+                                focus-changed(f) => { root.field-focus-changed(10, f); }
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 4px;
+                            AxisNumberField {
+                                axis-label: "z"; axis-color: #2890ff;
+                                value <=> root.quat-z;
+                                live-edited => { root.transform-edited(); }
+                                text-committed(t) => { root.field-text-committed(11, t); }
+                                focus-changed(f) => { root.field-focus-changed(11, f); }
+                            }
+                            AxisNumberField {
+                                axis-label: "w"; axis-color: #c0c0c0;
+                                value <=> root.quat-w;
+                                live-edited => { root.transform-edited(); }
+                                text-committed(t) => { root.field-text-committed(12, t); }
+                                focus-changed(f) => { root.field-focus-changed(12, f); }
+                            }
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 4px;
+                        Text {
+                            text: "Scale";
+                            color: #a8a8a8;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.scale-link-enabled = !root.scale-link-enabled;
+                                root.scale-link-toggled(root.scale-link-enabled);
+                            }
+                            Rectangle {
+                                width: 28px;
+                                height: 22px;
+                                background: root.scale-link-enabled ? #3a5a7a : #2a2a2a;
+                                border-radius: 3px;
+                                border-width: 1px;
+                                border-color: #4a4a4a;
+                                if root.scale-link-enabled: EditorIconInstance {
+                                    icon-size: 14px;
+                                    icon-color: #e0e0e0;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                                if !root.scale-link-enabled: EditorIconUnlinked {
+                                    icon-size: 14px;
+                                    icon-color: #808080;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 4px;
+                        AxisNumberField {
+                            axis-label: "x"; axis-color: #ff3352;
+                            value <=> root.scale-x; mixed: root.scale-x-mixed;
+                            scrub-sensitivity: 0.01;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(6, t); }
+                            focus-changed(f) => { root.field-focus-changed(6, f); }
+                        }
+                        AxisNumberField {
+                            axis-label: "y"; axis-color: #8bdc00;
+                            value <=> root.scale-y; mixed: root.scale-y-mixed;
+                            scrub-sensitivity: 0.01;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(7, t); }
+                            focus-changed(f) => { root.field-focus-changed(7, f); }
+                        }
+                        AxisNumberField {
+                            axis-label: "z"; axis-color: #2890ff;
+                            value <=> root.scale-z; mixed: root.scale-z-mixed;
+                            scrub-sensitivity: 0.01;
+                            live-edited => { root.transform-edited(); }
+                            text-committed(t) => { root.field-text-committed(8, t); }
+                            focus-changed(f) => { root.field-focus-changed(8, f); }
+                        }
+                    }
+
+                    if !root.multi-edit-visible: HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Rotation Edit Mode";
+                            color: #a8a8a8;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Rectangle {
+                            background: #2a2a2a;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: #4a4a4a;
+                            height: 22px;
+                            width: 110px;
+                            horizontal-stretch: 0;
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                width: 100%;
+                                height: 100%;
+                                clicked => { rotation-mode-popup.show(); }
+
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 6px;
+                                    spacing: 4px;
+                                    alignment: center;
+
+                                    Text {
+                                        text: root.rotation-edit-mode-euler ? "Euler" : "Quaternion";
+                                        color: #d0d0d0;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    EditorIconTreeArrowDown {
+                                        icon-color: #a8a8a8;
+                                        icon-size: 10px;
+                                    }
+                                }
+                            }
+
+                            rotation-mode-popup := PopupWindow {
+                                x: 0;
+                                y: parent.height + 2px;
+                                width: parent.width;
+                                close-policy: close-on-click-outside;
+
+                                Rectangle {
+                                    background: #252525;
+                                    border-color: #444444;
+                                    border-width: 1px;
+                                    border-radius: 3px;
+
+                                    VerticalLayout {
+                                        padding: 2px;
+                                        spacing: 0px;
+
+                                        for mode[index] in ["Euler", "Quaternion"]: Rectangle {
+                                            height: 22px;
+                                            background: opt-touch.has-hover ? #3a3a3a : transparent;
+                                            border-radius: 2px;
+
+                                            opt-touch := TouchArea {
+                                                mouse-cursor: pointer;
+                                                clicked => {
+                                                    root.rotation-edit-mode-euler = index == 0;
+                                                    root.rotation-mode-changed(index == 0);
+                                                    rotation-mode-popup.close();
+                                                }
+
+                                                Text {
+                                                    x: 8px;
+                                                    width: parent.width - 16px;
+                                                    height: parent.height;
+                                                    vertical-alignment: center;
+                                                    text: mode;
+                                                    color: ((index == 0) == root.rotation-edit-mode-euler) ? #bde7ff : #d0d0d0;
+                                                    font-size: 11px;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                // --- Behaviours header ---
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.behaviours-expanded = !root.behaviours-expanded; }
+                    HorizontalBox {
+                        spacing: 6px;
+                        if root.behaviours-expanded: EditorIconTreeArrowDown {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        if !root.behaviours-expanded: EditorIconTreeArrowRight {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        Text {
+                            text: "Behaviours";
+                            color: #f0f0f0;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.behaviours-expanded: VerticalBox {
+                    spacing: 6px;
+
+                    if !root.has-selection: Text {
+                        text: "Select an entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+
+                    for behaviour[i] in root.behaviours: Rectangle {
+                        background: #262626;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: behaviour.missing ? #6a3a3a : #3a3a3a;
+
+                        VerticalBox {
+                            width: 100%;
+                            padding: 6px;
+                            spacing: 4px;
+
+                        HorizontalBox {
+                            spacing: 4px;
+                            Text {
+                                text: behaviour.type-name + (behaviour.missing ? " (missing)" : "");
+                                color: behaviour.missing ? #ff9a9a : #d8d8d8;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            if i > 0: up-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.reorder-behaviour(i, i - 1); }
+                                Rectangle {
+                                    width: 22px;
+                                    height: 22px;
+                                    background: up-touch.has-hover ? #3a3a3a : #2a2a2a;
+                                    border-radius: 3px;
+                                    Text {
+                                        text: "▲";
+                                        color: #c0c0c0;
+                                        font-size: 10px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            if i < root.behaviours.length - 1: down-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.reorder-behaviour(i, i + 1); }
+                                Rectangle {
+                                    width: 22px;
+                                    height: 22px;
+                                    background: down-touch.has-hover ? #3a3a3a : #2a2a2a;
+                                    border-radius: 3px;
+                                    Text {
+                                        text: "▼";
+                                        color: #c0c0c0;
+                                        font-size: 10px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            remove-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.remove-behaviour(behaviour.behaviour-id); }
+                                Rectangle {
+                                    width: 22px;
+                                    height: 22px;
+                                    background: remove-touch.has-hover ? #5a2a2a : #3a2a2a;
+                                    border-radius: 3px;
+                                    Text {
+                                        text: "×";
+                                        color: #ffaaaa;
+                                        font-size: 14px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        if behaviour.missing: Text {
+                            text: "Type not in catalog — remove or rebuild Scripts";
+                            color: #a07070;
+                            font-size: 10px;
+                        }
+
+                        for prop[j] in behaviour.props: VerticalBox {
+                            spacing: 2px;
+                            if prop.kind == "bool": HorizontalBox {
+                                spacing: 6px;
+                                CheckBox {
+                                    text: prop.key;
+                                    checked: prop.bool-value;
+                                    toggled => {
+                                        root.commit-behaviour-prop(
+                                            behaviour.behaviour-id, prop.key, "", 0.0, self.checked);
+                                    }
+                                }
+                            }
+                            if prop.kind == "number": HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: prop.key;
+                                    color: #a8a8a8;
+                                    font-size: 11px;
+                                    width: 96px;
+                                    vertical-alignment: center;
+                                }
+                                num-input := LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: "" + prop.number-value;
+                                    accepted => {
+                                        root.commit-behaviour-prop(
+                                            behaviour.behaviour-id, prop.key, self.text,
+                                            self.text.to-float(), false);
+                                    }
+                                }
+                            }
+                            if prop.kind == "string": HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: prop.key;
+                                    color: #a8a8a8;
+                                    font-size: 11px;
+                                    width: 96px;
+                                    vertical-alignment: center;
+                                }
+                                LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: prop.string-value;
+                                    accepted => {
+                                        root.commit-behaviour-prop(
+                                            behaviour.behaviour-id, prop.key, self.text, 0.0, false);
+                                    }
+                                }
+                            }
+                        }
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        Rectangle {
+                            background: #2a2a2a;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: #4a4a4a;
+                            height: 24px;
+                            horizontal-stretch: 1;
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                width: 100%;
+                                height: 100%;
+                                clicked => {
+                                    if root.behaviour-type-choices.length > 0 {
+                                        add-behaviour-popup.show();
+                                    }
+                                }
+
+                                Text {
+                                    text: root.behaviour-type-choices.length > 0
+                                        ? "Add Behaviour…"
+                                        : "Add Behaviour (build Scripts first)";
+                                    color: root.behaviour-type-choices.length > 0 ? #bde7ff : #808080;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            add-behaviour-popup := PopupWindow {
+                                x: 0;
+                                y: parent.height + 2px;
+                                width: parent.width;
+                                close-policy: close-on-click-outside;
+
+                                Rectangle {
+                                    background: #252525;
+                                    border-color: #444444;
+                                    border-width: 1px;
+                                    border-radius: 3px;
+                                    max-height: 200px;
+
+                                    Flickable {
+                                        viewport-height: 200px;
+                                        VerticalLayout {
+                                            padding: 2px;
+                                            spacing: 0px;
+                                            for choice in root.behaviour-type-choices: Rectangle {
+                                                height: 22px;
+                                                background: choice-touch.has-hover ? #3a3a3a : transparent;
+                                                border-radius: 2px;
+                                                choice-touch := TouchArea {
+                                                    mouse-cursor: pointer;
+                                                    clicked => {
+                                                        root.add-behaviour(choice);
+                                                        add-behaviour-popup.close();
+                                                    }
+                                                    Text {
+                                                        x: 8px;
+                                                        width: parent.width - 16px;
+                                                        height: parent.height;
+                                                        vertical-alignment: center;
+                                                        text: choice;
+                                                        color: #d0d0d0;
+                                                        font-size: 11px;
+                                                        overflow: elide;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                Text { text: "Blinn-Phong Shading"; color: #f0f0f0; font-size: 13px; }
+
+                HorizontalBox {
+                    spacing: 6px;
+                    Button { text: "Sync Asset"; clicked => { root.sync-requested(); } }
+                    Button { text: "Reset"; clicked => { root.reset-requested(); } }
+                }
+
+                CheckBox {
+                    text: "Unlit (albedo only)";
+                    checked: root.shading-unlit;
+                    toggled => { root.shading-unlit = self.checked; }
+                }
+
+                Text { text: "Light direction"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "Dir X"; minimum: -1; maximum: 1; value <=> root.light-dir-x; }
+                ShadingSlider { label: "Dir Y"; minimum: -1; maximum: 1; value <=> root.light-dir-y; }
+                ShadingSlider { label: "Dir Z"; minimum: -1; maximum: 1; value <=> root.light-dir-z; }
+
+                Text { text: "Light color"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.light-color-r; }
+                ShadingSlider { label: "G"; value <=> root.light-color-g; }
+                ShadingSlider { label: "B"; value <=> root.light-color-b; }
+
+                Text { text: "Ambient (ka)"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.ambient-r; }
+                ShadingSlider { label: "G"; value <=> root.ambient-g; }
+                ShadingSlider { label: "B"; value <=> root.ambient-b; }
+
+                Text { text: "Diffuse (kd)"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.diffuse-r; }
+                ShadingSlider { label: "G"; value <=> root.diffuse-g; }
+                ShadingSlider { label: "B"; value <=> root.diffuse-b; }
+
+                Text { text: "Specular (ks)"; color: #a8a8a8; font-size: 12px; }
+                ShadingSlider { label: "R"; value <=> root.specular-r; }
+                ShadingSlider { label: "G"; value <=> root.specular-g; }
+                ShadingSlider { label: "B"; value <=> root.specular-b; }
+
+                ShadingSlider { label: "Shininess"; minimum: 8; maximum: 256; value <=> root.shininess; }
+
+                Text { text: "SSAO"; color: #a8a8a8; font-size: 12px; }
+                CheckBox { text: "Enabled"; checked: root.ssao-enabled; toggled => { root.ssao-enabled = self.checked; } }
+                ShadingSlider { label: "Radius"; minimum: 0.05; maximum: 1.0; value <=> root.ssao-radius; }
+                ShadingSlider { label: "Bias"; minimum: 0.0; maximum: 0.1; value <=> root.ssao-bias; }
+                ShadingSlider { label: "Strength"; minimum: 0.0; maximum: 1.0; value <=> root.ssao-strength; }
+            }
+        }
+    }
+}

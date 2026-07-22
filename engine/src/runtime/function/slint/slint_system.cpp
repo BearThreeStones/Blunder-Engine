@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -36,6 +37,9 @@
 #include "runtime/function/editor/document_history_helpers.h"
 #include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/hierarchy_system.h"
+#include "runtime/function/editor/inspector_behaviour_ops.h"
+#include "runtime/core/object/object.h"
+#include "runtime/function/script/behaviour_type_catalog.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -968,6 +972,25 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       syncInspectorFromSelection();
     });
 
+    component->on_inspector_add_behaviour([this](const slint::SharedString& type) {
+      applyInspectorAddBehaviour(eastl::string(type.data()));
+    });
+    component->on_inspector_remove_behaviour([this](int behaviour_id) {
+      applyInspectorRemoveBehaviour(static_cast<BehaviourId>(behaviour_id));
+    });
+    component->on_inspector_reorder_behaviour([this](int from_index, int to_index) {
+      applyInspectorReorderBehaviours(static_cast<size_t>(from_index),
+                                      static_cast<size_t>(to_index));
+    });
+    component->on_inspector_commit_behaviour_prop(
+        [this](int behaviour_id, const slint::SharedString& key,
+               const slint::SharedString& text, float number, bool flag) {
+          applyInspectorBehaviourPropertyCommit(static_cast<BehaviourId>(behaviour_id),
+                                                eastl::string(key.data()),
+                                                eastl::string{}, eastl::string(text.data()),
+                                                number, flag);
+        });
+
     component->on_transform_mode_selected([](int mode) {
       if (!g_runtime_global_context.m_render_system) {
         return;
@@ -1858,6 +1881,108 @@ int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
   return browser_origin_y + k_tree_chrome_height_px;
 }
 
+bool loadInspectorBehaviourCatalog(eastl::vector<BehaviourCatalogType>& out) {
+  out.clear();
+  if (!g_runtime_global_context.m_file_system) {
+    return false;
+  }
+  const std::filesystem::path catalog_path =
+      g_runtime_global_context.m_file_system->getProjectRoot() / ".blunder" /
+      "behaviour_catalog.json";
+  eastl::string error;
+  if (!loadBehaviourTypeCatalog(catalog_path, out, error)) {
+    return false;
+  }
+  return true;
+}
+
+std::shared_ptr<slint::VectorModel<BehaviourRow>> makeBehaviourRowModel(
+    const eastl::vector<InspectorBehaviourRowData>& rows) {
+  auto model = std::make_shared<slint::VectorModel<BehaviourRow>>();
+  for (const InspectorBehaviourRowData& row : rows) {
+    BehaviourRow slint_row{};
+    slint_row.behaviour_id = static_cast<int>(row.behaviour_id);
+    slint_row.type_name = slint::SharedString(row.type_name.c_str());
+    slint_row.missing = row.missing;
+    auto prop_model = std::make_shared<slint::VectorModel<BehaviourPropRow>>();
+    for (const InspectorBehaviourPropRowData& prop : row.props) {
+      BehaviourPropRow slint_prop{};
+      slint_prop.key = slint::SharedString(prop.key.c_str());
+      slint_prop.kind = slint::SharedString(prop.kind.c_str());
+      slint_prop.bool_value = prop.bool_value;
+      slint_prop.number_value = prop.number_value;
+      slint_prop.string_value = slint::SharedString(prop.string_value.c_str());
+      slint_prop.missing_type = prop.missing_type;
+      prop_model->push_back(slint_prop);
+    }
+    slint_row.props = prop_model;
+    model->push_back(slint_row);
+  }
+  return model;
+}
+
+std::shared_ptr<slint::VectorModel<slint::SharedString>> makeBehaviourTypeChoiceModel(
+    const eastl::vector<eastl::string>& choices) {
+  auto model = std::make_shared<slint::VectorModel<slint::SharedString>>();
+  for (const eastl::string& choice : choices) {
+    model->push_back(slint::SharedString(choice.c_str()));
+  }
+  return model;
+}
+
+size_t findBehaviourIndex(Object* object, BehaviourId behaviour_id) {
+  if (object == nullptr) {
+    return static_cast<size_t>(-1);
+  }
+  for (size_t i = 0; i < object->getBehaviourCount(); ++i) {
+    if (object->getBehaviourIdAt(i) == behaviour_id) {
+      return i;
+    }
+  }
+  return static_cast<size_t>(-1);
+}
+
+eastl::string behaviourPropKindFromCatalog(const eastl::vector<BehaviourCatalogType>& catalog,
+                                           const eastl::string& type_name,
+                                           const eastl::string& key) {
+  const BehaviourCatalogType* type = findBehaviourCatalogType(catalog, type_name);
+  if (type == nullptr) {
+    return {};
+  }
+  for (const BehaviourCatalogMember& member : type->members) {
+    if (member.name == key) {
+      return behaviourCatalogKindName(member.kind);
+    }
+  }
+  return {};
+}
+
+void copyBehaviourRowsToSnapshot(const slint::Model<BehaviourRow>& rows,
+                                 eastl::vector<NativeFloatBehaviourRow>& out_rows) {
+  out_rows.clear();
+  for (std::size_t i = 0; i < rows.row_count(); ++i) {
+    const BehaviourRow row = rows.row_data(i).value();
+    NativeFloatBehaviourRow copy{};
+    copy.behaviour_id = row.behaviour_id;
+    copy.type_name = row.type_name.data();
+    copy.missing = row.missing;
+    if (const auto* props = row.props.get()) {
+      for (std::size_t pi = 0; pi < props->row_count(); ++pi) {
+        const BehaviourPropRow prop = props->row_data(pi).value();
+        NativeFloatBehaviourPropRow prop_copy{};
+        prop_copy.key = prop.key.data();
+        prop_copy.kind = prop.kind.data();
+        prop_copy.bool_value = prop.bool_value;
+        prop_copy.number_value = prop.number_value;
+        prop_copy.string_value = prop.string_value.data();
+        prop_copy.missing_type = prop.missing_type;
+        copy.props.push_back(eastl::move(prop_copy));
+      }
+    }
+    out_rows.push_back(eastl::move(copy));
+  }
+}
+
 }  // namespace
 
 std::optional<UiContext::LockedServices> SlintSystem::lockServices() const {
@@ -1936,6 +2061,7 @@ void SlintSystem::syncInspectorFromSelection() {
       if (selection) {
         selection->clearDirty();
       }
+      syncInspectorBehavioursFromSelection();
       return;
     }
 
@@ -1947,6 +2073,7 @@ void SlintSystem::syncInspectorFromSelection() {
       ui->set_inspector_multi_edit_visible(false);
       m_applying_inspector_sync = false;
       selection->clearDirty();
+      syncInspectorBehavioursFromSelection();
       return;
     }
 
@@ -2074,6 +2201,7 @@ void SlintSystem::syncInspectorFromSelection() {
 
     selection->clearDirty();
     m_applying_inspector_sync = false;
+    syncInspectorBehavioursFromSelection();
   } catch (const std::exception& e) {
     m_applying_inspector_sync = false;
     LOG_ERROR("[SlintSystem::syncInspectorFromSelection] {}", e.what());
@@ -2265,6 +2393,277 @@ void SlintSystem::applyInspectorTransform() {
     LOG_ERROR("[SlintSystem::applyInspectorTransform] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::applyInspectorTransform] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorBehavioursFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    eastl::vector<BehaviourCatalogType> catalog;
+    loadInspectorBehaviourCatalog(catalog);
+    eastl::vector<eastl::string> type_choices;
+    buildBehaviourTypeChoices(catalog, type_choices);
+
+    eastl::vector<InspectorBehaviourRowData> rows;
+    if (selection != nullptr && scene != nullptr && selection->hasSelection()) {
+      const eastl::vector<EntityId> ids = selection->getSelectedIds();
+      if (ids.size() == 1) {
+        Object* object = scene->findBoundObject(ids[0]);
+        buildInspectorBehaviourRows(object, catalog, rows);
+      }
+    }
+
+    ui->set_inspector_behaviours(makeBehaviourRowModel(rows));
+    ui->set_inspector_behaviour_type_choices(makeBehaviourTypeChoiceModel(type_choices));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorBehavioursFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorBehavioursFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorAddBehaviour(const eastl::string& clr_type) {
+  if (clr_type.empty()) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->ensureBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    const BehaviourId created_id = object->addBehaviour(clr_type);
+    if (!isValidBehaviourId(created_id)) {
+      return;
+    }
+    pushDocumentCommand(makeAddBehaviourCommand(
+        scene, entity_id, clr_type, created_id, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorBehavioursFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddBehaviour] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddBehaviour] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorRemoveBehaviour(BehaviourId behaviour_id) {
+  if (!isValidBehaviourId(behaviour_id)) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    const size_t index_at_remove = findBehaviourIndex(object, behaviour_id);
+    if (index_at_remove == static_cast<size_t>(-1)) {
+      return;
+    }
+    const char* type_name = object->getBehaviourTypeName(behaviour_id);
+    if (type_name == nullptr) {
+      return;
+    }
+    eastl::vector<SceneBehaviourProperty> properties;
+    if (const eastl::vector<SceneBehaviourProperty>* bag =
+            object->getBehaviourProperties(behaviour_id);
+        bag != nullptr) {
+      properties = *bag;
+    }
+    if (!object->removeBehaviour(behaviour_id)) {
+      return;
+    }
+    pushDocumentCommand(makeRemoveBehaviourCommand(
+        scene, entity_id, behaviour_id, index_at_remove, type_name,
+        eastl::move(properties), currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorBehavioursFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveBehaviour] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveBehaviour] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorReorderBehaviours(size_t from_index, size_t to_index) {
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    if (!object->moveBehaviour(from_index, to_index)) {
+      return;
+    }
+    pushDocumentCommand(makeReorderBehavioursCommand(
+        scene, entity_id, from_index, to_index, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorBehavioursFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorReorderBehaviours] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorReorderBehaviours] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorBehaviourPropertyCommit(BehaviourId behaviour_id,
+                                                        const eastl::string& key,
+                                                        const eastl::string& kind,
+                                                        const eastl::string& text_value,
+                                                        float number_value, bool bool_value) {
+  if (!isValidBehaviourId(behaviour_id) || key.empty()) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    eastl::vector<BehaviourCatalogType> catalog;
+    loadInspectorBehaviourCatalog(catalog);
+    const char* type_name = object->getBehaviourTypeName(behaviour_id);
+    if (type_name == nullptr) {
+      return;
+    }
+    eastl::string resolved_kind = kind;
+    if (resolved_kind.empty()) {
+      resolved_kind =
+          behaviourPropKindFromCatalog(catalog, type_name, key);
+    }
+    if (resolved_kind.empty()) {
+      return;
+    }
+
+    const Variant after =
+        variantFromInspectorCommit(resolved_kind, text_value, number_value, bool_value);
+
+    eastl::vector<SceneBehaviourProperty> bag;
+    if (const eastl::vector<SceneBehaviourProperty>* existing =
+            object->getBehaviourProperties(behaviour_id);
+        existing != nullptr) {
+      bag = *existing;
+    }
+
+    Variant before;
+    bool found = false;
+    for (const SceneBehaviourProperty& prop : bag) {
+      if (prop.key == key) {
+        before = prop.value;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      if (resolved_kind == "bool") {
+        before = Variant(false);
+      } else if (resolved_kind == "number") {
+        before = Variant(0.0f);
+      } else {
+        before = Variant(eastl::string{});
+      }
+    }
+
+    bool updated = false;
+    for (SceneBehaviourProperty& prop : bag) {
+      if (prop.key == key) {
+        prop.value = after;
+        updated = true;
+        break;
+      }
+    }
+    if (!updated) {
+      SceneBehaviourProperty prop;
+      prop.key = key;
+      prop.value = after;
+      bag.push_back(eastl::move(prop));
+    }
+    object->setBehaviourProperties(behaviour_id, bag);
+
+    if (before == after) {
+      syncInspectorBehavioursFromSelection();
+      return;
+    }
+
+    pushDocumentCommand(makeSetBehaviourPropertyCommand(
+        scene, entity_id, behaviour_id, key, before, after,
+        currentSelectionSnapshot(), currentSelectionSnapshot()));
+    syncInspectorBehavioursFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorBehaviourPropertyCommit] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorBehaviourPropertyCommit] unknown exception");
   }
 }
 
@@ -4043,6 +4442,17 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_scale_link_enabled = main.get_inspector_scale_link_enabled();
         snapshot.inspector_multi_edit_visible = main.get_inspector_multi_edit_visible();
         snapshot.inspector_multi_edit_absolute = main.get_inspector_multi_edit_absolute();
+        if (const auto behaviour_rows = main.get_inspector_behaviours()) {
+          copyBehaviourRowsToSnapshot(*behaviour_rows, snapshot.inspector_behaviours);
+        }
+        if (const auto choices = main.get_inspector_behaviour_type_choices()) {
+          snapshot.inspector_behaviour_type_choices.clear();
+          for (std::size_t ci = 0; ci < choices->row_count(); ++ci) {
+            snapshot.inspector_behaviour_type_choices.push_back(
+                choices->row_data(ci).value().data());
+          }
+        }
+        snapshot.inspector_behaviours_expanded = main.get_inspector_behaviours_expanded();
         snapshot.light_dir_x = main.get_light_dir_x();
         snapshot.light_dir_y = main.get_light_dir_y();
         snapshot.light_dir_z = main.get_light_dir_z();
@@ -4288,6 +4698,23 @@ void SlintSystem::wireNativeFloatingCallbacks() {
     m_inspector_focused_field = -1;
     syncInspectorFromSelection();
   };
+  callbacks.on_inspector_add_behaviour = [this](const slint::SharedString& type) {
+    applyInspectorAddBehaviour(eastl::string(type.data()));
+  };
+  callbacks.on_inspector_remove_behaviour = [this](int behaviour_id) {
+    applyInspectorRemoveBehaviour(static_cast<BehaviourId>(behaviour_id));
+  };
+  callbacks.on_inspector_reorder_behaviour = [this](int from_index, int to_index) {
+    applyInspectorReorderBehaviours(static_cast<size_t>(from_index),
+                                    static_cast<size_t>(to_index));
+  };
+  callbacks.on_inspector_commit_behaviour_prop =
+      [this](int behaviour_id, const slint::SharedString& key,
+             const slint::SharedString& text, float number, bool flag) {
+        applyInspectorBehaviourPropertyCommit(static_cast<BehaviourId>(behaviour_id),
+                                             eastl::string(key.data()), eastl::string{},
+                                             eastl::string(text.data()), number, flag);
+      };
   callbacks.on_browser_folder_selected = UiCallbackBinder::bind(
       m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
         m_tree_folder_handled_by_slint = true;
