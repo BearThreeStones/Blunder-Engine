@@ -35,6 +35,18 @@
       "position": [0, 3.8, 1],
       "rotation": [0, 0, 0],
       "rotationMode": "euler_degrees"
+    },
+    {
+      "name": "Main Camera",
+      "position": [0, -8, 8],
+      "rotation": [30, 0, 0],
+      "rotationMode": "euler_degrees",
+      "camera": {
+        "verticalFovDegrees": 45,
+        "nearClip": 0.1,
+        "farClip": 1000,
+        "isMain": true
+      }
     }
   ],
   "childScenes": []
