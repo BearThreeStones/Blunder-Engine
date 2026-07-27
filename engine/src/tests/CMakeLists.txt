@@ -629,6 +629,21 @@ endif()
 add_test(NAME editor_overlay_policy_test
          COMMAND editor_overlay_policy_test)
 
+add_executable(player_authorship_input_test
+    "player_authorship_input_test.cpp"
+)
+
+target_include_directories(player_authorship_input_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(player_authorship_input_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME player_authorship_input_test
+         COMMAND player_authorship_input_test)
+
 add_executable(play_ipc_test
     "play_ipc_test.cpp"
     "../runtime/project/play_ipc.cpp"

@@ -11,6 +11,7 @@
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/function/render/overlay/editor_overlay_policy.h"
+#include "runtime/function/render/player_authorship_input.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/post/ssao_pass.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
@@ -236,6 +237,9 @@ void RenderSystem::initializeD3D12SkeletonPath(
   offscreen_desc.height = k_default_viewport_h;
   m_offscreen = m_backend->device().createOffscreenTarget(offscreen_desc);
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    m_editor_camera->setInteractionLocked(true);
+  }
 }
 
 void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
@@ -292,6 +296,9 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
                                vkBackend(this)->nativeSlangCompiler());
 
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    m_editor_camera->setInteractionLocked(true);
+  }
 
   Asset::Meta smoke_meta;
   smoke_meta.virtual_path = "generated://render/smoke_checkerboard";
@@ -1262,6 +1269,8 @@ void RenderSystem::onEvent(Event& event) {
 
   const bool overlays =
       editorOverlaysEnabled(g_runtime_global_context.hostMode());
+  const bool authorship =
+      playerAuthorshipInputEnabled(g_runtime_global_context.hostMode());
 
   if (overlays && m_overlay_system && m_editor_camera) {
     m_overlay_system->transform_gizmo().controller().onEvent(event,
@@ -1322,7 +1331,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (!event.handled && m_editor_camera &&
+  if (authorship && !event.handled && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.hasMousePosition() &&
@@ -1336,7 +1345,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (!event.handled && m_editor_camera &&
+  if (authorship && !event.handled && m_editor_camera &&
       event.getEventType() == EventType::MouseMoved) {
     auto& mouse_event = static_cast<MouseMovedEvent&>(event);
     if (g_runtime_global_context.m_viewport_pick) {
@@ -1345,7 +1354,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (!event.handled && m_editor_camera &&
+  if (authorship && !event.handled && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_RIGHT &&
@@ -1364,7 +1373,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (!event.handled && m_editor_camera &&
+  if (authorship && !event.handled && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
@@ -1377,7 +1386,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (!event.handled && m_editor_camera &&
+  if (authorship && !event.handled && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonReleased) {
     auto& mouse_event = static_cast<MouseButtonReleasedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
@@ -1395,7 +1404,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (m_editor_camera) {
+  if (authorship && m_editor_camera) {
     m_editor_camera->onEvent(event);
   }
 }
