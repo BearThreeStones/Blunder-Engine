@@ -16,4 +16,4 @@
 
 ## 4. Docs
 
-- [ ] 4.1 Confirm `CONTEXT.md` **Editor Overlay** glossary matches behavior
+- [x] 4.1 Confirm `CONTEXT.md` **Editor Overlay** glossary matches behavior
