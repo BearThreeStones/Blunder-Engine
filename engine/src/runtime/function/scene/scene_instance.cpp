@@ -105,6 +105,7 @@ void SceneInstance::clear() {
   m_world_matrices.clear();
   m_name_to_id.clear();
   m_mesh_renderers.clear();
+  m_cameras.clear();
   m_has_world_bounds = false;
   m_world_bounds = AABB{};
   m_world_matrices_dirty = true;
@@ -120,6 +121,21 @@ void SceneInstance::setMeshRenderer(EntityId id, MeshRendererComponent renderer)
 const MeshRendererComponent* SceneInstance::getMeshRenderer(EntityId id) const {
   const auto it = m_mesh_renderers.find(id);
   if (it == m_mesh_renderers.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+void SceneInstance::setCamera(EntityId id, CameraComponent camera) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_cameras[id] = eastl::move(camera);
+}
+
+const CameraComponent* SceneInstance::getCamera(EntityId id) const {
+  const auto it = m_cameras.find(id);
+  if (it == m_cameras.end()) {
     return nullptr;
   }
   return &it->second;

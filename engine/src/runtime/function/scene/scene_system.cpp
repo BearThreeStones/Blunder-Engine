@@ -10,6 +10,7 @@
 #include "runtime/function/script/dotnet_host.h"
 #include "runtime/function/script/scene_behaviour_mount.h"
 #include "runtime/resource/asset/guid.h"
+#include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -111,6 +112,7 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
   }
 
   attachSceneEntityMeshes(*instance, scene_asset->getScene());
+  attachSceneEntityCameras(*instance, scene_asset->getScene());
 
   for (const SceneChildReference& child : scene_asset->getScene().getChildScenes()) {
     const eastl::shared_ptr<SceneAsset> child_asset =
@@ -160,6 +162,39 @@ void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
       }
     }
 
+    // Mesh Assets (descriptor / GUID) load through Pull Fast Path / Cook —
+    // Intermediate may be COLLADA (.dae). Do not open them as glTF documents.
+    // Raw .gltf/.glb under an entity still expands via GltfSceneImporter.
+    const bool is_mesh_asset =
+        mesh_ref.size() >= 10 &&
+        (mesh_ref.compare(mesh_ref.size() - 10, 10, ".mesh.yaml") == 0 ||
+         (mesh_ref.size() >= 11 &&
+          mesh_ref.compare(mesh_ref.size() - 11, 11, ".mesh.asset") == 0));
+
+    if (is_mesh_asset || isValidGuidFormat(mesh_ref)) {
+      const eastl::shared_ptr<MeshAsset> mesh =
+          m_asset_manager->loadMesh(mesh_ref);
+      if (!mesh) {
+        LOG_ERROR("[SceneSystem] failed to load mesh '{}' for entity '{}'",
+                  mesh_ref.c_str(), definition.name.c_str());
+        continue;
+      }
+
+      MeshRendererComponent renderer{};
+      renderer.mesh = mesh;
+      renderer.material = mesh->getMaterialAsset();
+      if (renderer.material) {
+        renderer.alpha_mode = renderer.material->getAlphaMode();
+        renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
+        renderer.double_sided = renderer.material->isDoubleSided();
+      }
+      instance.setMeshRenderer(entity_id, eastl::move(renderer));
+
+      LOG_INFO("[SceneSystem] attached mesh asset to entity '{}' in '{}'",
+               definition.name.c_str(), instance.getSourcePath().c_str());
+      continue;
+    }
+
     const GltfSceneImporter::ImportResult import_result =
         GltfSceneImporter::importUnderEntity(m_asset_manager, mesh_ref, instance,
                                              entity_id);
@@ -173,6 +208,26 @@ void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
     LOG_INFO("[SceneSystem] attached {} mesh primitives to entity '{}' in '{}'",
              import_result.mesh_primitive_count, definition.name.c_str(),
              instance.getSourcePath().c_str());
+  }
+}
+
+void SceneSystem::attachSceneEntityCameras(SceneInstance& instance,
+                                           const Scene& scene) {
+  for (const SceneEntityDefinition& definition : scene.getEntities()) {
+    if (!definition.has_camera) {
+      continue;
+    }
+
+    const EntityId entity_id = instance.findEntityByName(definition.name);
+    if (!isValid(entity_id)) {
+      LOG_WARN("[SceneSystem] camera entity '{}' not found in scene '{}'",
+               definition.name.c_str(), instance.getSourcePath().c_str());
+      continue;
+    }
+
+    instance.setCamera(entity_id, definition.camera);
+    LOG_INFO("[SceneSystem] attached camera to entity '{}' in '{}'",
+             definition.name.c_str(), instance.getSourcePath().c_str());
   }
 }
 

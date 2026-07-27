@@ -49,6 +49,7 @@ class SceneSystem final {
   void unloadSceneInstanceRecursive(SceneInstance* instance);
 
   void attachSceneEntityMeshes(SceneInstance& instance, const Scene& scene);
+  void attachSceneEntityCameras(SceneInstance& instance, const Scene& scene);
 
   AssetManager* m_asset_manager{nullptr};
   eastl::vector<eastl::shared_ptr<SceneInstance>> m_loaded_instances;
