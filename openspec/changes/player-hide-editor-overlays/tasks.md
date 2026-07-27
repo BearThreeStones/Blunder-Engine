@@ -11,8 +11,8 @@
 
 ## 3. RenderSystem input gate
 
-- [ ] 3.1 Skip Transform / Navigate event handling when Player host
-- [ ] 3.2 Manual: editor overlays still work; Player ignores gizmo clicks; Pause still hidden
+- [x] 3.1 Skip Transform / Navigate event handling when Player host
+- [ ] 3.2 Manual: editor overlays still work; Player ignores gizmo clicks; Pause still hidden (USER-VERIFY)
 
 ## 4. Docs
 

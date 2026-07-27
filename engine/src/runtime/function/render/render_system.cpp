@@ -10,6 +10,7 @@
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/overlay/editor_overlay_policy.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/post/ssao_pass.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
@@ -1259,7 +1260,10 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (m_overlay_system && m_editor_camera) {
+  const bool overlays =
+      editorOverlaysEnabled(g_runtime_global_context.hostMode());
+
+  if (overlays && m_overlay_system && m_editor_camera) {
     m_overlay_system->transform_gizmo().controller().onEvent(event,
                                                              *m_editor_camera);
     if (event.handled) {
@@ -1267,7 +1271,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (m_overlay_system && m_editor_camera &&
+  if (overlays && m_overlay_system && m_editor_camera &&
       event.getEventType() == EventType::MouseMoved && !event.handled) {
     auto& mouse_event = static_cast<MouseMovedEvent&>(event);
     {
@@ -1305,7 +1309,7 @@ void RenderSystem::onEvent(Event& event) {
     }
   }
 
-  if (m_overlay_system && m_editor_camera &&
+  if (overlays && m_overlay_system && m_editor_camera &&
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
