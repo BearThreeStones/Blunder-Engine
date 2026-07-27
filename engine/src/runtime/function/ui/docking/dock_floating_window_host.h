@@ -70,6 +70,7 @@ struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
   int hierarchy_selected_entity_id{0};
+  eastl::string hierarchy_scene_display_name;
   bool inspector_has_selection{false};
   eastl::string inspector_entity_name;
   float inspector_pos_x{0.0f};
@@ -102,6 +103,12 @@ struct NativeFloatPanelSnapshot {
   eastl::vector<NativeFloatBehaviourRow> inspector_behaviours;
   eastl::vector<eastl::string> inspector_behaviour_type_choices;
   bool inspector_behaviours_expanded{true};
+  bool inspector_has_camera{false};
+  float inspector_camera_fov{45.0f};
+  float inspector_camera_near{0.1f};
+  float inspector_camera_far{1000.0f};
+  bool inspector_camera_is_main{false};
+  bool inspector_camera_expanded{true};
   float light_dir_x{0.45f};
   float light_dir_y{0.7f};
   float light_dir_z{0.55f};
@@ -167,6 +174,8 @@ class DockFloatingWindowHost final {
     std::function<void(int, int)> on_inspector_reorder_behaviour;
     std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
         on_inspector_commit_behaviour_prop;
+    std::function<void()> on_inspector_camera_edited;
+    std::function<void()> on_inspector_add_camera;
     std::function<void(const slint::SharedString&)> on_browser_folder_selected;
     std::function<void(const slint::SharedString&)> on_browser_folder_toggle;
     std::function<void()> on_browser_refresh_requested;
@@ -189,6 +198,10 @@ class DockFloatingWindowHost final {
   void applyPanelSnapshot(DockId node_id, const NativeFloatPanelSnapshot& snapshot);
   void renderFrames();
   bool processEvent(const SDL_Event& event);
+
+  /// Visits native floating Content Browser windows. Return true from fn to stop.
+  void forEachContentBrowserWindow(
+      const std::function<bool(SDL_Window* window)>& fn) const;
 
  private:
   FloatEntry* findEntry(DockId node_id);

@@ -133,6 +133,15 @@ export component InspectorPanel inherits Rectangle {
     callback reorder-behaviour(int, int);
     callback commit-behaviour-prop(int, string, string, float, bool);
 
+    in property <bool> has-camera: false;
+    in-out property <float> camera-fov: 45.0;
+    in-out property <float> camera-near: 0.1;
+    in-out property <float> camera-far: 1000.0;
+    in-out property <bool> camera-is-main: false;
+    in-out property <bool> camera-expanded: true;
+    callback camera-edited();
+    callback add-camera();
+
     background: #2d2d2d;
     border-color: #2a2a2a;
     border-width: 1px;
@@ -744,6 +753,148 @@ export component InspectorPanel inherits Rectangle {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                // --- Camera header ---
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.camera-expanded = !root.camera-expanded; }
+                    HorizontalBox {
+                        spacing: 6px;
+                        if root.camera-expanded: EditorIconTreeArrowDown {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        if !root.camera-expanded: EditorIconTreeArrowRight {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        Text {
+                            text: "Camera";
+                            color: #f0f0f0;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.camera-expanded: VerticalBox {
+                    spacing: 6px;
+
+                    if !root.has-selection || root.multi-edit-visible: Text {
+                        text: root.has-selection ? "Select one entity" : "Select an entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+
+                    if root.has-selection && !root.multi-edit-visible && root.has-camera: VerticalBox {
+                        spacing: 6px;
+
+                        HorizontalBox {
+                            spacing: 6px;
+                            Text {
+                                text: "FOV";
+                                color: #a8a8a8;
+                                font-size: 11px;
+                                width: 96px;
+                                vertical-alignment: center;
+                            }
+                            fov-input := LineEdit {
+                                horizontal-stretch: 1;
+                                text: "" + root.camera-fov;
+                                accepted => {
+                                    root.camera-fov = self.text.to-float();
+                                    root.camera-edited();
+                                }
+                                changed has-focus => {
+                                    if (!self.has-focus) {
+                                        root.camera-fov = self.text.to-float();
+                                        root.camera-edited();
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            spacing: 6px;
+                            Text {
+                                text: "Near";
+                                color: #a8a8a8;
+                                font-size: 11px;
+                                width: 96px;
+                                vertical-alignment: center;
+                            }
+                            near-input := LineEdit {
+                                horizontal-stretch: 1;
+                                text: "" + root.camera-near;
+                                accepted => {
+                                    root.camera-near = self.text.to-float();
+                                    root.camera-edited();
+                                }
+                                changed has-focus => {
+                                    if (!self.has-focus) {
+                                        root.camera-near = self.text.to-float();
+                                        root.camera-edited();
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalBox {
+                            spacing: 6px;
+                            Text {
+                                text: "Far";
+                                color: #a8a8a8;
+                                font-size: 11px;
+                                width: 96px;
+                                vertical-alignment: center;
+                            }
+                            far-input := LineEdit {
+                                horizontal-stretch: 1;
+                                text: "" + root.camera-far;
+                                accepted => {
+                                    root.camera-far = self.text.to-float();
+                                    root.camera-edited();
+                                }
+                                changed has-focus => {
+                                    if (!self.has-focus) {
+                                        root.camera-far = self.text.to-float();
+                                        root.camera-edited();
+                                    }
+                                }
+                            }
+                        }
+
+                        CheckBox {
+                            text: "Main";
+                            checked: root.camera-is-main;
+                            toggled => {
+                                root.camera-is-main = self.checked;
+                                root.camera-edited();
+                            }
+                        }
+                    }
+
+                    if root.has-selection && !root.multi-edit-visible && !root.has-camera: TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.add-camera(); }
+                        Rectangle {
+                            background: #2a2a2a;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: #4a4a4a;
+                            height: 24px;
+                            Text {
+                                text: "Add Camera";
+                                color: #bde7ff;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
                             }
                         }
                     }

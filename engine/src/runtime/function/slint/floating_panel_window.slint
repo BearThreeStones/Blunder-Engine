@@ -12,6 +12,7 @@ export component FloatingPanelWindow inherits Window {
 
     in property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
     in property <int> hierarchy-selected-entity-id: 0;
+    in property <string> hierarchy-scene-display-name: "(No Scene)";
 
     in property <bool> inspector-has-selection: false;
     in property <string> inspector-entity-name: "";
@@ -45,6 +46,12 @@ export component FloatingPanelWindow inherits Window {
     in property <[BehaviourRow]> inspector-behaviours: [];
     in property <[string]> inspector-behaviour-type-choices: [];
     in-out property <bool> inspector-behaviours-expanded: true;
+    in property <bool> inspector-has-camera: false;
+    in-out property <float> inspector-camera-fov: 45.0;
+    in-out property <float> inspector-camera-near: 0.1;
+    in-out property <float> inspector-camera-far: 1000.0;
+    in-out property <bool> inspector-camera-is-main: false;
+    in-out property <bool> inspector-camera-expanded: true;
     in-out property <float> light-dir-x: 0.45;
     in-out property <float> light-dir-y: 0.7;
     in-out property <float> light-dir-z: 0.55;
@@ -104,6 +111,8 @@ export component FloatingPanelWindow inherits Window {
     callback inspector-remove-behaviour(int);
     callback inspector-reorder-behaviour(int, int);
     callback inspector-commit-behaviour-prop(int, string, string, float, bool);
+    callback inspector-camera-edited();
+    callback inspector-add-camera();
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
@@ -174,6 +183,7 @@ export component FloatingPanelWindow inherits Window {
                 height: 100%;
                 tree-rows: root.hierarchy-tree-rows;
                 selected-entity-id: root.hierarchy-selected-entity-id;
+                scene-display-name: root.hierarchy-scene-display-name;
                 entity-selected(id) => { root.hierarchy-entity-selected(id); }
                 entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
             }
@@ -246,6 +256,14 @@ export component FloatingPanelWindow inherits Window {
                 commit-behaviour-prop(id, key, text, number, flag) => {
                     root.inspector-commit-behaviour-prop(id, key, text, number, flag);
                 }
+                has-camera: root.inspector-has-camera;
+                camera-fov <=> root.inspector-camera-fov;
+                camera-near <=> root.inspector-camera-near;
+                camera-far <=> root.inspector-camera-far;
+                camera-is-main <=> root.inspector-camera-is-main;
+                camera-expanded <=> root.inspector-camera-expanded;
+                camera-edited => { root.inspector-camera-edited(); }
+                add-camera => { root.inspector-add-camera(); }
             }
 
             if root.panel-kind == 4 : FilesystemHistoryHost {

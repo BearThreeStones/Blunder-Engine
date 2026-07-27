@@ -304,6 +304,11 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
       }
     }
 
+    if (const CameraComponent* camera = getCamera(entity_id)) {
+      definition.has_camera = true;
+      definition.camera = *camera;
+    }
+
     out_scene.getEntities().push_back(eastl::move(definition));
   }
 

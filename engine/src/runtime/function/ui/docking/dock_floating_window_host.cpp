@@ -174,6 +174,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       }
       ui.set_hierarchy_tree_rows(rows);
       ui.set_hierarchy_selected_entity_id(snapshot.hierarchy_selected_entity_id);
+      ui.set_hierarchy_scene_display_name(
+          toSharedString(snapshot.hierarchy_scene_display_name));
       break;
     }
     case DockPanelKind::inspector:
@@ -236,6 +238,12 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         ui.set_inspector_behaviour_type_choices(choices_model);
         ui.set_inspector_behaviours_expanded(snapshot.inspector_behaviours_expanded);
       }
+      ui.set_inspector_has_camera(snapshot.inspector_has_camera);
+      ui.set_inspector_camera_fov(snapshot.inspector_camera_fov);
+      ui.set_inspector_camera_near(snapshot.inspector_camera_near);
+      ui.set_inspector_camera_far(snapshot.inspector_camera_far);
+      ui.set_inspector_camera_is_main(snapshot.inspector_camera_is_main);
+      ui.set_inspector_camera_expanded(snapshot.inspector_camera_expanded);
       ui.set_light_dir_x(snapshot.light_dir_x);
       ui.set_light_dir_y(snapshot.light_dir_y);
       ui.set_light_dir_z(snapshot.light_dir_z);
@@ -498,6 +506,16 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
                                                              number, flag);
           }
         });
+    component->on_inspector_camera_edited([this]() {
+      if (m_callbacks.on_inspector_camera_edited) {
+        m_callbacks.on_inspector_camera_edited();
+      }
+    });
+    component->on_inspector_add_camera([this]() {
+      if (m_callbacks.on_inspector_add_camera) {
+        m_callbacks.on_inspector_add_camera();
+      }
+    });
     component->on_browser_folder_selected([this](const slint::SharedString& path) {
       if (m_callbacks.on_browser_folder_selected) {
         m_callbacks.on_browser_folder_selected(path);
@@ -643,6 +661,25 @@ void DockFloatingWindowHost::renderFrames() {
     if (SlintSystem::SlintWindowAdapter* adapter =
             m_slint_system->slintAdapterForWindow(window_id)) {
       m_slint_system->renderSlintAdapter(adapter);
+    }
+  }
+}
+
+void DockFloatingWindowHost::forEachContentBrowserWindow(
+    const std::function<bool(SDL_Window* window)>& fn) const {
+  if (!fn) {
+    return;
+  }
+  for (const auto& pair : m_entries) {
+    const FloatEntry& entry = pair.second;
+    if (entry.panel_kind != DockPanelKind::content_browser || !entry.sdl_window) {
+      continue;
+    }
+    if ((SDL_GetWindowFlags(entry.sdl_window) & SDL_WINDOW_HIDDEN) != 0) {
+      continue;
+    }
+    if (fn(entry.sdl_window)) {
+      return;
     }
   }
 }

@@ -136,10 +136,51 @@ void exportWritesBehavioursFromBoundObjects() {
   ObjectDB::clear();
 }
 
+void exportWritesCamerasFromSceneInstance() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  SceneEntityDefinition entity;
+  entity.name = "MainCam";
+  entity.has_camera = true;
+  entity.camera.vertical_fov_degrees = 60.0f;
+  entity.camera.near_clip = 0.25f;
+  entity.camera.far_clip = 500.0f;
+  entity.camera.is_main = true;
+  scene.getEntities().push_back(entity);
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+
+  const EntityId cam_id = instance.findEntityByName("MainCam");
+  expect_true("camera entity", isValid(cam_id));
+
+  CameraComponent updated;
+  updated.vertical_fov_degrees = 75.0f;
+  updated.near_clip = 0.5f;
+  updated.far_clip = 2000.0f;
+  updated.is_main = true;
+  instance.setCamera(cam_id, updated);
+
+  Scene exported;
+  expect_true("export ok", instance.exportToScene(exported));
+  expect_true("one entity", exported.getEntities().size() == 1);
+  if (exported.getEntities().size() == 1) {
+    const SceneEntityDefinition& def = exported.getEntities()[0];
+    expect_true("has_camera", def.has_camera);
+    expect_true("fov", def.camera.vertical_fov_degrees == 75.0f);
+    expect_true("near", def.camera.near_clip == 0.5f);
+    expect_true("far", def.camera.far_clip == 2000.0f);
+    expect_true("is_main", def.camera.is_main);
+  }
+}
+
 }  // namespace
 
 int main() {
   exportWritesBehavioursFromBoundObjects();
+  exportWritesCamerasFromSceneInstance();
 
   using namespace Blunder;
   ObjectDB::clear();
