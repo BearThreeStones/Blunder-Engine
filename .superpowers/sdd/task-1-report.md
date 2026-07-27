@@ -1,104 +1,111 @@
-# Task 1 Report: Native MessageDispatch + unit tests
+# Task 1 Report — Policy helper + unit test
 
-## Status
+**Status:** DONE  
+**Date:** 2026-07-27  
+**Branch:** feat/player-hide-editor-overlays  
+**OpenSpec:** player-hide-editor-overlays
 
-DONE
+## Objective
 
-## Summary
+Add pure `editorOverlaysEnabled(EngineHostMode)` policy helper with TDD unit test — foundation before OverlaySystem wiring.
 
-Implemented `MessageDispatch` — a static registry mapping message names to monotonic `MessageId` values, plus synchronous fan-out to non-null Behaviour script peers on a target `Object`. Added unit test covering registration stability, peer fan-out order, invalid-target no-op, and argc/id validation.
+## Files created
+
+| Path | Purpose |
+|------|---------|
+| `engine/src/runtime/function/render/overlay/editor_overlay_policy.h` | Header-only policy: overlays enabled when host != Player |
+| `engine/src/tests/editor_overlay_policy_test.cpp` | Unit tests for Editor/Player host modes |
+
+## Files modified
+
+| Path | Change |
+|------|--------|
+| `engine/src/tests/CMakeLists.txt` | Added `editor_overlay_policy_test` target after `play_pause_tick_gate_test` block |
+
+## Interfaces delivered
+
+```cpp
+namespace Blunder {
+inline bool editorOverlaysEnabled(EngineHostMode host_mode) {
+  return host_mode != EngineHostMode::Player;
+}
+}
+```
+
+Consumes `EngineHostMode` from `runtime/function/global/engine_host_mode.h`. Pause is orthogonal — test documents Player stays disabled.
 
 ## TDD Evidence
 
-### RED (test before implementation)
+### RED — test + CMake before header
 
 **Command:**
 ```powershell
-cmake --preset vs2026-debug
-cmake --build build/vs2026-debug --config Debug --target message_dispatch_test
+cmake --build build/vs2026-debug --config Debug --target editor_overlay_policy_test
 ```
 
-**Result:** exit code 1 — missing header (expected).
-
+**Output (excerpt):**
 ```
-E:\Dev\Blunder-Engine\engine\src\tests\message_dispatch_test.cpp(2,1): error C1083: 无法打开包括文件: "runtime/core/reflection/message_dispatch.h": No such file or directory
+editor_overlay_policy_test.cpp(2,1): fatal error C1083: 无法打开包括文件: "runtime/function/render/overlay/editor_overlay_policy.h": No such file or directory
 ```
 
-Saved: `.superpowers/sdd/task-1-red-build.txt`
+**Result:** Build failed — missing header (expected RED).
 
-### GREEN (after implementation)
+### GREEN — after policy header
 
-**Command:**
+**Build:**
 ```powershell
-cmake --build build/vs2026-debug --config Debug --target message_dispatch_test
-.\build\vs2026-debug\engine\src\tests\Debug\message_dispatch_test.exe
+cmake --build build/vs2026-debug --config Debug --target editor_overlay_policy_test
 ```
 
-**Result:** build exit 0, test exit 0 (silent pass).
-
-Saved: `.superpowers/sdd/task-1-green-run.txt`
-
-## Files Changed
-
-| File | Action |
-|------|--------|
-| `engine/src/runtime/core/reflection/message_dispatch.h` | Created — `MessageId`, `MessageArg`, `MessageDispatch` API |
-| `engine/src/runtime/core/reflection/message_dispatch.cpp` | Created — registry, hook, sync fan-out |
-| `engine/src/tests/message_dispatch_test.cpp` | Created — unit test from brief |
-| `engine/src/runtime/CMakeLists.txt` | Modified — added `message_dispatch.cpp` next to `lifecycle.cpp` |
-| `engine/src/tests/CMakeLists.txt` | Modified — added `message_dispatch_test` target after `ptrcall_lifecycle_test` |
-
-## Commit
-
+**Output (excerpt):**
 ```
-f9e1a13 feat: add MessageDispatch registry and sync fan-out
+editor_overlay_policy_test.vcxproj -> E:\Dev\Blunder-Engine\build\vs2026-debug\engine\src\tests\Debug\editor_overlay_policy_test.exe
 ```
 
-## Self-Review
+**Direct run:**
+```powershell
+.\build\vs2026-debug\engine\src\tests\Debug\editor_overlay_policy_test.exe
+```
+```
+editor_overlay_policy_test: all passed
+Exit code: 0
+```
 
-**Correctness**
-- `registerName` uses `eastl::unordered_map<eastl::string, MessageId>` with monotonic IDs starting at 1; duplicate names return the same ID.
-- `send` returns `false` when `argc` ∉ [0,4] or `id == 0`; invalid `ObjectId` returns `true` without calling the hook.
-- Fan-out copies `BehaviourId`s into a local vector before iteration (safe if hook mutates behaviours), re-gets object each iteration, skips null peers — mirrors `LifecycleDispatch::invokeTick` pattern.
-- Null hook is a no-op success (consistent with lifecycle when no hook registered).
+**CTest (from tests subdir — see Concerns):**
+```powershell
+ctest --test-dir build/vs2026-debug/engine/src/tests -C Debug -R editor_overlay_policy_test --output-on-failure
+```
+```
+1/1 Test #33: editor_overlay_policy_test .......   Passed    0.01 sec
+100% tests passed, 0 tests failed out of 1
+```
 
-**Test coverage**
-- Registration: non-zero, stable, distinct names.
-- Fan-out: 3 behaviours (A/B/C), only peers 1 and 3 called in order.
-- Args forwarded: argc=2, `args[0].i == 42`.
-- Invalid target `ObjectId(0)`: success, no hook calls.
-- Validation: argc=5 fails, id=0 fails.
+## Test coverage
 
-**Scope**
-- Task 1 only — no C-ABI, NativeAbi, or C# façade.
-- No ABI version bump.
+| Case | Expected |
+|------|----------|
+| Editor host | `editorOverlaysEnabled(Editor)` → true |
+| Player host | `editorOverlaysEnabled(Player)` → false |
+| Player + pause orthogonal | Player still false (documented in test comment) |
 
-**Minor notes (non-blocking)**
-- `MessageArg` union has no explicit default ctor beyond `kind{Nil}`; MSVC accepts brace-init in tests (`MessageArg too_many[5]{}`).
-- `registerName(nullptr)` returns 0 — not exercised by test but safe.
+## Commits
+
+| SHA | Message |
+|-----|---------|
+| `222054a` | test(overlay): add editorOverlaysEnabled host-mode policy |
+
+## OpenSpec
+
+Marked complete in `openspec/changes/player-hide-editor-overlays/tasks.md`: 1.1, 1.2, 1.3.
+
+## Self-review
+
+- Strict TDD order followed: failing test + CMake first, verified compile failure, then minimal header.
+- Policy matches brief verbatim; no `engine_runtime` link (header-only + `engine_host_mode.h`).
+- Test pattern matches other lightweight policy tests (`expect_true` / stderr on failure).
+- No OverlaySystem or RenderSystem wiring (deferred to Tasks 2–3).
+- MSVC C4819 warning on policy header (Unicode ellipsis/em dash in comment) — cosmetic only; matches brief text.
 
 ## Concerns
 
-None.
-
-## Review Fix (CMake scope)
-
-**Issue:** Commit `f9e1a13` bundled unrelated project-manager CMake wiring (runtime sources, `project_manager.slint`, and six project-manager test targets) into Task 1.
-
-**Fix commit:** `fb8bd74` — `fix: keep MessageDispatch CMake changes task-scoped`
-
-**Removed from Task 1 CMake delta:**
-- `engine/src/runtime/CMakeLists.txt`: `project_list`, `project_relaunch`, `project_manager_controller`, `project_manager_app` sources; `slint_target_sources` for `project_manager.slint`
-- `engine/src/tests/CMakeLists.txt`: `project_file_test`, `project_list_test`, `project_manager_controller_test`, `project_relaunch_test`, `project_last_opened_display_test`, `editor_launch_test`
-
-**Retained:** `message_dispatch.h/.cpp` in `engine_runtime`; `message_dispatch_test` target only.
-
-**Note:** Project-manager sources remain in the working tree (untracked/uncommitted) for a separate change; they are not required for `message_dispatch_test` to configure or build.
-
-**Re-verify (post-fix):**
-```powershell
-cmake --build build/vs2026-debug --config Debug --target message_dispatch_test
-.\build\vs2026-debug\engine\src\tests\Debug\message_dispatch_test.exe
-```
-
-**Result:** build exit 0, test exit 0 (silent pass).
+- `ctest --test-dir build/vs2026-debug` reports **Total Tests: 0** (no root `CTestTestfile.cmake`). Test is registered and passes via `ctest --test-dir build/vs2026-debug/engine/src/tests`. Same project-wide quirk as other engine tests; direct `.exe` run also passes.
