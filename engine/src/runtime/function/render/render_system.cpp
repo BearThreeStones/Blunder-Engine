@@ -920,7 +920,30 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   float far_clip = 1000.0f;
   float vertical_fov = glm::radians(45.0f);
   float ortho_size = 10.0f;
-  if (m_editor_camera) {
+  const bool player =
+      g_runtime_global_context.hostMode() == EngineHostMode::Player;
+  if (player) {
+    SceneInstance* scene =
+        g_runtime_global_context.m_scene_system
+            ? g_runtime_global_context.m_scene_system->getActiveInstance()
+            : nullptr;
+    const float aspect =
+        static_cast<float>(offscreen_extent.width) /
+        static_cast<float>(eastl::max(1u, offscreen_extent.height));
+    ResolvedPlayCamera cam =
+        scene ? resolvePlayCameraFromScene(*scene, aspect) : ResolvedPlayCamera{};
+    if (!cam.ok) {
+      pollViewportPresent();
+      return;
+    }
+    view = cam.view;
+    projection = cam.projection;
+    camera_position = cam.position;
+    camera_forward = cam.forward;
+    near_clip = cam.near_clip;
+    far_clip = cam.far_clip;
+    vertical_fov = cam.vertical_fov_radians;
+  } else if (m_editor_camera) {
     int32_t viewport_x = 0;
     int32_t viewport_y = 0;
     float viewport_logical_w = static_cast<float>(offscreen_extent.width);
