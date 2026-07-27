@@ -100,6 +100,9 @@ class OverlaySystem final {
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
 
  private:
+  bool authorshipOverlaysActive() const;
+  void disableAuthorshipOverlays();
+
   OverlayState m_state;
   OverlayResources m_resources;
   OffscreenRenderTarget* m_native_offscreen{nullptr};

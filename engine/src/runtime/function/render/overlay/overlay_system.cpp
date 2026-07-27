@@ -10,6 +10,7 @@
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/overlay/editor_overlay_policy.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/slang/slang_compiler.h"
@@ -103,11 +104,32 @@ void OverlaySystem::rebuildPickInstancesIfNeeded(SceneInstance& scene,
   m_pick_instances_dirty = false;
 }
 
+bool OverlaySystem::authorshipOverlaysActive() const {
+  return editorOverlaysEnabled(g_runtime_global_context.hostMode());
+}
+
+void OverlaySystem::disableAuthorshipOverlays() {
+  m_grid.enabled_ = false;
+  m_axes.enabled_ = false;
+  m_wireframe.enabled_ = false;
+  m_origins.enabled_ = false;
+  m_outline.enabled_ = false;
+  m_navigate_gizmo.enabled_ = false;
+  m_transform_gizmo.enabled_ = false;
+  m_anti_aliasing.enabled_ = false;
+}
+
 void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
                                uint32_t current_frame) {
   m_state = OverlayState::fromFrameState(frame_state, current_frame);
   m_state.gizmo_mode = m_transform_gizmo.controller().getMode();
   m_state.gizmo_space = m_transform_gizmo.controller().getSpace();
+
+  if (!authorshipOverlaysActive()) {
+    m_state.has_selection = false;
+    disableAuthorshipOverlays();
+    return;
+  }
 
   if (g_runtime_global_context.m_editor_selection &&
       g_runtime_global_context.m_editor_selection->hasSelection() &&
@@ -140,12 +162,18 @@ bool OverlaySystem::hasActiveOutline() const {
 }
 
 void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
+  if (!authorshipOverlaysActive()) {
+    return;
+  }
   m_axes.draw(cmd, m_state);
   m_wireframe.draw(cmd, m_state);
   m_origins.draw_color_only(cmd, m_state);
 }
 
 void OverlaySystem::draw_outline(VkCommandBuffer cmd) {
+  if (!authorshipOverlaysActive()) {
+    return;
+  }
   if (!m_outline.isEnabled()) {
     return;
   }
@@ -154,6 +182,9 @@ void OverlaySystem::draw_outline(VkCommandBuffer cmd) {
 }
 
 void OverlaySystem::draw_overlay_lines(VkCommandBuffer cmd) {
+  if (!authorshipOverlaysActive()) {
+    return;
+  }
   m_line_pass.begin(cmd);
   m_axes.draw_line(cmd, m_state);
   m_wireframe.draw_line(cmd, m_state);
@@ -161,10 +192,16 @@ void OverlaySystem::draw_overlay_lines(VkCommandBuffer cmd) {
 }
 
 void OverlaySystem::draw_overlay_aa(VkCommandBuffer cmd) {
+  if (!authorshipOverlaysActive()) {
+    return;
+  }
   m_anti_aliasing.apply(cmd, m_native_offscreen, m_state);
 }
 
 void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
+  if (!authorshipOverlaysActive()) {
+    return;
+  }
   m_screen_pass.begin(cmd);
   m_grid.draw_screen(cmd, m_state);
   m_transform_gizmo.draw_screen(cmd, m_state);

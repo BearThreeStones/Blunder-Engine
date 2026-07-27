@@ -6,8 +6,8 @@
 
 ## 2. OverlaySystem gate
 
-- [ ] 2.1 Disable authorship overlays and early-return sync/draw when Player host
-- [ ] 2.2 Smoke: Player presents without grid / Transform / Navigate
+- [x] 2.1 Disable authorship overlays and early-return sync/draw when Player host
+- [x] 2.2 Smoke: Player presents without grid / Transform / Navigate
 
 ## 3. RenderSystem input gate
 
