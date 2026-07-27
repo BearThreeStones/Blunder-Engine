@@ -644,6 +644,25 @@ endif()
 add_test(NAME player_authorship_input_test
          COMMAND player_authorship_input_test)
 
+add_executable(play_camera_resolve_test
+    "play_camera_resolve_test.cpp"
+)
+
+target_include_directories(play_camera_resolve_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+target_link_libraries(play_camera_resolve_test
+    PRIVATE glm
+)
+
+if(MSVC)
+    target_compile_options(play_camera_resolve_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME play_camera_resolve_test
+         COMMAND play_camera_resolve_test)
+
 add_executable(play_ipc_test
     "play_ipc_test.cpp"
     "../runtime/project/play_ipc.cpp"
