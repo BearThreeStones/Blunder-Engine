@@ -3,7 +3,6 @@ import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_brow
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { PlayDirtySceneDialog } from "play_dirty_scene_dialog.slint";
-import { OpenDirtySceneDialog } from "open_dirty_scene_dialog.slint";
 import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
@@ -15,8 +14,7 @@ import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, 
 
 export component MainEditorWindow inherits Window {
     // Logical size comes only from C++ dispatch_resize_event (see SlintWindowAdapter).
-    in-out property <string> window-title: "Blunder Editor";
-    title: root.window-title;
+    title: "Blunder Editor";
     background: #181818;
 
     in property <image> viewport-image;
@@ -53,7 +51,6 @@ export component MainEditorWindow inherits Window {
 
     in-out property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
     in property <int> hierarchy-selected-entity-id: 0;
-    in-out property <string> hierarchy-scene-display-name: "(No Scene)";
 
     in-out property <length> hierarchy-origin-x: 0px;
     in-out property <length> hierarchy-origin-y: 0px;
@@ -82,11 +79,6 @@ export component MainEditorWindow inherits Window {
     in-out property <length> browser-tree-panel-height: 0px;
     in-out property <length> browser-tree-panel-width: 150px;
     in-out property <length> browser-thumb-size: 64px;
-    in-out property <length> browser-grid-origin-x: 0px;
-    in-out property <length> browser-grid-origin-y: 0px;
-    in-out property <length> browser-grid-area-width: 0px;
-    in-out property <length> browser-grid-viewport-y: 0px;
-    in-out property <int> browser-grid-column-count: 1;
 
     in-out property <[HistoryRow]> history-rows: [];
     in-out property <bool> history-filter-scene: true;
@@ -174,11 +166,6 @@ export component MainEditorWindow inherits Window {
     callback play-dirty-save-and-play();
     callback play-dirty-play-last-saved();
     callback play-dirty-cancelled();
-
-    in-out property <bool> open-dirty-dialog-visible: false;
-    callback open-dirty-save-and-open();
-    callback open-dirty-discard-and-open();
-    callback open-dirty-cancelled();
 
     in-out property <bool> viewport-is-perspective: true;
     in property <bool> viewport-image-ready: false;
@@ -338,10 +325,6 @@ export component MainEditorWindow inherits Window {
                 TouchArea {
                     width: 100%;
                     height: 100%;
-                    // Must not capture: content panels sit below this layer in z-order
-                    // only for fall-through; an enabled full-size TouchArea swallows
-                    // clicks that miss nested handlers (grid open had no C++ fallback).
-                    enabled: false;
                 }
 
                 for tile in root.docking-tiles: Rectangle {
@@ -395,7 +378,6 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
-                        scene-display-name: root.hierarchy-scene-display-name;
                         tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
@@ -418,11 +400,6 @@ export component MainEditorWindow inherits Window {
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
                         thumb-size <=> root.browser-thumb-size;
-                        grid-origin-x <=> root.browser-grid-origin-x;
-                        grid-origin-y <=> root.browser-grid-origin-y;
-                        grid-area-width <=> root.browser-grid-area-width;
-                        grid-viewport-y <=> root.browser-grid-viewport-y;
-                        grid-column-count <=> root.browser-grid-column-count;
                         history-rows <=> root.history-rows;
                         history-filter-scene <=> root.history-filter-scene;
                         history-filter-global <=> root.history-filter-global;
@@ -681,7 +658,6 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
-                        scene-display-name: root.hierarchy-scene-display-name;
                         tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
@@ -704,11 +680,6 @@ export component MainEditorWindow inherits Window {
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
                         thumb-size <=> root.browser-thumb-size;
-                        grid-origin-x <=> root.browser-grid-origin-x;
-                        grid-origin-y <=> root.browser-grid-origin-y;
-                        grid-area-width <=> root.browser-grid-area-width;
-                        grid-viewport-y <=> root.browser-grid-viewport-y;
-                        grid-column-count <=> root.browser-grid-column-count;
                         history-rows <=> root.history-rows;
                         history-filter-scene <=> root.history-filter-scene;
                         history-filter-global <=> root.history-filter-global;
@@ -828,7 +799,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.open-dirty-dialog-visible || root.piercing-menu-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.piercing-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -859,16 +830,6 @@ export component MainEditorWindow inherits Window {
             save-and-play => { root.play-dirty-save-and-play(); }
             play-last-saved => { root.play-dirty-play-last-saved(); }
             cancelled => { root.play-dirty-cancelled(); }
-        }
-
-        open_dirty_scene_dialog := OpenDirtySceneDialog {
-            z: 3110;
-            width: parent.width;
-            height: parent.height;
-            show-dialog: root.open-dirty-dialog-visible;
-            save-and-open => { root.open-dirty-save-and-open(); }
-            discard-and-open => { root.open-dirty-discard-and-open(); }
-            cancelled => { root.open-dirty-cancelled(); }
         }
 
         PiercingMenu {

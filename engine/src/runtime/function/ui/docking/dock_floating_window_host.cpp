@@ -174,8 +174,6 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       }
       ui.set_hierarchy_tree_rows(rows);
       ui.set_hierarchy_selected_entity_id(snapshot.hierarchy_selected_entity_id);
-      ui.set_hierarchy_scene_display_name(
-          toSharedString(snapshot.hierarchy_scene_display_name));
       break;
     }
     case DockPanelKind::inspector:
@@ -661,25 +659,6 @@ void DockFloatingWindowHost::renderFrames() {
     if (SlintSystem::SlintWindowAdapter* adapter =
             m_slint_system->slintAdapterForWindow(window_id)) {
       m_slint_system->renderSlintAdapter(adapter);
-    }
-  }
-}
-
-void DockFloatingWindowHost::forEachContentBrowserWindow(
-    const std::function<bool(SDL_Window* window)>& fn) const {
-  if (!fn) {
-    return;
-  }
-  for (const auto& pair : m_entries) {
-    const FloatEntry& entry = pair.second;
-    if (entry.panel_kind != DockPanelKind::content_browser || !entry.sdl_window) {
-      continue;
-    }
-    if ((SDL_GetWindowFlags(entry.sdl_window) & SDL_WINDOW_HIDDEN) != 0) {
-      continue;
-    }
-    if (fn(entry.sdl_window)) {
-      return;
     }
   }
 }

@@ -70,7 +70,6 @@ struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
   int hierarchy_selected_entity_id{0};
-  eastl::string hierarchy_scene_display_name;
   bool inspector_has_selection{false};
   eastl::string inspector_entity_name;
   float inspector_pos_x{0.0f};
@@ -198,10 +197,6 @@ class DockFloatingWindowHost final {
   void applyPanelSnapshot(DockId node_id, const NativeFloatPanelSnapshot& snapshot);
   void renderFrames();
   bool processEvent(const SDL_Event& event);
-
-  /// Visits native floating Content Browser windows. Return true from fn to stop.
-  void forEachContentBrowserWindow(
-      const std::function<bool(SDL_Window* window)>& fn) const;
 
  private:
   FloatEntry* findEntry(DockId node_id);
