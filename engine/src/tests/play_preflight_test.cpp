@@ -1,5 +1,6 @@
 #include "runtime/project/play_preflight.h"
 #include "runtime/project/play_session_controller.h"
+#include "runtime/function/scene/scene.h"
 
 #include <chrono>
 #include <cstdio>
@@ -82,6 +83,31 @@ int main() {
     expect_true("cancel aborts", !cancel.proceed);
     expect_true("cancel no save", !cancel.save_first);
     expect_true("cancel no prompt", !cancel.needs_prompt);
+  }
+
+  {
+    Scene no_camera;
+    SceneEntityDefinition entity;
+    entity.name = "Cube";
+    no_camera.getEntities().push_back(entity);
+    expect_true("scene without camera", !sceneAssetHasPlayCamera(no_camera));
+    const PlayCameraGateResult blocked = runPlayCameraGate(no_camera);
+    expect_true("no camera gate fails", !blocked.ok);
+    expect_true("no camera gate error",
+                blocked.error == "play entry scene has no Camera");
+  }
+
+  {
+    Scene with_camera;
+    SceneEntityDefinition entity;
+    entity.name = "MainCamera";
+    entity.has_camera = true;
+    entity.camera.is_main = true;
+    with_camera.getEntities().push_back(entity);
+    expect_true("scene with camera", sceneAssetHasPlayCamera(with_camera));
+    const PlayCameraGateResult allowed = runPlayCameraGate(with_camera);
+    expect_true("camera gate ok", allowed.ok);
+    expect_true("camera gate no error", allowed.error.empty());
   }
 
   {

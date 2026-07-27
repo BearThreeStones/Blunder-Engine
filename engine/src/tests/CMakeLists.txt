@@ -685,14 +685,19 @@ add_test(NAME play_ipc_test
 
 add_executable(play_session_controller_test
     "play_session_controller_test.cpp"
-    "../runtime/project/play_session_controller.cpp"
-    "../runtime/project/play_preflight.cpp"
-    "../runtime/project/play_ipc.cpp"
+)
+
+target_link_libraries(play_session_controller_test
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(play_session_controller_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
+
+if(MSVC)
+    target_precompile_headers(play_session_controller_test REUSE_FROM engine_runtime)
+endif()
 
 if(WIN32)
     target_link_libraries(play_session_controller_test PRIVATE ws2_32)
@@ -707,14 +712,19 @@ add_test(NAME play_session_controller_test
 
 add_executable(play_preflight_test
     "play_preflight_test.cpp"
-    "../runtime/project/play_preflight.cpp"
-    "../runtime/project/play_session_controller.cpp"
-    "../runtime/project/play_ipc.cpp"
+)
+
+target_link_libraries(play_preflight_test
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(play_preflight_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
+
+if(MSVC)
+    target_precompile_headers(play_preflight_test REUSE_FROM engine_runtime)
+endif()
 
 if(WIN32)
     target_link_libraries(play_preflight_test PRIVATE ws2_32)

@@ -1,5 +1,6 @@
 #include "runtime/function/ui/ui_host.h"
 
+#include "runtime/core/base/macro.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -15,6 +16,7 @@
 #include "runtime/project/play_preflight.h"
 #include "runtime/function/script/scripts_builder.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
 
 #include <filesystem>
 #include <string>
@@ -43,11 +45,32 @@ bool startPlaySession(PlaySessionController& session, FileSystem& fs,
   req.project_root = fs.getProjectRoot();
   req.scene = scene_edit.activeScenePath().c_str();
   if (req.scene.empty()) {
+    LOG_ERROR("[Play] aborted: no active scene path");
     return false;
   }
+
+  AssetManager* asset_manager = g_runtime_global_context.m_asset_manager.get();
+  if (asset_manager == nullptr) {
+    LOG_ERROR("[Play] aborted: asset manager unavailable");
+    return false;
+  }
+  const auto scene_asset =
+      asset_manager->loadScene(eastl::string(req.scene.c_str()));
+  if (!scene_asset) {
+    LOG_ERROR("[Play] aborted: could not load scene {}", req.scene);
+    return false;
+  }
+  const PlayCameraGateResult cam = runPlayCameraGate(scene_asset->getScene());
+  if (!cam.ok) {
+    session.setLastError(cam.error);
+    LOG_ERROR("[Play] aborted: {}", cam.error.c_str());
+    return false;
+  }
+
   installScriptsPreflight(session, req.project_root);
   if (!session.play(req) && !session.lastError().empty()) {
     // Errors stay on the controller; toast surfacing is out of Task 5 scope.
+    LOG_ERROR("[Play] failed: {}", session.lastError().c_str());
     return false;
   }
   return session.state() != PlaySessionState::Stopped;

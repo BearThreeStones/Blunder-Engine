@@ -6,6 +6,8 @@
 #include <system_error>
 #include <string>
 
+#include "runtime/function/scene/scene.h"
+
 namespace Blunder {
 namespace {
 
@@ -144,6 +146,25 @@ PlayScriptsGateResult runPlayScriptsGate(const PlayScriptsGateHooks& hooks) {
     return result;
   }
   result.ok = true;
+  return result;
+}
+
+bool sceneAssetHasPlayCamera(const Scene& scene) {
+  for (const SceneEntityDefinition& entity : scene.getEntities()) {
+    if (entity.has_camera) {
+      return true;
+    }
+  }
+  return false;
+}
+
+PlayCameraGateResult runPlayCameraGate(const Scene& scene) {
+  PlayCameraGateResult result;
+  if (sceneAssetHasPlayCamera(scene)) {
+    result.ok = true;
+    return result;
+  }
+  result.error = "play entry scene has no Camera";
   return result;
 }
 

@@ -8,6 +8,8 @@
 
 namespace Blunder {
 
+class Scene;
+
 enum class PlayDirtySceneChoice : uint8_t {
   SaveAndPlay = 0,
   PlayLastSaved,
@@ -45,5 +47,16 @@ struct PlayScriptsGateResult {
 /// Runs the Scripts dirty gate: skip build when clean; build when dirty;
 /// failure keeps ok=false.
 PlayScriptsGateResult runPlayScriptsGate(const PlayScriptsGateHooks& hooks);
+
+/// True if scene contains at least one entity with a Camera component.
+bool sceneAssetHasPlayCamera(const Scene& scene);
+
+struct PlayCameraGateResult {
+  bool ok{false};
+  std::string error;
+};
+
+/// Fails closed when the play entry scene has no Camera component.
+PlayCameraGateResult runPlayCameraGate(const Scene& scene);
 
 }  // namespace Blunder
