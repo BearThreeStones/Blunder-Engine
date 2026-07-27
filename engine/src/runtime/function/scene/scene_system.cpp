@@ -10,7 +10,6 @@
 #include "runtime/function/script/dotnet_host.h"
 #include "runtime/function/script/scene_behaviour_mount.h"
 #include "runtime/resource/asset/guid.h"
-#include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -160,39 +159,6 @@ void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
       if (!path.empty()) {
         mesh_ref = path;
       }
-    }
-
-    // Mesh Assets (descriptor / GUID) load through Pull Fast Path / Cook —
-    // Intermediate may be COLLADA (.dae). Do not open them as glTF documents.
-    // Raw .gltf/.glb under an entity still expands via GltfSceneImporter.
-    const bool is_mesh_asset =
-        mesh_ref.size() >= 10 &&
-        (mesh_ref.compare(mesh_ref.size() - 10, 10, ".mesh.yaml") == 0 ||
-         (mesh_ref.size() >= 11 &&
-          mesh_ref.compare(mesh_ref.size() - 11, 11, ".mesh.asset") == 0));
-
-    if (is_mesh_asset || isValidGuidFormat(mesh_ref)) {
-      const eastl::shared_ptr<MeshAsset> mesh =
-          m_asset_manager->loadMesh(mesh_ref);
-      if (!mesh) {
-        LOG_ERROR("[SceneSystem] failed to load mesh '{}' for entity '{}'",
-                  mesh_ref.c_str(), definition.name.c_str());
-        continue;
-      }
-
-      MeshRendererComponent renderer{};
-      renderer.mesh = mesh;
-      renderer.material = mesh->getMaterialAsset();
-      if (renderer.material) {
-        renderer.alpha_mode = renderer.material->getAlphaMode();
-        renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
-        renderer.double_sided = renderer.material->isDoubleSided();
-      }
-      instance.setMeshRenderer(entity_id, eastl::move(renderer));
-
-      LOG_INFO("[SceneSystem] attached mesh asset to entity '{}' in '{}'",
-               definition.name.c_str(), instance.getSourcePath().c_str());
-      continue;
     }
 
     const GltfSceneImporter::ImportResult import_result =

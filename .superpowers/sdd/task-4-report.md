@@ -1,74 +1,46 @@
-# Task 4 Report: DotNet Message e2e smoke
+# Task 4 Report — SceneInstance camera storage + load attach
 
-**Branch:** `feat/object-message-communication`  
-**Status:** GREEN  
-**Date:** 2026-07-22
+**Status:** DONE  
+**Date:** 2026-07-27  
+**Branch:** feat/player-gameplay-camera
 
-## Scope
+## Built
 
-End-to-end proof that native C-ABI `blunder_message_send` (process ObjectDB path) delivers to a managed `Behaviour.OnMessage` on a **different** Object via ScriptHost's message hook.
+| API | Location |
+|-----|----------|
+| `setCamera` / `getCamera` / `forEachCamera` | `scene_instance.h/.cpp` — `m_cameras` map mirrors mesh renderer storage |
+| `resolvePlayCameraFromScene` | `scene_instance.h` (inline; needs `SceneInstance` + EASTL) |
+| `attachSceneEntityCameras` | `scene_system.cpp` — called from `instantiateScene` after mesh attach |
 
-## TDD evidence
+## Load path
 
-### RED (pre-seam / pre-fixture)
+On scene instantiate, `attachSceneEntityCameras` iterates `SceneEntityDefinition` entries with `has_camera`, finds entity by name, calls `setCamera` with deserialized `definition.camera`.
 
-Prior WIP had the test source and fixture Behaviour but no HostExports read seams or DotNetHost resolution. Expected failure modes:
+## Tests
 
-1. **Missing fixture** — `attachBehaviour` fails for `DotnetHostGame.MessageProbeBehaviour`.
-2. **Missing `GetMessageProbeCount` export** — `resolveProbeTickCount` fails resolving `HostExports.GetMessageProbeCount`, or `getMessageProbeCount()` returns `-1` → `FAIL OnMessage fired once`.
-
-Simulated RED (logic): with probe seams unwired, assertion `count == 1` fails with `getMessageProbeCount=-1 (expected 1)`.
-
-### GREEN
-
-```text
-> cmake --build build/vs2026-debug --config Debug --target object_message_dotnet_test
-  object_message_dotnet_test.vcxproj -> ...\object_message_dotnet_test.exe
-
-> .\build\vs2026-debug\engine\src\tests\Debug\object_message_dotnet_test.exe
-object_message_dotnet_test OK
-```
-
-## What shipped
-
-| Area | Change |
-|------|--------|
-| Fixture | `MessageProbeBehaviour.cs` — static `MessageCount` / `LastId`, `OnMessage` increments |
-| Test | `object_message_dotnet_test.cpp` — process ABI, DotNetHost, attach probe on **target**, register `"Ping"`, C-ABI send, assert count/id; second **other** Object gets send without incrementing probe |
-| ScriptHost | `GetMessageProbeCount`, `GetMessageProbeLastId`, `ReadGameStaticUInt` |
-| DotNetHost | Resolve + accessors for message probe exports (mirrors tick probe pattern) |
-| CMake | `object_message_dotnet_test` target (PRE_BUILD DotnetHostGame, nethost copy, script_host deps) |
-| OpenSpec | Tasks 4.1, 4.2 marked complete |
-
-## Test flow
-
-1. `ObjectDB::create()` → `target` + `other`
-2. `blunder_native_abi_fill_from_process` → `message_register` / `message_send`
-3. `DotNetHost::start` → `RegisterLifecycleHooks` sets managed message hook
-4. Load `DotnetHostGame.dll`, attach `MessageProbeBehaviour` on `target`
-5. `blunder_message_register("Ping")` + `blunder_message_send(target, ping_id, …)`
-6. `getMessageProbeCount() == 1`, `getMessageProbeLastId() == ping_id`
-7. `blunder_message_send(other, …)` — count stays `1` (cross-Object addressing)
-
-## ADR 0017 + CONTEXT.md alignment (4.2)
-
-| Doc term | Shipped API | Match |
-|----------|-------------|-------|
-| `Message.Send` | `Blunder.Message.Send` | yes |
-| `Message.Register` | `Blunder.Message.Register` | yes |
-| `OnMessage` | `Behaviour.OnMessage(MessageId, ReadOnlySpan<MessageArg>)` | yes |
-| Directed to ObjectId, fan-out Behaviours | `MessageDispatch::send` + ScriptHost hook | yes |
-| MVP Send from C#; native same path later | Test uses C-ABI send (delivery path shared) | yes (test exercises native sender) |
-
-No doc drift fixes required.
+| Target | Result |
+|--------|--------|
+| `engine_runtime` (Debug) | PASS |
+| `play_camera_resolve_test` | PASS (existing tests; no new scene-instance unit test) |
 
 ## Commit
 
-```
-test: verify cross-Object Message reaches OnMessage
-```
+`feat(scene): attach CameraComponent on scene load` — files: `scene_instance.h/.cpp`, `scene_system.h/.cpp`
 
 ## Concerns
 
-- Static `MessageCount` reset relies on fresh process per test run (same pattern as `ProbeBehaviour.TickCount`).
-- `resolveProbeTickCount` name is overloaded — resolves all probe exports including message probes; rename optional follow-up.
+- `resolvePlayCameraFromScene` lives in `scene_instance.h` (not `play_camera_resolve.h`) to avoid EASTL include path issues in lightweight test targets.
+- Scene reload path only re-attaches meshes via `needsMeshAttach`; cameras attach on fresh instantiate only (same as initial load).
+- `exportToScene` does not yet round-trip instance cameras back to definitions (future save-path work).
+
+## Review fix (2026-07-27)
+
+Commit `67a5ec9` accidentally added mesh-asset loading (`.mesh.yaml` / `.mesh.asset` / `loadMesh` + `mesh_asset.h`) inside `attachSceneEntityMeshes`. That was out of Task 4 scope.
+
+**Fix:** Restored `attachSceneEntityMeshes` to GltfSceneImporter-only path (as at parent `8ef02bd`); kept `attachSceneEntityCameras` call + CameraComponent APIs.
+
+| Target | Result |
+|--------|--------|
+| `engine_runtime` (Debug) | PASS |
+
+**Commit:** `8e2aed0` — `fix(scene): drop unrelated mesh-asset load from camera attach commit`
