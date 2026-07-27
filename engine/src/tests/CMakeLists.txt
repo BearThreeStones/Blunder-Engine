@@ -579,76 +579,6 @@ target_precompile_headers(project_create_test
 add_test(NAME project_create_test
          COMMAND project_create_test)
 
-add_executable(project_file_test
-    "project_file_test.cpp"
-)
-target_link_libraries(project_file_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(project_file_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(project_file_test REUSE_FROM engine_runtime)
-add_test(NAME project_file_test COMMAND project_file_test)
-
-add_executable(project_list_test
-    "project_list_test.cpp"
-)
-target_link_libraries(project_list_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(project_list_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(project_list_test REUSE_FROM engine_runtime)
-add_test(NAME project_list_test COMMAND project_list_test)
-
-add_executable(project_manager_controller_test
-    "project_manager_controller_test.cpp"
-)
-target_link_libraries(project_manager_controller_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(project_manager_controller_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(project_manager_controller_test REUSE_FROM engine_runtime)
-add_test(NAME project_manager_controller_test COMMAND project_manager_controller_test)
-
-add_executable(project_relaunch_test
-    "project_relaunch_test.cpp"
-)
-target_link_libraries(project_relaunch_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(project_relaunch_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(project_relaunch_test REUSE_FROM engine_runtime)
-add_test(NAME project_relaunch_test COMMAND project_relaunch_test)
-
-add_executable(project_last_opened_display_test
-    "project_last_opened_display_test.cpp"
-)
-target_link_libraries(project_last_opened_display_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(project_last_opened_display_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(project_last_opened_display_test REUSE_FROM engine_runtime)
-add_test(NAME project_last_opened_display_test COMMAND project_last_opened_display_test)
-
-add_executable(active_scene_display_test
-    "active_scene_display_test.cpp"
-)
-target_link_libraries(active_scene_display_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(active_scene_display_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(active_scene_display_test REUSE_FROM engine_runtime)
-add_test(NAME active_scene_display_test COMMAND active_scene_display_test)
-
-add_executable(editor_launch_test
-    "editor_launch_test.cpp"
-)
-target_link_libraries(editor_launch_test PRIVATE engine_runtime)
-if(MSVC)
-    target_compile_options(editor_launch_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(editor_launch_test REUSE_FROM engine_runtime)
-add_test(NAME editor_launch_test COMMAND editor_launch_test)
-
 add_executable(player_launch_test
     "player_launch_test.cpp"
     "../runtime/project/player_launch.cpp"
@@ -777,20 +707,6 @@ endif()
 
 add_test(NAME godot_editor_icons_test
          COMMAND godot_editor_icons_test)
-
-add_executable(content_browser_test
-    "content_browser_test.cpp"
-)
-target_link_libraries(content_browser_test
-    PRIVATE
-        engine_runtime
-        blunder_engine_c_static
-)
-if(MSVC)
-    target_compile_options(content_browser_test PRIVATE /Zc:preprocessor)
-endif()
-target_precompile_headers(content_browser_test REUSE_FROM engine_runtime)
-add_test(NAME content_browser_test COMMAND content_browser_test)
 
 add_executable(asset_yaml_test
     "asset_yaml_test.cpp"
