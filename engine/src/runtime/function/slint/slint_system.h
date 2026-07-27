@@ -233,7 +233,6 @@ class SlintSystem final : public IEditorUiPresentation {
                                              const eastl::string& text_value,
                                              float number_value, bool bool_value);
   void refreshEditorScenePanels() override;
-  void syncActiveSceneIndicator() override;
   void syncTransformToolbarFromEngine();
   void setBlinnPhongMaterialSource(const MaterialAsset* material) override;
   void syncBlinnPhongFromMaterialSource() override;
@@ -241,8 +240,6 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void showPlayDirtySceneDialog() override;
   void hidePlayDirtySceneDialog() override;
-  void showOpenDirtySceneDialog() override;
-  void hideOpenDirtySceneDialog() override;
 
   BrowserLogicalRect getBrowserLogicalRect() const;
   BrowserLogicalRect getHierarchyLogicalRect() const;
@@ -251,12 +248,6 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Select/expand a content-browser tree folder from window mouse coordinates.
   /// Returns true when a folder row was hit and state was updated.
   bool trySelectContentBrowserTreeFolder(float window_x, float window_y);
-  bool tryActivateContentBrowserGridItem(float window_x, float window_y);
-  bool tryActivateFloatingContentBrowserGridItem();
-  bool activateContentBrowserGridAtLocal(float local_x, float local_y,
-                                         float grid_area_width, float thumb_size,
-                                         int grid_cols, float grid_viewport_y,
-                                         float report_x, float report_y);
 
   void clearContentBrowserSlintClickFlag();
 
@@ -440,9 +431,6 @@ class SlintSystem final : public IEditorUiPresentation {
   void processCoalescedSdlMouseMotion();
   void finishContentBrowserDrag(float logical_x, float logical_y);
   void finishContentBrowserDragAtCursor();
-  /// Click/release on a content-browser grid item (open scene, navigate folder).
-  void handleBrowserItemRelease(const slint::SharedString& path, float x,
-                                float y);
   bool isPointerOverViewport(float logical_x, float logical_y) const;
 
   bool probeProjectionButtonAtLogical(float logical_x, float logical_y) const;
@@ -480,16 +468,9 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_pending_file_dialog_is_import{false};
   Uint32 m_open_import_dialog_event{0};
   bool m_tree_folder_handled_by_slint{false};
-  bool m_browser_item_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};
   bool m_piercing_menu_add_mode{false};
   bool m_left_mouse_down_prev{false};
-  bool m_browser_poll_mouse_down_prev{false};
-  eastl::string m_scene_open_click_path;
-  uint64_t m_scene_open_click_ms{0};
-  eastl::string m_synced_scene_path;
-  bool m_synced_scene_dirty{false};
-  bool m_scene_indicator_initialized{false};
   bool m_applying_inspector_sync{false};
   enum class InspectorRotationEditMode : uint8_t { euler = 0, quaternion = 1 };
   enum class InspectorMultiEditMode : uint8_t { absolute = 0, delta = 1 };
