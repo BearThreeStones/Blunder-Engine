@@ -378,6 +378,58 @@ bool parseUint64Field(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseFloatField(const char* object_start, const char* object_end,
+                     const char* key, float& out_value) {
+  const char* key_pos = findObjectKey(object_start, object_end, key);
+  if (key_pos == nullptr) {
+    return false;
+  }
+  const char* p = skipWhitespace(key_pos + std::strlen(key));
+  if (p >= object_end || *p != ':') {
+    return false;
+  }
+  ++p;
+  p = skipWhitespace(p);
+  if (p >= object_end) {
+    return false;
+  }
+  char* after = nullptr;
+  const float parsed = std::strtof(p, &after);
+  if (after == p || after > object_end) {
+    return false;
+  }
+  out_value = parsed;
+  return true;
+}
+
+bool parseBoolField(const char* object_start, const char* object_end,
+                    const char* key, bool& out_value) {
+  const char* key_pos = findObjectKey(object_start, object_end, key);
+  if (key_pos == nullptr) {
+    return false;
+  }
+  const char* p = skipWhitespace(key_pos + std::strlen(key));
+  if (p >= object_end || *p != ':') {
+    return false;
+  }
+  ++p;
+  p = skipWhitespace(p);
+  if (p >= object_end) {
+    return false;
+  }
+  if (object_end - p >= 4 && std::strncmp(p, "true", 4) == 0 &&
+      (p + 4 >= object_end || !std::isalnum(static_cast<unsigned char>(p[4])))) {
+    out_value = true;
+    return true;
+  }
+  if (object_end - p >= 5 && std::strncmp(p, "false", 5) == 0 &&
+      (p + 5 >= object_end || !std::isalnum(static_cast<unsigned char>(p[5])))) {
+    out_value = false;
+    return true;
+  }
+  return false;
+}
+
 bool parseBehaviourPropertyValue(const char* value_start, const char* limit,
                                  Variant& out_value, const char** out_after) {
   const char* p = skipWhitespace(value_start);
@@ -544,6 +596,18 @@ bool parseBehavioursArray(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseCameraObject(const char* object_start, const char* object_end,
+                       CameraComponent& out_camera) {
+  parseFloatField(object_start, object_end, "\"verticalFovDegrees\"",
+                  out_camera.vertical_fov_degrees);
+  parseFloatField(object_start, object_end, "\"nearClip\"",
+                  out_camera.near_clip);
+  parseFloatField(object_start, object_end, "\"farClip\"",
+                  out_camera.far_clip);
+  parseBoolField(object_start, object_end, "\"isMain\"", out_camera.is_main);
+  return true;
+}
+
 bool parseEntityObject(const char* object_start, const char* object_end,
                        SceneEntityDefinition& out_entity) {
   eastl::string name;
@@ -570,6 +634,16 @@ bool parseEntityObject(const char* object_start, const char* object_end,
 
   if (!parseBehavioursArray(object_start, object_end, out_entity.behaviours)) {
     return false;
+  }
+
+  const char* camera_end = nullptr;
+  const char* camera_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"camera\"", &camera_end);
+  if (camera_content != nullptr) {
+    out_entity.has_camera = true;
+    if (!parseCameraObject(camera_content, camera_end, out_entity.camera)) {
+      return false;
+    }
   }
 
   return true;
@@ -776,6 +850,23 @@ void appendBehaviourJson(eastl::string& out, const SceneBehaviourDeclaration& be
   out.append(is_last ? "\n        }\n" : "\n        },\n");
 }
 
+void appendCameraJson(eastl::string& out, const CameraComponent& camera) {
+  char buffer[128];
+  out.append(",\n      \"camera\": {\n");
+  std::snprintf(buffer, sizeof(buffer), "        \"verticalFovDegrees\": %.6g,\n",
+                static_cast<double>(camera.vertical_fov_degrees));
+  out.append(buffer);
+  std::snprintf(buffer, sizeof(buffer), "        \"nearClip\": %.6g,\n",
+                static_cast<double>(camera.near_clip));
+  out.append(buffer);
+  std::snprintf(buffer, sizeof(buffer), "        \"farClip\": %.6g,\n",
+                static_cast<double>(camera.far_clip));
+  out.append(buffer);
+  out.append("        \"isMain\": ");
+  out.append(camera.is_main ? "true" : "false");
+  out.append("\n      }");
+}
+
 eastl::string meshReferenceForSerialize(const eastl::string& mesh_ref,
                                         const AssetRegistry* registry) {
   if (mesh_ref.empty() || isValidGuidFormat(mesh_ref) || registry == nullptr) {
@@ -845,6 +936,10 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
                           i + 1 == entity.behaviours.size());
     }
     out.append("      ]");
+  }
+
+  if (entity.has_camera) {
+    appendCameraJson(out, entity.camera);
   }
 
   out.append(is_last ? "\n    }\n" : "\n    },\n");

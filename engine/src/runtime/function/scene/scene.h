@@ -6,6 +6,7 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/reflection/variant.h"
+#include "runtime/function/scene/camera_component.h"
 
 namespace Blunder {
 
@@ -34,6 +35,8 @@ struct SceneEntityDefinition final {
   eastl::string mesh_virtual_path;
   /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
   eastl::vector<SceneBehaviourDeclaration> behaviours;
+  bool has_camera{false};
+  CameraComponent camera{};
 };
 
 /// Reference to a nested child scene (loaded explicitly by SceneSystem).

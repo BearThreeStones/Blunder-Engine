@@ -305,6 +305,79 @@ void deserializeBehavioursScopedKeyLookup() {
   }
 }
 
+/// Entity with camera round-trips verticalFovDegrees/nearClip/farClip/isMain.
+void serializeAndParseCamera() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  scene.setGuid("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+
+  SceneEntityDefinition entity;
+  entity.name = "MainCamera";
+  entity.has_camera = true;
+  entity.camera.vertical_fov_degrees = 60.0f;
+  entity.camera.near_clip = 0.25f;
+  entity.camera.far_clip = 500.0f;
+  entity.camera.is_main = true;
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize scene with camera",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json contains camera key",
+              json.find("\"camera\"") != eastl::string::npos);
+  expect_true("json contains verticalFovDegrees",
+              json.find("\"verticalFovDegrees\"") != eastl::string::npos);
+  expect_true("json contains nearClip",
+              json.find("\"nearClip\"") != eastl::string::npos);
+  expect_true("json contains farClip",
+              json.find("\"farClip\"") != eastl::string::npos);
+  expect_true("json contains isMain",
+              json.find("\"isMain\"") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize scene with camera",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("one entity after camera deserialize",
+              loaded.getEntities().size() == 1);
+
+  const SceneEntityDefinition& out = loaded.getEntities()[0];
+  expect_true("has_camera restored", out.has_camera);
+  expect_true("verticalFovDegrees restored",
+              out.camera.vertical_fov_degrees == 60.0f);
+  expect_true("nearClip restored", out.camera.near_clip == 0.25f);
+  expect_true("farClip restored", out.camera.far_clip == 500.0f);
+  expect_true("isMain restored", out.camera.is_main);
+}
+
+/// Legacy entities without a camera key deserialize with has_camera false.
+void deserializeLegacyEntityWithoutCamera() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kLegacy = R"({
+  "type": "Scene",
+  "guid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "Cube",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    }
+  ]
+}
+)";
+
+  Scene loaded;
+  expect_true("deserialize legacy entity without camera",
+              SceneSerializer::deserialize(eastl::string(kLegacy), loaded));
+  expect_true("legacy entity present", loaded.getEntities().size() == 1);
+  expect_true("legacy has_camera false",
+              !loaded.getEntities()[0].has_camera);
+}
+
 /// Quotes / backslashes in type names and string property values must round-trip.
 void serializeAndParseEscapedBehaviourStrings() {
   using namespace Blunder;
@@ -369,6 +442,8 @@ int main() {
   deserializeLegacyEntityWithoutBehaviours();
   deserializeBehavioursScopedKeyLookup();
   serializeAndParseEscapedBehaviourStrings();
+  serializeAndParseCamera();
+  deserializeLegacyEntityWithoutCamera();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {
