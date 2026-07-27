@@ -43,5 +43,5 @@
 ## 8. Content seed + dual-window verification
 
 - [x] 8.1 Seed Main Camera on Play entry Test scene
-- [x] 8.2 Manual checklist (Edit orbit / preflight fail / Player no orbit / Pause / editor while Playing)
+- [ ] 8.2 Manual checklist (Edit orbit / preflight fail / Player no orbit / Pause / editor while Playing) — USER-VERIFY (manual dual-window)
 - [x] 8.3 Commit content

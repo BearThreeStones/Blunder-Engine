@@ -133,14 +133,19 @@ class SceneInstance final {
   bool m_world_matrices_dirty{true};
 };
 
+/// Prefer Main camera; else first camera in ascending EntityId order (stable).
 inline ResolvedPlayCamera resolvePlayCameraFromScene(const SceneInstance& scene,
                                                      float aspect) {
   eastl::vector<PlayCameraResolveInput> cams;
-  scene.forEachCamera([&](EntityId id, const CameraComponent& cam) {
+  scene.forEachEntity([&](EntityId id, const Entity&) {
+    const CameraComponent* cam = scene.getCamera(id);
+    if (cam == nullptr) {
+      return;
+    }
     PlayCameraResolveInput in;
     in.entity_id = id;
     in.world = scene.getWorldMatrix(id);
-    in.camera = cam;
+    in.camera = *cam;
     cams.push_back(in);
   });
   return resolvePlayCamera(cams.data(), cams.size(), aspect);

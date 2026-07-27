@@ -2,6 +2,7 @@
 #include <cstdio>
 
 #include "runtime/function/scene/play_camera_resolve.h"
+#include "runtime/function/scene/scene_instance.h"
 
 namespace {
 
@@ -80,6 +81,42 @@ int main() {
                 glm::radians(60.0f));
     expect_near("near clip", result.near_clip, 0.5f);
     expect_near("far clip", result.far_clip, 500.0f);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId no_cam = scene.createEntity("Empty", {}, {}, {});
+    const EntityId cam_low = scene.createEntity("CamLow", {}, {}, {});
+    const EntityId cam_high = scene.createEntity("CamHigh", {}, {}, {});
+    (void)no_cam;
+
+    CameraComponent low_cam{};
+    CameraComponent high_cam{};
+    high_cam.is_main = true;
+    scene.setCamera(cam_high, high_cam);
+    scene.setCamera(cam_low, low_cam);
+
+    const ResolvedPlayCamera main_result =
+        resolvePlayCameraFromScene(scene, 16.0f / 9.0f);
+    expect_true("scene main -> ok", main_result.ok);
+    expect_eq_entity("scene prefers is_main", main_result.entity_id, cam_high);
+  }
+
+  {
+    SceneInstance scene;
+    scene.createEntity("Empty", {}, {}, {});
+    const EntityId cam_low = scene.createEntity("CamLow", {}, {}, {});
+    const EntityId cam_high = scene.createEntity("CamHigh", {}, {}, {});
+
+    CameraComponent cam{};
+    scene.setCamera(cam_high, cam);
+    scene.setCamera(cam_low, cam);
+
+    const ResolvedPlayCamera first_result =
+        resolvePlayCameraFromScene(scene, 16.0f / 9.0f);
+    expect_true("scene no main -> ok", first_result.ok);
+    expect_eq_entity("scene no main picks lowest entity id", first_result.entity_id,
+                     cam_low);
   }
 
   if (g_failures != 0) {

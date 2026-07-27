@@ -650,15 +650,20 @@ add_executable(play_camera_resolve_test
 
 target_include_directories(play_camera_resolve_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 
 target_link_libraries(play_camera_resolve_test
-    PRIVATE glm
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
     target_compile_options(play_camera_resolve_test PRIVATE /Zc:preprocessor)
 endif()
+
+target_precompile_headers(play_camera_resolve_test
+    REUSE_FROM engine_runtime
+)
 
 add_test(NAME play_camera_resolve_test
          COMMAND play_camera_resolve_test)
