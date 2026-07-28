@@ -87,8 +87,12 @@ The first deliverable of the reflection system: ClassDB, Clang-driven export for
 _Avoid_: Treating C# hot reload, multi-Behaviour storage, or full ECS migration as part of the first reflection milestone
 
 **.NET host MVP**:
-The first script-host deliverable after the Reflection kernel: in-process CoreCLR, load one Project assembly, attach Behaviours to Objects, Ready/Tick per Behaviour list order — without ALC hot reload, without Behaviour scene serialization, and without Inspector Behaviour UX. DogWalk's first playable character slice is written as C# Behaviours on this host, not as a throwaway C++ controller to migrate later. In development, the editor invokes `dotnet build` on the Scripts root (manually or before Play) and loads the output assembly; shipping builds use a separate publish/cook path. File-watcher auto-build is out of this slice.
+The first script-host deliverable after the Reflection kernel: in-process CoreCLR, load one Project assembly, attach Behaviours to Objects, Ready/Tick per Behaviour list order — without ALC hot reload, without Behaviour scene serialization, and without Inspector Behaviour UX. The **DogWalk character slice** is written as C# Behaviours on this host, not as a throwaway C++ controller to migrate later. In development, the editor invokes `dotnet build` on the Scripts root (manually or before Play) and loads the output assembly; shipping builds use a separate publish/cook path. File-watcher auto-build is out of this slice.
 _Avoid_: Bundling hot reload, scene-persisted Behaviours, or full binding surface into the host MVP; starting DogWalk gameplay on a C++-only controller as the lasting path; shipping the host before the Reflection kernel contract is stable; requiring authors to build Scripts only outside the editor as the primary loop; save-triggered auto-build as an MVP blocker
+
+**DogWalk character slice**:
+The first DogWalk content milestone on Blunder: a Blunder Project whose Play Mode proof is horizontal Move via a single C# Behaviour (`PlayerMove`) driven by Gameplay Input — not a Godot DogWalk port and not a full DogWalk feature set (no Jump requirement, no physics, no animation, no camera follow, no dual player entities). Delivery is content-primary: Project Scripts, scene, and Behaviour authoring — not new engine capabilities.
+_Avoid_: Treating the Godot DogWalk tree as the Blunder Project; shipping Chocomel/Pinda parity as this milestone; bundling asset pipeline port or narrative systems into the first slice; requiring a newly named DogWalk Project before the Move proof can land; splitting the first Move proof across multiple collaborating Behaviours; treating new engine features as part of this milestone
 
 **Behaviour serialization slice**:
 Follow-on to the .NET host MVP (requires single-ObjectDB / NativeAbi from `unify-script-objectdb`): persist and restore an Object's ordered Behaviour list on scene entities (`behaviours`: BehaviourId, type, optional bool/number/string property bag). Load binds Objects and restores slots offline (null peers); mount AttachBehaviour when DotNetHost is running; export writes type + id from bound Objects. Inspector authoring of that declaration list is a separate follow-on (**Inspector Behaviour UX**, ADR 0016), not part of this serialization slice itself.
@@ -329,8 +333,44 @@ The separate OS process that runs Play Mode for the open Project. It owns the li
 _Avoid_: Second editor window in the same process as the product Play boundary; treating env-gated in-editor DotNetHost as Play Mode
 
 **Player**:
-The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI.
-_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play
+The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI. In the Player, only Gameplay Input (plus system window chrome such as close) is accepted; authorship input (Editor Camera, Editor Overlays / gizmos, viewport pick, Editor Commands) is off.
+_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play; treating Player as a second editor viewport
+
+**Editor Overlay**:
+Authorship-only viewport chrome that is drawn and hit-tested in the editor viewport — ground grid, Transform gizmo, Navigate gizmo, selection outline, world axes, origins, wireframe, Camera Gizmo (scene Camera Component visualization), and similar tools. The Player never shows or interacts with Editor Overlays in Play Mode (including while Play Pause is active). The editor viewport keeps Editor Overlays while a Play Session runs.
+_Avoid_: Game HUD; debug draw as product Overlay; “game mode chrome”; hiding editor-viewport overlays merely because a Play Session is open; a Player debug toggle to force Editor Overlays on in the first slice; treating Editor Camera orbit as Player gameplay
+
+**Camera Gizmo**:
+The Editor Overlay that visualizes and interacts with a scene **Camera Component** in the editor viewport. Visual language matches Blender’s camera wire: origin point, four frustum edges, a **view frame** rectangle, and an **up triangle** on the frame’s top edge. Unselected cameras draw the same shape in a muted color; a **single** selected camera uses the selection color and exposes FOV / clip interaction handles (multi-select draws bodies/frames but not those handles). Frame aspect follows the current editor viewport; frame depth is a fixed local display distance (not a stored sensor aspect). Hit-testing the Camera Gizmo takes priority over mesh viewport pick. It is not the **Editor Camera** and is never shown or driven in the Player.
+_Avoid_: Editor Camera widget; Play view HUD camera; treating Navigate gizmo as the Camera Gizmo; inventing a separate non-Blender camera icon language for the first slice; FOV/clip handles on a multi-camera selection
+
+**View frame**:
+The rectangular wire on a **Camera Gizmo** that represents the camera’s imaged bounds at the gizmo’s fixed display distance, sized from vertical FOV and the editor viewport aspect.
+_Avoid_: Sensor plane as a separate authored asset in this slice; near-plane-only frame as the sole body
+
+**Up triangle**:
+The filled triangle on the top edge of the **view frame** that marks the Camera Component’s local up.
+_Avoid_: Roll arrow; separate billboard icon
+
+**Align View to Camera**:
+A one-shot Edit Mode action that moves the **Editor Camera** to match a target **Camera Component**'s pose and vertical FOV. Target is the single selected Camera entity when exactly one such selection exists; multi-select is invalid. With no selection, target follows the same resolve rule as Play: **Main Camera**, else first valid Camera (stable EntityId order). With no Camera in the scene, the action fails. Does not copy near/far. Does not push **Document History** (Editor Camera is not scene document state).
+_Avoid_: Forcing the editor viewport to always follow Main Camera; live lock to Play view; treating Align View as an undoable scene Command; silently syncing clip planes; aligning under multi-select
+
+**Align Camera to View**:
+A one-shot Edit Mode action that writes the current **Editor Camera** pose and vertical FOV into a target **Camera Component**. Target rules match **Align View to Camera** (single Camera selection, else Main then first, else fail). Does not write near/far. Seals a **Document History** Command at the action boundary.
+_Avoid_: Silently rewriting every Camera; using this as the only way to author Camera pose; skipping history for scene Camera writes; overwriting clip planes from the Editor Camera; aligning under multi-select
+
+**Editor Camera**:
+The Edit Mode free-look / pan / zoom view used to author the scene in the editor viewport. It is not a scene Camera Component and does not drive the Player view. The Player does not accept Editor Camera interaction (including while Play Pause is active).
+_Avoid_: Using Editor Camera as the product Play view; Pause-time orbit of the Player window; calling Editor Camera a Gameplay Camera
+
+**Camera Component**:
+A native scene Component (like MeshRenderer) on an entity: pose follows that entity’s TRS; stores projection parameters (at least FOV, near, far) and whether it is the Main Camera. It is not a C# Behaviour. The Player renders only through a resolved scene Camera; Edit Mode keeps using Editor Camera for authorship.
+_Avoid_: Camera-as-Behaviour for the first Play view; requiring camera-follow gameplay for the Camera Component MVP; forcing the editor viewport to track Main Camera
+
+**Main Camera**:
+The Camera Component marked as the primary Play view. When several Cameras exist, the Player prefers the Main Camera; if none is marked, it uses the first valid Camera in the scene. Play preflight fails if the Play entry scene has no valid Camera.
+_Avoid_: Name-only matching as the sole rule; auto-spawning a hidden default Camera on Play; silent black screen with no preflight error when Camera is missing
 
 **Gameplay Input**:
 The product-facing input state that Project Behaviours read to drive gameplay (e.g. move, jump). Its authoritative source is the Player process during Play Mode. Outside Play Mode — including Edit Mode and the env-gated editor ScriptHost — Gameplay Input is not a product signal (reads as inactive / unavailable). While **Play Pause** is active, Gameplay Input does not accumulate Action edges for later Tick (a Jump pressed only during Pause is discarded); Move reads as idle when simulation is paused. When the Player window does not have OS focus, Gameplay Input is idle (Move zero, Jump false).
@@ -369,8 +409,12 @@ The editor exposes Play, Pause, and Stop for the Play session. Play starts (or r
 _Avoid_: Play-only toggle with no Pause; Pause that exits Play Mode; Stop that leaves the Player process running
 
 **Play Pause**:
-While paused, the Player skips gameplay Behaviour Tick (and other gameplay simulation time) but keeps the process and window alive so the author can still view and orbit the frozen world. Resume continues Tick from the paused world state.
-_Avoid_: Pause that tears down the Player; Pause that freezes rendering as the only definition; Pause as a synonym for Stop
+While paused, the Player skips gameplay Behaviour Tick (and other gameplay simulation time) but keeps the process and window alive so the author can still view the frozen world through the resolved scene Camera. Resume continues Tick from the paused world state. Pause does not enable Editor Camera orbit or other authorship input in the Player.
+_Avoid_: Pause that tears down the Player; Pause that freezes rendering as the only definition; Pause as a synonym for Stop; Pause-time Editor Camera orbit in the Player window
+
+**Play camera preflight**:
+Before spawning the Player, the editor verifies the Play entry scene (as it will be loaded — after dirty-prompt save rules) contains at least one valid Camera Component. Failure keeps the session in Edit Mode and surfaces an error (same class of gate as a failed Scripts build).
+_Avoid_: Starting Player with no Camera and relying on a black screen; auto-injecting a Camera at Play time
 
 **Play control channel**:
 A local IPC link between the editor and the single Play Process used to send session commands (at least pause, resume, and stop). Process exit is also treated as leaving Play Mode. It is not a networked multiplayer protocol.
@@ -505,8 +549,8 @@ The product-facing unit of content identity, keyed by GUID. One Asset binds an A
 _Avoid_: Calling a lone glTF/PNG file “the Asset”, equating Asset with the in-memory runtime object, path-only identity without GUID
 
 **Asset Descriptor**:
-The Intermediate YAML under the Assets root that persists an Asset’s GUID, type, import settings, and references to Intermediate data (and optional Source). The durable on-disk face of an Asset.
-_Avoid_: Embedding identity only in the registry with no descriptor file, putting descriptors under Resources
+The Intermediate YAML under the Assets root that persists an Asset’s GUID, type, import settings, and references to Intermediate data (and optional Source). The durable on-disk face of an Asset. Mesh descriptors commonly use a typed suffix such as `.mesh.yaml`; they are not the mesh Intermediate body and are not Unity-style sidecars beside COLLADA.
+_Avoid_: Embedding identity only in the registry with no descriptor file, putting descriptors under Resources, treating the descriptor YAML as the COLLADA/image body, treating COLLADA as the GUID/meta carrier, requiring Unity-style `.meta` sidecars beside Intermediate files as the product identity model
 
 **Loaded Asset**:
 The in-memory CPU-side resource the runtime holds for an Asset (or a slice of one), e.g. mesh/texture payloads. Distinct from the product term Asset; not what Content Browser identity means.
