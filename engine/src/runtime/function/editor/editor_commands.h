@@ -28,6 +28,14 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
     const CameraComponent& after_camera, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
 
+eastl::unique_ptr<IEditorCommand> makeAlignCameraToViewCommand(
+    SceneInstance* scene, EntityId entity_id, const Vec3& before_position,
+    const Quat& before_rotation, const Vec3& before_scale,
+    const CameraComponent& before_camera, const Vec3& after_position,
+    const Quat& after_rotation, const Vec3& after_scale,
+    const CameraComponent& after_camera, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
 eastl::unique_ptr<IEditorCommand> makeSoftDeleteEntityCommand(
     SceneInstance* scene, EntityId entity_id,
     SelectionSnapshot selection_before, SelectionSnapshot selection_after);

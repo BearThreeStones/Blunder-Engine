@@ -119,6 +119,45 @@ int main() {
                 reapplied != nullptr && reapplied->far_clip == 500.0f);
   }
 
+  // Align camera to view command round-trip
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Cam", Vec3(1, 2, 3), glm::identity<Quat>(), Vec3(1));
+    CameraComponent before_cam{};
+    before_cam.vertical_fov_degrees = 45.0f;
+    scene.setCamera(id, before_cam);
+
+    const Vec3 after_pos(4, 5, 6);
+    const Quat after_rot = glm::angleAxis(glm::radians(30.0f), Vec3(0, 0, 1));
+    CameraComponent after_cam = before_cam;
+    after_cam.vertical_fov_degrees = 70.0f;
+
+    Entity* entity = scene.getEntity(id);
+    entity->setPosition(after_pos);
+    entity->setRotation(after_rot);
+    scene.setCamera(id, after_cam);
+
+    DocumentHistory history;
+    history.push(makeAlignCameraToViewCommand(
+        &scene, id, Vec3(1, 2, 3), glm::identity<Quat>(), Vec3(1), before_cam,
+        after_pos, after_rot, Vec3(1), after_cam, SelectionSnapshot{id},
+        SelectionSnapshot{id}));
+
+    expect_true("undo align camera", history.undo());
+    expect_true("pos restored",
+                scene.getEntity(id)->getPosition() == Vec3(1, 2, 3));
+    const CameraComponent* restored = scene.getCamera(id);
+    expect_true("fov restored",
+                restored != nullptr && restored->vertical_fov_degrees == 45.0f);
+    expect_true("redo align camera", history.redo());
+    expect_true("pos reapplied",
+                scene.getEntity(id)->getPosition() == after_pos);
+    const CameraComponent* reapplied = scene.getCamera(id);
+    expect_true("fov reapplied",
+                reapplied != nullptr && reapplied->vertical_fov_degrees == 70.0f);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

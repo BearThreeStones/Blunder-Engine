@@ -456,6 +456,11 @@ void EditorCamera::setViewportSize(float width, float height) {
   updateProjectionMatrix();
 }
 
+void EditorCamera::setVerticalFov(float vertical_fov_radians) {
+  m_vertical_fov = vertical_fov_radians;
+  updateProjectionMatrix();
+}
+
 void EditorCamera::setProjectionMode(ProjectionMode mode) {
   if (m_target_projection_mode == mode) {
     return;

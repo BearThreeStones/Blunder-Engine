@@ -48,6 +48,8 @@
 #include "runtime/function/ui/viewport/viewport_cpu_frame.h"
 #include "runtime/function/ui/viewport/viewport_vulkan_image.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/editor/align_camera_actions.h"
+#include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -123,6 +125,30 @@ bool matricesNearlyEqual(const glm::mat4& a, const glm::mat4& b) {
     }
   }
   return true;
+}
+
+bool isAlignViewToCameraShortcut(const KeyPressedEvent& key_event) {
+  const int key_code = key_event.getKeyCode();
+  if (key_code == SDLK_KP_0) {
+    return !key_event.isCtrlDown() && !key_event.isAltDown();
+  }
+  if (key_code == SDLK_0) {
+    return key_event.isAltDown() && key_event.isShiftDown() &&
+           !key_event.isCtrlDown();
+  }
+  return false;
+}
+
+bool isAlignCameraToViewShortcut(const KeyPressedEvent& key_event) {
+  const int key_code = key_event.getKeyCode();
+  if (key_code == SDLK_KP_0) {
+    return key_event.isCtrlDown() && key_event.isAltDown();
+  }
+  if (key_code == SDLK_0) {
+    return key_event.isCtrlDown() && key_event.isAltDown() &&
+           key_event.isShiftDown();
+  }
+  return false;
 }
 
 eastl::vector<uint8_t> buildSmokeCheckerboardPixels(uint32_t width,
@@ -1433,6 +1459,42 @@ void RenderSystem::onEvent(Event& event) {
               Vec2(mouse_event.getX(), mouse_event.getY()))) {
         event.handled = true;
         return;
+      }
+    }
+  }
+
+  if (overlays && m_editor_camera && !isTranslateModalSessionActive() &&
+      !event.handled && event.getEventType() == EventType::KeyPressed) {
+    auto& key_event = static_cast<KeyPressedEvent&>(event);
+    if (!key_event.isRepeat()) {
+      const bool align_view = isAlignViewToCameraShortcut(key_event);
+      const bool align_camera = isAlignCameraToViewShortcut(key_event);
+      if (align_view || align_camera) {
+        SceneInstance* scene =
+            g_runtime_global_context.m_scene_system != nullptr
+                ? g_runtime_global_context.m_scene_system->getActiveInstance()
+                : nullptr;
+        eastl::vector<EntityId> selected_ids;
+        if (g_runtime_global_context.m_editor_selection) {
+          selected_ids =
+              g_runtime_global_context.m_editor_selection->getSelectedIds();
+        }
+        bool applied = false;
+        const eastl::span<const EntityId> selection_span(
+            selected_ids.data(), selected_ids.size());
+        if (align_camera) {
+          applied = alignCameraToView(scene, *m_editor_camera, selection_span);
+        } else if (align_view && scene != nullptr) {
+          applied = alignViewToCamera(*m_editor_camera, *scene, selection_span);
+        }
+        if (applied) {
+          requestViewportRedraw();
+          if (g_runtime_global_context.m_slint_system) {
+            g_runtime_global_context.m_slint_system->syncInspectorFromSelection();
+          }
+          event.handled = true;
+          return;
+        }
       }
     }
   }

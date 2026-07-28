@@ -40,6 +40,7 @@ class EditorCamera final {
   ProjectionMode getProjectionMode() const { return m_target_projection_mode; }
   float getDistance() const { return m_distance; }
   float getVerticalFov() const { return m_vertical_fov; }
+  void setVerticalFov(float vertical_fov_radians);
   float getNearClip() const { return m_near_clip; }
   float getFarClip() const { return m_far_clip; }
   float getOrthoSize() const { return m_ortho_size; }

@@ -25,11 +25,11 @@
 
 ## 5. Align View to Camera / Align Camera to View
 
-- [ ] 5.1 Target resolve helper (single Camera selection → else Main → else first → fail); unit tests
-- [ ] 5.2 Align View: Editor Camera pose + FOV; no history
-- [ ] 5.3 Align Camera: write pose + FOV; history Command
-- [ ] 5.4 Menu + Numpad0 / Ctrl+Alt+Numpad0 + laptop fallbacks
-- [ ] 5.5 Commit
+- [x] 5.1 Target resolve helper (single Camera selection → else Main → else first → fail); unit tests
+- [x] 5.2 Align View: Editor Camera pose + FOV; no history
+- [x] 5.3 Align Camera: write pose + FOV; history Command
+- [x] 5.4 Menu + Numpad0 / Ctrl+Alt+Numpad0 + laptop fallbacks
+- [x] 5.5 Commit
 
 ## 6. Docs / QA
 
