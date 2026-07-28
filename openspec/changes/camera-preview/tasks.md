@@ -19,8 +19,8 @@
 
 ## 4. Slint chrome
 
-- [ ] 4.1 Create `camera_preview_panel.slint` (title, menu Collapse, drag, resize, collapse, image)
-- [ ] 4.2 Wire into viewport tile in `editor_window.slint` + `slint_target_sources` in `runtime/CMakeLists.txt`
+- [x] 4.1 Create `camera_preview_panel.slint` (title, menu Collapse, drag, resize, collapse, image)
+- [x] 4.2 Wire into viewport tile in `editor_window.slint` + `slint_target_sources` in `runtime/CMakeLists.txt`
 - [ ] 4.3 Sync visibility, title, image, layout props from `SlintSystem`
 
 ## 5. Input hit block
