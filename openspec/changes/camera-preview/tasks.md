@@ -30,6 +30,6 @@
 
 ## 6. Validate
 
-- [ ] 6.1 Run unit tests: resolve, matrices, RT size
-- [ ] 6.2 Build `engine_editor`; manual USER-VERIFY checklist in OpenSpec / plan
-- [ ] 6.3 Confirm `engine_player` has no Camera Preview UI
+- [x] 6.1 Run unit tests: resolve, matrices, RT size
+- [ ] 6.2 Build `engine_editor`; manual USER-VERIFY checklist in OpenSpec / plan *(human — see `.superpowers/sdd/task-9-report.md`)*
+- [x] 6.3 Confirm `engine_player` has no Camera Preview UI
