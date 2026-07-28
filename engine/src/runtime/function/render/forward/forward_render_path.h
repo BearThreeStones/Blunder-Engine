@@ -50,6 +50,18 @@ class ForwardRenderPath final {
   void initialize(const ForwardRenderPathInit& init);
   void shutdown();
 
+  /// Renders opaque+transparent into `target`. When draw_overlays is false, skips
+  /// OverlaySystem (required for Camera Preview). Uses `target` extent for viewport.
+  void renderFrameTo(rhi::IOffscreenRenderTarget* target,
+                     VkCommandBuffer command_buffer,
+                     const ForwardFrameState& frame_state,
+                     const ForwardOpaqueDraw* opaque_draws,
+                     uint32_t opaque_draw_count,
+                     const ForwardOpaqueDraw* transparent_draws,
+                     uint32_t transparent_draw_count,
+                     uint32_t frame_index,
+                     bool draw_overlays);
+
   /// Records opaque + transparent draws, overlays, and post-pass copy barriers.
   /// Submit, fence wait, and staging map remain the caller's responsibility.
   void renderFrame(VkCommandBuffer command_buffer,

@@ -344,6 +344,10 @@ _Avoid_: Game HUD; debug draw as product Overlay; “game mode chrome”; hiding
 The Editor Overlay that visualizes and interacts with a scene **Camera Component** in the editor viewport. Visual language matches Blender’s camera wire: origin point, four frustum edges, a **view frame** rectangle, and an **up triangle** on the frame’s top edge. Unselected cameras draw the same shape in a muted color; a **single** selected camera uses the selection color and exposes FOV / clip interaction handles (multi-select draws bodies/frames but not those handles). Frame aspect follows the current editor viewport; frame depth is a fixed local display distance (not a stored sensor aspect). Hit-testing the Camera Gizmo takes priority over mesh viewport pick. It is not the **Editor Camera** and is never shown or driven in the Player.
 _Avoid_: Editor Camera widget; Play view HUD camera; treating Navigate gizmo as the Camera Gizmo; inventing a separate non-Blender camera icon language for the first slice; FOV/clip handles on a multi-camera selection
 
+**Camera Preview**:
+An authorship-only floating panel over the editor viewport that shows a live view through a selected scene **Camera Component** (pose + FOV + near/far). It is Slint chrome plus a dedicated preview image, not an OverlaySystem draw into the main viewport offscreen, and never appears in the Player.
+_Avoid_: Game View dock; Play window; Editor Camera widget; baking the PiP into `viewport-image`
+
 **View frame**:
 The rectangular wire on a **Camera Gizmo** that represents the camera’s imaged bounds at the gizmo’s fixed display distance, sized from vertical FOV and the editor viewport aspect.
 _Avoid_: Sensor plane as a separate authored asset in this slice; near-plane-only frame as the sole body

@@ -228,6 +228,7 @@ slint_target_sources(engine_runtime
     "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
     "function/slint/transform_toolbar.slint"
+    "function/slint/camera_preview_panel.slint"
 )
 
 target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})

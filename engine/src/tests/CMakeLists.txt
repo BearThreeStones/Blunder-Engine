@@ -749,6 +749,45 @@ target_precompile_headers(align_camera_target_test
 add_test(NAME align_camera_target_test
          COMMAND align_camera_target_test)
 
+add_executable(camera_preview_resolve_test
+    "camera_preview_resolve_test.cpp"
+)
+
+target_include_directories(camera_preview_resolve_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+target_link_libraries(camera_preview_resolve_test
+    PRIVATE blunder_engine_c_static
+)
+
+if(MSVC)
+    target_compile_options(camera_preview_resolve_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(camera_preview_resolve_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME camera_preview_resolve_test
+         COMMAND camera_preview_resolve_test)
+
+add_executable(camera_preview_rt_size_test
+    "camera_preview_rt_size_test.cpp"
+)
+
+target_include_directories(camera_preview_rt_size_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(camera_preview_rt_size_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME camera_preview_rt_size_test
+         COMMAND camera_preview_rt_size_test)
+
 add_executable(play_ipc_test
     "play_ipc_test.cpp"
     "../runtime/project/play_ipc.cpp"

@@ -1,0 +1,298 @@
+// Unity-style floating Camera Preview chrome inside the viewport tile.
+
+export component CameraPreviewPanel inherits Rectangle {
+    in property <bool> preview-visible: false;
+    in-out property <bool> collapsed: false;
+    in property <string> title: "Camera";
+    in property <image> preview-image;
+    in property <length> host-width: 0px;
+    in property <length> host-height: 0px;
+    in property <bool> layout-drag-active: false;
+
+    in-out property <length> panel-x: 0px;
+    in-out property <length> panel-y: 0px;
+    in-out property <length> content-w: 320px;
+    in-out property <length> content-h: 180px;
+    in-out property <bool> position-initialized: false;
+
+    callback collapse-toggled();
+
+    property <length> title-bar-h: 22px;
+    property <length> min-content-w: 120px;
+    property <length> min-content-h: 68px;
+    property <length> resize-edge: 5px;
+    property <length> panel-w: root.content-w;
+    property <length> panel-h: root.collapsed ? root.title-bar-h : (root.title-bar-h + root.content-h);
+
+    property <length> resolved-x: root.position-initialized
+        ? root.panel-x
+        : Math.max(0px, root.host-width - root.panel-w - 10px);
+    property <length> resolved-y: root.position-initialized
+        ? root.panel-y
+        : Math.max(0px, root.host-height - root.panel-h - 10px);
+
+    property <bool> menu-visible: false;
+    property <bool> dragging: false;
+    property <length> drag-anchor-x: 0px;
+    property <length> drag-anchor-y: 0px;
+    property <length> drag-origin-x: 0px;
+    property <length> drag-origin-y: 0px;
+
+    property <int> resize-grip: 0;
+    property <length> resize-anchor-x: 0px;
+    property <length> resize-anchor-y: 0px;
+    property <length> resize-origin-x: 0px;
+    property <length> resize-origin-y: 0px;
+    property <length> resize-origin-w: 0px;
+    property <length> resize-origin-h: 0px;
+
+    width: root.host-width;
+    height: root.host-height;
+    background: transparent;
+    visible: root.preview-visible && !root.layout-drag-active;
+
+    if root.preview-visible && !root.layout-drag-active: panel := Rectangle {
+        x: root.resolved-x;
+        y: root.resolved-y;
+        width: root.panel-w;
+        height: root.panel-h;
+        background: #1e1e22ee;
+        border-width: 1px;
+        border-color: #3a3a42;
+        border-radius: 2px;
+        clip: true;
+
+        Rectangle {
+            y: 0;
+            width: 100%;
+            height: root.title-bar-h;
+            background: #2a2a30;
+
+            Rectangle {
+                y: parent.height - 1px;
+                width: 100%;
+                height: 1px;
+                background: #3a3a42;
+            }
+
+            Text {
+                x: 8px;
+                width: parent.width - 40px;
+                height: parent.height;
+                vertical-alignment: center;
+                overflow: elide;
+                text: root.title;
+                color: #ebebef;
+                font-size: 11px;
+            }
+
+            Rectangle {
+                x: parent.width - 22px;
+                y: 3px;
+                width: 18px;
+                height: 16px;
+                border-radius: 2px;
+                background: menu-btn-touch.has-hover ? #3a3a42 : transparent;
+
+                menu-btn-touch := TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.menu-visible = !root.menu-visible;
+                    }
+                }
+
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    text: "⋮";
+                    color: #c8c8d0;
+                    font-size: 12px;
+                }
+            }
+
+            title-drag := TouchArea {
+                width: parent.width - 24px;
+                height: 100%;
+                mouse-cursor: default;
+                moved => {
+                    if (root.dragging) {
+                        root.panel-x = root.drag-origin-x + (self.mouse-x - root.drag-anchor-x);
+                        root.panel-y = root.drag-origin-y + (self.mouse-y - root.drag-anchor-y);
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                        if (!root.position-initialized) {
+                            root.panel-x = root.resolved-x;
+                            root.panel-y = root.resolved-y;
+                            root.position-initialized = true;
+                        }
+                        root.dragging = true;
+                        root.drag-anchor-x = self.mouse-x;
+                        root.drag-anchor-y = self.mouse-y;
+                        root.drag-origin-x = root.panel-x;
+                        root.drag-origin-y = root.panel-y;
+                    }
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                        root.dragging = false;
+                    }
+                }
+            }
+        }
+
+        if !root.collapsed: Rectangle {
+            y: root.title-bar-h;
+            width: 100%;
+            height: root.content-h;
+            background: #121214;
+
+            Image {
+                width: 100%;
+                height: 100%;
+                source: root.preview-image;
+                image-fit: contain;
+            }
+        }
+
+        if !root.collapsed: Rectangle {
+            x: parent.width - root.resize-edge;
+            y: parent.height - root.resize-edge;
+            width: root.resize-edge;
+            height: root.resize-edge;
+            se-grip := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: MouseCursor.nwse-resize;
+                moved => {
+                    if (root.resize-grip == 3) {
+                        root.content-w = Math.max(root.min-content-w, root.resize-origin-w + (self.mouse-x - root.resize-anchor-x));
+                        root.content-h = Math.max(root.min-content-h, root.resize-origin-h + (self.mouse-y - root.resize-anchor-y));
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                        root.resize-grip = 3;
+                        root.resize-anchor-x = self.mouse-x;
+                        root.resize-anchor-y = self.mouse-y;
+                        root.resize-origin-w = root.content-w;
+                        root.resize-origin-h = root.content-h;
+                    }
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                        root.resize-grip = 0;
+                    }
+                }
+            }
+        }
+
+        if !root.collapsed: Rectangle {
+            x: root.resize-edge;
+            y: parent.height - root.resize-edge;
+            width: parent.width - 2 * root.resize-edge;
+            height: root.resize-edge;
+            south-edge := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: MouseCursor.ns-resize;
+                moved => {
+                    if (root.resize-grip == 2) {
+                        root.content-h = Math.max(root.min-content-h, root.resize-origin-h + (self.mouse-y - root.resize-anchor-y));
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                        root.resize-grip = 2;
+                        root.resize-anchor-y = self.mouse-y;
+                        root.resize-origin-h = root.content-h;
+                    }
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                        root.resize-grip = 0;
+                    }
+                }
+            }
+        }
+
+        if !root.collapsed: Rectangle {
+            x: parent.width - root.resize-edge;
+            y: root.title-bar-h + root.resize-edge;
+            width: root.resize-edge;
+            height: root.content-h - 2 * root.resize-edge;
+            east-edge := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: MouseCursor.ew-resize;
+                moved => {
+                    if (root.resize-grip == 1) {
+                        root.content-w = Math.max(root.min-content-w, root.resize-origin-w + (self.mouse-x - root.resize-anchor-x));
+                    }
+                }
+                pointer-event(event) => {
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                        root.resize-grip = 1;
+                        root.resize-anchor-x = self.mouse-x;
+                        root.resize-origin-w = root.content-w;
+                    }
+                    if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                        root.resize-grip = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    if root.menu-visible: menu-dismiss := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { root.menu-visible = false; }
+    }
+
+    if root.menu-visible: menu-panel := Rectangle {
+        x: root.resolved-x + root.panel-w - 120px;
+        y: root.resolved-y + root.title-bar-h;
+        width: 120px;
+        height: 30px;
+        background: #252528;
+        border-color: #444448;
+        border-width: 1px;
+        border-radius: 3px;
+
+        menu-absorb := TouchArea {
+            width: 100%;
+            height: 100%;
+            clicked => { /* absorb */ }
+        }
+
+        Rectangle {
+            x: 4px;
+            y: 4px;
+            width: parent.width - 8px;
+            height: 22px;
+            border-radius: 2px;
+            background: collapse-row-touch.has-hover ? #3a3a42 : transparent;
+
+            collapse-row-touch := TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.menu-visible = false;
+                    root.collapsed = !root.collapsed;
+                    root.collapse-toggled();
+                }
+
+                Text {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height;
+                    vertical-alignment: center;
+                    text: root.collapsed ? "Expand" : "Collapse";
+                    color: #e8e8ec;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+}

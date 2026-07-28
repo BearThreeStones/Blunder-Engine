@@ -7,6 +7,7 @@ import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
+import { CameraPreviewPanel } from "camera_preview_panel.slint";
 import { InspectorPanel, BehaviourRow } from "inspector_panel.slint";
 import { FloatingPanelWindow } from "floating_panel_window.slint";
 export { FloatingPanelWindow }
@@ -175,6 +176,17 @@ export component MainEditorWindow inherits Window {
     in-out property <bool> transform-gizmo-space-global: true;
     callback transform-mode-selected(int);
     callback gizmo-space-toggled();
+
+    in property <bool> camera-preview-visible: false;
+    in property <image> camera-preview-image;
+    in-out property <bool> camera-preview-collapsed: false;
+    in property <string> camera-preview-title: "Camera";
+    in-out property <length> camera-preview-panel-x: 0px;
+    in-out property <length> camera-preview-panel-y: 0px;
+    in-out property <length> camera-preview-content-w: 320px;
+    in-out property <length> camera-preview-content-h: 180px;
+    in-out property <bool> camera-preview-position-initialized: false;
+    callback camera-preview-collapse-toggled();
 
     in-out property <bool> import-mesh-dialog-visible: false;
     in-out property <bool> import-mesh-materials: true;
@@ -383,6 +395,24 @@ export component MainEditorWindow inherits Window {
                             }
                             gizmo-space-toggled => {
                                 root.gizmo-space-toggled();
+                            }
+                        }
+
+                        CameraPreviewPanel {
+                            host-width: parent.width;
+                            host-height: parent.height;
+                            preview-visible: root.camera-preview-visible;
+                            collapsed <=> root.camera-preview-collapsed;
+                            title: root.camera-preview-title;
+                            preview-image: root.camera-preview-image;
+                            panel-x <=> root.camera-preview-panel-x;
+                            panel-y <=> root.camera-preview-panel-y;
+                            content-w <=> root.camera-preview-content-w;
+                            content-h <=> root.camera-preview-content-h;
+                            position-initialized <=> root.camera-preview-position-initialized;
+                            layout-drag-active: root.docking-drag-active;
+                            collapse-toggled => {
+                                root.camera-preview-collapse-toggled();
                             }
                         }
                     }
