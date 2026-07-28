@@ -85,6 +85,8 @@ set(RENDER_SOURCES
     "function/render/overlay/overlay_line_pass.h"
     "function/render/overlay/grid_overlay.cpp"
     "function/render/overlay/grid_overlay.h"
+    "function/render/overlay/camera_gizmo_overlay.cpp"
+    "function/render/overlay/camera_gizmo_overlay.h"
     "function/render/overlay/axes_overlay.cpp"
     "function/render/overlay/axes_overlay.h"
     "function/render/overlay/wireframe_overlay.cpp"

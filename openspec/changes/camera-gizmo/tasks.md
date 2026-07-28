@@ -1,14 +1,14 @@
 ## 1. Frustum / view-frame geometry helpers (TDD)
 
-- [ ] 1.1 Pure functions: view-frame corners from FOV + aspect + display distance; up-triangle verts
-- [ ] 1.2 Unit tests for aspect/FOV extremes
-- [ ] 1.3 Commit
+- [x] 1.1 Pure functions: view-frame corners from FOV + aspect + display distance; up-triangle verts
+- [x] 1.2 Unit tests for aspect/FOV extremes
+- [x] 1.3 Commit
 
 ## 2. Camera Gizmo draw overlay
 
-- [ ] 2.1 `CameraGizmoOverlay` wired into `OverlaySystem` (line/screen path as appropriate)
-- [ ] 2.2 Draw all scene cameras; muted vs selection color; gated by `editorOverlaysEnabled`
-- [ ] 2.3 Smoke build editor; commit
+- [x] 2.1 `CameraGizmoOverlay` wired into `OverlaySystem` (line/screen path as appropriate)
+- [x] 2.2 Draw all scene cameras; muted vs selection color; gated by `editorOverlaysEnabled`
+- [x] 2.3 Smoke build editor; commit
 
 ## 3. Pick priority + selection
 

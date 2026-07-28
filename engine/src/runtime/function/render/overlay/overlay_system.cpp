@@ -56,6 +56,7 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_grid.initialize(ctx, alloc, m_resources, compiler);
   m_navigate_gizmo.initialize(m_resources, compiler);
   m_transform_gizmo.initialize(m_resources, compiler);
+  m_camera_gizmo.initialize(m_resources, compiler);
   m_anti_aliasing.initialize(ctx, alloc, offscreen, compiler, &m_line_targets);
 }
 
@@ -69,6 +70,7 @@ void OverlaySystem::shutdown() {
   m_outline_targets.shutdown();
   m_navigate_gizmo.shutdown();
   m_transform_gizmo.shutdown();
+  m_camera_gizmo.shutdown();
   m_grid.shutdown();
   m_outline.shutdown();
   m_outline_targets.shutdown();
@@ -116,6 +118,7 @@ void OverlaySystem::disableAuthorshipOverlays() {
   m_outline.enabled_ = false;
   m_navigate_gizmo.enabled_ = false;
   m_transform_gizmo.enabled_ = false;
+  m_camera_gizmo.enabled_ = false;
   m_anti_aliasing.enabled_ = false;
 }
 
@@ -149,6 +152,7 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
   m_outline.begin_sync(m_resources, m_state);
   m_navigate_gizmo.begin_sync(m_resources, m_state);
   m_transform_gizmo.begin_sync(m_resources, m_state);
+  m_camera_gizmo.begin_sync(m_resources, m_state);
   m_outline.begin_sync(m_resources, m_state);
   m_anti_aliasing.begin_sync(m_resources, m_state);
 }
@@ -204,6 +208,7 @@ void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
   }
   m_screen_pass.begin(cmd);
   m_grid.draw_screen(cmd, m_state);
+  m_camera_gizmo.draw_screen(cmd, m_state);
   m_transform_gizmo.draw_screen(cmd, m_state);
   m_navigate_gizmo.draw_screen(cmd, m_state);
   m_screen_pass.end(cmd);

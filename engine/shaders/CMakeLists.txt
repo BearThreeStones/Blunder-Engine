@@ -9,6 +9,7 @@ set(SHADER_CANDIDATES
     basic.slang
     pbr.slang
     grid.slang
+    camera_gizmo.slang
     grid_line.slang
     shadow_depth.slang
     ssao_generate.slang

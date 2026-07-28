@@ -7,6 +7,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/function/render/overlay/axes_overlay.h"
+#include "runtime/function/render/overlay/camera_gizmo_overlay.h"
 #include "runtime/function/render/overlay/grid_overlay.h"
 #include "runtime/function/render/gizmo/transform_gizmo_overlay.h"
 #include "runtime/function/render/overlay/navigate_gizmo_overlay.h"
@@ -97,6 +98,7 @@ class OverlaySystem final {
   OriginsOverlay& origins() { return m_origins; }
   NavigateGizmoOverlay& navigate_gizmo() { return m_navigate_gizmo; }
   TransformGizmoOverlay& transform_gizmo() { return m_transform_gizmo; }
+  CameraGizmoOverlay& camera_gizmo() { return m_camera_gizmo; }
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
 
  private:
@@ -126,6 +128,7 @@ class OverlaySystem final {
   OriginsOverlay m_origins;
   NavigateGizmoOverlay m_navigate_gizmo;
   TransformGizmoOverlay m_transform_gizmo;
+  CameraGizmoOverlay m_camera_gizmo;
   OverlayAntiAliasing m_anti_aliasing;
 };
 
