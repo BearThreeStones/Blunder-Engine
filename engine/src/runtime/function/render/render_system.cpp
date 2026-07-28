@@ -1351,6 +1351,11 @@ void RenderSystem::onEvent(Event& event) {
         event.handled = true;
         return;
       }
+      if (m_overlay_system->camera_gizmo().tryHandleMouseClick(
+              Vec2(mouse_event.getX(), mouse_event.getY()), *m_editor_camera)) {
+        event.handled = true;
+        return;
+      }
     }
   }
 

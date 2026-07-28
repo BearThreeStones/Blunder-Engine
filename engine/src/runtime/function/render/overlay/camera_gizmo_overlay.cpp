@@ -11,8 +11,11 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/overlay/camera_gizmo_geometry.h"
+#include "runtime/function/render/overlay/camera_gizmo_hit_test.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/rhi_desc.h"
@@ -24,6 +27,7 @@
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -334,6 +338,59 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
                transformPoint(world, Vec3(-local_y.x, -local_y.y, -local_y.z)),
                transformPoint(world, local_y), glm::vec3(0.0f), color);
   });
+}
+
+bool CameraGizmoOverlay::tryHandleMouseClick(const Vec2& window_position,
+                                             EditorCamera& camera) {
+  if (!enabled_ || !camera.isWindowPositionInViewport(window_position)) {
+    return false;
+  }
+
+  if (!g_runtime_global_context.m_scene_system) {
+    return false;
+  }
+  SceneInstance* scene =
+      g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    return false;
+  }
+
+  const Vec2 viewport_local = camera.windowToViewportLocal(window_position);
+  const glm::vec2 pointer(viewport_local.x, viewport_local.y);
+  const float vp_w = camera.getViewportWidth();
+  const float vp_h = std::max(camera.getViewportHeight(), 1.0f);
+  const float aspect = vp_w / vp_h;
+  const glm::mat4 view = camera.getViewMatrix();
+  const glm::mat4 proj = camera.getProjectionMatrix();
+
+  EntityId best_entity{k_invalid_entity_id};
+  float best_depth = -1e9f;
+
+  scene->forEachCamera([&](EntityId entity_id, const CameraComponent& cam) {
+    const float fov_rad = glm::radians(cam.vertical_fov_degrees);
+    const CameraGizmoFrame frame =
+        buildCameraGizmoFrameLocal(fov_rad, aspect, kCameraGizmoDisplayDistance);
+    const glm::mat4 world = scene->getWorldMatrix(entity_id);
+    const std::optional<float> hit_depth = hitTestCameraGizmoFrameViewportLocal(
+        pointer, frame, world, view, proj, vp_w, vp_h);
+    if (!hit_depth.has_value() || hit_depth.value() <= best_depth) {
+      return;
+    }
+    best_depth = hit_depth.value();
+    best_entity = entity_id;
+  });
+
+  if (!isValid(best_entity)) {
+    return false;
+  }
+
+  if (g_runtime_global_context.m_editor_selection) {
+    g_runtime_global_context.m_editor_selection->setSelection(best_entity);
+  }
+  if (g_runtime_global_context.m_viewport_pick) {
+    g_runtime_global_context.m_viewport_pick->suppressNextLeftReleasePick();
+  }
+  return true;
 }
 
 }  // namespace Blunder

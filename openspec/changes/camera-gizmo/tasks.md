@@ -12,9 +12,9 @@
 
 ## 3. Pick priority + selection
 
-- [ ] 3.1 Hit-test body/frame before mesh pick in `RenderSystem::onEvent` / overlay path
-- [ ] 3.2 Click selects Camera entity; Player host ignores
-- [ ] 3.3 Commit
+- [x] 3.1 Hit-test body/frame before mesh pick in `RenderSystem::onEvent` / overlay path
+- [x] 3.2 Click selects Camera entity; Player host ignores
+- [x] 3.3 Commit
 
 ## 4. FOV / clip handles + history
 

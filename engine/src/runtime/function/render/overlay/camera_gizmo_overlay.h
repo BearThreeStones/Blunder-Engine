@@ -10,10 +10,12 @@
 #include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
+#include "runtime/core/math/math_types.h"
 #include "runtime/function/render/overlay/overlay_base.h"
 
 namespace Blunder {
 
+class EditorCamera;
 class SlangCompiler;
 class VulkanAllocator;
 class VulkanBuffer;
@@ -38,6 +40,9 @@ class CameraGizmoOverlay final : public Overlay {
 
   void begin_sync(OverlayResources& res, const OverlayState& state) override;
   void draw_screen(VkCommandBuffer cmd, const OverlayState& state) override;
+
+  /// Returns true when the click hit a scene camera gizmo (entity selection).
+  bool tryHandleMouseClick(const Vec2& window_position, EditorCamera& camera);
 
  private:
   enum class DrawStyle : uint32_t {
