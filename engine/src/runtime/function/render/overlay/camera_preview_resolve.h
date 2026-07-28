@@ -3,6 +3,7 @@
 #include "EASTL/span.h"
 
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/play_camera_resolve.h"
 #include "runtime/function/scene/scene_instance.h"
 
 namespace Blunder {
@@ -38,6 +39,21 @@ inline CameraPreviewTargetResult resolveCameraPreviewTarget(
     }
   }
   return result;
+}
+
+inline ResolvedPlayCamera buildCameraPreviewMatrices(const SceneInstance& scene,
+                                                     EntityId entity_id,
+                                                     float aspect) {
+  ResolvedPlayCamera empty{};
+  const CameraComponent* cam = scene.getCamera(entity_id);
+  if (cam == nullptr || scene.isTombstoned(entity_id)) {
+    return empty;
+  }
+  PlayCameraResolveInput input{};
+  input.entity_id = entity_id;
+  input.world = scene.getWorldMatrix(entity_id);
+  input.camera = *cam;
+  return resolvePlayCamera(&input, 1, aspect);
 }
 
 }  // namespace Blunder
