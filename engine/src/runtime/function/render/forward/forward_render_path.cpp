@@ -561,15 +561,13 @@ void ForwardRenderPath::drawShadowOpaqueList(
   }
 }
 
-void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
-                                    const ForwardFrameState& frame_state,
-                                    const ForwardOpaqueDraw* opaque_draws,
-                                    uint32_t opaque_draw_count,
-                                    const ForwardOpaqueDraw* transparent_draws,
-                                    uint32_t transparent_draw_count,
-                                    uint32_t frame_index) {
-  ASSERT(m_offscreen);
-  const rhi::Extent2D extent = m_offscreen->extent();
+void ForwardRenderPath::renderFrameTo(
+    rhi::IOffscreenRenderTarget* target, VkCommandBuffer command_buffer,
+    const ForwardFrameState& frame_state, const ForwardOpaqueDraw* opaque_draws,
+    uint32_t opaque_draw_count, const ForwardOpaqueDraw* transparent_draws,
+    uint32_t transparent_draw_count, uint32_t frame_index, bool draw_overlays) {
+  ASSERT(target);
+  const rhi::Extent2D extent = target->extent();
   if (extent.width == 0 || extent.height == 0) {
     return;
   }
@@ -590,7 +588,7 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
                      kViewportBackgroundRgb, 1.0f};
   clears[1].depth_stencil = {1.0f, 0};
 
-  m_offscreen->beginRenderPass(command_list, clears, 2);
+  target->beginRenderPass(command_list, clears, 2);
   bindViewportScissor(command_buffer, extent.width, extent.height);
 
   // Scene passes: opaque (depth write ON), then transparent (depth write OFF).
@@ -601,12 +599,24 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
 
   // Overlay pass: draws grid, axes, wireframes, etc. after scene geometry.
   // Overlays read the scene depth but do not write to it.
-  if (m_overlay_system != nullptr) {
+  if (draw_overlays && m_overlay_system != nullptr) {
     m_overlay_system->draw_scene_overlays(command_buffer);
   }
 
-  m_offscreen->endRenderPass(command_list);
-  m_offscreen->markPostRenderPassShaderRead();
+  target->endRenderPass(command_list);
+  target->markPostRenderPassShaderRead();
+}
+
+void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
+                                    const ForwardFrameState& frame_state,
+                                    const ForwardOpaqueDraw* opaque_draws,
+                                    uint32_t opaque_draw_count,
+                                    const ForwardOpaqueDraw* transparent_draws,
+                                    uint32_t transparent_draw_count,
+                                    uint32_t frame_index) {
+  renderFrameTo(m_offscreen, command_buffer, frame_state, opaque_draws,
+                opaque_draw_count, transparent_draws, transparent_draw_count,
+                frame_index, /*draw_overlays=*/true);
 }
 
 }  // namespace Blunder
