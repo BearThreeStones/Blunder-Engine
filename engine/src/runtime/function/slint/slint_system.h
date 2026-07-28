@@ -163,6 +163,7 @@ class SlintSystem final : public IEditorUiPresentation {
                         uint32_t height, bool request_composite = true);
 
   /// Camera Preview panel (Slint chrome + secondary render image).
+  bool isCameraPreviewVisible() const { return m_camera_preview_visible; }
   bool isCameraPreviewCollapsed() const { return m_camera_preview_collapsed; }
   float getCameraPreviewContentWidth() const { return m_camera_preview_content_w; }
   float getCameraPreviewContentHeight() const {
@@ -175,6 +176,8 @@ class SlintSystem final : public IEditorUiPresentation {
   void setCameraPreviewImage(const uint8_t* pixels_rgba, uint32_t width,
                              uint32_t height);
   void clearCameraPreviewImage();
+  bool probeCameraPreviewPanelAtLogical(float logical_x, float logical_y) const;
+  bool probeCameraPreviewPanelAtWindow(float window_x, float window_y) const;
 
   void setViewportImageInternal(const uint8_t* pixels_rgba, uint32_t width,
                                 uint32_t height, bool allow_during_dispatch,
@@ -579,6 +582,7 @@ class SlintSystem final : public IEditorUiPresentation {
   static constexpr uint32_t k_layout_cooldown_frames = 6;
   static constexpr uint32_t k_layout_resync_frames = 16;
 
+  bool m_camera_preview_visible{false};
   bool m_camera_preview_collapsed{false};
   float m_camera_preview_content_w{320.f};
   float m_camera_preview_content_h{180.f};

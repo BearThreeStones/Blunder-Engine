@@ -25,8 +25,8 @@
 
 ## 5. Input hit block
 
-- [ ] 5.1 Publish panel rect (viewport-local) to C++; add `hitCameraPreviewPanelLocal`
-- [ ] 5.2 Gate mesh pick / Editor Camera orbit when pointer is over the panel (incl. collapsed title bar)
+- [x] 5.1 Publish panel rect (viewport-local) to C++; add `hitCameraPreviewPanelLocal`
+- [x] 5.2 Gate mesh pick / Editor Camera orbit when pointer is over the panel (incl. collapsed title bar)
 
 ## 6. Validate
 

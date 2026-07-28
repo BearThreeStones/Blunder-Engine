@@ -52,6 +52,7 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/slint/window_pointer_map.h"
+#include "runtime/function/render/overlay/camera_preview_layout.h"
 #include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 #include "runtime/function/render/overlay/camera_preview_resolve.h"
@@ -3039,6 +3040,8 @@ void SlintSystem::syncCameraPreviewFromEngine() {
     }
   }
 
+  m_camera_preview_visible = visible;
+
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     auto& ui = *m_window_component;
@@ -3662,6 +3665,9 @@ bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
   }
   const eastl::array<float, 2> logical =
       mapWindowPointerToLogical(m_window_system, px, py);
+  if (probeCameraPreviewPanelAtLogical(logical[0], logical[1])) {
+    return false;
+  }
   const ViewportLogicalRect& vp = m_cached_viewport_logical_rect;
   const float vp_right = static_cast<float>(vp.x) + static_cast<float>(vp.width);
   const float vp_bottom = static_cast<float>(vp.y) + static_cast<float>(vp.height);
@@ -3714,6 +3720,36 @@ bool SlintSystem::probeProjectionButtonAtLogical(float logical_x,
     }
   }
   return false;
+}
+
+bool SlintSystem::probeCameraPreviewPanelAtLogical(float logical_x,
+                                                   float logical_y) const {
+  if (!m_camera_preview_visible) {
+    return false;
+  }
+  const ViewportLogicalRect& vp = m_cached_viewport_logical_rect;
+  if (vp.width == 0u || vp.height == 0u) {
+    return false;
+  }
+  const float local_x = logical_x - static_cast<float>(vp.x);
+  const float local_y = logical_y - static_cast<float>(vp.y);
+  const auto& panel = m_camera_preview_panel_rect;
+  if (panel.width == 0u || panel.height == 0u) {
+    return false;
+  }
+  return hitCameraPreviewPanelLocal(
+      local_x, local_y, static_cast<float>(panel.x), static_cast<float>(panel.y),
+      static_cast<float>(panel.width), static_cast<float>(panel.height));
+}
+
+bool SlintSystem::probeCameraPreviewPanelAtWindow(float window_x,
+                                                  float window_y) const {
+  if (!m_window_system) {
+    return false;
+  }
+  const SlintPointerCoords ptr =
+      mapWindowPointerToSlint(m_window_system, window_x, window_y);
+  return probeCameraPreviewPanelAtLogical(ptr.x, ptr.y);
 }
 
 bool SlintSystem::probeProjectionButtonAtWindow(float window_x,

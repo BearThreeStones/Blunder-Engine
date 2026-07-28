@@ -98,6 +98,19 @@ bool viewportZeroCopyDisabled() {
   return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
 }
 
+bool isViewportPickInputPoint(const EditorCamera& camera, float window_x,
+                              float window_y) {
+  if (!camera.isWindowPositionInViewport(Vec2(window_x, window_y))) {
+    return false;
+  }
+  if (SlintSystem* slint = g_runtime_global_context.m_slint_system.get()) {
+    if (slint->probeCameraPreviewPanelAtWindow(window_x, window_y)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool editorShadowsEnabled() {
   const char* env = std::getenv("BLUNDER_EDITOR_SHADOWS");
   return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
@@ -1769,8 +1782,8 @@ void RenderSystem::onEvent(Event& event) {
       event.getEventType() == EventType::MouseButtonPressed) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.hasMousePosition() &&
-        m_editor_camera->isWindowPositionInViewport(
-            Vec2(mouse_event.getX(), mouse_event.getY())) &&
+        isViewportPickInputPoint(*m_editor_camera, mouse_event.getX(),
+                                 mouse_event.getY()) &&
         g_runtime_global_context.m_viewport_pick) {
       if (mouse_event.getMouseButton() == SDL_BUTTON_RIGHT ||
           mouse_event.getMouseButton() == SDL_BUTTON_MIDDLE) {
@@ -1782,7 +1795,9 @@ void RenderSystem::onEvent(Event& event) {
   if (authorship && !event.handled && m_editor_camera &&
       event.getEventType() == EventType::MouseMoved) {
     auto& mouse_event = static_cast<MouseMovedEvent&>(event);
-    if (g_runtime_global_context.m_viewport_pick) {
+    if (g_runtime_global_context.m_viewport_pick &&
+        isViewportPickInputPoint(*m_editor_camera, mouse_event.getX(),
+                                 mouse_event.getY())) {
       g_runtime_global_context.m_viewport_pick->onViewportPointerMoved(
           mouse_event.getX(), mouse_event.getY());
     }
@@ -1793,8 +1808,8 @@ void RenderSystem::onEvent(Event& event) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_RIGHT &&
         mouse_event.hasMousePosition() &&
-        m_editor_camera->isWindowPositionInViewport(
-            Vec2(mouse_event.getX(), mouse_event.getY())) &&
+        isViewportPickInputPoint(*m_editor_camera, mouse_event.getX(),
+                                 mouse_event.getY()) &&
         g_runtime_global_context.m_viewport_pick) {
       const uint16_t modifiers =
           static_cast<uint16_t>(SDL_GetModState() & 0xFFFFu);
@@ -1812,8 +1827,8 @@ void RenderSystem::onEvent(Event& event) {
     auto& mouse_event = static_cast<MouseButtonPressedEvent&>(event);
     if (mouse_event.getMouseButton() == SDL_BUTTON_LEFT &&
         mouse_event.hasMousePosition() &&
-        m_editor_camera->isWindowPositionInViewport(
-            Vec2(mouse_event.getX(), mouse_event.getY())) &&
+        isViewportPickInputPoint(*m_editor_camera, mouse_event.getX(),
+                                 mouse_event.getY()) &&
         g_runtime_global_context.m_viewport_pick) {
       g_runtime_global_context.m_viewport_pick->onViewportLeftPressed(
           mouse_event.getX(), mouse_event.getY());
@@ -1828,10 +1843,10 @@ void RenderSystem::onEvent(Event& event) {
         g_runtime_global_context.m_viewport_pick) {
       const uint16_t modifiers =
           static_cast<uint16_t>(SDL_GetModState() & 0xFFFFu);
-      g_runtime_global_context.m_viewport_pick->onViewportLeftReleased(
-          mouse_event.getX(), mouse_event.getY(), modifiers);
-      if (m_editor_camera->isWindowPositionInViewport(
-              Vec2(mouse_event.getX(), mouse_event.getY()))) {
+      if (isViewportPickInputPoint(*m_editor_camera, mouse_event.getX(),
+                                   mouse_event.getY())) {
+        g_runtime_global_context.m_viewport_pick->onViewportLeftReleased(
+            mouse_event.getX(), mouse_event.getY(), modifiers);
         event.handled = true;
         return;
       }
