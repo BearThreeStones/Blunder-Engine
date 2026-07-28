@@ -2564,21 +2564,32 @@ void SlintSystem::applyInspectorCamera() {
     return;
   }
   const EntityId entity_id = ids[0];
-  if (scene->getCamera(entity_id) == nullptr) {
+  const CameraComponent* existing_camera = scene->getCamera(entity_id);
+  if (existing_camera == nullptr) {
     return;
   }
 
   try {
     const auto& ui = *m_window_component;
-    CameraComponent camera;
-    camera.vertical_fov_degrees = ui->get_inspector_camera_fov();
-    camera.near_clip = ui->get_inspector_camera_near();
-    camera.far_clip = ui->get_inspector_camera_far();
-    camera.is_main = ui->get_inspector_camera_is_main();
-    if (camera.is_main) {
+    const CameraComponent before_camera = *existing_camera;
+    CameraComponent after_camera = before_camera;
+    after_camera.vertical_fov_degrees = ui->get_inspector_camera_fov();
+    after_camera.near_clip = ui->get_inspector_camera_near();
+    after_camera.far_clip = ui->get_inspector_camera_far();
+    after_camera.is_main = ui->get_inspector_camera_is_main();
+    if (after_camera.vertical_fov_degrees == before_camera.vertical_fov_degrees &&
+        after_camera.near_clip == before_camera.near_clip &&
+        after_camera.far_clip == before_camera.far_clip &&
+        after_camera.is_main == before_camera.is_main) {
+      return;
+    }
+    if (after_camera.is_main) {
       clearOtherMainCameras(*scene, entity_id);
     }
-    scene->setCamera(entity_id, camera);
+    scene->setCamera(entity_id, after_camera);
+    pushDocumentCommand(makeSetCameraComponentCommand(
+        scene, entity_id, before_camera, after_camera,
+        SelectionSnapshot{entity_id}, SelectionSnapshot{entity_id}));
     if (services->editor_scene_edit) {
       services->editor_scene_edit->markDirty();
     }

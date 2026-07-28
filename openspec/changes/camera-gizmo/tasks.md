@@ -18,10 +18,10 @@
 
 ## 4. FOV / clip handles + history
 
-- [ ] 4.1 Single-selection handles; live update; seal Document History on release
-- [ ] 4.2 Inspector FOV/near/far commits use same Command class where practical
-- [ ] 4.3 Multi-select: no handles
-- [ ] 4.4 Commit
+- [x] 4.1 Single-selection handles; live update; seal Document History on release
+- [x] 4.2 Inspector FOV/near/far commits use same Command class where practical
+- [x] 4.3 Multi-select: no handles
+- [x] 4.4 Commit
 
 ## 5. Align View to Camera / Align Camera to View
 

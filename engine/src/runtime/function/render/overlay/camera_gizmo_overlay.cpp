@@ -45,6 +45,7 @@ constexpr float k_origin_cross_half_len = 0.05f;
 
 const glm::vec4 k_muted_color{0.55f, 0.55f, 0.55f, 0.45f};
 const glm::vec4 k_selected_color{1.0f, 0.6f, 0.1f, 0.9f};
+const glm::vec4 k_handle_color{1.0f, 0.85f, 0.2f, 1.0f};
 
 /// Must match CameraGizmoUniform in camera_gizmo.slang (std140).
 struct CameraGizmoUniformData {
@@ -289,6 +290,14 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
   EditorSelectionSystem* selection =
       g_runtime_global_context.m_editor_selection.get();
 
+  EntityId sole_selected_camera{k_invalid_entity_id};
+  if (selection != nullptr) {
+    const eastl::vector<EntityId> selected_ids = selection->getSelectedIds();
+    if (selected_ids.size() == 1 && scene->getCamera(selected_ids[0]) != nullptr) {
+      sole_selected_camera = selected_ids[0];
+    }
+  }
+
   scene->forEachCamera([&](EntityId entity_id, const CameraComponent& camera) {
     if (m_next_draw_slot >= k_max_draws_per_frame) {
       return;
@@ -337,6 +346,44 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     recordDraw(cmd, state, DrawStyle::line,
                transformPoint(world, Vec3(-local_y.x, -local_y.y, -local_y.z)),
                transformPoint(world, local_y), glm::vec3(0.0f), color);
+
+    if (entity_id != sole_selected_camera) {
+      return;
+    }
+
+    const float fov_rad_handles = glm::radians(camera.vertical_fov_degrees);
+    const CameraGizmoFrame near_frame =
+        buildCameraGizmoFrameLocal(fov_rad_handles, aspect, camera.near_clip);
+    const CameraGizmoFrame far_frame =
+        buildCameraGizmoFrameLocal(fov_rad_handles, aspect, camera.far_clip);
+
+    glm::vec3 near_corners[4];
+    glm::vec3 far_corners[4];
+    for (int i = 0; i < 4; ++i) {
+      near_corners[i] = transformPoint(world, near_frame.corners[i]);
+      far_corners[i] = transformPoint(world, far_frame.corners[i]);
+    }
+    const glm::vec3 near_origin = transformPoint(world, near_frame.origin);
+    const glm::vec3 far_origin = transformPoint(world, far_frame.origin);
+
+    for (int i = 0; i < 4; ++i) {
+      const int next = (i + 1) % 4;
+      recordDraw(cmd, state, DrawStyle::line, near_corners[i], near_corners[next],
+                 glm::vec3(0.0f), k_handle_color);
+      recordDraw(cmd, state, DrawStyle::line, far_corners[i], far_corners[next],
+                 glm::vec3(0.0f), k_handle_color);
+    }
+    recordDraw(cmd, state, DrawStyle::line, origin, near_origin, glm::vec3(0.0f),
+               k_handle_color);
+    recordDraw(cmd, state, DrawStyle::line, origin, far_origin, glm::vec3(0.0f),
+               k_handle_color);
+
+    recordDraw(cmd, state, DrawStyle::line, corners[0], corners[1], glm::vec3(0.0f),
+               k_handle_color);
+    recordDraw(cmd, state, DrawStyle::line, tri[0], tri[1], glm::vec3(0.0f),
+               k_handle_color);
+    recordDraw(cmd, state, DrawStyle::line, tri[1], tri[2], glm::vec3(0.0f),
+               k_handle_color);
   });
 }
 

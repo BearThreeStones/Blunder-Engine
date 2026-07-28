@@ -1,10 +1,22 @@
 #include "runtime/function/editor/editor_commands.h"
 
 #include "runtime/core/object/object.h"
+#include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/scene_instance.h"
 
 namespace Blunder {
 namespace {
+
+void clearOtherMainCameras(SceneInstance& scene, EntityId keep_id) {
+  scene.forEachCamera([&](EntityId entity_id, const CameraComponent& camera) {
+    if (entity_id == keep_id || !camera.is_main) {
+      return;
+    }
+    CameraComponent updated = camera;
+    updated.is_main = false;
+    scene.setCamera(entity_id, eastl::move(updated));
+  });
+}
 
 void applyBehaviourProperty(Object* object, BehaviourId behaviour_id,
                             const eastl::string& key, const Variant& value) {
@@ -63,6 +75,29 @@ class SetEntityTransformCommand final : public IEditorCommand {
     entity->setRotation(rotation);
     entity->setScale(scale);
     scene->markTransformsDirty();
+  }
+};
+
+class SetCameraComponentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  CameraComponent before_camera{};
+  CameraComponent after_camera{};
+
+  void undo() override { apply(before_camera); }
+
+  void redo() override { apply(after_camera); }
+
+ private:
+  void apply(const CameraComponent& camera) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    if (camera.is_main) {
+      clearOtherMainCameras(*scene, entity_id);
+    }
+    scene->setCamera(entity_id, camera);
   }
 };
 
@@ -230,6 +265,20 @@ eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
   command->after_position = after_position;
   command->after_rotation = after_rotation;
   command->after_scale = after_scale;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const CameraComponent& before_camera,
+    const CameraComponent& after_camera, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetCameraComponentCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_camera = before_camera;
+  command->after_camera = after_camera;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   return command;

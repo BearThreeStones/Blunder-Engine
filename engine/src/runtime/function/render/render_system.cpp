@@ -1301,6 +1301,11 @@ void RenderSystem::onEvent(Event& event) {
     if (event.handled) {
       return;
     }
+    m_overlay_system->camera_gizmo().controller().onEvent(event,
+                                                          *m_editor_camera);
+    if (event.handled) {
+      return;
+    }
   }
 
   if (overlays && m_overlay_system && m_editor_camera &&

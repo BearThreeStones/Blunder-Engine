@@ -1,5 +1,6 @@
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/editor_commands.h"
+#include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/scene_instance.h"
 
 #include <cstdio>
@@ -81,6 +82,41 @@ int main() {
                 exported.getEntities().empty());
     expect_true("redo spawn", history.redo());
     expect_true("spawn restored", !scene.isTombstoned(id));
+  }
+
+  // Camera component command round-trip
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Cam", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    CameraComponent before{};
+    before.vertical_fov_degrees = 45.0f;
+    before.near_clip = 0.1f;
+    before.far_clip = 100.0f;
+    scene.setCamera(id, before);
+
+    CameraComponent after = before;
+    after.vertical_fov_degrees = 75.0f;
+    after.near_clip = 0.25f;
+    after.far_clip = 500.0f;
+    scene.setCamera(id, after);
+
+    DocumentHistory history;
+    history.push(makeSetCameraComponentCommand(
+        &scene, id, before, after, SelectionSnapshot{id}, SelectionSnapshot{id}));
+
+    expect_true("undo camera", history.undo());
+    const CameraComponent* restored = scene.getCamera(id);
+    expect_true("fov restored",
+                restored != nullptr && restored->vertical_fov_degrees == 45.0f);
+    expect_true("near restored",
+                restored != nullptr && restored->near_clip == 0.1f);
+    expect_true("redo camera", history.redo());
+    const CameraComponent* reapplied = scene.getCamera(id);
+    expect_true("fov reapplied",
+                reapplied != nullptr && reapplied->vertical_fov_degrees == 75.0f);
+    expect_true("far reapplied",
+                reapplied != nullptr && reapplied->far_clip == 500.0f);
   }
 
   if (g_failures != 0) {

@@ -8,6 +8,7 @@
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/reflection/variant.h"
 #include "runtime/function/editor/document_history.h"
+#include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
 
@@ -20,6 +21,11 @@ eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
     const Quat& before_rotation, const Vec3& before_scale,
     const Vec3& after_position, const Quat& after_rotation,
     const Vec3& after_scale, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const CameraComponent& before_camera,
+    const CameraComponent& after_camera, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
 
 eastl::unique_ptr<IEditorCommand> makeSoftDeleteEntityCommand(
