@@ -26,6 +26,9 @@ enum class UiEventKind : uint8_t {
   browserSearchChanged,
   browserPathSegmentClicked,
   openSceneAsset,
+  openDirtySaveAndOpen,
+  openDirtyDiscardAndOpen,
+  openDirtyCancel,
   syncShadingFromAsset,
   undo,
   redo,
@@ -35,6 +38,8 @@ enum class UiEventKind : uint8_t {
   playDirtySaveAndPlay,
   playDirtyPlayLastSaved,
   playDirtyCancel,
+  alignViewToCamera,
+  alignCameraToView,
 };
 
 struct UiEvent {

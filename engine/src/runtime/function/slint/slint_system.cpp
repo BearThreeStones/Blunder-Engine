@@ -1064,6 +1064,19 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       onPiercingMenuEntitySelected(static_cast<EntityId>(entity_id));
     });
     component->on_piercing_menu_dismissed([this]() { hidePiercingMenu(); });
+    component->on_view_menu_dismissed([this]() {
+      if (m_window_component) {
+        m_window_component->operator->()->set_view_menu_visible(false);
+      }
+    });
+    component->on_view_align_view_to_camera_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::alignViewToCamera));
+        }));
+    component->on_view_align_camera_to_view_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::alignCameraToView));
+        }));
     component->on_browser_folder_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
           m_tree_folder_handled_by_slint = true;

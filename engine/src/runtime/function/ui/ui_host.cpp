@@ -1,6 +1,7 @@
 #include "runtime/function/ui/ui_host.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/editor/align_camera_actions.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -326,6 +327,38 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
     case UiEventKind::syncShadingFromAsset:
       syncBlinnPhongFromMaterialSource();
       break;
+    case UiEventKind::alignViewToCamera:
+    case UiEventKind::alignCameraToView: {
+      if (!services.render_system || !services.scene) {
+        break;
+      }
+      EditorCamera* editor_camera = services.render_system->getEditorCamera();
+      SceneInstance* scene = services.scene->getActiveInstance();
+      if (editor_camera == nullptr || scene == nullptr) {
+        break;
+      }
+      eastl::vector<EntityId> selected_ids;
+      if (services.selection) {
+        selected_ids = services.selection->getSelectedIds();
+      }
+      const eastl::span<const EntityId> selection_span(
+          selected_ids.data(), selected_ids.size());
+      bool applied = false;
+      if (event.kind == UiEventKind::alignCameraToView) {
+        applied = alignCameraToView(scene, *editor_camera, selection_span);
+      } else {
+        applied = alignViewToCamera(*editor_camera, *scene, selection_span);
+      }
+      if (!applied) {
+        break;
+      }
+      services.render_system->requestViewportRedraw();
+      if (m_presentation) {
+        m_presentation->syncInspectorFromSelection();
+      }
+      m_panels.markDirty(EditorPanelDirty::inspector);
+      break;
+    }
     case UiEventKind::none:
       break;
   }

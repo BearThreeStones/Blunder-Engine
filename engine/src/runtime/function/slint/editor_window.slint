@@ -190,6 +190,13 @@ export component MainEditorWindow inherits Window {
     callback piercing-entity-selected(int);
     callback piercing-menu-dismissed();
 
+    in-out property <bool> view-menu-visible: false;
+    in-out property <length> view-menu-anchor-x: 0px;
+    in-out property <length> view-menu-anchor-y: 0px;
+    callback view-menu-dismissed();
+    callback view-align-view-to-camera-requested();
+    callback view-align-camera-to-view-requested();
+
     in property <bool> docking-visible: true;
     in property <[DockTile]> docking-tiles: [];
     in property <[DockTab]> docking-tabs: [];
@@ -300,7 +307,14 @@ export component MainEditorWindow inherits Window {
                         enabled: root.edit-can-redo;
                         clicked => { root.edit-redo-requested(); }
                     }
-                    Button { text: "View"; }
+                    view-menu-button := Button {
+                        text: "View";
+                        clicked => {
+                            root.view-menu-anchor-x = self.absolute-position.x;
+                            root.view-menu-anchor-y = self.absolute-position.y + self.height;
+                            root.view-menu-visible = true;
+                        }
+                    }
                     Button {
                         text: "Play";
                         clicked => { root.play-requested(); }
@@ -799,7 +813,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.piercing-menu-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -842,6 +856,88 @@ export component MainEditorWindow inherits Window {
             rows: root.piercing-menu-rows;
             entity-selected(id) => { root.piercing-entity-selected(id); }
             dismissed => { root.piercing-menu-dismissed(); }
+        }
+
+        if root.view-menu-visible: view-menu-dismiss-layer := TouchArea {
+            z: 3600;
+            width: parent.width;
+            height: parent.height;
+            clicked => { root.view-menu-dismissed(); }
+        }
+
+        if root.view-menu-visible: view-menu-panel := Rectangle {
+            z: 3601;
+            x: root.view-menu-anchor-x;
+            y: root.view-menu-anchor-y;
+            width: 240px;
+            height: 60px;
+            background: #252525;
+            border-color: #444444;
+            border-width: 1px;
+            border-radius: 4px;
+
+            panel-touch := TouchArea {
+                width: 100%;
+                height: 100%;
+                clicked => { /* absorb */ }
+            }
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 0px;
+
+                Rectangle {
+                    height: 26px;
+                    background: align-view-touch.has-hover ? #3a3a3a : transparent;
+                    border-radius: 2px;
+
+                    align-view-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.view-menu-visible = false;
+                            root.view-align-view-to-camera-requested();
+                        }
+
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: "Align View to Camera";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 26px;
+                    background: align-camera-touch.has-hover ? #3a3a3a : transparent;
+                    border-radius: 2px;
+
+                    align-camera-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.view-menu-visible = false;
+                            root.view-align-camera-to-view-requested();
+                        }
+
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: "Align Camera to View";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
         }
     }
 }
