@@ -13,9 +13,9 @@
 ## 3. Secondary render
 
 - [x] 3.1 Extend `ForwardRenderPath` with `renderFrameTo(target, frame_state, draws…, draw_overlays)`
-- [ ] 3.2 Allocate/resize dedicated preview offscreen in `RenderSystem`; skip when no target / collapsed
-- [ ] 3.3 After main frame, build preview `ForwardFrameState` (shadows off, no overlays) and `renderFrameTo`
-- [ ] 3.4 CPU readback → `SlintSystem::setCameraPreviewImage`
+- [x] 3.2 Allocate/resize dedicated preview offscreen in `RenderSystem`; skip when no target / collapsed
+- [x] 3.3 After main frame, build preview `ForwardFrameState` (shadows off, no overlays) and `renderFrameTo`
+- [x] 3.4 CPU readback → `SlintSystem::setCameraPreviewImage`
 
 ## 4. Slint chrome
 

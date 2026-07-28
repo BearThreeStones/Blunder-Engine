@@ -162,6 +162,23 @@ class SlintSystem final : public IEditorUiPresentation {
   void setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
                         uint32_t height, bool request_composite = true);
 
+  /// Camera Preview panel (Task 6/7 binds Slint image property).
+  bool isCameraPreviewCollapsed() const { return m_camera_preview_collapsed; }
+  void setCameraPreviewCollapsed(bool collapsed) {
+    m_camera_preview_collapsed = collapsed;
+  }
+  float getCameraPreviewContentWidth() const { return m_camera_preview_content_w; }
+  float getCameraPreviewContentHeight() const {
+    return m_camera_preview_content_h;
+  }
+  void setCameraPreviewContentSize(float width, float height) {
+    m_camera_preview_content_w = width;
+    m_camera_preview_content_h = height;
+  }
+  void setCameraPreviewImage(const uint8_t* pixels_rgba, uint32_t width,
+                             uint32_t height);
+  void clearCameraPreviewImage();
+
   void setViewportImageInternal(const uint8_t* pixels_rgba, uint32_t width,
                                 uint32_t height, bool allow_during_dispatch,
                                 bool request_composite = true);
@@ -562,6 +579,14 @@ class SlintSystem final : public IEditorUiPresentation {
   static constexpr uint32_t k_maximize_layout_frames = 12;
   static constexpr uint32_t k_layout_cooldown_frames = 6;
   static constexpr uint32_t k_layout_resync_frames = 16;
+
+  bool m_camera_preview_collapsed{false};
+  float m_camera_preview_content_w{320.f};
+  float m_camera_preview_content_h{180.f};
+  std::optional<slint::SharedPixelBuffer<slint::Rgba8Pixel>>
+      m_camera_preview_pixel_buffer;
+  uint32_t m_camera_preview_image_w{0};
+  uint32_t m_camera_preview_image_h{0};
 };
 
 }  // namespace Blunder

@@ -11,6 +11,8 @@
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/function/render/overlay/editor_overlay_policy.h"
+#include "runtime/function/render/overlay/camera_preview_resolve.h"
+#include "runtime/function/render/overlay/camera_preview_rt_size.h"
 #include "runtime/function/render/player_authorship_input.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/post/ssao_pass.h"
@@ -653,6 +655,225 @@ void RenderSystem::resizeViewportReadback(uint32_t width, uint32_t height) {
   resetZeroCopyPresentState();
 }
 
+void RenderSystem::shutdownCameraPreviewResources() {
+  if (isVulkanBackend() && vkCtx(this)) {
+    vkDeviceWaitIdle(vkCtx(this)->getDevice());
+  }
+  if (m_camera_preview_staging_map && m_camera_preview_staging && vkAlloc(this)) {
+    vmaUnmapMemory(vkAlloc(this)->getAllocator(),
+                   m_camera_preview_staging->getAllocation());
+    m_camera_preview_staging_map = nullptr;
+  }
+  if (m_camera_preview_staging) {
+    m_camera_preview_staging->destroy();
+    m_camera_preview_staging.reset();
+  }
+  m_camera_preview_staging_w = 0;
+  m_camera_preview_staging_h = 0;
+  if (m_camera_preview_offscreen) {
+    if (auto* vk_target = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
+            m_camera_preview_offscreen.get())) {
+      vk_target->shutdown();
+    }
+    m_camera_preview_offscreen.reset();
+  }
+  m_camera_preview_readback_pending = false;
+}
+
+void RenderSystem::ensureCameraPreviewOffscreen(uint32_t width, uint32_t height) {
+  if (!isVulkanBackend() || width == 0 || height == 0) {
+    return;
+  }
+  if (!m_camera_preview_offscreen) {
+    rhi::OffscreenTargetDesc desc{};
+    desc.width = width;
+    desc.height = height;
+    m_camera_preview_offscreen =
+        vkBackend(this)->device().createOffscreenTarget(desc);
+    resizeCameraPreviewReadback(width, height);
+    return;
+  }
+  const rhi::Extent2D current = m_camera_preview_offscreen->extent();
+  if (current.width == width && current.height == height) {
+    return;
+  }
+  vkDeviceWaitIdle(vkCtx(this)->getDevice());
+  m_camera_preview_offscreen->resize(width, height);
+  resizeCameraPreviewReadback(width, height);
+}
+
+void RenderSystem::resizeCameraPreviewReadback(uint32_t width, uint32_t height) {
+  if (!isVulkanBackend() || !vkAlloc(this) || width == 0 || height == 0) {
+    return;
+  }
+  if (m_camera_preview_staging_map && m_camera_preview_staging) {
+    vmaUnmapMemory(vkAlloc(this)->getAllocator(),
+                   m_camera_preview_staging->getAllocation());
+    m_camera_preview_staging_map = nullptr;
+  }
+  if (m_camera_preview_staging) {
+    m_camera_preview_staging->destroy();
+    m_camera_preview_staging.reset();
+  }
+  const VkDeviceSize bytes = static_cast<VkDeviceSize>(width) * height * 4u;
+  m_camera_preview_staging = eastl::make_unique<VulkanBuffer>();
+  m_camera_preview_staging->create(vkAlloc(this), bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VMA_MEMORY_USAGE_GPU_TO_CPU);
+  const VkResult map_result = vmaMapMemory(
+      vkAlloc(this)->getAllocator(), m_camera_preview_staging->getAllocation(),
+      &m_camera_preview_staging_map);
+  if (map_result != VK_SUCCESS) {
+    m_camera_preview_staging_map = nullptr;
+  }
+  m_camera_preview_staging_w = width;
+  m_camera_preview_staging_h = height;
+}
+
+bool RenderSystem::shouldForceViewportForCameraPreview() const {
+  if (!editorOverlaysEnabled(g_runtime_global_context.hostMode())) {
+    return false;
+  }
+  if (!m_viewport_layout_source || !g_runtime_global_context.m_editor_selection ||
+      !g_runtime_global_context.m_scene_system) {
+    return false;
+  }
+  const auto* slint = static_cast<const SlintSystem*>(m_viewport_layout_source);
+  if (slint->isCameraPreviewCollapsed()) {
+    return false;
+  }
+  SceneInstance* scene = g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    return false;
+  }
+  const EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
+  const eastl::vector<EntityId> selected = selection.getSelectedIds();
+  const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
+      *scene, selection.getPrimarySelection(), selected);
+  return target.ok;
+}
+
+bool RenderSystem::recordCameraPreviewPass(
+    VkCommandBuffer command_buffer, const ForwardFrameState& main_frame_state,
+    const eastl::vector<ForwardOpaqueDraw>& opaque_draws,
+    const eastl::vector<ForwardOpaqueDraw>& transparent_draws,
+    const uint32_t frame_index, uint32_t& out_width, uint32_t& out_height) {
+  out_width = 0;
+  out_height = 0;
+  if (!editorOverlaysEnabled(g_runtime_global_context.hostMode()) ||
+      !m_viewport_layout_source || !m_forward_path) {
+    return false;
+  }
+
+  auto* slint = static_cast<SlintSystem*>(m_viewport_layout_source);
+  if (slint->isCameraPreviewCollapsed()) {
+    if (!m_camera_preview_image_cleared) {
+      slint->clearCameraPreviewImage();
+      m_camera_preview_image_cleared = true;
+    }
+    return false;
+  }
+
+  SceneInstance* scene = g_runtime_global_context.m_scene_system
+                             ? g_runtime_global_context.m_scene_system->getActiveInstance()
+                             : nullptr;
+  if (scene == nullptr || !g_runtime_global_context.m_editor_selection) {
+    return false;
+  }
+
+  const EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
+  const eastl::vector<EntityId> selected = selection.getSelectedIds();
+  const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
+      *scene, selection.getPrimarySelection(), selected);
+  if (!target.ok) {
+    if (!m_camera_preview_image_cleared) {
+      slint->clearCameraPreviewImage();
+      m_camera_preview_image_cleared = true;
+    }
+    return false;
+  }
+  m_camera_preview_image_cleared = false;
+
+  const CameraPreviewRtSize rt_size = computeCameraPreviewRtSize(
+      slint->getCameraPreviewContentWidth(), slint->getCameraPreviewContentHeight());
+  if (!rt_size.ok) {
+    return false;
+  }
+
+  ensureCameraPreviewOffscreen(rt_size.width, rt_size.height);
+  if (!m_camera_preview_offscreen || !m_camera_preview_staging) {
+    return false;
+  }
+
+  const float aspect =
+      static_cast<float>(rt_size.width) /
+      static_cast<float>(eastl::max(1u, rt_size.height));
+  const ResolvedPlayCamera cam =
+      buildCameraPreviewMatrices(*scene, target.entity_id, aspect);
+  if (!cam.ok) {
+    return false;
+  }
+
+  ForwardFrameState preview_state = main_frame_state;
+  preview_state.view = cam.view;
+  preview_state.projection = cam.projection;
+  preview_state.camera_position = cam.position;
+  preview_state.camera_forward = cam.forward;
+  preview_state.near_clip = cam.near_clip;
+  preview_state.far_clip = cam.far_clip;
+  preview_state.vertical_fov = cam.vertical_fov_radians;
+  preview_state.projection_mode = EditorCamera::ProjectionMode::perspective;
+  preview_state.shadows_enabled = false;
+  preview_state.viewport_width = rt_size.width;
+  preview_state.viewport_height = rt_size.height;
+
+  m_forward_path->renderFrameTo(
+      m_camera_preview_offscreen.get(), command_buffer, preview_state,
+      opaque_draws.data(), static_cast<uint32_t>(opaque_draws.size()),
+      transparent_draws.data(), static_cast<uint32_t>(transparent_draws.size()),
+      frame_index, false);
+
+  vulkan_backend::VulkanCommandList command_list;
+  command_list.bind(vkCtx(this), command_buffer);
+  m_camera_preview_offscreen->transitionToCopySource(command_list);
+
+  auto* preview_rt = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
+      m_camera_preview_offscreen.get());
+  OffscreenRenderTarget* native_rt = preview_rt ? preview_rt->nativeTarget() : nullptr;
+  if (native_rt != nullptr) {
+    VkBufferImageCopy copy_region{};
+    copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copy_region.imageSubresource.mipLevel = 0;
+    copy_region.imageSubresource.baseArrayLayer = 0;
+    copy_region.imageSubresource.layerCount = 1;
+    copy_region.imageExtent = {rt_size.width, rt_size.height, 1};
+    vkCmdCopyImageToBuffer(command_buffer, native_rt->getImage(),
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           m_camera_preview_staging->getBuffer(), 1, &copy_region);
+  }
+  m_camera_preview_offscreen->transitionToShaderRead(command_list);
+
+  out_width = rt_size.width;
+  out_height = rt_size.height;
+  return true;
+}
+
+void RenderSystem::tryPresentCameraPreview() {
+  if (!m_camera_preview_readback_pending || !m_viewport_layout_source ||
+      !m_camera_preview_staging_map || m_camera_preview_readback_w == 0 ||
+      m_camera_preview_readback_h == 0) {
+    return;
+  }
+  VkFence fence = vkSync(this)->getInFlightFence(m_camera_preview_readback_slot);
+  if (vkGetFenceStatus(vkCtx(this)->getDevice(), fence) != VK_SUCCESS) {
+    return;
+  }
+  static_cast<SlintSystem*>(m_viewport_layout_source)
+      ->setCameraPreviewImage(static_cast<const uint8_t*>(m_camera_preview_staging_map),
+                              m_camera_preview_readback_w,
+                              m_camera_preview_readback_h);
+  m_camera_preview_readback_pending = false;
+}
+
 VulkanTexture* RenderSystem::ensureTextureUploaded(
     const Texture2DAsset* texture_asset) {
   if (texture_asset == nullptr || !isVulkanBackend() || !vkAlloc(this)) {
@@ -815,6 +1036,8 @@ void RenderSystem::shutdown() {
     m_offscreen.reset();
   }
 
+  shutdownCameraPreviewResources();
+
   if (m_overlay_system) {
     m_overlay_system->shutdown();
     m_overlay_system.reset();
@@ -903,6 +1126,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   resizeOffscreenIfNeeded(target_width, target_height);
   flushOffscreenResizeToTarget(target_width, target_height);
   applyDeferredOffscreenResize();
+
+  tryPresentCameraPreview();
 
   const rhi::Extent2D offscreen_extent_rhi = m_offscreen->extent();
   const VkExtent2D offscreen_extent{offscreen_extent_rhi.width,
@@ -1099,6 +1324,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       !matricesNearlyEqual(projection, m_last_viewport_projection);
   const bool scene_changed =
       m_viewport_render_generation != m_last_rendered_viewport_generation;
+  if (shouldForceViewportForCameraPreview()) {
+    m_force_viewport_render = true;
+  }
   bool skip_camera_only_zero_copy = false;
   if (usesZeroCopyViewport() && m_viewport_layout_source != nullptr &&
       !m_force_viewport_render && !viewport_target_changed && !scene_changed &&
@@ -1265,6 +1493,12 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     m_offscreen->transitionToShaderRead(command_list);
   }
 
+  uint32_t preview_width = 0;
+  uint32_t preview_height = 0;
+  const bool preview_recorded = recordCameraPreviewPass(
+      command_buffer, frame_state, opaque_draws, transparent_draws, m_current_frame,
+      preview_width, preview_height);
+
   vkEndCommandBuffer(command_buffer);
 
   VkSubmitInfo submit_info{};
@@ -1273,6 +1507,13 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   submit_info.pCommandBuffers = &command_buffer;
   vkQueueSubmit(vkCtx(this)->getGraphicsQueue(), 1, &submit_info,
                 in_flight_fence);
+
+  if (preview_recorded) {
+    m_camera_preview_readback_pending = true;
+    m_camera_preview_readback_slot = m_current_frame;
+    m_camera_preview_readback_w = preview_width;
+    m_camera_preview_readback_h = preview_height;
+  }
 
   if (zero_copy_viewport) {
     notifyZeroCopySubmitted(m_current_frame, offscreen_extent.width,

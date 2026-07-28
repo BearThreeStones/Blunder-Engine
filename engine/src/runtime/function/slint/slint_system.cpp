@@ -1468,6 +1468,29 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
   setViewportImageInternal(pixels_rgba, width, height, false, request_composite);
 }
 
+void SlintSystem::setCameraPreviewImage(const uint8_t* pixels_rgba, uint32_t width,
+                                        uint32_t height) {
+  if (pixels_rgba == nullptr || width == 0 || height == 0) {
+    return;
+  }
+  const size_t byte_count = static_cast<size_t>(width) * height * 4u;
+  if (!m_camera_preview_pixel_buffer ||
+      m_camera_preview_pixel_buffer->width() != width ||
+      m_camera_preview_pixel_buffer->height() != height) {
+    m_camera_preview_pixel_buffer =
+        slint::SharedPixelBuffer<slint::Rgba8Pixel>(width, height);
+  }
+  std::memcpy(m_camera_preview_pixel_buffer->begin(), pixels_rgba, byte_count);
+  m_camera_preview_image_w = width;
+  m_camera_preview_image_h = height;
+}
+
+void SlintSystem::clearCameraPreviewImage() {
+  m_camera_preview_image_w = 0;
+  m_camera_preview_image_h = 0;
+  m_camera_preview_pixel_buffer.reset();
+}
+
 void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
                                              uint32_t layout, uint32_t width,
                                              uint32_t height,

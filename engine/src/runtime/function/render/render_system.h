@@ -55,6 +55,8 @@ class VulkanGraphicsPipeline;
 }
 
 struct Vertex;
+struct ForwardOpaqueDraw;
+struct ForwardFrameState;
 
 struct RenderSystemInitInfo {
   AssetManager* asset_manager{nullptr};
@@ -237,6 +239,28 @@ class RenderSystem final {
 
   void markViewportRenderDirty();
   void pollViewportPickIfActive();
+
+  void shutdownCameraPreviewResources();
+  void ensureCameraPreviewOffscreen(uint32_t width, uint32_t height);
+  void resizeCameraPreviewReadback(uint32_t width, uint32_t height);
+  bool shouldForceViewportForCameraPreview() const;
+  bool recordCameraPreviewPass(
+      VkCommandBuffer command_buffer, const ForwardFrameState& main_frame_state,
+      const eastl::vector<ForwardOpaqueDraw>& opaque_draws,
+      const eastl::vector<ForwardOpaqueDraw>& transparent_draws,
+      uint32_t frame_index, uint32_t& out_width, uint32_t& out_height);
+  void tryPresentCameraPreview();
+
+  eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_camera_preview_offscreen;
+  eastl::unique_ptr<VulkanBuffer> m_camera_preview_staging;
+  void* m_camera_preview_staging_map{nullptr};
+  uint32_t m_camera_preview_staging_w{0};
+  uint32_t m_camera_preview_staging_h{0};
+  bool m_camera_preview_readback_pending{false};
+  uint32_t m_camera_preview_readback_slot{0};
+  uint32_t m_camera_preview_readback_w{0};
+  uint32_t m_camera_preview_readback_h{0};
+  bool m_camera_preview_image_cleared{true};
 };
 
 }  // namespace Blunder
