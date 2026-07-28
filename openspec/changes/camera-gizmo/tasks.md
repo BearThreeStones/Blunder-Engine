@@ -33,6 +33,6 @@
 
 ## 6. Docs / QA
 
-- [ ] 6.1 Confirm `CONTEXT.md` Camera Gizmo terms match shipped behavior
+- [x] 6.1 Confirm `CONTEXT.md` Camera Gizmo terms match shipped behavior
 - [ ] 6.2 Manual checklist: draw, pick over mesh, FOV/clip undo, Align both ways, Player no gizmo
 - [ ] 6.3 OpenSpec task boxes; ready to archive after USER-VERIFY
