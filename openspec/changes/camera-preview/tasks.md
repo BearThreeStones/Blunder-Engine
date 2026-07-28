@@ -6,7 +6,7 @@
 
 ## 2. Resolve + matrices (TDD)
 
-- [ ] 2.1 Add `resolve_camera_preview_target.h` + unit test: primary-if-Camera else first selected Camera; empty → none
+- [x] 2.1 Add `resolve_camera_preview_target.h` + unit test: primary-if-Camera else first selected Camera; empty → none
 - [ ] 2.2 Add `camera_preview_matrices.h` (or reuse single-input path through `resolvePlayCamera`) + test: aspect/FOV/near/far → projection; world → view
 - [ ] 2.3 Add `camera_preview_rt_size.h` + test: longest edge clamp ≤480; preserves aspect; zero dims → skip
 
