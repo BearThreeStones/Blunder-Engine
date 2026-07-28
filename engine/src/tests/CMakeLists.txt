@@ -644,6 +644,25 @@ endif()
 add_test(NAME player_authorship_input_test
          COMMAND player_authorship_input_test)
 
+add_executable(camera_gizmo_geometry_test
+    "camera_gizmo_geometry_test.cpp"
+)
+
+target_include_directories(camera_gizmo_geometry_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+target_link_libraries(camera_gizmo_geometry_test
+    PRIVATE glm::glm-header-only
+)
+
+if(MSVC)
+    target_compile_options(camera_gizmo_geometry_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME camera_gizmo_geometry_test
+         COMMAND camera_gizmo_geometry_test)
+
 add_executable(play_camera_resolve_test
     "play_camera_resolve_test.cpp"
 )
