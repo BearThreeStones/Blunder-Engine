@@ -1,8 +1,8 @@
 ## 1. Domain + scaffolding
 
-- [ ] 1.1 Add **Camera Preview** glossary entry to `CONTEXT.md` (near Camera Gizmo / Editor Overlay)
-- [ ] 1.2 Add ADR `docs/adr/0018-camera-preview-secondary-offscreen.md` (secondary RT + second Slint image)
-- [ ] 1.3 Branch `feat/camera-preview` if not already on a feature branch
+- [x] 1.1 Add **Camera Preview** glossary entry to `CONTEXT.md` (near Camera Gizmo / Editor Overlay)
+- [x] 1.2 Add ADR `docs/adr/0018-camera-preview-secondary-offscreen.md` (secondary RT + second Slint image)
+- [x] 1.3 Branch `feat/camera-preview` if not already on a feature branch
 
 ## 2. Resolve + matrices (TDD)
 
