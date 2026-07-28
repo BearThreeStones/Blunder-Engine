@@ -54,6 +54,7 @@
 #include "runtime/function/slint/window_pointer_map.h"
 #include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
+#include "runtime/function/render/overlay/camera_preview_resolve.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/transform_edit_viewport_notify.h"
 #include "runtime/function/ui/ui_callback_binder.h"
@@ -864,6 +865,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       (void)this;
     });
 
+    component->on_camera_preview_collapse_toggled([this]() {
+      syncCameraPreviewFromSlint();
+      if (m_window_adapter) {
+        m_viewport_frame_ready = true;
+        m_window_adapter->request_redraw();
+      }
+    });
+
 
 
     component->on_hierarchy_entity_selected(UiCallbackBinder::bind(
@@ -1470,25 +1479,63 @@ void SlintSystem::setViewportImage(const uint8_t* pixels_rgba, uint32_t width,
 
 void SlintSystem::setCameraPreviewImage(const uint8_t* pixels_rgba, uint32_t width,
                                         uint32_t height) {
-  if (pixels_rgba == nullptr || width == 0 || height == 0) {
+  if (pixels_rgba == nullptr || width == 0 || height == 0 || !m_window_component) {
     return;
   }
   const size_t byte_count = static_cast<size_t>(width) * height * 4u;
-  if (!m_camera_preview_pixel_buffer ||
-      m_camera_preview_pixel_buffer->width() != width ||
-      m_camera_preview_pixel_buffer->height() != height) {
+  const bool size_changed =
+      width != m_camera_preview_image_w || height != m_camera_preview_image_h;
+  if (!m_camera_preview_pixel_buffer || size_changed) {
     m_camera_preview_pixel_buffer =
         slint::SharedPixelBuffer<slint::Rgba8Pixel>(width, height);
+    m_camera_preview_slint_image_bound = false;
   }
   std::memcpy(m_camera_preview_pixel_buffer->begin(), pixels_rgba, byte_count);
   m_camera_preview_image_w = width;
   m_camera_preview_image_h = height;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    if (!m_camera_preview_slint_image_bound) {
+      ui->set_camera_preview_image(slint::Image(*m_camera_preview_pixel_buffer));
+      m_camera_preview_slint_image_bound = true;
+    }
+    m_viewport_frame_ready = true;
+    if (size_changed) {
+      markFullSkiaRefresh();
+    } else if (slintPartialCompositeEnabled()) {
+      markViewportDirtyRegion();
+    } else {
+      markFullSkiaRefresh();
+    }
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::setCameraPreviewImage] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::setCameraPreviewImage] unknown exception");
+  }
 }
 
 void SlintSystem::clearCameraPreviewImage() {
   m_camera_preview_image_w = 0;
   m_camera_preview_image_h = 0;
   m_camera_preview_pixel_buffer.reset();
+  m_camera_preview_slint_image_bound = false;
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_window_component->operator->()->set_camera_preview_image(slint::Image());
+    m_viewport_frame_ready = true;
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+  } catch (...) {
+  }
 }
 
 void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
@@ -2919,6 +2966,92 @@ void SlintSystem::refreshEditorScenePanels() {
   syncHierarchy();
   syncInspectorFromSelection();
   syncTransformToolbarFromEngine();
+  syncCameraPreviewFromEngine();
+}
+
+void SlintSystem::syncCameraPreviewFromSlint() {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    m_camera_preview_collapsed = ui->get_camera_preview_collapsed();
+    m_camera_preview_content_w =
+        static_cast<float>(ui->get_camera_preview_content_w());
+    m_camera_preview_content_h =
+        static_cast<float>(ui->get_camera_preview_content_h());
+
+    constexpr float k_title_bar_h = 22.f;
+    const float panel_w = m_camera_preview_content_w;
+    const float panel_h = m_camera_preview_collapsed
+                              ? k_title_bar_h
+                              : (k_title_bar_h + m_camera_preview_content_h);
+
+    float host_w = static_cast<float>(m_cached_viewport_logical_rect.width);
+    float host_h = static_cast<float>(m_cached_viewport_logical_rect.height);
+    if (host_w <= 0.f || host_h <= 0.f) {
+      host_w = ui->get_viewport_width();
+      host_h = ui->get_viewport_height();
+    }
+
+    float panel_x = static_cast<float>(ui->get_camera_preview_panel_x());
+    float panel_y = static_cast<float>(ui->get_camera_preview_panel_y());
+    if (!ui->get_camera_preview_position_initialized()) {
+      panel_x = eastl::max(0.f, host_w - panel_w - 10.f);
+      panel_y = eastl::max(0.f, host_h - panel_h - 10.f);
+    }
+
+    m_camera_preview_panel_rect.x = static_cast<int32_t>(panel_x);
+    m_camera_preview_panel_rect.y = static_cast<int32_t>(panel_y);
+    m_camera_preview_panel_rect.width =
+        static_cast<uint32_t>(eastl::max(0.f, panel_w));
+    m_camera_preview_panel_rect.height =
+        static_cast<uint32_t>(eastl::max(0.f, panel_h));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncCameraPreviewFromSlint] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncCameraPreviewFromSlint] unknown exception");
+  }
+}
+
+void SlintSystem::syncCameraPreviewFromEngine() {
+  if (!m_window_component) {
+    return;
+  }
+
+  bool visible = false;
+  eastl::string title = "Camera";
+  if (const auto services = lockServices()) {
+    EditorSelectionSystem* selection = services->selection.get();
+    SceneInstance* scene =
+        services->scene ? services->scene->getActiveInstance() : nullptr;
+    if (selection && scene && selection->hasSelection()) {
+      const eastl::vector<EntityId> ids = selection->getSelectedIds();
+      const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
+          *scene, selection->getPrimarySelection(), ids);
+      if (target.ok) {
+        visible = true;
+        if (Entity* entity = scene->getEntity(target.entity_id)) {
+          title = entity->getName();
+        }
+      }
+    }
+  }
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_camera_preview_visible(visible);
+    ui->set_camera_preview_title(slint::SharedString(title.c_str()));
+    if (!visible) {
+      clearCameraPreviewImage();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncCameraPreviewFromEngine] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncCameraPreviewFromEngine] unknown exception");
+  }
 }
 
 void SlintSystem::syncTransformToolbarFromEngine() {
@@ -5384,6 +5517,8 @@ void SlintSystem::beginFrame() {
     syncDockingWorkspace();
     tickProjectionTogglePointerPoll();
     if (!defer_heavy) {
+      syncCameraPreviewFromSlint();
+      syncCameraPreviewFromEngine();
       if (const auto ui_host = m_ui_host.lock()) {
         ui_host->tickEditorPanels();
         ui_host->syncPreviewSettingsFromPresentation();
