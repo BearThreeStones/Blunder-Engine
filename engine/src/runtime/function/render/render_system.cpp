@@ -724,9 +724,94 @@ void RenderSystem::resizeCameraPreviewReadback(uint32_t width, uint32_t height) 
       &m_camera_preview_staging_map);
   if (map_result != VK_SUCCESS) {
     m_camera_preview_staging_map = nullptr;
+    m_camera_preview_readback_pending = false;
   }
   m_camera_preview_staging_w = width;
   m_camera_preview_staging_h = height;
+}
+
+void RenderSystem::clearCameraPreviewPresentation() {
+  if (m_viewport_layout_source && !m_camera_preview_image_cleared) {
+    static_cast<SlintSystem*>(m_viewport_layout_source)->clearCameraPreviewImage();
+    m_camera_preview_image_cleared = true;
+  }
+  m_camera_preview_readback_pending = false;
+}
+
+void RenderSystem::ensureCameraPreviewOffscreenIfNeeded() {
+  if (!editorOverlaysEnabled(g_runtime_global_context.hostMode()) ||
+      !m_viewport_layout_source || !isVulkanBackend()) {
+    return;
+  }
+  const auto* slint = static_cast<const SlintSystem*>(m_viewport_layout_source);
+  if (slint->isCameraPreviewCollapsed()) {
+    return;
+  }
+  if (!g_runtime_global_context.m_scene_system ||
+      !g_runtime_global_context.m_editor_selection) {
+    return;
+  }
+  SceneInstance* scene = g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    return;
+  }
+  const EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
+  const eastl::vector<EntityId> selected = selection.getSelectedIds();
+  const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
+      *scene, selection.getPrimarySelection(), selected);
+  if (!target.ok) {
+    return;
+  }
+  const CameraPreviewRtSize rt_size = computeCameraPreviewRtSize(
+      slint->getCameraPreviewContentWidth(), slint->getCameraPreviewContentHeight());
+  if (!rt_size.ok) {
+    return;
+  }
+  ensureCameraPreviewOffscreen(rt_size.width, rt_size.height);
+}
+
+void RenderSystem::syncCameraPreviewSkipClear() {
+  if (!editorOverlaysEnabled(g_runtime_global_context.hostMode()) ||
+      !m_viewport_layout_source) {
+    return;
+  }
+  auto* slint = static_cast<SlintSystem*>(m_viewport_layout_source);
+  if (slint->isCameraPreviewCollapsed()) {
+    clearCameraPreviewPresentation();
+    return;
+  }
+  if (!g_runtime_global_context.m_scene_system ||
+      !g_runtime_global_context.m_editor_selection) {
+    clearCameraPreviewPresentation();
+    return;
+  }
+  SceneInstance* scene = g_runtime_global_context.m_scene_system->getActiveInstance();
+  if (scene == nullptr) {
+    clearCameraPreviewPresentation();
+    return;
+  }
+  const EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
+  const eastl::vector<EntityId> selected = selection.getSelectedIds();
+  const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
+      *scene, selection.getPrimarySelection(), selected);
+  if (!target.ok) {
+    clearCameraPreviewPresentation();
+    return;
+  }
+  const CameraPreviewRtSize rt_size = computeCameraPreviewRtSize(
+      slint->getCameraPreviewContentWidth(), slint->getCameraPreviewContentHeight());
+  if (!rt_size.ok) {
+    clearCameraPreviewPresentation();
+    return;
+  }
+  const float aspect =
+      static_cast<float>(rt_size.width) /
+      static_cast<float>(eastl::max(1u, rt_size.height));
+  const ResolvedPlayCamera cam =
+      buildCameraPreviewMatrices(*scene, target.entity_id, aspect);
+  if (!cam.ok) {
+    clearCameraPreviewPresentation();
+  }
 }
 
 bool RenderSystem::shouldForceViewportForCameraPreview() const {
@@ -755,7 +840,7 @@ bool RenderSystem::shouldForceViewportForCameraPreview() const {
 bool RenderSystem::recordCameraPreviewPass(
     VkCommandBuffer command_buffer, const ForwardFrameState& main_frame_state,
     const eastl::vector<ForwardOpaqueDraw>& opaque_draws,
-    const eastl::vector<ForwardOpaqueDraw>& transparent_draws,
+    const eastl::vector<ForwardOpaqueDraw>& /*transparent_draws*/,
     const uint32_t frame_index, uint32_t& out_width, uint32_t& out_height) {
   out_width = 0;
   out_height = 0;
@@ -766,10 +851,7 @@ bool RenderSystem::recordCameraPreviewPass(
 
   auto* slint = static_cast<SlintSystem*>(m_viewport_layout_source);
   if (slint->isCameraPreviewCollapsed()) {
-    if (!m_camera_preview_image_cleared) {
-      slint->clearCameraPreviewImage();
-      m_camera_preview_image_cleared = true;
-    }
+    clearCameraPreviewPresentation();
     return false;
   }
 
@@ -777,6 +859,7 @@ bool RenderSystem::recordCameraPreviewPass(
                              ? g_runtime_global_context.m_scene_system->getActiveInstance()
                              : nullptr;
   if (scene == nullptr || !g_runtime_global_context.m_editor_selection) {
+    clearCameraPreviewPresentation();
     return false;
   }
 
@@ -785,22 +868,20 @@ bool RenderSystem::recordCameraPreviewPass(
   const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
       *scene, selection.getPrimarySelection(), selected);
   if (!target.ok) {
-    if (!m_camera_preview_image_cleared) {
-      slint->clearCameraPreviewImage();
-      m_camera_preview_image_cleared = true;
-    }
+    clearCameraPreviewPresentation();
     return false;
   }
-  m_camera_preview_image_cleared = false;
 
   const CameraPreviewRtSize rt_size = computeCameraPreviewRtSize(
       slint->getCameraPreviewContentWidth(), slint->getCameraPreviewContentHeight());
   if (!rt_size.ok) {
+    clearCameraPreviewPresentation();
     return false;
   }
 
-  ensureCameraPreviewOffscreen(rt_size.width, rt_size.height);
-  if (!m_camera_preview_offscreen || !m_camera_preview_staging) {
+  if (!m_camera_preview_offscreen || !m_camera_preview_staging ||
+      !m_camera_preview_staging_map) {
+    clearCameraPreviewPresentation();
     return false;
   }
 
@@ -810,8 +891,10 @@ bool RenderSystem::recordCameraPreviewPass(
   const ResolvedPlayCamera cam =
       buildCameraPreviewMatrices(*scene, target.entity_id, aspect);
   if (!cam.ok) {
+    clearCameraPreviewPresentation();
     return false;
   }
+  m_camera_preview_image_cleared = false;
 
   ForwardFrameState preview_state = main_frame_state;
   preview_state.view = cam.view;
@@ -826,10 +909,54 @@ bool RenderSystem::recordCameraPreviewPass(
   preview_state.viewport_width = rt_size.width;
   preview_state.viewport_height = rt_size.height;
 
+  eastl::vector<OpaqueMeshDraw> sorted_transparent = m_transparent_mesh_draws;
+  for (OpaqueMeshDraw& mesh_draw : sorted_transparent) {
+    const glm::vec3 world_position =
+        glm::vec3(mesh_draw.model * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    mesh_draw.sort_depth = glm::length(world_position - cam.position);
+  }
+  std::sort(sorted_transparent.begin(), sorted_transparent.end(),
+            [](const OpaqueMeshDraw& a, const OpaqueMeshDraw& b) {
+              return a.sort_depth > b.sort_depth;
+            });
+
+  eastl::vector<ForwardOpaqueDraw> preview_transparent_draws;
+  preview_transparent_draws.reserve(sorted_transparent.size());
+  for (const OpaqueMeshDraw& mesh_draw : sorted_transparent) {
+    if (mesh_draw.gpu_mesh == nullptr) {
+      continue;
+    }
+    VulkanBuffer* vertex_buffer = mesh_draw.gpu_mesh->getVertexBuffer();
+    VulkanBuffer* index_buffer = mesh_draw.gpu_mesh->getIndexBuffer();
+    const uint32_t index_count = mesh_draw.gpu_mesh->getIndexCount();
+    if (vertex_buffer == nullptr || index_buffer == nullptr || index_count == 0) {
+      continue;
+    }
+    const glm::mat4& model = mesh_draw.model;
+    ForwardOpaqueDraw draw{};
+    draw.slot_index = mesh_draw.slot_index;
+    draw.vertex_buffer = vertex_buffer;
+    draw.index_buffer = index_buffer;
+    draw.index_count = index_count;
+    draw.model = model;
+    draw.normal_matrix =
+        glm::mat4(glm::transpose(glm::inverse(glm::mat3(model))));
+    draw.material = mesh_draw.material.get();
+    draw.base_color_texture = mesh_draw.base_color_texture;
+    draw.metallic_roughness_texture = mesh_draw.metallic_roughness_texture;
+    draw.normal_texture = mesh_draw.normal_texture;
+    draw.occlusion_texture = mesh_draw.occlusion_texture;
+    draw.alpha_cutoff = mesh_draw.alpha_cutoff;
+    draw.alpha_mode = mesh_draw.alpha_mode;
+    draw.double_sided = mesh_draw.double_sided;
+    preview_transparent_draws.push_back(draw);
+  }
+
   m_forward_path->renderFrameTo(
       m_camera_preview_offscreen.get(), command_buffer, preview_state,
       opaque_draws.data(), static_cast<uint32_t>(opaque_draws.size()),
-      transparent_draws.data(), static_cast<uint32_t>(transparent_draws.size()),
+      preview_transparent_draws.data(),
+      static_cast<uint32_t>(preview_transparent_draws.size()),
       frame_index, false);
 
   vulkan_backend::VulkanCommandList command_list;
@@ -861,6 +988,11 @@ void RenderSystem::tryPresentCameraPreview() {
   if (!m_camera_preview_readback_pending || !m_viewport_layout_source ||
       !m_camera_preview_staging_map || m_camera_preview_readback_w == 0 ||
       m_camera_preview_readback_h == 0) {
+    return;
+  }
+  auto* slint = static_cast<SlintSystem*>(m_viewport_layout_source);
+  if (slint->isCameraPreviewCollapsed()) {
+    clearCameraPreviewPresentation();
     return;
   }
   VkFence fence = vkSync(this)->getInFlightFence(m_camera_preview_readback_slot);
@@ -1126,6 +1258,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   resizeOffscreenIfNeeded(target_width, target_height);
   flushOffscreenResizeToTarget(target_width, target_height);
   applyDeferredOffscreenResize();
+  ensureCameraPreviewOffscreenIfNeeded();
+  syncCameraPreviewSkipClear();
 
   tryPresentCameraPreview();
 

@@ -242,7 +242,10 @@ class RenderSystem final {
 
   void shutdownCameraPreviewResources();
   void ensureCameraPreviewOffscreen(uint32_t width, uint32_t height);
+  void ensureCameraPreviewOffscreenIfNeeded();
   void resizeCameraPreviewReadback(uint32_t width, uint32_t height);
+  void clearCameraPreviewPresentation();
+  void syncCameraPreviewSkipClear();
   bool shouldForceViewportForCameraPreview() const;
   bool recordCameraPreviewPass(
       VkCommandBuffer command_buffer, const ForwardFrameState& main_frame_state,
