@@ -32,6 +32,8 @@
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/align_camera_actions.h"
+#include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/inspector_transform_ops.h"
 #include "runtime/function/editor/viewport_pick_system.h"
@@ -846,6 +848,22 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_play_stop_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playStop));
+        }));
+    component->on_anim_preview_play_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewPlay));
+        }));
+    component->on_anim_preview_pause_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewPause));
+        }));
+    component->on_anim_preview_stop_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewStop));
+        }));
+    component->on_anim_preview_loop_toggled(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewLoopToggle));
         }));
     component->on_play_dirty_save_and_play(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
@@ -3097,6 +3115,24 @@ void SlintSystem::syncTransformToolbarFromEngine() {
       ui->set_play_stop_enabled(session->stopEnabled());
       ui->set_play_session_paused(session->state() ==
                                   PlaySessionState::Paused);
+    }
+    if (AnimationPreviewController* preview =
+            g_runtime_global_context.m_animation_preview.get()) {
+      if (g_runtime_global_context.m_editor_selection &&
+          g_runtime_global_context.m_scene_system) {
+        SceneInstance* scene =
+            g_runtime_global_context.m_scene_system->getActiveInstance();
+        if (g_runtime_global_context.m_editor_selection->isDirty()) {
+          preview->bindSelection(
+              scene, g_runtime_global_context.m_editor_selection->getSelection());
+          g_runtime_global_context.m_editor_selection->clearDirty();
+        }
+      }
+      ui->set_anim_preview_enabled(preview->playEnabled());
+      ui->set_anim_preview_pause_enabled(preview->pauseEnabled());
+      ui->set_anim_preview_stop_enabled(preview->stopEnabled());
+      ui->set_anim_preview_paused(preview->isPaused());
+      ui->set_anim_preview_looping(preview->isLooping());
     }
   } catch (...) {
   }

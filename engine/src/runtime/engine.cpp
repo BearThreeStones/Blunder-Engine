@@ -24,6 +24,7 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/script/animation_frame.h"
@@ -418,6 +419,10 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 
     if (g_runtime_global_context.m_scene_system) {
       g_runtime_global_context.m_scene_system->tick(delta_time);
+      if (g_runtime_global_context.hostMode() == EngineHostMode::Editor &&
+          g_runtime_global_context.m_animation_preview) {
+        g_runtime_global_context.m_animation_preview->tick(delta_time);
+      }
       if (g_runtime_global_context.m_render_system &&
           g_runtime_global_context.m_scene_system->getActiveInstance()) {
         syncSceneToRender(g_runtime_global_context.m_render_system.get(),

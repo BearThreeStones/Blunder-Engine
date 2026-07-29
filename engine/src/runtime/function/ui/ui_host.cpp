@@ -2,6 +2,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/editor/align_camera_actions.h"
+#include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -141,6 +142,12 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       m_panels.markDirty(EditorPanelDirty::inspector);
       m_panels.markDirty(EditorPanelDirty::hierarchy);
+      if (AnimationPreviewController* preview =
+              g_runtime_global_context.m_animation_preview.get()) {
+        SceneInstance* scene =
+            services.scene ? services.scene->getActiveInstance() : nullptr;
+        preview->bindSelection(scene, services.selection->getPrimarySelection());
+      }
       break;
     }
     case UiEventKind::toggleHierarchyNode: {
@@ -200,6 +207,10 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       break;
     }
     case UiEventKind::play: {
+      if (AnimationPreviewController* preview =
+              g_runtime_global_context.m_animation_preview.get()) {
+        preview->stop();
+      }
       PlaySessionController* session =
           g_runtime_global_context.m_play_session.get();
       FileSystem* fs = g_runtime_global_context.m_file_system.get();
@@ -284,6 +295,57 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (session != nullptr) {
         session->stop();
       }
+      break;
+    }
+    case UiEventKind::animPreviewPlay: {
+      AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      if (preview == nullptr) {
+        break;
+      }
+      if (!preview->play()) {
+        break;
+      }
+      if (services.render_system) {
+        services.render_system->requestViewportRedraw();
+      }
+      break;
+    }
+    case UiEventKind::animPreviewPause: {
+      AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      if (preview == nullptr) {
+        break;
+      }
+      if (preview->isPaused()) {
+        preview->resume();
+      } else {
+        preview->pause();
+      }
+      if (services.render_system) {
+        services.render_system->requestViewportRedraw();
+      }
+      break;
+    }
+    case UiEventKind::animPreviewStop: {
+      AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      if (preview == nullptr) {
+        break;
+      }
+      preview->stop();
+      if (services.render_system) {
+        services.render_system->requestViewportRedraw();
+      }
+      break;
+    }
+    case UiEventKind::animPreviewLoopToggle: {
+      AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      if (preview == nullptr) {
+        break;
+      }
+      preview->toggleLoop();
       break;
     }
     case UiEventKind::browserRefresh:

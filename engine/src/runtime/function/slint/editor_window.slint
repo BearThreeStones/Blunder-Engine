@@ -7,6 +7,7 @@ import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
+import { AnimationPreviewToolbar } from "animation_preview_toolbar.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
 import { InspectorPanel, BehaviourRow } from "inspector_panel.slint";
 import { FloatingPanelWindow } from "floating_panel_window.slint";
@@ -163,6 +164,17 @@ export component MainEditorWindow inherits Window {
     in property <bool> play-pause-enabled: false;
     in property <bool> play-stop-enabled: false;
     in property <bool> play-session-paused: false;
+
+    callback anim-preview-play-requested();
+    callback anim-preview-pause-requested();
+    callback anim-preview-stop-requested();
+    callback anim-preview-loop-toggled();
+    in property <bool> anim-preview-enabled: false;
+    in property <bool> anim-preview-pause-enabled: false;
+    in property <bool> anim-preview-stop-enabled: false;
+    in property <bool> anim-preview-paused: false;
+    in property <bool> anim-preview-looping: false;
+
     in-out property <bool> play-dirty-dialog-visible: false;
     callback play-dirty-save-and-play();
     callback play-dirty-play-last-saved();
@@ -396,6 +408,18 @@ export component MainEditorWindow inherits Window {
                             gizmo-space-toggled => {
                                 root.gizmo-space-toggled();
                             }
+                        }
+
+                        AnimationPreviewToolbar {
+                            preview-enabled: root.anim-preview-enabled;
+                            preview-pause-enabled: root.anim-preview-pause-enabled;
+                            preview-stop-enabled: root.anim-preview-stop-enabled;
+                            preview-paused: root.anim-preview-paused;
+                            preview-looping: root.anim-preview-looping;
+                            preview-play-requested => { root.anim-preview-play-requested(); }
+                            preview-pause-requested => { root.anim-preview-pause-requested(); }
+                            preview-stop-requested => { root.anim-preview-stop-requested(); }
+                            preview-loop-toggled => { root.anim-preview-loop-toggled(); }
                         }
 
                         CameraPreviewPanel {

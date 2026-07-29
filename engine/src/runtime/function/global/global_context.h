@@ -38,6 +38,7 @@ class WindowSystem;
 class LayerStack;
 class DotNetHost;
 class PlaySessionController;
+class AnimationPreviewController;
 // class ParticleManager;
 
 struct EngineInitParams;
@@ -92,6 +93,8 @@ class RuntimeGlobalContext {
   eastl::unique_ptr<DotNetHost> m_dotnet_host;
   /// Editor Play session (spawn engine_player + IPC). Null in Player host mode.
   eastl::unique_ptr<PlaySessionController> m_play_session;
+  /// Edit Mode AnimationPlayer viewport preview (no DotNetHost).
+  eastl::unique_ptr<AnimationPreviewController> m_animation_preview;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
 
  private:

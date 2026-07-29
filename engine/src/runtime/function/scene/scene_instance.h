@@ -109,6 +109,7 @@ class SceneInstance final {
 
   Object* findBoundObject(EntityId entity_id) const;
   Object* ensureBoundObject(EntityId entity_id);
+  eastl::string getDefaultAnimationClipName(EntityId entity_id) const;
   /// Walks entity parents for a bound Object with a Skeleton.
   Skeleton* findSkeletonForEntity(EntityId entity_id) const;
 
@@ -131,6 +132,7 @@ class SceneInstance final {
   eastl::unordered_map<EntityId, CameraComponent> m_cameras;
   /// Objects created for Behaviour-bearing entities; destroyed on clear().
   eastl::vector<ObjectId> m_bound_object_ids;
+  eastl::unordered_map<EntityId, eastl::string> m_default_animation_clip_names;
   AABB m_world_bounds{};
   bool m_has_world_bounds{false};
   bool m_world_matrices_dirty{true};

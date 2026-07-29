@@ -4,7 +4,9 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/scene/scene_serializer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -58,6 +60,18 @@ void SceneInstance::instantiate(const Scene& scene) {
       if (definition.has_skeleton) {
         object->ensureSkeleton();
       }
+      if (!definition.animation_player_clips.empty()) {
+        AnimationPlayer* player = object->ensureAnimationPlayer();
+        wireAnimationPlayerAssetResolver(*player);
+        for (const SceneEntityDefinition::AnimationClipBinding& binding :
+             definition.animation_player_clips) {
+          player->setClipGuid(binding.name, binding.guid);
+          if (m_default_animation_clip_names.find(id) ==
+              m_default_animation_clip_names.end()) {
+            m_default_animation_clip_names[id] = binding.name;
+          }
+        }
+      }
       for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
         if (!object->restoreBehaviour(decl.id, decl.type)) {
           LOG_WARN(
@@ -107,6 +121,7 @@ void SceneInstance::clear() {
     ObjectDB::destroy(object_id);
   }
   m_bound_object_ids.clear();
+  m_default_animation_clip_names.clear();
 
   m_entities.clear();
   m_world_matrices.clear();
@@ -338,6 +353,15 @@ void SceneInstance::tick(float delta_time) {
   if (m_world_matrices_dirty) {
     rebuildWorldMatrices();
   }
+}
+
+eastl::string SceneInstance::getDefaultAnimationClipName(
+    EntityId entity_id) const {
+  const auto it = m_default_animation_clip_names.find(entity_id);
+  if (it == m_default_animation_clip_names.end()) {
+    return eastl::string();
+  }
+  return it->second;
 }
 
 Object* SceneInstance::findBoundObject(EntityId entity_id) const {

@@ -35,6 +35,7 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/project/play_session_controller.h"
@@ -349,6 +350,7 @@ void RuntimeGlobalContext::startSystems(
     m_ui_host->bindEditorServices(ui_handles);
 
     m_play_session = eastl::make_unique<PlaySessionController>();
+    m_animation_preview = eastl::make_unique<AnimationPreviewController>();
   }
 
   m_input_system = eastl::make_shared<InputSystem>();
@@ -370,6 +372,7 @@ void RuntimeGlobalContext::shutdownSystems() {
     m_play_session->stop();
     m_play_session.reset();
   }
+  m_animation_preview.reset();
 
   // Tear down CoreCLR before other systems that scripts may have touched.
   if (m_dotnet_host) {

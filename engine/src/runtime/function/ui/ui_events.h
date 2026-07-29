@@ -38,6 +38,10 @@ enum class UiEventKind : uint8_t {
   playDirtySaveAndPlay,
   playDirtyPlayLastSaved,
   playDirtyCancel,
+  animPreviewPlay,
+  animPreviewPause,
+  animPreviewStop,
+  animPreviewLoopToggle,
   alignViewToCamera,
   alignCameraToView,
 };
