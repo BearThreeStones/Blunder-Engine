@@ -1111,6 +1111,7 @@ add_executable(asset_manager_fast_path_test
 
 target_link_libraries(asset_manager_fast_path_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(asset_manager_fast_path_test
@@ -1199,6 +1200,7 @@ add_executable(asset_import_test
 
 target_link_libraries(asset_import_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(asset_import_test
@@ -1222,6 +1224,7 @@ add_executable(asset_pipeline_smoke_test
 
 target_link_libraries(asset_pipeline_smoke_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(asset_pipeline_smoke_test

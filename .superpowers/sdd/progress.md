@@ -5,14 +5,14 @@ Worktree: E:/Dev/Blunder-Engine/.worktrees/dogwalk-animation-phase-1
 Models: composer-2.5 only for implementer/reviewer subagents
 
 Task 1.1: complete (commits cd8e051..6544e20, review Approved; model=composer-2.5)
-  Minor (defer): tests not executed (Slint); CONTENT_LAYOUT FBX→glTF ahead of code until 1.2
-
 Task 1.2: complete (commits 6544e20..7ab6dc7, review Approved; model=composer-2.5)
-  Minor: no FBX e2e; tests not run; legacy dae path until 1.4
-
 Task 1.3: complete (commit f1a7a7f; model=composer-2.5)
-  glTF/GLB primary Fast Path + Cook; legacy dae Assimp retained; tests not run (Slint)
+Task 1.4: complete (commits f1a7a7f..1635a68, review Approved; model=composer-2.5)
+Task 1.5: complete (commits 1635a68..9460917, review Approved; model=composer-2.5)
 
-Task 1.4: complete (pending commit; model=composer-2.5)
-  dae→glTF GUID-preserving migration on scan/open; fail-soft; tests not run (Slint)
+## Group 1 (pipeline flip) COMPLETE + VERIFIED
+
+Build note: worktree Slint cargo OOM — build with /p:BuildProjectReferences=false using main .cmake_deps/slint-build + local Slint fork header patches synced from main working tree.
+Tests run (exit 0): asset_import_test, asset_manager_fast_path_test, asset_pipeline_smoke_test
+Follow-up: link blunder_engine_c_static into those three test targets (pre-existing LNK2019).
 
