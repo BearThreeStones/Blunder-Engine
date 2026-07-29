@@ -35,6 +35,7 @@ bool startsWithPrefix(const eastl::string& value, const char* prefix) {
 bool isScannableDescriptor(const eastl::string& virtual_path) {
   return endsWith(virtual_path, ".mesh.yaml") ||
          endsWith(virtual_path, ".texture.yaml") ||
+         endsWith(virtual_path, ".animation.yaml") ||
          endsWith(virtual_path, ".scene.asset");
 }
 

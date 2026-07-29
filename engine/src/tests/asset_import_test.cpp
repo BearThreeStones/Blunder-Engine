@@ -1730,6 +1730,168 @@ void reimportFromArchivedObjRegeneratesGltfIntermediate() {
   fs::remove_all(external.parent_path());
 }
 
+// Task 2.3: mesh Reimport refreshes clip YAML while preserving clip GUIDs.
+void reimportPreservesAnimationClipGuidsAndRefreshesYaml() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_reimport_dual_anim_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "rig.gltf";
+  writeDualAnimationGltfFixture(external);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, nullptr, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const ImportResult imported =
+      import_service.importMesh(external, "assets/Meshes", settings);
+  expect_true("clip reimport fixture: mesh import succeeds", imported.success);
+  expect_true("clip reimport fixture: two clips extracted",
+              imported.animation_clips.size() == 2);
+
+  const eastl::string mesh_guid = imported.guid;
+  const eastl::string idle_guid = imported.animation_clips[0].guid;
+  const eastl::string walk_guid = imported.animation_clips[1].guid;
+  expect_true("clip reimport fixture: clip guids captured",
+              !idle_guid.empty() && !walk_guid.empty() &&
+                  idle_guid != walk_guid);
+
+  eastl::string mesh_desc_rel = imported.descriptor_virtual_path;
+  if (startsWith(mesh_desc_rel, "assets/")) {
+    mesh_desc_rel.erase(0, 7);
+  }
+  const fs::path mesh_descriptor_absolute =
+      file_system.resolveAsset(fs::path(mesh_desc_rel.c_str()));
+  eastl::string mesh_yaml;
+  expect_true("clip reimport fixture: read mesh descriptor",
+              file_system.readText(mesh_descriptor_absolute, mesh_yaml));
+  MeshAssetDescriptor mesh_descriptor{};
+  expect_true("clip reimport fixture: parse mesh descriptor",
+              AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  const fs::path mesh_gltf_absolute =
+      resolveResourcesVirtual(mesh_descriptor.source);
+  expect_true("clip reimport fixture: mesh glTF exists",
+              file_system.exists(mesh_gltf_absolute));
+
+  for (const ImportResult& clip : imported.animation_clips) {
+    eastl::string desc_rel = clip.descriptor_virtual_path;
+    if (startsWith(desc_rel, "assets/")) {
+      desc_rel.erase(0, 7);
+    }
+    const fs::path descriptor_absolute =
+        file_system.resolveAsset(fs::path(desc_rel.c_str()));
+    eastl::string descriptor_yaml;
+    expect_true("clip reimport fixture: read clip descriptor",
+                file_system.readText(descriptor_absolute, descriptor_yaml));
+    AnimationClipAssetDescriptor clip_descriptor{};
+    expect_true("clip reimport fixture: parse clip descriptor",
+                AssetYaml::parseAnimationClipDescriptor(descriptor_yaml,
+                                                        clip_descriptor));
+
+    const fs::path clip_intermediate_absolute =
+        resolveResourcesVirtual(clip_descriptor.source);
+    writeTextFile(clip_intermediate_absolute, "STALE_CLIP_MARKER");
+    expect_true("clip reimport fixture: stamped stale clip yaml",
+                readTextFile(clip_intermediate_absolute) == "STALE_CLIP_MARKER");
+  }
+
+  expect_true("clip reimport: requestReimport succeeds",
+              import_service.requestReimport(mesh_guid));
+
+  expect_true("clip reimport preserves mesh GUID",
+              registry.resolveGuid(mesh_guid) ==
+                  imported.descriptor_virtual_path);
+  expect_true("clip reimport preserves idle clip GUID",
+              registry.resolveGuid(idle_guid) ==
+                  imported.animation_clips[0].descriptor_virtual_path);
+  expect_true("clip reimport preserves walk clip GUID",
+              registry.resolveGuid(walk_guid) ==
+                  imported.animation_clips[1].descriptor_virtual_path);
+
+  bool refreshed_idle = false;
+  bool refreshed_walk = false;
+  for (const ImportResult& clip : imported.animation_clips) {
+    eastl::string desc_rel = clip.descriptor_virtual_path;
+    if (startsWith(desc_rel, "assets/")) {
+      desc_rel.erase(0, 7);
+    }
+    const fs::path descriptor_absolute =
+        file_system.resolveAsset(fs::path(desc_rel.c_str()));
+    eastl::string descriptor_yaml;
+    expect_true("clip reimport: read clip descriptor after",
+                file_system.readText(descriptor_absolute, descriptor_yaml));
+    AnimationClipAssetDescriptor clip_descriptor{};
+    expect_true("clip reimport: parse clip descriptor after",
+                AssetYaml::parseAnimationClipDescriptor(descriptor_yaml,
+                                                        clip_descriptor));
+    expect_true("clip reimport: clip descriptor guid unchanged",
+                clip_descriptor.guid == clip.guid);
+
+    const fs::path clip_intermediate_absolute =
+        resolveResourcesVirtual(clip_descriptor.source);
+    const std::string clip_yaml_after =
+        readTextFile(clip_intermediate_absolute);
+    expect_true("clip reimport: clip yaml refreshed (not stale marker)",
+                clip_yaml_after != "STALE_CLIP_MARKER");
+
+    AnimationClipData clip_data{};
+    expect_true("clip reimport: parse refreshed clip yaml",
+                AssetYaml::parseAnimationClipData(
+                    eastl::string(clip_yaml_after.c_str()), clip_data));
+    if (clip_data.name == "idle") {
+      refreshed_idle = true;
+      expect_true("clip reimport: idle duration from glTF",
+                  clip_data.duration == 1.0f);
+    } else if (clip_data.name == "walk") {
+      refreshed_walk = true;
+      expect_true("clip reimport: walk duration from glTF",
+                  clip_data.duration == 0.5f);
+    }
+  }
+
+  expect_true("clip reimport refreshed idle clip", refreshed_idle);
+  expect_true("clip reimport refreshed walk clip", refreshed_walk);
+
+  import_service.shutdown();
+  compiler.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
 }  // namespace
 
 int main() {
@@ -1737,6 +1899,7 @@ int main() {
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
   importGltfWithTwoAnimationsRegistersMeshAndClips();
+  reimportPreservesAnimationClipGuidsAndRefreshesYaml();
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
   importGltfIntermediateDirectNotSourceExport();

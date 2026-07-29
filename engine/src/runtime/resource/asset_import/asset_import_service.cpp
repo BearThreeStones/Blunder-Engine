@@ -375,6 +375,54 @@ bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
   return true;
 }
 
+eastl::string meshStemFromMeshDescriptorVirtual(
+    const eastl::string& descriptor_virtual) {
+  size_t slash = eastl::string::npos;
+  for (size_t i = descriptor_virtual.size(); i > 0; --i) {
+    const char c = descriptor_virtual[i - 1];
+    if (c == '/' || c == '\\') {
+      slash = i - 1;
+      break;
+    }
+  }
+  const size_t name_start = slash == eastl::string::npos ? 0 : slash + 1;
+  eastl::string filename = descriptor_virtual.substr(name_start);
+  constexpr const char* kMeshSuffix = ".mesh.yaml";
+  const size_t suffix_length = std::strlen(kMeshSuffix);
+  if (filename.size() >= suffix_length &&
+      filename.compare(filename.size() - suffix_length, suffix_length,
+                       kMeshSuffix) == 0) {
+    filename.erase(filename.size() - suffix_length);
+  }
+  return filename;
+}
+
+void refreshMeshAnimationClipsFromIntermediate(
+    FileSystem* file_system, AssetRegistry* asset_registry,
+    ContentBrowserSystem* content_browser,
+    const eastl::string& descriptor_virtual, const MeshAssetDescriptor& mesh,
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
+  if (!mesh.import.animations || mesh.source.empty() ||
+      !make_unique_descriptor_name) {
+    return;
+  }
+
+  const eastl::string mesh_stem = meshStemFromMeshDescriptorVirtual(descriptor_virtual);
+  if (mesh_stem.empty()) {
+    return;
+  }
+
+  const ExistingAnimationClipMap existing_clips =
+      collectExistingAnimationClipsForMesh(file_system, asset_registry,
+                                           mesh_stem);
+  const fs::path gltf_absolute =
+      resolveResourcesVirtualPath(file_system, mesh.source);
+
+  refreshAnimationClipsFromGltf(file_system, asset_registry, content_browser,
+                                gltf_absolute, mesh_stem, existing_clips,
+                                make_unique_descriptor_name);
+}
+
 bool endsWithIgnoreCase(const eastl::string& value, const char* suffix) {
   const size_t suffix_length = std::strlen(suffix);
   if (value.size() < suffix_length) {
@@ -884,6 +932,18 @@ bool AssetImportService::requestReimports(
           "[AssetImport] requestReimport: Intermediate refresh failed for "
           "guid={} (GUID preserved; still invalidating Finals)",
           guid.c_str());
+    } else {
+      MeshAssetDescriptor mesh_descriptor{};
+      if (AssetYaml::parseMeshDescriptor(yaml_text, mesh_descriptor)) {
+        const MakeUniqueDescriptorNameFn make_name =
+            [this](const eastl::string& folder, const eastl::string& name_stem,
+                   const char* suffix) {
+              return makeUniqueDescriptorName(folder, name_stem, suffix);
+            };
+        refreshMeshAnimationClipsFromIntermediate(
+            m_file_system, m_asset_registry, m_content_browser,
+            descriptor_virtual, mesh_descriptor, make_name);
+      }
     }
 
     LOG_INFO("[AssetImport] requestReimport guid={} descriptor={}",

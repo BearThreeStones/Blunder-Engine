@@ -22,3 +22,6 @@ Task 2.1: complete (commit 1cfd979, review Approved; model=composer-2.5)
   Minor: round-trip tests shallow on float equality; scale channel untested
 
 Task 2.2: complete — glTF Import extracts AnimationClip YAML via cgltf (gltf_animation_clip_extractor); importMeshIntermediate + importMeshSourceExport register clips under assets/Animations/; ImportResult.animation_clips; asset_import_test dual-animation fixture (idle STEP→Constant, walk LINEAR).
+Task 2.2: complete (commit 6f422c0, review Approved; model=composer-2.5)
+
+Task 2.3: complete — mesh Reimport calls refreshAnimationClipsFromGltf with filesystem-discovered clip bindings (name→GUID); overwrites Intermediate YAML preserving GUIDs; orphan clips left in place + logged; registry scan includes .animation.yaml; asset_import_test reimportPreservesAnimationClipGuidsAndRefreshesYaml.

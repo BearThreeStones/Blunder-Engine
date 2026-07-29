@@ -6,6 +6,8 @@
 
 #include <cgltf.h>
 
+#include "EASTL/hash_set.h"
+
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
@@ -31,6 +33,22 @@ eastl::string joinVirtualPath(const eastl::string& folder,
 bool isValidCharForClipName(char c) {
   return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_' ||
          c == '-';
+}
+
+void normalizeVirtualPathSlashes(eastl::string& path) {
+  for (char& c : path) {
+    if (c == '\\') {
+      c = '/';
+    }
+  }
+}
+
+bool endsWithLiteral(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  return value.compare(value.size() - suffix_length, suffix_length, suffix) == 0;
 }
 
 eastl::string sanitizeClipName(const char* raw_name, size_t fallback_index) {
@@ -271,6 +289,7 @@ eastl::string makeUniqueIntermediateClipVirtualPath(
                               file_name.c_str();
     eastl::string virtual_path("resources/");
     virtual_path.append(relative.generic_string().c_str());
+    normalizeVirtualPathSlashes(virtual_path);
     if (intermediateClipExists(file_system, content_browser, virtual_path)) {
       return eastl::string();
     }
@@ -302,23 +321,38 @@ fs::path resolveResourcesVirtualPath(FileSystem* file_system,
   return file_system->resolveResource(fs::path(relative.c_str()));
 }
 
+fs::path resolveDescriptorAbsolute(FileSystem* file_system,
+                                   const eastl::string& descriptor_virtual) {
+  eastl::string relative = descriptor_virtual;
+  if (relative.compare(0, 7, "assets/") == 0) {
+    relative.erase(0, 7);
+  }
+  return file_system->resolveAsset(fs::path(relative.c_str()));
+}
+
 ImportResult registerSingleAnimationClip(
     FileSystem* file_system, AssetRegistry* asset_registry,
     ContentBrowserSystem* content_browser, const eastl::string& mesh_stem,
     const eastl::string& clip_stem, const AnimationClipData& clip_data,
-    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
+    const ExistingAnimationClipBinding* existing_binding = nullptr) {
   ImportResult result{};
   if (file_system == nullptr || asset_registry == nullptr ||
       !make_unique_descriptor_name) {
     return result;
   }
 
-  const eastl::string intermediate_virtual = makeUniqueIntermediateClipVirtualPath(
-      file_system, content_browser, mesh_stem, clip_stem);
-  if (intermediate_virtual.empty()) {
-    LOG_WARN("[AssetImport] failed to allocate Intermediate clip path for {}",
-             clip_stem.c_str());
-    return result;
+  eastl::string intermediate_virtual;
+  if (existing_binding != nullptr) {
+    intermediate_virtual = existing_binding->intermediate_virtual;
+  } else {
+    intermediate_virtual = makeUniqueIntermediateClipVirtualPath(
+        file_system, content_browser, mesh_stem, clip_stem);
+    if (intermediate_virtual.empty()) {
+      LOG_WARN("[AssetImport] failed to allocate Intermediate clip path for {}",
+               clip_stem.c_str());
+      return result;
+    }
   }
 
   const fs::path intermediate_absolute =
@@ -328,6 +362,16 @@ ImportResult registerSingleAnimationClip(
                               AssetYaml::serializeAnimationClipData(clip_data))) {
     LOG_WARN("[AssetImport] failed to write clip Intermediate {}",
              intermediate_absolute.generic_string());
+    return result;
+  }
+
+  if (existing_binding != nullptr) {
+    result.descriptor_virtual_path = existing_binding->descriptor_virtual;
+    result.guid = existing_binding->guid;
+    result.success = true;
+    LOG_INFO("[AssetImport] animation clip refresh {} -> {} (Intermediate: {})",
+             clip_stem.c_str(), result.descriptor_virtual_path.c_str(),
+             intermediate_virtual.c_str());
     return result;
   }
 
@@ -344,6 +388,7 @@ ImportResult registerSingleAnimationClip(
   AnimationClipAssetDescriptor descriptor{};
   descriptor.guid = asset_registry->allocateGuid();
   descriptor.source = intermediate_virtual;
+  normalizeVirtualPathSlashes(descriptor.source);
 
   const eastl::string descriptor_virtual =
       joinVirtualPath(kAssetsAnimationsFolder, descriptor_name);
@@ -371,13 +416,33 @@ ImportResult registerSingleAnimationClip(
   return result;
 }
 
-}  // namespace
+eastl::string descriptorStemBeforeSuffix(const eastl::string& descriptor_virtual,
+                                         const char* suffix) {
+  size_t slash = eastl::string::npos;
+  for (size_t i = descriptor_virtual.size(); i > 0; --i) {
+    const char c = descriptor_virtual[i - 1];
+    if (c == '/' || c == '\\') {
+      slash = i - 1;
+      break;
+    }
+  }
+  const size_t name_start = slash == eastl::string::npos ? 0 : slash + 1;
+  eastl::string filename = descriptor_virtual.substr(name_start);
+  const size_t suffix_length = std::strlen(suffix);
+  if (filename.size() >= suffix_length &&
+      filename.compare(filename.size() - suffix_length, suffix_length, suffix) ==
+          0) {
+    filename.erase(filename.size() - suffix_length);
+  }
+  return filename;
+}
 
-eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
+eastl::vector<ImportResult> processAnimationClipsFromGltf(
     FileSystem* file_system, AssetRegistry* asset_registry,
     ContentBrowserSystem* content_browser,
     const fs::path& gltf_absolute, const eastl::string& mesh_stem,
-    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
+    const ExistingAnimationClipMap* existing_clips) {
   eastl::vector<ImportResult> results;
   if (file_system == nullptr || asset_registry == nullptr ||
       !make_unique_descriptor_name) {
@@ -389,6 +454,7 @@ eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
     return results;
   }
 
+  eastl::hash_set<eastl::string> matched_guids;
   for (cgltf_size animation_index = 0; animation_index < data->animations_count;
        ++animation_index) {
     const cgltf_animation& animation = data->animations[animation_index];
@@ -407,16 +473,152 @@ eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
                          static_cast<size_t>(animation_index));
     clip_data.name = clip_stem;
 
+    const ExistingAnimationClipBinding* existing_binding = nullptr;
+    if (existing_clips != nullptr) {
+      const auto it = existing_clips->find(clip_stem);
+      if (it != existing_clips->end()) {
+        existing_binding = &it->second;
+        matched_guids.insert(existing_binding->guid);
+      }
+    }
+
     ImportResult imported = registerSingleAnimationClip(
         file_system, asset_registry, content_browser, mesh_stem, clip_stem,
-        clip_data, make_unique_descriptor_name);
+        clip_data, make_unique_descriptor_name, existing_binding);
     if (imported.success) {
       results.push_back(imported);
     }
   }
 
+  if (existing_clips != nullptr) {
+    eastl::hash_set<eastl::string> logged_orphan_guids;
+    for (const auto& entry : *existing_clips) {
+      const ExistingAnimationClipBinding& binding = entry.second;
+      if (matched_guids.find(binding.guid) != matched_guids.end()) {
+        continue;
+      }
+      if (logged_orphan_guids.find(binding.guid) != logged_orphan_guids.end()) {
+        continue;
+      }
+      logged_orphan_guids.insert(binding.guid);
+      LOG_INFO(
+          "[AssetImport] animation clip orphan left in place: {} ({})",
+          binding.descriptor_virtual.c_str(), binding.guid.c_str());
+    }
+  }
+
   cgltf_free(data);
   return results;
+}
+
+}  // namespace
+
+ExistingAnimationClipMap collectExistingAnimationClipsForMesh(
+    FileSystem* file_system, AssetRegistry* asset_registry,
+    const eastl::string& mesh_stem) {
+  ExistingAnimationClipMap result;
+  if (file_system == nullptr || mesh_stem.empty()) {
+    return result;
+  }
+
+  eastl::string expected_prefix("resources/Animations/");
+  expected_prefix.append(mesh_stem);
+  expected_prefix.push_back('/');
+
+  const fs::path asset_root = file_system->getAssetRoot();
+  if (!file_system->isDirectory(asset_root)) {
+    return result;
+  }
+
+  const eastl::vector<DirectoryEntry> entries =
+      file_system->listDirectoryRecursive(asset_root, asset_root, -1);
+  for (const DirectoryEntry& entry : entries) {
+    if (entry.is_directory) {
+      continue;
+    }
+
+    eastl::string relative_path = entry.relative_path;
+    for (char& c : relative_path) {
+      if (c == '\\') {
+        c = '/';
+      }
+    }
+    const eastl::string descriptor_virtual =
+        eastl::string("assets/") + relative_path;
+    if (!endsWithLiteral(descriptor_virtual, ".animation.yaml")) {
+      continue;
+    }
+
+    eastl::string descriptor_yaml;
+    if (!file_system->readText(entry.absolute_path, descriptor_yaml)) {
+      continue;
+    }
+
+    AnimationClipAssetDescriptor descriptor{};
+    if (!AssetYaml::parseAnimationClipDescriptor(descriptor_yaml, descriptor)) {
+      continue;
+    }
+    normalizeVirtualPathSlashes(descriptor.source);
+    if (descriptor.source.compare(0, expected_prefix.size(), expected_prefix) !=
+        0) {
+      continue;
+    }
+
+    eastl::string guid = descriptor.guid;
+    if (guid.empty() && asset_registry != nullptr) {
+      guid = asset_registry->findGuidForPath(descriptor_virtual);
+    }
+    if (guid.empty()) {
+      continue;
+    }
+
+    const eastl::string descriptor_stem =
+        descriptorStemBeforeSuffix(descriptor_virtual, ".animation.yaml");
+
+    eastl::string clip_name = descriptor_stem;
+    const fs::path intermediate_absolute =
+        resolveResourcesVirtualPath(file_system, descriptor.source);
+    eastl::string intermediate_yaml;
+    if (file_system->readText(intermediate_absolute, intermediate_yaml)) {
+      AnimationClipData clip_data{};
+      if (AssetYaml::parseAnimationClipData(intermediate_yaml, clip_data) &&
+          !clip_data.name.empty()) {
+        clip_name = clip_data.name;
+      }
+    }
+
+    ExistingAnimationClipBinding binding{};
+    binding.guid = guid;
+    binding.intermediate_virtual = descriptor.source;
+    binding.descriptor_virtual = descriptor_virtual;
+    result[clip_name] = binding;
+    if (descriptor_stem != clip_name) {
+      result[descriptor_stem] = binding;
+    }
+  }
+
+  return result;
+}
+
+eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
+    FileSystem* file_system, AssetRegistry* asset_registry,
+    ContentBrowserSystem* content_browser,
+    const fs::path& gltf_absolute, const eastl::string& mesh_stem,
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
+  return processAnimationClipsFromGltf(
+      file_system, asset_registry, content_browser, gltf_absolute, mesh_stem,
+      make_unique_descriptor_name, nullptr);
+}
+
+eastl::vector<ImportResult> refreshAnimationClipsFromGltf(
+    FileSystem* file_system, AssetRegistry* asset_registry,
+    ContentBrowserSystem* content_browser,
+    const fs::path& gltf_absolute, const eastl::string& mesh_stem,
+    const ExistingAnimationClipMap& existing_clips,
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
+  return processAnimationClipsFromGltf(
+      file_system, asset_registry, content_browser, gltf_absolute, mesh_stem,
+      make_unique_descriptor_name, &existing_clips);
 }
 
 }  // namespace Blunder
