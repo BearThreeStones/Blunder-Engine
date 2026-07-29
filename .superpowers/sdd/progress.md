@@ -38,3 +38,10 @@ Task 2.4: complete — AssetDependencyGraph registers `.animation.yaml` leaves +
 
 ## Starting Group 2
 
+
+Task 2.4: complete (commit 2af29bc, review Approved; model=composer-2.5)
+## Group 2 COMPLETE
+
+## Starting Group 3
+
+Task 3.1: complete — Skeleton runtime (bone hierarchy, rest/bind, pose, inverse bind); Object hosts at most one Skeleton; ClassDB registers Skeleton with bone_count; skeleton_test pass.

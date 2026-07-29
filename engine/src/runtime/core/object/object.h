@@ -1,11 +1,13 @@
 #pragma once
 
 #include "EASTL/string.h"
+#include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/export_macros.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
@@ -75,6 +77,12 @@ class Object {
   Vec3 getScale() const;
   void setScale(const Vec3& scale);
 
+  bool hasSkeleton() const { return m_skeleton != nullptr; }
+  Skeleton* getSkeleton() { return m_skeleton.get(); }
+  const Skeleton* getSkeleton() const { return m_skeleton.get(); }
+  Skeleton* ensureSkeleton();
+  void clearSkeleton();
+
  private:
   friend class ObjectDB;
 
@@ -106,6 +114,7 @@ class Object {
   Quat m_local_rotation{glm::identity<Quat>()};
   Vec3 m_local_scale{1.0f, 1.0f, 1.0f};
   bool m_has_local_trs{false};
+  eastl::unique_ptr<Skeleton> m_skeleton;
 };
 
 }  // namespace Blunder

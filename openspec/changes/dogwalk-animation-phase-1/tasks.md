@@ -15,7 +15,7 @@
 
 ## 3. Skeleton + AnimationPlayer runtime
 
-- [ ] 3.1 ClassDB Skeleton (rest/bind, bone poses) on Object
+- [x] 3.1 ClassDB Skeleton (rest/bind, bone poses) on Object
 - [ ] 3.2 ClassDB AnimationPlayer: name→GUID map, Play/Stop/Loop, hard cut, playback position/length
 - [ ] 3.3 Sampler: Constant + Linear onto co-located Skeleton; reject/ignore Phase 1 cross-Object drive
 - [ ] 3.4 Frame order: Behaviour Tick → sample → PoseApplied signal/callback

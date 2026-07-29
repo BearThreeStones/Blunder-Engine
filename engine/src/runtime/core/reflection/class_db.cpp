@@ -136,6 +136,7 @@ bool ClassDB::getProperty(const void* instance, const char* class_name,
 void ClassDB::initialize() {
   clear();
   register_reflection_generated();
+  register_skeleton_reflection();
 }
 
 void ClassDB::shutdown() { clear(); }

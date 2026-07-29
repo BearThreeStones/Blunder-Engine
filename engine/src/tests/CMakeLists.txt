@@ -1244,3 +1244,27 @@ target_precompile_headers(asset_pipeline_smoke_test
 
 add_test(NAME asset_pipeline_smoke_test
          COMMAND asset_pipeline_smoke_test)
+
+add_executable(skeleton_test
+    "skeleton_test.cpp"
+)
+
+target_link_libraries(skeleton_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(skeleton_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(skeleton_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(skeleton_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME skeleton_test
+         COMMAND skeleton_test)

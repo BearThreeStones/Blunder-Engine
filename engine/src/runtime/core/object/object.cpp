@@ -4,6 +4,7 @@
 
 #include "runtime/core/object/entity_store.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/skeleton.h"
 
 namespace Blunder {
 
@@ -306,6 +307,15 @@ void Object::materializeEntityIfNeeded() {
   m_entity_id = store->createEntity(m_name, m_local_position, m_local_rotation,
                                     m_local_scale, parent_entity);
 }
+
+Skeleton* Object::ensureSkeleton() {
+  if (m_skeleton == nullptr) {
+    m_skeleton = eastl::make_unique<Skeleton>();
+  }
+  return m_skeleton.get();
+}
+
+void Object::clearSkeleton() { m_skeleton.reset(); }
 
 void Object::syncLocalTransformFromStore() {
   if (!hasEntity()) {
