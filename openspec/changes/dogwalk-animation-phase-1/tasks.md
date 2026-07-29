@@ -20,7 +20,7 @@
 - [x] 3.3 Sampler: Constant + Linear onto co-located Skeleton; reject/ignore Phase 1 cross-Object drive
 - [x] 3.4 Frame order: Behaviour Tick → sample → PoseApplied signal/callback
 - [x] 3.5 Generate Blunder.Api / C-ABI bindings for Play and PoseApplied subscription
-- [ ] 3.6 Scene serialize/deserialize AnimationPlayer map + Skeleton presence on entities
+- [x] 3.6 Scene serialize/deserialize AnimationPlayer map + Skeleton presence on entities
 
 ## 4. Skinning paths
 

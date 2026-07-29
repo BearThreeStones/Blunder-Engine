@@ -351,6 +351,102 @@ void serializeAndParseCamera() {
   expect_true("isMain restored", out.camera.is_main);
 }
 
+/// AnimationPlayer clip map + Skeleton presence round-trip; clip GUID list stays
+/// consistent with the map for dependency-graph edges.
+void serializeAndParseAnimationPlayerAndSkeleton() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kIdleGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const char* kWalkGuid = "11111111-2222-4333-8444-555555555555";
+
+  Scene scene;
+  scene.setGuid("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+
+  SceneEntityDefinition entity;
+  entity.name = "Dog";
+  entity.has_skeleton = true;
+  entity.animation_player_clips.push_back({"idle", eastl::string(kIdleGuid)});
+  entity.animation_player_clips.push_back({"walk", eastl::string(kWalkGuid)});
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize animation player + skeleton",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json contains hasSkeleton",
+              json.find("\"hasSkeleton\"") != eastl::string::npos);
+  expect_true("json contains animationPlayer",
+              json.find("\"animationPlayer\"") != eastl::string::npos);
+  expect_true("json contains clips map idle",
+              json.find("\"idle\"") != eastl::string::npos);
+  expect_true("json contains animation_clip_guids",
+              json.find("\"animation_clip_guids\"") != eastl::string::npos);
+  expect_true("json clip guids include idle",
+              json.find(kIdleGuid) != eastl::string::npos);
+  expect_true("json clip guids include walk",
+              json.find(kWalkGuid) != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize animation player + skeleton",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("one entity after animation deserialize",
+              loaded.getEntities().size() == 1);
+
+  const SceneEntityDefinition& out = loaded.getEntities()[0];
+  expect_true("has_skeleton restored", out.has_skeleton);
+  expect_true("two clip bindings restored",
+              out.animation_player_clips.size() == 2);
+  if (out.animation_player_clips.size() == 2) {
+    expect_true("idle binding name", out.animation_player_clips[0].name == "idle");
+    expect_true("idle binding guid",
+                out.animation_player_clips[0].guid == kIdleGuid);
+    expect_true("walk binding name", out.animation_player_clips[1].name == "walk");
+    expect_true("walk binding guid",
+                out.animation_player_clips[1].guid == kWalkGuid);
+  }
+  expect_true("animation_clip_guids size matches map",
+              out.animation_clip_guids.size() == 2);
+  expect_true("animation_clip_guids include idle",
+              out.animation_clip_guids.size() >= 1 &&
+                  (out.animation_clip_guids[0] == kIdleGuid ||
+                   out.animation_clip_guids[1] == kIdleGuid));
+  expect_true("animation_clip_guids include walk",
+              out.animation_clip_guids.size() >= 2 &&
+                  (out.animation_clip_guids[0] == kWalkGuid ||
+                   out.animation_clip_guids[1] == kWalkGuid));
+}
+
+/// Legacy entities without animation keys deserialize with defaults.
+void deserializeLegacyEntityWithoutAnimation() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kLegacy = R"({
+  "type": "Scene",
+  "guid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "Cube",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees"
+    }
+  ]
+}
+)";
+
+  Scene loaded;
+  expect_true("deserialize legacy entity without animation",
+              SceneSerializer::deserialize(eastl::string(kLegacy), loaded));
+  expect_true("legacy entity present", loaded.getEntities().size() == 1);
+  expect_true("legacy has_skeleton false",
+              !loaded.getEntities()[0].has_skeleton);
+  expect_true("legacy animation_player_clips empty",
+              loaded.getEntities()[0].animation_player_clips.empty());
+  expect_true("legacy animation_clip_guids empty",
+              loaded.getEntities()[0].animation_clip_guids.empty());
+}
+
 /// Legacy entities without a camera key deserialize with has_camera false.
 void deserializeLegacyEntityWithoutCamera() {
   using namespace Blunder;
@@ -443,6 +539,8 @@ int main() {
   deserializeBehavioursScopedKeyLookup();
   serializeAndParseEscapedBehaviourStrings();
   serializeAndParseCamera();
+  serializeAndParseAnimationPlayerAndSkeleton();
+  deserializeLegacyEntityWithoutAnimation();
   deserializeLegacyEntityWithoutCamera();
 
   const int exit_code = g_failures != 0 ? 1 : 0;

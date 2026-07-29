@@ -33,9 +33,20 @@ struct SceneEntityDefinition final {
   /// Mesh Asset Reference: preferred GUID; may briefly hold a legacy
   /// `assets/...mesh.yaml` path until migration on load/save.
   eastl::string mesh_virtual_path;
-  /// AnimationClip Asset GUIDs referenced by this entity (Task 3.6 fills via
-  /// AnimationPlayer; graph uses these for consumer→clip dependency edges).
+  /// One AnimationPlayer clip name→GUID binding (serialized under
+  /// `animationPlayer.clips`).
+  struct AnimationClipBinding final {
+    eastl::string name;
+    eastl::string guid;
+  };
+
+  /// AnimationClip Asset GUIDs referenced by this entity (derived from
+  /// `animation_player_clips` on save; graph uses these for consumer→clip edges).
   eastl::vector<eastl::string> animation_clip_guids;
+  /// When true, runtime instantiates a Skeleton on the entity Object.
+  bool has_skeleton{false};
+  /// AnimationPlayer name→GUID map; empty when the player key is absent.
+  eastl::vector<AnimationClipBinding> animation_player_clips;
   /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
   eastl::vector<SceneBehaviourDeclaration> behaviours;
   bool has_camera{false};

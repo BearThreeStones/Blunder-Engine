@@ -522,6 +522,93 @@ bool parseBehaviourPropertyValue(const char* value_start, const char* limit,
   return true;
 }
 
+bool parseStringStringMapObject(
+    const char* object_start, const char* object_end,
+    eastl::vector<SceneEntityDefinition::AnimationClipBinding>& out_bindings) {
+  out_bindings.clear();
+  const char* p = object_start;
+  while (p < object_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= object_end - 1 || *p == '}') {
+      break;
+    }
+    if (*p != '"') {
+      return false;
+    }
+    SceneEntityDefinition::AnimationClipBinding binding;
+    const char* after_key = nullptr;
+    if (!parseJsonString(p, object_end, binding.name, &after_key)) {
+      return false;
+    }
+    p = skipWhitespace(after_key);
+    if (p >= object_end || *p != ':') {
+      return false;
+    }
+    ++p;
+    p = skipWhitespace(p);
+    const char* after_value = nullptr;
+    if (!parseJsonString(p, object_end, binding.guid, &after_value)) {
+      return false;
+    }
+    if (!binding.name.empty() && !binding.guid.empty()) {
+      out_bindings.push_back(eastl::move(binding));
+    }
+    p = skipWhitespace(after_value);
+    if (p < object_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
+void rebuildAnimationClipGuidsFromPlayerMap(SceneEntityDefinition& entity) {
+  if (entity.animation_player_clips.empty()) {
+    return;
+  }
+  entity.animation_clip_guids.clear();
+  for (const SceneEntityDefinition::AnimationClipBinding& binding :
+       entity.animation_player_clips) {
+    if (binding.guid.empty()) {
+      continue;
+    }
+    bool duplicate = false;
+    for (const eastl::string& existing : entity.animation_clip_guids) {
+      if (existing == binding.guid) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (!duplicate) {
+      entity.animation_clip_guids.push_back(binding.guid);
+    }
+  }
+}
+
+eastl::vector<eastl::string> animationClipGuidsForSerialize(
+    const SceneEntityDefinition& entity) {
+  eastl::vector<eastl::string> guids;
+  if (!entity.animation_player_clips.empty()) {
+    for (const SceneEntityDefinition::AnimationClipBinding& binding :
+         entity.animation_player_clips) {
+      if (binding.guid.empty()) {
+        continue;
+      }
+      bool duplicate = false;
+      for (const eastl::string& existing : guids) {
+        if (existing == binding.guid) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!duplicate) {
+        guids.push_back(binding.guid);
+      }
+    }
+    return guids;
+  }
+  return entity.animation_clip_guids;
+}
+
 bool parseBehaviourProperties(const char* object_start, const char* object_end,
                               eastl::vector<SceneBehaviourProperty>& out_props) {
   out_props.clear();
@@ -676,6 +763,28 @@ bool parseEntityObject(const char* object_start, const char* object_end,
                             "\"animation_clip_guids\"", clip_guids)) {
     out_entity.animation_clip_guids = eastl::move(clip_guids);
   }
+
+  parseBoolField(object_start, object_end, "\"hasSkeleton\"",
+                 out_entity.has_skeleton);
+
+  const char* player_end = nullptr;
+  const char* player_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"animationPlayer\"",
+                                &player_end);
+  if (player_content != nullptr) {
+    const char* clips_end = nullptr;
+    const char* clips_content =
+        findObjectAfterKeyBounded(player_content, player_end, "\"clips\"",
+                                  &clips_end);
+    if (clips_content != nullptr) {
+      if (!parseStringStringMapObject(clips_content, clips_end,
+                                      out_entity.animation_player_clips)) {
+        return false;
+      }
+    }
+  }
+
+  rebuildAnimationClipGuidsFromPlayerMap(out_entity);
 
   if (!parseBehavioursArray(object_start, object_end, out_entity.behaviours)) {
     return false;
@@ -895,6 +1004,25 @@ void appendBehaviourJson(eastl::string& out, const SceneBehaviourDeclaration& be
   out.append(is_last ? "\n        }\n" : "\n        },\n");
 }
 
+void appendAnimationPlayerJson(eastl::string& out,
+                               const SceneEntityDefinition& entity) {
+  if (entity.animation_player_clips.empty()) {
+    return;
+  }
+  out.append(",\n      \"animationPlayer\": {\n");
+  out.append("        \"clips\": {\n");
+  for (size_t i = 0; i < entity.animation_player_clips.size(); ++i) {
+    const SceneEntityDefinition::AnimationClipBinding& binding =
+        entity.animation_player_clips[i];
+    out.append("          ");
+    appendJsonString(out, binding.name);
+    out.append(": ");
+    appendJsonString(out, binding.guid);
+    out.append(i + 1 == entity.animation_player_clips.size() ? "\n" : ",\n");
+  }
+  out.append("        }\n      }");
+}
+
 void appendCameraJson(eastl::string& out, const CameraComponent& camera) {
   char buffer[128];
   out.append(",\n      \"camera\": {\n");
@@ -974,12 +1102,20 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
     out.append("\"");
   }
 
-  if (!entity.animation_clip_guids.empty()) {
+  if (entity.has_skeleton) {
+    out.append(",\n      \"hasSkeleton\": true");
+  }
+
+  appendAnimationPlayerJson(out, entity);
+
+  const eastl::vector<eastl::string> clip_guids =
+      animationClipGuidsForSerialize(entity);
+  if (!clip_guids.empty()) {
     out.append(",\n      \"animation_clip_guids\": [\n");
-    for (size_t i = 0; i < entity.animation_clip_guids.size(); ++i) {
+    for (size_t i = 0; i < clip_guids.size(); ++i) {
       out.append("        \"");
-      out.append(entity.animation_clip_guids[i]);
-      out.append(i + 1 == entity.animation_clip_guids.size() ? "\"\n" : "\",\n");
+      out.append(clip_guids[i]);
+      out.append(i + 1 == clip_guids.size() ? "\"\n" : "\",\n");
     }
     out.append("      ]");
   }
