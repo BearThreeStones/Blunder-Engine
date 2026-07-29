@@ -32,4 +32,41 @@ struct TextureAssetDescriptor {
   TextureImportSettings import{};
 };
 
+enum class AnimationInterpolation {
+  Constant,
+  Linear,
+};
+
+enum class AnimationChannel {
+  Translation,
+  Rotation,
+  Scale,
+};
+
+struct AnimationKeyframe {
+  float time{0.0f};
+  /// Translation/scale: 3 floats; rotation: 4 floats (quaternion xyzw).
+  eastl::vector<float> value;
+};
+
+struct AnimationTrack {
+  eastl::string bone;
+  AnimationChannel channel{AnimationChannel::Translation};
+  AnimationInterpolation interpolation{AnimationInterpolation::Constant};
+  eastl::vector<AnimationKeyframe> keys;
+};
+
+struct AnimationClipData {
+  static constexpr int kVersion = 1;
+  eastl::string name;
+  float duration{0.0f};
+  eastl::vector<AnimationTrack> tracks;
+};
+
+struct AnimationClipAssetDescriptor {
+  eastl::string guid;
+  eastl::string source;
+  eastl::string archived_source;
+};
+
 }  // namespace Blunder

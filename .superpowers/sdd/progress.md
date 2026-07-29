@@ -10,6 +10,8 @@ Task 1.3: complete (commit f1a7a7f; model=composer-2.5)
 Task 1.4: complete (commits f1a7a7f..1635a68, review Approved; model=composer-2.5)
 Task 1.5: complete (commits 1635a68..9460917, review Approved; model=composer-2.5)
 
+Task 2.1: complete — AnimationClipAssetDescriptor + AnimationClipData YAML parse/serialize (asset_descriptor.h, asset_yaml.h/.cpp); asset_yaml_test round-trip + reject Cubic; CONTENT_LAYOUT.md extension docs; blunder_engine_c_static linked into asset_yaml_test.
+
 ## Group 1 (pipeline flip) COMPLETE + VERIFIED
 
 Build note: worktree Slint cargo OOM — build with /p:BuildProjectReferences=false using main .cmake_deps/slint-build + local Slint fork header patches synced from main working tree.

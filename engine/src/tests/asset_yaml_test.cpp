@@ -200,6 +200,86 @@ void omitEmptyTextureGuidsFromSerializedYaml() {
               yaml.find("texture_guids") == eastl::string::npos);
 }
 
+void roundTripAnimationClipDescriptor() {
+  using namespace Blunder;
+  AnimationClipAssetDescriptor in;
+  in.guid = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1";
+  in.source = "resources/Animations/Walk/Walk.anim.yaml";
+  in.archived_source.clear();
+
+  const eastl::string yaml = AssetYaml::serializeAnimationClipDescriptor(in);
+  AnimationClipAssetDescriptor out;
+  expect_true("animation clip descriptor round-trip parse",
+              AssetYaml::parseAnimationClipDescriptor(yaml, out));
+  expect_true("animation clip descriptor round-trip guid",
+              out.guid == in.guid);
+  expect_true("animation clip descriptor round-trip source",
+              out.source == in.source);
+  expect_true("animation clip descriptor round-trip archived_source empty",
+              out.archived_source.empty());
+}
+
+void roundTripAnimationClipDataConstantAndLinear() {
+  using namespace Blunder;
+  AnimationClipData in;
+  in.name = "Walk";
+  in.duration = 1.0f;
+
+  AnimationTrack translation;
+  translation.bone = "Hips";
+  translation.channel = AnimationChannel::Translation;
+  translation.interpolation = AnimationInterpolation::Constant;
+  translation.keys.push_back({0.0f, {0.0f, 0.0f, 0.0f}});
+  translation.keys.push_back({1.0f, {0.0f, 0.5f, 0.0f}});
+
+  AnimationTrack rotation;
+  rotation.bone = "Hips";
+  rotation.channel = AnimationChannel::Rotation;
+  rotation.interpolation = AnimationInterpolation::Linear;
+  rotation.keys.push_back({0.0f, {0.0f, 0.0f, 0.0f, 1.0f}});
+  rotation.keys.push_back({1.0f, {0.0f, 0.7071068f, 0.0f, 0.7071068f}});
+
+  in.tracks.push_back(translation);
+  in.tracks.push_back(rotation);
+
+  const eastl::string yaml = AssetYaml::serializeAnimationClipData(in);
+  AnimationClipData out;
+  expect_true("animation clip data round-trip parse",
+              AssetYaml::parseAnimationClipData(yaml, out));
+  expect_true("animation clip data round-trip name", out.name == in.name);
+  expect_true("animation clip data round-trip duration",
+              out.duration == in.duration);
+  expect_true("animation clip data round-trip track count",
+              out.tracks.size() == 2);
+  expect_true("animation clip data translation interpolation Constant",
+              out.tracks[0].interpolation == AnimationInterpolation::Constant);
+  expect_true("animation clip data rotation interpolation Linear",
+              out.tracks[1].interpolation == AnimationInterpolation::Linear);
+  expect_true("animation clip data translation key count",
+              out.tracks[0].keys.size() == 2);
+  expect_true("animation clip data rotation value length 4",
+              out.tracks[1].keys[0].value.size() == 4);
+}
+
+void rejectUnknownInterpolation() {
+  using namespace Blunder;
+  const eastl::string yaml =
+      "version: 1\n"
+      "name: BadClip\n"
+      "duration: 1.0\n"
+      "tracks:\n"
+      "  - bone: Hips\n"
+      "    channel: translation\n"
+      "    interpolation: Cubic\n"
+      "    keys:\n"
+      "      - time: 0.0\n"
+      "        value: [0.0, 0.0, 0.0]\n";
+
+  AnimationClipData data;
+  expect_true("reject unknown interpolation Cubic",
+              !AssetYaml::parseAnimationClipData(yaml, data));
+}
+
 }  // namespace
 
 int main() {
@@ -212,6 +292,9 @@ int main() {
   parseMeshWithoutTextureGuidsLeavesEmpty();
   roundTripMeshTextureGuids();
   omitEmptyTextureGuidsFromSerializedYaml();
+  roundTripAnimationClipDescriptor();
+  roundTripAnimationClipDataConstantAndLinear();
+  rejectUnknownInterpolation();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

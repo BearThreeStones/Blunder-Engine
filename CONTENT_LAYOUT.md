@@ -74,6 +74,19 @@ YAML metadata (`type`, `guid`, `source`, `import`) pointing at an Intermediate i
 Resources. The descriptor field `source` is the Intermediate data path (glossary), not a
 Source Asset. Load prefers `.blunder/cooked/{guid}.texbin` when fresh; otherwise Fast Path.
 
+## AnimationClip descriptor (`.animation.yaml`)
+
+YAML metadata (`type`, `guid`, `source`, optional `archived_source`) pointing at a readable
+YAML Intermediate body (`.anim.yaml`) under Resources (non-Source). Each clip is a
+GUID-identified Asset distinct from Mesh. The descriptor field `source` is the Intermediate
+data path (e.g. `resources/Animations/{name}/{name}.anim.yaml`), not a Source Asset.
+
+## AnimationClip Intermediate (`.anim.yaml`)
+
+Readable YAML under Resources (non-Source) with bone TRS tracks (`version`, `name`, `duration`,
+`tracks` with `bone`, `channel`, `interpolation`, `keys`). Sampling supports `Constant` and
+`Linear` interpolation only (Phase 1).
+
 ## Scene descriptor (`.scene.asset`)
 
 Static scene data remains JSON for now (see existing scene docs). Documents include a
@@ -150,7 +163,7 @@ Editor thumbnails are generated at startup by `ThumbnailGenerator` and stored un
 
 `<project>/.blunder/cache/thumbnails/`
 
-Supported sources include `.mesh.yaml`, `.texture.yaml`, images, glTF/GLB Intermediate,
+Supported sources include `.mesh.yaml`, `.texture.yaml`, `.animation.yaml`, images, glTF/GLB Intermediate,
 and legacy `.mesh.asset`.
 
 The editor **Content Browser** (left dock) uses `ContentBrowserSystem` to scan **Assets only**,

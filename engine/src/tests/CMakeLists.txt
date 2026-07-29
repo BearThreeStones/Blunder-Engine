@@ -902,6 +902,7 @@ add_executable(asset_yaml_test
 
 target_link_libraries(asset_yaml_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
