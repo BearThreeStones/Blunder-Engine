@@ -10,6 +10,8 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/core/object/object.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/resource/asset/mesh_asset.h"
@@ -68,6 +70,69 @@ eastl::string nodeDisplayName(const cgltf_node* node) {
   return eastl::string("node");
 }
 
+void populateSkeletonFromSkin(cgltf_skin* skin, Skeleton& skeleton) {
+  if (skin == nullptr || skin->joints_count == 0) {
+    return;
+  }
+
+  eastl::vector<cgltf_node*> joint_nodes(static_cast<size_t>(skin->joints_count));
+  for (cgltf_size joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+    joint_nodes[static_cast<size_t>(joint_index)] = skin->joints[joint_index];
+  }
+
+  eastl::vector<int> joint_to_bone_index(static_cast<size_t>(skin->joints_count), -1);
+  for (cgltf_size joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+    cgltf_node* joint_node = skin->joints[joint_index];
+    if (joint_node == nullptr) {
+      continue;
+    }
+
+    int parent_bone_index = -1;
+    if (joint_node->parent != nullptr) {
+      for (cgltf_size parent_joint_index = 0;
+           parent_joint_index < skin->joints_count; ++parent_joint_index) {
+        if (skin->joints[parent_joint_index] == joint_node->parent) {
+          parent_bone_index = joint_to_bone_index[static_cast<size_t>(parent_joint_index)];
+          break;
+        }
+      }
+    }
+
+    const int bone_index =
+        skeleton.addBone(nodeDisplayName(joint_node), parent_bone_index);
+    if (bone_index < 0) {
+      continue;
+    }
+    joint_to_bone_index[static_cast<size_t>(joint_index)] = bone_index;
+
+    Vec3 local_position{};
+    Quat local_rotation = glm::identity<Quat>();
+    Vec3 local_scale(1.0f);
+    decomposeCgltfNodeLocal(joint_node, local_position, local_rotation, local_scale);
+    BoneTransform rest_local;
+    rest_local.translation = local_position;
+    rest_local.rotation = local_rotation;
+    rest_local.scale = local_scale;
+    skeleton.setBoneRestLocal(static_cast<size_t>(bone_index), rest_local);
+
+    if (skin->inverse_bind_matrices != nullptr &&
+        joint_index < skin->inverse_bind_matrices->count) {
+      float inverse_bind_cgltf[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+                                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+      if (cgltf_accessor_read_float(skin->inverse_bind_matrices, joint_index,
+                                    inverse_bind_cgltf, 16)) {
+        Mat4 inverse_bind_gltf(1.0f);
+        std::memcpy(glm::value_ptr(inverse_bind_gltf), inverse_bind_cgltf,
+                    sizeof(cgltf_float) * 16);
+        skeleton.setBoneInverseBind(static_cast<size_t>(bone_index),
+                                    similarityGltfToEngine(inverse_bind_gltf));
+      }
+    }
+  }
+
+  skeleton.resetPoseToRest();
+}
+
 GltfSceneImporter::ImportResult importGltfDocument(
     AssetManager* asset_manager, GltfImportDocument& document,
     SceneInstance& scene_instance, EntityId attach_parent_entity) {
@@ -91,6 +156,14 @@ GltfSceneImporter::ImportResult importGltfDocument(
         nodeDisplayName(node), local_position, local_rotation, local_scale,
         parent_entity_id);
 
+    if (node->skin != nullptr) {
+      Object* skin_object = scene_instance.ensureBoundObject(node_entity_id);
+      if (skin_object != nullptr) {
+        Skeleton* skeleton = skin_object->ensureSkeleton();
+        populateSkeletonFromSkin(node->skin, *skeleton);
+      }
+    }
+
     if (node->mesh != nullptr) {
       const size_t mesh_index = static_cast<size_t>(node->mesh - data->meshes);
       const cgltf_mesh& mesh = *node->mesh;
@@ -99,7 +172,7 @@ GltfSceneImporter::ImportResult importGltfDocument(
         const eastl::shared_ptr<MeshAsset> mesh_asset =
             asset_manager->loadMeshPrimitive(data, mesh_index,
                                              static_cast<size_t>(primitive_index),
-                                             absolute, gltf_key);
+                                             absolute, gltf_key, node->skin);
         if (!mesh_asset) {
           continue;
         }

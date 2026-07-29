@@ -441,6 +441,30 @@ GpuMesh* RenderSystem::getOrUploadGpuMeshByKey(const eastl::string& cache_key,
   return uploaded_mesh_ptr;
 }
 
+GpuMesh* RenderSystem::updateOrUploadSkinnedGpuMesh(
+    const eastl::string& base_cache_key, const void* vertex_bytes,
+    size_t vertex_byte_size, const uint32_t* indices, size_t index_count) {
+  if (base_cache_key.empty() || vertex_bytes == nullptr || indices == nullptr ||
+      vertex_byte_size == 0 || index_count == 0 || !isVulkanBackend() ||
+      !vkAlloc(this)) {
+    return nullptr;
+  }
+
+  eastl::string cache_key(base_cache_key);
+  cache_key.append("#skinned");
+
+  if (auto it = m_gpu_meshes.find(cache_key); it != m_gpu_meshes.end()) {
+    GpuMesh* existing_mesh = it->second.get();
+    if (existing_mesh != nullptr &&
+        existing_mesh->uploadVertices(vertex_bytes, vertex_byte_size)) {
+      return existing_mesh;
+    }
+  }
+
+  return getOrUploadGpuMeshByKey(cache_key, vertex_bytes, vertex_byte_size, indices,
+                               index_count);
+}
+
 bool RenderSystem::addOpaqueMeshDraw(
     GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
     VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,

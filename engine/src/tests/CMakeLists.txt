@@ -1269,6 +1269,31 @@ target_precompile_headers(skeleton_test
 add_test(NAME skeleton_test
          COMMAND skeleton_test)
 
+add_executable(cpu_skinning_test
+    "cpu_skinning_test.cpp"
+)
+
+target_link_libraries(cpu_skinning_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(cpu_skinning_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(cpu_skinning_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(cpu_skinning_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME cpu_skinning_test
+         COMMAND cpu_skinning_test)
+
 add_executable(animation_player_test
     "animation_player_test.cpp"
 )

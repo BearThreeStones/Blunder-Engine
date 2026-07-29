@@ -119,6 +119,11 @@ class RenderSystem final {
                                    const void* vertex_bytes,
                                    size_t vertex_byte_size, const uint32_t* indices,
                                    size_t index_count);
+  GpuMesh* updateOrUploadSkinnedGpuMesh(const eastl::string& base_cache_key,
+                                        const void* vertex_bytes,
+                                        size_t vertex_byte_size,
+                                        const uint32_t* indices,
+                                        size_t index_count);
 
   bool addOpaqueMeshDraw(
       GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,

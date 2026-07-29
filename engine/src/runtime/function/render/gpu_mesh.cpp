@@ -67,6 +67,18 @@ eastl::unique_ptr<GpuMesh> GpuMesh::createFromGeometry(
                         index_count);
 }
 
+bool GpuMesh::uploadVertices(const void* vertex_bytes, size_t vertex_byte_size) {
+  if (m_vertex_buffer == nullptr || vertex_bytes == nullptr ||
+      vertex_byte_size == 0) {
+    return false;
+  }
+  if (static_cast<VkDeviceSize>(vertex_byte_size) != m_vertex_buffer->getSize()) {
+    return false;
+  }
+  m_vertex_buffer->upload(vertex_bytes, static_cast<VkDeviceSize>(vertex_byte_size));
+  return true;
+}
+
 void GpuMesh::destroy() {
   if (m_index_buffer) {
     m_index_buffer->destroy();

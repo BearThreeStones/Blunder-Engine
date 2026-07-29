@@ -24,7 +24,7 @@
 
 ## 4. Skinning paths
 
-- [ ] 4.1 CPU skinning for Fast Path skinned meshes from Intermediate glTF weights + Skeleton pose
+- [x] 4.1 CPU skinning for Fast Path skinned meshes from Intermediate glTF weights + Skeleton pose
 - [ ] 4.2 Cook skinned Final (GPU bone palette / skinning shader inputs)
 - [ ] 4.3 GPU skinned draw for fresh Final; Editor Final and Player share path
 - [ ] 4.4 Pose parity test: one frame CPU vs GPU (or CPU vs reference) within tolerance

@@ -17,6 +17,7 @@
 namespace Blunder {
 
 class Object;
+class Skeleton;
 
 /// Runtime container for entities spawned from a Scene asset (Stride SceneInstance).
 class SceneInstance final {
@@ -108,6 +109,8 @@ class SceneInstance final {
 
   Object* findBoundObject(EntityId entity_id) const;
   Object* ensureBoundObject(EntityId entity_id);
+  /// Walks entity parents for a bound Object with a Skeleton.
+  Skeleton* findSkeletonForEntity(EntityId entity_id) const;
 
  private:
   EntityId indexToId(size_t index) const;

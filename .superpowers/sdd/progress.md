@@ -61,3 +61,13 @@ Task 3.5: complete (commit 413c36e, review pending; model=composer-2.5)
 
 Task 3.6: complete (pending commit; model=composer-2.5)
   Scene serializer round-trips `hasSkeleton` + `animationPlayer.clips` name→GUID map; `animation_clip_guids` derived from map on save/load for dependency-graph edges; scene_serializer_test pass.
+
+Task 3.6: complete (commit d570297, review Approved; model=composer-2.5)
+Task 3.5 fix: ef25b3a clear PoseApplied bindings on destroy
+## Group 3 COMPLETE
+
+## Starting Group 4
+
+Task 4.1: complete (pending commit; model=composer-2.5)
+  MeshSkinData on MeshAsset from glTF JOINTS_0/WEIGHTS_0; populateSkeletonFromSkin on glTF import; applyCpuSkinning + syncSceneToRender Fast Path upload; cpu_skinning_test pass.
+

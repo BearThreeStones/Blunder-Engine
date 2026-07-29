@@ -204,6 +204,8 @@ add_library(engine_runtime STATIC
     "function/scene/gltf_scene_importer.cpp"
     "function/scene/scene_render_bridge.h"
     "function/scene/scene_render_bridge.cpp"
+    "function/scene/cpu_skinning.h"
+    "function/scene/cpu_skinning.cpp"
     "function/editor/editor_selection_system.h"
     "function/editor/editor_selection_system.cpp"
     "function/editor/inspector_transform_ops.h"

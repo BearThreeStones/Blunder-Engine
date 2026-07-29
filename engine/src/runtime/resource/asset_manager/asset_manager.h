@@ -94,7 +94,7 @@ class AssetManager final {
   eastl::shared_ptr<MeshAsset> loadMeshPrimitive(
       cgltf_data* data, size_t mesh_index, size_t primitive_index,
       const std::filesystem::path& absolute,
-      const eastl::string& gltf_canonical_key);
+      const eastl::string& gltf_canonical_key, const cgltf_skin* skin = nullptr);
   eastl::shared_ptr<MaterialAsset> loadGltfMaterial(
       cgltf_data* data, size_t material_index,
       const std::filesystem::path& absolute,

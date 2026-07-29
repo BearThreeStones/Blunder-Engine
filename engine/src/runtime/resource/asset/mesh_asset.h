@@ -11,6 +11,7 @@
 #include "runtime/core/math/geometry.h"
 #include "runtime/resource/asset/asset.h"
 #include "runtime/resource/asset/material_asset.h"
+#include "runtime/resource/asset/mesh_skin_data.h"
 
 namespace Blunder {
 
@@ -45,12 +46,14 @@ class MeshAsset final : public Asset {
  public:
   MeshAsset(Asset::Meta meta, eastl::vector<MeshVertex> vertices,
             eastl::vector<uint32_t> indices, AssetHandle material = {},
-            eastl::shared_ptr<MaterialAsset> material_asset = nullptr)
+            eastl::shared_ptr<MaterialAsset> material_asset = nullptr,
+            MeshSkinData skin_data = {})
       : Asset(Asset::Type::Mesh, eastl::move(meta)),
         m_vertices(eastl::move(vertices)),
         m_indices(eastl::move(indices)),
         m_material(eastl::move(material)),
         m_material_asset(eastl::move(material_asset)),
+        m_skin_data(eastl::move(skin_data)),
         m_local_bounds(computeLocalBounds(m_vertices)) {
     setState(State::Loaded);
   }
@@ -71,11 +74,15 @@ class MeshAsset final : public Asset {
   size_t getIndexCount() const { return m_indices.size(); }
   const AABB& getLocalBounds() const { return m_local_bounds; }
 
+  bool isSkinned() const { return m_skin_data.isValid(); }
+  const MeshSkinData& getSkinData() const { return m_skin_data; }
+
  private:
   eastl::vector<MeshVertex> m_vertices;
   eastl::vector<uint32_t> m_indices;
   AssetHandle m_material;
   eastl::shared_ptr<MaterialAsset> m_material_asset;
+  MeshSkinData m_skin_data;
   AABB m_local_bounds{};
 };
 

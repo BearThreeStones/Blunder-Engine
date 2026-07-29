@@ -32,6 +32,9 @@ class GpuMesh final {
   VulkanBuffer* getIndexBuffer() const { return m_index_buffer.get(); }
   uint32_t getIndexCount() const { return m_index_count; }
 
+  /// Re-upload vertex bytes when size matches the existing GPU buffer.
+  bool uploadVertices(const void* vertex_bytes, size_t vertex_byte_size);
+
  private:
   GpuMesh() = default;
 

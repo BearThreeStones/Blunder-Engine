@@ -6,6 +6,7 @@
 #include "runtime/function/render/gpu_mesh.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/scene/cpu_skinning.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/resource/asset/material_asset.h"
@@ -27,6 +28,19 @@ VulkanTexture* resolveTexture(RenderSystem* render_system,
   return uploaded != nullptr ? uploaded : fallback;
 }
 
+eastl::string meshGpuCacheKey(const MeshAsset& mesh_asset) {
+  eastl::string cache_key = mesh_asset.getVirtualPath();
+  if (cache_key.empty()) {
+    const std::filesystem::path& absolute_path = mesh_asset.getAbsolutePath();
+    if (!absolute_path.empty()) {
+      cache_key = eastl::string(absolute_path.generic_string().c_str());
+    } else {
+      cache_key = "generated://render/anonymous_mesh";
+    }
+  }
+  return cache_key;
+}
+
 }  // namespace
 
 void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instance) {
@@ -46,6 +60,7 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
   }
 
   VulkanTexture* fallback_texture = render_system->getFallbackTexture();
+  eastl::vector<MeshVertex> skinned_vertices_scratch;
 
   scene_instance->forEachMeshRenderer(
       [&](EntityId entity_id, const MeshRendererComponent& renderer) {
@@ -56,7 +71,23 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
         MeshRendererComponent draw_renderer = renderer;
         draw_renderer.world_matrix = scene_instance->getWorldMatrix(entity_id);
 
-        GpuMesh* gpu_mesh = render_system->getOrUploadGpuMesh(renderer.mesh.get());
+        GpuMesh* gpu_mesh = nullptr;
+        const eastl::string cache_key = meshGpuCacheKey(*renderer.mesh);
+        if (renderer.mesh->isSkinned()) {
+          Skeleton* skeleton = scene_instance->findSkeletonForEntity(entity_id);
+          if (skeleton != nullptr) {
+            applyCpuSkinning(*skeleton, renderer.mesh->getSkinData(),
+                             renderer.mesh->getVertices(), skinned_vertices_scratch);
+            gpu_mesh = render_system->updateOrUploadSkinnedGpuMesh(
+                cache_key, skinned_vertices_scratch.data(),
+                skinned_vertices_scratch.size() * sizeof(MeshVertex),
+                renderer.mesh->getIndices().data(),
+                renderer.mesh->getIndexCount());
+          }
+        }
+        if (gpu_mesh == nullptr) {
+          gpu_mesh = render_system->getOrUploadGpuMesh(renderer.mesh.get());
+        }
         if (gpu_mesh == nullptr) {
           return;
         }

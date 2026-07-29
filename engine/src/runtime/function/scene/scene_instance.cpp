@@ -4,6 +4,7 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/function/scene/scene_serializer.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -40,7 +41,10 @@ void SceneInstance::instantiate(const Scene& scene) {
     }
     // Bind Object + restore Behaviour slots only when the list is non-empty.
     // Peers stay null here; mountSceneBehaviours attaches when DotNetHost runs.
-    if (!definition.behaviours.empty()) {
+    const bool needs_object =
+        !definition.behaviours.empty() || definition.has_skeleton ||
+        !definition.animation_player_clips.empty();
+    if (needs_object) {
       const ObjectId object_id = ObjectDB::create();
       Object* object = ObjectDB::get(object_id);
       if (object == nullptr) {
@@ -51,6 +55,9 @@ void SceneInstance::instantiate(const Scene& scene) {
       object->setName(definition.name);
       object->setEntityId(id);
       m_bound_object_ids.push_back(object_id);
+      if (definition.has_skeleton) {
+        object->ensureSkeleton();
+      }
       for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
         if (!object->restoreBehaviour(decl.id, decl.type)) {
           LOG_WARN(
@@ -369,6 +376,23 @@ Object* SceneInstance::ensureBoundObject(EntityId entity_id) {
   object->setEntityId(entity_id);
   m_bound_object_ids.push_back(object_id);
   return object;
+}
+
+Skeleton* SceneInstance::findSkeletonForEntity(EntityId entity_id) const {
+  EntityId current = entity_id;
+  while (isValid(current)) {
+    if (Object* object = findBoundObject(current)) {
+      if (object->hasSkeleton()) {
+        return object->getSkeleton();
+      }
+    }
+    const Entity* entity = getEntity(current);
+    if (entity == nullptr) {
+      break;
+    }
+    current = entity->getParentId();
+  }
+  return nullptr;
 }
 
 EntityId SceneInstance::indexToId(size_t index) const {

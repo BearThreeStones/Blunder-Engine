@@ -14,6 +14,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/mesh_asset.h"
 
 namespace Blunder {
 
@@ -136,6 +137,80 @@ eastl::string buildGeneratedKey(const eastl::string& base_key, const char* kind,
   eastl::string generated_key(base_key);
   generated_key.append(suffix);
   return generated_key;
+}
+
+MeshSkinData buildMeshSkinData(const cgltf_primitive& primitive,
+                               const cgltf_skin* skin, size_t vertex_count) {
+  MeshSkinData skin_data;
+  if (vertex_count == 0) {
+    return skin_data;
+  }
+
+  const cgltf_attribute* joints_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_joints, 0);
+  const cgltf_attribute* weights_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_weights, 0);
+  if (joints_attribute == nullptr || joints_attribute->data == nullptr ||
+      weights_attribute == nullptr || weights_attribute->data == nullptr) {
+    return skin_data;
+  }
+
+  const cgltf_accessor* joints_accessor = joints_attribute->data;
+  const cgltf_accessor* weights_accessor = weights_attribute->data;
+  if (joints_accessor->count < vertex_count ||
+      weights_accessor->count < vertex_count) {
+    return skin_data;
+  }
+
+  skin_data.influences.resize(vertex_count);
+  for (size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+    MeshSkinInfluence& influence = skin_data.influences[vertex_index];
+    for (int component = 0; component < 4; ++component) {
+      cgltf_uint joint_value = 0;
+      if (!cgltf_accessor_read_uint(joints_accessor, vertex_index, &joint_value,
+                                    component)) {
+        joint_value = 0;
+      }
+      influence.joint_indices[component] = static_cast<int>(joint_value);
+
+      float weight_value = 0.0f;
+      if (!cgltf_accessor_read_float(weights_accessor, vertex_index, &weight_value,
+                                     component)) {
+        weight_value = 0.0f;
+      }
+      influence.weights[component] = weight_value;
+    }
+  }
+
+  if (skin != nullptr && skin->joints_count > 0) {
+    skin_data.joint_to_bone.resize(static_cast<size_t>(skin->joints_count));
+    for (size_t joint_index = 0; joint_index < skin_data.joint_to_bone.size();
+         ++joint_index) {
+      skin_data.joint_to_bone[joint_index] = static_cast<int>(joint_index);
+    }
+  } else {
+    size_t max_joint_slot = 0;
+    for (const MeshSkinInfluence& influence : skin_data.influences) {
+      for (int slot = 0; slot < 4; ++slot) {
+        if (influence.weights[slot] > 0.0f) {
+          max_joint_slot =
+              eastl::max(max_joint_slot,
+                         static_cast<size_t>(influence.joint_indices[slot] + 1));
+        }
+      }
+    }
+    if (max_joint_slot == 0) {
+      skin_data.influences.clear();
+      return skin_data;
+    }
+    skin_data.joint_to_bone.resize(max_joint_slot);
+    for (size_t joint_index = 0; joint_index < skin_data.joint_to_bone.size();
+         ++joint_index) {
+      skin_data.joint_to_bone[joint_index] = static_cast<int>(joint_index);
+    }
+  }
+
+  return skin_data;
 }
 
 }  // namespace
@@ -261,7 +336,8 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
 
 eastl::shared_ptr<MeshAsset> AssetManager::loadMeshPrimitive(
     cgltf_data* data, size_t mesh_index, size_t primitive_index,
-    const std::filesystem::path& absolute, const eastl::string& gltf_canonical_key) {
+    const std::filesystem::path& absolute, const eastl::string& gltf_canonical_key,
+    const cgltf_skin* skin) {
   if (!m_is_initialized || data == nullptr ||
       mesh_index >= static_cast<size_t>(data->meshes_count)) {
     return nullptr;
@@ -408,9 +484,10 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMeshPrimitive(
   meta.virtual_path = cache_key;
   meta.absolute_path = absolute;
   meta.source_timestamp = querySourceTimestamp(absolute);
+  MeshSkinData skin_data = buildMeshSkinData(primitive, skin, vertex_count);
   auto asset = eastl::make_shared<MeshAsset>(
       eastl::move(meta), eastl::move(vertices), eastl::move(indices), material_handle,
-      material_asset);
+      material_asset, eastl::move(skin_data));
   m_mesh_cache[cache_key] = asset;
   return asset;
 }
