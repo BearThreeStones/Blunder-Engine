@@ -7,6 +7,7 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/export_macros.h"
 #include "runtime/function/scene/entity_id.h"
@@ -83,6 +84,14 @@ class Object {
   Skeleton* ensureSkeleton();
   void clearSkeleton();
 
+  bool hasAnimationPlayer() const { return m_animation_player != nullptr; }
+  AnimationPlayer* getAnimationPlayer() { return m_animation_player.get(); }
+  const AnimationPlayer* getAnimationPlayer() const {
+    return m_animation_player.get();
+  }
+  AnimationPlayer* ensureAnimationPlayer();
+  void clearAnimationPlayer();
+
  private:
   friend class ObjectDB;
 
@@ -115,6 +124,7 @@ class Object {
   Vec3 m_local_scale{1.0f, 1.0f, 1.0f};
   bool m_has_local_trs{false};
   eastl::unique_ptr<Skeleton> m_skeleton;
+  eastl::unique_ptr<AnimationPlayer> m_animation_player;
 };
 
 }  // namespace Blunder

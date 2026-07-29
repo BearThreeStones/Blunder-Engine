@@ -1268,3 +1268,27 @@ target_precompile_headers(skeleton_test
 
 add_test(NAME skeleton_test
          COMMAND skeleton_test)
+
+add_executable(animation_player_test
+    "animation_player_test.cpp"
+)
+
+target_link_libraries(animation_player_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_player_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(animation_player_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(animation_player_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME animation_player_test
+         COMMAND animation_player_test)

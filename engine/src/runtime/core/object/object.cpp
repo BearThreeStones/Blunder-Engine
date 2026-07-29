@@ -4,6 +4,7 @@
 
 #include "runtime/core/object/entity_store.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/skeleton.h"
 
 namespace Blunder {
@@ -316,6 +317,15 @@ Skeleton* Object::ensureSkeleton() {
 }
 
 void Object::clearSkeleton() { m_skeleton.reset(); }
+
+AnimationPlayer* Object::ensureAnimationPlayer() {
+  if (m_animation_player == nullptr) {
+    m_animation_player = eastl::make_unique<AnimationPlayer>();
+  }
+  return m_animation_player.get();
+}
+
+void Object::clearAnimationPlayer() { m_animation_player.reset(); }
 
 void Object::syncLocalTransformFromStore() {
   if (!hasEntity()) {

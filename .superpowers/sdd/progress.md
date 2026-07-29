@@ -46,3 +46,6 @@ Task 2.4: complete (commit 2af29bc, review Approved; model=composer-2.5)
 
 Task 3.1: complete (commit 3d73b84, review pending; model=composer-2.5)
   Skeleton runtime (bone hierarchy, rest/bind, pose, inverse bind); Object hosts at most one Skeleton; ClassDB registers Skeleton with bone_count; skeleton_test pass.
+
+Task 3.2: complete (commit pending, review pending; model=composer-2.5)
+  AnimationPlayer on Object (name→GUID map, Play/Stop/Loop, hard cut, advance/position/length); injectClipData + ClipResolver seam; ClassDB is_playing/is_looping/playback_position/clip_length; animation_player_test pass.
