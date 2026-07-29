@@ -127,8 +127,8 @@ void AnimationPlayer::advance(float delta_seconds) {
   }
 
   m_position = m_clip_length;
-  m_playing = false;
   sampleBoundSkeleton();
+  m_playing = false;
 }
 
 }  // namespace Blunder

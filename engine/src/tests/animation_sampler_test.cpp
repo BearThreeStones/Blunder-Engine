@@ -154,6 +154,34 @@ void test_no_skeleton_binding_is_no_op() {
   expect_true("still playing", player.isPlaying());
 }
 
+void test_end_pose_sampled_on_terminal_advance() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string guid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  AnimationClipData clip;
+  clip.duration = 1.0f;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(6.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("move", guid);
+  player.injectClipData(guid, clip);
+  expect_true("play", player.play("move"));
+  player.setLoop(false);
+  player.advance(1.0f);
+
+  expect_true("stopped at end", !player.isPlaying());
+  expect_true("position at duration",
+              float_near(player.getPlaybackPosition(), 1.0f));
+  expect_true("end key pose applied",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(6.0f, 0.0f, 0.0f)));
+}
+
 void test_object_colocated_sampling() {
   using namespace Blunder;
 
@@ -195,6 +223,7 @@ int main() {
   test_linear_midpoint();
   test_missing_bone_ignored_safely();
   test_hard_cut_and_sample_via_player();
+  test_end_pose_sampled_on_terminal_advance();
   test_no_skeleton_binding_is_no_op();
   test_object_colocated_sampling();
 
