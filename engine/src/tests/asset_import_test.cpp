@@ -1023,6 +1023,362 @@ void upgradeLegacyMeshIntermediatesIsNoOp() {
   fs::remove_all(project);
 }
 
+// Legacy migration: minimal COLLADA Intermediate (Assimp-readable).
+constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Y_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="tri-mesh" name="tri">
+      <mesh>
+        <source id="tri-positions">
+          <float_array id="tri-positions-array" count="9">0 0 0 1 0 0 0 1 0</float_array>
+          <technique_common>
+            <accessor source="#tri-positions-array" count="3" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="tri-vertices">
+          <input semantic="POSITION" source="#tri-positions"/>
+        </vertices>
+        <triangles count="1">
+          <input semantic="VERTEX" source="#tri-vertices" offset="0"/>
+          <p>0 1 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="tri-node" name="tri">
+        <instance_geometry url="#tri-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>
+)";
+
+// Task 1.4 (ADR 0019): legacy `.dae` Intermediate migrates GUID-preserving to glTF.
+void upgradeLegacyDaeIntermediateToGltfPreservesGuid() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbbb";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+
+  const fs::path legacy_dae =
+      project / "Resources" / "Models" / "legacy" / "hero.dae";
+  writeTextFile(legacy_dae, kMinimalTriangleDae);
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  writeTextFile(descriptor_absolute,
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/legacy/hero.dae\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  const fs::path mesh_cooked = cookedMeshPath(file_system, kGuid);
+  writeBinaryFile(mesh_cooked, "MESH", 4);
+
+  const uint32_t migrated = import_service.upgradeLegacyMeshIntermediates();
+  expect_true("dae migration reports one Asset", migrated == 1);
+
+  eastl::string yaml_after;
+  expect_true("dae migration: read descriptor after",
+              file_system.readText(descriptor_absolute, yaml_after));
+  MeshAssetDescriptor parsed{};
+  expect_true("dae migration: parse descriptor after",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed));
+  expect_true("dae migration preserves descriptor GUID", parsed.guid == kGuid);
+  expect_true("dae migration rewrites source to glTF",
+              containsIgnoreCase(parsed.source, ".gltf"));
+  expect_true("dae migration source does not point at .dae",
+              !containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("dae migration archives former .dae under Source",
+              !parsed.archived_source.empty());
+  expect_true("dae migration archived_source under Source",
+              containsIgnoreCase(parsed.archived_source, "source/"));
+  expect_true("dae migration archived_source keeps .dae",
+              containsIgnoreCase(parsed.archived_source, ".dae"));
+
+  const fs::path gltf_path =
+      project / "Resources" / "Models" / "legacy" / "hero.gltf";
+  expect_true("dae migration creates sibling glTF Intermediate",
+              file_system.exists(gltf_path));
+  expect_true("dae migration glTF body looks valid",
+              looksLikeGltfIntermediate(readTextFile(gltf_path)));
+  expect_true("dae migration removes legacy .dae Intermediate",
+              !file_system.exists(legacy_dae));
+  expect_true("dae migration invalidates cooked Final",
+              !file_system.exists(mesh_cooked));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+// Task 1.4: registry scan path migrates legacy `.dae` Intermediate.
+void registryScanUpgradesDaeToGltf() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "eeeeeeee-ffff-4aaa-8bbb-cccccccccccc";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+
+  const fs::path legacy_dae =
+      project / "Resources" / "Models" / "legacy" / "hero.dae";
+  writeTextFile(legacy_dae, kMinimalTriangleDae);
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  writeTextFile(descriptor_absolute,
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/legacy/hero.dae\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  const uint32_t migrated = import_service.scanAndUpgradeLegacyIntermediates();
+  expect_true("scan migrates legacy dae", migrated == 1);
+
+  eastl::string yaml_after;
+  expect_true("scan dae migration: read descriptor",
+              file_system.readText(descriptor_absolute, yaml_after));
+  MeshAssetDescriptor parsed{};
+  expect_true("scan dae migration: parse descriptor",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed));
+  expect_true("scan dae migration preserves GUID", parsed.guid == kGuid);
+  expect_true("scan dae migration rewrites source to glTF",
+              containsIgnoreCase(parsed.source, ".gltf"));
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+// Task 1.4: fail-soft migration leaves `.dae` source when convert fails.
+void upgradeLegacyDaeFailSoftLeavesDaeSource() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "ffffff00-1111-4222-8333-444444444444";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+
+  const fs::path legacy_dae =
+      project / "Resources" / "Models" / "legacy" / "hero.dae";
+  writeTextFile(legacy_dae, kMinimalTriangleDae);
+
+  const fs::path partial_gltf =
+      project / "Resources" / "Models" / "legacy" / "hero.gltf";
+  writeTextFile(partial_gltf, "PARTIAL_GLTF_NOT_VALID");
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  const std::string descriptor_before =
+      std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+      "source: resources/Models/legacy/hero.dae\n" +
+      "import:\n"
+      "  materials: true\n"
+      "  animations: true\n"
+      "  scale: 1\n";
+  writeTextFile(descriptor_absolute, descriptor_before);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  AssetImportService::setForceUpgradeConvertFailureForTest(true);
+  const uint32_t migrated = import_service.upgradeLegacyMeshIntermediates();
+  AssetImportService::setForceUpgradeConvertFailureForTest(false);
+
+  expect_true("fail-soft dae migration reports zero", migrated == 0);
+
+  eastl::string yaml_after;
+  expect_true("fail-soft dae: read descriptor after",
+              file_system.readText(descriptor_absolute, yaml_after));
+  expect_true("fail-soft dae: descriptor body unchanged",
+              std::string(yaml_after.c_str()) == descriptor_before);
+
+  MeshAssetDescriptor parsed{};
+  expect_true("fail-soft dae: parse descriptor after",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed));
+  expect_true("fail-soft dae: source still .dae",
+              containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("fail-soft dae: archived_source not invented",
+              parsed.archived_source.empty());
+  expect_true("fail-soft dae: cleans partial sibling glTF",
+              !file_system.exists(partial_gltf));
+  expect_true("fail-soft dae: legacy Intermediate preserved",
+              file_system.exists(legacy_dae));
+
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string("assets/Meshes/hero.mesh.yaml"));
+  expect_true("fail-soft dae: loadMesh legacy Fast Path returns mesh",
+              mesh != nullptr);
+  expect_true("fail-soft dae: loadMesh legacy Fast Path has vertices",
+              mesh && mesh->getVertexCount() == 3);
+
+  import_service.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+// Task 1.4: when archived OBJ exists, migration Reimports glTF from Source.
+void upgradeLegacyDaeWithArchivedObjReimportsGltf() {
+  using namespace Blunder;
+  ensureLogger();
+
+  constexpr const char* kGuid = "aaaa1111-bbbb-4222-8ccc-dddddddddddd";
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / "Resources" / "Models" / "legacy");
+  fs::create_directories(project / "Resources" / "Source" / "Models" / "hero");
+
+  const fs::path legacy_dae =
+      project / "Resources" / "Models" / "legacy" / "hero.dae";
+  writeTextFile(legacy_dae, kMinimalTriangleDae);
+
+  const fs::path archived_obj =
+      project / "Resources" / "Source" / "Models" / "hero" / "triangle.obj";
+  writeTextFile(archived_obj, kTriangleObj);
+
+  const fs::path descriptor_absolute =
+      project / "Assets" / "Meshes" / "hero.mesh.yaml";
+  writeTextFile(descriptor_absolute,
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/legacy/hero.dae\n" +
+                    "archived_source: resources/Source/Models/hero/triangle.obj\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  const uint32_t migrated = import_service.upgradeLegacyMeshIntermediates();
+  expect_true("archived OBJ dae migration reports one", migrated == 1);
+
+  eastl::string yaml_after;
+  expect_true("archived OBJ migration: read descriptor",
+              file_system.readText(descriptor_absolute, yaml_after));
+  MeshAssetDescriptor parsed{};
+  expect_true("archived OBJ migration: parse descriptor",
+              AssetYaml::parseMeshDescriptor(yaml_after, parsed));
+  expect_true("archived OBJ migration preserves GUID", parsed.guid == kGuid);
+  expect_true("archived OBJ migration rewrites source to glTF",
+              containsIgnoreCase(parsed.source, ".gltf"));
+  expect_true("archived OBJ migration keeps archived_source",
+              parsed.archived_source ==
+                  "resources/Source/Models/hero/triangle.obj");
+
+  const fs::path gltf_path =
+      project / "Resources" / "Models" / "legacy" / "hero.gltf";
+  expect_true("archived OBJ migration creates glTF Intermediate",
+              file_system.exists(gltf_path));
+  expect_true("archived OBJ migration glTF from OBJ reexport",
+              looksLikeGltfIntermediate(readTextFile(gltf_path)));
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 // Task 1.2: Reimport from archived OBJ regenerates Intermediate glTF.
 void reimportFromArchivedObjRegeneratesGltfIntermediate() {
   using namespace Blunder;
@@ -1159,6 +1515,10 @@ int main() {
   reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();
   registryScanDoesNotUpgradeGltfToDae();
   upgradeLegacyMeshIntermediatesIsNoOp();
+  upgradeLegacyDaeIntermediateToGltfPreservesGuid();
+  registryScanUpgradesDaeToGltf();
+  upgradeLegacyDaeFailSoftLeavesDaeSource();
+  upgradeLegacyDaeWithArchivedObjReimportsGltf();
   reimportFromArchivedObjRegeneratesGltfIntermediate();
   if (g_failures != 0) {
     std::fprintf(stderr, "asset_import_test: %d failure(s)\n", g_failures);

@@ -10,6 +10,9 @@ Task 1.1: complete (commits cd8e051..6544e20, review Approved; model=composer-2.
 Task 1.2: complete (commits 6544e20..7ab6dc7, review Approved; model=composer-2.5)
   Minor: no FBX e2e; tests not run; legacy dae path until 1.4
 
-Task 1.3: complete (pending commit after 7ab6dc7; model=composer-2.5)
+Task 1.3: complete (commit f1a7a7f; model=composer-2.5)
   glTF/GLB primary Fast Path + Cook; legacy dae Assimp retained; tests not run (Slint)
+
+Task 1.4: complete (pending commit; model=composer-2.5)
+  dae→glTF GUID-preserving migration on scan/open; fail-soft; tests not run (Slint)
 

@@ -73,12 +73,20 @@ class AssetImportService final {
   /// each GUID. Prefer this over N× requestReimport for watch debounce flush.
   bool requestReimports(const eastl::vector<eastl::string>& guids);
 
-  /// Legacy no-op (ADR 0019): glTF→COLLADA Intermediate Upgrade removed.
-  /// Returns 0. Call sites retained for project-open / cook warm-up hooks.
+  /// Lazy Intermediate migration (project open / registry scan): for each mesh
+  /// Asset whose Intermediate `source` is still `.dae`, migrate GUID-preserving
+  /// to sibling glTF/GLB (Assimp convert) or Reimport from `archived_source`
+  /// when Source Export whitelist. glTF/GLB sources are never downgraded to
+  /// COLLADA. Fail-soft: conversion failure leaves descriptor/`source` as `.dae`.
+  /// Returns the number of Assets successfully migrated.
   uint32_t upgradeLegacyMeshIntermediates();
 
-  /// Rebuild registry from Assets/ scan. Intermediate Upgrade is a no-op.
+  /// Rebuild registry from Assets/ scan, then run Intermediate migration.
   uint32_t scanAndUpgradeLegacyIntermediates();
+
+  /// Test seam: when true, Intermediate migration convert always fails so
+  /// fail-soft behavior can be asserted with a still-loadable legacy `.dae`.
+  static void setForceUpgradeConvertFailureForTest(bool force);
 
   /// glTF/GLB Intermediate exchange extensions (not Source Assets).
   static bool isMeshIntermediateExtension(const eastl::string& extension_lower);

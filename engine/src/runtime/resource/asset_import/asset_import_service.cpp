@@ -22,6 +22,15 @@ namespace Blunder {
 namespace fs = std::filesystem;
 
 namespace {
+// Test seam for Intermediate migration fail-soft (Task 1.4).
+bool g_force_upgrade_convert_failure_for_test = false;
+}  // namespace
+
+void AssetImportService::setForceUpgradeConvertFailureForTest(bool force) {
+  g_force_upgrade_convert_failure_for_test = force;
+}
+
+namespace {
 
 eastl::string extensionLower(const fs::path& path) {
   eastl::string ext(path.extension().generic_string().c_str());
@@ -362,6 +371,102 @@ bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
       "[AssetImport] Reimport refreshed Intermediate {} from archived {}",
       descriptor.source.c_str(), descriptor.archived_source.c_str());
   return true;
+}
+
+bool endsWithIgnoreCase(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  for (size_t i = 0; i < suffix_length; ++i) {
+    char a = value[value.size() - suffix_length + i];
+    char b = suffix[i];
+    if (a >= 'A' && a <= 'Z') {
+      a = static_cast<char>(a - 'A' + 'a');
+    }
+    if (b >= 'A' && b <= 'Z') {
+      b = static_cast<char>(b - 'A' + 'a');
+    }
+    if (a != b) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isLegacyColladaIntermediateSource(const eastl::string& source) {
+  return endsWithIgnoreCase(source, ".dae");
+}
+
+eastl::string replaceExtensionWithGltf(const eastl::string& virtual_path) {
+  const size_t dot = virtual_path.find_last_of('.');
+  if (dot == eastl::string::npos) {
+    return virtual_path + ".gltf";
+  }
+  eastl::string result = virtual_path;
+  result.replace(dot, eastl::string::npos, ".gltf");
+  return result;
+}
+
+/// Assimp Import `.dae` + Export sibling `.gltf`. Empty on failure.
+eastl::string convertLegacyColladaToSiblingGltf(
+    FileSystem* file_system, const eastl::string& source_virtual,
+    const fs::path& source_absolute) {
+  if (g_force_upgrade_convert_failure_for_test) {
+    return eastl::string();
+  }
+
+  Assimp::Importer importer;
+  const aiScene* scene = readSourceScene(importer, source_absolute);
+  if (!scene) {
+    return eastl::string();
+  }
+
+  const eastl::string gltf_virtual = replaceExtensionWithGltf(source_virtual);
+  const fs::path gltf_absolute =
+      resolveResourcesVirtualPath(file_system, gltf_virtual);
+  if (!exportSceneToGltfFile(scene, file_system, gltf_absolute)) {
+    if (file_system->exists(gltf_absolute)) {
+      std::error_code ec;
+      fs::remove(gltf_absolute, ec);
+    }
+    return eastl::string();
+  }
+  return gltf_virtual;
+}
+
+/// Produce glTF Intermediate for a legacy `.dae` descriptor: Reimport from
+/// archived Source Export when possible, else Assimp convert the `.dae`.
+eastl::string migrateLegacyDaeIntermediateToGltf(
+    FileSystem* file_system, const MeshAssetDescriptor& descriptor) {
+  const fs::path dae_absolute =
+      resolveResourcesVirtualPath(file_system, descriptor.source);
+  if (!file_system->exists(dae_absolute)) {
+    return eastl::string();
+  }
+
+  const eastl::string gltf_virtual = replaceExtensionWithGltf(descriptor.source);
+  const fs::path gltf_absolute =
+      resolveResourcesVirtualPath(file_system, gltf_virtual);
+
+  if (!descriptor.archived_source.empty()) {
+    const fs::path archived_absolute =
+        resolveResourcesVirtualPath(file_system, descriptor.archived_source);
+    const eastl::string archived_ext = extensionLower(archived_absolute);
+    if (AssetImportService::isMeshSourceExportExtension(archived_ext) &&
+        file_system->exists(archived_absolute)) {
+      if (g_force_upgrade_convert_failure_for_test) {
+        return eastl::string();
+      }
+      if (reexportArchivedSourceToIntermediate(file_system, archived_absolute,
+                                                 gltf_absolute)) {
+        return gltf_virtual;
+      }
+    }
+  }
+
+  return convertLegacyColladaToSiblingGltf(file_system, descriptor.source,
+                                           dae_absolute);
 }
 
 }  // namespace
@@ -759,9 +864,135 @@ bool AssetImportService::requestReimports(
 }
 
 uint32_t AssetImportService::upgradeLegacyMeshIntermediates() {
-  // ADR 0019: glTF→COLLADA Intermediate Upgrade removed; glTF stays glTF.
-  (void)m_is_initialized;
-  return 0;
+  if (!m_is_initialized) {
+    return 0;
+  }
+
+  const auto entries = m_asset_registry->registeredEntries();
+  eastl::vector<eastl::pair<eastl::string, eastl::string>> mesh_candidates;
+  mesh_candidates.reserve(entries.size());
+  for (const auto& entry : entries) {
+    const eastl::string& descriptor_virtual = entry.second;
+    if (descriptor_virtual.size() < 10 ||
+        descriptor_virtual.compare(descriptor_virtual.size() - 10, 10,
+                                   ".mesh.yaml") != 0) {
+      continue;
+    }
+    mesh_candidates.push_back(entry);
+  }
+  if (mesh_candidates.empty()) {
+    return 0;
+  }
+
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+  }
+
+  uint32_t migrated = 0;
+  for (const auto& entry : mesh_candidates) {
+    const eastl::string& guid = entry.first;
+    const eastl::string& descriptor_virtual = entry.second;
+    const fs::path descriptor_absolute =
+        resolveDescriptorAbsolute(m_file_system, descriptor_virtual);
+
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
+      continue;
+    }
+
+    MeshAssetDescriptor descriptor{};
+    if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+      continue;
+    }
+    if (!isLegacyColladaIntermediateSource(descriptor.source)) {
+      continue;
+    }
+
+    const fs::path dae_absolute =
+        resolveResourcesVirtualPath(m_file_system, descriptor.source);
+    if (!m_file_system->exists(dae_absolute)) {
+      LOG_WARN(
+          "[AssetImport] Intermediate migration skipped: missing source {} "
+          "(guid={})",
+          descriptor.source.c_str(), guid.c_str());
+      continue;
+    }
+
+    const eastl::string gltf_virtual =
+        migrateLegacyDaeIntermediateToGltf(m_file_system, descriptor);
+    if (gltf_virtual.empty()) {
+      const eastl::string sibling_gltf =
+          replaceExtensionWithGltf(descriptor.source);
+      const fs::path sibling_gltf_absolute =
+          resolveResourcesVirtualPath(m_file_system, sibling_gltf);
+      if (m_file_system->exists(sibling_gltf_absolute)) {
+        std::error_code ec;
+        fs::remove(sibling_gltf_absolute, ec);
+      }
+      LOG_WARN(
+          "[AssetImport] Intermediate migration failed for guid={} source={} "
+          "(leaving legacy .dae source unchanged)",
+          guid.c_str(), descriptor.source.c_str());
+      continue;
+    }
+
+    const eastl::string previous_source = descriptor.source;
+    if (descriptor.archived_source.empty()) {
+      const eastl::string archived =
+          archiveSourceAsset(m_file_system, dae_absolute, "Models");
+      if (archived.empty()) {
+        LOG_WARN(
+            "[AssetImport] Intermediate migration: archive failed for {} "
+            "(guid={}); leaving descriptor unchanged",
+            previous_source.c_str(), guid.c_str());
+        const fs::path gltf_absolute =
+            resolveResourcesVirtualPath(m_file_system, gltf_virtual);
+        if (m_file_system->exists(gltf_absolute)) {
+          std::error_code ec;
+          fs::remove(gltf_absolute, ec);
+        }
+        continue;
+      }
+      descriptor.archived_source = archived;
+    }
+
+    descriptor.source = gltf_virtual;
+    // GUID must stay stable across Intermediate migration.
+    descriptor.guid = guid;
+
+    if (!m_file_system->writeText(
+            descriptor_absolute,
+            AssetYaml::serializeMeshDescriptor(descriptor))) {
+      LOG_WARN(
+          "[AssetImport] Intermediate migration: failed to write descriptor {} "
+          "(guid={}); leaving legacy source unchanged",
+          descriptor_virtual.c_str(), guid.c_str());
+      const fs::path gltf_absolute =
+          resolveResourcesVirtualPath(m_file_system, gltf_virtual);
+      if (m_file_system->exists(gltf_absolute)) {
+        std::error_code ec;
+        fs::remove(gltf_absolute, ec);
+      }
+      continue;
+    }
+
+    if (m_file_system->exists(dae_absolute)) {
+      std::error_code ec;
+      fs::remove(dae_absolute, ec);
+    }
+
+    LOG_INFO(
+        "[AssetImport] Intermediate migration guid={} {} -> {} (archived={})",
+        guid.c_str(), previous_source.c_str(), descriptor.source.c_str(),
+        descriptor.archived_source.c_str());
+
+    if (m_asset_compiler) {
+      m_asset_compiler->invalidateAssetAndDependents(guid);
+    }
+    ++migrated;
+  }
+
+  return migrated;
 }
 
 uint32_t AssetImportService::scanAndUpgradeLegacyIntermediates() {
