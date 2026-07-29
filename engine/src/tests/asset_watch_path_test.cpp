@@ -83,8 +83,8 @@ void classifyPaths() {
                              resources) == AssetWatchPathClass::AssetsTree);
 
   expect_true(
-      "intermediate dae is IntermediateResource",
-      classifyAssetWatchPath(resources / "Models" / "cube" / "cube.dae",
+      "intermediate gltf is IntermediateResource",
+      classifyAssetWatchPath(resources / "Models" / "cube" / "cube.gltf",
                              assets, resources) ==
           AssetWatchPathClass::IntermediateResource);
 
@@ -122,7 +122,7 @@ void pathToGuidMapping() {
   writeTextFile(project / "Resources" / "Textures" / "albedo.png", "png");
   writeTextFile(project / "Assets" / "Meshes" / "cube.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/cube/cube.dae\n" +
+                    "source: resources/Models/cube/cube.gltf\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
@@ -130,8 +130,8 @@ void pathToGuidMapping() {
                     "texture_guids:\n"
                     "  - " +
                     kTexGuid + "\n");
-  writeTextFile(project / "Resources" / "Models" / "cube" / "cube.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "cube" / "cube.gltf",
+                "gltf");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -171,7 +171,7 @@ void pathToGuidMapping() {
   {
     const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
         AssetWatchPathClass::IntermediateResource,
-        resources / "Models" / "cube" / "cube.dae", assets, resources,
+        resources / "Models" / "cube" / "cube.gltf", assets, resources,
         registry, graph);
     expect_true("intermediate mesh body maps to mesh guid",
                 containsGuid(guids, kMeshGuid));
@@ -209,7 +209,7 @@ void archivedSourcePathToGuids() {
   const fs::path project = makeTempProject();
   writeTextFile(project / "Assets" / "Meshes" / "hero.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/hero/hero.dae\n" +
+                    "source: resources/Models/hero/hero.gltf\n" +
                     "archived_source: Source/Models/hero.fbx\n" +
                     "import:\n"
                     "  generate_normals: true\n"
@@ -217,16 +217,16 @@ void archivedSourcePathToGuids() {
                     "  scale: 1.0\n");
   writeTextFile(project / "Assets" / "Meshes" / "prop.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kOtherGuid + "\n" +
-                    "source: resources/Models/prop/prop.dae\n" +
+                    "source: resources/Models/prop/prop.gltf\n" +
                     "archived_source: Source/Models/prop.fbx\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
                     "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.dae",
-                "dae");
-  writeTextFile(project / "Resources" / "Models" / "prop" / "prop.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.gltf",
+                "gltf");
+  writeTextFile(project / "Resources" / "Models" / "prop" / "prop.gltf",
+                "gltf");
   writeTextFile(project / "Resources" / "Source" / "Models" / "hero.fbx",
                 "fbx");
   writeTextFile(project / "Resources" / "Source" / "Models" / "prop.fbx",
@@ -267,8 +267,8 @@ void archivedSourcePathToGuids() {
   fs::remove_all(project);
 }
 
-// Spec: Intermediate Resources change (.dae) invalidates that Asset's Final.
-void meshIntermediateDaeChangeInvalidatesFinal() {
+// Spec: Intermediate Resources change (.gltf) invalidates that Asset's Final.
+void meshIntermediateGltfChangeInvalidatesFinal() {
   using namespace Blunder;
   ensureLogger();
 
@@ -277,13 +277,13 @@ void meshIntermediateDaeChangeInvalidatesFinal() {
   const fs::path project = makeTempProject();
   writeTextFile(project / "Assets" / "Meshes" / "solo.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/solo/solo.dae\n" +
+                    "source: resources/Models/solo/solo.gltf\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
                     "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.gltf",
+                "gltf");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -317,18 +317,18 @@ void meshIntermediateDaeChangeInvalidatesFinal() {
 
   const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
       AssetWatchPathClass::IntermediateResource,
-      resources / "Models" / "solo" / "solo.dae", assets, resources, registry,
+      resources / "Models" / "solo" / "solo.gltf", assets, resources, registry,
       graph);
-  expect_true("Intermediate .dae maps to mesh guid",
+  expect_true("Intermediate .gltf maps to mesh guid",
               containsGuid(guids, kMeshGuid));
 
   for (const eastl::string& guid : guids) {
     compiler.invalidateAssetAndDependents(guid);
   }
 
-  expect_true("Intermediate .dae change invalidates mesh Final",
+  expect_true("Intermediate .gltf change invalidates mesh Final",
               !file_system.exists(mesh_cooked));
-  expect_true("Intermediate .dae change invalidates mesh meta",
+  expect_true("Intermediate .gltf change invalidates mesh meta",
               !file_system.exists(mesh_meta));
 
   compiler.shutdown();
@@ -356,7 +356,7 @@ void intermediateTextureChangeInvalidatesMeshFinal() {
   writeTextFile(project / "Resources" / "Textures" / "albedo.png", "png");
   writeTextFile(project / "Assets" / "Meshes" / "cube.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/cube/cube.dae\n" +
+                    "source: resources/Models/cube/cube.gltf\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
@@ -364,8 +364,8 @@ void intermediateTextureChangeInvalidatesMeshFinal() {
                     "texture_guids:\n"
                     "  - " +
                     kTexGuid + "\n");
-  writeTextFile(project / "Resources" / "Models" / "cube" / "cube.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "cube" / "cube.gltf",
+                "gltf");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -430,13 +430,13 @@ void descriptorChangeInvalidatesFinal() {
   const fs::path project = makeTempProject();
   writeTextFile(project / "Assets" / "Meshes" / "solo.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/solo/solo.dae\n" +
+                    "source: resources/Models/solo/solo.gltf\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
                     "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.gltf",
+                "gltf");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -501,14 +501,14 @@ void sourceChangeTriggersReimportInvalidatesFinal() {
   const fs::path project = makeTempProject();
   writeTextFile(project / "Assets" / "Meshes" / "hero.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/hero/hero.dae\n" +
+                    "source: resources/Models/hero/hero.gltf\n" +
                     "archived_source: Source/Models/hero.fbx\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
                     "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.gltf",
+                "gltf");
   writeTextFile(project / "Resources" / "Source" / "Models" / "hero.fbx",
                 "fbx");
 
@@ -576,7 +576,7 @@ void reimportBatchRebuildsGraphOnce() {
   const fs::path project = makeTempProject();
   writeTextFile(project / "Assets" / "Meshes" / "hero.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
-                    "source: resources/Models/hero/hero.dae\n" +
+                    "source: resources/Models/hero/hero.gltf\n" +
                     "archived_source: Source/Models/hero.fbx\n" +
                     "import:\n"
                     "  generate_normals: true\n"
@@ -584,16 +584,16 @@ void reimportBatchRebuildsGraphOnce() {
                     "  scale: 1.0\n");
   writeTextFile(project / "Assets" / "Meshes" / "prop.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kOtherGuid + "\n" +
-                    "source: resources/Models/prop/prop.dae\n" +
+                    "source: resources/Models/prop/prop.gltf\n" +
                     "archived_source: Source/Models/prop.fbx\n" +
                     "import:\n"
                     "  generate_normals: true\n"
                     "  generate_tangents: true\n"
                     "  scale: 1.0\n");
-  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.dae",
-                "dae");
-  writeTextFile(project / "Resources" / "Models" / "prop" / "prop.dae",
-                "dae");
+  writeTextFile(project / "Resources" / "Models" / "hero" / "hero.gltf",
+                "gltf");
+  writeTextFile(project / "Resources" / "Models" / "prop" / "prop.gltf",
+                "gltf");
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -645,7 +645,7 @@ int main() {
   classifyPaths();
   pathToGuidMapping();
   archivedSourcePathToGuids();
-  meshIntermediateDaeChangeInvalidatesFinal();
+  meshIntermediateGltfChangeInvalidatesFinal();
   intermediateTextureChangeInvalidatesMeshFinal();
   descriptorChangeInvalidatesFinal();
   sourceChangeTriggersReimportInvalidatesFinal();

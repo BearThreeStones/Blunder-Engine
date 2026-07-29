@@ -4,7 +4,7 @@
 - [x] 1.2 Remove or gate Assimp COLLADA Intermediate-direct Import and glTF→COLLADA upgrade on registry scan
 - [x] 1.3 Restore/ensure Fast Path + Cook mesh load from Intermediate glTF/GLB (cgltf or chosen reader)
 - [x] 1.4 Add GUID-preserving migration for remaining `.dae` Intermediate → glTF (or Reimport from Source); tests for no dae upgrade of glTF
-- [ ] 1.5 Update asset-pipeline unit/smoke tests that still assert COLLADA Intermediate
+- [x] 1.5 Update asset-pipeline unit/smoke tests that still assert COLLADA Intermediate
 
 ## 2. AnimationClip Asset + Import extract
 
