@@ -1,5 +1,7 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 
+#include "runtime/resource/asset_import/gltf_animation_clip_extractor.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -613,6 +615,19 @@ ImportResult AssetImportService::importMeshIntermediate(
   result.guid = descriptor.guid;
   result.success = true;
 
+  if (settings.animations) {
+    const fs::path gltf_absolute =
+        resolveResourcesVirtualPath(m_file_system, resource_virtual_path);
+    const MakeUniqueDescriptorNameFn make_name =
+        [this](const eastl::string& folder, const eastl::string& name_stem,
+               const char* suffix) {
+          return makeUniqueDescriptorName(folder, name_stem, suffix);
+        };
+    result.animation_clips = extractAndRegisterAnimationClipsFromGltf(
+        m_file_system, m_asset_registry, m_content_browser, gltf_absolute, stem,
+        make_name);
+  }
+
   LOG_INFO("[AssetImport] mesh {} -> {} (Intermediate: {})",
            input_absolute.generic_string(), descriptor_virtual.c_str(),
            resource_virtual_path.c_str());
@@ -674,6 +689,19 @@ ImportResult AssetImportService::importMeshSourceExport(
   result.descriptor_virtual_path = descriptor_virtual;
   result.guid = descriptor.guid;
   result.success = true;
+
+  if (settings.animations) {
+    const fs::path gltf_absolute =
+        resolveResourcesVirtualPath(m_file_system, intermediate_virtual);
+    const MakeUniqueDescriptorNameFn make_name =
+        [this](const eastl::string& folder, const eastl::string& name_stem,
+               const char* suffix) {
+          return makeUniqueDescriptorName(folder, name_stem, suffix);
+        };
+    result.animation_clips = extractAndRegisterAnimationClipsFromGltf(
+        m_file_system, m_asset_registry, m_content_browser, gltf_absolute, stem,
+        make_name);
+  }
 
   LOG_INFO(
       "[AssetImport] Source Export {} -> {} (Intermediate: {}, archived: {})",
@@ -777,6 +805,11 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
                    mesh_settings);
     if (imported.success) {
       results.push_back(imported);
+      for (const ImportResult& clip : imported.animation_clips) {
+        if (clip.success) {
+          results.push_back(clip);
+        }
+      }
     }
   }
 

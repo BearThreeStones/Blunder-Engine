@@ -11,6 +11,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -44,8 +45,10 @@ fs::path makeTempProject() {
        std::to_string(static_cast<unsigned long long>(
            std::chrono::steady_clock::now().time_since_epoch().count())));
   fs::create_directories(root / "Assets" / "Meshes");
+  fs::create_directories(root / "Assets" / "Animations");
   fs::create_directories(root / "Assets" / "Textures");
   fs::create_directories(root / "Resources" / "Models");
+  fs::create_directories(root / "Resources" / "Animations");
   fs::create_directories(root / "Resources" / "Textures");
   fs::create_directories(root / "Resources" / "Source");
   fs::create_directories(root / ".blunder" / "cooked");
@@ -134,6 +137,232 @@ constexpr const char* kTriangleGltf = R"({
     "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA"
   }]
 })";
+
+void writeDualAnimationGltfFixture(const fs::path& gltf_path) {
+  const std::string gltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "name": "Hips", "mesh": 0 }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 0 },
+      "indices": 1
+    }]
+  }],
+  "animations": [
+    {
+      "name": "idle",
+      "channels": [{
+        "sampler": 0,
+        "target": { "node": 0, "path": "translation" }
+      }],
+      "samplers": [{
+        "input": 2,
+        "interpolation": "STEP",
+        "output": 3
+      }]
+    },
+    {
+      "name": "walk",
+      "channels": [{
+        "sampler": 0,
+        "target": { "node": 0, "path": "translation" }
+      }],
+      "samplers": [{
+        "input": 4,
+        "interpolation": "LINEAR",
+        "output": 5
+      }]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR",
+      "max": [1.0],
+      "min": [0.0]
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR",
+      "max": [0.5],
+      "min": [0.0]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 42, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 50, "byteLength": 24 },
+    { "buffer": 0, "byteOffset": 74, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 82, "byteLength": 24 }
+  ],
+  "buffers": [{
+    "byteLength": 106,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAA=="
+  }]
+})";
+  writeTextFile(gltf_path, gltf);
+}
+
+// Task 2.2: multi-animation glTF Import registers mesh + clip Assets.
+void importGltfWithTwoAnimationsRegistersMeshAndClips() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_import_dual_anim_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "rig.gltf";
+  writeDualAnimationGltfFixture(external);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const ImportResult result =
+      import_service.importMesh(external, "assets/Meshes", settings);
+
+  expect_true("dual anim import mesh succeeds", result.success);
+  expect_true("dual anim import returns mesh guid", !result.guid.empty());
+  expect_true("dual anim import extracts two clips",
+              result.animation_clips.size() == 2);
+  expect_true("dual anim clip guids distinct",
+              !result.animation_clips[0].guid.empty() &&
+                  !result.animation_clips[1].guid.empty() &&
+                  result.animation_clips[0].guid != result.animation_clips[1].guid);
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  bool saw_idle = false;
+  bool saw_walk = false;
+  for (const ImportResult& clip : result.animation_clips) {
+    expect_true("clip import succeeds", clip.success);
+    expect_true("clip descriptor under assets/Animations",
+                startsWith(clip.descriptor_virtual_path, "assets/Animations/"));
+    expect_true("clip descriptor ends with .animation.yaml",
+                clip.descriptor_virtual_path.find(".animation.yaml") !=
+                    eastl::string::npos);
+
+    eastl::string desc_rel = clip.descriptor_virtual_path;
+    if (startsWith(desc_rel, "assets/")) {
+      desc_rel.erase(0, 7);
+    }
+    const fs::path descriptor_absolute =
+        file_system.resolveAsset(fs::path(desc_rel.c_str()));
+    eastl::string descriptor_yaml;
+    expect_true("read clip descriptor yaml",
+                file_system.readText(descriptor_absolute, descriptor_yaml));
+
+    AnimationClipAssetDescriptor clip_descriptor{};
+    expect_true("parse clip descriptor",
+                AssetYaml::parseAnimationClipDescriptor(descriptor_yaml,
+                                                        clip_descriptor));
+    expect_true("clip descriptor guid matches",
+                clip_descriptor.guid == clip.guid);
+    expect_true("clip source is Intermediate resources/ path",
+                startsWith(clip_descriptor.source, "resources/Animations/"));
+    expect_true("clip Intermediate ends with .anim.yaml",
+                clip_descriptor.source.find(".anim.yaml") !=
+                    eastl::string::npos);
+
+    const fs::path intermediate_absolute =
+        resolveResourcesVirtual(clip_descriptor.source);
+    eastl::string intermediate_yaml;
+    expect_true("read clip Intermediate yaml",
+                file_system.readText(intermediate_absolute, intermediate_yaml));
+
+    AnimationClipData clip_data{};
+    expect_true("parse clip Intermediate yaml",
+                AssetYaml::parseAnimationClipData(intermediate_yaml, clip_data));
+    expect_true("clip has at least one track", !clip_data.tracks.empty());
+    expect_true("clip track targets Hips bone",
+                clip_data.tracks[0].bone == "Hips");
+    expect_true("clip track is translation",
+                clip_data.tracks[0].channel == AnimationChannel::Translation);
+
+    if (clip_data.name == "idle") {
+      saw_idle = true;
+      expect_true("idle clip uses Constant interpolation",
+                  clip_data.tracks[0].interpolation ==
+                      AnimationInterpolation::Constant);
+      expect_true("idle clip duration is 1.0",
+                  clip_data.duration == 1.0f);
+    } else if (clip_data.name == "walk") {
+      saw_walk = true;
+      expect_true("walk clip uses Linear interpolation",
+                  clip_data.tracks[0].interpolation ==
+                      AnimationInterpolation::Linear);
+      expect_true("walk clip duration is 0.5",
+                  clip_data.duration == 0.5f);
+    }
+
+    expect_true("registry maps clip guid",
+                registry.resolveGuid(clip.guid) == clip.descriptor_virtual_path);
+  }
+
+  expect_true("dual anim import registered idle clip", saw_idle);
+  expect_true("dual anim import registered walk clip", saw_walk);
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
 
 // Task 1.1 (ADR 0019): mesh Intermediate = glTF/GLB; COLLADA removed.
 // FBX/OBJ are Source Export inputs. Images remain Intermediate-direct.
@@ -1507,6 +1736,7 @@ int main() {
   meshExtensionRoutingTables();
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
+  importGltfWithTwoAnimationsRegistersMeshAndClips();
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
   importGltfIntermediateDirectNotSourceExport();

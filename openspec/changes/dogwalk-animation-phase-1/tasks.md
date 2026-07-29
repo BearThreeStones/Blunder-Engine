@@ -9,7 +9,7 @@
 ## 2. AnimationClip Asset + Import extract
 
 - [x] 2.1 Define AnimationClip descriptor + readable YAML Intermediate schema (bones, times, TRS, Constant|Linear)
-- [ ] 2.2 On glTF Import: register 1 Mesh Asset (+ skin/bind) and N AnimationClip Assets with YAML extraction
+- [x] 2.2 On glTF Import: register 1 Mesh Asset (+ skin/bind) and N AnimationClip Assets with YAML extraction
 - [ ] 2.3 Reimport refreshes clip YAML while preserving stable clip GUIDs
 - [ ] 2.4 Dependency graph + Asset Watch: clip YAML / descriptor invalidate clip Finals; consumer→clip edges
 

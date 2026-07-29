@@ -18,3 +18,7 @@ Build note: worktree Slint cargo OOM — build with /p:BuildProjectReferences=fa
 Tests run (exit 0): asset_import_test, asset_manager_fast_path_test, asset_pipeline_smoke_test
 Follow-up: link blunder_engine_c_static into those three test targets (pre-existing LNK2019).
 
+Task 2.1: complete (commit 1cfd979, review Approved; model=composer-2.5)
+  Minor: round-trip tests shallow on float equality; scale channel untested
+
+Task 2.2: complete — glTF Import extracts AnimationClip YAML via cgltf (gltf_animation_clip_extractor); importMeshIntermediate + importMeshSourceExport register clips under assets/Animations/; ImportResult.animation_clips; asset_import_test dual-animation fixture (idle STEP→Constant, walk LINEAR).

@@ -152,6 +152,8 @@ add_library(engine_runtime STATIC
     "resource/asset_dependency/asset_dependency_graph.cpp"
     "resource/asset_import/asset_import_service.h"
     "resource/asset_import/asset_import_service.cpp"
+    "resource/asset_import/gltf_animation_clip_extractor.h"
+    "resource/asset_import/gltf_animation_clip_extractor.cpp"
     "resource/asset/material_asset.h"
     "resource/asset/shader_asset.h"
     "resource/asset/mesh_asset.h"

@@ -19,6 +19,8 @@ struct ImportResult {
   eastl::string descriptor_virtual_path;
   eastl::string guid;
   bool success{false};
+  /// AnimationClip Assets extracted alongside a mesh glTF Import (Task 2.2).
+  eastl::vector<ImportResult> animation_clips;
 };
 
 struct AssetImportServiceInit {
