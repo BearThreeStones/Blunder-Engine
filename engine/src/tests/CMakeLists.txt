@@ -1308,6 +1308,10 @@ target_include_directories(mesh_skin_cook_test
     PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 
+target_compile_definitions(mesh_skin_cook_test
+    PRIVATE "BLUNDER_REPO_ROOT=R\"(${CMAKE_SOURCE_DIR})\""
+)
+
 if(MSVC)
     target_compile_options(mesh_skin_cook_test PRIVATE /Zc:preprocessor)
 endif()

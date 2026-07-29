@@ -71,6 +71,6 @@ Task 3.5 fix: ef25b3a clear PoseApplied bindings on destroy
 Task 4.1: complete (commit c4ccbde, review pending; model=composer-2.5)
   MeshSkinData on MeshAsset from glTF JOINTS_0/WEIGHTS_0; populateSkeletonFromSkin on glTF import; applyCpuSkinning + syncSceneToRender Fast Path upload; cpu_skinning_test pass.
 
-Task 4.2: complete (pending commit; model=composer-2.5)
+Task 4.2: complete (commit 8313875 + test fix; model=composer-2.5)
   meshbin v2 skin section (joint_to_bone + per-vertex influences); cook writes skin payload; loadCookedMeshAsset restores MeshSkinData; glTF loadMesh resolves node skin; mesh_skin_cook_test pass.
 

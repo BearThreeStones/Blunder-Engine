@@ -72,72 +72,8 @@ eastl::vector<Blunder::MeshVertex> makeTriangleVertices() {
   return vertices;
 }
 
-// Minimal skinned triangle glTF (1 joint, JOINTS_0/WEIGHTS_0 on all verts).
-constexpr char kSkinnedTriangleGltf[] = R"({
-  "asset": { "version": "2.0" },
-  "scene": 0,
-  "scenes": [{ "nodes": [0] }],
-  "nodes": [{ "mesh": 0, "skin": 0 }],
-  "meshes": [{
-    "primitives": [{
-      "attributes": {
-        "POSITION": 0,
-        "JOINTS_0": 1,
-        "WEIGHTS_0": 2
-      },
-      "indices": 3
-    }]
-  }],
-  "skins": [{
-    "joints": [0],
-    "inverseBindMatrices": 4
-  }],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC3",
-      "max": [1.0, 1.0, 0.0],
-      "min": [0.0, 0.0, 0.0]
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5121,
-      "count": 3,
-      "type": "VEC4"
-    },
-    {
-      "bufferView": 2,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC4"
-    },
-    {
-      "bufferView": 3,
-      "componentType": 5123,
-      "count": 3,
-      "type": "SCALAR"
-    },
-    {
-      "bufferView": 4,
-      "componentType": 5126,
-      "count": 1,
-      "type": "MAT4"
-    }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
-    { "buffer": 0, "byteOffset": 36, "byteLength": 12 },
-    { "buffer": 0, "byteOffset": 48, "byteLength": 48 },
-    { "buffer": 0, "byteOffset": 96, "byteLength": 6 },
-    { "buffer": 0, "byteOffset": 102, "byteLength": 64 }
-  ],
-  "buffers": [{
-    "byteLength": 166,
-    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAABAAIAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPw=="
-  }]
-})";
+constexpr char kSimpleSkinGltfRel[] =
+    "engine/3rdparty/assimp/test/models/glTF2/simple_skin/simple_skin.gltf";
 
 void skinPayloadRoundTripsThroughMeshCookFile() {
   using namespace Blunder;
@@ -209,8 +145,11 @@ void cookSkinnedDescriptorWritesFinalSkinPayload() {
   const char* kGuid = "eeeeeeee-ffff-4aaa-8bbb-cccccccccccc";
   const char* kDescriptorPath = "assets/Meshes/skinned.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "skinned.gltf",
-                kSkinnedTriangleGltf);
+  const fs::path fixture_gltf =
+      fs::path(BLUNDER_REPO_ROOT) / kSimpleSkinGltfRel;
+  expect_true("simple_skin glTF fixture exists", fs::exists(fixture_gltf));
+  fs::copy_file(fixture_gltf, project / "Resources" / "Models" / "skinned.gltf",
+                fs::copy_options::overwrite_existing);
   writeTextFile(project / "Assets" / "Meshes" / "skinned.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
                     "source: resources/Models/skinned.gltf\n" +
@@ -233,11 +172,12 @@ void cookSkinnedDescriptorWritesFinalSkinPayload() {
   am_init.file_system = &file_system;
   manager.initialize(am_init);
 
-  AssetCompilerService compiler;
-  compiler.initialize(&file_system, &manager, &registry);
+  auto compiler = eastl::make_shared<AssetCompilerService>();
+  compiler->initialize(&file_system, &manager, &registry);
+  manager.setAssetCompiler(compiler);
 
   expect_true("cook skinned mesh descriptor",
-              compiler.cookAsset(eastl::string(kGuid)));
+              compiler->cookAsset(eastl::string(kGuid)));
 
   const fs::path cooked_path = cookedMeshPath(file_system, eastl::string(kGuid));
   expect_true("cooked meshbin exists", file_system.exists(cooked_path));
@@ -262,7 +202,8 @@ void cookSkinnedDescriptorWritesFinalSkinPayload() {
               loaded && loaded->getSkinData().influences.size() ==
                              loaded->getVertexCount());
 
-  compiler.shutdown();
+  manager.setAssetCompiler({});
+  compiler->shutdown();
   manager.shutdown();
   registry.shutdown();
   file_system.shutdown();
