@@ -66,7 +66,46 @@ void writeBinaryFile(const fs::path& path, const unsigned char* bytes,
             static_cast<std::streamsize>(size));
 }
 
-// Minimal single-triangle COLLADA Intermediate (Assimp-readable).
+// Minimal single-triangle glTF Intermediate (cgltf Fast Path; ADR 0019 primary).
+constexpr char kMinimalTriangleGltf[] = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 1 },
+      "indices": 0
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
+  ],
+  "buffers": [{
+    "byteLength": 44,
+    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
+  }]
+}
+)";
+
+// Legacy migration: minimal COLLADA Intermediate (Assimp-readable until Task 1.4).
 constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
   <asset>
@@ -108,45 +147,6 @@ constexpr char kMinimalTriangleDae[] = R"(<?xml version="1.0" encoding="utf-8"?>
 </COLLADA>
 )";
 
-// Legacy glTF Intermediate (cgltf Fast Path while source still points at glTF).
-constexpr char kMinimalTriangleGltf[] = R"({
-  "asset": { "version": "2.0" },
-  "scene": 0,
-  "scenes": [{ "nodes": [0] }],
-  "nodes": [{ "mesh": 0 }],
-  "meshes": [{
-    "primitives": [{
-      "attributes": { "POSITION": 1 },
-      "indices": 0
-    }]
-  }],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5123,
-      "count": 3,
-      "type": "SCALAR"
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC3",
-      "max": [1.0, 1.0, 0.0],
-      "min": [0.0, 0.0, 0.0]
-    }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
-    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
-  ],
-  "buffers": [{
-    "byteLength": 44,
-    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
-  }]
-}
-)";
-
 // 1x1 RGB PNG (red pixel).
 constexpr unsigned char kMinimalPng[] = {
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
@@ -156,6 +156,11 @@ constexpr unsigned char kMinimalPng[] = {
     0x00, 0x03, 0x01, 0x01, 0x00, 0xC9, 0xFE, 0x92, 0xEF, 0x00, 0x00, 0x00,
     0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
 
+bool pathContains(const fs::path& path, const char* needle) {
+  const std::string s = path.generic_string();
+  return s.find(needle) != std::string::npos;
+}
+
 void loadMeshMissingFinalFastPathRequestsCook() {
   using namespace Blunder;
   ensureLogger();
@@ -164,11 +169,11 @@ void loadMeshMissingFinalFastPathRequestsCook() {
   const char* kGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01";
   const char* kDescriptorPath = "assets/Meshes/tri.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "tri.dae",
-                kMinimalTriangleDae);
+  writeTextFile(project / "Resources" / "Models" / "tri.gltf",
+                kMinimalTriangleGltf);
   writeTextFile(project / "Assets" / "Meshes" / "tri.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/tri.dae\n" +
+                    "source: resources/Models/tri.gltf\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -201,6 +206,8 @@ void loadMeshMissingFinalFastPathRequestsCook() {
   expect_true("Fast Path load returns mesh", mesh != nullptr);
   expect_true("Fast Path mesh has vertices",
               mesh && mesh->getVertexCount() == 3);
+  expect_true("Fast Path uses Intermediate glTF",
+              mesh && pathContains(mesh->getAbsolutePath(), ".gltf"));
   expect_true(
       "Fast Path load requested cook (Final written)",
       file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
@@ -275,11 +282,6 @@ void loadTextureMissingFinalFastPathRequestsCook() {
   fs::remove_all(project);
 }
 
-bool pathContains(const fs::path& path, const char* needle) {
-  const std::string s = path.generic_string();
-  return s.find(needle) != std::string::npos;
-}
-
 void loadMeshStaleMetaFastPathRequestsCook() {
   using namespace Blunder;
   ensureLogger();
@@ -288,11 +290,11 @@ void loadMeshStaleMetaFastPathRequestsCook() {
   const char* kGuid = "cccccccc-dddd-4eee-8fff-aaaaaaaaaa03";
   const char* kDescriptorPath = "assets/Meshes/stale.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "stale.dae",
-                kMinimalTriangleDae);
+  writeTextFile(project / "Resources" / "Models" / "stale.gltf",
+                kMinimalTriangleGltf);
   writeTextFile(project / "Assets" / "Meshes" / "stale.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/stale.dae\n" +
+                    "source: resources/Models/stale.gltf\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -335,8 +337,8 @@ void loadMeshStaleMetaFastPathRequestsCook() {
   const eastl::shared_ptr<MeshAsset> mesh =
       manager.loadMesh(eastl::string(kDescriptorPath));
   expect_true("stale meta Fast Path returns mesh", mesh != nullptr);
-  expect_true("stale meta Fast Path uses Intermediate COLLADA",
-              mesh && pathContains(mesh->getAbsolutePath(), ".dae"));
+  expect_true("stale meta Fast Path uses Intermediate glTF",
+              mesh && pathContains(mesh->getAbsolutePath(), ".gltf"));
   expect_true("stale meta Fast Path does not use descriptor as absolute",
               mesh && !pathContains(mesh->getAbsolutePath(), ".mesh.yaml"));
 
@@ -364,11 +366,11 @@ void loadMeshFreshFinalPreferred() {
   const char* kGuid = "dddddddd-eeee-4fff-8000-bbbbbbbbbb04";
   const char* kDescriptorPath = "assets/Meshes/fresh.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "fresh.dae",
-                kMinimalTriangleDae);
+  writeTextFile(project / "Resources" / "Models" / "fresh.gltf",
+                kMinimalTriangleGltf);
   writeTextFile(project / "Assets" / "Meshes" / "fresh.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/fresh.dae\n" +
+                    "source: resources/Models/fresh.gltf\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -409,8 +411,8 @@ void loadMeshFreshFinalPreferred() {
   expect_true("fresh Final preferred returns mesh", mesh != nullptr);
   expect_true("fresh Final preferred uses descriptor absolute path",
               mesh && pathContains(mesh->getAbsolutePath(), ".mesh.yaml"));
-  expect_true("fresh Final preferred does not use Intermediate COLLADA",
-              mesh && !pathContains(mesh->getAbsolutePath(), ".dae"));
+  expect_true("fresh Final preferred does not use Intermediate glTF",
+              mesh && !pathContains(mesh->getAbsolutePath(), ".gltf"));
   expect_true("fresh Final preferred has vertices",
               mesh && mesh->getVertexCount() == 3);
 
@@ -421,19 +423,19 @@ void loadMeshFreshFinalPreferred() {
   fs::remove_all(project);
 }
 
-void loadMeshLegacyGltfFastPathStillWorks() {
+void loadMeshLegacyColladaFastPathStillWorks() {
   using namespace Blunder;
   ensureLogger();
 
   const fs::path project = makeTempProject();
   const char* kGuid = "eeeeeeee-ffff-4000-8000-cccccccccc05";
-  const char* kDescriptorPath = "assets/Meshes/legacy.mesh.yaml";
+  const char* kDescriptorPath = "assets/Meshes/legacy_dae.mesh.yaml";
 
-  writeTextFile(project / "Resources" / "Models" / "legacy.gltf",
-                kMinimalTriangleGltf);
-  writeTextFile(project / "Assets" / "Meshes" / "legacy.mesh.yaml",
+  writeTextFile(project / "Resources" / "Models" / "legacy_dae.dae",
+                kMinimalTriangleDae);
+  writeTextFile(project / "Assets" / "Meshes" / "legacy_dae.mesh.yaml",
                 std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
-                    "source: resources/Models/legacy.gltf\n" +
+                    "source: resources/Models/legacy_dae.dae\n" +
                     "import:\n  materials: false\n  animations: false\n"
                     "  scale: 1\n");
 
@@ -444,7 +446,7 @@ void loadMeshLegacyGltfFastPathStillWorks() {
 
   AssetRegistry registry;
   registry.initialize(&file_system);
-  expect_true("register legacy glTF mesh",
+  expect_true("register legacy COLLADA mesh",
               registry.registerAsset(eastl::string(kGuid),
                                      eastl::string(kDescriptorPath)));
 
@@ -459,14 +461,78 @@ void loadMeshLegacyGltfFastPathStillWorks() {
 
   const eastl::shared_ptr<MeshAsset> mesh =
       manager.loadMesh(eastl::string(kDescriptorPath));
-  expect_true("legacy glTF Fast Path returns mesh", mesh != nullptr);
-  expect_true("legacy glTF Fast Path has vertices",
+  expect_true("legacy COLLADA Fast Path returns mesh", mesh != nullptr);
+  expect_true("legacy COLLADA Fast Path has vertices",
               mesh && mesh->getVertexCount() == 3);
-  expect_true("legacy glTF Fast Path uses Intermediate glTF",
+  expect_true("legacy COLLADA Fast Path uses Intermediate .dae",
+              mesh && pathContains(mesh->getAbsolutePath(), ".dae"));
+  expect_true(
+      "legacy COLLADA Fast Path requested cook",
+      file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
+
+  manager.setAssetCompiler({});
+  compiler->shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+// Task 1.3 (ADR 0019): explicit glTF Intermediate Fast Path + Cook integration.
+void loadMeshGltfIntermediateFastPathAndCook() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "ffffffff-0000-4000-8000-dddddddddd06";
+  const char* kDescriptorPath = "assets/Meshes/gltf_fast.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "gltf_fast.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "gltf_fast.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/gltf_fast.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  expect_true("register glTF Intermediate mesh",
+              registry.registerAsset(eastl::string(kGuid),
+                                     eastl::string(kDescriptorPath)));
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  auto compiler = eastl::make_shared<AssetCompilerService>();
+  compiler->initialize(&file_system, &manager, &registry);
+  manager.setAssetCompiler(compiler);
+
+  eastl::vector<MeshVertex> vertices;
+  eastl::vector<uint32_t> indices;
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string(kDescriptorPath));
+  expect_true("glTF Intermediate Fast Path returns mesh", mesh != nullptr);
+  expect_true("glTF Intermediate Fast Path has vertices",
+              mesh && mesh->getVertexCount() == 3);
+  expect_true("glTF Intermediate Fast Path uses Intermediate glTF",
               mesh && pathContains(mesh->getAbsolutePath(), ".gltf"));
   expect_true(
-      "legacy glTF Fast Path requested cook",
+      "glTF Intermediate Fast Path requested cook",
       file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
+  expect_true(
+      "glTF Intermediate cook wrote readable Final",
+      readMeshCookFile(cookedMeshPath(file_system, eastl::string(kGuid)),
+                       vertices, indices));
+  expect_true("glTF Intermediate cook Final has vertices", vertices.size() == 3);
+  expect_true("glTF Intermediate cook Final has indices", indices.size() == 3);
 
   manager.setAssetCompiler({});
   compiler->shutdown();
@@ -483,7 +549,8 @@ int main() {
   loadTextureMissingFinalFastPathRequestsCook();
   loadMeshStaleMetaFastPathRequestsCook();
   loadMeshFreshFinalPreferred();
-  loadMeshLegacyGltfFastPathStillWorks();
+  loadMeshLegacyColladaFastPathStillWorks();
+  loadMeshGltfIntermediateFastPathAndCook();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

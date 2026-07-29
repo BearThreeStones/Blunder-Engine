@@ -68,7 +68,7 @@ const char* cgltfResultToString(cgltf_result result) {
   }
 }
 
-/// Fast Path / Cook: load Intermediate COLLADA via Assimp (Y-up → engine Z-up).
+/// Legacy migration (Task 1.4): load Intermediate COLLADA via Assimp (Y-up → engine Z-up).
 eastl::shared_ptr<MeshAsset> loadMeshFromColladaAssimp(
     const std::filesystem::path& absolute, const eastl::string& cache_key) {
   Assimp::Importer importer;
@@ -923,101 +923,105 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
   const eastl::string mesh_extension(
       absolute.extension().generic_string().c_str());
 
-  // Intermediate COLLADA: Assimp. Legacy glTF/GLB Intermediate: cgltf only.
+  // Intermediate glTF/GLB (ADR 0019): cgltf. Legacy COLLADA migration: Assimp.
+  if (mesh_extension == ".gltf" || mesh_extension == ".glb") {
+    eastl::vector<uint8_t> bytes;
+    if (!m_file_system->readBinary(absolute, bytes)) {
+      LOG_ERROR("[AssetManager] loadMesh: cannot read {}",
+                absolute.generic_string());
+      return nullptr;
+    }
+
+    cgltf_options options{};
+    cgltf_data* data = nullptr;
+    const auto fail_mesh_load = [&](const char* format,
+                                    auto&&... args) -> eastl::shared_ptr<MeshAsset> {
+      LOG_ERROR("{}", fmt::vformat(fmt::string_view(format),
+                                    fmt::make_format_args(args...)));
+      if (data != nullptr) {
+        cgltf_free(data);
+        data = nullptr;
+      }
+      return nullptr;
+    };
+
+    const cgltf_result parse_result =
+        cgltf_parse(&options, bytes.data(), bytes.size(), &data);
+    if (parse_result != cgltf_result_success || data == nullptr) {
+      return fail_mesh_load(
+          "[AssetManager] loadMesh: cgltf_parse failed for {} ({})",
+          absolute.generic_string(), cgltfResultToString(parse_result));
+    }
+
+    const std::string absolute_string = absolute.string();
+    const cgltf_result buffer_result =
+        cgltf_load_buffers(&options, data, absolute_string.c_str());
+    if (buffer_result != cgltf_result_success) {
+      return fail_mesh_load(
+          "[AssetManager] loadMesh: cgltf_load_buffers failed for {} ({})",
+          absolute.generic_string(), cgltfResultToString(buffer_result));
+    }
+
+    const cgltf_result validate_result = cgltf_validate(data);
+    if (validate_result != cgltf_result_success) {
+      return fail_mesh_load(
+          "[AssetManager] loadMesh: cgltf_validate failed for {} ({})",
+          absolute.generic_string(), cgltfResultToString(validate_result));
+    }
+
+    size_t selected_mesh_index = 0;
+    size_t selected_primitive_index = 0;
+    bool found_primitive = false;
+    for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
+      const cgltf_mesh& mesh = data->meshes[mesh_index];
+      for (cgltf_size primitive_index = 0;
+           primitive_index < mesh.primitives_count; ++primitive_index) {
+        if (!found_primitive) {
+          selected_mesh_index = static_cast<size_t>(mesh_index);
+          selected_primitive_index = static_cast<size_t>(primitive_index);
+          found_primitive = true;
+          break;
+        }
+      }
+      if (found_primitive) {
+        break;
+      }
+    }
+
+    if (!found_primitive) {
+      return fail_mesh_load(
+          "[AssetManager] loadMesh: no mesh primitives found in {}",
+          absolute.generic_string());
+    }
+
+    const eastl::shared_ptr<MeshAsset> loaded = loadMeshPrimitive(
+        data, selected_mesh_index, selected_primitive_index, absolute, key);
+    cgltf_free(data);
+    if (loaded) {
+      m_mesh_cache[key] = loaded;
+      LOG_INFO(
+          "[AssetManager] loaded Mesh {} (glTF cgltf: {}, mesh_index={}, "
+          "primitive_index={})",
+          key.c_str(), absolute.generic_string(), selected_mesh_index,
+          selected_primitive_index);
+    }
+    return loaded;
+  }
+
   if (mesh_extension == ".dae") {
     eastl::shared_ptr<MeshAsset> loaded =
         loadMeshFromColladaAssimp(absolute, key);
     if (loaded) {
       m_mesh_cache[key] = loaded;
-      LOG_INFO("[AssetManager] loaded Mesh {} (COLLADA Assimp: {})",
+      LOG_INFO("[AssetManager] loaded Mesh {} (legacy COLLADA Assimp: {})",
                key.c_str(), absolute.generic_string());
     }
     return loaded;
   }
 
-  eastl::vector<uint8_t> bytes;
-  if (!m_file_system->readBinary(absolute, bytes)) {
-    LOG_ERROR("[AssetManager] loadMesh: cannot read {}", absolute.generic_string());
-    return nullptr;
-  }
-
-  if (mesh_extension != ".gltf" && mesh_extension != ".glb") {
-    LOG_ERROR("[AssetManager] loadMesh: unsupported mesh format {} for {}",
-              mesh_extension.c_str(), absolute.generic_string());
-    return nullptr;
-  }
-
-  cgltf_options options{};
-  cgltf_data* data = nullptr;
-  const auto fail_mesh_load = [&](const char* format,
-                                  auto&&... args) -> eastl::shared_ptr<MeshAsset> {
-    LOG_ERROR("{}", fmt::vformat(fmt::string_view(format),
-                                  fmt::make_format_args(args...)));
-    if (data != nullptr) {
-      cgltf_free(data);
-      data = nullptr;
-    }
-    return nullptr;
-  };
-
-  const cgltf_result parse_result =
-      cgltf_parse(&options, bytes.data(), bytes.size(), &data);
-  if (parse_result != cgltf_result_success || data == nullptr) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: cgltf_parse failed for {} ({})",
-        absolute.generic_string(), cgltfResultToString(parse_result));
-  }
-
-  const std::string absolute_string = absolute.string();
-  const cgltf_result buffer_result =
-      cgltf_load_buffers(&options, data, absolute_string.c_str());
-  if (buffer_result != cgltf_result_success) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: cgltf_load_buffers failed for {} ({})",
-        absolute.generic_string(), cgltfResultToString(buffer_result));
-  }
-
-  const cgltf_result validate_result = cgltf_validate(data);
-  if (validate_result != cgltf_result_success) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: cgltf_validate failed for {} ({})",
-        absolute.generic_string(), cgltfResultToString(validate_result));
-  }
-
-  size_t selected_mesh_index = 0;
-  size_t selected_primitive_index = 0;
-  bool found_primitive = false;
-  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
-    const cgltf_mesh& mesh = data->meshes[mesh_index];
-    for (cgltf_size primitive_index = 0;
-         primitive_index < mesh.primitives_count; ++primitive_index) {
-      if (!found_primitive) {
-        selected_mesh_index = static_cast<size_t>(mesh_index);
-        selected_primitive_index = static_cast<size_t>(primitive_index);
-        found_primitive = true;
-        break;
-      }
-    }
-    if (found_primitive) {
-      break;
-    }
-  }
-
-  if (!found_primitive) {
-    return fail_mesh_load(
-        "[AssetManager] loadMesh: no mesh primitives found in {}",
-        absolute.generic_string());
-  }
-
-  const eastl::shared_ptr<MeshAsset> loaded = loadMeshPrimitive(
-      data, selected_mesh_index, selected_primitive_index, absolute, key);
-  cgltf_free(data);
-  if (loaded) {
-    LOG_INFO("[AssetManager] loaded Mesh {} (resolved: {}, mesh_index={}, primitive_index={})",
-             key.c_str(), absolute.generic_string(), selected_mesh_index,
-             selected_primitive_index);
-  }
-  return loaded;
+  LOG_ERROR("[AssetManager] loadMesh: unsupported mesh format {} for {}",
+            mesh_extension.c_str(), absolute.generic_string());
+  return nullptr;
 }
 
 AssetHandle AssetManager::makeHandle(Asset::Type type,
