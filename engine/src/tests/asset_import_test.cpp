@@ -83,21 +83,21 @@ bool containsIgnoreCase(const eastl::string& value, const char* needle) {
   return lower.find(needle) != std::string::npos;
 }
 
-// Task 1.1 (collada-intermediate): mesh Intermediate = COLLADA; glTF/GLB are
-// Source Export inputs. Images remain Intermediate-direct.
+// Task 1.1 (ADR 0019): mesh Intermediate = glTF/GLB; COLLADA removed.
+// FBX/OBJ are Source Export inputs. Images remain Intermediate-direct.
 void meshExtensionRoutingTables() {
   using namespace Blunder;
 
-  expect_true("dae is mesh Intermediate extension",
-              AssetImportService::isMeshIntermediateExtension(".dae"));
-  expect_true("gltf is not mesh Intermediate extension",
-              !AssetImportService::isMeshIntermediateExtension(".gltf"));
-  expect_true("glb is not mesh Intermediate extension",
-              !AssetImportService::isMeshIntermediateExtension(".glb"));
-  expect_true("gltf is Source Export extension",
-              AssetImportService::isMeshSourceExportExtension(".gltf"));
-  expect_true("glb is Source Export extension",
-              AssetImportService::isMeshSourceExportExtension(".glb"));
+  expect_true("gltf is mesh Intermediate extension",
+              AssetImportService::isMeshIntermediateExtension(".gltf"));
+  expect_true("glb is mesh Intermediate extension",
+              AssetImportService::isMeshIntermediateExtension(".glb"));
+  expect_true("dae is not mesh Intermediate extension",
+              !AssetImportService::isMeshIntermediateExtension(".dae"));
+  expect_true("gltf is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".gltf"));
+  expect_true("glb is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".glb"));
   expect_true("obj is Source Export extension",
               AssetImportService::isMeshSourceExportExtension(".obj"));
   expect_true("fbx is Source Export extension",

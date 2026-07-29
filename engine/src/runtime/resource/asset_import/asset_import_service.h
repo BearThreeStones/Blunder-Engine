@@ -28,19 +28,19 @@ struct AssetImportServiceInit {
   AssetCompilerService* asset_compiler{nullptr};
 };
 
-/// Registers Intermediate exchange files (COLLADA / images) as Assets, and runs
-/// Assimp Source Export for FBX/OBJ/glTF/GLB (dual-write Source archive +
-/// Intermediate). Descriptor field `source` stores the Intermediate virtual
-/// path; Source Export also sets `archived_source` to the Resources/Source
-/// archive path.
+/// Registers Intermediate exchange files (glTF/GLB / images) as Assets, and runs
+/// Assimp Source Export for FBX/OBJ (dual-write Source archive + Intermediate
+/// glTF). Descriptor field `source` stores the Intermediate virtual path;
+/// Source Export also sets `archived_source` to the Resources/Source archive
+/// path.
 class AssetImportService final {
  public:
   void initialize(const AssetImportServiceInit& init);
   void shutdown();
 
-  /// Import a mesh: COLLADA Intermediate register, or FBX/OBJ/glTF/GLB Source
-  /// Export (archive under Resources/Source/, Assimp → Intermediate COLLADA
-  /// under Models/).
+  /// Import a mesh: glTF/GLB Intermediate register, or FBX/OBJ Source Export
+  /// (archive under Resources/Source/, Assimp → Intermediate glTF under
+  /// Models/).
   ImportResult importMesh(const std::filesystem::path& input_absolute,
                           const eastl::string& assets_folder_virtual,
                           const MeshImportSettings& settings);
@@ -89,12 +89,12 @@ class AssetImportService final {
   /// behavior can be asserted with a still-loadable legacy glTF Intermediate.
   static void setForceUpgradeConvertFailureForTest(bool force);
 
-  /// COLLADA Intermediate exchange extension (not Source Assets).
+  /// glTF/GLB Intermediate exchange extensions (not Source Assets).
   static bool isMeshIntermediateExtension(const eastl::string& extension_lower);
   /// Image Intermediate exchange extensions (not Source Assets).
   static bool isTextureIntermediateExtension(
       const eastl::string& extension_lower);
-  /// FBX/OBJ/glTF/GLB whitelist for Assimp Source Export (v1).
+  /// FBX/OBJ whitelist for Assimp Source Export (v1).
   static bool isMeshSourceExportExtension(const eastl::string& extension_lower);
 
   /// Deprecated aliases — prefer Intermediate names above.

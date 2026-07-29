@@ -454,7 +454,7 @@ void AssetImportService::shutdown() {
 
 bool AssetImportService::isMeshIntermediateExtension(
     const eastl::string& extension_lower) {
-  return extension_lower == ".dae";
+  return extension_lower == ".gltf" || extension_lower == ".glb";
 }
 
 bool AssetImportService::isTextureIntermediateExtension(
@@ -466,8 +466,7 @@ bool AssetImportService::isTextureIntermediateExtension(
 
 bool AssetImportService::isMeshSourceExportExtension(
     const eastl::string& extension_lower) {
-  return extension_lower == ".fbx" || extension_lower == ".obj" ||
-         extension_lower == ".gltf" || extension_lower == ".glb";
+  return extension_lower == ".fbx" || extension_lower == ".obj";
 }
 
 eastl::string AssetImportService::makeUniqueDescriptorName(
@@ -521,13 +520,13 @@ ImportResult AssetImportService::importMesh(
                                   settings);
   }
 
-  // v1: FBX/OBJ/glTF/GLB Source Export; COLLADA Intermediate-direct;
+  // v1: FBX/OBJ Source Export; glTF/GLB Intermediate-direct;
   // .blend / others are a clear reject (success=false), not copy-to-Source
   // and not silent success.
   LOG_WARN(
       "[AssetImport] unsupported mesh input {} "
-      "(v1 Source Export whitelist is .fbx/.obj/.gltf/.glb; Intermediate "
-      "direct is .dae; .blend automatic export is not supported)",
+      "(v1 Source Export whitelist is .fbx/.obj; Intermediate direct is "
+      ".gltf/.glb; .blend automatic export is not supported)",
       input_absolute.generic_string());
   return result;
 }

@@ -1,6 +1,6 @@
 ## 1. Docs and pipeline flip (glTF Intermediate)
 
-- [ ] 1.1 Align `CONTENT_LAYOUT.md` / import extension tables with ADR 0019 (glTF Intermediate; COLLADA removed)
+- [x] 1.1 Align `CONTENT_LAYOUT.md` / import extension tables with ADR 0019 (glTF Intermediate; COLLADA removed)
 - [ ] 1.2 Remove or gate Assimp COLLADA Intermediate-direct Import and glTF→COLLADA upgrade on registry scan
 - [ ] 1.3 Restore/ensure Fast Path + Cook mesh load from Intermediate glTF/GLB (cgltf or chosen reader)
 - [ ] 1.4 Add GUID-preserving migration for remaining `.dae` Intermediate → glTF (or Reimport from Source); tests for no dae upgrade of glTF
