@@ -1136,6 +1136,7 @@ add_executable(asset_dependency_graph_test
 
 target_link_libraries(asset_dependency_graph_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
@@ -1178,6 +1179,7 @@ add_executable(asset_watch_path_test
 
 target_link_libraries(asset_watch_path_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(asset_watch_path_test

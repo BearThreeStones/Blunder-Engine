@@ -50,11 +50,14 @@ fs::path makeTempProject() {
        std::to_string(
            static_cast<unsigned long long>(
                std::chrono::steady_clock::now().time_since_epoch().count())));
+  fs::create_directories(root / "Assets" / "Animations");
   fs::create_directories(root / "Assets" / "Meshes");
   fs::create_directories(root / "Assets" / "Textures");
+  fs::create_directories(root / "Resources" / "Animations");
   fs::create_directories(root / "Resources" / "Models");
   fs::create_directories(root / "Resources" / "Textures");
   fs::create_directories(root / "Resources" / "Source" / "Models");
+  fs::create_directories(root / "Resources" / "Source" / "Animations");
   fs::create_directories(root / ".blunder" / "cooked");
   return root;
 }
@@ -566,6 +569,139 @@ void sourceChangeTriggersReimportInvalidatesFinal() {
   fs::remove_all(project);
 }
 
+void animationClipPathToGuidMapping() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kClipGuid = "abababab-abab-4aba-8aba-abababababab";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Animations" / "walk.animation.yaml",
+                std::string("type: AnimationClip\n") + "guid: " + kClipGuid +
+                    "\n" + "source: resources/Animations/walk.anim.yaml\n");
+  writeTextFile(
+      project / "Resources" / "Animations" / "walk.anim.yaml",
+      std::string("version: 1\n") + "name: walk\n" + "duration: 1.0\n" +
+          "tracks:\n" +
+          "  - bone: Hips\n" +
+          "    channel: translation\n" +
+          "    interpolation: Linear\n" +
+          "    keys:\n" +
+          "      - time: 0.0\n" +
+          "        value: [0, 0, 0]\n" +
+          "      - time: 1.0\n" +
+          "        value: [0, 1, 0]\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const fs::path assets = file_system.getAssetRoot();
+  const fs::path resources = file_system.getResourcesRoot();
+
+  {
+    const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+        AssetWatchPathClass::AssetsTree,
+        assets / "Animations" / "walk.animation.yaml", assets, resources,
+        registry, graph);
+    expect_true("clip descriptor path maps to clip guid",
+                containsGuid(guids, kClipGuid));
+    expect_true("clip descriptor path yields single guid", guids.size() == 1);
+  }
+
+  {
+    const eastl::vector<eastl::string> guids = guidsToInvalidateForWatchedPath(
+        AssetWatchPathClass::IntermediateResource,
+        resources / "Animations" / "walk.anim.yaml", assets, resources,
+        registry, graph);
+    expect_true("clip Intermediate yaml maps to clip guid",
+                containsGuid(guids, kClipGuid));
+  }
+
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void archivedSourcePathToClipGuids() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kClipGuid = "bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc";
+  const char* kOtherGuid = "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Animations" / "walk.animation.yaml",
+                std::string("type: AnimationClip\n") + "guid: " + kClipGuid +
+                    "\n" + "source: resources/Animations/walk.anim.yaml\n" +
+                    "archived_source: Source/Animations/walk.fbx\n");
+  writeTextFile(project / "Assets" / "Animations" / "idle.animation.yaml",
+                std::string("type: AnimationClip\n") + "guid: " + kOtherGuid +
+                    "\n" + "source: resources/Animations/idle.anim.yaml\n" +
+                    "archived_source: Source/Animations/idle.fbx\n");
+  writeTextFile(
+      project / "Resources" / "Animations" / "walk.anim.yaml",
+      std::string("version: 1\n") + "name: walk\n" + "duration: 1.0\n" +
+          "tracks:\n" +
+          "  - bone: Hips\n" +
+          "    channel: translation\n" +
+          "    interpolation: Linear\n" +
+          "    keys:\n" +
+          "      - time: 0.0\n" +
+          "        value: [0, 0, 0]\n");
+  writeTextFile(
+      project / "Resources" / "Animations" / "idle.anim.yaml",
+      std::string("version: 1\n") + "name: idle\n" + "duration: 1.0\n" +
+          "tracks:\n" +
+          "  - bone: Hips\n" +
+          "    channel: translation\n" +
+          "    interpolation: Constant\n" +
+          "    keys:\n" +
+          "      - time: 0.0\n" +
+          "        value: [0, 0, 0]\n");
+  writeTextFile(project / "Resources" / "Source" / "Animations" / "walk.fbx",
+                "fbx");
+  writeTextFile(project / "Resources" / "Source" / "Animations" / "idle.fbx",
+                "fbx");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  const fs::path resources = file_system.getResourcesRoot();
+  const fs::path walk_source =
+      resources / "Source" / "Animations" / "walk.fbx";
+
+  {
+    const eastl::vector<eastl::string> guids =
+        guidsForArchivedSourcePath(walk_source, resources, registry,
+                                   file_system);
+    expect_true("archived Source path maps to owning clip guid",
+                containsGuid(guids, kClipGuid));
+    expect_true("archived Source path does not include unrelated clip guid",
+                !containsGuid(guids, kOtherGuid));
+  }
+
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void reimportBatchRebuildsGraphOnce() {
   using namespace Blunder;
   ensureLogger();
@@ -644,7 +780,9 @@ void reimportBatchRebuildsGraphOnce() {
 int main() {
   classifyPaths();
   pathToGuidMapping();
+  animationClipPathToGuidMapping();
   archivedSourcePathToGuids();
+  archivedSourcePathToClipGuids();
   meshIntermediateGltfChangeInvalidatesFinal();
   intermediateTextureChangeInvalidatesMeshFinal();
   descriptorChangeInvalidatesFinal();

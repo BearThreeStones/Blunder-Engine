@@ -354,6 +354,45 @@ const char* findArrayAfterKeyBounded(const char* text, const char* limit,
   return bracket + 1;
 }
 
+bool parseStringArrayField(const char* object_start, const char* object_end,
+                           const char* key,
+                           eastl::vector<eastl::string>& out_values) {
+  const char* array_end = nullptr;
+  const char* array_content =
+      findArrayAfterKeyBounded(object_start, object_end, key, &array_end);
+  if (array_content == nullptr) {
+    return false;
+  }
+
+  out_values.clear();
+  const char* p = array_content;
+  while (p < array_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= array_end - 1 || *p == ']') {
+      break;
+    }
+    if (*p != '"') {
+      ++p;
+      continue;
+    }
+
+    eastl::string value;
+    const char* after = nullptr;
+    if (!parseJsonString(p, array_end, value, &after)) {
+      return false;
+    }
+    if (!value.empty()) {
+      out_values.push_back(eastl::move(value));
+    }
+    p = after;
+    p = skipWhitespace(p);
+    if (p < array_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
 bool parseUint64Field(const char* object_start, const char* object_end,
                       const char* key, uint64_t& out_value) {
   const char* key_pos = findObjectKey(object_start, object_end, key);
@@ -630,6 +669,12 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   eastl::string mesh_path;
   if (parseStringField(object_start, object_end, "\"mesh\"", mesh_path)) {
     out_entity.mesh_virtual_path = eastl::move(mesh_path);
+  }
+
+  eastl::vector<eastl::string> clip_guids;
+  if (parseStringArrayField(object_start, object_end,
+                            "\"animation_clip_guids\"", clip_guids)) {
+    out_entity.animation_clip_guids = eastl::move(clip_guids);
   }
 
   if (!parseBehavioursArray(object_start, object_end, out_entity.behaviours)) {
@@ -927,6 +972,16 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
     out.append(",\n      \"mesh\": \"");
     out.append(mesh_ref);
     out.append("\"");
+  }
+
+  if (!entity.animation_clip_guids.empty()) {
+    out.append(",\n      \"animation_clip_guids\": [\n");
+    for (size_t i = 0; i < entity.animation_clip_guids.size(); ++i) {
+      out.append("        \"");
+      out.append(entity.animation_clip_guids[i]);
+      out.append(i + 1 == entity.animation_clip_guids.size() ? "\"\n" : "\",\n");
+    }
+    out.append("      ]");
   }
 
   if (!entity.behaviours.empty()) {

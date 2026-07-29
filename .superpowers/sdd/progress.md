@@ -25,3 +25,16 @@ Task 2.2: complete — glTF Import extracts AnimationClip YAML via cgltf (gltf_a
 Task 2.2: complete (commit 6f422c0, review Approved; model=composer-2.5)
 
 Task 2.3: complete — mesh Reimport calls refreshAnimationClipsFromGltf with filesystem-discovered clip bindings (name→GUID); overwrites Intermediate YAML preserving GUIDs; orphan clips left in place + logged; registry scan includes .animation.yaml; asset_import_test reimportPreservesAnimationClipGuidsAndRefreshesYaml.
+Task 2.3: complete (commit dfac6e3, pending review; model=composer-2.5)
+
+Task 2.4: complete — AssetDependencyGraph registers `.animation.yaml` leaves + Scene→Clip edges via `animation_clip_guids`; guidsForArchivedSourcePath matches clip descriptors; scene serializer parse/serialize hook; asset_dependency_graph_test + asset_watch_path_test clip cases; blunder_engine_c_static linked into both test targets.
+
+## Env unblocked
+- cmake OK; asset_import_test all passed
+
+
+- asset_manager_fast_path_test: all passed
+- asset_pipeline_smoke_test: all passed
+
+## Starting Group 2
+

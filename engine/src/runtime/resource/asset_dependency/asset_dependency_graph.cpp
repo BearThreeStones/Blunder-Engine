@@ -85,6 +85,11 @@ void AssetDependencyGraph::rebuildFromProject(FileSystem& file_system,
           if (isValidGuidFormat(entity.mesh_virtual_path)) {
             addDependent(entity.mesh_virtual_path, guid);
           }
+          for (const eastl::string& clip_guid : entity.animation_clip_guids) {
+            if (isValidGuidFormat(clip_guid)) {
+              addDependent(clip_guid, guid);
+            }
+          }
         }
       }
       m_leaves[guid] = leaves;
@@ -108,6 +113,15 @@ void AssetDependencyGraph::rebuildFromProject(FileSystem& file_system,
     if (endsWith(virtual_path, ".texture.yaml")) {
       TextureAssetDescriptor descriptor;
       if (AssetYaml::parseTextureDescriptor(text, descriptor)) {
+        leaves.intermediate_source_path = descriptor.source;
+      }
+      m_leaves[guid] = leaves;
+      continue;
+    }
+
+    if (endsWith(virtual_path, ".animation.yaml")) {
+      AnimationClipAssetDescriptor descriptor;
+      if (AssetYaml::parseAnimationClipDescriptor(text, descriptor)) {
         leaves.intermediate_source_path = descriptor.source;
       }
       m_leaves[guid] = leaves;

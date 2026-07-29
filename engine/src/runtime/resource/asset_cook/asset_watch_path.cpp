@@ -313,6 +313,16 @@ eastl::vector<eastl::string> guidsForArchivedSourcePath(
           matchesArchived(desc.archived_source)) {
         pushUnique(guid);
       }
+      continue;
+    }
+    if (virtual_path.size() >= 15 &&
+        virtual_path.compare(virtual_path.size() - 15, 15, ".animation.yaml") ==
+            0) {
+      AnimationClipAssetDescriptor desc;
+      if (AssetYaml::parseAnimationClipDescriptor(yaml_text, desc) &&
+          matchesArchived(desc.archived_source)) {
+        pushUnique(guid);
+      }
     }
   }
 

@@ -46,9 +46,11 @@ fs::path makeTempProject() {
        std::to_string(
            static_cast<unsigned long long>(
                std::chrono::steady_clock::now().time_since_epoch().count())));
+  fs::create_directories(root / "Assets" / "Animations");
   fs::create_directories(root / "Assets" / "Meshes");
   fs::create_directories(root / "Assets" / "Textures");
   fs::create_directories(root / "Assets" / "Scenes");
+  fs::create_directories(root / "Resources" / "Animations");
   fs::create_directories(root / "Resources" / "Models");
   fs::create_directories(root / "Resources" / "Textures");
   return root;
@@ -209,6 +211,73 @@ void rebuildClearsPreviousEdges() {
   fs::remove_all(project);
 }
 
+void rebuildAnimationClipLeavesAndSceneEdge() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kSceneGuid = "12121212-1212-4212-8212-121212121212";
+  const char* kClipGuid = "23232323-2323-4232-8232-232323232323";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(
+      project / "Assets" / "Animations" / "walk.animation.yaml",
+      std::string("type: AnimationClip\n") + "guid: " + kClipGuid + "\n" +
+          "source: resources/Animations/walk.anim.yaml\n");
+  writeTextFile(
+      project / "Resources" / "Animations" / "walk.anim.yaml",
+      std::string("version: 1\n") + "name: walk\n" + "duration: 1.0\n" +
+          "tracks:\n" +
+          "  - bone: Hips\n" +
+          "    channel: translation\n" +
+          "    interpolation: Linear\n" +
+          "    keys:\n" +
+          "      - time: 0.0\n" +
+          "        value: [0, 0, 0]\n" +
+          "      - time: 1.0\n" +
+          "        value: [0, 1, 0]\n");
+
+  writeTextFile(
+      project / "Assets" / "Scenes" / "anim.scene.asset",
+      std::string("{\n") + "  \"type\": \"Scene\",\n" + "  \"guid\": \"" +
+          kSceneGuid + "\",\n" + "  \"entities\": [\n" + "    {\n" +
+          "      \"name\": \"Dog\",\n" +
+          "      \"position\": [0, 0, 0],\n" +
+          "      \"rotation\": [0, 0, 0],\n" +
+          "      \"rotationMode\": \"euler_degrees\",\n" +
+          "      \"animation_clip_guids\": [\n" +
+          "        \"" + kClipGuid + "\"\n" + "      ]\n" + "    }\n" +
+          "  ]\n" + "}\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo init;
+  init.project_root = project;
+  file_system.initialize(init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  AssetDependencyGraph graph;
+  graph.rebuildFromProject(file_system, registry);
+
+  const eastl::vector<eastl::string> clip_deps = graph.dependentsOf(kClipGuid);
+  expect_true("clip dependents include scene",
+              containsGuid(clip_deps, kSceneGuid));
+  expect_true("clip dependents size 1", clip_deps.size() == 1);
+
+  const AssetDependencyLeaves clip_leaves = graph.intermediateLeavesOf(kClipGuid);
+  expect_true("clip leaf descriptor path",
+              clip_leaves.descriptor_virtual_path ==
+                  "assets/Animations/walk.animation.yaml");
+  expect_true("clip leaf intermediate source",
+              clip_leaves.intermediate_source_path ==
+                  "resources/Animations/walk.anim.yaml");
+
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 void ignoresLegacyPathMeshRefs() {
   using namespace Blunder;
   ensureLogger();
@@ -259,6 +328,7 @@ void ignoresLegacyPathMeshRefs() {
 
 int main() {
   rebuildSceneMeshTextureEdgesAndLeaves();
+  rebuildAnimationClipLeavesAndSceneEdge();
   rebuildClearsPreviousEdges();
   ignoresLegacyPathMeshRefs();
 

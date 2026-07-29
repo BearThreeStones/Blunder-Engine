@@ -33,6 +33,9 @@ struct SceneEntityDefinition final {
   /// Mesh Asset Reference: preferred GUID; may briefly hold a legacy
   /// `assets/...mesh.yaml` path until migration on load/save.
   eastl::string mesh_virtual_path;
+  /// AnimationClip Asset GUIDs referenced by this entity (Task 3.6 fills via
+  /// AnimationPlayer; graph uses these for consumer→clip dependency edges).
+  eastl::vector<eastl::string> animation_clip_guids;
   /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
   eastl::vector<SceneBehaviourDeclaration> behaviours;
   bool has_camera{false};
