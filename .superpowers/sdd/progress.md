@@ -77,3 +77,6 @@ Task 4.2: complete (commits 8313875, 236f7ce; model=composer-2.5)
 Task 4.3: complete (pending commit; model=composer-2.5)
   GPU skinned draw for cooked Final: pbr_skinned/shadow_depth_skinned shaders, bone palette UBO (128 joints), SkinnedMeshVertex upload; scene_render_bridge routes cooked Final→GPU / Intermediate→CPU; gpu_skinning_test pass.
 
+Task 4.4: complete (pending commit; model=composer-2.5)
+  `applyGpuReferenceSkinning` mirrors pbr_skinned.slang position path; `skinning_pose_parity_test` compares CPU deformed positions + bone palette vs GPU reference at k_pose_parity_abs_eps=1e-3; cpu/gpu_skinning_test regression pass.
+

@@ -24,4 +24,9 @@ void buildGpuBonePalette(const Skeleton& skeleton, const MeshSkinData& skin_data
 void packSkinnedMeshVertices(const MeshAsset& mesh_asset,
                              eastl::vector<SkinnedMeshVertex>& out_vertices);
 
+/// CPU mirror of `blendSkinMatrix` + position multiply in pbr_skinned.slang (positions only).
+void applyGpuReferenceSkinning(const Skeleton& skeleton, const MeshSkinData& skin_data,
+                               const eastl::vector<MeshVertex>& bind_vertices,
+                               eastl::vector<Vec3>& out_positions);
+
 }  // namespace Blunder

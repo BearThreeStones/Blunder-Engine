@@ -1348,6 +1348,31 @@ target_precompile_headers(gpu_skinning_test
 add_test(NAME gpu_skinning_test
          COMMAND gpu_skinning_test)
 
+add_executable(skinning_pose_parity_test
+    "skinning_pose_parity_test.cpp"
+)
+
+target_link_libraries(skinning_pose_parity_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(skinning_pose_parity_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(skinning_pose_parity_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(skinning_pose_parity_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME skinning_pose_parity_test
+         COMMAND skinning_pose_parity_test)
+
 add_executable(animation_player_test
     "animation_player_test.cpp"
 )
