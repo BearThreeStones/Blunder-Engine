@@ -7,6 +7,8 @@
 
 namespace Blunder {
 
+class Skeleton;
+
 using AnimationClipResolveFn = bool (*)(void* userdata, const eastl::string& guid,
                                         AnimationClipData& out_clip);
 
@@ -35,9 +37,14 @@ class AnimationPlayer {
 
   void advance(float delta_seconds);
 
+  /// Co-located Skeleton only (set by Object). When bound, play/advance sample poses.
+  void bindSamplingSkeleton(Skeleton* skeleton);
+  void sampleOntoSkeleton(Skeleton& skeleton);
+
  private:
   bool resolveClip(const eastl::string& guid, AnimationClipData& out_clip);
   void beginClip(const eastl::string& name, const AnimationClipData& clip);
+  void sampleBoundSkeleton();
 
   eastl::hash_map<eastl::string, eastl::string> m_name_to_guid;
   eastl::hash_map<eastl::string, AnimationClipData> m_injected_clips;
@@ -45,6 +52,9 @@ class AnimationPlayer {
   void* m_resolver_userdata{nullptr};
 
   eastl::string m_current_clip_name;
+  AnimationClipData m_current_clip;
+  bool m_has_current_clip{false};
+  Skeleton* m_sampling_skeleton{nullptr};
   float m_position{0.0f};
   float m_clip_length{0.0f};
   bool m_playing{false};

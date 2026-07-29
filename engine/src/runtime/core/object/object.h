@@ -95,6 +95,8 @@ class Object {
  private:
   friend class ObjectDB;
 
+  void updateAnimationSamplingBinding();
+
   struct BehaviourSlot {
     BehaviourId id{k_invalid_behaviour_id};
     eastl::string type_name;

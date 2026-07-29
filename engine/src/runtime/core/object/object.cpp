@@ -313,19 +313,34 @@ Skeleton* Object::ensureSkeleton() {
   if (m_skeleton == nullptr) {
     m_skeleton = eastl::make_unique<Skeleton>();
   }
+  updateAnimationSamplingBinding();
   return m_skeleton.get();
 }
 
-void Object::clearSkeleton() { m_skeleton.reset(); }
+void Object::clearSkeleton() {
+  m_skeleton.reset();
+  updateAnimationSamplingBinding();
+}
 
 AnimationPlayer* Object::ensureAnimationPlayer() {
   if (m_animation_player == nullptr) {
     m_animation_player = eastl::make_unique<AnimationPlayer>();
   }
+  updateAnimationSamplingBinding();
   return m_animation_player.get();
 }
 
-void Object::clearAnimationPlayer() { m_animation_player.reset(); }
+void Object::clearAnimationPlayer() {
+  m_animation_player.reset();
+  updateAnimationSamplingBinding();
+}
+
+void Object::updateAnimationSamplingBinding() {
+  if (m_animation_player == nullptr) {
+    return;
+  }
+  m_animation_player->bindSamplingSkeleton(m_skeleton.get());
+}
 
 void Object::syncLocalTransformFromStore() {
   if (!hasEntity()) {

@@ -1,5 +1,8 @@
 #include "runtime/core/object/animation_player.h"
 
+#include "runtime/core/object/animation_sampler.h"
+#include "runtime/core/object/skeleton.h"
+
 #include <cmath>
 
 namespace Blunder {
@@ -58,9 +61,29 @@ bool AnimationPlayer::resolveClip(const eastl::string& guid,
 void AnimationPlayer::beginClip(const eastl::string& name,
                                 const AnimationClipData& clip) {
   m_current_clip_name = name;
+  m_current_clip = clip;
+  m_has_current_clip = true;
   m_clip_length = clip.duration;
   m_position = 0.0f;
   m_playing = true;
+  sampleBoundSkeleton();
+}
+
+void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
+  m_sampling_skeleton = skeleton;
+}
+
+void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
+  if (!m_has_current_clip) {
+    return;
+  }
+  sampleClipOntoSkeleton(skeleton, m_current_clip, m_position);
+}
+
+void AnimationPlayer::sampleBoundSkeleton() {
+  if (m_sampling_skeleton != nullptr && m_has_current_clip && m_playing) {
+    sampleOntoSkeleton(*m_sampling_skeleton);
+  }
 }
 
 bool AnimationPlayer::play(const eastl::string& name) {
@@ -90,6 +113,7 @@ void AnimationPlayer::advance(float delta_seconds) {
 
   m_position += delta_seconds;
   if (m_position < m_clip_length) {
+    sampleBoundSkeleton();
     return;
   }
 
@@ -98,11 +122,13 @@ void AnimationPlayer::advance(float delta_seconds) {
     if (m_position < 0.0f) {
       m_position += m_clip_length;
     }
+    sampleBoundSkeleton();
     return;
   }
 
   m_position = m_clip_length;
   m_playing = false;
+  sampleBoundSkeleton();
 }
 
 }  // namespace Blunder

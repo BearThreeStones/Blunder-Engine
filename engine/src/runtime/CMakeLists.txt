@@ -105,6 +105,8 @@ add_library(engine_runtime STATIC
     "core/object/skeleton.cpp"
     "core/object/animation_player.h"
     "core/object/animation_player.cpp"
+    "core/object/animation_sampler.h"
+    "core/object/animation_sampler.cpp"
     "core/object/object_db.h"
     "core/object/object_db.cpp"
     "platform/window/window_system.h"
