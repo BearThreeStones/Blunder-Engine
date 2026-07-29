@@ -6,6 +6,8 @@
 
 #include <cgltf.h>
 
+#include "EASTL/vector.h"
+
 namespace Blunder {
 
 class MaterialAsset;
@@ -28,6 +30,7 @@ struct ForwardOpaqueDraw {
   float alpha_cutoff{0.5f};
   cgltf_alpha_mode alpha_mode{cgltf_alpha_mode_opaque};
   bool double_sided{false};
+  eastl::vector<glm::mat4> gpu_bone_palette;
 };
 
 }  // namespace Blunder

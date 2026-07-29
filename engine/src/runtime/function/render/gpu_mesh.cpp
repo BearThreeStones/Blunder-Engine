@@ -4,6 +4,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/mesh_skin_data.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 
@@ -11,6 +12,8 @@ namespace Blunder {
 
 static_assert(sizeof(MeshVertex) == sizeof(Vertex),
               "MeshVertex must match render Vertex layout");
+static_assert(sizeof(SkinnedMeshVertex) == sizeof(SkinnedVertex),
+              "SkinnedMeshVertex must match render SkinnedVertex layout");
 static_assert(offsetof(MeshVertex, position) == offsetof(Vertex, position),
               "MeshVertex/Vertex position offset mismatch");
 static_assert(offsetof(MeshVertex, normal) == offsetof(Vertex, normal),

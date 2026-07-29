@@ -315,6 +315,30 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_transparent_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_transparent_pipeline->initialize(*m_offscreen, transparent_pipeline_desc);
 
+  rhi::GraphicsPipelineDesc skinned_mesh_pipeline_desc = mesh_pipeline_desc;
+  skinned_mesh_pipeline_desc.shader_path = "engine/shaders/pbr_skinned.slang";
+  skinned_mesh_pipeline_desc.enable_skinned_vertex_input = true;
+  skinned_mesh_pipeline_desc.enable_bone_palette = true;
+  skinned_mesh_pipeline_desc.bone_palette_binding = 11;
+  m_skinned_mesh_pipeline =
+      eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+  m_skinned_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
+  m_skinned_mesh_pipeline->initialize(*m_offscreen, skinned_mesh_pipeline_desc);
+
+  rhi::GraphicsPipelineDesc skinned_transparent_pipeline_desc =
+      skinned_mesh_pipeline_desc;
+  skinned_transparent_pipeline_desc.enable_blend = true;
+  skinned_transparent_pipeline_desc.enable_depth_write = false;
+  skinned_transparent_pipeline_desc.shared_descriptor_set_layout =
+      reinterpret_cast<uint64_t>(
+          m_skinned_mesh_pipeline->nativePipeline()->getDescriptorSetLayout());
+  m_skinned_transparent_pipeline =
+      eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+  m_skinned_transparent_pipeline->bind(vkCtx(this),
+                                       vkBackend(this)->nativeSlangCompiler());
+  m_skinned_transparent_pipeline->initialize(*m_offscreen,
+                                             skinned_transparent_pipeline_desc);
+
   m_shadow_map = eastl::make_unique<ShadowMapTarget>();
   m_shadow_map->initialize(vkCtx(this), vkAlloc(this));
 
@@ -330,6 +354,24 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_shadow_pipeline->initializeWithRenderPass(m_shadow_map->getRenderPass(),
                                               shadow_pipeline_desc);
+
+  rhi::GraphicsPipelineDesc skinned_shadow_pipeline_desc{};
+  skinned_shadow_pipeline_desc.shader_path =
+      "engine/shaders/shadow_depth_skinned.slang";
+  skinned_shadow_pipeline_desc.enable_vertex_input = true;
+  skinned_shadow_pipeline_desc.enable_skinned_vertex_input = true;
+  skinned_shadow_pipeline_desc.enable_bone_palette = true;
+  skinned_shadow_pipeline_desc.bone_palette_binding = 1;
+  skinned_shadow_pipeline_desc.cull_mode = rhi::CullMode::Back;
+  skinned_shadow_pipeline_desc.enable_depth_test = true;
+  skinned_shadow_pipeline_desc.enable_depth_write = true;
+  skinned_shadow_pipeline_desc.depth_compare_op = rhi::CompareOp::Less;
+  skinned_shadow_pipeline_desc.depth_only_subpass = true;
+  m_skinned_shadow_pipeline =
+      eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+  m_skinned_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
+  m_skinned_shadow_pipeline->initializeWithRenderPass(
+      m_shadow_map->getRenderPass(), skinned_shadow_pipeline_desc);
 
   m_overlay_system = eastl::make_unique<OverlaySystem>();
   m_overlay_system->initialize(vkCtx(this), vkAlloc(this),
@@ -363,6 +405,9 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   forward_init.opaque_pipeline = m_mesh_pipeline.get();
   forward_init.transparent_pipeline = m_transparent_pipeline.get();
   forward_init.shadow_pipeline = m_shadow_pipeline.get();
+  forward_init.skinned_opaque_pipeline = m_skinned_mesh_pipeline.get();
+  forward_init.skinned_transparent_pipeline = m_skinned_transparent_pipeline.get();
+  forward_init.skinned_shadow_pipeline = m_skinned_shadow_pipeline.get();
   forward_init.shadow_map = m_shadow_map.get();
   forward_init.fallback_texture = m_fallback_texture;
   m_forward_path->initialize(forward_init);
@@ -470,7 +515,7 @@ bool RenderSystem::addOpaqueMeshDraw(
     VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
     VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
     const glm::mat4& model, float alpha_cutoff, cgltf_alpha_mode alpha_mode,
-    bool double_sided) {
+    bool double_sided, eastl::vector<glm::mat4> gpu_bone_palette) {
   if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
       gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
     return false;
@@ -494,6 +539,7 @@ bool RenderSystem::addOpaqueMeshDraw(
   draw.alpha_cutoff = alpha_cutoff;
   draw.alpha_mode = alpha_mode;
   draw.double_sided = double_sided;
+  draw.gpu_bone_palette = eastl::move(gpu_bone_palette);
   draw.slot_index = static_cast<uint32_t>(m_opaque_mesh_draws.size());
   m_opaque_mesh_draws.push_back(eastl::move(draw));
   return true;
@@ -503,7 +549,8 @@ bool RenderSystem::addTransparentMeshDraw(
     GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
     VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
     VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
-    const glm::mat4& model, float alpha_cutoff, bool double_sided) {
+    const glm::mat4& model, float alpha_cutoff, bool double_sided,
+    eastl::vector<glm::mat4> gpu_bone_palette) {
   if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
       gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
     return false;
@@ -528,6 +575,7 @@ bool RenderSystem::addTransparentMeshDraw(
   draw.alpha_mode = cgltf_alpha_mode_blend;
   draw.double_sided = double_sided;
   draw.is_transparent = true;
+  draw.gpu_bone_palette = eastl::move(gpu_bone_palette);
   draw.slot_index =
       static_cast<uint32_t>(m_opaque_mesh_draws.size() + m_transparent_mesh_draws.size());
   m_transparent_mesh_draws.push_back(eastl::move(draw));
@@ -1561,6 +1609,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         draw.alpha_cutoff = mesh_draw.alpha_cutoff;
         draw.alpha_mode = mesh_draw.alpha_mode;
         draw.double_sided = mesh_draw.double_sided;
+        draw.gpu_bone_palette = mesh_draw.gpu_bone_palette;
         out.push_back(draw);
       };
 

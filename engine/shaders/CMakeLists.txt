@@ -8,10 +8,12 @@ file(MAKE_DIRECTORY ${SHADER_BINARY_DIR})
 set(SHADER_CANDIDATES
     basic.slang
     pbr.slang
+    pbr_skinned.slang
     grid.slang
     camera_gizmo.slang
     grid_line.slang
     shadow_depth.slang
+    shadow_depth_skinned.slang
     ssao_generate.slang
     ssao_apply.slang
     pick_broad_phase.slang

@@ -3,8 +3,10 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
+#include <glm/glm.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 #include "EASTL/array.h"
 
@@ -20,6 +22,19 @@ struct Vertex {
 
   static VkVertexInputBindingDescription getBindingDescription();
   static eastl::array<VkVertexInputAttributeDescription, 4>
+  getAttributeDescriptions();
+};
+
+struct SkinnedVertex {
+  glm::vec3 position;
+  glm::vec3 normal;
+  glm::vec2 uv;
+  glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
+  glm::ivec4 joint_indices{0, 0, 0, 0};
+  glm::vec4 weights{1.0f, 0.0f, 0.0f, 0.0f};
+
+  static VkVertexInputBindingDescription getBindingDescription();
+  static eastl::array<VkVertexInputAttributeDescription, 6>
   getAttributeDescriptions();
 };
 

@@ -34,6 +34,9 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
   info.enable_texture_sampling = desc.enable_texture_sampling;
   info.enable_shadow_sampling = desc.enable_shadow_sampling;
   info.enable_pbr_texture_sampling = desc.enable_pbr_texture_sampling;
+  info.enable_skinned_vertex_input = desc.enable_skinned_vertex_input;
+  info.enable_bone_palette = desc.enable_bone_palette;
+  info.bone_palette_binding = desc.bone_palette_binding;
   info.shared_descriptor_set_layout =
       static_cast<uintptr_t>(desc.shared_descriptor_set_layout);
   info.depth_only_subpass = desc.depth_only_subpass;

@@ -98,9 +98,17 @@ void VulkanPipeline::createGraphicsPipeline() {
   vertex_input_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
   VkVertexInputBindingDescription binding_description{};
-  auto attribute_descriptions = Vertex::getAttributeDescriptions();
+  eastl::vector<VkVertexInputAttributeDescription> attribute_descriptions;
   if (m_create_info.enable_vertex_input) {
-    binding_description = Vertex::getBindingDescription();
+    if (m_create_info.enable_skinned_vertex_input) {
+      binding_description = SkinnedVertex::getBindingDescription();
+      const auto skinned_attrs = SkinnedVertex::getAttributeDescriptions();
+      attribute_descriptions.assign(skinned_attrs.begin(), skinned_attrs.end());
+    } else {
+      binding_description = Vertex::getBindingDescription();
+      const auto static_attrs = Vertex::getAttributeDescriptions();
+      attribute_descriptions.assign(static_attrs.begin(), static_attrs.end());
+    }
     vertex_input_info.vertexBindingDescriptionCount = 1;
     vertex_input_info.pVertexBindingDescriptions = &binding_description;
     vertex_input_info.vertexAttributeDescriptionCount =
@@ -258,6 +266,9 @@ void VulkanPipeline::createDescriptorSetLayout() {
   if (m_create_info.enable_pbr_texture_sampling) {
     binding_reserve += 6;
   }
+  if (m_create_info.enable_bone_palette) {
+    binding_reserve += 1;
+  }
   bindings.reserve(binding_reserve);
 
   VkDescriptorSetLayoutBinding ubo_layout_binding{};
@@ -321,6 +332,15 @@ void VulkanPipeline::createDescriptorSetLayout() {
       sampler_binding_info.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
       bindings.push_back(sampler_binding_info);
     }
+  }
+
+  if (m_create_info.enable_bone_palette) {
+    VkDescriptorSetLayoutBinding bone_palette_binding{};
+    bone_palette_binding.binding = m_create_info.bone_palette_binding;
+    bone_palette_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bone_palette_binding.descriptorCount = 1;
+    bone_palette_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    bindings.push_back(bone_palette_binding);
   }
 
   VkDescriptorSetLayoutCreateInfo layout_info{};

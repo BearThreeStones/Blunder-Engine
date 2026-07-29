@@ -7,6 +7,7 @@
 #include <cgltf.h>
 
 #include "EASTL/shared_ptr.h"
+#include "EASTL/vector.h"
 
 namespace Blunder {
 
@@ -29,6 +30,7 @@ struct OpaqueMeshDraw {
   bool double_sided{false};
   bool is_transparent{false};
   float sort_depth{0.0f};
+  eastl::vector<glm::mat4> gpu_bone_palette;
 };
 
 }  // namespace Blunder

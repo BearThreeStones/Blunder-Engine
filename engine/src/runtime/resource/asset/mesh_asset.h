@@ -47,13 +47,14 @@ class MeshAsset final : public Asset {
   MeshAsset(Asset::Meta meta, eastl::vector<MeshVertex> vertices,
             eastl::vector<uint32_t> indices, AssetHandle material = {},
             eastl::shared_ptr<MaterialAsset> material_asset = nullptr,
-            MeshSkinData skin_data = {})
+            MeshSkinData skin_data = {}, bool from_cooked_final = false)
       : Asset(Asset::Type::Mesh, eastl::move(meta)),
         m_vertices(eastl::move(vertices)),
         m_indices(eastl::move(indices)),
         m_material(eastl::move(material)),
         m_material_asset(eastl::move(material_asset)),
         m_skin_data(eastl::move(skin_data)),
+        m_from_cooked_final(from_cooked_final),
         m_local_bounds(computeLocalBounds(m_vertices)) {
     setState(State::Loaded);
   }
@@ -76,6 +77,10 @@ class MeshAsset final : public Asset {
 
   bool isSkinned() const { return m_skin_data.isValid(); }
   const MeshSkinData& getSkinData() const { return m_skin_data; }
+  bool isFromCookedFinal() const { return m_from_cooked_final; }
+  bool hasCookedFinalSkin() const {
+    return m_from_cooked_final && m_skin_data.isValid();
+  }
 
  private:
   eastl::vector<MeshVertex> m_vertices;
@@ -83,6 +88,7 @@ class MeshAsset final : public Asset {
   AssetHandle m_material;
   eastl::shared_ptr<MaterialAsset> m_material_asset;
   MeshSkinData m_skin_data;
+  bool m_from_cooked_final{false};
   AABB m_local_bounds{};
 };
 

@@ -26,6 +26,10 @@ struct VulkanPipelineCreateInfo {
   bool enable_texture_sampling{false};
   bool enable_shadow_sampling{false};
   bool enable_pbr_texture_sampling{false};
+  bool enable_skinned_vertex_input{false};
+  /// Adds a joint-matrix UBO for GPU skinning (vertex stage).
+  bool enable_bone_palette{false};
+  uint32_t bone_palette_binding{11};
   uintptr_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
   VkShaderStageFlags descriptor_stage_flags{VK_SHADER_STAGE_VERTEX_BIT};

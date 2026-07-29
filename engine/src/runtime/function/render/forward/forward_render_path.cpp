@@ -1,6 +1,7 @@
 #include "runtime/function/render/forward/forward_render_path.h"
 
 #include <cmath>
+#include <algorithm>
 #include <vulkan/vulkan.h>
 
 #include <glm/ext/matrix_float4x4.hpp>
@@ -12,6 +13,7 @@
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/scene/gpu_skinning.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/rhi_types.h"
@@ -176,6 +178,9 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   m_opaque_pipeline = init.opaque_pipeline;
   m_shadow_pipeline = init.shadow_pipeline;
   m_transparent_pipeline = init.transparent_pipeline;
+  m_skinned_opaque_pipeline = init.skinned_opaque_pipeline;
+  m_skinned_transparent_pipeline = init.skinned_transparent_pipeline;
+  m_skinned_shadow_pipeline = init.skinned_shadow_pipeline;
   m_shadow_map = init.shadow_map;
   m_fallback_texture = init.fallback_texture;
   m_overlay_system = init.overlay_system;
@@ -328,6 +333,190 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
       vkUpdateDescriptorSets(device, 1, &ubo_write, 0, nullptr);
     }
   }
+
+  if (m_skinned_opaque_pipeline != nullptr) {
+    m_skinned_opaque_uniform_buffers.resize(total_opaque_sets);
+    m_skinned_bone_palette_buffers.resize(total_opaque_sets);
+    for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+      m_skinned_opaque_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
+      m_skinned_opaque_uniform_buffers[i]->create(
+          m_vk_allocator, sizeof(ForwardMeshUniformData),
+          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+      m_skinned_bone_palette_buffers[i] = eastl::make_unique<VulkanBuffer>();
+      m_skinned_bone_palette_buffers[i]->create(
+          m_vk_allocator, sizeof(GpuSkinPaletteData),
+          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    }
+
+    VkDescriptorPoolSize skinned_pool_sizes[3]{};
+    skinned_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    skinned_pool_sizes[0].descriptorCount = total_opaque_sets * 2u;
+    skinned_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    skinned_pool_sizes[1].descriptorCount = total_opaque_sets * 5u;
+    skinned_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    skinned_pool_sizes[2].descriptorCount = total_opaque_sets * 5u;
+
+    VkDescriptorPoolCreateInfo skinned_pool_info{};
+    skinned_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    skinned_pool_info.poolSizeCount = 3;
+    skinned_pool_info.pPoolSizes = skinned_pool_sizes;
+    skinned_pool_info.maxSets = total_opaque_sets;
+    VkDescriptorPool skinned_pool = VK_NULL_HANDLE;
+    const VkResult skinned_pool_result = vkCreateDescriptorPool(
+        device, &skinned_pool_info, nullptr, &skinned_pool);
+    if (skinned_pool_result != VK_SUCCESS) {
+      LOG_FATAL(
+          "[ForwardRenderPath] skinned opaque vkCreateDescriptorPool failed: {}",
+          static_cast<int>(skinned_pool_result));
+    }
+    m_skinned_opaque_descriptor_pool = reinterpret_cast<uintptr_t>(skinned_pool);
+
+    const VkDescriptorSetLayout skinned_layout =
+        m_skinned_opaque_pipeline->nativePipeline()->getDescriptorSetLayout();
+    eastl::vector<VkDescriptorSetLayout> skinned_layouts(total_opaque_sets,
+                                                           skinned_layout);
+    VkDescriptorSetAllocateInfo skinned_alloc_info{};
+    skinned_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    skinned_alloc_info.descriptorPool = skinned_pool;
+    skinned_alloc_info.descriptorSetCount = total_opaque_sets;
+    skinned_alloc_info.pSetLayouts = skinned_layouts.data();
+
+    eastl::vector<VkDescriptorSet> skinned_sets(total_opaque_sets);
+    const VkResult skinned_set_result = vkAllocateDescriptorSets(
+        device, &skinned_alloc_info, skinned_sets.data());
+    if (skinned_set_result != VK_SUCCESS) {
+      LOG_FATAL(
+          "[ForwardRenderPath] skinned opaque vkAllocateDescriptorSets failed: {}",
+          static_cast<int>(skinned_set_result));
+    }
+
+    m_skinned_opaque_descriptor_sets.resize(total_opaque_sets);
+    for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+      m_skinned_opaque_descriptor_sets[i] =
+          reinterpret_cast<uintptr_t>(skinned_sets[i]);
+
+      VkDescriptorBufferInfo mesh_buffer_info{};
+      mesh_buffer_info.buffer = m_skinned_opaque_uniform_buffers[i]->getBuffer();
+      mesh_buffer_info.offset = 0;
+      mesh_buffer_info.range = sizeof(ForwardMeshUniformData);
+
+      VkDescriptorBufferInfo bone_buffer_info{};
+      bone_buffer_info.buffer = m_skinned_bone_palette_buffers[i]->getBuffer();
+      bone_buffer_info.offset = 0;
+      bone_buffer_info.range = sizeof(GpuSkinPaletteData);
+
+      VkWriteDescriptorSet writes[2]{};
+      writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[0].dstSet = skinned_sets[i];
+      writes[0].dstBinding = 0;
+      writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      writes[0].descriptorCount = 1;
+      writes[0].pBufferInfo = &mesh_buffer_info;
+
+      writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[1].dstSet = skinned_sets[i];
+      writes[1].dstBinding = 11;
+      writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      writes[1].descriptorCount = 1;
+      writes[1].pBufferInfo = &bone_buffer_info;
+      vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+
+      if (m_fallback_texture != nullptr) {
+        writeOpaqueTextureBindings(device, skinned_sets[i], m_fallback_texture,
+                                   m_fallback_texture, m_fallback_texture,
+                                   m_fallback_texture, m_fallback_texture);
+      }
+      if (m_shadow_map != nullptr) {
+        writeOpaqueShadowBinding(device, skinned_sets[i], m_shadow_map);
+      }
+    }
+  }
+
+  if (m_skinned_shadow_pipeline != nullptr) {
+    m_skinned_shadow_uniform_buffers.resize(total_opaque_sets);
+    m_skinned_shadow_bone_palette_buffers.resize(total_opaque_sets);
+    for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+      m_skinned_shadow_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
+      m_skinned_shadow_uniform_buffers[i]->create(
+          m_vk_allocator, sizeof(ShadowUniformData),
+          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+      m_skinned_shadow_bone_palette_buffers[i] = eastl::make_unique<VulkanBuffer>();
+      m_skinned_shadow_bone_palette_buffers[i]->create(
+          m_vk_allocator, sizeof(GpuSkinPaletteData),
+          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    }
+
+    VkDescriptorPoolSize skinned_shadow_pool_sizes[1]{};
+    skinned_shadow_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    skinned_shadow_pool_sizes[0].descriptorCount = total_opaque_sets * 2u;
+
+    VkDescriptorPoolCreateInfo skinned_shadow_pool_info{};
+    skinned_shadow_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    skinned_shadow_pool_info.poolSizeCount = 1;
+    skinned_shadow_pool_info.pPoolSizes = skinned_shadow_pool_sizes;
+    skinned_shadow_pool_info.maxSets = total_opaque_sets;
+    VkDescriptorPool skinned_shadow_pool = VK_NULL_HANDLE;
+    const VkResult skinned_shadow_pool_result = vkCreateDescriptorPool(
+        device, &skinned_shadow_pool_info, nullptr, &skinned_shadow_pool);
+    if (skinned_shadow_pool_result != VK_SUCCESS) {
+      LOG_FATAL("[ForwardRenderPath] skinned shadow vkCreateDescriptorPool failed: {}",
+                static_cast<int>(skinned_shadow_pool_result));
+    }
+    m_skinned_shadow_descriptor_pool =
+        reinterpret_cast<uintptr_t>(skinned_shadow_pool);
+
+    const VkDescriptorSetLayout skinned_shadow_layout =
+        m_skinned_shadow_pipeline->nativePipeline()->getDescriptorSetLayout();
+    eastl::vector<VkDescriptorSetLayout> skinned_shadow_layouts(
+        total_opaque_sets, skinned_shadow_layout);
+    VkDescriptorSetAllocateInfo skinned_shadow_alloc_info{};
+    skinned_shadow_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    skinned_shadow_alloc_info.descriptorPool = skinned_shadow_pool;
+    skinned_shadow_alloc_info.descriptorSetCount = total_opaque_sets;
+    skinned_shadow_alloc_info.pSetLayouts = skinned_shadow_layouts.data();
+
+    eastl::vector<VkDescriptorSet> skinned_shadow_sets(total_opaque_sets);
+    const VkResult skinned_shadow_set_result = vkAllocateDescriptorSets(
+        device, &skinned_shadow_alloc_info, skinned_shadow_sets.data());
+    if (skinned_shadow_set_result != VK_SUCCESS) {
+      LOG_FATAL(
+          "[ForwardRenderPath] skinned shadow vkAllocateDescriptorSets failed: {}",
+          static_cast<int>(skinned_shadow_set_result));
+    }
+
+    m_skinned_shadow_descriptor_sets.resize(total_opaque_sets);
+    for (uint32_t i = 0; i < total_opaque_sets; ++i) {
+      m_skinned_shadow_descriptor_sets[i] =
+          reinterpret_cast<uintptr_t>(skinned_shadow_sets[i]);
+
+      VkDescriptorBufferInfo shadow_buffer_info{};
+      shadow_buffer_info.buffer = m_skinned_shadow_uniform_buffers[i]->getBuffer();
+      shadow_buffer_info.offset = 0;
+      shadow_buffer_info.range = sizeof(ShadowUniformData);
+
+      VkDescriptorBufferInfo bone_buffer_info{};
+      bone_buffer_info.buffer =
+          m_skinned_shadow_bone_palette_buffers[i]->getBuffer();
+      bone_buffer_info.offset = 0;
+      bone_buffer_info.range = sizeof(GpuSkinPaletteData);
+
+      VkWriteDescriptorSet writes[2]{};
+      writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[0].dstSet = skinned_shadow_sets[i];
+      writes[0].dstBinding = 0;
+      writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      writes[0].descriptorCount = 1;
+      writes[0].pBufferInfo = &shadow_buffer_info;
+
+      writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[1].dstSet = skinned_shadow_sets[i];
+      writes[1].dstBinding = 1;
+      writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      writes[1].descriptorCount = 1;
+      writes[1].pBufferInfo = &bone_buffer_info;
+      vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+    }
+  }
 }
 
 void ForwardRenderPath::shutdown() {
@@ -353,6 +542,38 @@ void ForwardRenderPath::shutdown() {
   }
   m_shadow_uniform_buffers.clear();
 
+  for (eastl::unique_ptr<VulkanBuffer>& buf : m_skinned_opaque_uniform_buffers) {
+    if (buf) {
+      buf->destroy();
+      buf.reset();
+    }
+  }
+  m_skinned_opaque_uniform_buffers.clear();
+
+  for (eastl::unique_ptr<VulkanBuffer>& buf : m_skinned_bone_palette_buffers) {
+    if (buf) {
+      buf->destroy();
+      buf.reset();
+    }
+  }
+  m_skinned_bone_palette_buffers.clear();
+
+  for (eastl::unique_ptr<VulkanBuffer>& buf : m_skinned_shadow_uniform_buffers) {
+    if (buf) {
+      buf->destroy();
+      buf.reset();
+    }
+  }
+  m_skinned_shadow_uniform_buffers.clear();
+
+  for (eastl::unique_ptr<VulkanBuffer>& buf : m_skinned_shadow_bone_palette_buffers) {
+    if (buf) {
+      buf->destroy();
+      buf.reset();
+    }
+  }
+  m_skinned_shadow_bone_palette_buffers.clear();
+
   m_opaque_descriptor_sets.clear();
   m_opaque_texture_binding_cache.clear();
   if (m_opaque_descriptor_pool != 0) {
@@ -360,6 +581,15 @@ void ForwardRenderPath::shutdown() {
         device, reinterpret_cast<VkDescriptorPool>(m_opaque_descriptor_pool),
         nullptr);
     m_opaque_descriptor_pool = 0;
+  }
+
+  m_skinned_opaque_descriptor_sets.clear();
+  if (m_skinned_opaque_descriptor_pool != 0) {
+    vkDestroyDescriptorPool(
+        device,
+        reinterpret_cast<VkDescriptorPool>(m_skinned_opaque_descriptor_pool),
+        nullptr);
+    m_skinned_opaque_descriptor_pool = 0;
   }
 
   m_shadow_descriptor_sets.clear();
@@ -370,10 +600,22 @@ void ForwardRenderPath::shutdown() {
     m_shadow_descriptor_pool = 0;
   }
 
+  m_skinned_shadow_descriptor_sets.clear();
+  if (m_skinned_shadow_descriptor_pool != 0) {
+    vkDestroyDescriptorPool(
+        device,
+        reinterpret_cast<VkDescriptorPool>(m_skinned_shadow_descriptor_pool),
+        nullptr);
+    m_skinned_shadow_descriptor_pool = 0;
+  }
+
   m_overlay_system = nullptr;
   m_fallback_texture = nullptr;
   m_shadow_map = nullptr;
   m_shadow_pipeline = nullptr;
+  m_skinned_shadow_pipeline = nullptr;
+  m_skinned_transparent_pipeline = nullptr;
+  m_skinned_opaque_pipeline = nullptr;
   m_transparent_pipeline = nullptr;
   m_opaque_pipeline = nullptr;
   m_offscreen = nullptr;
@@ -396,20 +638,37 @@ void ForwardRenderPath::bindViewportScissor(VkCommandBuffer cmd, uint32_t width,
 
 namespace {
 
+void fillGpuSkinPalette(const eastl::vector<glm::mat4>& joint_matrices,
+                        GpuSkinPaletteData& out_palette) {
+  for (uint32_t i = 0; i < k_max_gpu_skin_joints; ++i) {
+    out_palette.joint_matrices[i] = Mat4(1.0f);
+  }
+  const uint32_t copy_count = static_cast<uint32_t>(
+      std::min(joint_matrices.size(), static_cast<size_t>(k_max_gpu_skin_joints)));
+  for (uint32_t i = 0; i < copy_count; ++i) {
+    out_palette.joint_matrices[i] = joint_matrices[i];
+  }
+}
+
 void drawMeshList(VkCommandBuffer cmd, VkDevice device,
                   vulkan_backend::VulkanGraphicsPipeline* pipeline,
+                  vulkan_backend::VulkanGraphicsPipeline* skinned_pipeline,
                   const ForwardFrameState& frame_state,
                   const ForwardOpaqueDraw* draws, uint32_t draw_count,
                   uint32_t frame_index, VulkanTexture* fallback_texture,
                   const eastl::vector<uintptr_t>& descriptor_sets,
                   const eastl::vector<eastl::unique_ptr<VulkanBuffer>>& uniform_buffers,
+                  const eastl::vector<uintptr_t>& skinned_descriptor_sets,
+                  const eastl::vector<eastl::unique_ptr<VulkanBuffer>>&
+                      skinned_uniform_buffers,
+                  const eastl::vector<eastl::unique_ptr<VulkanBuffer>>&
+                      skinned_bone_palette_buffers,
                   ForwardRenderPath* render_path) {
   if (pipeline == nullptr || draws == nullptr || draw_count == 0) {
     return;
   }
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    pipeline->nativePipeline()->getGraphicsPipeline());
+  vulkan_backend::VulkanGraphicsPipeline* last_pipeline = nullptr;
 
   for (uint32_t draw_i = 0; draw_i < draw_count; ++draw_i) {
     const ForwardOpaqueDraw& draw = draws[draw_i];
@@ -418,9 +677,26 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
       continue;
     }
 
+    const bool gpu_skinned =
+        !draw.gpu_bone_palette.empty() && skinned_pipeline != nullptr;
+    vulkan_backend::VulkanGraphicsPipeline* active_pipeline =
+        gpu_skinned ? skinned_pipeline : pipeline;
+    if (active_pipeline == nullptr) {
+      continue;
+    }
+
+    if (active_pipeline != last_pipeline) {
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        active_pipeline->nativePipeline()->getGraphicsPipeline());
+      last_pipeline = active_pipeline;
+    }
+
     const uint32_t descriptor_index =
         opaqueDescriptorIndex(draw.slot_index, frame_index);
     if (descriptor_index >= descriptor_sets.size()) {
+      continue;
+    }
+    if (gpu_skinned && descriptor_index >= skinned_descriptor_sets.size()) {
       continue;
     }
 
@@ -458,8 +734,9 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
             ? 1.0f
             : 0.0f;
 
-    const VkDescriptorSet descriptor_set =
-        reinterpret_cast<VkDescriptorSet>(descriptor_sets[descriptor_index]);
+    const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
+        gpu_skinned ? skinned_descriptor_sets[descriptor_index]
+                    : descriptor_sets[descriptor_index]);
     if (render_path != nullptr) {
       render_path->updateOpaqueTextureBindingsIfNeeded(
           descriptor_index, device, descriptor_set, base_color, metallic_roughness,
@@ -470,13 +747,22 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
                                  fallback_texture);
     }
 
-    uniform_buffers[descriptor_index]->upload(&mesh_ubo, sizeof(mesh_ubo));
+    if (gpu_skinned) {
+      GpuSkinPaletteData palette{};
+      fillGpuSkinPalette(draw.gpu_bone_palette, palette);
+      skinned_bone_palette_buffers[descriptor_index]->upload(&palette,
+                                                             sizeof(palette));
+      skinned_uniform_buffers[descriptor_index]->upload(&mesh_ubo, sizeof(mesh_ubo));
+    } else {
+      uniform_buffers[descriptor_index]->upload(&mesh_ubo, sizeof(mesh_ubo));
+    }
 
     VkBuffer vertex_buffers[] = {draw.vertex_buffer->getBuffer()};
     VkDeviceSize vertex_offsets[] = {0};
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
-                            &descriptor_set, 0, nullptr);
+    vkCmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        active_pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
+        &descriptor_set, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, vertex_buffers, vertex_offsets);
     vkCmdBindIndexBuffer(cmd, draw.index_buffer->getBuffer(), 0,
                          VK_INDEX_TYPE_UINT32);
@@ -490,9 +776,12 @@ void ForwardRenderPath::drawOpaqueList(
     VkCommandBuffer cmd, const ForwardFrameState& frame_state,
     const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
     uint32_t frame_index) {
-  drawMeshList(cmd, m_vk_context->getDevice(), m_opaque_pipeline, frame_state,
-               opaque_draws, opaque_draw_count, frame_index, m_fallback_texture,
-               m_opaque_descriptor_sets, m_opaque_uniform_buffers, this);
+  drawMeshList(cmd, m_vk_context->getDevice(), m_opaque_pipeline,
+               m_skinned_opaque_pipeline, frame_state, opaque_draws,
+               opaque_draw_count, frame_index, m_fallback_texture,
+               m_opaque_descriptor_sets, m_opaque_uniform_buffers,
+               m_skinned_opaque_descriptor_sets, m_skinned_opaque_uniform_buffers,
+               m_skinned_bone_palette_buffers, this);
 }
 
 void ForwardRenderPath::drawTransparentList(
@@ -502,10 +791,12 @@ void ForwardRenderPath::drawTransparentList(
   if (m_transparent_pipeline == nullptr) {
     return;
   }
-  drawMeshList(cmd, m_vk_context->getDevice(), m_transparent_pipeline, frame_state,
-               transparent_draws, transparent_draw_count, frame_index,
-               m_fallback_texture, m_opaque_descriptor_sets, m_opaque_uniform_buffers,
-               this);
+  drawMeshList(cmd, m_vk_context->getDevice(), m_transparent_pipeline,
+               m_skinned_transparent_pipeline, frame_state, transparent_draws,
+               transparent_draw_count, frame_index, m_fallback_texture,
+               m_opaque_descriptor_sets, m_opaque_uniform_buffers,
+               m_skinned_opaque_descriptor_sets, m_skinned_opaque_uniform_buffers,
+               m_skinned_bone_palette_buffers, this);
 }
 
 void ForwardRenderPath::drawShadowOpaqueList(
@@ -521,8 +812,7 @@ void ForwardRenderPath::drawShadowOpaqueList(
   const VkExtent2D shadow_extent = m_shadow_map->getExtent();
   bindViewportScissor(cmd, shadow_extent.width, shadow_extent.height);
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_shadow_pipeline->nativePipeline()->getGraphicsPipeline());
+  vulkan_backend::VulkanGraphicsPipeline* last_pipeline = nullptr;
 
   for (uint32_t draw_i = 0; draw_i < opaque_draw_count; ++draw_i) {
     const ForwardOpaqueDraw& draw = opaque_draws[draw_i];
@@ -531,9 +821,27 @@ void ForwardRenderPath::drawShadowOpaqueList(
       continue;
     }
 
+    const bool gpu_skinned =
+        !draw.gpu_bone_palette.empty() && m_skinned_shadow_pipeline != nullptr;
+    vulkan_backend::VulkanGraphicsPipeline* active_shadow_pipeline =
+        gpu_skinned ? m_skinned_shadow_pipeline : m_shadow_pipeline;
+    if (active_shadow_pipeline == nullptr) {
+      continue;
+    }
+
+    if (active_shadow_pipeline != last_pipeline) {
+      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        active_shadow_pipeline->nativePipeline()->getGraphicsPipeline());
+      last_pipeline = active_shadow_pipeline;
+    }
+
     const uint32_t descriptor_index =
         opaqueDescriptorIndex(draw.slot_index, frame_index);
-    if (descriptor_index >= m_shadow_descriptor_sets.size()) {
+    if (gpu_skinned) {
+      if (descriptor_index >= m_skinned_shadow_descriptor_sets.size()) {
+        continue;
+      }
+    } else if (descriptor_index >= m_shadow_descriptor_sets.size()) {
       continue;
     }
 
@@ -542,17 +850,27 @@ void ForwardRenderPath::drawShadowOpaqueList(
     shadow_ubo.light_view = frame_state.light_view;
     shadow_ubo.light_projection = frame_state.light_projection;
 
-    m_shadow_uniform_buffers[descriptor_index]->upload(&shadow_ubo,
-                                                     sizeof(shadow_ubo));
-
     const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
-        m_shadow_descriptor_sets[descriptor_index]);
+        gpu_skinned ? m_skinned_shadow_descriptor_sets[descriptor_index]
+                    : m_shadow_descriptor_sets[descriptor_index]);
+
+    if (gpu_skinned) {
+      m_skinned_shadow_uniform_buffers[descriptor_index]->upload(
+          &shadow_ubo, sizeof(shadow_ubo));
+      GpuSkinPaletteData palette{};
+      fillGpuSkinPalette(draw.gpu_bone_palette, palette);
+      m_skinned_shadow_bone_palette_buffers[descriptor_index]->upload(
+          &palette, sizeof(palette));
+    } else {
+      m_shadow_uniform_buffers[descriptor_index]->upload(&shadow_ubo,
+                                                         sizeof(shadow_ubo));
+    }
 
     VkBuffer vertex_buffers[] = {draw.vertex_buffer->getBuffer()};
     VkDeviceSize vertex_offsets[] = {0};
     vkCmdBindDescriptorSets(
         cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_shadow_pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
+        active_shadow_pipeline->nativePipeline()->getPipelineLayout(), 0, 1,
         &descriptor_set, 0, nullptr);
     vkCmdBindVertexBuffers(cmd, 0, 1, vertex_buffers, vertex_offsets);
     vkCmdBindIndexBuffer(cmd, draw.index_buffer->getBuffer(), 0,

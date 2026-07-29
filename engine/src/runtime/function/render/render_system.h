@@ -130,12 +130,14 @@ class RenderSystem final {
       VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
       VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
       const glm::mat4& model, float alpha_cutoff = 0.5f,
-      cgltf_alpha_mode alpha_mode = cgltf_alpha_mode_opaque, bool double_sided = false);
+      cgltf_alpha_mode alpha_mode = cgltf_alpha_mode_opaque, bool double_sided = false,
+      eastl::vector<glm::mat4> gpu_bone_palette = {});
   bool addTransparentMeshDraw(
       GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
       VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
       VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
-      const glm::mat4& model, float alpha_cutoff = 0.5f, bool double_sided = false);
+      const glm::mat4& model, float alpha_cutoff = 0.5f, bool double_sided = false,
+      eastl::vector<glm::mat4> gpu_bone_palette = {});
   void clearOpaqueMeshDraws();
   void clearTransparentMeshDraws();
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
@@ -192,7 +194,10 @@ class RenderSystem final {
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_offscreen;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_mesh_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_transparent_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_skinned_mesh_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_skinned_transparent_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_shadow_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_skinned_shadow_pipeline;
   eastl::unique_ptr<OverlaySystem> m_overlay_system;
   eastl::unique_ptr<ShadowMapTarget> m_shadow_map;
   eastl::unique_ptr<EditorCamera> m_editor_camera;

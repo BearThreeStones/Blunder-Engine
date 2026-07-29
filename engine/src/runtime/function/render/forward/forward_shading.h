@@ -6,12 +6,18 @@
 #include <cgltf.h>
 
 #include "runtime/core/math/geometry.h"
+#include "runtime/function/scene/gpu_skinning.h"
 
 namespace Blunder {
 
 class MaterialAsset;
 struct BlinnPhongEditorSettings;
 struct ForwardFrameState;
+
+/// GPU bone palette UBO (std140) shared with skinned shaders; see k_max_gpu_skin_joints.
+struct GpuSkinPaletteData {
+  glm::mat4 joint_matrices[k_max_gpu_skin_joints];
+};
 
 /// Mesh UBO layout shared with engine/shaders/basic.slang (std140).
 struct ForwardMeshUniformData {

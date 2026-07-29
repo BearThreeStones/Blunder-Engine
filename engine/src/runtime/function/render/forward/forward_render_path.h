@@ -34,6 +34,9 @@ struct ForwardRenderPathInit {
   vulkan_backend::VulkanGraphicsPipeline* opaque_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* transparent_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* shadow_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* skinned_opaque_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* skinned_transparent_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* skinned_shadow_pipeline{nullptr};
   ShadowMapTarget* shadow_map{nullptr};
   VulkanTexture* fallback_texture{nullptr};
   OverlaySystem* overlay_system{nullptr};
@@ -100,16 +103,27 @@ class ForwardRenderPath final {
   vulkan_backend::VulkanGraphicsPipeline* m_opaque_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_transparent_pipeline{nullptr};
   vulkan_backend::VulkanGraphicsPipeline* m_shadow_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* m_skinned_opaque_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* m_skinned_transparent_pipeline{nullptr};
+  vulkan_backend::VulkanGraphicsPipeline* m_skinned_shadow_pipeline{nullptr};
   ShadowMapTarget* m_shadow_map{nullptr};
   VulkanTexture* m_fallback_texture{nullptr};
   OverlaySystem* m_overlay_system{nullptr};
 
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_opaque_uniform_buffers;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_shadow_uniform_buffers;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_skinned_opaque_uniform_buffers;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_skinned_bone_palette_buffers;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_skinned_shadow_uniform_buffers;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_skinned_shadow_bone_palette_buffers;
   uintptr_t m_opaque_descriptor_pool{0};
   eastl::vector<uintptr_t> m_opaque_descriptor_sets;
+  uintptr_t m_skinned_opaque_descriptor_pool{0};
+  eastl::vector<uintptr_t> m_skinned_opaque_descriptor_sets;
   uintptr_t m_shadow_descriptor_pool{0};
   eastl::vector<uintptr_t> m_shadow_descriptor_sets;
+  uintptr_t m_skinned_shadow_descriptor_pool{0};
+  eastl::vector<uintptr_t> m_skinned_shadow_descriptor_sets;
 
   struct OpaqueTextureBindingCache {
     VulkanTexture* base_color{nullptr};

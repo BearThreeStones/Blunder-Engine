@@ -368,10 +368,11 @@ eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
   if (skin_data.isValid()) {
     asset = eastl::make_shared<MeshAsset>(
         eastl::move(meta), eastl::move(vertices), eastl::move(indices),
-        AssetHandle{}, nullptr, eastl::move(skin_data));
+        AssetHandle{}, nullptr, eastl::move(skin_data), true);
   } else {
     asset = eastl::make_shared<MeshAsset>(
-        eastl::move(meta), eastl::move(vertices), eastl::move(indices));
+        eastl::move(meta), eastl::move(vertices), eastl::move(indices),
+        AssetHandle{}, nullptr, MeshSkinData{}, true);
   }
   LOG_INFO("[AssetManager] loaded cooked Mesh {} ({})", descriptor_key.c_str(),
            cooked_path.generic_string());
