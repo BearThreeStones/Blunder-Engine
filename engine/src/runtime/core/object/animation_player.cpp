@@ -73,11 +73,31 @@ void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
   m_sampling_skeleton = skeleton;
 }
 
+void AnimationPlayer::addPoseAppliedListener(PoseAppliedFn fn, void* userdata) {
+  if (fn == nullptr) {
+    return;
+  }
+  m_pose_applied_listeners.push_back(PoseAppliedListener{fn, userdata});
+}
+
+void AnimationPlayer::clearPoseAppliedListeners() {
+  m_pose_applied_listeners.clear();
+}
+
+void AnimationPlayer::notifyPoseApplied() {
+  for (const PoseAppliedListener& listener : m_pose_applied_listeners) {
+    if (listener.fn != nullptr) {
+      listener.fn(*this, listener.userdata);
+    }
+  }
+}
+
 void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
   if (!m_has_current_clip) {
     return;
   }
   sampleClipOntoSkeleton(skeleton, m_current_clip, m_position);
+  notifyPoseApplied();
 }
 
 void AnimationPlayer::sampleBoundSkeleton() {

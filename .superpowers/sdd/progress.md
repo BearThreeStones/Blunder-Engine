@@ -50,5 +50,8 @@ Task 3.1: complete (commit 3d73b84, review pending; model=composer-2.5)
 Task 3.2: complete (commit 5387286, review pending; model=composer-2.5)
   AnimationPlayer on Object (name→GUID map, Play/Stop/Loop, hard cut, advance/position/length); injectClipData + ClipResolver seam; ClassDB is_playing/is_looping/playback_position/clip_length; animation_player_test pass.
 
-Task 3.3: complete (commit pending, review pending; model=composer-2.5)
+Task 3.3: complete (commit 90773d0, review pending; model=composer-2.5)
   Constant/Linear sampler onto co-located Skeleton; sampleClipOntoSkeleton + AnimationPlayer bindSamplingSkeleton; play/advance sample poses; Object wires binding; animation_sampler_test pass.
+
+Task 3.4: complete (commit pending, review pending; model=composer-2.5)
+  PoseApplied listener API on AnimationPlayer; tickObjectAnimationPlayFrame / tickObjectAnimationPreviewFrame helpers; engine play loop uses ordered Tick → advance/sample → PoseApplied; animation_frame_order_test pass.

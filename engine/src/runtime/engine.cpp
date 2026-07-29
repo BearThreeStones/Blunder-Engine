@@ -26,7 +26,7 @@
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/lifecycle.h"
-#include "runtime/function/script/play_tick_gate.h"
+#include "runtime/function/script/animation_frame.h"
 
 #include <SDL3/SDL.h>
 #if defined(_WIN32)
@@ -436,7 +436,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       ObjectDB::forEach(
           [](Object* object, void* user) {
             const auto* args = static_cast<const TickArgs*>(user);
-            dispatchObjectLifecycle(object, args->dt, args->paused);
+            tickObjectAnimationPlayFrame(object, args->dt, args->paused);
           },
           &tick_args);
     }

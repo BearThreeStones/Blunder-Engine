@@ -1316,3 +1316,27 @@ target_precompile_headers(animation_sampler_test
 
 add_test(NAME animation_sampler_test
          COMMAND animation_sampler_test)
+
+add_executable(animation_frame_order_test
+    "animation_frame_order_test.cpp"
+)
+
+target_link_libraries(animation_frame_order_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_frame_order_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(animation_frame_order_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(animation_frame_order_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME animation_frame_order_test
+         COMMAND animation_frame_order_test)
