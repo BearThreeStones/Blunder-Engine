@@ -145,6 +145,11 @@ int blunder_object_destroy(BlunderObjectId id) {
   if (object == nullptr) {
     return BLUNDER_ENGINE_ERROR;
   }
+  AnimationPlayer* player = object->getAnimationPlayer();
+  if (player != nullptr) {
+    player->clearPoseAppliedListeners();
+  }
+  removePoseAppliedBindingsForObject(id);
   ObjectDB::destroy(static_cast<ObjectId>(id));
   return BLUNDER_ENGINE_OK;
 }

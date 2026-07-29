@@ -162,12 +162,48 @@ int main() {
               blunder_animation_player_play(id, "walk") == BLUNDER_ENGINE_OK);
   expect_true("no pose after clear", g_pose_applied_hits == 0);
 
-  expect_true("table play",
-              abi.animation_player_play(id, "walk") == BLUNDER_ENGINE_OK);
+  // Destroy with active PoseApplied listener — bindings must be removed (no leak / dangling hook).
+  g_pose_applied_hits = 0;
+  expect_true(
+      "re-add pose listener before destroy",
+      blunder_animation_player_add_pose_applied_listener(id, on_pose_applied_c_abi,
+                                                         nullptr) ==
+          BLUNDER_ENGINE_OK);
+  expect_true("destroy with pose listener",
+              blunder_object_destroy(id) == BLUNDER_ENGINE_OK);
+  expect_true("destroyed object invalid", blunder_object_is_valid(id) == 0);
 
-  ObjectDB::destroy(native_id);
-  expect_true("play invalid object",
+  const ObjectId second_id = ObjectDB::create();
+  const BlunderObjectId second_abi_id = static_cast<BlunderObjectId>(second_id);
+  Object* second_object = ObjectDB::get(second_id);
+  expect_true("second object created", second_object != nullptr);
+  if (second_object != nullptr) {
+    setup_object_with_clip(second_id, second_object, "walk",
+                           "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1.0f);
+    g_pose_applied_hits = 0;
+    g_pose_applied_object_id = 0;
+    expect_true(
+        "second add pose listener",
+        blunder_animation_player_add_pose_applied_listener(
+            second_abi_id, on_pose_applied_c_abi, nullptr) == BLUNDER_ENGINE_OK);
+    expect_true("second play via c abi",
+                blunder_animation_player_play(second_abi_id, "walk") ==
+                    BLUNDER_ENGINE_OK);
+    expect_true("second pose applied on play", g_pose_applied_hits == 1);
+    expect_true("second pose applied object id",
+                g_pose_applied_object_id == second_abi_id);
+    second_object->getAnimationPlayer()->advance(0.25f);
+    expect_true("second pose after advance", g_pose_applied_hits == 2);
+    expect_true("table play second",
+                abi.animation_player_play(second_abi_id, "walk") ==
+                    BLUNDER_ENGINE_OK);
+    ObjectDB::destroy(second_id);
+  }
+
+  expect_true("play invalid object after destroy",
               blunder_animation_player_play(id, "walk") == BLUNDER_ENGINE_ERROR);
+  expect_true("table play invalid object",
+              abi.animation_player_play(id, "walk") == BLUNDER_ENGINE_ERROR);
 
   ClassDB::shutdown();
   ObjectDB::clear();
