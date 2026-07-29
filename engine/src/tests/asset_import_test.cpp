@@ -1892,6 +1892,142 @@ void reimportPreservesAnimationClipGuidsAndRefreshesYaml() {
   fs::remove_all(external.parent_path());
 }
 
+// Task 2.3: clip GUID preservation when mesh descriptor stem differs from
+// Intermediate source stem (e.g. rig_1.mesh.yaml → resources/Models/rig/rig.gltf).
+void reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / ".blunder" / "cooked");
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_reimport_stem_mismatch_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "rig.gltf";
+  writeDualAnimationGltfFixture(external);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, nullptr, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const ImportResult imported =
+      import_service.importMesh(external, "assets/Meshes", settings);
+  expect_true("stem mismatch fixture: mesh import succeeds", imported.success);
+  expect_true("stem mismatch fixture: two clips extracted",
+              imported.animation_clips.size() == 2);
+
+  const eastl::string mesh_guid = imported.guid;
+  const eastl::string idle_guid = imported.animation_clips[0].guid;
+  const eastl::string walk_guid = imported.animation_clips[1].guid;
+
+  eastl::string old_desc_rel = imported.descriptor_virtual_path;
+  if (startsWith(old_desc_rel, "assets/")) {
+    old_desc_rel.erase(0, 7);
+  }
+  const fs::path old_descriptor_absolute =
+      file_system.resolveAsset(fs::path(old_desc_rel.c_str()));
+  const fs::path new_descriptor_absolute =
+      file_system.resolveAsset(fs::path("Meshes/rig_1.mesh.yaml"));
+  fs::rename(old_descriptor_absolute, new_descriptor_absolute);
+  const eastl::string renamed_descriptor_virtual =
+      eastl::string("assets/Meshes/rig_1.mesh.yaml");
+  expect_true("stem mismatch fixture: registry updated for renamed descriptor",
+              registry.registerAsset(mesh_guid, renamed_descriptor_virtual));
+  expect_true("stem mismatch fixture: resolveGuid returns renamed path",
+              registry.resolveGuid(mesh_guid) == renamed_descriptor_virtual);
+
+  auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
+    eastl::string relative = virtual_path;
+    if (startsWith(relative, "resources/")) {
+      relative.erase(0, 10);
+    }
+    return file_system.resolveResource(fs::path(relative.c_str()));
+  };
+
+  for (const ImportResult& clip : imported.animation_clips) {
+    eastl::string desc_rel = clip.descriptor_virtual_path;
+    if (startsWith(desc_rel, "assets/")) {
+      desc_rel.erase(0, 7);
+    }
+    const fs::path descriptor_absolute =
+        file_system.resolveAsset(fs::path(desc_rel.c_str()));
+    eastl::string descriptor_yaml;
+    expect_true("stem mismatch fixture: read clip descriptor",
+                file_system.readText(descriptor_absolute, descriptor_yaml));
+    AnimationClipAssetDescriptor clip_descriptor{};
+    expect_true("stem mismatch fixture: parse clip descriptor",
+                AssetYaml::parseAnimationClipDescriptor(descriptor_yaml,
+                                                        clip_descriptor));
+    expect_true("stem mismatch fixture: clips still under Animations/rig/",
+                clip_descriptor.source.find("resources/Animations/rig/") == 0);
+
+    const fs::path clip_intermediate_absolute =
+        resolveResourcesVirtual(clip_descriptor.source);
+    writeTextFile(clip_intermediate_absolute, "STALE_CLIP_MARKER");
+  }
+
+  expect_true("stem mismatch reimport: requestReimport succeeds",
+              import_service.requestReimport(mesh_guid));
+
+  expect_true("stem mismatch reimport preserves mesh GUID",
+              registry.resolveGuid(mesh_guid) == renamed_descriptor_virtual);
+  expect_true("stem mismatch reimport preserves idle clip GUID",
+              registry.resolveGuid(idle_guid) ==
+                  imported.animation_clips[0].descriptor_virtual_path);
+  expect_true("stem mismatch reimport preserves walk clip GUID",
+              registry.resolveGuid(walk_guid) ==
+                  imported.animation_clips[1].descriptor_virtual_path);
+
+  for (const ImportResult& clip : imported.animation_clips) {
+    eastl::string desc_rel = clip.descriptor_virtual_path;
+    if (startsWith(desc_rel, "assets/")) {
+      desc_rel.erase(0, 7);
+    }
+    const fs::path descriptor_absolute =
+        file_system.resolveAsset(fs::path(desc_rel.c_str()));
+    eastl::string descriptor_yaml;
+    expect_true("stem mismatch reimport: read clip descriptor after",
+                file_system.readText(descriptor_absolute, descriptor_yaml));
+    AnimationClipAssetDescriptor clip_descriptor{};
+    expect_true("stem mismatch reimport: parse clip descriptor after",
+                AssetYaml::parseAnimationClipDescriptor(descriptor_yaml,
+                                                        clip_descriptor));
+    expect_true("stem mismatch reimport: clip guid unchanged",
+                clip_descriptor.guid == clip.guid);
+
+    const fs::path clip_intermediate_absolute =
+        resolveResourcesVirtual(clip_descriptor.source);
+    expect_true("stem mismatch reimport: clip yaml refreshed",
+                readTextFile(clip_intermediate_absolute) != "STALE_CLIP_MARKER");
+  }
+
+  import_service.shutdown();
+  compiler.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
 }  // namespace
 
 int main() {
@@ -1900,6 +2036,7 @@ int main() {
   importMeshWritesIntermediateAndDescriptor();
   importGltfWithTwoAnimationsRegistersMeshAndClips();
   reimportPreservesAnimationClipGuidsAndRefreshesYaml();
+  reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers();
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
   importGltfIntermediateDirectNotSourceExport();

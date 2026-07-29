@@ -375,24 +375,28 @@ bool refreshIntermediateFromArchivedSource(FileSystem* file_system,
   return true;
 }
 
-eastl::string meshStemFromMeshDescriptorVirtual(
-    const eastl::string& descriptor_virtual) {
+/// Filename stem from a virtual path (e.g. resources/Models/rig/rig.gltf → rig).
+eastl::string stemFromVirtualPath(const eastl::string& virtual_path) {
   size_t slash = eastl::string::npos;
-  for (size_t i = descriptor_virtual.size(); i > 0; --i) {
-    const char c = descriptor_virtual[i - 1];
+  for (size_t i = virtual_path.size(); i > 0; --i) {
+    const char c = virtual_path[i - 1];
     if (c == '/' || c == '\\') {
       slash = i - 1;
       break;
     }
   }
   const size_t name_start = slash == eastl::string::npos ? 0 : slash + 1;
-  eastl::string filename = descriptor_virtual.substr(name_start);
-  constexpr const char* kMeshSuffix = ".mesh.yaml";
-  const size_t suffix_length = std::strlen(kMeshSuffix);
-  if (filename.size() >= suffix_length &&
-      filename.compare(filename.size() - suffix_length, suffix_length,
-                       kMeshSuffix) == 0) {
-    filename.erase(filename.size() - suffix_length);
+  eastl::string filename = virtual_path.substr(name_start);
+
+  size_t dot = eastl::string::npos;
+  for (size_t i = filename.size(); i > 0; --i) {
+    if (filename[i - 1] == '.') {
+      dot = i - 1;
+      break;
+    }
+  }
+  if (dot != eastl::string::npos) {
+    filename.erase(dot);
   }
   return filename;
 }
@@ -407,7 +411,8 @@ void refreshMeshAnimationClipsFromIntermediate(
     return;
   }
 
-  const eastl::string mesh_stem = meshStemFromMeshDescriptorVirtual(descriptor_virtual);
+  (void)descriptor_virtual;
+  const eastl::string mesh_stem = stemFromVirtualPath(mesh.source);
   if (mesh_stem.empty()) {
     return;
   }
