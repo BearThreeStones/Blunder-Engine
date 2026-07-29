@@ -286,7 +286,10 @@ bool AssetCompilerService::cookMeshDescriptor(
   }
 
   m_file_system->ensureParentDirectory(cooked_path);
-  if (!writeMeshCookFile(cooked_path, mesh->getVertices(), mesh->getIndices())) {
+  const MeshSkinData* skin_ptr =
+      mesh->isSkinned() ? &mesh->getSkinData() : nullptr;
+  if (!writeMeshCookFile(cooked_path, mesh->getVertices(), mesh->getIndices(),
+                         skin_ptr)) {
     return false;
   }
 

@@ -1294,6 +1294,31 @@ target_precompile_headers(cpu_skinning_test
 add_test(NAME cpu_skinning_test
          COMMAND cpu_skinning_test)
 
+add_executable(mesh_skin_cook_test
+    "mesh_skin_cook_test.cpp"
+)
+
+target_link_libraries(mesh_skin_cook_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(mesh_skin_cook_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(mesh_skin_cook_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(mesh_skin_cook_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME mesh_skin_cook_test
+         COMMAND mesh_skin_cook_test)
+
 add_executable(animation_player_test
     "animation_player_test.cpp"
 )

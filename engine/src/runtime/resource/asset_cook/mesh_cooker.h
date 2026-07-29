@@ -14,11 +14,13 @@ class FileSystem;
 
 bool writeMeshCookFile(const std::filesystem::path& output_path,
                        const eastl::vector<MeshVertex>& vertices,
-                       const eastl::vector<uint32_t>& indices);
+                       const eastl::vector<uint32_t>& indices,
+                       const MeshSkinData* skin_data = nullptr);
 
 bool readMeshCookFile(const std::filesystem::path& input_path,
                       eastl::vector<MeshVertex>& out_vertices,
-                      eastl::vector<uint32_t>& out_indices);
+                      eastl::vector<uint32_t>& out_indices,
+                      MeshSkinData* out_skin_data = nullptr);
 
 bool writeCookMetaFile(const std::filesystem::path& meta_path,
                        const CookedAssetMeta& meta);

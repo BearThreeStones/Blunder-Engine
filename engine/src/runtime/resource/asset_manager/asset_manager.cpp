@@ -354,7 +354,8 @@ eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
 
   eastl::vector<MeshVertex> vertices;
   eastl::vector<uint32_t> indices;
-  if (!readMeshCookFile(cooked_path, vertices, indices)) {
+  MeshSkinData skin_data;
+  if (!readMeshCookFile(cooked_path, vertices, indices, &skin_data)) {
     return nullptr;
   }
 
@@ -363,8 +364,15 @@ eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
   meta.absolute_path = descriptor_absolute;
   meta.source_timestamp = querySourceTimestamp(descriptor_absolute);
 
-  auto asset = eastl::make_shared<MeshAsset>(
-      eastl::move(meta), eastl::move(vertices), eastl::move(indices));
+  eastl::shared_ptr<MeshAsset> asset;
+  if (skin_data.isValid()) {
+    asset = eastl::make_shared<MeshAsset>(
+        eastl::move(meta), eastl::move(vertices), eastl::move(indices),
+        AssetHandle{}, nullptr, eastl::move(skin_data));
+  } else {
+    asset = eastl::make_shared<MeshAsset>(
+        eastl::move(meta), eastl::move(vertices), eastl::move(indices));
+  }
   LOG_INFO("[AssetManager] loaded cooked Mesh {} ({})", descriptor_key.c_str(),
            cooked_path.generic_string());
   return asset;
@@ -381,6 +389,21 @@ const cgltf_attribute* findPrimitiveAttribute(const cgltf_primitive& primitive,
     const cgltf_attribute& attribute = primitive.attributes[i];
     if (attribute.type == type && attribute.index == index) {
       return &attribute;
+    }
+  }
+  return nullptr;
+}
+
+const cgltf_skin* findSkinForMeshIndex(const cgltf_data& data,
+                                       size_t mesh_index) {
+  if (mesh_index >= data.meshes_count) {
+    return nullptr;
+  }
+  const cgltf_mesh& target_mesh = data.meshes[mesh_index];
+  for (cgltf_size node_index = 0; node_index < data.nodes_count; ++node_index) {
+    const cgltf_node& node = data.nodes[node_index];
+    if (node.mesh == &target_mesh && node.skin != nullptr) {
+      return node.skin;
     }
   }
   return nullptr;
@@ -994,8 +1017,10 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
           absolute.generic_string());
     }
 
+    const cgltf_skin* skin =
+        findSkinForMeshIndex(*data, selected_mesh_index);
     const eastl::shared_ptr<MeshAsset> loaded = loadMeshPrimitive(
-        data, selected_mesh_index, selected_primitive_index, absolute, key);
+        data, selected_mesh_index, selected_primitive_index, absolute, key, skin);
     cgltf_free(data);
     if (loaded) {
       m_mesh_cache[key] = loaded;
