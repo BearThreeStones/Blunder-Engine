@@ -123,7 +123,7 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
   }
 
   m_asset_registry->rebuildFromScan();
-  // Registry scan / project warm-up: upgrade legacy glTF Intermediate → .dae.
+  // Registry warm-up: Intermediate Upgrade is a no-op (ADR 0019).
   if (m_asset_import) {
     m_asset_import->upgradeLegacyMeshIntermediates();
   }

@@ -253,7 +253,7 @@ void RuntimeGlobalContext::startSystems(
   import_init.asset_compiler = m_asset_compiler.get();
   m_asset_import->initialize(import_init);
   m_asset_compiler->setAssetImportService(m_asset_import.get());
-  // Project open: upgrade legacy glTF Intermediate → COLLADA before watch starts.
+  // Registry scan on project open (Intermediate Upgrade is a no-op per ADR 0019).
   m_asset_import->upgradeLegacyMeshIntermediates();
   m_content_browser->setReimportTarget(m_asset_import.get());
   if (!player_host) {
