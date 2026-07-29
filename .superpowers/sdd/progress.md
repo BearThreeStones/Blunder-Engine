@@ -53,5 +53,8 @@ Task 3.2: complete (commit 5387286, review pending; model=composer-2.5)
 Task 3.3: complete (commit 90773d0, review pending; model=composer-2.5)
   Constant/Linear sampler onto co-located Skeleton; sampleClipOntoSkeleton + AnimationPlayer bindSamplingSkeleton; play/advance sample poses; Object wires binding; animation_sampler_test pass.
 
-Task 3.4: complete (commit pending, review pending; model=composer-2.5)
+Task 3.4: complete (commit 07dccc4, review pending; model=composer-2.5)
   PoseApplied listener API on AnimationPlayer; tickObjectAnimationPlayFrame / tickObjectAnimationPreviewFrame helpers; engine play loop uses ordered Tick → advance/sample → PoseApplied; animation_frame_order_test pass.
+
+Task 3.5: complete (commit pending; model=composer-2.5)
+  C-ABI v5: AnimationPlayer Play/Stop/Loop, playback position/length, PoseApplied subscribe/clear; BlunderNativeAbi table + Blunder.Api AnimationPlayer façade; animation_player_c_abi_test pass.

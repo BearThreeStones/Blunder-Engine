@@ -1,14 +1,20 @@
 #include "runtime/core/reflection/engine_c_abi.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/object_id.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/reflection/message_dispatch.h"
 #include "runtime/core/reflection/variant.h"
 #include "runtime/platform/input/gameplay_input.h"
 
+#include "EASTL/hash_map.h"
 #include "EASTL/string.h"
+#include "EASTL/unique_ptr.h"
+#include "EASTL/vector.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #ifndef NOMINMAX
@@ -24,6 +30,46 @@ using namespace Blunder;
 namespace {
 
 BlunderMessageHook g_blunder_message_hook = nullptr;
+
+struct PoseAppliedCAbiBinding {
+  BlunderObjectId object_id{0};
+  BlunderPoseAppliedHook hook{nullptr};
+  void* userdata{nullptr};
+};
+
+eastl::hash_map<BlunderObjectId,
+                eastl::vector<eastl::unique_ptr<PoseAppliedCAbiBinding>>>
+    g_pose_applied_bindings;
+
+AnimationPlayer* animationPlayerForObject(BlunderObjectId id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return nullptr;
+  }
+  return object->ensureAnimationPlayer();
+}
+
+void pose_applied_c_abi_bridge(AnimationPlayer& /*player*/, void* userdata) {
+  auto* binding = static_cast<PoseAppliedCAbiBinding*>(userdata);
+  if (binding == nullptr || binding->hook == nullptr) {
+    return;
+  }
+  binding->hook(binding->object_id, binding->userdata);
+}
+
+void removePoseAppliedBindingsForObject(BlunderObjectId id) {
+  g_pose_applied_bindings.erase(id);
+}
+
+void* propertyInstance(Object* object, const char* class_name) {
+  if (object == nullptr || class_name == nullptr) {
+    return nullptr;
+  }
+  if (eastl::string(class_name) == "AnimationPlayer") {
+    return object->getAnimationPlayer();
+  }
+  return object;
+}
 
 BlunderMessageArg toBlunderMessageArg(const MessageArg& arg) {
   BlunderMessageArg out{};
@@ -113,7 +159,11 @@ int blunder_object_set_bool_property(BlunderObjectId id, const char* class_name,
   if (object == nullptr) {
     return BLUNDER_ENGINE_ERROR;
   }
-  return ClassDB::setProperty(object, class_name, property_name,
+  void* instance = propertyInstance(object, class_name);
+  if (instance == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return ClassDB::setProperty(instance, class_name, property_name,
                               Variant(value != 0))
              ? BLUNDER_ENGINE_OK
              : BLUNDER_ENGINE_ERROR;
@@ -126,8 +176,12 @@ int blunder_object_get_bool_property(BlunderObjectId id, const char* class_name,
   if (object == nullptr || out_value == nullptr) {
     return BLUNDER_ENGINE_ERROR;
   }
+  void* instance = propertyInstance(object, class_name);
+  if (instance == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
   Variant value;
-  if (!ClassDB::getProperty(object, class_name, property_name, value)) {
+  if (!ClassDB::getProperty(instance, class_name, property_name, value)) {
     return BLUNDER_ENGINE_ERROR;
   }
   *out_value = value.asBool() ? 1 : 0;
@@ -333,6 +387,85 @@ int blunder_message_clear_hook(void) {
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_animation_player_play(BlunderObjectId id, const char* clip_name) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return player->play(eastl::string(clip_name)) ? BLUNDER_ENGINE_OK
+                                                : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_player_stop(BlunderObjectId id) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  player->stop();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_set_loop(BlunderObjectId id, int loop) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  player->setLoop(loop != 0);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_get_playback_position(BlunderObjectId id,
+                                                   float* out_position) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr || out_position == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_position = player->getPlaybackPosition();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_get_clip_length(BlunderObjectId id,
+                                             float* out_length) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr || out_length == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_length = player->getClipLength();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_add_pose_applied_listener(
+    BlunderObjectId id, BlunderPoseAppliedHook hook, void* userdata) {
+  if (hook == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+
+  auto binding = eastl::make_unique<PoseAppliedCAbiBinding>();
+  binding->object_id = id;
+  binding->hook = hook;
+  binding->userdata = userdata;
+  player->addPoseAppliedListener(&pose_applied_c_abi_bridge, binding.get());
+  g_pose_applied_bindings[id].push_back(eastl::move(binding));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_clear_pose_applied_listeners(BlunderObjectId id) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  player->clearPoseAppliedListeners();
+  removePoseAppliedBindingsForObject(id);
+  return BLUNDER_ENGINE_OK;
+}
+
 void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   if (out == nullptr) {
     return;
@@ -361,6 +494,17 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->message_send = &blunder_message_send;
   out->message_set_hook = &blunder_message_set_hook;
   out->message_clear_hook = &blunder_message_clear_hook;
+  out->animation_player_play = &blunder_animation_player_play;
+  out->animation_player_stop = &blunder_animation_player_stop;
+  out->animation_player_set_loop = &blunder_animation_player_set_loop;
+  out->animation_player_get_playback_position =
+      &blunder_animation_player_get_playback_position;
+  out->animation_player_get_clip_length =
+      &blunder_animation_player_get_clip_length;
+  out->animation_player_add_pose_applied_listener =
+      &blunder_animation_player_add_pose_applied_listener;
+  out->animation_player_clear_pose_applied_listeners =
+      &blunder_animation_player_clear_pose_applied_listeners;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -424,6 +568,18 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
   BLUNDER_NATIVE_ABI_LOAD(message_send, "blunder_message_send");
   BLUNDER_NATIVE_ABI_LOAD(message_set_hook, "blunder_message_set_hook");
   BLUNDER_NATIVE_ABI_LOAD(message_clear_hook, "blunder_message_clear_hook");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_play, "blunder_animation_player_play");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_stop, "blunder_animation_player_stop");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_set_loop,
+                          "blunder_animation_player_set_loop");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_playback_position,
+                          "blunder_animation_player_get_playback_position");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_clip_length,
+                          "blunder_animation_player_get_clip_length");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_add_pose_applied_listener,
+                          "blunder_animation_player_add_pose_applied_listener");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_clear_pose_applied_listeners,
+                          "blunder_animation_player_clear_pose_applied_listeners");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

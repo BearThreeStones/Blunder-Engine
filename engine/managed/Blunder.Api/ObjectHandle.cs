@@ -148,4 +148,6 @@ public sealed class ObjectHandle
     }
 
     public bool IsValid => Native.blunder_object_is_valid(Id) != 0;
+
+    public AnimationPlayer EnsureAnimationPlayer() => new(this);
 }

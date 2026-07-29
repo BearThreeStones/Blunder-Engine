@@ -35,4 +35,15 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<delegate* unmanaged[Cdecl]<void*, uint, BlunderMessageArg*, int, void>, int>
         message_set_hook;
     public delegate* unmanaged[Cdecl]<int> message_clear_hook;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_player_play;
+    public delegate* unmanaged[Cdecl]<ulong, int> animation_player_stop;
+    public delegate* unmanaged[Cdecl]<ulong, int, int> animation_player_set_loop;
+    public delegate* unmanaged[Cdecl]<ulong, float*, int>
+        animation_player_get_playback_position;
+    public delegate* unmanaged[Cdecl]<ulong, float*, int>
+        animation_player_get_clip_length;
+    public delegate* unmanaged[Cdecl]<ulong, delegate* unmanaged[Cdecl]<ulong, void*, void>, void*, int>
+        animation_player_add_pose_applied_listener;
+    public delegate* unmanaged[Cdecl]<ulong, int>
+        animation_player_clear_pose_applied_listeners;
 }

@@ -15,8 +15,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 23 * sizeof(nint),
-            "BlunderNativeAbi layout size is 23 pointers");
+            sizeof(BlunderNativeAbi) == 30 * sizeof(nint),
+            "BlunderNativeAbi layout size is 30 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -63,6 +63,13 @@ static unsafe class Program
         abi.message_send = &StubMessageSend;
         abi.message_set_hook = &StubMessageSetHook;
         abi.message_clear_hook = &StubMessageClearHook;
+        abi.animation_player_play = &StubAnimationPlay;
+        abi.animation_player_stop = &StubAnimationStop;
+        abi.animation_player_set_loop = &StubAnimationSetLoop;
+        abi.animation_player_get_playback_position = &StubAnimationGetPosition;
+        abi.animation_player_get_clip_length = &StubAnimationGetLength;
+        abi.animation_player_add_pose_applied_listener = &StubAnimationAddPoseListener;
+        abi.animation_player_clear_pose_applied_listeners = &StubAnimationClearPoseListeners;
 
         Native.Register(in abi);
 
@@ -243,4 +250,50 @@ static unsafe class Program
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     static int StubMessageClearHook() => Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationPlay(ulong id, byte* clipName) =>
+        id == 0 || clipName == null ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationStop(ulong id) => id == 0 ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationSetLoop(ulong id, int loop) =>
+        id == 0 ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetPosition(ulong id, float* position)
+    {
+        if (id == 0 || position == null)
+        {
+            return Native.Error;
+        }
+
+        *position = 0.5f;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetLength(ulong id, float* length)
+    {
+        if (id == 0 || length == null)
+        {
+            return Native.Error;
+        }
+
+        *length = 2.0f;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationAddPoseListener(
+        ulong id,
+        delegate* unmanaged[Cdecl]<ulong, void*, void> hook,
+        void* userdata) =>
+        id == 0 || hook == null ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationClearPoseListeners(ulong id) =>
+        id == 0 ? Native.Error : Native.Ok;
 }

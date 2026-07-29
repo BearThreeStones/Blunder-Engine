@@ -62,7 +62,14 @@ internal static unsafe class Native
         abi.message_register != null &&
         abi.message_send != null &&
         abi.message_set_hook != null &&
-        abi.message_clear_hook != null;
+        abi.message_clear_hook != null &&
+        abi.animation_player_play != null &&
+        abi.animation_player_stop != null &&
+        abi.animation_player_set_loop != null &&
+        abi.animation_player_get_playback_position != null &&
+        abi.animation_player_get_clip_length != null &&
+        abi.animation_player_add_pose_applied_listener != null &&
+        abi.animation_player_clear_pose_applied_listeners != null;
 
     static void EnsureRegistered()
     {
@@ -278,6 +285,64 @@ internal static unsafe class Native
     {
         EnsureRegistered();
         return s_abi.message_clear_hook();
+    }
+
+    public static int blunder_animation_player_play(ulong id, string clipName)
+    {
+        EnsureRegistered();
+        byte[] clipUtf8 = ToUtf8(clipName);
+        fixed (byte* clipPtr = clipUtf8)
+        {
+            return s_abi.animation_player_play(id, clipPtr);
+        }
+    }
+
+    public static int blunder_animation_player_stop(ulong id)
+    {
+        EnsureRegistered();
+        return s_abi.animation_player_stop(id);
+    }
+
+    public static int blunder_animation_player_set_loop(ulong id, int loop)
+    {
+        EnsureRegistered();
+        return s_abi.animation_player_set_loop(id, loop);
+    }
+
+    public static int blunder_animation_player_get_playback_position(
+        ulong id, out float position)
+    {
+        EnsureRegistered();
+        position = 0;
+        float value = 0;
+        int rc = s_abi.animation_player_get_playback_position(id, &value);
+        position = value;
+        return rc;
+    }
+
+    public static int blunder_animation_player_get_clip_length(ulong id, out float length)
+    {
+        EnsureRegistered();
+        length = 0;
+        float value = 0;
+        int rc = s_abi.animation_player_get_clip_length(id, &value);
+        length = value;
+        return rc;
+    }
+
+    public static int blunder_animation_player_add_pose_applied_listener(
+        ulong id,
+        delegate* unmanaged[Cdecl]<ulong, void*, void> hook,
+        void* userdata)
+    {
+        EnsureRegistered();
+        return s_abi.animation_player_add_pose_applied_listener(id, hook, userdata);
+    }
+
+    public static int blunder_animation_player_clear_pose_applied_listeners(ulong id)
+    {
+        EnsureRegistered();
+        return s_abi.animation_player_clear_pose_applied_listeners(id);
     }
 
     static byte[] ToUtf8(string value)

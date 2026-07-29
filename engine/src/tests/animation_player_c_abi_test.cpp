@@ -1,0 +1,180 @@
+#include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/object_db.h"
+#include "runtime/core/object/skeleton.h"
+#include "runtime/core/reflection/class_db.h"
+#include "runtime/core/reflection/engine_c_abi.h"
+
+#include <cmath>
+#include <cstdio>
+
+#include "EASTL/string.h"
+
+namespace {
+
+int g_failures = 0;
+int g_pose_applied_hits = 0;
+BlunderObjectId g_pose_applied_object_id = 0;
+
+void expect_true(const char* label, bool ok) {
+  if (!ok) {
+    std::fprintf(stderr, "FAIL %s\n", label);
+    ++g_failures;
+  }
+}
+
+bool float_near(float a, float b, float eps = 1e-4f) {
+  return std::fabs(a - b) < eps;
+}
+
+Blunder::AnimationTrack makeTranslationTrack(
+    const char* bone, Blunder::AnimationInterpolation interpolation,
+    std::initializer_list<std::pair<float, Blunder::Vec3>> keys) {
+  Blunder::AnimationTrack track;
+  track.bone = bone;
+  track.channel = Blunder::AnimationChannel::Translation;
+  track.interpolation = interpolation;
+  for (const auto& key : keys) {
+    Blunder::AnimationKeyframe frame;
+    frame.time = key.first;
+    frame.value = {key.second.x, key.second.y, key.second.z};
+    track.keys.push_back(frame);
+  }
+  return track;
+}
+
+void on_pose_applied_c_abi(BlunderObjectId object_id, void* /*userdata*/) {
+  ++g_pose_applied_hits;
+  g_pose_applied_object_id = object_id;
+}
+
+void setup_object_with_clip(Blunder::ObjectId id, Blunder::Object* object,
+                            const char* clip_name, const char* guid_str,
+                            float duration) {
+  Blunder::Skeleton* skeleton = object->ensureSkeleton();
+  Blunder::AnimationPlayer* player = object->ensureAnimationPlayer();
+  skeleton->addBone("Hips", -1);
+
+  Blunder::AnimationClipData clip;
+  clip.duration = duration;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", Blunder::AnimationInterpolation::Linear,
+      {{0.0f, Blunder::Vec3(0.0f, 0.0f, 0.0f)},
+       {duration, Blunder::Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  const eastl::string guid(guid_str);
+  player->setClipGuid(clip_name, guid);
+  player->injectClipData(guid, clip);
+}
+
+}  // namespace
+
+int main() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  ClassDB::initialize();
+
+  expect_true("abi version >= 5", blunder_engine_abi_version() >= 5);
+
+  BlunderNativeAbi abi{};
+  blunder_native_abi_fill_from_process(&abi);
+  expect_true("abi animation play", abi.animation_player_play != nullptr);
+  expect_true("abi animation stop", abi.animation_player_stop != nullptr);
+  expect_true("abi pose listener", abi.animation_player_add_pose_applied_listener !=
+                                       nullptr);
+
+  const ObjectId native_id = ObjectDB::create();
+  const BlunderObjectId id = static_cast<BlunderObjectId>(native_id);
+  Object* object = ObjectDB::get(native_id);
+  expect_true("object created", object != nullptr);
+  if (object == nullptr) {
+    ClassDB::shutdown();
+    ObjectDB::clear();
+    return 1;
+  }
+
+  setup_object_with_clip(native_id, object, "walk",
+                         "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+
+  g_pose_applied_hits = 0;
+  g_pose_applied_object_id = 0;
+  expect_true(
+      "add pose listener",
+      blunder_animation_player_add_pose_applied_listener(id, on_pose_applied_c_abi,
+                                                         nullptr) ==
+          BLUNDER_ENGINE_OK);
+
+  expect_true("play via c abi",
+              blunder_animation_player_play(id, "walk") == BLUNDER_ENGINE_OK);
+  expect_true("pose applied on play", g_pose_applied_hits == 1);
+  expect_true("pose applied object id", g_pose_applied_object_id == id);
+
+  int playing = 0;
+  expect_true("is_playing property",
+              blunder_object_get_bool_property(id, "AnimationPlayer", "is_playing",
+                                               &playing) == BLUNDER_ENGINE_OK);
+  expect_true("is playing", playing == 1);
+
+  float position = 0.0f;
+  float length = 0.0f;
+  expect_true("get position",
+              blunder_animation_player_get_playback_position(id, &position) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("position zero", float_near(position, 0.0f));
+  expect_true("get length",
+              blunder_animation_player_get_clip_length(id, &length) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("length two", float_near(length, 2.0f));
+
+  expect_true("set loop",
+              blunder_animation_player_set_loop(id, 1) == BLUNDER_ENGINE_OK);
+  int looping = 0;
+  expect_true("get loop property",
+              blunder_object_get_bool_property(id, "AnimationPlayer", "is_looping",
+                                               &looping) == BLUNDER_ENGINE_OK);
+  expect_true("looping", looping == 1);
+
+  object->getAnimationPlayer()->advance(0.5f);
+  expect_true("get position after advance",
+              blunder_animation_player_get_playback_position(id, &position) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("position half", float_near(position, 0.5f));
+
+  expect_true("stop",
+              blunder_animation_player_stop(id) == BLUNDER_ENGINE_OK);
+  expect_true("get position after stop",
+              blunder_animation_player_get_playback_position(id, &position) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("position reset", float_near(position, 0.0f));
+  expect_true("not playing after stop",
+              blunder_object_get_bool_property(id, "AnimationPlayer", "is_playing",
+                                               &playing) == BLUNDER_ENGINE_OK &&
+                  playing == 0);
+
+  expect_true("unknown play fails",
+              blunder_animation_player_play(id, "missing") == BLUNDER_ENGINE_ERROR);
+
+  expect_true("clear pose listeners",
+              blunder_animation_player_clear_pose_applied_listeners(id) ==
+                  BLUNDER_ENGINE_OK);
+  g_pose_applied_hits = 0;
+  expect_true("play after clear listeners",
+              blunder_animation_player_play(id, "walk") == BLUNDER_ENGINE_OK);
+  expect_true("no pose after clear", g_pose_applied_hits == 0);
+
+  expect_true("table play",
+              abi.animation_player_play(id, "walk") == BLUNDER_ENGINE_OK);
+
+  ObjectDB::destroy(native_id);
+  expect_true("play invalid object",
+              blunder_animation_player_play(id, "walk") == BLUNDER_ENGINE_ERROR);
+
+  ClassDB::shutdown();
+  ObjectDB::clear();
+
+  if (g_failures != 0) {
+    std::fprintf(stderr, "%d failure(s)\n", g_failures);
+    return 1;
+  }
+  return 0;
+}

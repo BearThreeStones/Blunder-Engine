@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 4
+#define BLUNDER_ENGINE_C_ABI_VERSION 5
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -106,6 +106,22 @@ BLUNDER_ENGINE_C_API int blunder_message_send(BlunderObjectId target,
 BLUNDER_ENGINE_C_API int blunder_message_set_hook(BlunderMessageHook hook);
 BLUNDER_ENGINE_C_API int blunder_message_clear_hook(void);
 
+typedef void (*BlunderPoseAppliedHook)(BlunderObjectId object_id, void* userdata);
+
+BLUNDER_ENGINE_C_API int blunder_animation_player_play(BlunderObjectId id,
+                                                       const char* clip_name);
+BLUNDER_ENGINE_C_API int blunder_animation_player_stop(BlunderObjectId id);
+BLUNDER_ENGINE_C_API int blunder_animation_player_set_loop(BlunderObjectId id,
+                                                           int loop);
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_playback_position(
+    BlunderObjectId id, float* out_position);
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_clip_length(
+    BlunderObjectId id, float* out_length);
+BLUNDER_ENGINE_C_API int blunder_animation_player_add_pose_applied_listener(
+    BlunderObjectId id, BlunderPoseAppliedHook hook, void* userdata);
+BLUNDER_ENGINE_C_API int blunder_animation_player_clear_pose_applied_listeners(
+    BlunderObjectId id);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
@@ -149,6 +165,16 @@ typedef struct BlunderNativeAbi {
                       const BlunderMessageArg* args, int argc);
   int (*message_set_hook)(BlunderMessageHook hook);
   int (*message_clear_hook)(void);
+  int (*animation_player_play)(BlunderObjectId id, const char* clip_name);
+  int (*animation_player_stop)(BlunderObjectId id);
+  int (*animation_player_set_loop)(BlunderObjectId id, int loop);
+  int (*animation_player_get_playback_position)(BlunderObjectId id,
+                                              float* out_position);
+  int (*animation_player_get_clip_length)(BlunderObjectId id,
+                                          float* out_length);
+  int (*animation_player_add_pose_applied_listener)(
+      BlunderObjectId id, BlunderPoseAppliedHook hook, void* userdata);
+  int (*animation_player_clear_pose_applied_listeners)(BlunderObjectId id);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).
