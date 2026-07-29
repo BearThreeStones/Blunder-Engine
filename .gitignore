@@ -86,6 +86,11 @@ agent-transcripts/
 .tmp-*
 slint_bt_*.txt
 skia-*.tar.gz
+debug-*.bmp
+debug-*.png
+Play-*-Verify.bat
+/player_stdout.txt
+/player_stderr.txt
 
 # Git worktrees (superpowers / local agent isolation)
 .worktrees/

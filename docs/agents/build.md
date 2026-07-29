@@ -56,6 +56,22 @@ MSVC engine targets (e.g. `engine_runtime`) are built with `/arch:AVX2` so GLM c
 
 Linux GCC builds use `GLM_FORCE_INTRINSICS` without the MSVC `/arch:AVX2` flag; SIMD level follows the compiler's default x86_64 ISA.
 
+## MSVC memory (C3859 / C1076)
+
+Building `engine_editor` still compiles dependency **`engine_runtime`** (many TUs + a large Debug PCH ~270MB).
+
+**Do not trust “page file 20GB” alone.** What matters for `cl.exe` is Windows **commit free** (`FreeVirtualMemory`). This machine often shows ~16GB free **physical** RAM while free **commit** is only ~3GB — that is enough to trip C3859.
+
+Also: under the Visual Studio CMake generator, bare `/MP` / `/MP2` becomes `<MultiProcessorCompilation>true` **without a worker cap** (all cores). Blunder sets `CL_MPCount` via `CMAKE_VS_GLOBALS` instead (`BLUNDER_CL_MP_COUNT`, default `1`).
+
+```powershell
+# Force single-worker compile + single MSBuild node
+cmake --preset vs2026-debug -DBLUNDER_CL_MP_COUNT=1
+cmake --build build/vs2026-debug --config Debug --target engine_editor -- /m:1 /p:CL_MPCount=1
+```
+
+In Task Manager → Performance → Memory, check **Committed** (已提交) near the limit — not only “In use” / page-file size. Close other heavy apps (extra Cursor windows, second VS) if Committed stays high.
+
 ## See also
 
 - [CMakePresets.json](../../CMakePresets.json)

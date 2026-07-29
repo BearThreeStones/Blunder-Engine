@@ -46,6 +46,13 @@ eastl::vector<ContentEntry> ContentIndex::scan(const FileSystem& file_system,
       return;
     }
 
+    // Synthetic root so the browser tree can always anchor on "assets/".
+    ContentEntry root_entry{};
+    root_entry.root = root;
+    root_entry.is_directory = true;
+    root_entry.virtual_path = buildVirtualPath(root, eastl::string());
+    entries.push_back(root_entry);
+
     const eastl::vector<DirectoryEntry> discovered =
         file_system.listDirectoryRecursive(absolute_root, absolute_root,
                                            max_depth);
@@ -59,6 +66,12 @@ eastl::vector<ContentEntry> ContentIndex::scan(const FileSystem& file_system,
       content_entry.is_directory = dir_entry.is_directory;
       content_entry.virtual_path =
           buildVirtualPath(root, dir_entry.relative_path);
+      // Directory virtual paths always end with '/' so parent/child matching
+      // lines up with selected-folder paths from the UI.
+      if (content_entry.is_directory &&
+          !endsWith(content_entry.virtual_path, "/")) {
+        content_entry.virtual_path.push_back('/');
+      }
       if (!dir_entry.is_directory) {
         content_entry.size_bytes =
             file_system.fileSize(dir_entry.absolute_path);

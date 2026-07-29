@@ -1,10 +1,15 @@
 // camera_gizmo.slang — Blender-like Camera Gizmo wire overlay (ScreenOverlayPass).
 
-static const float kPolylineSmoothWidth = 1.0;
+static const float kPolylineSmoothWidth = 0.5;
 static const uint kLineVertCount = 6u;
 static const uint kTriangleVertCount = 3u;
 static const uint kOriginDiscVertCount = 6u;
+static const uint kIconVertCount = 6u;
 static const float kOriginDiscRadiusPx = 3.0;
+/// Screen-space half-extent of the camera billboard icon (pixels).
+static const float kIconHalfExtentPx = 18.0;
+static const float3 kIconFill = float3(0.969, 0.961, 0.812); // #f7f5cf
+static const float3 kIconOutline = float3(0.08, 0.08, 0.08);
 
 struct CameraGizmoUniform {
     float4x4 view;
@@ -134,6 +139,62 @@ VertexOutput vsOriginDisc(uint vid) {
     return o;
 }
 
+/// Screen-aligned billboard at world p0 (always faces viewport, upright on screen).
+VertexOutput vsIconBillboard(uint vid) {
+    float4 clipC = mul(ubo.proj, mul(ubo.view, float4(ubo.p0.xyz, 1.0)));
+    if (clipC.w <= 1e-5) {
+        return emitDiscarded();
+    }
+    float halfClip =
+        kIconHalfExtentPx * 2.0 / max(ubo.viewport_height_px, 1.0) * abs(clipC.w);
+    float2 uv = quadUV(vid);
+    float2 offset = uv * halfClip;
+
+    VertexOutput o;
+    o.sv_position = float4(clipC.xy + offset, clipC.z, clipC.w);
+    o.color = ubo.color;
+    o.style = 3.0;
+    o.disc_uv = uv;
+    return o;
+}
+
+float sdCircle(float2 p, float r) {
+    return length(p) - r;
+}
+
+float sdRoundedBox(float2 p, float2 b, float r) {
+    float2 q = abs(p) - b + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float sdTriangleIsosceles(float2 p, float2 q) {
+    p.x = abs(p.x);
+    float2 a = p - q * saturate(dot(p, q) / dot(q, q));
+    float2 b = p - float2(saturate(p.x / q.x) * q.x, q.y);
+    float s = -sign(q.y);
+    float2 d = min(float2(dot(a, a), s * (p.x * q.y - p.y * q.x)),
+                   float2(dot(b, b), s * (p.y - q.y)));
+    return -sqrt(d.x) * sign(d.y);
+}
+
+/// Godot GizmoCamera3D-like silhouette in UV [-1,1] (lens points +X / right).
+float cameraIconSdf(float2 uv) {
+    // Slight padding so stroke stays inside the billboard quad.
+    float2 p = uv * 1.15;
+
+    float reelL = sdCircle(p - float2(-0.32, -0.42), 0.30);
+    float reelR = sdCircle(p - float2(0.18, -0.52), 0.30);
+    float body = sdRoundedBox(p - float2(0.0, 0.22), float2(0.48, 0.38), 0.10);
+    // Lens: isosceles triangle pointing +X, anchored on body right edge.
+    float2 lp = float2(-(p.y - 0.12), p.x - 0.35);
+    float lens = sdTriangleIsosceles(lp, float2(0.42, 0.55));
+
+    float d = min(reelL, reelR);
+    d = min(d, body);
+    d = min(d, lens);
+    return d;
+}
+
 [shader("vertex")]
 VertexOutput vertexMain(uint vid : SV_VertexID) {
     uint style = uint(ubo.style + 0.5);
@@ -155,6 +216,12 @@ VertexOutput vertexMain(uint vid : SV_VertexID) {
         }
         return vsOriginDisc(vid);
     }
+    if (style == 3u) {
+        if (vid >= kIconVertCount) {
+            return emitDiscarded();
+        }
+        return vsIconBillboard(vid);
+    }
     return emitDiscarded();
 }
 
@@ -165,6 +232,22 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
     }
 
     float4 color = input.color;
+    if (input.style > 2.5) {
+        float d = cameraIconSdf(input.disc_uv);
+        float aa = max(fwidth(d), 1e-4);
+        float fill = 1.0 - smoothstep(-aa, aa, d);
+        float stroke = smoothstep(-aa, aa, abs(d) - 0.07);
+        stroke = 1.0 - stroke;
+
+        float3 fillRgb = lerp(kIconFill, input.color.rgb, 0.35 * saturate(input.color.a));
+        float3 outlineRgb = lerp(kIconOutline, input.color.rgb, 0.55);
+        float3 rgb = lerp(outlineRgb, fillRgb, fill);
+        float a = max(fill, stroke) * saturate(input.color.a);
+        if (a < 0.001) {
+            discard;
+        }
+        return float4(rgb, a);
+    }
     if (input.style > 1.5) {
         float d = length(input.disc_uv);
         float aa = fwidth(d);

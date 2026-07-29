@@ -25,11 +25,28 @@ bool endsWith(const eastl::string& value, const char* suffix) {
 }
 
 eastl::string parentVirtualPath(const eastl::string& virtual_path) {
-  const size_t slash = virtual_path.find_last_of('/');
-  if (slash == eastl::string::npos || slash == 0) {
+  if (virtual_path.empty()) {
+    return eastl::string();
+  }
+  // Strip a trailing slash so "assets/Meshes/" yields parent "assets/",
+  // not the path itself.
+  size_t end = virtual_path.size();
+  if (virtual_path.back() == '/' && end > 1) {
+    --end;
+  }
+  const size_t slash = virtual_path.find_last_of('/', end - 1);
+  if (slash == eastl::string::npos) {
     return eastl::string();
   }
   return virtual_path.substr(0, slash + 1);
+}
+
+eastl::string normalizeFolderVirtualPath(const eastl::string& virtual_path) {
+  eastl::string folder = virtual_path;
+  if (!folder.empty() && folder.back() != '/') {
+    folder.push_back('/');
+  }
+  return folder;
 }
 
 }  // namespace
@@ -94,13 +111,14 @@ eastl::string ContentBrowserSystem::displayNameFromPath(
 
 bool ContentBrowserSystem::isDescendantPath(const eastl::string& ancestor,
                                             const eastl::string& path) {
-  if (ancestor.empty() || path.size() <= ancestor.size()) {
+  if (ancestor.empty() || path.empty()) {
     return false;
   }
-  if (path.compare(0, ancestor.size(), ancestor) != 0) {
+  const eastl::string prefix = normalizeFolderVirtualPath(ancestor);
+  if (path.size() <= prefix.size()) {
     return false;
   }
-  return path[ancestor.size()] == '/';
+  return path.compare(0, prefix.size(), prefix) == 0;
 }
 
 eastl::string ContentBrowserSystem::joinVirtualPath(
@@ -222,10 +240,26 @@ void ContentBrowserSystem::indexEntries() {
 const ContentEntry* ContentBrowserSystem::findEntry(
     const eastl::string& virtual_path) const {
   const auto it = m_entry_index.find(virtual_path);
-  if (it == m_entry_index.end()) {
-    return nullptr;
+  if (it != m_entry_index.end()) {
+    return &m_entries[it->second];
   }
-  return &m_entries[it->second];
+  // Directories are indexed with a trailing slash; UI paths may omit it.
+  if (!virtual_path.empty() && virtual_path.back() != '/') {
+    eastl::string with_slash = virtual_path;
+    with_slash.push_back('/');
+    const auto slash_it = m_entry_index.find(with_slash);
+    if (slash_it != m_entry_index.end()) {
+      return &m_entries[slash_it->second];
+    }
+  } else if (!virtual_path.empty() && virtual_path.back() == '/' &&
+             virtual_path.size() > 1) {
+    eastl::string without_slash = virtual_path.substr(0, virtual_path.size() - 1);
+    const auto bare_it = m_entry_index.find(without_slash);
+    if (bare_it != m_entry_index.end()) {
+      return &m_entries[bare_it->second];
+    }
+  }
+  return nullptr;
 }
 
 void ContentBrowserSystem::startFileWatch() {
@@ -327,12 +361,9 @@ void ContentBrowserSystem::rebuildGrid() {
       }
     } else {
       // Show direct children of the selected folder.
-      const eastl::string parent = parentVirtualPath(entry.virtual_path);
-      eastl::string normalized_parent = parent;
-      if (!normalized_parent.empty() && !endsWith(normalized_parent, "/")) {
-        normalized_parent.push_back('/');
-      }
-      if (normalized_parent != m_selected_folder) {
+      const eastl::string parent =
+          normalizeFolderVirtualPath(parentVirtualPath(entry.virtual_path));
+      if (parent != m_selected_folder) {
         continue;
       }
     }
@@ -426,23 +457,23 @@ void ContentBrowserSystem::rebuildVisibleTree() {
             });
 
   auto appendFolder = [&](const eastl::string& folder_path, int32_t depth) {
-    const ContentEntry* entry = findEntry(folder_path);
-    if (entry == nullptr) {
+    const eastl::string normalized = normalizeFolderVirtualPath(folder_path);
+    const ContentEntry* entry = findEntry(normalized);
+    if (entry == nullptr && normalized != root_path) {
       return;
     }
 
     bool has_children = false;
     for (const ContentEntry* other : directories) {
-      if (other->virtual_path == folder_path) {
+      const eastl::string other_path =
+          normalizeFolderVirtualPath(other->virtual_path);
+      if (other_path == normalized) {
         continue;
       }
-      if (isDescendantPath(folder_path, other->virtual_path)) {
-        const eastl::string parent = parentVirtualPath(other->virtual_path);
-        eastl::string normalized_parent = parent;
-        if (!normalized_parent.empty() && !endsWith(normalized_parent, "/")) {
-          normalized_parent.push_back('/');
-        }
-        if (normalized_parent == folder_path) {
+      if (isDescendantPath(normalized, other_path)) {
+        const eastl::string parent =
+            normalizeFolderVirtualPath(parentVirtualPath(other_path));
+        if (parent == normalized) {
           has_children = true;
           break;
         }
@@ -450,28 +481,32 @@ void ContentBrowserSystem::rebuildVisibleTree() {
     }
 
     ContentBrowserTreeRow row{};
-    row.virtual_path = folder_path;
-    row.display_name = displayNameFromPath(folder_path);
+    row.virtual_path = normalized;
+    row.display_name = displayNameFromPath(normalized);
     row.depth = depth;
     row.is_directory = true;
     row.has_children = has_children;
-    row.is_expanded = isFolderExpanded(folder_path);
+    row.is_expanded = isFolderExpanded(normalized);
     m_tree_rows.push_back(row);
   };
 
   auto walk = [&](auto&& self, const eastl::string& folder_path,
                   int32_t depth) -> void {
-    appendFolder(folder_path, depth);
-    if (!isFolderExpanded(folder_path)) {
+    const eastl::string normalized = normalizeFolderVirtualPath(folder_path);
+    appendFolder(normalized, depth);
+    if (!isFolderExpanded(normalized)) {
       return;
     }
     for (const ContentEntry* other : directories) {
-      eastl::string parent = parentVirtualPath(other->virtual_path);
-      if (!parent.empty() && !endsWith(parent, "/")) {
-        parent.push_back('/');
+      const eastl::string other_path =
+          normalizeFolderVirtualPath(other->virtual_path);
+      if (other_path == normalized) {
+        continue;
       }
-      if (parent == folder_path && other->virtual_path != folder_path) {
-        self(self, other->virtual_path, depth + 1);
+      const eastl::string parent =
+          normalizeFolderVirtualPath(parentVirtualPath(other_path));
+      if (parent == normalized) {
+        self(self, other_path, depth + 1);
       }
     }
   };

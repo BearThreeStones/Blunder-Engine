@@ -65,7 +65,6 @@
 // ============================================================================
 #include <spdlog/spdlog.h>
 
-// ============================================================================
-// Third-Party: Vulkan SDK (Graphics API)
-// ============================================================================
-#include <vulkan/vulkan.h>
+// Vulkan is intentionally NOT in the PCH: vulkan.h balloons the Debug .pch
+// (~hundreds of MB) and multiplies virtual-memory use under /MP (C3859/C1076).
+// Include <vulkan/vulkan.h> only in TUs / headers that need it.

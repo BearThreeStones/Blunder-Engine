@@ -119,6 +119,14 @@ add_library(engine_runtime STATIC
     "project/play_session_controller.cpp"
     "project/play_preflight.h"
     "project/play_preflight.cpp"
+    "project/project_list.h"
+    "project/project_list.cpp"
+    "project/project_relaunch.h"
+    "project/project_relaunch.cpp"
+    "project/project_manager_controller.h"
+    "project/project_manager_controller.cpp"
+    "project/project_manager_app.h"
+    "project/project_manager_app.cpp"
     "function/script/scripts_builder.h"
     "function/script/scripts_builder.cpp"
     "function/script/behaviour_type_catalog.h"
@@ -265,6 +273,9 @@ target_compile_definitions(EASTL
 if(MSVC)
     target_compile_options(engine_runtime PRIVATE /Zc:preprocessor)
 endif()
+
+# Cap cl.exe /MP workers (VS generator ignores /MPn — see cmake/compiler.cmake).
+blunder_msvc_limit_cl_mp(engine_runtime)
 
 target_link_libraries(engine_runtime
     PUBLIC

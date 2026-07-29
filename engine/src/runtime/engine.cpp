@@ -8,6 +8,7 @@
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/slint/slint_system.h"
+#include "runtime/function/ui/ui_host.h"
 #include "runtime/platform/input/input_system.h"
 #include "runtime/platform/input/gameplay_input.h"
 #include "runtime/function/global/engine_host_mode.h"
@@ -296,6 +297,12 @@ void BlunderEngine::initialize(const eastl::string& play_scene) {
         stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
         stats.thumbnails_skipped, stats.thumbnails_failed);
 
+    // Mark dirty so UiHost::tickEditorPanels re-pushes models even if the
+    // immediate sync below runs before Slint finishes first layout.
+    if (g_runtime_global_context.m_ui_host) {
+      g_runtime_global_context.m_ui_host->panels().markDirty(
+          EditorPanelDirty::content_browser);
+    }
     if (g_runtime_global_context.m_slint_system) {
       g_runtime_global_context.m_slint_system->syncContentBrowser();
     }

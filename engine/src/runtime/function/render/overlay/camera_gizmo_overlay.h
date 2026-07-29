@@ -53,6 +53,7 @@ class CameraGizmoOverlay final : public Overlay {
     line = 0,
     triangle = 1,
     origin_disc = 2,
+    icon_billboard = 3,
   };
 
   void recordDraw(VkCommandBuffer cmd, const OverlayState& state, DrawStyle style,

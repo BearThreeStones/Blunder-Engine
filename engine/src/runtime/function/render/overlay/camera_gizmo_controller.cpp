@@ -201,8 +201,6 @@ bool CameraGizmoController::onMouseMoved(Event& event, EditorCamera& camera) {
     applyFovDrag(camera, window_pos);
   } else if (m_active_handle == CameraGizmoHandleKind::near_clip) {
     applyClipDrag(camera, window_pos, true);
-  } else if (m_active_handle == CameraGizmoHandleKind::far_clip) {
-    applyClipDrag(camera, window_pos, false);
   }
 
   markSceneDirty();
@@ -222,11 +220,14 @@ void CameraGizmoController::applyFovDrag(EditorCamera& camera,
     return;
   }
 
+  // FOV is edited on the near clip plane: half-height at near_clip → FOV.
+  const float plane_distance =
+      std::max(existing->near_clip, kCameraClipMinDistance);
   const glm::mat4 world = scene->getWorldMatrix(m_entity_id);
   const glm::vec3 look_world =
       glm::normalize(glm::vec3(world * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
   const glm::vec3 plane_point =
-      glm::vec3(world * glm::vec4(0.0f, 0.0f, -kCameraGizmoDisplayDistance, 1.0f));
+      glm::vec3(world * glm::vec4(0.0f, 0.0f, -plane_distance, 1.0f));
   const Plane plane = Plane::fromPointAndNormal(plane_point, look_world);
 
   const Ray ray = camera.makeRayFromWindowPosition(window_pos);
@@ -238,8 +239,7 @@ void CameraGizmoController::applyFovDrag(EditorCamera& camera,
   const glm::mat4 inv_world = glm::inverse(world);
   const glm::vec3 local = glm::vec3(inv_world * glm::vec4(*hit, 1.0f));
   const float half_h = std::abs(local.y);
-  const float new_fov =
-      verticalFovDegreesFromHalfHeight(half_h, kCameraGizmoDisplayDistance);
+  const float new_fov = verticalFovDegreesFromHalfHeight(half_h, plane_distance);
 
   CameraComponent updated = *existing;
   updated.vertical_fov_degrees = new_fov;
@@ -270,10 +270,9 @@ void CameraGizmoController::applyClipDrag(EditorCamera& camera,
 
   const float distance = std::max(*t, kCameraClipMinDistance);
   CameraComponent updated = *existing;
+  // Far clip is Inspector-only; gizmo only adjusts near along the look axis.
   if (near_clip) {
     setCameraNearClip(updated.near_clip, updated.far_clip, distance);
-  } else {
-    setCameraFarClip(updated.near_clip, updated.far_clip, distance);
   }
   scene->setCamera(m_entity_id, updated);
 }

@@ -33,6 +33,8 @@ if(MSVC)
     target_compile_options(engine_editor PRIVATE /Zc:preprocessor)
 endif()
 
+blunder_msvc_limit_cl_mp(engine_editor)
+
 target_precompile_headers(engine_editor
     REUSE_FROM engine_runtime
 )

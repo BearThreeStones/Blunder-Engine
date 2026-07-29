@@ -144,103 +144,124 @@ export component FilesystemHistoryHost {
     out property <length> browser-height: browser.browser-height;
     in-out property <length> tree-origin-y <=> browser.tree-origin-y;
     in-out property <length> tree-panel-height <=> browser.tree-panel-height;
+    in-out property <length> grid-origin-x <=> browser.grid-origin-x;
+    in-out property <length> grid-origin-y <=> browser.grid-origin-y;
+    in-out property <length> grid-area-width <=> browser.grid-area-width;
+    in-out property <length> grid-viewport-y <=> browser.grid-viewport-y;
+    in-out property <int> grid-column-count <=> browser.grid-column-count;
 
     min-height: 120px;
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
-    VerticalLayout {
-        spacing: 0px;
+    // Fill the dock tile and position the active page directly below the
+    // subtab bar. A VerticalLayout placed the custom page at the host's
+    // bottom edge, outside the tile's clip — looks like an empty browser.
+    host-root := Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #1e1e1e;
 
         Rectangle {
-            height: 28px;
-            background: #2a2a2a;
+            width: 100%;
+            height: 100%;
+            background: transparent;
 
-            HorizontalLayout {
-                spacing: 0px;
-                alignment: start;
+            subtab-bar := Rectangle {
+                x: 0px;
+                y: 0px;
+                width: 100%;
+                height: 28px;
+                background: #2a2a2a;
 
-                TouchArea {
-                    width: fs-tab.preferred-width + 24px;
-                    height: 100%;
-                    clicked => { root.active-subtab = 0; }
-                    Rectangle {
-                        background: root.active-subtab == 0 ? #3a3a3a : transparent;
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 12px;
-                            alignment: center;
-                            fs-tab := Text {
-                                text: "File System";
-                                color: root.active-subtab == 0 ? #ffffff : #a0a0a0;
-                                font-size: 12px;
+                HorizontalLayout {
+                    spacing: 0px;
+                    alignment: start;
+
+                    TouchArea {
+                        width: fs-tab.preferred-width + 24px;
+                        height: 100%;
+                        clicked => { root.active-subtab = 0; }
+                        Rectangle {
+                            background: root.active-subtab == 0 ? #3a3a3a : transparent;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                alignment: center;
+                                fs-tab := Text {
+                                    text: "File System";
+                                    color: root.active-subtab == 0 ? #ffffff : #a0a0a0;
+                                    font-size: 12px;
+                                }
                             }
                         }
                     }
-                }
 
-                TouchArea {
-                    width: hist-tab.preferred-width + 24px;
-                    height: 100%;
-                    clicked => { root.active-subtab = 1; }
-                    Rectangle {
-                        background: root.active-subtab == 1 ? #3a3a3a : transparent;
-                        HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 12px;
-                            alignment: center;
-                            hist-tab := Text {
-                                text: "History";
-                                color: root.active-subtab == 1 ? #ffffff : #a0a0a0;
-                                font-size: 12px;
+                    TouchArea {
+                        width: hist-tab.preferred-width + 24px;
+                        height: 100%;
+                        clicked => { root.active-subtab = 1; }
+                        Rectangle {
+                            background: root.active-subtab == 1 ? #3a3a3a : transparent;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                alignment: center;
+                                hist-tab := Text {
+                                    text: "History";
+                                    color: root.active-subtab == 1 ? #ffffff : #a0a0a0;
+                                    font-size: 12px;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        browser := ContentBrowser {
-            width: 100%;
-            height: 100%;
-            vertical-stretch: root.active-subtab == 0 ? 1 : 0;
-            visible: root.active-subtab == 0;
-            layout-drag-active: root.layout-drag-active;
-            tree-rows <=> root.tree-rows;
-            grid-rows <=> root.grid-rows;
-            path-segments <=> root.path-segments;
-            drag-active: root.drag-active;
-            drag-source-path: root.drag-source-path;
-            drop-highlight-path: root.drop-highlight-path;
-            viewport-drop-active: root.viewport-drop-active;
-            status-text: root.status-text;
-            selected-folder-path: root.selected-folder-path;
-            tree-pane-width <=> root.tree-pane-width;
-            thumb-size <=> root.thumb-size;
-            folder-selected(path) => { root.folder-selected(path); }
-            folder-toggle(path) => { root.folder-toggle(path); }
-            refresh-requested => { root.refresh-requested(); }
-            import-requested => { root.import-requested(); }
-            item-press(path, x, y) => { root.item-press(path, x, y); }
-            item-move(path, x, y) => { root.item-move(path, x, y); }
-            item-release(path, x, y) => { root.item-release(path, x, y); }
-            layout-drag-active-changed(active) => {
-                root.layout-drag-active-changed(active);
+            browser := ContentBrowser {
+                x: 0px;
+                y: 28px;
+                width: 100%;
+                height: parent.height > 28px ? parent.height - 28px : 0px;
+                visible: root.active-subtab == 0;
+                layout-drag-active: root.layout-drag-active;
+                tree-rows <=> root.tree-rows;
+                grid-rows <=> root.grid-rows;
+                path-segments <=> root.path-segments;
+                drag-active: root.drag-active;
+                drag-source-path: root.drag-source-path;
+                drop-highlight-path: root.drop-highlight-path;
+                viewport-drop-active: root.viewport-drop-active;
+                status-text: root.status-text;
+                selected-folder-path: root.selected-folder-path;
+                tree-pane-width <=> root.tree-pane-width;
+                thumb-size <=> root.thumb-size;
+                folder-selected(path) => { root.folder-selected(path); }
+                folder-toggle(path) => { root.folder-toggle(path); }
+                refresh-requested => { root.refresh-requested(); }
+                import-requested => { root.import-requested(); }
+                item-press(path, x, y) => { root.item-press(path, x, y); }
+                item-move(path, x, y) => { root.item-move(path, x, y); }
+                item-release(path, x, y) => { root.item-release(path, x, y); }
+                layout-drag-active-changed(active) => {
+                    root.layout-drag-active-changed(active);
+                }
+                search-changed(text) => { root.search-changed(text); }
+                path-segment-clicked(path) => { root.path-segment-clicked(path); }
             }
-            search-changed(text) => { root.search-changed(text); }
-            path-segment-clicked(path) => { root.path-segment-clicked(path); }
-        }
 
-        HistoryPanel {
-            width: 100%;
-            height: 100%;
-            vertical-stretch: root.active-subtab == 1 ? 1 : 0;
-            visible: root.active-subtab == 1;
-            rows <=> root.history-rows;
-            filter-scene <=> root.history-filter-scene;
-            filter-global <=> root.history-filter-global;
-            filter-changed => { root.history-filter-changed(); }
-            entry-clicked(index) => { root.history-entry-clicked(index); }
+            HistoryPanel {
+                x: 0px;
+                y: 28px;
+                width: 100%;
+                height: parent.height > 28px ? parent.height - 28px : 0px;
+                visible: root.active-subtab == 1;
+                rows <=> root.history-rows;
+                filter-scene <=> root.history-filter-scene;
+                filter-global <=> root.history-filter-global;
+                filter-changed => { root.history-filter-changed(); }
+                entry-clicked(index) => { root.history-entry-clicked(index); }
+            }
         }
     }
 }

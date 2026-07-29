@@ -24,7 +24,10 @@ enum class CameraGizmoHandleKind {
 /// Screen-space pick slop for Camera Gizmo wireframe (matches overlay chrome).
 constexpr float kCameraGizmoPickThresholdPx = 7.0f;
 
-/// Matches `k_origin_cross_half_len` in camera_gizmo_overlay.cpp draw path.
+/// Half-extent of the camera icon billboard in viewport pixels (match slang).
+constexpr float kCameraGizmoIconHalfExtentPx = 18.0f;
+
+/// Matches former origin cross length (kept for any legacy callers).
 constexpr float kCameraGizmoOriginCrossHalfLen = 0.05f;
 
 inline float distanceToSegment2D(const glm::vec2& point, const glm::vec2& a,
@@ -102,18 +105,7 @@ inline std::optional<float> hitTestCameraGizmoFrameViewportLocal(
 
   const std::optional<glm::vec2> origin_screen = project(origin);
   if (origin_screen.has_value() &&
-      glm::length(pointer - *origin_screen) <= threshold_px) {
-    hit = true;
-  }
-
-  const Vec3 local_x{kCameraGizmoOriginCrossHalfLen, 0.0f, 0.0f};
-  const Vec3 local_y{0.0f, kCameraGizmoOriginCrossHalfLen, 0.0f};
-  if (test_segment(to_world(Vec3(-local_x.x, -local_x.y, -local_x.z)),
-                   to_world(local_x))) {
-    hit = true;
-  }
-  if (test_segment(to_world(Vec3(-local_y.x, -local_y.y, -local_y.z)),
-                   to_world(local_y))) {
+      glm::length(pointer - *origin_screen) <= kCameraGizmoIconHalfExtentPx) {
     hit = true;
   }
 
@@ -149,72 +141,24 @@ inline std::optional<CameraGizmoHandleKind> hitTestCameraGizmoHandlesViewportLoc
 
   const float aspect = viewport_width / std::max(viewport_height, 1.0f);
   const float fov_rad = glm::radians(camera.vertical_fov_degrees);
+  // Near clip frame edges drive FOV; far clip plane is not drawn or hit-tested.
   const CameraGizmoFrame near_frame =
       buildCameraGizmoFrameLocal(fov_rad, aspect, camera.near_clip);
-  const CameraGizmoFrame far_frame =
-      buildCameraGizmoFrameLocal(fov_rad, aspect, camera.far_clip);
-
-  glm::vec3 display_corners[4];
-  for (int i = 0; i < 4; ++i) {
-    display_corners[i] = to_world(display_frame_local.corners[i]);
-  }
-  glm::vec3 up_tri[3];
-  for (int i = 0; i < 3; ++i) {
-    up_tri[i] = to_world(display_frame_local.up_triangle[i]);
-  }
-
-  if (test_segment(display_corners[0], display_corners[1]) ||
-      test_segment(up_tri[0], up_tri[1]) || test_segment(up_tri[1], up_tri[2]) ||
-      test_segment(up_tri[2], up_tri[0])) {
-    return CameraGizmoHandleKind::fov_top;
-  }
 
   glm::vec3 near_corners[4];
   for (int i = 0; i < 4; ++i) {
     near_corners[i] = to_world(near_frame.corners[i]);
   }
-  glm::vec3 far_corners[4];
-  for (int i = 0; i < 4; ++i) {
-    far_corners[i] = to_world(far_frame.corners[i]);
-  }
-
-  bool near_hit = false;
-  bool far_hit = false;
   for (int i = 0; i < 4; ++i) {
     const int next = (i + 1) % 4;
     if (test_segment(near_corners[i], near_corners[next])) {
-      near_hit = true;
-    }
-    if (test_segment(far_corners[i], far_corners[next])) {
-      far_hit = true;
+      return CameraGizmoHandleKind::fov_top;
     }
   }
 
   const glm::vec3 near_origin = to_world(near_frame.origin);
-  const glm::vec3 far_origin = to_world(far_frame.origin);
   if (test_segment(to_world(display_frame_local.origin), near_origin)) {
-    near_hit = true;
-  }
-  if (test_segment(to_world(display_frame_local.origin), far_origin)) {
-    far_hit = true;
-  }
-
-  if (near_hit && far_hit) {
-  const std::optional<glm::vec2> near_screen = project(near_origin);
-  const std::optional<glm::vec2> far_screen = project(far_origin);
-    if (near_screen.has_value() && far_screen.has_value()) {
-      const float near_dist = glm::length(pointer - *near_screen);
-      const float far_dist = glm::length(pointer - *far_screen);
-      return near_dist <= far_dist ? CameraGizmoHandleKind::near_clip
-                                   : CameraGizmoHandleKind::far_clip;
-    }
     return CameraGizmoHandleKind::near_clip;
-  }
-  if (near_hit) {
-    return CameraGizmoHandleKind::near_clip;
-  }
-  if (far_hit) {
-    return CameraGizmoHandleKind::far_clip;
   }
 
   return std::nullopt;

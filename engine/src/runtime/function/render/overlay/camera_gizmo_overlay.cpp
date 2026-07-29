@@ -39,11 +39,11 @@ constexpr uint32_t k_max_draws_per_frame = 128u;
 constexpr uint32_t k_line_vert_count = 6u;
 constexpr uint32_t k_triangle_vert_count = 3u;
 constexpr uint32_t k_origin_disc_vert_count = 6u;
+constexpr uint32_t k_icon_vert_count = 6u;
 
-constexpr float k_line_width_px = 1.5f;
-constexpr float k_origin_cross_half_len = 0.05f;
+constexpr float k_line_width_px = 0.75f;
 
-const glm::vec4 k_muted_color{0.55f, 0.55f, 0.55f, 0.45f};
+const glm::vec4 k_muted_color{0.0f, 0.0f, 0.0f, 0.9f};
 const glm::vec4 k_selected_color{1.0f, 0.6f, 0.1f, 0.9f};
 const glm::vec4 k_handle_color{1.0f, 0.85f, 0.2f, 1.0f};
 
@@ -73,6 +73,7 @@ enum class CameraGizmoDrawStyle : uint32_t {
   line = 0,
   triangle = 1,
   origin_disc = 2,
+  icon_billboard = 3,
 };
 
 uint32_t vertexCountForStyle(CameraGizmoDrawStyle style) {
@@ -83,6 +84,8 @@ uint32_t vertexCountForStyle(CameraGizmoDrawStyle style) {
       return k_triangle_vert_count;
     case CameraGizmoDrawStyle::origin_disc:
       return k_origin_disc_vert_count;
+    case CameraGizmoDrawStyle::icon_billboard:
+      return k_icon_vert_count;
     default:
       return 0u;
   }
@@ -335,54 +338,35 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     }
     recordDraw(cmd, state, DrawStyle::triangle, tri[0], tri[1], tri[2], color);
 
-    recordDraw(cmd, state, DrawStyle::origin_disc, origin, glm::vec3(0.0f),
-               glm::vec3(0.0f), color);
-
-    const Vec3 local_x{k_origin_cross_half_len, 0.0f, 0.0f};
-    const Vec3 local_y{0.0f, k_origin_cross_half_len, 0.0f};
-    recordDraw(cmd, state, DrawStyle::line,
-               transformPoint(world, Vec3(-local_x.x, -local_x.y, -local_x.z)),
-               transformPoint(world, local_x), glm::vec3(0.0f), color);
-    recordDraw(cmd, state, DrawStyle::line,
-               transformPoint(world, Vec3(-local_y.x, -local_y.y, -local_y.z)),
-               transformPoint(world, local_y), glm::vec3(0.0f), color);
+    // Screen-aligned camera icon billboard at the component origin.
+    const glm::vec4 icon_color =
+        selected ? glm::vec4(k_selected_color.x, k_selected_color.y,
+                             k_selected_color.z, 1.0f)
+                 : glm::vec4(0.0f, 0.0f, 0.0f, 0.95f);
+    recordDraw(cmd, state, DrawStyle::icon_billboard, origin, glm::vec3(0.0f),
+               glm::vec3(0.0f), icon_color);
 
     if (entity_id != sole_selected_camera) {
       return;
     }
 
+    // Near clip frame = FOV handle (drag edges). Do not draw far clip plane.
     const float fov_rad_handles = glm::radians(camera.vertical_fov_degrees);
     const CameraGizmoFrame near_frame =
         buildCameraGizmoFrameLocal(fov_rad_handles, aspect, camera.near_clip);
-    const CameraGizmoFrame far_frame =
-        buildCameraGizmoFrameLocal(fov_rad_handles, aspect, camera.far_clip);
 
     glm::vec3 near_corners[4];
-    glm::vec3 far_corners[4];
     for (int i = 0; i < 4; ++i) {
       near_corners[i] = transformPoint(world, near_frame.corners[i]);
-      far_corners[i] = transformPoint(world, far_frame.corners[i]);
     }
     const glm::vec3 near_origin = transformPoint(world, near_frame.origin);
-    const glm::vec3 far_origin = transformPoint(world, far_frame.origin);
 
     for (int i = 0; i < 4; ++i) {
       const int next = (i + 1) % 4;
       recordDraw(cmd, state, DrawStyle::line, near_corners[i], near_corners[next],
                  glm::vec3(0.0f), k_handle_color);
-      recordDraw(cmd, state, DrawStyle::line, far_corners[i], far_corners[next],
-                 glm::vec3(0.0f), k_handle_color);
     }
     recordDraw(cmd, state, DrawStyle::line, origin, near_origin, glm::vec3(0.0f),
-               k_handle_color);
-    recordDraw(cmd, state, DrawStyle::line, origin, far_origin, glm::vec3(0.0f),
-               k_handle_color);
-
-    recordDraw(cmd, state, DrawStyle::line, corners[0], corners[1], glm::vec3(0.0f),
-               k_handle_color);
-    recordDraw(cmd, state, DrawStyle::line, tri[0], tri[1], glm::vec3(0.0f),
-               k_handle_color);
-    recordDraw(cmd, state, DrawStyle::line, tri[1], tri[2], glm::vec3(0.0f),
                k_handle_color);
   });
 }

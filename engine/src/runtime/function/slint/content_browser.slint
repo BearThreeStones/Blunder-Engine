@@ -64,10 +64,15 @@ export component ContentBrowser {
     out property <length> browser-height: browser-root.height;
     in-out property <length> tree-origin-y: tree-list.absolute-position.y;
     in-out property <length> tree-panel-height: tree-panel.height;
+    in-out property <length> grid-origin-x: grid-flickable.absolute-position.x;
+    in-out property <length> grid-origin-y: grid-flickable.absolute-position.y;
+    in-out property <length> grid-area-width: grid-area.width;
+    in-out property <length> grid-viewport-y: grid-flickable.viewport-y;
+    in-out property <int> grid-column-count: root.grid-cols;
 
     min-height: 120px;
     horizontal-stretch: 1;
-    vertical-stretch: 0;
+    vertical-stretch: 1;
 
     // --- Grid layout calculations ---
     property <length> cell-gap: 8px;
@@ -76,13 +81,18 @@ export component ContentBrowser {
     property <int> grid-cols: Math.max(1, Math.floor(grid-area.width / Math.max(1px, root.cell-total-w)));
 
     browser-root := Rectangle {
+        width: 100%;
+        height: 100%;
         background: #252525;
         border-color: #1a1a1a;
         border-width: 1px;
         horizontal-stretch: 1;
+        vertical-stretch: 1;
 
         VerticalLayout {
             spacing: 0px;
+            width: 100%;
+            height: 100%;
 
             // ═══════════════ Toolbar ═══════════════
             Rectangle {
@@ -443,8 +453,18 @@ export component ContentBrowser {
                             }
 
                             grid-tile-touch := TouchArea {
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width;
+                                height: parent.height;
                                 moved => {
                                     root.item-move(tile.path,
+                                        self.mouse-x / 1px, self.mouse-y / 1px);
+                                }
+                                // Prefer clicked for discrete open/navigate; pointer
+                                // up alone was unreliable when TouchArea had zero size.
+                                clicked => {
+                                    root.item-release(tile.path,
                                         self.mouse-x / 1px, self.mouse-y / 1px);
                                 }
                                 pointer-event(event) => {
