@@ -83,6 +83,44 @@ bool containsIgnoreCase(const eastl::string& value, const char* needle) {
   return lower.find(needle) != std::string::npos;
 }
 
+// Minimal glTF 2.0 triangle (Intermediate-direct import fixture).
+constexpr const char* kTriangleGltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 0 },
+      "indices": 1
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+  ],
+  "buffers": [{
+    "byteLength": 42,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA"
+  }]
+})";
+
 // Task 1.1 (ADR 0019): mesh Intermediate = glTF/GLB; COLLADA removed.
 // FBX/OBJ are Source Export inputs. Images remain Intermediate-direct.
 void meshExtensionRoutingTables() {
@@ -110,15 +148,65 @@ void meshExtensionRoutingTables() {
               AssetImportService::isTextureIntermediateExtension(".png"));
 }
 
+// Task 1.1 (ADR 0019): COLLADA `.dae` is not mesh Intermediate — Import rejects.
+void importColladaMeshRejected() {
+  using namespace Blunder;
+  ensureLogger();
+
+  expect_true("dae is not mesh Intermediate extension",
+              !AssetImportService::isMeshIntermediateExtension(".dae"));
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_import_dae_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "cube.dae";
+  writeTextFile(external, "dae-not-intermediate");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  const ImportResult result =
+      import_service.importMesh(external, "assets/Meshes", settings);
+
+  expect_true("dae mesh Import rejected", !result.success);
+  expect_true("dae reject leaves guid empty", result.guid.empty());
+  expect_true("dae reject writes no Assets descriptor",
+              !fs::exists(project / "Assets" / "Meshes" / "cube.mesh.yaml"));
+  expect_true("dae reject writes no Intermediate under Models",
+              !fs::exists(project / "Resources" / "Models" / "cube.dae"));
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
 // Task 5.1 / 1.1: Import registers Intermediate (not Source) — copy body under
 // Resources (non-Source) + write Assets descriptor with Intermediate `source`.
-// Mesh Intermediate-direct input is COLLADA (`.dae`).
+// Mesh Intermediate-direct input is glTF/GLB (ADR 0019).
 void importMeshWritesIntermediateAndDescriptor() {
   using namespace Blunder;
   ensureLogger();
 
-  expect_true("dae is mesh Intermediate extension",
-              AssetImportService::isMeshIntermediateExtension(".dae"));
+  expect_true("gltf is mesh Intermediate extension",
+              AssetImportService::isMeshIntermediateExtension(".gltf"));
   expect_true("png is texture Intermediate extension",
               AssetImportService::isTextureIntermediateExtension(".png"));
 
@@ -128,8 +216,8 @@ void importMeshWritesIntermediateAndDescriptor() {
       ("blunder_import_ext_" +
        std::to_string(static_cast<unsigned long long>(
            std::chrono::steady_clock::now().time_since_epoch().count()))) /
-      "cube.dae";
-  writeTextFile(external, "dae-intermediate-body");
+      "cube.gltf";
+  writeTextFile(external, kTriangleGltf);
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -178,7 +266,7 @@ void importMeshWritesIntermediateAndDescriptor() {
               startsWith(parsed.source, "resources/"));
   expect_true("descriptor source is not Source archive",
               !containsIgnoreCase(parsed.source, "/source/"));
-  expect_true("archived_source empty for COLLADA Import",
+  expect_true("archived_source empty for glTF Intermediate Import",
               parsed.archived_source.empty());
 
   eastl::string intermediate_rel = parsed.source;
@@ -195,9 +283,9 @@ void importMeshWritesIntermediateAndDescriptor() {
                   intermediate_absolute.generic_string().find("\\Source\\") ==
                       std::string::npos);
   expect_true("Intermediate body content copied",
-              readTextFile(intermediate_absolute) == "dae-intermediate-body");
-  expect_true("Intermediate body is COLLADA",
-              containsIgnoreCase(parsed.source, ".dae"));
+              readTextFile(intermediate_absolute) == kTriangleGltf);
+  expect_true("Intermediate body is glTF",
+              containsIgnoreCase(parsed.source, ".gltf"));
   expect_true("registry maps guid to descriptor",
               registry.resolveGuid(result.guid) ==
                   result.descriptor_virtual_path);
@@ -219,44 +307,6 @@ v 0.0 1.0 0.0
 f 1 2 3
 )";
 
-// Minimal glTF 2.0 triangle (Source Export input → Intermediate COLLADA).
-constexpr const char* kTriangleGltf = R"({
-  "asset": { "version": "2.0" },
-  "scene": 0,
-  "scenes": [{ "nodes": [0] }],
-  "nodes": [{ "mesh": 0 }],
-  "meshes": [{
-    "primitives": [{
-      "attributes": { "POSITION": 0 },
-      "indices": 1
-    }]
-  }],
-  "accessors": [
-    {
-      "bufferView": 0,
-      "componentType": 5126,
-      "count": 3,
-      "type": "VEC3",
-      "max": [1.0, 1.0, 0.0],
-      "min": [0.0, 0.0, 0.0]
-    },
-    {
-      "bufferView": 1,
-      "componentType": 5123,
-      "count": 3,
-      "type": "SCALAR"
-    }
-  ],
-  "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
-    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
-  ],
-  "buffers": [{
-    "byteLength": 42,
-    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA"
-  }]
-})";
-
 // Task 1.2: Source Export dual-writes Source archive + Intermediate COLLADA (.dae).
 void importObjSourceExportDualWritesArchiveAndIntermediate() {
   using namespace Blunder;
@@ -266,10 +316,10 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
               AssetImportService::isMeshSourceExportExtension(".obj"));
   expect_true("fbx is Source Export extension",
               AssetImportService::isMeshSourceExportExtension(".fbx"));
-  expect_true("gltf is Source Export extension",
-              AssetImportService::isMeshSourceExportExtension(".gltf"));
-  expect_true("glb is Source Export extension",
-              AssetImportService::isMeshSourceExportExtension(".glb"));
+  expect_true("gltf is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".gltf"));
+  expect_true("glb is not Source Export extension",
+              !AssetImportService::isMeshSourceExportExtension(".glb"));
   expect_true("blend is not Source Export extension",
               !AssetImportService::isMeshSourceExportExtension(".blend"));
 
@@ -395,8 +445,8 @@ void importObjSourceExportDualWritesArchiveAndIntermediate() {
   fs::remove_all(external.parent_path());
 }
 
-// Task 1.2: glTF Source Export dual-writes archive + Intermediate COLLADA (.dae).
-void importGltfSourceExportDualWritesArchiveAndIntermediate() {
+// Task 1.1 (ADR 0019): glTF Import is Intermediate-direct, not Source Export.
+void importGltfIntermediateDirectNotSourceExport() {
   using namespace Blunder;
   ensureLogger();
 
@@ -427,8 +477,8 @@ void importGltfSourceExportDualWritesArchiveAndIntermediate() {
   const ImportResult result =
       import_service.importMesh(external, "assets/Meshes", settings);
 
-  expect_true("glTF Source Export succeeds", result.success);
-  expect_true("glTF Source Export returns guid", !result.guid.empty());
+  expect_true("glTF Intermediate Import succeeds", result.success);
+  expect_true("glTF Intermediate Import returns guid", !result.guid.empty());
 
   eastl::string desc_rel = result.descriptor_virtual_path;
   if (startsWith(desc_rel, "assets/")) {
@@ -443,14 +493,12 @@ void importGltfSourceExportDualWritesArchiveAndIntermediate() {
   MeshAssetDescriptor parsed{};
   expect_true("parse glTF mesh descriptor",
               AssetYaml::parseMeshDescriptor(yaml, parsed));
-  expect_true("glTF source is Intermediate COLLADA .dae",
-              containsIgnoreCase(parsed.source, ".dae"));
-  expect_true("glTF source is not Intermediate glTF",
-              !containsIgnoreCase(parsed.source, ".gltf") &&
-                  !containsIgnoreCase(parsed.source, ".glb"));
-  expect_true("glTF archived_source set", !parsed.archived_source.empty());
-  expect_true("glTF archived_source keeps .gltf",
-              containsIgnoreCase(parsed.archived_source, ".gltf"));
+  expect_true("glTF source is Intermediate .gltf",
+              containsIgnoreCase(parsed.source, ".gltf"));
+  expect_true("glTF source is not COLLADA .dae",
+              !containsIgnoreCase(parsed.source, ".dae"));
+  expect_true("glTF archived_source empty (no Source Export)",
+              parsed.archived_source.empty());
 
   auto resolveResourcesVirtual = [&](const eastl::string& virtual_path) {
     eastl::string relative = virtual_path;
@@ -461,19 +509,12 @@ void importGltfSourceExportDualWritesArchiveAndIntermediate() {
   };
 
   const fs::path intermediate_absolute = resolveResourcesVirtual(parsed.source);
-  expect_true("glTF Intermediate COLLADA file exists",
+  expect_true("glTF Intermediate file exists",
               file_system.exists(intermediate_absolute));
-  const std::string intermediate_body = readTextFile(intermediate_absolute);
-  expect_true("glTF Intermediate body looks like COLLADA",
-              intermediate_body.find("COLLADA") != std::string::npos ||
-                  intermediate_body.find("collada") != std::string::npos);
-
-  const fs::path archived_absolute =
-      resolveResourcesVirtual(parsed.archived_source);
-  expect_true("glTF archived Source exists",
-              file_system.exists(archived_absolute));
-  expect_true("glTF archived Source content preserved",
-              readTextFile(archived_absolute) == kTriangleGltf);
+  expect_true("glTF Intermediate body preserved",
+              readTextFile(intermediate_absolute) == kTriangleGltf);
+  expect_true("glTF Import did not archive under Source",
+              !fs::exists(project / "Resources" / "Source" / "Models"));
 
   import_service.shutdown();
   registry.shutdown();
@@ -638,11 +679,11 @@ void reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal() {
   fs::create_directories(project / ".blunder" / "cooked");
   const fs::path external =
       fs::temp_directory_path() /
-      ("blunder_reimport_dae_" +
+      ("blunder_reimport_gltf_" +
        std::to_string(static_cast<unsigned long long>(
            std::chrono::steady_clock::now().time_since_epoch().count()))) /
-      "cube.dae";
-  writeTextFile(external, "dae-intermediate-body");
+      "cube.gltf";
+  writeTextFile(external, kTriangleGltf);
 
   FileSystem file_system;
   FileSystemInitInfo fs_init{};
@@ -670,7 +711,7 @@ void reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal() {
   MeshImportSettings settings{};
   const ImportResult imported =
       import_service.importMesh(external, "assets/Meshes", settings);
-  expect_true("COLLADA Reimport fixture import succeeds", imported.success);
+  expect_true("glTF Intermediate Reimport fixture import succeeds", imported.success);
   const eastl::string original_guid = imported.guid;
 
   const fs::path mesh_cooked = cookedMeshPath(file_system, original_guid);
@@ -1198,10 +1239,11 @@ void reimportAfterUpgradeRegeneratesDaeFromArchivedGltf() {
 
 int main() {
   meshExtensionRoutingTables();
+  importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
   importTextureWritesIntermediateAndDescriptor();
   importObjSourceExportDualWritesArchiveAndIntermediate();
-  importGltfSourceExportDualWritesArchiveAndIntermediate();
+  importGltfIntermediateDirectNotSourceExport();
   importUnsupportedSourceExportRejected();
   reimportObjPreservesGuidAndRefreshesIntermediate();
   reimportIntermediateOnlyPreservesGuidAndInvalidatesFinal();
