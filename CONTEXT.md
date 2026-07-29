@@ -518,26 +518,26 @@ _Avoid_: Godot theme skin, restyle entire Inspector
 
 ### Asset pipeline
 
-On-disk layout and cook mechanics: [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md). Decision records: [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) (Pull / three-tier), [docs/adr/0013-collada-intermediate.md](docs/adr/0013-collada-intermediate.md) (COLLADA mesh Intermediate).
+On-disk layout and cook mechanics: [CONTENT_LAYOUT.md](CONTENT_LAYOUT.md). Decision records: [docs/adr/0012-pull-asset-pipeline.md](docs/adr/0012-pull-asset-pipeline.md) (Pull / three-tier), [docs/adr/0019-gltf-intermediate.md](docs/adr/0019-gltf-intermediate.md) (glTF mesh Intermediate; supersedes [0013](docs/adr/0013-collada-intermediate.md)).
 
 **Source Asset**:
 A DCC-native or exchange file archived so Intermediate can be rebuilt (e.g. `.blend`, `.psd`, `.fbx`, `.obj`, `.gltf`, `.glb`). Source Assets alone must be enough to rebuild Intermediate and Final Assets. They are not loaded by the runtime; Cook and Fast Path never read them directly.
-_Avoid_: Calling cooked binaries "source", storing only Source under `Assets/`, treating COLLADA Intermediate as Source, treating glTF as Intermediate after Import
+_Avoid_: Calling cooked binaries "source", storing only Source under `Assets/`, treating Intermediate glTF as Source archive, collapsing Source and Intermediate into one folder
 
 **Intermediate Asset**:
-A lossless (or near-lossless), readable exchange/process form between Source and Final — **mesh** Intermediate bodies are COLLADA (`.dae`); **texture** Intermediate bodies remain ordinary image files (PNG/JPEG/…), never wrapped as `.dae`; YAML Asset Descriptors carry GUID, import settings, and references. Fast Path and Cook consume Intermediate Assets. Khronos glTF is not the Intermediate body and not the Final runtime form in this pipeline.
-_Avoid_: glTF as Intermediate body, storing a Texture Asset as COLLADA, opaque binary as the only intermediate, pruning/platform-optimizing at this stage, calling the Asset Descriptor YAML “the Intermediate format”
+A lossless (or near-lossless), readable exchange/process form between Source and Final — **mesh** Intermediate bodies are **glTF/GLB** (including skinned meshes); **texture** Intermediate bodies remain ordinary image files (PNG/JPEG/…); **skeletal AnimationClip** Intermediate bodies are readable YAML sidecars extracted at Import (bone TRS keys + interpolation), not relying on COLLADA. YAML Asset Descriptors carry GUID, import settings, and references. Fast Path and Cook consume Intermediate Assets. **COLLADA (`.dae`) is not used** as mesh Intermediate. Final remains platform cooked binaries, not glTF-as-shipped-runtime.
+_Avoid_: COLLADA as mesh Intermediate, opaque binary as the only intermediate, pruning/platform-optimizing at this stage, calling the Asset Descriptor YAML “the Intermediate format”, shipping glTF as Final
 
 **Final Asset**:
-A platform-optimized, pruned runtime form produced by the Build Process (today: `.blunder/cooked/{guid}.*bin`). The runtime prefers Final Assets when present and fresh. glTF may later be an optional packaging/transmission product; it is not Final in v1.
-_Avoid_: Hand-editing Final Assets as the source of truth, shipping DCC-native or COLLADA files as Final, treating glTF as the engine Final
+A platform-optimized, pruned runtime form produced by the Build Process (today: `.blunder/cooked/{guid}.*bin`). The runtime prefers Final Assets when present and fresh. glTF is Intermediate (and often the authored exchange), not Final in v1.
+_Avoid_: Hand-editing Final Assets as the source of truth, shipping DCC-native files as Final, treating glTF as the engine Final cooked form
 
 **Assets root**:
-The project folder `Assets/` that holds Intermediate **descriptors** (YAML: GUID, import settings, references). It is the Content Browser’s primary tree and the engine’s identity entry for content — not the home for COLLADA/image bodies or Source Assets.
+The project folder `Assets/` that holds Intermediate **descriptors** (YAML: GUID, import settings, references). It is the Content Browser’s primary tree and the engine’s identity entry for content — not the home for glTF/image Intermediate bodies or Source Assets.
 _Avoid_: Storing Intermediate data files or Source Assets under `Assets/`, treating `Assets/` as Unity-style “everything content”
 
 **Resources root**:
-The project folder `Resources/` whose non-Source subtree holds Intermediate **data bodies** (COLLADA, images, audio, …) referenced by descriptors. Not scanned as the Content Browser’s primary tree.
+The project folder `Resources/` whose non-Source subtree holds Intermediate **data bodies** (glTF/GLB, images, audio, AnimationClip YAML, …) referenced by descriptors. Not scanned as the Content Browser’s primary tree.
 _Avoid_: Putting descriptors under `Resources/`, using `Resources/` as the Final Asset store
 
 **Source root**:
@@ -553,8 +553,8 @@ The product-facing unit of content identity, keyed by GUID. One Asset binds an A
 _Avoid_: Calling a lone glTF/PNG file “the Asset”, equating Asset with the in-memory runtime object, path-only identity without GUID
 
 **Asset Descriptor**:
-The Intermediate YAML under the Assets root that persists an Asset’s GUID, type, import settings, and references to Intermediate data (and optional Source). The durable on-disk face of an Asset. Mesh descriptors commonly use a typed suffix such as `.mesh.yaml`; they are not the mesh Intermediate body and are not Unity-style sidecars beside COLLADA.
-_Avoid_: Embedding identity only in the registry with no descriptor file, putting descriptors under Resources, treating the descriptor YAML as the COLLADA/image body, treating COLLADA as the GUID/meta carrier, requiring Unity-style `.meta` sidecars beside Intermediate files as the product identity model
+The Intermediate YAML under the Assets root that persists an Asset’s GUID, type, import settings, and references to Intermediate data (and optional Source). The durable on-disk face of an Asset. Mesh descriptors commonly use a typed suffix such as `.mesh.yaml`; they are not the mesh Intermediate body and are not Unity-style sidecars beside glTF.
+_Avoid_: Embedding identity only in the registry with no descriptor file, putting descriptors under Resources, treating the descriptor YAML as the glTF/image body, treating mesh Intermediate as the GUID/meta carrier, requiring Unity-style `.meta` sidecars beside Intermediate files as the product identity model
 
 **Loaded Asset**:
 The in-memory CPU-side resource the runtime holds for an Asset (or a slice of one), e.g. mesh/texture payloads. Distinct from the product term Asset; not what Content Browser identity means.
@@ -573,28 +573,58 @@ Loading Intermediate data into a Loaded Asset for preview when Final is missing 
 _Avoid_: Blocking the first preview until Cook completes, treating Intermediate-only load as an error instead of an intentional path
 
 **Asset Dependency Graph**:
-A directed graph of Asset→Asset references used to invalidate Finals and to know what to Cook. v1 minimal edges: Scene→Mesh Asset; Mesh Asset→Texture Asset via the mesh descriptor’s authoritative `texture_guids` (not via paths inside COLLADA); textures referenced only by COLLADA `<image>` URIs and not registered as Assets are out of graph; each Asset→its Intermediate inputs (descriptor + `source` file) as leaves for freshness. No Material Asset nodes, animation/audio/shader edges, or Source-file parsing in v1.
-_Avoid_: Hand-maintained file lists, “only this Asset’s own mtime matters” with no cross-Asset invalidation, treating a packaging Manifest as required before the graph exists, inventing Material graph nodes before material descriptors exist, treating COLLADA image URIs as the canonical Mesh→Texture Asset Reference
+A directed graph of Asset→Asset references used to invalidate Finals and to know what to Cook. v1 minimal edges: Scene→Mesh Asset; Mesh Asset→Texture Asset via the mesh descriptor’s authoritative `texture_guids` (not via paths inside mesh Intermediate alone); textures referenced only by embedded image URIs and not registered as Assets are out of graph; each Asset→its Intermediate inputs (descriptor + `source` file) as leaves for freshness. No Material Asset nodes, audio/shader edges, or Source-file parsing in v1. **Animation Phase 1** adds edges for skinned Mesh↔Skeleton bind data and consumers→AnimationClip Assets (exact edge set recorded when that change lands).
+_Avoid_: Hand-maintained file lists, “only this Asset’s own mtime matters” with no cross-Asset invalidation, treating a packaging Manifest as required before the graph exists, inventing Material graph nodes before material descriptors exist, treating embedded image URIs as the canonical Mesh→Texture Asset Reference
 
 **Manifest**:
 The set of Assets required by a top-level product unit (e.g. a scene/level), derived by walking the Asset Dependency Graph from that root. Used later for packaging and “what is still needed”; not a separately hand-edited list.
 _Avoid_: Manually curated include lists as the source of truth, shipping every file under Resources because Manifest is unknown
 
 **Asset Reference**:
-A durable cross-Asset link stored as the target Asset’s GUID (not a filesystem path). Scenes and Mesh→Texture links use Asset References. For meshes, Mesh→Texture Asset References live in the Asset Descriptor (`texture_guids`); COLLADA may carry ordinary image URIs for interchange/preview but those URIs are not the durable Asset Reference. Paths remain for display and for resolving a GUID via the registry; legacy path-only scene fields migrate to GUID on save.
-_Avoid_: Path-as-canonical reference, renaming descriptors without a GUID identity, treating virtual path as the stable public identity of an Asset, embedding Blunder GUIDs inside COLLADA as a second source of truth
+A durable cross-Asset link stored as the target Asset’s GUID (not a filesystem path). Scenes and Mesh→Texture links use Asset References. For meshes, Mesh→Texture Asset References live in the Asset Descriptor (\	exture_guids\); mesh Intermediate may carry ordinary image URIs for interchange/preview but those URIs are not the durable Asset Reference. Paths remain for display and for resolving a GUID via the registry; legacy path-only scene fields migrate to GUID on save.
+_Avoid_: Path-as-canonical reference, renaming descriptors without a GUID identity, treating virtual path as the stable public identity of an Asset, embedding Blunder GUIDs inside mesh Intermediate as a second source of truth
 
 **Intermediate Upgrade (v1)**:
-A one-shot, GUID-preserving refresh that runs when an Asset’s Intermediate mesh `source` still points at glTF/GLB after the COLLADA Intermediate switch: convert to `.dae`, rewrite the descriptor `source`, archive the former glTF/GLB under the Source root when not already archived, and mark Finals stale. Triggered lazily on project open / registry scan — not a separate user command. If conversion fails: leave the descriptor and glTF/GLB `source` unchanged, log the error, and allow Fast Path/Cook to keep using that glTF/GLB until a later successful upgrade or Reimport.
-_Avoid_: Requiring delete-and-re-import to leave glTF Intermediate, changing GUID on upgrade, leaving glTF as a permanent alternate Intermediate body, writing a partial `.dae` then pointing `source` at it, blocking load entirely when upgrade fails
+The former glTF→COLLADA Intermediate Upgrade is **retired** with COLLADA removal. Any remaining `.dae` Intermediate is migrated back to glTF (GUID-preserving) or reimported from archived Source — procedure lands in the superseding ADR.
+_Avoid_: Requiring COLLADA as an upgrade destination, leaving `.dae` as a permanent mesh Intermediate body
 
 **Import**:
-The act of registering external content as project Assets: allocate GUID, write an Asset Descriptor, place Intermediate data under the Resources root, and register the Asset. **COLLADA (`.dae`)** and image formats use Intermediate direct registration (copy body under Resources, no Source archive required). **FBX, OBJ, glTF, GLB** run Source Export into COLLADA first, then register. Import is not Cook and is not opening a DCC for manual editing.
-_Avoid_: Calling Intermediate COLLADA/PNG “Source”, equating Import with Cook, leaving Source files as the only registered form with no Intermediate, registering glTF/GLB as Intermediate bodies
+The act of registering external content as project Assets: allocate GUID, write an Asset Descriptor, place Intermediate data under the Resources root, and register the Asset. **glTF/GLB** and images are the primary mesh/texture Intermediate path; **COLLADA is removed**. FBX/OBJ may Source-Export into glTF Intermediate when supported. Import is not Cook and is not opening a DCC for manual editing.
+_Avoid_: Equating Import with Cook, registering COLLADA as mesh Intermediate, leaving Source files as the only registered form with no Intermediate, calling archived Source the Intermediate body
 
 **Source Export (v1)**:
-The Import sub-step that converts a Source (or DCC exchange) file into Intermediate data. v1 Assimp whitelist: **FBX, OBJ, glTF, GLB → COLLADA (`.dae`)** under the Resources root, then register the Asset as usual. `.blend` / `.psd` automatic export remains out of v1. On Source Export, the original file is archived under the Source root and the descriptor may record that Source path; Cook and Fast Path always consume Intermediate COLLADA (and images), regenerable from the archived Source on Reimport.
-_Avoid_: Claiming silent `.blend` export in v1, treating every Assimp format as supported without a whitelist, skipping Intermediate and cooking Source bytes directly, discarding FBX/OBJ/glTF after conversion with no Source archive, registering glTF/GLB as Intermediate bodies, exporting Source to glTF as Intermediate
+The Import sub-step that converts a non-Intermediate exchange file into Intermediate data. Mesh Intermediate target is **glTF/GLB** (not COLLADA). On Source Export, the original may be archived under the Source root; Cook and Fast Path consume Intermediate glTF (and images / AnimationClip YAML). **Animation Phase 1** extracts readable AnimationClip YAML sidecars from skinned imports while preserving Constant/Stepped.
+_Avoid_: Claiming silent `.blend` export in v1, COLLADA as Source Export target, skipping Intermediate and cooking only archived Source bytes, treating glTF as Final
+
+### Animation (Phase 1+)
+
+**AnimationClip**:
+A first-class Asset whose Intermediate body is readable YAML of skeletal TRS keyframes (bone names, times, values, interpolation). Cook produces a Final runtime clip. Distinct from Mesh Asset; not a Behaviour and not the AnimationPlayer. Phase 1 sampler supports **Constant** and **Linear** interpolation (glTF STEP/LINEAR map in); Cubic/Bezier later. Importing a multi-animation glTF yields **one Mesh Asset + N AnimationClip Assets**.
+_Avoid_: Embedding durable clip authorship only inside the mesh Intermediate with no Clip Asset, treating clip bytes as Mesh payload, path-only clip identity without GUID, Phase 1 Cubic/Bezier as required, bundling all clips only inside the Mesh Asset with no Clip GUIDs
+
+**AnimationPlayer**:
+The engine-owned playback surface (ClassDB) that samples AnimationClips onto a Skeleton and reports playback time / pose-applied signals for scripts. Phase 1 supports Play/Stop/Loop and hard cuts between clips; blend graphs are later phases. Phase 1: co-located on the same Object as the Skeleton it drives. Clips are addressed by logical string name via a serialized name→AnimationClip Asset Reference map on the player (`Play("LOOP-chocomel-walk")`); GUID is the durable reference inside the map, not the primary script Play key. The map is **auto-filled** from Import (clip names) and remains **editable** in the Inspector afterward.
+_Avoid_: Sampling clips only in C# as the product path, requiring an AnimationTree for Phase 1 playback, Phase 1 remote skeleton driving, GUID-only Play as the primary authoring API, read-only auto-filled maps with no Inspector edit
+
+**Skeleton**:
+The runtime bone hierarchy (rest/bind poses and current pose) that skinned meshes deform against. Pose is advanced by AnimationPlayer and may be overridden after apply by later procedural layers (post–Phase 1). In DogWalk animation Phase 1, Skeleton and AnimationPlayer live on the same Object; cross-Object skeleton references are out of scope.
+_Avoid_: Per-vertex animation with no bone hierarchy as the DogWalk character path, treating Object TRS alone as skeletal pose, Phase 1 cross-Object AnimationPlayer→Skeleton links
+
+**Animation step**:
+The discrete pose-change boundary in Stepped (on-2s/on-3s) playback that visual systems sync to (e.g. quantized facing). Gameplay motion and input stay real-time; step-synced visuals subscribe to pose-applied timing rather than raw frame rate. Phase 1: engine emits PoseApplied after sampling; C# detects steps (e.g. frametime modulo) — the engine does not define on-2s as a builtin event.
+_Avoid_: Updating facing/blend visuals every render frame as the DogWalk look, conflating physics tick with animation step, requiring engine-builtin AnimationStep events for Phase 1
+
+**ValueSlicer**:
+A C# gameplay utility that quantizes a continuous value into slices with hysteresis so Stepped visuals do not flicker at boundaries. Not an engine ClassDB type in Phase 1; scripts own DogWalk-style stepping policy.
+_Avoid_: Baking ValueSlicer into the engine as the only facing model, overwriting gameplay floats with sliced visuals in place
+
+**DogWalk animation Phase 1**:
+The first engine+content milestone after the Move-only DogWalk character slice: P0 skeletal skinning + AnimationClip playback, plus P1 Stepped feel via C# ValueSlicer and Animation step sync — not full AnimationTree, SYNC/CINE, or procedural bone modifiers. Per-frame order: Behaviour Tick (gameplay Play/move) → AnimationPlayer sample → PoseApplied (step-synced visuals). Engineering gate: minimal skinned test rig + idle/walk. **Done criteria** also require Chocomel (or an agreed subset) Play acceptance: idle↔walk hard cut, real-time move, stepped facing. **Edit Mode** may preview AnimationPlayer clips on the Skeleton in the authorship viewport without starting the .NET host or Behaviour Tick; Stepped feel (ValueSlicer) is Play-validated.
+_Avoid_: Shipping full Godot AnimationTree parity as Phase 1, treating Phase 1 as content-only with no engine animation runtime, reading final skeleton pose inside Tick as the supported Phase 1 pattern, declaring Phase 1 done on test-rig-only without Chocomel feel acceptance, Play-Mode-only clip visibility as the Phase 1 editor rule, in-editor Behaviour Tick as required for Edit clip preview
+
+**Skinning path (Phase 1)**:
+How bind pose + weights turn Skeleton pose into deformed vertices. **Fast Path** (Intermediate) uses **CPU skinning**; **Final** (Cooked) uses **GPU skinning**. Editor after Cook and Player share the Final/GPU path; uncooked preview stays CPU.
+_Avoid_: Editor-always-CPU as the product rule, requiring GPU skin before first Intermediate preview, maintaining a third unrelated skinning backend
 
 **Scene Asset**:
 A first-class Asset for a level/scene document. Persisted as `.scene.asset` JSON with a GUID field; registered like other Assets. Entity mesh links are Asset References (GUID). It is a root for walking the Asset Dependency Graph and (later) Manifests.
