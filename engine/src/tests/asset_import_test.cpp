@@ -424,6 +424,47 @@ constexpr const char* kCompanionLoopGltf = R"({
   }]
 })";
 
+constexpr const char* kExternalBufferCompanionLoopGltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "name": "Hips" }],
+  "animations": [{
+    "name": "LOOP",
+    "channels": [{
+      "sampler": 0,
+      "target": { "node": 0, "path": "translation" }
+    }],
+    "samplers": [{
+      "input": 0,
+      "interpolation": "LINEAR",
+      "output": 1
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 24 }
+  ],
+  "buffers": [{
+    "byteLength": 32,
+    "uri": "LOOP-idle.bin"
+  }]
+})";
+
 constexpr const char* kCompanionAnimOnlyGltf = R"({
   "asset": { "version": "2.0" },
   "animations": [
@@ -806,6 +847,129 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
   g_runtime_global_context.m_logger_system.reset();
   fs::remove_all(project);
   fs::remove_all(disabled_project);
+  fs::remove_all(external_root);
+}
+
+void importExternalBufferCompanionPersistsSidecarAndExtractsClip() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external_root =
+      fs::temp_directory_path() /
+      ("blunder_companion_external_buffer_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path host_path = external_root / "Chocomel.gltf";
+  const fs::path companion_path = external_root / "LOOP-idle.gltf";
+  const fs::path companion_buffer_path = external_root / "LOOP-idle.bin";
+  writeSkinnedMeshHostGltfFixture(host_path);
+  writeTextFile(companion_path, kExternalBufferCompanionLoopGltf);
+  constexpr char kCompanionBuffer[32] = {};
+  writeBinaryFile(companion_buffer_path, kCompanionBuffer,
+                  sizeof(kCompanionBuffer));
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const eastl::vector<eastl::string> paths = {
+      eastl::string(host_path.generic_string().c_str()),
+      eastl::string(companion_path.generic_string().c_str())};
+  const eastl::vector<ImportResult> results =
+      import_service.importExternalFiles(paths, "assets/Meshes", settings);
+
+  const fs::path persisted_buffer =
+      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      "LOOP-idle.bin";
+  expect_true("external-buffer companion imports mesh plus clip",
+              results.size() == 2);
+  expect_true("external-buffer companion clip extracted after persistence",
+              !results.empty() && results[0].animation_clips.size() == 1);
+  expect_true("external-buffer companion sidecar persisted beside glTF",
+              fs::exists(persisted_buffer));
+  expect_true("external-buffer companion sidecar body preserved",
+              fs::exists(persisted_buffer) &&
+                  fs::file_size(persisted_buffer) ==
+                      sizeof(kCompanionBuffer));
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external_root);
+}
+
+void multiHostBatchDoesNotRediscoverOrphanCompanions() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external_root =
+      fs::temp_directory_path() /
+      ("blunder_companion_multi_host_import_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path host_a = external_root / "host_a.gltf";
+  const fs::path host_b = external_root / "host_b.gltf";
+  const fs::path orphan = external_root / "LOOP-idle.gltf";
+  writeSkinnedMeshHostGltfFixture(host_a);
+  writeSkinnedMeshHostGltfFixture(host_b);
+  writeTextFile(orphan, kCompanionLoopGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const eastl::vector<eastl::string> paths = {
+      eastl::string(host_a.generic_string().c_str()),
+      eastl::string(host_b.generic_string().c_str()),
+      eastl::string(orphan.generic_string().c_str())};
+  const eastl::vector<ImportResult> results =
+      import_service.importExternalFiles(paths, "assets/Meshes", settings);
+
+  expect_true("multi-host batch imports only the two hosts",
+              results.size() == 2);
+  expect_true("multi-host batch leaves orphan companion unattached",
+              results.size() == 2 &&
+                  results[0].companion_animation_paths.empty() &&
+                  results[1].companion_animation_paths.empty() &&
+                  results[0].animation_clips.empty() &&
+                  results[1].animation_clips.empty());
+  expect_true("multi-host batch creates no orphan-derived clip descriptor",
+              !fs::exists(project / "Assets" / "Animations" /
+                          "LOOP-idle.animation.yaml"));
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
   fs::remove_all(external_root);
 }
 
@@ -2923,6 +3087,8 @@ int main() {
   nearDiskCompanionGltfCandidateEnumeration();
   companionAnimationGltfMultiSelectBatchPairing();
   importExternalFilesPairsCompanionsIntoMeshImport();
+  importExternalBufferCompanionPersistsSidecarAndExtractsClip();
+  multiHostBatchDoesNotRediscoverOrphanCompanions();
   singleMeshImportDiscoversNearDiskCompanions();
   meshExtensionRoutingTables();
   importColladaMeshRejected();

@@ -11,6 +11,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <cgltf.h>
 
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -91,6 +92,82 @@ bool pathsReferToSameFile(const fs::path& lhs, const fs::path& rhs) {
   ec.clear();
   const fs::path rhs_absolute = fs::absolute(rhs, ec).lexically_normal();
   return !ec && lhs_absolute == rhs_absolute;
+}
+
+bool collectExternalGltfResourcePaths(
+    const fs::path& gltf_absolute,
+    std::vector<fs::path>& out_relative_paths) {
+  out_relative_paths.clear();
+  if (extensionLower(gltf_absolute) != ".gltf") {
+    return true;
+  }
+
+  cgltf_options options{};
+  cgltf_data* data = nullptr;
+  const cgltf_result parse_result =
+      cgltf_parse_file(&options, gltf_absolute.string().c_str(), &data);
+  if (parse_result != cgltf_result_success || data == nullptr) {
+    return false;
+  }
+
+  auto append_uri = [&](const char* uri) -> bool {
+    if (uri == nullptr || uri[0] == '\0' ||
+        std::strncmp(uri, "data:", 5) == 0) {
+      return true;
+    }
+
+    std::vector<char> decoded(uri, uri + std::strlen(uri) + 1);
+    cgltf_decode_uri(decoded.data());
+    const fs::path relative(decoded.data());
+    if (relative.empty() || relative.is_absolute() ||
+        relative.has_root_name() || relativePathEscapesRoot(relative)) {
+      return false;
+    }
+
+    const fs::path normalized = relative.lexically_normal();
+    if (std::find(out_relative_paths.begin(), out_relative_paths.end(),
+                  normalized) == out_relative_paths.end()) {
+      out_relative_paths.push_back(normalized);
+    }
+    return true;
+  };
+
+  bool valid = true;
+  for (cgltf_size index = 0; valid && index < data->buffers_count; ++index) {
+    valid = append_uri(data->buffers[index].uri);
+  }
+  for (cgltf_size index = 0; valid && index < data->images_count; ++index) {
+    valid = append_uri(data->images[index].uri);
+  }
+  cgltf_free(data);
+  return valid;
+}
+
+bool copyCompanionGltfResources(
+    FileSystem* file_system, const fs::path& source_gltf,
+    const fs::path& destination_gltf,
+    std::vector<fs::path>& copied_paths) {
+  std::vector<fs::path> relative_resources;
+  if (!collectExternalGltfResourcePaths(source_gltf, relative_resources)) {
+    return false;
+  }
+
+  for (const fs::path& relative : relative_resources) {
+    const fs::path source = source_gltf.parent_path() / relative;
+    const fs::path destination = destination_gltf.parent_path() / relative;
+    if (!file_system->exists(source)) {
+      return false;
+    }
+    if (pathsReferToSameFile(source, destination)) {
+      continue;
+    }
+    if (file_system->exists(destination) ||
+        !file_system->copyFile(source, destination, false)) {
+      return false;
+    }
+    copied_paths.push_back(destination);
+  }
+  return true;
 }
 
 eastl::string toLowerAscii(eastl::string value) {
@@ -240,6 +317,10 @@ bool registerCompanionAnimationIntermediates(
         return fail();
       }
       copied_paths.push_back(destination_absolute);
+    }
+    if (!copyCompanionGltfResources(file_system, input, destination_absolute,
+                                    copied_paths)) {
+      return fail();
     }
 
     eastl::string virtual_path("resources/");
@@ -998,6 +1079,7 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
 
   const CompanionGltfMultiSelectBatchPairingResult pairing =
       pairCompanionAnimationGltfMultiSelectBatch(gltf_batch_paths);
+  const bool allow_near_disk_discovery = gltf_batch_paths.size() == 1;
 
   if (mesh_settings.animations) {
     for (const fs::path& orphan_path : pairing.orphan_companion_paths) {
@@ -1042,7 +1124,8 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
       if (host_pairing != pairing.host_pairings.end() &&
           !host_pairing->companion_paths.empty()) {
         companion_paths_for_host = host_pairing->companion_paths;
-      } else if (isMeshIntermediateExtension(pending_ext) &&
+      } else if (allow_near_disk_discovery &&
+                 isMeshIntermediateExtension(pending_ext) &&
                  isSkinnedMeshHostCandidateGltf(pending_path)) {
         companion_paths_for_host =
             discoverAcceptedNearDiskCompanionAnimationGltfs(pending_path);
