@@ -29,9 +29,11 @@
 - [x] 5.1 Engineering gate: test-rig (or equivalent) demonstrates two-slot blend, Crossfade, TimeScale, dominant-slot step sync
 - [x] 5.2 Wire Test Project C# to SetSlot + blendWeight (idle↔walk) while Position stays Tick real-time; stepped facing uses dominant clock
 - [ ] 5.3 Chocomel (or agreed subset) Play acceptance: weighted idle↔walk, perceptible TimeScale, real-time move, stepped facing — Phase 2 Done
-- [ ] 5.4 Keep Phase 1 Chocomel hard-cut acceptance tracked separately if still open (do not drop)
+- [x] 5.4 Keep Phase 1 Chocomel hard-cut acceptance tracked separately if still open (do not drop)
+
+  Phase 1 `openspec/changes/dogwalk-animation-phase-1/tasks.md` **6.4** (Chocomel hard-cut Play acceptance) remains **open** — not dropped by Phase 2. Engineering gate on `dogwalk_test_rig` covers Phase 2 blend; Chocomel content gate is separate (5.3 / Phase 1 6.4).
 
 ## 6. Docs / closeout
 
-- [ ] 6.1 Confirm CONTEXT + ADR 0020 match apply (prefer no churn)
+- [x] 6.1 Confirm CONTEXT + ADR 0020 match apply (prefer no churn)
 - [ ] 6.2 Manual checklist: Edit scrub; Play weighted blend + TimeScale; Fast Path/Final skin still sane under blend
