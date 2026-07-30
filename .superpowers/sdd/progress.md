@@ -33,4 +33,6 @@ Task 4.1–4.3: complete (audit + dual-slot TimeScale gap test)
 Task 4.1-4.3: complete (d15f9fb)
 ## Group 4 COMPLETE
 
-Task 5.1: complete
+Task 5.1: complete (f2ef287)
+
+Task 5.2: complete (Test Project C# wiring; tasks.md + report only, no engine source)
