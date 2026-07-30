@@ -42,6 +42,7 @@ enum class UiEventKind : uint8_t {
   animPreviewPause,
   animPreviewStop,
   animPreviewLoopToggle,
+  animPreviewParamsEdited,
   alignViewToCamera,
   alignCameraToView,
 };

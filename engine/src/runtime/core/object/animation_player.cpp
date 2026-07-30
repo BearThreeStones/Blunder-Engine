@@ -31,6 +31,16 @@ void AnimationPlayer::clearClipGuid(const eastl::string& name) {
 
 void AnimationPlayer::clearAllClipGuids() { m_name_to_guid.clear(); }
 
+void AnimationPlayer::visitClipBindings(ClipBindingVisitorFn visitor,
+                                        void* userdata) const {
+  if (visitor == nullptr) {
+    return;
+  }
+  for (const auto& entry : m_name_to_guid) {
+    visitor(entry.first, entry.second, userdata);
+  }
+}
+
 void AnimationPlayer::setClipResolver(AnimationClipResolveFn resolver,
                                       void* userdata) {
   m_resolver = resolver;

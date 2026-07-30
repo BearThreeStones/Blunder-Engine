@@ -31,6 +31,11 @@ class AnimationPreviewController final {
   float playbackPosition() const;
   float clipLength() const;
 
+  float timeScale() const;
+  float blendWeight() const;
+  float fadeSeconds() const { return m_fade_seconds; }
+  const eastl::string& slotClipName(int slot_index) const;
+
   void bindObject(Object* object, const eastl::string& default_clip_name = {});
   void bindSelection(SceneInstance* scene, EntityId entity_id);
   void clearTarget();
@@ -42,12 +47,20 @@ class AnimationPreviewController final {
   void toggleLoop();
   void setLoop(bool loop);
 
+  void setTimeScale(float scale);
+  void setBlendWeight(float weight);
+  void setFadeSeconds(float fade_seconds);
+  bool setSlot(int slot_index, const eastl::string& name);
+
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);
 
  private:
+  void resampleBoundSkeleton();
+
   Object* m_target_object{nullptr};
   eastl::string m_default_clip_name;
+  float m_fade_seconds{0.0f};
   AnimationPreviewState m_state{AnimationPreviewState::Stopped};
 };
 

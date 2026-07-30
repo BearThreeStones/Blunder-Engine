@@ -865,6 +865,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::animPreviewLoopToggle));
         }));
+    component->on_anim_preview_params_edited(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewParamsEdited));
+        }));
     component->on_play_dirty_save_and_play(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playDirtySaveAndPlay));
@@ -2538,6 +2542,49 @@ void SlintSystem::applyInspectorTransform() {
   }
 }
 
+void SlintSystem::applyAnimationPreviewParams() {
+  if (!m_window_component) {
+    return;
+  }
+
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr || !preview->hasTarget()) {
+    return;
+  }
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    preview->setTimeScale(ui->get_anim_preview_time_scale());
+    preview->setBlendWeight(ui->get_anim_preview_blend_weight());
+    preview->setFadeSeconds(ui->get_anim_preview_fade_seconds());
+
+    const slint::SharedString slot0 = ui->get_anim_preview_slot0();
+    const slint::SharedString slot1 = ui->get_anim_preview_slot1();
+    if (!slot0.empty()) {
+      preview->setSlot(0, eastl::string(slot0.data()));
+    }
+    if (!slot1.empty()) {
+      preview->setSlot(1, eastl::string(slot1.data()));
+    }
+
+    if (const auto services = lockServices()) {
+      if (services->editor_scene_edit) {
+        services->editor_scene_edit->markDirty();
+      }
+      if (services->render_system) {
+        services->render_system->requestViewportRedraw();
+      }
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyAnimationPreviewParams] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyAnimationPreviewParams] unknown exception");
+  }
+}
+
 void SlintSystem::syncInspectorBehavioursFromSelection() {
   if (!m_window_component || m_applying_inspector_sync) {
     return;
@@ -3126,6 +3173,13 @@ void SlintSystem::syncTransformToolbarFromEngine() {
           preview->bindSelection(
               scene, g_runtime_global_context.m_editor_selection->getSelection());
           g_runtime_global_context.m_editor_selection->clearDirty();
+          ui->set_anim_preview_time_scale(preview->timeScale());
+          ui->set_anim_preview_blend_weight(preview->blendWeight());
+          ui->set_anim_preview_fade_seconds(preview->fadeSeconds());
+          ui->set_anim_preview_slot0(
+              slint::SharedString(preview->slotClipName(0).c_str()));
+          ui->set_anim_preview_slot1(
+              slint::SharedString(preview->slotClipName(1).c_str()));
         }
       }
       ui->set_anim_preview_enabled(preview->playEnabled());

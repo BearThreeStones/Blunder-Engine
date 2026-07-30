@@ -19,6 +19,10 @@ class AnimationPlayer {
  public:
   size_t getClipMapEntryCount() const { return m_name_to_guid.size(); }
 
+  using ClipBindingVisitorFn = void (*)(const eastl::string& name,
+                                        const eastl::string& guid, void* userdata);
+  void visitClipBindings(ClipBindingVisitorFn visitor, void* userdata) const;
+
   void setClipGuid(const eastl::string& name, const eastl::string& guid);
   bool getClipGuid(const eastl::string& name, eastl::string& out_guid) const;
   void clearClipGuid(const eastl::string& name);

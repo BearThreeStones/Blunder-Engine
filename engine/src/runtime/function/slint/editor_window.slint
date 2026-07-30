@@ -169,11 +169,17 @@ export component MainEditorWindow inherits Window {
     callback anim-preview-pause-requested();
     callback anim-preview-stop-requested();
     callback anim-preview-loop-toggled();
+    callback anim-preview-params-edited();
     in property <bool> anim-preview-enabled: false;
     in property <bool> anim-preview-pause-enabled: false;
     in property <bool> anim-preview-stop-enabled: false;
     in property <bool> anim-preview-paused: false;
     in property <bool> anim-preview-looping: false;
+    in-out property <float> anim-preview-time-scale: 1.0;
+    in-out property <float> anim-preview-blend-weight: 0.0;
+    in-out property <float> anim-preview-fade-seconds: 0.0;
+    in-out property <string> anim-preview-slot0: "";
+    in-out property <string> anim-preview-slot1: "";
 
     in-out property <bool> play-dirty-dialog-visible: false;
     callback play-dirty-save-and-play();
@@ -416,10 +422,16 @@ export component MainEditorWindow inherits Window {
                             preview-stop-enabled: root.anim-preview-stop-enabled;
                             preview-paused: root.anim-preview-paused;
                             preview-looping: root.anim-preview-looping;
+                            preview-time-scale <=> root.anim-preview-time-scale;
+                            preview-blend-weight <=> root.anim-preview-blend-weight;
+                            preview-fade-seconds <=> root.anim-preview-fade-seconds;
+                            preview-slot0 <=> root.anim-preview-slot0;
+                            preview-slot1 <=> root.anim-preview-slot1;
                             preview-play-requested => { root.anim-preview-play-requested(); }
                             preview-pause-requested => { root.anim-preview-pause-requested(); }
                             preview-stop-requested => { root.anim-preview-stop-requested(); }
                             preview-loop-toggled => { root.anim-preview-loop-toggled(); }
+                            preview-params-edited => { root.anim-preview-params-edited(); }
                         }
 
                         CameraPreviewPanel {

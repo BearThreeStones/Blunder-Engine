@@ -1,4 +1,5 @@
-import { HorizontalBox } from "std-widgets.slint";
+import { HorizontalBox, LineEdit } from "std-widgets.slint";
+import { AxisNumberField } from "axis_number_field.slint";
 
 export component AnimationPreviewToolbar inherits Rectangle {
     in property <bool> preview-enabled: false;
@@ -7,103 +8,176 @@ export component AnimationPreviewToolbar inherits Rectangle {
     in property <bool> preview-paused: false;
     in property <bool> preview-looping: false;
 
+    in-out property <float> preview-time-scale: 1.0;
+    in-out property <float> preview-blend-weight: 0.0;
+    in-out property <float> preview-fade-seconds: 0.0;
+    in-out property <string> preview-slot0: "";
+    in-out property <string> preview-slot1: "";
+
     callback preview-play-requested();
     callback preview-pause-requested();
     callback preview-stop-requested();
     callback preview-loop-toggled();
+    callback preview-params-edited();
 
     visible: root.preview-enabled;
     y: 48px;
     x: 8px;
-    height: 32px;
+    height: 58px;
     background: #1a1a1acc;
     border-radius: 4px;
     border-width: 1px;
     border-color: #3a3a3a;
 
-    HorizontalLayout {
+    VerticalLayout {
         padding: 4px;
         spacing: 4px;
 
-        Rectangle {
-            width: 44px;
-            height: 24px;
-            border-radius: 3px;
-            background: play-touch.has-hover ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: #444444;
-            Text {
-                text: "Play";
-                color: #e8e8e8;
-                font-size: 11px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+        HorizontalLayout {
+            spacing: 4px;
+
+            Rectangle {
+                width: 44px;
+                height: 24px;
+                border-radius: 3px;
+                background: play-touch.has-hover ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: #444444;
+                Text {
+                    text: "Play";
+                    color: #e8e8e8;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                play-touch := TouchArea {
+                    enabled: root.preview-enabled;
+                    clicked => { root.preview-play-requested(); }
+                }
             }
-            play-touch := TouchArea {
-                enabled: root.preview-enabled;
-                clicked => { root.preview-play-requested(); }
+
+            Rectangle {
+                width: 52px;
+                height: 24px;
+                border-radius: 3px;
+                background: pause-touch.has-hover ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: #444444;
+                Text {
+                    text: root.preview-paused ? "Resume" : "Pause";
+                    color: root.preview-pause-enabled ? #e8e8e8 : #707070;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                pause-touch := TouchArea {
+                    enabled: root.preview-pause-enabled;
+                    clicked => { root.preview-pause-requested(); }
+                }
+            }
+
+            Rectangle {
+                width: 44px;
+                height: 24px;
+                border-radius: 3px;
+                background: stop-touch.has-hover ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: #444444;
+                Text {
+                    text: "Stop";
+                    color: root.preview-stop-enabled ? #e8e8e8 : #707070;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                stop-touch := TouchArea {
+                    enabled: root.preview-stop-enabled;
+                    clicked => { root.preview-stop-requested(); }
+                }
+            }
+
+            Rectangle { width: 8px; }
+
+            Rectangle {
+                width: 52px;
+                height: 24px;
+                border-radius: 3px;
+                background: root.preview-looping ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: root.preview-looping ? #6ab0ff : #444444;
+                Text {
+                    text: "Loop";
+                    color: root.preview-looping ? #ffffff : #b0b0b0;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                loop-touch := TouchArea {
+                    enabled: root.preview-enabled;
+                    clicked => { root.preview-loop-toggled(); }
+                }
+            }
+
+            Rectangle { width: 8px; }
+
+            AxisNumberField {
+                width: 72px;
+                axis-label: "TS";
+                axis-color: #8ab4f8;
+                value <=> root.preview-time-scale;
+                scrub-sensitivity: 0.05;
+                live-edited => { root.preview-params-edited(); }
+            }
+
+            AxisNumberField {
+                width: 72px;
+                axis-label: "BW";
+                axis-color: #f8b48a;
+                value <=> root.preview-blend-weight;
+                show-slider: true;
+                slider-min: 0.0;
+                slider-max: 1.0;
+                scrub-sensitivity: 0.01;
+                live-edited => { root.preview-params-edited(); }
+            }
+
+            AxisNumberField {
+                width: 72px;
+                axis-label: "Fd";
+                axis-color: #b4f88a;
+                value <=> root.preview-fade-seconds;
+                scrub-sensitivity: 0.05;
+                live-edited => { root.preview-params-edited(); }
             }
         }
 
-        Rectangle {
-            width: 52px;
-            height: 24px;
-            border-radius: 3px;
-            background: pause-touch.has-hover ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: #444444;
+        HorizontalLayout {
+            spacing: 4px;
+
             Text {
-                text: root.preview-paused ? "Resume" : "Pause";
-                color: root.preview-pause-enabled ? #e8e8e8 : #707070;
+                text: "S0";
+                color: #b0b0b0;
                 font-size: 11px;
-                horizontal-alignment: center;
                 vertical-alignment: center;
             }
-            pause-touch := TouchArea {
-                enabled: root.preview-pause-enabled;
-                clicked => { root.preview-pause-requested(); }
+            LineEdit {
+                width: 80px;
+                height: 22px;
+                text <=> root.preview-slot0;
+                edited => { root.preview-params-edited(); }
             }
-        }
 
-        Rectangle {
-            width: 44px;
-            height: 24px;
-            border-radius: 3px;
-            background: stop-touch.has-hover ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: #444444;
             Text {
-                text: "Stop";
-                color: root.preview-stop-enabled ? #e8e8e8 : #707070;
+                text: "S1";
+                color: #b0b0b0;
                 font-size: 11px;
-                horizontal-alignment: center;
                 vertical-alignment: center;
             }
-            stop-touch := TouchArea {
-                enabled: root.preview-stop-enabled;
-                clicked => { root.preview-stop-requested(); }
-            }
-        }
-
-        Rectangle { width: 8px; }
-
-        Rectangle {
-            width: 52px;
-            height: 24px;
-            border-radius: 3px;
-            background: root.preview-looping ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: root.preview-looping ? #6ab0ff : #444444;
-            Text {
-                text: "Loop";
-                color: root.preview-looping ? #ffffff : #b0b0b0;
-                font-size: 11px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            loop-touch := TouchArea {
-                enabled: root.preview-enabled;
-                clicked => { root.preview-loop-toggled(); }
+            LineEdit {
+                width: 80px;
+                height: 22px;
+                text <=> root.preview-slot1;
+                edited => { root.preview-params-edited(); }
             }
         }
     }
