@@ -237,6 +237,79 @@ void writeDualAnimationGltfFixture(const fs::path& gltf_path) {
   writeTextFile(gltf_path, gltf);
 }
 
+// skins>=1, meshes>=1, animations>=1 - full skinned character (reject as companion).
+void writeSkinnedMeshWithGeometryGltfFixture(const fs::path& gltf_path) {
+  const std::string gltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "name": "Hips", "mesh": 0, "skin": 0 }],
+  "skins": [{
+    "joints": [0],
+    "skeleton": 0
+  }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 0 },
+      "indices": 1
+    }]
+  }],
+  "animations": [{
+    "name": "idle",
+    "channels": [{
+      "sampler": 0,
+      "target": { "node": 0, "path": "translation" }
+    }],
+    "samplers": [{
+      "input": 2,
+      "interpolation": "STEP",
+      "output": 3
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR",
+      "max": [1.0],
+      "min": [0.0]
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 42, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 50, "byteLength": 24 }
+  ],
+  "buffers": [{
+    "byteLength": 74,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPw=="
+  }]
+})";
+  writeTextFile(gltf_path, gltf);
+}
+
 // Task 1.1 (ADR 0021): Companion Animation glTF acceptance fixtures.
 constexpr const char* kCompanionLoopGltf = R"({
   "asset": { "version": "2.0" },
@@ -336,13 +409,15 @@ void companionAnimationGltfAcceptance() {
 
   const fs::path loop_path = root / "loop.gltf";
   const fs::path anim_only_path = root / "idle.gltf";
-  const fs::path skinned_mesh_path = root / "rig.gltf";
+  const fs::path mesh_with_anim_path = root / "mesh_anim.gltf";
+  const fs::path skinned_mesh_path = root / "skinned_rig.gltf";
   const fs::path mesh_only_path = root / "triangle.gltf";
   const fs::path empty_path = root / "empty.gltf";
 
   writeTextFile(loop_path, kCompanionLoopGltf);
   writeTextFile(anim_only_path, kCompanionAnimOnlyGltf);
-  writeDualAnimationGltfFixture(skinned_mesh_path);
+  writeDualAnimationGltfFixture(mesh_with_anim_path);
+  writeSkinnedMeshWithGeometryGltfFixture(skinned_mesh_path);
   writeTextFile(mesh_only_path, kTriangleGltf);
   writeTextFile(empty_path, kEmptyGltf);
 
@@ -350,7 +425,9 @@ void companionAnimationGltfAcceptance() {
               isCompanionAnimationGltf(loop_path));
   expect_true("animations-only companion accepted (meshes=0)",
               isCompanionAnimationGltf(anim_only_path));
-  expect_true("skinned mesh-with-geometry rejected",
+  expect_true("mesh-with-geometry and animations rejected (no skins)",
+              !isCompanionAnimationGltf(mesh_with_anim_path));
+  expect_true("skinned mesh-with-geometry rejected (skins>=1, meshes>=1, anims>=1)",
               !isCompanionAnimationGltf(skinned_mesh_path));
   expect_true("mesh without animations rejected",
               !isCompanionAnimationGltf(mesh_only_path));
