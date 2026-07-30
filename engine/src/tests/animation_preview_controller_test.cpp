@@ -11,6 +11,7 @@ namespace {
 
 int g_failures = 0;
 int g_tick_calls = 0;
+int g_ready_calls = 0;
 
 constexpr const char* kWalkGuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
@@ -42,6 +43,8 @@ Blunder::AnimationTrack makeTranslationTrack(
 }
 
 void on_tick(void* /*peer*/, float /*dt*/) { ++g_tick_calls; }
+
+void on_ready(void* /*peer*/) { ++g_ready_calls; }
 
 Blunder::Object* makePreviewObject(Blunder::Skeleton** out_skeleton) {
   using namespace Blunder;
@@ -97,13 +100,15 @@ void test_play_pause_stop_state_machine() {
   LifecycleDispatch::clear();
 }
 
-void test_tick_advances_without_behaviour_tick() {
+void test_tick_advances_without_behaviour_lifecycle() {
   using namespace Blunder;
 
   ObjectDB::clear();
   LifecycleDispatch::clear();
   g_tick_calls = 0;
+  g_ready_calls = 0;
   LifecycleDispatch::setTickHook("Object", on_tick);
+  LifecycleDispatch::setReadyHook("Object", on_ready);
 
   Skeleton* skeleton = nullptr;
   Object* object = makePreviewObject(&skeleton);
@@ -117,9 +122,11 @@ void test_tick_advances_without_behaviour_tick() {
   AnimationPreviewController controller;
   controller.bindObject(object, "walk");
   expect_true("play", controller.play());
+  expect_true("play skips lifecycle", g_tick_calls == 0 && g_ready_calls == 0);
 
   controller.tick(0.5f);
   expect_true("preview skips behaviour tick", g_tick_calls == 0);
+  expect_true("preview skips behaviour ready", g_ready_calls == 0);
   expect_true("position advanced", float_near(controller.playbackPosition(), 0.5f));
   expect_true("bone sampled",
               float_near(skeleton->getBonePoseLocal(0).translation.x, 1.0f));
@@ -152,7 +159,7 @@ void test_loop_toggle() {
 
 int main() {
   test_play_pause_stop_state_machine();
-  test_tick_advances_without_behaviour_tick();
+  test_tick_advances_without_behaviour_lifecycle();
   test_loop_toggle();
 
   if (g_failures != 0) {

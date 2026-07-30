@@ -32,7 +32,7 @@
 ## 5. Edit Mode preview
 
 - [x] 5.1 Authorship viewport controls to Play/Pause/Stop/Loop AnimationPlayer without DotNetHost
-- [ ] 5.2 Verify Behaviour Tick does not run on Edit preview path
+- [x] 5.2 Verify Behaviour Tick does not run on Edit preview path
 
 ## 6. Content: test rig + Stepped feel
 
