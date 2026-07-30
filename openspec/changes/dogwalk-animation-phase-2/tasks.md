@@ -4,7 +4,7 @@
 - [x] 1.2 Sample both active slots and combine local TRS (lerp) / rotation (slerp) onto the co-located Skeleton
 - [x] 1.3 Implement Crossfade as time-driven weight ramp on the two slots; Play(name, fade) sugar; fade=0 hard cut
 - [x] 1.4 Advance slots under global TimeScale; expose dominant-slot playback position for step sync
-- [ ] 1.5 Keep PoseApplied after combined sample; preserve Tick → sample → PoseApplied order
+- [x] 1.5 Keep PoseApplied after combined sample; preserve Tick → sample → PoseApplied order
 
 ## 2. Scene + Edit authorship
 
