@@ -26,7 +26,7 @@
 
 ## 5. Content gates
 
-- [ ] 5.1 Engineering gate: test-rig (or equivalent) demonstrates two-slot blend, Crossfade, TimeScale, dominant-slot step sync
+- [x] 5.1 Engineering gate: test-rig (or equivalent) demonstrates two-slot blend, Crossfade, TimeScale, dominant-slot step sync
 - [ ] 5.2 Wire Test Project C# to SetSlot + blendWeight (idle↔walk) while Position stays Tick real-time; stepped facing uses dominant clock
 - [ ] 5.3 Chocomel (or agreed subset) Play acceptance: weighted idle↔walk, perceptible TimeScale, real-time move, stepped facing — Phase 2 Done
 - [ ] 5.4 Keep Phase 1 Chocomel hard-cut acceptance tracked separately if still open (do not drop)

@@ -30,3 +30,7 @@ Task 3.2+3.3: complete (cf315b3)
 
 Task 4.1–4.3: complete (audit + dual-slot TimeScale gap test)
 ## Group 4 COMPLETE (automated validation)
+Task 4.1-4.3: complete (d15f9fb)
+## Group 4 COMPLETE
+
+Task 5.1: complete
