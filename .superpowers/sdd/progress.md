@@ -7,7 +7,6 @@ Task 1.1: complete (commits e612ab3..f9fa398, review clean)
 
 Task 1.2: complete (commits f9fa398..7e80f1b, review clean)
 
-Task 1.3: complete (pending commit)
 Task 1.3: complete (commits 7e80f1b..c697dcb, review deferred-minor OK)
 
 Task 1.4: complete (commits c697dcb..2255898)
@@ -19,4 +18,7 @@ Task 2.1: complete (b6608c9)
 
 Task 2.2: complete (8415604)
 
-Task 2.3: complete (pending commit)
+Task 2.3: complete (0933eec)
+## Group 2 COMPLETE
+
+Task 3.1: complete (22c22b4)
