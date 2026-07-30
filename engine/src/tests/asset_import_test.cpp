@@ -617,6 +617,107 @@ void companionAnimationGltfMultiSelectBatchPairing() {
   fs::remove_all(root);
 }
 
+// Task 2.1 (ADR 0021): importExternalFiles hard-wires batch pairing into mesh
+// Import without registering companion-only glTFs as Mesh Assets.
+void importExternalFilesPairsCompanionsIntoMeshImport() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external_root =
+      fs::temp_directory_path() /
+      ("blunder_companion_import_integration_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path host_path = external_root / "Chocomel.gltf";
+  const fs::path idle_path = external_root / "LOOP-idle.gltf";
+  const fs::path walk_path = external_root / "LOOP-walk.gltf";
+  writeSkinnedMeshHostGltfFixture(host_path);
+  writeTextFile(idle_path, kCompanionLoopGltf);
+  writeTextFile(walk_path, kCompanionAnimOnlyGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  const eastl::vector<eastl::string> paths = {
+      eastl::string(host_path.generic_string().c_str()),
+      eastl::string(idle_path.generic_string().c_str()),
+      eastl::string(walk_path.generic_string().c_str())};
+
+  MeshImportSettings enabled{};
+  enabled.animations = true;
+  const eastl::vector<ImportResult> enabled_results =
+      import_service.importExternalFiles(paths, "assets/Meshes", enabled);
+
+  expect_true("companion-aware batch imports one Mesh",
+              enabled_results.size() == 1);
+  expect_true("companion-aware batch returns successful host",
+              !enabled_results.empty() && enabled_results[0].success);
+  expect_true("companion-aware mesh receives both companion paths",
+              !enabled_results.empty() &&
+                  pathSetsEqual(enabled_results[0].companion_animation_paths,
+                                {idle_path, walk_path}));
+  expect_true("companion-only glTFs are not Mesh descriptors",
+              !fs::exists(project / "Assets" / "Meshes" /
+                          "LOOP-idle.mesh.yaml") &&
+                  !fs::exists(project / "Assets" / "Meshes" /
+                              "LOOP-walk.mesh.yaml"));
+
+  const fs::path disabled_project = makeTempProject();
+  FileSystem disabled_file_system;
+  FileSystemInitInfo disabled_fs_init{};
+  disabled_fs_init.project_root = disabled_project;
+  disabled_file_system.initialize(disabled_fs_init);
+
+  AssetRegistry disabled_registry;
+  disabled_registry.initialize(&disabled_file_system);
+
+  AssetImportService disabled_import_service;
+  AssetImportServiceInit disabled_import_init{};
+  disabled_import_init.file_system = &disabled_file_system;
+  disabled_import_init.asset_registry = &disabled_registry;
+  disabled_import_service.initialize(disabled_import_init);
+
+  MeshImportSettings disabled{};
+  disabled.animations = false;
+  const eastl::vector<ImportResult> disabled_results =
+      disabled_import_service.importExternalFiles(paths, "assets/Meshes",
+                                                  disabled);
+
+  expect_true("animations disabled still imports only host Mesh",
+              disabled_results.size() == 1);
+  expect_true("animations disabled does not attach companions",
+              !disabled_results.empty() &&
+                  disabled_results[0].companion_animation_paths.empty());
+  expect_true("animations disabled skips companion Mesh registration",
+              !fs::exists(disabled_project / "Assets" / "Meshes" /
+                          "LOOP-idle.mesh.yaml") &&
+                  !fs::exists(disabled_project / "Assets" / "Meshes" /
+                              "LOOP-walk.mesh.yaml"));
+
+  disabled_import_service.shutdown();
+  disabled_registry.shutdown();
+  disabled_file_system.shutdown();
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(disabled_project);
+  fs::remove_all(external_root);
+}
+
 void companionAnimationGltfAcceptance() {
   using namespace Blunder;
 
@@ -2456,6 +2557,7 @@ int main() {
   companionAnimationGltfAcceptance();
   nearDiskCompanionGltfCandidateEnumeration();
   companionAnimationGltfMultiSelectBatchPairing();
+  importExternalFilesPairsCompanionsIntoMeshImport();
   meshExtensionRoutingTables();
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();

@@ -1,5 +1,6 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 
+#include "runtime/resource/asset_import/companion_animation_gltf.h"
 #include "runtime/resource/asset_import/gltf_animation_clip_extractor.h"
 
 #include <algorithm>
@@ -73,6 +74,23 @@ bool relativePathEscapesRoot(const std::filesystem::path& relative_path) {
     return part == "..";
   }
   return false;
+}
+
+bool pathsReferToSameFile(const fs::path& lhs, const fs::path& rhs) {
+  std::error_code ec;
+  const bool equivalent = fs::equivalent(lhs, rhs, ec);
+  if (!ec) {
+    return equivalent;
+  }
+
+  ec.clear();
+  const fs::path lhs_absolute = fs::absolute(lhs, ec).lexically_normal();
+  if (ec) {
+    return lhs.lexically_normal() == rhs.lexically_normal();
+  }
+  ec.clear();
+  const fs::path rhs_absolute = fs::absolute(rhs, ec).lexically_normal();
+  return !ec && lhs_absolute == rhs_absolute;
 }
 
 eastl::string toLowerAscii(eastl::string value) {
@@ -623,7 +641,8 @@ ImportResult AssetImportService::importMesh(
 
 ImportResult AssetImportService::importMeshIntermediate(
     const fs::path& input_absolute, const eastl::string& assets_folder_virtual,
-    const MeshImportSettings& settings) {
+    const MeshImportSettings& settings,
+    const std::vector<fs::path>& companion_animation_paths) {
   ImportResult result{};
 
   const eastl::string assets_folder = resolveAssetsFolder(assets_folder_virtual);
@@ -667,6 +686,7 @@ ImportResult AssetImportService::importMeshIntermediate(
   result.descriptor_virtual_path = descriptor_virtual;
   result.guid = descriptor.guid;
   result.success = true;
+  result.companion_animation_paths = companion_animation_paths;
 
   if (settings.animations) {
     const fs::path gltf_absolute =
@@ -835,11 +855,15 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
   }
 
   eastl::vector<eastl::string> pending_meshes;
+  std::vector<fs::path> gltf_batch_paths;
   for (const eastl::string& absolute_path : absolute_paths) {
     const fs::path src(absolute_path.c_str());
     const eastl::string ext = extensionLower(src);
     if (isMeshIntermediateExtension(ext) || isMeshSourceExportExtension(ext)) {
       pending_meshes.push_back(absolute_path);
+      if (isMeshIntermediateExtension(ext)) {
+        gltf_batch_paths.push_back(src);
+      }
       continue;
     }
     if (isTextureIntermediateExtension(ext)) {
@@ -852,10 +876,56 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
     }
   }
 
+  const CompanionGltfMultiSelectBatchPairingResult pairing =
+      pairCompanionAnimationGltfMultiSelectBatch(gltf_batch_paths);
+
+  if (mesh_settings.animations) {
+    for (const fs::path& orphan_path : pairing.orphan_companion_paths) {
+      LOG_WARN("[AssetImport] orphan Companion Animation glTF skipped: {}",
+               orphan_path.generic_string());
+    }
+  }
+
+  std::vector<fs::path> companion_paths_to_skip =
+      pairing.orphan_companion_paths;
+  for (const CompanionGltfBatchHostPairing& host_pairing :
+       pairing.host_pairings) {
+    companion_paths_to_skip.insert(companion_paths_to_skip.end(),
+                                   host_pairing.companion_paths.begin(),
+                                   host_pairing.companion_paths.end());
+  }
+
   for (const eastl::string& absolute_path : pending_meshes) {
-    ImportResult imported =
-        importMesh(fs::path(absolute_path.c_str()), assets_folder_virtual,
-                   mesh_settings);
+    const fs::path pending_path(absolute_path.c_str());
+    const bool is_companion =
+        std::any_of(companion_paths_to_skip.begin(),
+                    companion_paths_to_skip.end(),
+                    [&pending_path](const fs::path& companion_path) {
+                      return pathsReferToSameFile(pending_path, companion_path);
+                    });
+    if (is_companion) {
+      continue;
+    }
+
+    const auto host_pairing =
+        std::find_if(pairing.host_pairings.begin(),
+                     pairing.host_pairings.end(),
+                     [&pending_path](
+                         const CompanionGltfBatchHostPairing& candidate) {
+                       return pathsReferToSameFile(pending_path,
+                                                   candidate.host_path);
+                     });
+
+    ImportResult imported;
+    if (mesh_settings.animations &&
+        host_pairing != pairing.host_pairings.end()) {
+      imported = importMeshIntermediate(pending_path, assets_folder_virtual,
+                                        mesh_settings,
+                                        host_pairing->companion_paths);
+    } else {
+      imported =
+          importMesh(pending_path, assets_folder_virtual, mesh_settings);
+    }
     if (imported.success) {
       results.push_back(imported);
       for (const ImportResult& clip : imported.animation_clips) {

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <vector>
 
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
@@ -21,6 +22,9 @@ struct ImportResult {
   bool success{false};
   /// AnimationClip Assets extracted alongside a mesh glTF Import (Task 2.2).
   eastl::vector<ImportResult> animation_clips;
+  /// Accepted external companion glTFs paired with this Mesh Import batch.
+  /// Task 2.2 consumes these paths to persist companion Intermediate bodies.
+  std::vector<std::filesystem::path> companion_animation_paths;
 };
 
 struct AssetImportServiceInit {
@@ -110,7 +114,8 @@ class AssetImportService final {
   ImportResult importMeshIntermediate(
       const std::filesystem::path& input_absolute,
       const eastl::string& assets_folder_virtual,
-      const MeshImportSettings& settings);
+      const MeshImportSettings& settings,
+      const std::vector<std::filesystem::path>& companion_animation_paths = {});
   ImportResult importMeshSourceExport(
       const std::filesystem::path& input_absolute,
       const eastl::string& assets_folder_virtual,
