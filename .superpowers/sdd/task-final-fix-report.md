@@ -8,9 +8,9 @@
   copies non-data relative resources beside the persisted glTF while preserving
   URI-relative paths, rejects escaping/absolute references, and rolls copied
   sidecars back if persistence fails.
-- Near-disk companion discovery is gated to a batch containing exactly one glTF
-  mesh candidate. Multi-host selection keeps ambiguous companions orphaned
-  instead of rediscovering and attaching them to every host.
+- Near-disk companion discovery is gated to a batch containing exactly one mesh
+  input and exactly one glTF candidate. Multi-host selection keeps ambiguous
+  companions orphaned instead of rediscovering and attaching them to every host.
 
 ### TDD evidence
 
@@ -31,3 +31,9 @@
   the persisted companion.
 - `multiHostBatchDoesNotRediscoverOrphanCompanions` verifies a two-host batch
   imports only the hosts and creates no orphan-derived animation descriptor.
+
+### Final verification
+
+- Build: `cmake --build build/vs2026-debug --config Debug --target asset_import_test -- /m:1 /p:CL_MPCount=1`
+  completed successfully.
+- Test: `asset_import_test.exe` exited 0 with `asset_import_test: all passed`.

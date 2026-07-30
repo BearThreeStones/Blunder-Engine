@@ -1079,7 +1079,8 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
 
   const CompanionGltfMultiSelectBatchPairingResult pairing =
       pairCompanionAnimationGltfMultiSelectBatch(gltf_batch_paths);
-  const bool allow_near_disk_discovery = gltf_batch_paths.size() == 1;
+  const bool allow_near_disk_discovery =
+      pending_meshes.size() == 1 && gltf_batch_paths.size() == 1;
 
   if (mesh_settings.animations) {
     for (const fs::path& orphan_path : pairing.orphan_companion_paths) {
