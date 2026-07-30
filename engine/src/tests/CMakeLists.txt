@@ -1492,3 +1492,33 @@ target_precompile_headers(animation_player_c_abi_test
 
 add_test(NAME animation_player_c_abi_test
          COMMAND animation_player_c_abi_test)
+
+add_executable(dogwalk_import_test_rig
+    "dogwalk_import_test_rig.cpp"
+)
+
+target_link_libraries(dogwalk_import_test_rig
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_import_test_rig
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+target_compile_definitions(dogwalk_import_test_rig
+    PRIVATE "BLUNDER_REPO_ROOT=R\"(${CMAKE_SOURCE_DIR})\""
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_import_test_rig PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_import_test_rig
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_import_test_rig_self
+         COMMAND dogwalk_import_test_rig --self-test)
+
