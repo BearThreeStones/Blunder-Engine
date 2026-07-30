@@ -17,6 +17,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -99,6 +100,29 @@ bool looksLikeGlb(const std::string& body) {
 
 bool looksLikeGltfIntermediate(const std::string& body) {
   return looksLikeGltfJson(body) || looksLikeGlb(body);
+}
+
+fs::path normalizePathForCompare(const fs::path& path) {
+  std::error_code ec;
+  const fs::path absolute = fs::absolute(path, ec);
+  if (ec) {
+    return path.lexically_normal();
+  }
+  const fs::path canonical = fs::weakly_canonical(absolute, ec);
+  return ec ? absolute.lexically_normal() : canonical;
+}
+
+bool pathSetsEqual(const std::vector<fs::path>& actual,
+                   const std::vector<fs::path>& expected) {
+  std::set<std::string> actual_set;
+  std::set<std::string> expected_set;
+  for (const fs::path& path : actual) {
+    actual_set.insert(normalizePathForCompare(path).generic_string());
+  }
+  for (const fs::path& path : expected) {
+    expected_set.insert(normalizePathForCompare(path).generic_string());
+  }
+  return actual_set == expected_set;
 }
 
 // Minimal glTF 2.0 triangle (Intermediate-direct import fixture).
@@ -397,6 +421,78 @@ constexpr const char* kEmptyGltf = R"({
   "scene": 0,
   "scenes": [{ "nodes": [] }]
 })";
+
+void writeEmptyGltfStub(const fs::path& path) {
+  writeTextFile(path, kEmptyGltf);
+}
+
+// Task 1.2 (ADR 0021): near-disk companion candidate enumeration.
+void nearDiskCompanionGltfCandidateEnumeration() {
+  using namespace Blunder;
+
+  const fs::path root =
+      fs::temp_directory_path() /
+      ("blunder_companion_near_disk_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+
+  const fs::path mesh_path =
+      root / "assets" / "char" / "chocomel" / "Chocomel.gltf";
+  const fs::path co_located =
+      root / "assets" / "char" / "chocomel" / "co_located.gltf";
+  const fs::path sibling_idle =
+      root / "assets" / "char" / "animations" / "LOOP-idle.gltf";
+  const fs::path sibling_walk =
+      root / "assets" / "char" / "animations" / "LOOP-walk.gltf";
+  const fs::path nested_deep =
+      root / "assets" / "char" / "animations" / "world" / "deep.gltf";
+  const fs::path unrelated_far = root / "unrelated" / "far.gltf";
+
+  writeEmptyGltfStub(mesh_path);
+  writeEmptyGltfStub(co_located);
+  writeEmptyGltfStub(sibling_idle);
+  writeEmptyGltfStub(sibling_walk);
+  writeEmptyGltfStub(nested_deep);
+  writeEmptyGltfStub(unrelated_far);
+
+  const std::vector<fs::path> candidates =
+      enumerateNearDiskCompanionGltfCandidates(mesh_path);
+
+  expect_true("near-disk finds mesh-dir and parent child-dir glTFs",
+              pathSetsEqual(candidates,
+                            {co_located, sibling_idle, sibling_walk}));
+  expect_true("near-disk excludes mesh file itself",
+              !pathSetsEqual(candidates, {mesh_path}));
+  expect_true("near-disk does not recurse into nested child folders",
+              !pathSetsEqual(candidates, {nested_deep}));
+  expect_true("near-disk does not scan unrelated trees",
+              !pathSetsEqual(candidates, {unrelated_far}));
+
+  fs::remove_all(root);
+
+  const fs::path pack_root =
+      fs::temp_directory_path() /
+      ("blunder_companion_near_disk_pack_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+
+  const fs::path pack_mesh = pack_root / "pack" / "mesh.gltf";
+  const fs::path pack_companion = pack_root / "pack" / "companion.gltf";
+  const fs::path sibling_pack_other = pack_root / "sibling_pack" / "other.gltf";
+  writeEmptyGltfStub(pack_mesh);
+  writeEmptyGltfStub(pack_companion);
+  writeEmptyGltfStub(sibling_pack_other);
+
+  const std::vector<fs::path> pack_candidates =
+      enumerateNearDiskCompanionGltfCandidates(pack_mesh);
+  expect_true("near-disk mesh dir plus sibling child dirs",
+              pathSetsEqual(pack_candidates,
+                            {pack_companion, sibling_pack_other}));
+  expect_true("near-disk excludes host mesh in pack layout",
+              !pathSetsEqual(pack_candidates, {pack_mesh}));
+
+  fs::remove_all(pack_root);
+}
 
 void companionAnimationGltfAcceptance() {
   using namespace Blunder;
@@ -2235,6 +2331,7 @@ void reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers() {
 
 int main() {
   companionAnimationGltfAcceptance();
+  nearDiskCompanionGltfCandidateEnumeration();
   meshExtensionRoutingTables();
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
