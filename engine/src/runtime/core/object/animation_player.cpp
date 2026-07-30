@@ -126,6 +126,42 @@ void AnimationPlayer::stop() {
   m_position = 0.0f;
 }
 
+bool AnimationPlayer::setSlot(int slot_index, const eastl::string& name) {
+  if (slot_index < 0 || slot_index > 1) {
+    return false;
+  }
+  eastl::string guid;
+  if (!getClipGuid(name, guid)) {
+    return false;
+  }
+  m_slot_clip_names[slot_index] = name;
+  return true;
+}
+
+const eastl::string& AnimationPlayer::getSlotClipName(int slot_index) const {
+  static const eastl::string k_empty;
+  if (slot_index < 0 || slot_index > 1) {
+    return k_empty;
+  }
+  return m_slot_clip_names[slot_index];
+}
+
+void AnimationPlayer::setBlendWeight(float weight) {
+  m_blend_weight = clamp01(weight);
+}
+
+float AnimationPlayer::clamp01(float value) {
+  if (value < 0.0f) {
+    return 0.0f;
+  }
+  if (value > 1.0f) {
+    return 1.0f;
+  }
+  return value;
+}
+
+void AnimationPlayer::setTimeScale(float scale) { m_time_scale = scale; }
+
 void AnimationPlayer::advance(float delta_seconds) {
   if (!m_playing || delta_seconds <= 0.0f || m_clip_length <= 0.0f) {
     return;

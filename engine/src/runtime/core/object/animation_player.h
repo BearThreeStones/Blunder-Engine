@@ -30,6 +30,16 @@ class AnimationPlayer {
   bool play(const eastl::string& name);
   void stop();
 
+  /// Assign a mapped clip name to slot 0 or 1 (Phase 2 two-slot model).
+  bool setSlot(int slot_index, const eastl::string& name);
+  const eastl::string& getSlotClipName(int slot_index) const;
+
+  void setBlendWeight(float weight);
+  float getBlendWeight() const { return m_blend_weight; }
+
+  void setTimeScale(float scale);
+  float getTimeScale() const { return m_time_scale; }
+
   bool isPlaying() const { return m_playing; }
   void setLoop(bool loop) { m_loop = loop; }
   bool isLooping() const { return m_loop; }
@@ -58,6 +68,9 @@ class AnimationPlayer {
   bool resolveClip(const eastl::string& guid, AnimationClipData& out_clip);
   void beginClip(const eastl::string& name, const AnimationClipData& clip);
   void sampleBoundSkeleton();
+  static float clamp01(float value);
+
+  static constexpr int k_slot_count = 2;
 
   eastl::hash_map<eastl::string, eastl::string> m_name_to_guid;
   eastl::hash_map<eastl::string, AnimationClipData> m_injected_clips;
@@ -72,6 +85,9 @@ class AnimationPlayer {
   float m_clip_length{0.0f};
   bool m_playing{false};
   bool m_loop{false};
+  eastl::string m_slot_clip_names[k_slot_count];
+  float m_blend_weight{0.0f};
+  float m_time_scale{1.0f};
   eastl::vector<PoseAppliedListener> m_pose_applied_listeners;
 };
 

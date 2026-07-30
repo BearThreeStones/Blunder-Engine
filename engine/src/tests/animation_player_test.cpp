@@ -150,6 +150,49 @@ void test_object_hosts_animation_player() {
   ObjectDB::clear();
 }
 
+void test_two_slot_assignment_and_blend_weight() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 1.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 2.0f));
+
+  expect_true("default blend weight zero", float_near(player.getBlendWeight(), 0.0f));
+  expect_true("slot0 empty initially", player.getSlotClipName(0).empty());
+  expect_true("slot1 empty initially", player.getSlotClipName(1).empty());
+
+  expect_true("set slot0 idle", player.setSlot(0, "idle"));
+  expect_true("slot0 name", player.getSlotClipName(0) == "idle");
+  expect_true("set slot1 walk", player.setSlot(1, "walk"));
+  expect_true("slot1 name", player.getSlotClipName(1) == "walk");
+
+  expect_true("unknown slot name fails", !player.setSlot(0, "missing"));
+  expect_true("invalid slot index fails", !player.setSlot(2, "idle"));
+
+  player.setBlendWeight(0.5f);
+  expect_true("blend weight set", float_near(player.getBlendWeight(), 0.5f));
+  player.setBlendWeight(1.5f);
+  expect_true("blend weight clamped high", float_near(player.getBlendWeight(), 1.0f));
+  player.setBlendWeight(-0.25f);
+  expect_true("blend weight clamped low", float_near(player.getBlendWeight(), 0.0f));
+}
+
+void test_global_time_scale_default_and_set() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  expect_true("default time scale", float_near(player.getTimeScale(), 1.0f));
+
+  player.setTimeScale(0.5f);
+  expect_true("time scale set", float_near(player.getTimeScale(), 0.5f));
+  player.setTimeScale(2.0f);
+  expect_true("time scale updated", float_near(player.getTimeScale(), 2.0f));
+}
+
 void test_classdb_animation_player_registration() {
   using namespace Blunder;
 
@@ -191,6 +234,8 @@ int main() {
   test_clip_name_guid_map();
   test_play_stop_loop_and_advance();
   test_hard_cut_between_clips();
+  test_two_slot_assignment_and_blend_weight();
+  test_global_time_scale_default_and_set();
   test_unknown_play_name_no_crash();
   test_object_hosts_animation_player();
   test_classdb_animation_player_registration();
