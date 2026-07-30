@@ -782,6 +782,27 @@ bool parseEntityObject(const char* object_start, const char* object_end,
         return false;
       }
     }
+
+    float time_scale = 1.0f;
+    if (parseFloatField(player_content, player_end, "\"timeScale\"", time_scale)) {
+      out_entity.animation_player_time_scale = time_scale;
+    }
+
+    eastl::string slot0;
+    if (parseStringField(player_content, player_end, "\"slot0\"", slot0)) {
+      out_entity.animation_player_slot0 = eastl::move(slot0);
+    }
+
+    eastl::string slot1;
+    if (parseStringField(player_content, player_end, "\"slot1\"", slot1)) {
+      out_entity.animation_player_slot1 = eastl::move(slot1);
+    }
+
+    float blend_weight = 0.0f;
+    if (parseFloatField(player_content, player_end, "\"blendWeight\"",
+                        blend_weight)) {
+      out_entity.animation_player_blend_weight = blend_weight;
+    }
   }
 
   rebuildAnimationClipGuidsFromPlayerMap(out_entity);
@@ -1006,21 +1027,74 @@ void appendBehaviourJson(eastl::string& out, const SceneBehaviourDeclaration& be
 
 void appendAnimationPlayerJson(eastl::string& out,
                                const SceneEntityDefinition& entity) {
-  if (entity.animation_player_clips.empty()) {
+  const bool has_clips = !entity.animation_player_clips.empty();
+  const bool has_defaults =
+      entity.animation_player_time_scale != 1.0f ||
+      !entity.animation_player_slot0.empty() ||
+      !entity.animation_player_slot1.empty() ||
+      entity.animation_player_blend_weight != 0.0f;
+  if (!has_clips && !has_defaults) {
     return;
   }
+
   out.append(",\n      \"animationPlayer\": {\n");
-  out.append("        \"clips\": {\n");
-  for (size_t i = 0; i < entity.animation_player_clips.size(); ++i) {
-    const SceneEntityDefinition::AnimationClipBinding& binding =
-        entity.animation_player_clips[i];
-    out.append("          ");
-    appendJsonString(out, binding.name);
-    out.append(": ");
-    appendJsonString(out, binding.guid);
-    out.append(i + 1 == entity.animation_player_clips.size() ? "\n" : ",\n");
+  bool need_comma = false;
+
+  if (has_clips) {
+    out.append("        \"clips\": {\n");
+    for (size_t i = 0; i < entity.animation_player_clips.size(); ++i) {
+      const SceneEntityDefinition::AnimationClipBinding& binding =
+          entity.animation_player_clips[i];
+      out.append("          ");
+      appendJsonString(out, binding.name);
+      out.append(": ");
+      appendJsonString(out, binding.guid);
+      out.append(i + 1 == entity.animation_player_clips.size() ? "\n" : ",\n");
+    }
+    out.append("        }");
+    need_comma = true;
   }
-  out.append("        }\n      }");
+
+  if (entity.animation_player_time_scale != 1.0f) {
+    if (need_comma) {
+      out.append(",");
+    }
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "\n        \"timeScale\": %.6g",
+                  static_cast<double>(entity.animation_player_time_scale));
+    out.append(buffer);
+    need_comma = true;
+  }
+
+  if (!entity.animation_player_slot0.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n        \"slot0\": ");
+    appendJsonString(out, entity.animation_player_slot0);
+    need_comma = true;
+  }
+
+  if (!entity.animation_player_slot1.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n        \"slot1\": ");
+    appendJsonString(out, entity.animation_player_slot1);
+    need_comma = true;
+  }
+
+  if (entity.animation_player_blend_weight != 0.0f) {
+    if (need_comma) {
+      out.append(",");
+    }
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "\n        \"blendWeight\": %.6g",
+                  static_cast<double>(entity.animation_player_blend_weight));
+    out.append(buffer);
+  }
+
+  out.append("\n      }");
 }
 
 void appendCameraJson(eastl::string& out, const CameraComponent& camera) {

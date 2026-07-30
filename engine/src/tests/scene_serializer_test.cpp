@@ -9,6 +9,7 @@
 #include "runtime/resource/asset_registry/asset_registry.h"
 
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -25,6 +26,10 @@ void expect_true(const char* label, bool ok) {
     std::fprintf(stderr, "FAIL %s\n", label);
     ++g_failures;
   }
+}
+
+bool float_near(float a, float b, float epsilon = 1e-5f) {
+  return std::fabs(a - b) <= epsilon;
 }
 
 void ensureLogger() {
@@ -416,6 +421,57 @@ void serializeAndParseAnimationPlayerAndSkeleton() {
                    out.animation_clip_guids[1] == kWalkGuid));
 }
 
+/// Phase 2 defaults (TimeScale, slot0/slot1, blendWeight) round-trip with clips map.
+void serializeAndParseAnimationPlayerPhase2Defaults() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kIdleGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const char* kWalkGuid = "11111111-2222-4333-8444-555555555555";
+
+  Scene scene;
+  scene.setGuid("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+
+  SceneEntityDefinition entity;
+  entity.name = "Dog";
+  entity.has_skeleton = true;
+  entity.animation_player_clips.push_back({"idle", eastl::string(kIdleGuid)});
+  entity.animation_player_clips.push_back({"walk", eastl::string(kWalkGuid)});
+  entity.animation_player_time_scale = 0.5f;
+  entity.animation_player_slot0 = "idle";
+  entity.animation_player_slot1 = "walk";
+  entity.animation_player_blend_weight = 0.35f;
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize animation player phase 2 defaults",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json contains timeScale",
+              json.find("\"timeScale\"") != eastl::string::npos);
+  expect_true("json contains slot0",
+              json.find("\"slot0\"") != eastl::string::npos);
+  expect_true("json contains slot1",
+              json.find("\"slot1\"") != eastl::string::npos);
+  expect_true("json contains blendWeight",
+              json.find("\"blendWeight\"") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize animation player phase 2 defaults",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("one entity after phase 2 defaults deserialize",
+              loaded.getEntities().size() == 1);
+
+  const SceneEntityDefinition& out = loaded.getEntities()[0];
+  expect_true("timeScale restored",
+              float_near(out.animation_player_time_scale, 0.5f));
+  expect_true("slot0 restored", out.animation_player_slot0 == "idle");
+  expect_true("slot1 restored", out.animation_player_slot1 == "walk");
+  expect_true("blendWeight restored",
+              float_near(out.animation_player_blend_weight, 0.35f));
+  expect_true("clips map still restored",
+              out.animation_player_clips.size() == 2);
+}
+
 /// Legacy entities without animation keys deserialize with defaults.
 void deserializeLegacyEntityWithoutAnimation() {
   using namespace Blunder;
@@ -445,6 +501,14 @@ void deserializeLegacyEntityWithoutAnimation() {
               loaded.getEntities()[0].animation_player_clips.empty());
   expect_true("legacy animation_clip_guids empty",
               loaded.getEntities()[0].animation_clip_guids.empty());
+  expect_true("legacy timeScale default",
+              float_near(loaded.getEntities()[0].animation_player_time_scale, 1.0f));
+  expect_true("legacy slot0 empty",
+              loaded.getEntities()[0].animation_player_slot0.empty());
+  expect_true("legacy slot1 empty",
+              loaded.getEntities()[0].animation_player_slot1.empty());
+  expect_true("legacy blendWeight default",
+              float_near(loaded.getEntities()[0].animation_player_blend_weight, 0.0f));
 }
 
 /// Legacy entities without a camera key deserialize with has_camera false.
@@ -540,6 +604,7 @@ int main() {
   serializeAndParseEscapedBehaviourStrings();
   serializeAndParseCamera();
   serializeAndParseAnimationPlayerAndSkeleton();
+  serializeAndParseAnimationPlayerPhase2Defaults();
   deserializeLegacyEntityWithoutAnimation();
   deserializeLegacyEntityWithoutCamera();
 

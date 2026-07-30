@@ -71,6 +71,14 @@ void SceneInstance::instantiate(const Scene& scene) {
             m_default_animation_clip_names[id] = binding.name;
           }
         }
+        player->setTimeScale(definition.animation_player_time_scale);
+        if (!definition.animation_player_slot0.empty()) {
+          player->setSlot(0, definition.animation_player_slot0);
+        }
+        if (!definition.animation_player_slot1.empty()) {
+          player->setSlot(1, definition.animation_player_slot1);
+        }
+        player->setBlendWeight(definition.animation_player_blend_weight);
       }
       for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
         if (!object->restoreBehaviour(decl.id, decl.type)) {

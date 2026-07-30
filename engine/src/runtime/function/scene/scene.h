@@ -47,6 +47,11 @@ struct SceneEntityDefinition final {
   bool has_skeleton{false};
   /// AnimationPlayer name→GUID map; empty when the player key is absent.
   eastl::vector<AnimationClipBinding> animation_player_clips;
+  /// Phase 2 defaults persisted under `animationPlayer` (not live playback).
+  float animation_player_time_scale{1.0f};
+  eastl::string animation_player_slot0;
+  eastl::string animation_player_slot1;
+  float animation_player_blend_weight{0.0f};
   /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
   eastl::vector<SceneBehaviourDeclaration> behaviours;
   bool has_camera{false};
