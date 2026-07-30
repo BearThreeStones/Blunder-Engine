@@ -80,3 +80,26 @@ Task 4.3: complete (pending commit; model=composer-2.5)
 Task 4.4: complete (pending commit; model=composer-2.5)
   `applyGpuReferenceSkinning` mirrors pbr_skinned.slang position path; `skinning_pose_parity_test` compares CPU deformed positions + bone palette vs GPU reference at k_pose_parity_abs_eps=1e-3; cpu/gpu_skinning_test regression pass.
 
+
+Task 4.4: complete (commit 8fab359)
+## Group 4 COMPLETE (pending 4.4 review)
+
+## Starting Group 5
+
+Task 5.1: complete (commit 24b823e; model=composer-2.5)
+  AnimationPreviewController + viewport AnimationPreviewToolbar (Play/Pause/Stop/Loop); tickObjectAnimationPreviewFrame in editor loop; asset clip resolver; scene_instance wires AnimationPlayer clips; animation_preview_controller_test pass.
+
+## Env verify (2026-07-30)
+cmake --preset vs2026-debug OK; Slint blunder/v1.16.1 ancestor check passes
+asset_import_test: all passed
+asset_manager_fast_path_test: all passed
+asset_pipeline_smoke_test: all passed
+
+## Note
+Tasks 2.1-5.1 already complete on branch (commits beyond Group 1); resume at 5.2
+
+Task 5.2: complete (commits 24b823e..ea0f927, tests passed; model=composer-2.5)
+  Edit preview uses tickObjectAnimationPreviewFrame; no Behaviour Tick
+
+Task 6.1: complete (commit 504116f; dogwalk_import_test_rig PASS; model=composer-2.5)
+

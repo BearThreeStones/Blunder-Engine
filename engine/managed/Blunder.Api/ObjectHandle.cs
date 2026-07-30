@@ -13,6 +13,7 @@ public sealed class ObjectHandle
     static readonly Dictionary<ulong, ObjectHandle> s_byId = new();
 
     readonly List<Behaviour> _behaviours = new();
+    AnimationPlayer? _animationPlayer;
 
     ObjectHandle(ulong id)
     {
@@ -76,6 +77,8 @@ public sealed class ObjectHandle
         {
             foreach (ObjectHandle handle in s_byId.Values)
             {
+                handle._animationPlayer?.DetachNativeListeners();
+                handle._animationPlayer = null;
                 handle._behaviours.Clear();
             }
 
@@ -137,6 +140,8 @@ public sealed class ObjectHandle
 
     public bool Destroy()
     {
+        _animationPlayer?.DetachNativeListeners();
+        _animationPlayer = null;
         int rc = Native.blunder_object_destroy(Id);
         lock (s_byId)
         {
@@ -149,5 +154,7 @@ public sealed class ObjectHandle
 
     public bool IsValid => Native.blunder_object_is_valid(Id) != 0;
 
-    public AnimationPlayer EnsureAnimationPlayer() => new(this);
+    /// <summary>Cached co-located AnimationPlayer façade for this Object.</summary>
+    public AnimationPlayer EnsureAnimationPlayer() =>
+        _animationPlayer ??= new AnimationPlayer(this);
 }

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace Blunder;
 
 /// <summary>
@@ -8,8 +10,32 @@ public sealed class AnimationPlayer
     const string ClassName = "AnimationPlayer";
 
     readonly ObjectHandle _owner;
+    GCHandle _selfHandle;
+    bool _nativeListenerRegistered;
+    event Action? _poseApplied;
 
     internal AnimationPlayer(ObjectHandle owner) => _owner = owner;
+
+    /// <summary>
+    /// Raised after skeleton sample each Play/advance (Tick → sample → PoseApplied).
+    /// Content uses this plus <see cref="PlaybackPosition"/> frametime-modulo for Animation steps.
+    /// </summary>
+    public event Action PoseApplied
+    {
+        add
+        {
+            EnsureNativeListener();
+            _poseApplied += value;
+        }
+        remove
+        {
+            _poseApplied -= value;
+            if (_poseApplied == null)
+            {
+                ClearNativeListener();
+            }
+        }
+    }
 
     public bool Play(string clipName) =>
         Native.blunder_animation_player_play(_owner.Id, clipName) == Native.Ok;
@@ -71,5 +97,72 @@ public sealed class AnimationPlayer
 
             return value;
         }
+    }
+
+    internal void DetachNativeListeners()
+    {
+        _poseApplied = null;
+        ClearNativeListener();
+    }
+
+    unsafe void EnsureNativeListener()
+    {
+        if (_nativeListenerRegistered)
+        {
+            return;
+        }
+
+        if (!_selfHandle.IsAllocated)
+        {
+            _selfHandle = GCHandle.Alloc(this);
+        }
+
+        int rc = Native.blunder_animation_player_add_pose_applied_listener(
+            _owner.Id,
+            &OnPoseAppliedNative,
+            GCHandle.ToIntPtr(_selfHandle).ToPointer());
+        if (rc != Native.Ok)
+        {
+            throw new InvalidOperationException(
+                $"blunder_animation_player_add_pose_applied_listener failed (rc={rc}).");
+        }
+
+        _nativeListenerRegistered = true;
+    }
+
+    void ClearNativeListener()
+    {
+        if (_nativeListenerRegistered)
+        {
+            Native.blunder_animation_player_clear_pose_applied_listeners(_owner.Id);
+            _nativeListenerRegistered = false;
+        }
+
+        if (_selfHandle.IsAllocated)
+        {
+            _selfHandle.Free();
+        }
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    static unsafe void OnPoseAppliedNative(ulong objectId, void* userdata)
+    {
+        if (userdata == null)
+        {
+            return;
+        }
+
+        GCHandle handle = GCHandle.FromIntPtr((IntPtr)userdata);
+        if (handle.Target is not AnimationPlayer player)
+        {
+            return;
+        }
+
+        if (player._owner.Id != objectId)
+        {
+            return;
+        }
+
+        player._poseApplied?.Invoke();
     }
 }

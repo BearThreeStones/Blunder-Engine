@@ -37,7 +37,7 @@
 ## 6. Content: test rig + Stepped feel
 
 - [x] 6.1 Author minimal skinned test-rig glTF (idle + walk) into Test/DogWalk Project; Import → clips + player map auto-fill
-- [ ] 6.2 C# ValueSlicer utility + PoseApplied step sync; facing uses sliced visual, move stays real-time
+- [x] 6.2 C# ValueSlicer utility + PoseApplied step sync; facing uses sliced visual, move stays real-time
 - [ ] 6.3 Play acceptance: test-rig idle↔walk hard cut + deformation (engineering gate)
 - [ ] 6.4 Import Chocomel (or agreed subset); Play acceptance: idle↔walk, real-time move, stepped facing (Done criteria)
 - [ ] 6.5 Inspector: confirm name→GUID map editable after auto-fill
