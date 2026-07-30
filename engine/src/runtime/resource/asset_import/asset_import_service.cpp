@@ -519,6 +519,24 @@ void refreshMeshAnimationClipsFromIntermediate(
   refreshAnimationClipsFromGltf(file_system, asset_registry, content_browser,
                                 gltf_absolute, mesh_stem, existing_clips,
                                 make_unique_descriptor_name);
+
+  for (const eastl::string& companion_source :
+       mesh.companion_animation_sources) {
+    const eastl::string companion_stem =
+        stemFromVirtualPath(companion_source);
+    if (companion_source.empty() || companion_stem.empty()) {
+      continue;
+    }
+
+    const fs::path companion_absolute =
+        resolveResourcesVirtualPath(file_system, companion_source);
+    warnOnCompanionAnimationBoneMismatches(gltf_absolute,
+                                           companion_absolute);
+    refreshAnimationClipsFromGltf(
+        file_system, asset_registry, content_browser, companion_absolute,
+        mesh_stem, existing_clips, make_unique_descriptor_name,
+        companion_stem);
+  }
 }
 
 bool endsWithIgnoreCase(const eastl::string& value, const char* suffix) {

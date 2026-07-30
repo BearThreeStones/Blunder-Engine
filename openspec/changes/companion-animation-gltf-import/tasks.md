@@ -13,8 +13,8 @@
 
 ## 3. Reimport
 
-- [ ] 3.1 Reimport host Mesh refreshes clips from mesh Intermediate + stored companion Intermediate; preserve stable clip GUIDs
-- [ ] 3.2 Tests: Reimport companion-derived clip GUID stability
+- [x] 3.1 Reimport host Mesh refreshes clips from mesh Intermediate + stored companion Intermediate; preserve stable clip GUIDs
+- [x] 3.2 Tests: Reimport companion-derived clip GUID stability
 
 ## 4. Validation + content unblock
 

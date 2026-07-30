@@ -54,6 +54,7 @@ eastl::vector<ImportResult> refreshAnimationClipsFromGltf(
     ContentBrowserSystem* content_browser,
     const std::filesystem::path& gltf_absolute, const eastl::string& mesh_stem,
     const ExistingAnimationClipMap& existing_clips,
-    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name);
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
+    const eastl::string& preferred_clip_stem = {});
 
 }  // namespace Blunder

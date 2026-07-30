@@ -2490,6 +2490,134 @@ void reimportFromArchivedObjRegeneratesGltfIntermediate() {
   fs::remove_all(external.parent_path());
 }
 
+// Tasks 3.1-3.2 (ADR 0021): Mesh Reimport uses persisted companion
+// Intermediates to refresh derived clips without changing their Asset GUIDs.
+void reimportCompanionClipPreservesGuidAndRefreshesYaml() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external_root =
+      fs::temp_directory_path() /
+      ("blunder_reimport_companion_anim_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path host_path = external_root / "Chocomel.gltf";
+  const fs::path companion_path = external_root / "LOOP-idle.gltf";
+  writeSkinnedMeshHostGltfFixture(host_path);
+  writeTextFile(companion_path, kCompanionLoopGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const eastl::vector<eastl::string> paths = {
+      eastl::string(host_path.generic_string().c_str()),
+      eastl::string(companion_path.generic_string().c_str())};
+  const eastl::vector<ImportResult> imported =
+      import_service.importExternalFiles(paths, "assets/Meshes", settings);
+
+  expect_true("companion reimport fixture: mesh plus clip imported",
+              imported.size() == 2);
+  expect_true("companion reimport fixture: host has one clip",
+              !imported.empty() && imported[0].animation_clips.size() == 1);
+  if (imported.empty() || imported[0].animation_clips.empty()) {
+    import_service.shutdown();
+    registry.shutdown();
+    file_system.shutdown();
+    g_runtime_global_context.m_logger_system.reset();
+    fs::remove_all(project);
+    fs::remove_all(external_root);
+    return;
+  }
+  const eastl::string mesh_guid = imported[0].guid;
+  const ImportResult companion_clip = imported[0].animation_clips[0];
+  expect_true("companion reimport fixture: clip GUID captured",
+              !companion_clip.guid.empty());
+
+  eastl::string mesh_yaml;
+  expect_true("companion reimport fixture: read mesh descriptor",
+              file_system.readText(
+                  project / "Assets" / "Meshes" / "Chocomel.mesh.yaml",
+                  mesh_yaml));
+  MeshAssetDescriptor mesh_descriptor{};
+  expect_true("companion reimport fixture: parse mesh descriptor",
+              AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
+  expect_true("companion reimport fixture: stored companion source",
+              mesh_descriptor.companion_animation_sources.size() == 1);
+
+  eastl::string clip_desc_rel = companion_clip.descriptor_virtual_path;
+  if (startsWith(clip_desc_rel, "assets/")) {
+    clip_desc_rel.erase(0, 7);
+  }
+  const fs::path clip_descriptor_absolute =
+      file_system.resolveAsset(fs::path(clip_desc_rel.c_str()));
+  eastl::string clip_descriptor_yaml;
+  expect_true("companion reimport fixture: read clip descriptor",
+              file_system.readText(clip_descriptor_absolute,
+                                   clip_descriptor_yaml));
+  AnimationClipAssetDescriptor clip_descriptor{};
+  expect_true("companion reimport fixture: parse clip descriptor",
+              AssetYaml::parseAnimationClipDescriptor(clip_descriptor_yaml,
+                                                      clip_descriptor));
+
+  eastl::string clip_source_rel = clip_descriptor.source;
+  if (startsWith(clip_source_rel, "resources/")) {
+    clip_source_rel.erase(0, 10);
+  }
+  const fs::path clip_intermediate_absolute =
+      file_system.resolveResource(fs::path(clip_source_rel.c_str()));
+  writeTextFile(clip_intermediate_absolute, "STALE_COMPANION_CLIP_MARKER");
+
+  // Reimport must be independent of the original external selection.
+  fs::remove_all(external_root);
+  expect_true("companion clip reimport request succeeds",
+              import_service.requestReimport(mesh_guid));
+  expect_true("companion clip reimport preserves GUID mapping",
+              registry.resolveGuid(companion_clip.guid) ==
+                  companion_clip.descriptor_virtual_path);
+
+  eastl::string descriptor_yaml_after;
+  expect_true("companion clip reimport: descriptor remains readable",
+              file_system.readText(clip_descriptor_absolute,
+                                   descriptor_yaml_after));
+  AnimationClipAssetDescriptor descriptor_after{};
+  expect_true("companion clip reimport: descriptor remains parseable",
+              AssetYaml::parseAnimationClipDescriptor(descriptor_yaml_after,
+                                                      descriptor_after));
+  expect_true("companion clip reimport: descriptor GUID unchanged",
+              descriptor_after.guid == companion_clip.guid);
+
+  const std::string clip_yaml_after =
+      readTextFile(clip_intermediate_absolute);
+  expect_true("companion clip reimport refreshes stale YAML",
+              clip_yaml_after != "STALE_COMPANION_CLIP_MARKER");
+  AnimationClipData clip_data_after{};
+  expect_true("companion clip reimport writes valid clip YAML",
+              AssetYaml::parseAnimationClipData(
+                  eastl::string(clip_yaml_after.c_str()), clip_data_after));
+  expect_true("companion clip reimport keeps companion stem identity",
+              clip_data_after.name == "LOOP-idle");
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 // Task 2.3: mesh Reimport refreshes clip YAML while preserving clip GUIDs.
 void reimportPreservesAnimationClipGuidsAndRefreshesYaml() {
   using namespace Blunder;
@@ -2800,6 +2928,7 @@ int main() {
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
   importGltfWithTwoAnimationsRegistersMeshAndClips();
+  reimportCompanionClipPreservesGuidAndRefreshesYaml();
   reimportPreservesAnimationClipGuidsAndRefreshesYaml();
   reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers();
   importTextureWritesIntermediateAndDescriptor();
