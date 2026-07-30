@@ -10,7 +10,7 @@
 
 - [x] 2.1 Serialize/deserialize Phase 2 defaults (TimeScale, optional default slots + initial weight) with name→GUID map
 - [x] 2.2 Edit Mode controls to scrub TimeScale, fade, and two-slot weights without DotNetHost / Behaviour Tick
-- [ ] 2.3 Verify Edit scrub does not run Behaviour Tick
+- [x] 2.3 Verify Edit scrub does not run Behaviour Tick
 
 ## 3. C-ABI + Blunder.Api
 

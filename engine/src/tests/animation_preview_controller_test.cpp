@@ -250,11 +250,64 @@ void test_loop_toggle() {
   LifecycleDispatch::clear();
 }
 
+void test_preview_scrub_paths_skip_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  g_ready_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+  LifecycleDispatch::setReadyHook("Object", on_ready);
+
+  Object* object = makePreviewObject(nullptr, true);
+  expect_true("object created", object != nullptr);
+
+  int peer = 0;
+  object->addBehaviour("Object");
+  object->setBehaviourScriptPeer(object->getBehaviourIdAt(0), &peer);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+
+  controller.setTimeScale(2.0f);
+  expect_true("timeScale scrub skips tick",
+              g_tick_calls == 0 && g_ready_calls == 0);
+
+  expect_true("play", controller.play());
+  expect_true("play skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  controller.tick(0.25f);
+  expect_true("preview tick skips behaviour", g_tick_calls == 0);
+  expect_true("preview tick skips ready", g_ready_calls == 0);
+  expect_true("timeScale advances preview",
+              float_near(controller.playbackPosition(), 0.5f));
+
+  controller.setBlendWeight(0.75f);
+  expect_true("blendWeight scrub skips tick",
+              g_tick_calls == 0 && g_ready_calls == 0);
+
+  expect_true("set slot0", controller.setSlot(0, "idle"));
+  expect_true("setSlot skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  controller.setFadeSeconds(0.5f);
+  expect_true("play fade", controller.play("walk"));
+  expect_true("play fade skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  controller.tick(0.1f);
+  expect_true("tick during crossfade skips behaviour", g_tick_calls == 0);
+  expect_true("tick during crossfade skips ready", g_ready_calls == 0);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
 }  // namespace
 
 int main() {
   test_play_pause_stop_state_machine();
   test_tick_advances_without_behaviour_lifecycle();
+  test_preview_scrub_paths_skip_behaviour_tick();
   test_time_scale_scrub_affects_tick();
   test_blend_weight_scrub_updates_player();
   test_play_uses_fade_duration();
