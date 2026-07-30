@@ -5,6 +5,7 @@
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
+#include "runtime/resource/asset_import/companion_animation_gltf.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -234,6 +235,131 @@ void writeDualAnimationGltfFixture(const fs::path& gltf_path) {
   }]
 })";
   writeTextFile(gltf_path, gltf);
+}
+
+// Task 1.1 (ADR 0021): Companion Animation glTF acceptance fixtures.
+constexpr const char* kCompanionLoopGltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "name": "Hips" }],
+  "skins": [{
+    "joints": [0]
+  }],
+  "animations": [{
+    "name": "LOOP",
+    "channels": [{
+      "sampler": 0,
+      "target": { "node": 0, "path": "translation" }
+    }],
+    "samplers": [{
+      "input": 0,
+      "interpolation": "LINEAR",
+      "output": 1
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 32 }
+  ],
+  "buffers": [{
+    "byteLength": 32,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }]
+})";
+
+constexpr const char* kCompanionAnimOnlyGltf = R"({
+  "asset": { "version": "2.0" },
+  "animations": [{
+    "name": "idle",
+    "channels": [{
+      "sampler": 0,
+      "target": { "node": 0, "path": "translation" }
+    }],
+    "samplers": [{
+      "input": 0,
+      "interpolation": "LINEAR",
+      "output": 1
+    }]
+  }],
+  "nodes": [{ "name": "Hips" }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 32 }
+  ],
+  "buffers": [{
+    "byteLength": 32,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }]
+})";
+
+constexpr const char* kEmptyGltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [] }]
+})";
+
+void companionAnimationGltfAcceptance() {
+  using namespace Blunder;
+
+  const fs::path root =
+      fs::temp_directory_path() /
+      ("blunder_companion_accept_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+
+  const fs::path loop_path = root / "loop.gltf";
+  const fs::path anim_only_path = root / "idle.gltf";
+  const fs::path skinned_mesh_path = root / "rig.gltf";
+  const fs::path mesh_only_path = root / "triangle.gltf";
+  const fs::path empty_path = root / "empty.gltf";
+
+  writeTextFile(loop_path, kCompanionLoopGltf);
+  writeTextFile(anim_only_path, kCompanionAnimOnlyGltf);
+  writeDualAnimationGltfFixture(skinned_mesh_path);
+  writeTextFile(mesh_only_path, kTriangleGltf);
+  writeTextFile(empty_path, kEmptyGltf);
+
+  expect_true("LOOP companion accepted (anim, meshes=0, skins=1)",
+              isCompanionAnimationGltf(loop_path));
+  expect_true("animations-only companion accepted (meshes=0)",
+              isCompanionAnimationGltf(anim_only_path));
+  expect_true("skinned mesh-with-geometry rejected",
+              !isCompanionAnimationGltf(skinned_mesh_path));
+  expect_true("mesh without animations rejected",
+              !isCompanionAnimationGltf(mesh_only_path));
+  expect_true("empty glTF rejected",
+              !isCompanionAnimationGltf(empty_path));
+  expect_true("missing file rejected",
+              !isCompanionAnimationGltf(root / "missing.gltf"));
+
+  fs::remove_all(root);
 }
 
 // Task 2.2: multi-animation glTF Import registers mesh + clip Assets.
@@ -2031,6 +2157,7 @@ void reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers() {
 }  // namespace
 
 int main() {
+  companionAnimationGltfAcceptance();
   meshExtensionRoutingTables();
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
