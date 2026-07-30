@@ -18,6 +18,12 @@ std::vector<std::filesystem::path> enumerateNearDiskCompanionGltfCandidates(
 /// Returns true when `gltf_absolute` is a skinned mesh host candidate (skins present).
 bool isSkinnedMeshHostCandidateGltf(const std::filesystem::path& gltf_absolute);
 
+/// Warns for animation target bones absent from the host skin. Parse failures
+/// are left to the importer/extractor; mismatches do not reject the companion.
+void warnOnCompanionAnimationBoneMismatches(
+    const std::filesystem::path& host_gltf_absolute,
+    const std::filesystem::path& companion_gltf_absolute);
+
 struct CompanionGltfBatchHostPairing {
   std::filesystem::path host_path;
   std::vector<std::filesystem::path> companion_paths;

@@ -37,12 +37,15 @@ ExistingAnimationClipMap collectExistingAnimationClipsForMesh(
 
 /// Parse animations from a glTF/GLB Intermediate file, write clip YAML +
 /// AnimationClip Asset descriptors under assets/Animations/, and register GUIDs.
+/// When `preferred_clip_stem` is non-empty, use it for the first clip and append
+/// numeric suffixes for additional animations in the same file.
 /// Returns one ImportResult per successfully registered clip (may be empty).
 eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
     FileSystem* file_system, AssetRegistry* asset_registry,
     ContentBrowserSystem* content_browser,
     const std::filesystem::path& gltf_absolute, const eastl::string& mesh_stem,
-    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name);
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
+    const eastl::string& preferred_clip_stem = {});
 
 /// Re-extract clip YAML from glTF, reusing GUIDs for stable clip names.
 /// New animations create new clips; removed animations leave orphan descriptors.

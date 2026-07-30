@@ -408,36 +408,51 @@ constexpr const char* kCompanionLoopGltf = R"({
       "type": "SCALAR"
     },
     {
-      "bufferView": 0,
+      "bufferView": 1,
       "componentType": 5126,
       "count": 2,
       "type": "VEC3"
     }
   ],
   "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 32 }
+    { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 24 }
   ],
   "buffers": [{
     "byteLength": 32,
-    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   }]
 })";
 
 constexpr const char* kCompanionAnimOnlyGltf = R"({
   "asset": { "version": "2.0" },
-  "animations": [{
-    "name": "idle",
-    "channels": [{
-      "sampler": 0,
-      "target": { "node": 0, "path": "translation" }
-    }],
-    "samplers": [{
-      "input": 0,
-      "interpolation": "LINEAR",
-      "output": 1
-    }]
-  }],
-  "nodes": [{ "name": "Hips" }],
+  "animations": [
+    {
+      "name": "walk_take_a",
+      "channels": [{
+        "sampler": 0,
+        "target": { "node": 0, "path": "translation" }
+      }],
+      "samplers": [{
+        "input": 0,
+        "interpolation": "LINEAR",
+        "output": 1
+      }]
+    },
+    {
+      "name": "walk_take_b",
+      "channels": [{
+        "sampler": 0,
+        "target": { "node": 0, "path": "translation" }
+      }],
+      "samplers": [{
+        "input": 0,
+        "interpolation": "LINEAR",
+        "output": 1
+      }]
+    }
+  ],
+  "nodes": [{ "name": "Tail" }],
   "accessors": [
     {
       "bufferView": 0,
@@ -446,18 +461,19 @@ constexpr const char* kCompanionAnimOnlyGltf = R"({
       "type": "SCALAR"
     },
     {
-      "bufferView": 0,
+      "bufferView": 1,
       "componentType": 5126,
       "count": 2,
       "type": "VEC3"
     }
   ],
   "bufferViews": [
-    { "buffer": 0, "byteOffset": 0, "byteLength": 32 }
+    { "buffer": 0, "byteOffset": 0, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 24 }
   ],
   "buffers": [{
     "byteLength": 32,
-    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   }]
 })";
 
@@ -617,9 +633,9 @@ void companionAnimationGltfMultiSelectBatchPairing() {
   fs::remove_all(root);
 }
 
-// Tasks 2.1-2.2 (ADR 0021): batch pairing routes accepted companions through
-// Mesh Import, which persists them as Resources Intermediate bodies without
-// registering companion-only glTFs as Mesh Assets.
+// Tasks 2.1-2.3 (ADR 0021): batch pairing routes accepted companions through
+// Mesh Import, persists them as Resources Intermediate bodies, and extracts
+// companion clips using the companion file stem as the logical name.
 void importExternalFilesPairsCompanionsIntoMeshImport() {
   using namespace Blunder;
   ensureLogger();
@@ -661,10 +677,22 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
   const eastl::vector<ImportResult> enabled_results =
       import_service.importExternalFiles(paths, "assets/Meshes", enabled);
 
-  expect_true("companion-aware batch imports one Mesh",
-              enabled_results.size() == 1);
+  expect_true("companion-aware batch imports one Mesh and three clips",
+              enabled_results.size() == 4);
   expect_true("companion-aware batch returns successful host",
               !enabled_results.empty() && enabled_results[0].success);
+  expect_true("companion-aware host merges all companion clips",
+              !enabled_results.empty() &&
+                  enabled_results[0].animation_clips.size() == 3);
+  expect_true("single-animation companion prefers file stem",
+              fs::exists(project / "Assets" / "Animations" /
+                         "LOOP-idle.animation.yaml"));
+  expect_true("multi-animation companion uses file stem",
+              fs::exists(project / "Assets" / "Animations" /
+                         "LOOP-walk.animation.yaml"));
+  expect_true("multi-animation companion disambiguates with suffix",
+              fs::exists(project / "Assets" / "Animations" /
+                         "LOOP-walk_1.animation.yaml"));
   const fs::path idle_intermediate =
       project / "Resources" / "Models" / "Chocomel" / "companions" /
       "LOOP-idle.gltf";
@@ -707,6 +735,35 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
                           "LOOP-idle.mesh.yaml") &&
                   !fs::exists(project / "Assets" / "Meshes" /
                               "LOOP-walk.mesh.yaml"));
+
+  eastl::string mismatch_descriptor_yaml;
+  expect_true(
+      "bone-mismatched companion clip descriptor remains registered",
+      file_system.readText(project / "Assets" / "Animations" /
+                               "LOOP-walk.animation.yaml",
+                           mismatch_descriptor_yaml));
+  AnimationClipAssetDescriptor mismatch_descriptor{};
+  expect_true(
+      "bone-mismatched companion clip descriptor parses",
+      AssetYaml::parseAnimationClipDescriptor(mismatch_descriptor_yaml,
+                                              mismatch_descriptor));
+  eastl::string mismatch_source = mismatch_descriptor.source;
+  if (startsWith(mismatch_source, "resources/")) {
+    mismatch_source.erase(0, 10);
+  }
+  eastl::string mismatch_clip_yaml;
+  expect_true(
+      "bone-mismatched companion clip Intermediate is readable",
+      file_system.readText(
+          file_system.resolveResource(fs::path(mismatch_source.c_str())),
+          mismatch_clip_yaml));
+  AnimationClipData mismatch_clip{};
+  expect_true("bone-mismatched companion clip data parses",
+              AssetYaml::parseAnimationClipData(mismatch_clip_yaml,
+                                                mismatch_clip));
+  expect_true("bone-mismatched companion clip keeps Tail track",
+              !mismatch_clip.tracks.empty() &&
+                  mismatch_clip.tracks[0].bone == "Tail");
 
   const fs::path disabled_project = makeTempProject();
   FileSystem disabled_file_system;

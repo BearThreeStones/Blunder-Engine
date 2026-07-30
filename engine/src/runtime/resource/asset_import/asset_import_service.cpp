@@ -787,6 +787,20 @@ ImportResult AssetImportService::importMeshIntermediate(
     result.animation_clips = extractAndRegisterAnimationClipsFromGltf(
         m_file_system, m_asset_registry, m_content_browser, gltf_absolute, stem,
         make_name);
+    for (const fs::path& companion_absolute :
+         companion_resource_absolute_paths) {
+      warnOnCompanionAnimationBoneMismatches(gltf_absolute,
+                                             companion_absolute);
+      const eastl::string companion_stem(
+          companion_absolute.stem().generic_string().c_str());
+      eastl::vector<ImportResult> companion_clips =
+          extractAndRegisterAnimationClipsFromGltf(
+              m_file_system, m_asset_registry, m_content_browser,
+              companion_absolute, stem, make_name, companion_stem);
+      result.animation_clips.insert(result.animation_clips.end(),
+                                    companion_clips.begin(),
+                                    companion_clips.end());
+    }
   }
 
   LOG_INFO("[AssetImport] mesh {} -> {} (Intermediate: {})",

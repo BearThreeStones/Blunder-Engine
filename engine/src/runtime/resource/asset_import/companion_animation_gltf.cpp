@@ -1,10 +1,13 @@
 #include "runtime/resource/asset_import/companion_animation_gltf.h"
 
 #include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
 #include <cgltf.h>
+
+#include "runtime/core/base/macro.h"
 
 namespace Blunder {
 
@@ -128,6 +131,66 @@ bool isSkinnedMeshHostCandidateGltf(const std::filesystem::path& gltf_absolute) 
   const bool accepted = isSkinnedMeshHostCandidateGltfDocument(data);
   cgltf_free(data);
   return accepted;
+}
+
+void warnOnCompanionAnimationBoneMismatches(
+    const std::filesystem::path& host_gltf_absolute,
+    const std::filesystem::path& companion_gltf_absolute) {
+  cgltf_data* host_data = nullptr;
+  cgltf_data* companion_data = nullptr;
+  if (!parseGltfDocument(host_gltf_absolute, &host_data) ||
+      !parseGltfDocument(companion_gltf_absolute, &companion_data)) {
+    if (host_data != nullptr) {
+      cgltf_free(host_data);
+    }
+    if (companion_data != nullptr) {
+      cgltf_free(companion_data);
+    }
+    return;
+  }
+
+  std::set<std::string> host_bones;
+  for (cgltf_size skin_index = 0; skin_index < host_data->skins_count;
+       ++skin_index) {
+    const cgltf_skin& skin = host_data->skins[skin_index];
+    for (cgltf_size joint_index = 0; joint_index < skin.joints_count;
+         ++joint_index) {
+      const cgltf_node* joint = skin.joints[joint_index];
+      if (joint != nullptr && joint->name != nullptr &&
+          joint->name[0] != '\0') {
+        host_bones.insert(joint->name);
+      }
+    }
+  }
+
+  std::set<std::string> warned_bones;
+  for (cgltf_size animation_index = 0;
+       animation_index < companion_data->animations_count;
+       ++animation_index) {
+    const cgltf_animation& animation =
+        companion_data->animations[animation_index];
+    for (cgltf_size channel_index = 0;
+         channel_index < animation.channels_count; ++channel_index) {
+      const cgltf_node* target = animation.channels[channel_index].target_node;
+      const std::string target_name =
+          target != nullptr && target->name != nullptr &&
+                  target->name[0] != '\0'
+              ? target->name
+              : "Node";
+      if (host_bones.find(target_name) != host_bones.end() ||
+          !warned_bones.insert(target_name).second) {
+        continue;
+      }
+      LOG_WARN(
+          "[AssetImport] companion animation bone '{}' is absent from host "
+          "skeleton {}; registering clip anyway ({})",
+          target_name, host_gltf_absolute.generic_string(),
+          companion_gltf_absolute.generic_string());
+    }
+  }
+
+  cgltf_free(companion_data);
+  cgltf_free(host_data);
 }
 
 std::vector<std::filesystem::path> enumerateNearDiskCompanionGltfCandidates(

@@ -442,7 +442,8 @@ eastl::vector<ImportResult> processAnimationClipsFromGltf(
     ContentBrowserSystem* content_browser,
     const fs::path& gltf_absolute, const eastl::string& mesh_stem,
     const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
-    const ExistingAnimationClipMap* existing_clips) {
+    const ExistingAnimationClipMap* existing_clips,
+    const eastl::string& preferred_clip_stem) {
   eastl::vector<ImportResult> results;
   if (file_system == nullptr || asset_registry == nullptr ||
       !make_unique_descriptor_name) {
@@ -468,9 +469,19 @@ eastl::vector<ImportResult> processAnimationClipsFromGltf(
           sanitizeClipName(nullptr, static_cast<size_t>(animation_index));
     }
 
-    const eastl::string clip_stem =
-        sanitizeClipName(clip_data.name.c_str(),
-                         static_cast<size_t>(animation_index));
+    eastl::string clip_stem;
+    if (!preferred_clip_stem.empty()) {
+      clip_stem = sanitizeClipName(preferred_clip_stem.c_str(), 0);
+      if (animation_index > 0) {
+        char suffix[32];
+        std::snprintf(suffix, sizeof(suffix), "_%zu",
+                      static_cast<size_t>(animation_index));
+        clip_stem.append(suffix);
+      }
+    } else {
+      clip_stem = sanitizeClipName(clip_data.name.c_str(),
+                                   static_cast<size_t>(animation_index));
+    }
     clip_data.name = clip_stem;
 
     const ExistingAnimationClipBinding* existing_binding = nullptr;
@@ -604,10 +615,11 @@ eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
     FileSystem* file_system, AssetRegistry* asset_registry,
     ContentBrowserSystem* content_browser,
     const fs::path& gltf_absolute, const eastl::string& mesh_stem,
-    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
+    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
+    const eastl::string& preferred_clip_stem) {
   return processAnimationClipsFromGltf(
       file_system, asset_registry, content_browser, gltf_absolute, mesh_stem,
-      make_unique_descriptor_name, nullptr);
+      make_unique_descriptor_name, nullptr, preferred_clip_stem);
 }
 
 eastl::vector<ImportResult> refreshAnimationClipsFromGltf(
@@ -618,7 +630,7 @@ eastl::vector<ImportResult> refreshAnimationClipsFromGltf(
     const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
   return processAnimationClipsFromGltf(
       file_system, asset_registry, content_browser, gltf_absolute, mesh_stem,
-      make_unique_descriptor_name, &existing_clips);
+      make_unique_descriptor_name, &existing_clips, {});
 }
 
 }  // namespace Blunder
