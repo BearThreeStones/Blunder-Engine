@@ -200,6 +200,51 @@ void omitEmptyTextureGuidsFromSerializedYaml() {
               yaml.find("texture_guids") == eastl::string::npos);
 }
 
+void roundTripMeshCompanionAnimationSources() {
+  using namespace Blunder;
+  MeshAssetDescriptor in;
+  in.guid = "cdcdcdcd-cdcd-4cdc-8dcd-cdcdcdcdcdcd";
+  in.source = "resources/Models/Hero/Hero.gltf";
+  in.companion_animation_sources.push_back(
+      "resources/Models/Hero/companions/LOOP-idle.gltf");
+  in.companion_animation_sources.push_back(
+      "resources/Models/Hero/companions/LOOP-walk.glb");
+
+  const eastl::string yaml = AssetYaml::serializeMeshDescriptor(in);
+  expect_true("serialize contains companion_animation_sources key",
+              yaml.find("companion_animation_sources") != eastl::string::npos);
+
+  MeshAssetDescriptor out;
+  expect_true("companion_animation_sources round-trip parse",
+              AssetYaml::parseMeshDescriptor(yaml, out));
+  expect_true("companion_animation_sources round-trip size",
+              out.companion_animation_sources.size() == 2);
+  expect_true("companion_animation_sources round-trip [0]",
+              out.companion_animation_sources[0] ==
+                  in.companion_animation_sources[0]);
+  expect_true("companion_animation_sources round-trip [1]",
+              out.companion_animation_sources[1] ==
+                  in.companion_animation_sources[1]);
+}
+
+void parseMeshWithoutCompanionAnimationSourcesLeavesEmpty() {
+  using namespace Blunder;
+  const eastl::string yaml =
+      "type: Mesh\n"
+      "guid: efefefef-efef-4efe-8efe-efefefefefef\n"
+      "source: resources/Models/Cube/Cube.gltf\n"
+      "import:\n"
+      "  materials: true\n"
+      "  animations: true\n"
+      "  scale: 1.0\n";
+
+  MeshAssetDescriptor desc;
+  expect_true("parse mesh without companion_animation_sources",
+              AssetYaml::parseMeshDescriptor(yaml, desc));
+  expect_true("companion_animation_sources empty when omitted",
+              desc.companion_animation_sources.empty());
+}
+
 void roundTripAnimationClipDescriptor() {
   using namespace Blunder;
   AnimationClipAssetDescriptor in;
@@ -292,6 +337,8 @@ int main() {
   parseMeshWithoutTextureGuidsLeavesEmpty();
   roundTripMeshTextureGuids();
   omitEmptyTextureGuidsFromSerializedYaml();
+  roundTripMeshCompanionAnimationSources();
+  parseMeshWithoutCompanionAnimationSourcesLeavesEmpty();
   roundTripAnimationClipDescriptor();
   roundTripAnimationClipDataConstantAndLinear();
   rejectUnknownInterpolation();

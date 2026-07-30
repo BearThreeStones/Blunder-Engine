@@ -55,10 +55,13 @@ glTF/GLB under non-Source `Resources/` is the **mesh Intermediate** body format 
 ## Mesh descriptor (`.mesh.yaml`)
 
 YAML metadata (`type`, `guid`, `source`, `import`, optional `texture_guids`,
-`archived_source`) pointing at Intermediate **glTF/GLB** under Resources
+`companion_animation_sources`, `archived_source`) pointing at Intermediate **glTF/GLB** under Resources
 (non-Source). The descriptor field `source` is the Intermediate data path (glossary),
 not a Source Asset. `texture_guids` is the authoritative Mesh→Texture Asset Reference
-list; glTF texture references are interchange/preview only.
+list; glTF texture references are interchange/preview only. Imported companion
+animation glTF/GLB bodies use
+`resources/Models/{mesh}/companions/{filename}` and are recorded explicitly in
+`companion_animation_sources` for Reimport.
 
 Load prefers a fresh Final under `.blunder/cooked/{guid}.meshbin`; otherwise **Fast Path**
 loads Intermediate glTF/GLB and may request on-demand **Cook**. Legacy COLLADA `.dae`

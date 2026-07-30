@@ -22,6 +22,8 @@ struct MeshAssetDescriptor {
   eastl::string archived_source;
   /// Optional explicit Texture Asset GUID references (Mesh→Texture graph edges).
   eastl::vector<eastl::string> texture_guids;
+  /// Resources Intermediate glTF/GLB bodies paired with this mesh for Reimport.
+  eastl::vector<eastl::string> companion_animation_sources;
   MeshImportSettings import{};
 };
 

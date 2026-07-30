@@ -617,8 +617,9 @@ void companionAnimationGltfMultiSelectBatchPairing() {
   fs::remove_all(root);
 }
 
-// Task 2.1 (ADR 0021): importExternalFiles hard-wires batch pairing into mesh
-// Import without registering companion-only glTFs as Mesh Assets.
+// Tasks 2.1-2.2 (ADR 0021): batch pairing routes accepted companions through
+// Mesh Import, which persists them as Resources Intermediate bodies without
+// registering companion-only glTFs as Mesh Assets.
 void importExternalFilesPairsCompanionsIntoMeshImport() {
   using namespace Blunder;
   ensureLogger();
@@ -664,10 +665,43 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
               enabled_results.size() == 1);
   expect_true("companion-aware batch returns successful host",
               !enabled_results.empty() && enabled_results[0].success);
-  expect_true("companion-aware mesh receives both companion paths",
+  const fs::path idle_intermediate =
+      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      "LOOP-idle.gltf";
+  const fs::path walk_intermediate =
+      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      "LOOP-walk.gltf";
+  expect_true("companion-aware mesh returns persisted Intermediate paths",
               !enabled_results.empty() &&
                   pathSetsEqual(enabled_results[0].companion_animation_paths,
-                                {idle_path, walk_path}));
+                                {idle_intermediate, walk_intermediate}));
+  expect_true("idle companion copied under host Resources Intermediate",
+              fs::exists(idle_intermediate) &&
+                  readTextFile(idle_intermediate) == kCompanionLoopGltf);
+  expect_true("walk companion copied under host Resources Intermediate",
+              fs::exists(walk_intermediate) &&
+                  readTextFile(walk_intermediate) == kCompanionAnimOnlyGltf);
+
+  eastl::string mesh_yaml;
+  const fs::path mesh_descriptor_path =
+      project / "Assets" / "Meshes" / "Chocomel.mesh.yaml";
+  expect_true("companion-aware mesh descriptor is readable",
+              file_system.readText(mesh_descriptor_path, mesh_yaml));
+  MeshAssetDescriptor mesh_descriptor{};
+  expect_true("companion-aware mesh descriptor parses",
+              AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
+  expect_true("mesh descriptor records both companion Intermediates",
+              mesh_descriptor.companion_animation_sources.size() == 2);
+  expect_true(
+      "mesh descriptor records idle companion path",
+      mesh_descriptor.companion_animation_sources.size() == 2 &&
+          mesh_descriptor.companion_animation_sources[0] ==
+              "resources/Models/Chocomel/companions/LOOP-idle.gltf");
+  expect_true(
+      "mesh descriptor records walk companion path",
+      mesh_descriptor.companion_animation_sources.size() == 2 &&
+          mesh_descriptor.companion_animation_sources[1] ==
+              "resources/Models/Chocomel/companions/LOOP-walk.gltf");
   expect_true("companion-only glTFs are not Mesh descriptors",
               !fs::exists(project / "Assets" / "Meshes" /
                           "LOOP-idle.mesh.yaml") &&

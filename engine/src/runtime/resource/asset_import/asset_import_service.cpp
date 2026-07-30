@@ -175,6 +175,81 @@ eastl::string registerIntermediateBody(FileSystem* file_system,
   return eastl::string();
 }
 
+bool registerCompanionAnimationIntermediates(
+    FileSystem* file_system, const eastl::string& host_resource_virtual,
+    const std::vector<fs::path>& companion_inputs,
+    eastl::vector<eastl::string>& out_virtual_paths,
+    std::vector<fs::path>& out_absolute_paths) {
+  out_virtual_paths.clear();
+  out_absolute_paths.clear();
+  if (companion_inputs.empty()) {
+    return true;
+  }
+  if (host_resource_virtual.compare(0, 10, "resources/") != 0) {
+    return false;
+  }
+
+  // Convention: companions live beside the host body under
+  // resources/<host-parent>/companions/<companion-file>. The explicit
+  // descriptor list remains authoritative for Reimport.
+  const fs::path host_relative(host_resource_virtual.substr(10).c_str());
+  const fs::path companions_relative =
+      host_relative.parent_path() / "companions";
+  std::vector<fs::path> copied_paths;
+  const auto fail = [&]() {
+    for (const fs::path& copied : copied_paths) {
+      std::error_code ec;
+      fs::remove(copied, ec);
+    }
+    out_virtual_paths.clear();
+    out_absolute_paths.clear();
+    return false;
+  };
+
+  for (const fs::path& input : companion_inputs) {
+    const fs::path original_name = input.filename();
+    if (original_name.empty()) {
+      return fail();
+    }
+
+    fs::path destination_relative = companions_relative / original_name;
+    fs::path destination_absolute =
+        file_system->resolveResource(destination_relative);
+    if (file_system->exists(destination_absolute) &&
+        !pathsReferToSameFile(input, destination_absolute)) {
+      bool found_unique = false;
+      for (uint32_t index = 1; index < 10000; ++index) {
+        const fs::path candidate_name =
+            original_name.stem().generic_string() + "_" +
+            std::to_string(index) + original_name.extension().generic_string();
+        destination_relative = companions_relative / candidate_name;
+        destination_absolute =
+            file_system->resolveResource(destination_relative);
+        if (!file_system->exists(destination_absolute)) {
+          found_unique = true;
+          break;
+        }
+      }
+      if (!found_unique) {
+        return fail();
+      }
+    }
+
+    if (!pathsReferToSameFile(input, destination_absolute)) {
+      if (!file_system->copyFile(input, destination_absolute, false)) {
+        return fail();
+      }
+      copied_paths.push_back(destination_absolute);
+    }
+
+    eastl::string virtual_path("resources/");
+    virtual_path.append(destination_relative.generic_string().c_str());
+    out_virtual_paths.push_back(virtual_path);
+    out_absolute_paths.push_back(destination_absolute);
+  }
+  return true;
+}
+
 /// Copy Source Asset under Resources/Source/{subdir}/{stem}/filename.
 eastl::string archiveSourceAsset(FileSystem* file_system,
                                  const fs::path& input_absolute,
@@ -654,6 +729,17 @@ ImportResult AssetImportService::importMeshIntermediate(
     return result;
   }
 
+  eastl::vector<eastl::string> companion_resource_virtual_paths;
+  std::vector<fs::path> companion_resource_absolute_paths;
+  if (!registerCompanionAnimationIntermediates(
+          m_file_system, resource_virtual_path, companion_animation_paths,
+          companion_resource_virtual_paths,
+          companion_resource_absolute_paths)) {
+    LOG_WARN("[AssetImport] failed to place companion Intermediates for {}",
+             input_absolute.generic_string());
+    return result;
+  }
+
   const eastl::string stem(input_absolute.stem().generic_string().c_str());
   const eastl::string descriptor_name =
       makeUniqueDescriptorName(assets_folder, stem, ".mesh.yaml");
@@ -666,6 +752,8 @@ ImportResult AssetImportService::importMeshIntermediate(
   descriptor.guid = m_asset_registry->allocateGuid();
   // Descriptor field `source` = Intermediate path (glossary), not Source Asset.
   descriptor.source = resource_virtual_path;
+  descriptor.companion_animation_sources =
+      companion_resource_virtual_paths;
   descriptor.import = settings;
 
   const eastl::string descriptor_virtual =
@@ -686,7 +774,7 @@ ImportResult AssetImportService::importMeshIntermediate(
   result.descriptor_virtual_path = descriptor_virtual;
   result.guid = descriptor.guid;
   result.success = true;
-  result.companion_animation_paths = companion_animation_paths;
+  result.companion_animation_paths = companion_resource_absolute_paths;
 
   if (settings.animations) {
     const fs::path gltf_absolute =

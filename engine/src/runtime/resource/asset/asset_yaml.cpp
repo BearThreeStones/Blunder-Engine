@@ -92,6 +92,21 @@ bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
       }
     }
 
+    out_descriptor.companion_animation_sources.clear();
+    const YAML::Node companion_sources =
+        root["companion_animation_sources"];
+    if (companion_sources && companion_sources.IsSequence()) {
+      for (const auto& item : companion_sources) {
+        if (!item || !item.IsScalar()) {
+          continue;
+        }
+        const eastl::string source = item.as<std::string>().c_str();
+        if (!source.empty()) {
+          out_descriptor.companion_animation_sources.push_back(source);
+        }
+      }
+    }
+
     const YAML::Node import = root["import"];
     if (import && import.IsMap()) {
       readBoolField(import, "materials", true,
@@ -157,6 +172,15 @@ eastl::string AssetYaml::serializeMeshDescriptor(
     emitter << YAML::Key << "texture_guids" << YAML::Value << YAML::BeginSeq;
     for (const eastl::string& guid : descriptor.texture_guids) {
       emitter << guid.c_str();
+    }
+    emitter << YAML::EndSeq;
+  }
+  if (!descriptor.companion_animation_sources.empty()) {
+    emitter << YAML::Key << "companion_animation_sources" << YAML::Value
+            << YAML::BeginSeq;
+    for (const eastl::string& source :
+         descriptor.companion_animation_sources) {
+      emitter << source.c_str();
     }
     emitter << YAML::EndSeq;
   }
