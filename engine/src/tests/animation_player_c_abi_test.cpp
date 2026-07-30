@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include "EASTL/string.h"
 
@@ -74,11 +75,23 @@ int main() {
   ObjectDB::clear();
   ClassDB::initialize();
 
-  expect_true("abi version >= 5", blunder_engine_abi_version() >= 5);
+  expect_true("abi version >= 6", blunder_engine_abi_version() >= 6);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);
   expect_true("abi animation play", abi.animation_player_play != nullptr);
+  expect_true("abi animation play with fade",
+              abi.animation_player_play_with_fade != nullptr);
+  expect_true("abi animation set slot", abi.animation_player_set_slot != nullptr);
+  expect_true("abi animation get slot", abi.animation_player_get_slot != nullptr);
+  expect_true("abi animation set blend weight",
+              abi.animation_player_set_blend_weight != nullptr);
+  expect_true("abi animation get blend weight",
+              abi.animation_player_get_blend_weight != nullptr);
+  expect_true("abi animation set time scale",
+              abi.animation_player_set_time_scale != nullptr);
+  expect_true("abi animation get time scale",
+              abi.animation_player_get_time_scale != nullptr);
   expect_true("abi animation stop", abi.animation_player_stop != nullptr);
   expect_true("abi pose listener", abi.animation_player_add_pose_applied_listener !=
                                        nullptr);
@@ -95,6 +108,67 @@ int main() {
 
   setup_object_with_clip(native_id, object, "walk",
                          "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  setup_object_with_clip(native_id, object, "idle",
+                         "11111111-1111-1111-1111-111111111111", 1.0f);
+
+  expect_true("set slot0 idle",
+              blunder_animation_player_set_slot(id, 0, "idle") ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("set slot1 walk",
+              blunder_animation_player_set_slot(id, 1, "walk") ==
+                  BLUNDER_ENGINE_OK);
+  char slot_name[64] = {};
+  expect_true("get slot0",
+              blunder_animation_player_get_slot(id, 0, slot_name,
+                                              static_cast<int>(sizeof(slot_name))) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("slot0 name", std::strcmp(slot_name, "idle") == 0);
+  expect_true("get slot1",
+              blunder_animation_player_get_slot(id, 1, slot_name,
+                                              static_cast<int>(sizeof(slot_name))) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("slot1 name", std::strcmp(slot_name, "walk") == 0);
+  expect_true("unknown slot fails",
+              blunder_animation_player_set_slot(id, 0, "missing") ==
+                  BLUNDER_ENGINE_ERROR);
+
+  expect_true("set blend weight",
+              blunder_animation_player_set_blend_weight(id, 0.75f) ==
+                  BLUNDER_ENGINE_OK);
+  float blend_weight = 0.0f;
+  expect_true("get blend weight",
+              blunder_animation_player_get_blend_weight(id, &blend_weight) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("blend weight value", float_near(blend_weight, 0.75f));
+
+  expect_true("set time scale",
+              blunder_animation_player_set_time_scale(id, 2.0f) ==
+                  BLUNDER_ENGINE_OK);
+  float time_scale = 0.0f;
+  expect_true("get time scale",
+              blunder_animation_player_get_time_scale(id, &time_scale) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("time scale value", float_near(time_scale, 2.0f));
+
+  expect_true("reset blend for fade",
+              blunder_animation_player_set_blend_weight(id, 0.0f) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("play with fade via c abi",
+              blunder_animation_player_play_with_fade(id, "walk", 0.5f) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("crossfading",
+              object->getAnimationPlayer()->isCrossfading());
+  object->getAnimationPlayer()->advance(0.25f);
+  expect_true("get blend weight after fade",
+              blunder_animation_player_get_blend_weight(id, &blend_weight) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("fade ramp complete", float_near(blend_weight, 1.0f, 1e-3f));
+
+  expect_true("reset time scale for legacy play",
+              blunder_animation_player_set_time_scale(id, 1.0f) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("stop before legacy play",
+              blunder_animation_player_stop(id) == BLUNDER_ENGINE_OK);
 
   g_pose_applied_hits = 0;
   g_pose_applied_object_id = 0;

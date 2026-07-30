@@ -91,6 +91,22 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
       (std::string(label) + ": animation_player_clear_pose_applied_listeners")
           .c_str(),
       abi.animation_player_clear_pose_applied_listeners != nullptr);
+  expect_true((std::string(label) + ": animation_player_play_with_fade").c_str(),
+              abi.animation_player_play_with_fade != nullptr);
+  expect_true((std::string(label) + ": animation_player_set_slot").c_str(),
+              abi.animation_player_set_slot != nullptr);
+  expect_true((std::string(label) + ": animation_player_get_slot").c_str(),
+              abi.animation_player_get_slot != nullptr);
+  expect_true((std::string(label) + ": animation_player_set_blend_weight")
+                  .c_str(),
+              abi.animation_player_set_blend_weight != nullptr);
+  expect_true((std::string(label) + ": animation_player_get_blend_weight")
+                  .c_str(),
+              abi.animation_player_get_blend_weight != nullptr);
+  expect_true((std::string(label) + ": animation_player_set_time_scale").c_str(),
+              abi.animation_player_set_time_scale != nullptr);
+  expect_true((std::string(label) + ": animation_player_get_time_scale").c_str(),
+              abi.animation_player_get_time_scale != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -110,7 +126,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 5", BLUNDER_ENGINE_C_ABI_VERSION >= 5);
+  expect_true("abi version >= 6", BLUNDER_ENGINE_C_ABI_VERSION >= 6);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;
