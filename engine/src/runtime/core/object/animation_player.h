@@ -49,7 +49,7 @@ class AnimationPlayer {
   bool isLooping() const { return m_loop; }
 
   const eastl::string& getCurrentClipName() const { return m_current_clip_name; }
-  float getPlaybackPosition() const { return m_position; }
+  float getPlaybackPosition() const;
   float getClipLength() const { return m_clip_length; }
 
   void advance(float delta_seconds);
@@ -78,6 +78,7 @@ class AnimationPlayer {
   void clearCrossfade();
   void advanceCrossfade(float delta_seconds);
   bool beginCrossfade(const eastl::string& name, float fade_seconds);
+  int getDominantSlotIndex() const;
   static float clamp01(float value);
   static float lerp(float a, float b, float t);
 

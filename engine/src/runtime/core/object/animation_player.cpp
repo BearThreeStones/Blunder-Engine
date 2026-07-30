@@ -320,17 +320,38 @@ void AnimationPlayer::setBlendWeight(float weight) {
 
 void AnimationPlayer::setTimeScale(float scale) { m_time_scale = scale; }
 
+int AnimationPlayer::getDominantSlotIndex() const {
+  if (m_crossfade_active) {
+    // While crossfading, step sync follows the fade target slot.
+    return (m_crossfade_target_weight >= 0.5f) ? 1 : 0;
+  }
+  // Higher blendWeight favors slot1; tie at 0.5 prefers slot0.
+  return (m_blend_weight > 0.5f) ? 1 : 0;
+}
+
+float AnimationPlayer::getPlaybackPosition() const {
+  if (hasActiveSlot()) {
+    return m_slot_positions[getDominantSlotIndex()];
+  }
+  return m_position;
+}
+
 void AnimationPlayer::advance(float delta_seconds) {
   if (!m_playing || delta_seconds <= 0.0f) {
     return;
   }
 
-  advanceCrossfade(delta_seconds);
+  const float scaled_delta = delta_seconds * m_time_scale;
+  if (scaled_delta <= 0.0f) {
+    return;
+  }
+
+  advanceCrossfade(scaled_delta);
 
   if (hasActiveSlot()) {
     for (int slot = 0; slot < k_slot_count; ++slot) {
       if (!m_slot_clip_names[slot].empty()) {
-        advanceSlot(slot, delta_seconds);
+        advanceSlot(slot, scaled_delta);
       }
     }
     sampleBoundSkeleton();
@@ -341,7 +362,7 @@ void AnimationPlayer::advance(float delta_seconds) {
     return;
   }
 
-  m_position += delta_seconds;
+  m_position += scaled_delta;
   if (m_position < m_clip_length) {
     sampleBoundSkeleton();
     return;

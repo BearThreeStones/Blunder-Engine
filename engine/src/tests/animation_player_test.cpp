@@ -412,6 +412,110 @@ void test_crossfade_blends_pose_mid_ramp() {
                         Vec3(4.0f, 0.0f, 0.0f), 1e-3f));
 }
 
+void test_time_scale_scales_slot_advance() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  player.setClipGuid("idle", idle_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 10.0f));
+  player.setSlot(0, "idle");
+  player.setTimeScale(2.0f);
+
+  expect_true("play slot", player.play("idle"));
+  player.advance(0.5f);
+  expect_true("scaled slot advance",
+              float_near(player.getPlaybackPosition(), 1.0f));
+}
+
+void test_time_scale_scales_phase1_advance() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(walk_guid, make_test_clip("walk", 10.0f));
+  player.setTimeScale(0.5f);
+
+  expect_true("play", player.play("walk"));
+  player.advance(1.0f);
+  expect_true("scaled phase1 advance",
+              float_near(player.getPlaybackPosition(), 0.5f));
+}
+
+void test_time_scale_scales_crossfade_ramp() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 2.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 2.0f));
+
+  player.setSlot(0, "idle");
+  player.setBlendWeight(0.0f);
+  player.setTimeScale(2.0f);
+  expect_true("crossfade", player.play("walk", 1.0f));
+
+  player.advance(0.25f);
+  expect_true("scaled crossfade halfway",
+              float_near(player.getBlendWeight(), 0.5f, 1e-4f));
+}
+
+void test_playback_position_dominant_slot_by_weight() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 10.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 10.0f));
+
+  player.setSlot(0, "idle");
+  expect_true("play idle", player.play("idle"));
+  player.advance(0.6f);
+  expect_true("slot0 advanced", float_near(player.getPlaybackPosition(), 0.6f));
+
+  expect_true("assign slot1", player.setSlot(1, "walk"));
+  player.setBlendWeight(0.75f);
+  expect_true("dominant slot1 at zero",
+              float_near(player.getPlaybackPosition(), 0.0f));
+
+  player.setBlendWeight(0.25f);
+  expect_true("dominant slot0", float_near(player.getPlaybackPosition(), 0.6f));
+
+  player.setBlendWeight(0.5f);
+  expect_true("tie prefers slot0", float_near(player.getPlaybackPosition(), 0.6f));
+}
+
+void test_playback_position_crossfade_uses_target_slot() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 10.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 10.0f));
+
+  player.setSlot(0, "idle");
+  player.setBlendWeight(0.0f);
+  expect_true("crossfade to walk", player.play("walk", 1.0f));
+  expect_true("crossfading", player.isCrossfading());
+  expect_true("target slot1 even at weight zero",
+              float_near(player.getPlaybackPosition(), 0.0f));
+
+  player.advance(0.4f);
+  expect_true("still crossfading mid-ramp", player.isCrossfading());
+  expect_true("reports target slot position",
+              float_near(player.getPlaybackPosition(), 0.4f));
+}
+
 void test_crossfade_from_phase1_single_clip() {
   using namespace Blunder;
 
@@ -485,6 +589,11 @@ int main() {
   test_play_with_zero_fade_is_hard_cut();
   test_crossfade_ramps_blend_weight_over_time();
   test_crossfade_blends_pose_mid_ramp();
+  test_time_scale_scales_slot_advance();
+  test_time_scale_scales_phase1_advance();
+  test_time_scale_scales_crossfade_ramp();
+  test_playback_position_dominant_slot_by_weight();
+  test_playback_position_crossfade_uses_target_slot();
   test_crossfade_from_phase1_single_clip();
   test_unknown_play_name_no_crash();
   test_object_hosts_animation_player();
