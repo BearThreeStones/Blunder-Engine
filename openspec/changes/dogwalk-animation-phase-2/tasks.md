@@ -15,8 +15,8 @@
 ## 3. C-ABI + Blunder.Api
 
 - [x] 3.1 Add C-ABI entry points for SetSlot, blendWeight, TimeScale, Play-with-fade; bump ABI version; fill NativeAbi
-- [ ] 3.2 Extend Blunder.Api AnimationPlayer + NativeAbi completeness for the new entries
-- [ ] 3.3 Tests: C-ABI / NativeAbi completeness and managed façade smoke
+- [x] 3.2 Extend Blunder.Api AnimationPlayer + NativeAbi completeness for the new entries
+- [x] 3.3 Tests: C-ABI / NativeAbi completeness and managed façade smoke
 
 ## 4. Automated validation
 

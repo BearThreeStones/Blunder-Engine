@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for an Object's co-located AnimationPlayer (C-ABI v5).
+/// Managed façade for an Object's co-located AnimationPlayer (C-ABI v6).
 /// </summary>
 public sealed class AnimationPlayer
 {
@@ -40,7 +40,55 @@ public sealed class AnimationPlayer
     public bool Play(string clipName) =>
         Native.blunder_animation_player_play(_owner.Id, clipName) == Native.Ok;
 
+    public bool Play(string clipName, float fadeSeconds) =>
+        Native.blunder_animation_player_play_with_fade(_owner.Id, clipName, fadeSeconds) ==
+        Native.Ok;
+
     public void Stop() => Native.blunder_animation_player_stop(_owner.Id);
+
+    public bool SetSlot(int slotIndex, string clipName) =>
+        Native.blunder_animation_player_set_slot(_owner.Id, slotIndex, clipName) == Native.Ok;
+
+    public string GetSlot(int slotIndex)
+    {
+        if (Native.blunder_animation_player_get_slot(_owner.Id, slotIndex, out string clipName) !=
+            Native.Ok)
+        {
+            return "";
+        }
+
+        return clipName;
+    }
+
+    public float BlendWeight
+    {
+        get
+        {
+            if (Native.blunder_animation_player_get_blend_weight(_owner.Id, out float value) !=
+                Native.Ok)
+            {
+                return 0f;
+            }
+
+            return value;
+        }
+        set => Native.blunder_animation_player_set_blend_weight(_owner.Id, value);
+    }
+
+    public float TimeScale
+    {
+        get
+        {
+            if (Native.blunder_animation_player_get_time_scale(_owner.Id, out float value) !=
+                Native.Ok)
+            {
+                return 0f;
+            }
+
+            return value;
+        }
+        set => Native.blunder_animation_player_set_time_scale(_owner.Id, value);
+    }
 
     public bool Loop
     {

@@ -11,12 +11,19 @@ namespace Blunder.Api.NativeAbiTests;
 static unsafe class Program
 {
     static int s_failures;
+    static float s_lastFadeSeconds;
+    static int s_lastSlotIndex;
+    static string s_lastSlotClip = "";
+    static string s_slot0Clip = "";
+    static string s_slot1Clip = "";
+    static float s_blendWeight = 0.5f;
+    static float s_timeScale = 1.0f;
 
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 30 * sizeof(nint),
-            "BlunderNativeAbi layout size is 30 pointers");
+            sizeof(BlunderNativeAbi) == 37 * sizeof(nint),
+            "BlunderNativeAbi layout size is 37 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -64,7 +71,14 @@ static unsafe class Program
         abi.message_set_hook = &StubMessageSetHook;
         abi.message_clear_hook = &StubMessageClearHook;
         abi.animation_player_play = &StubAnimationPlay;
+        abi.animation_player_play_with_fade = &StubAnimationPlayWithFade;
         abi.animation_player_stop = &StubAnimationStop;
+        abi.animation_player_set_slot = &StubAnimationSetSlot;
+        abi.animation_player_get_slot = &StubAnimationGetSlot;
+        abi.animation_player_set_blend_weight = &StubAnimationSetBlendWeight;
+        abi.animation_player_get_blend_weight = &StubAnimationGetBlendWeight;
+        abi.animation_player_set_time_scale = &StubAnimationSetTimeScale;
+        abi.animation_player_get_time_scale = &StubAnimationGetTimeScale;
         abi.animation_player_set_loop = &StubAnimationSetLoop;
         abi.animation_player_get_playback_position = &StubAnimationGetPosition;
         abi.animation_player_get_clip_length = &StubAnimationGetLength;
@@ -98,6 +112,8 @@ static unsafe class Program
 
         Expect(rejected, "Register must reject incomplete (null) tables");
 
+        RunAnimationPlayerSmokeTests();
+
         if (s_failures == 0)
         {
             Console.WriteLine("Blunder.Api.NativeAbiTests: OK");
@@ -106,6 +122,61 @@ static unsafe class Program
 
         Console.Error.WriteLine($"Blunder.Api.NativeAbiTests: {s_failures} failure(s)");
         return 1;
+    }
+
+    static void RunAnimationPlayerSmokeTests()
+    {
+        s_lastFadeSeconds = 0f;
+        s_lastSlotIndex = -1;
+        s_lastSlotClip = "";
+        s_slot0Clip = "idle";
+        s_slot1Clip = "";
+        s_blendWeight = 0.25f;
+        s_timeScale = 1.5f;
+
+        ObjectHandle handle = ObjectHandle.GetOrCreate(7);
+        AnimationPlayer player = handle.EnsureAnimationPlayer();
+
+        Expect(player.Play("walk"), "AnimationPlayer.Play");
+        Expect(player.Play("run", 0.35f), "AnimationPlayer.Play with fade");
+        Expect(Math.Abs(s_lastFadeSeconds - 0.35f) < 0.0001f, "Play fade forwarded to native");
+
+        Expect(player.SetSlot(0, "idle"), "AnimationPlayer.SetSlot");
+        Expect(s_lastSlotIndex == 0 && s_lastSlotClip == "idle", "SetSlot forwarded to native");
+        Expect(player.GetSlot(0) == "idle", "AnimationPlayer.GetSlot");
+
+        player.BlendWeight = 0.75f;
+        Expect(Math.Abs(s_blendWeight - 0.75f) < 0.0001f, "BlendWeight set");
+        Expect(Math.Abs(player.BlendWeight - 0.75f) < 0.0001f, "BlendWeight get");
+
+        player.TimeScale = 2.0f;
+        Expect(Math.Abs(s_timeScale - 2.0f) < 0.0001f, "TimeScale set");
+        Expect(Math.Abs(player.TimeScale - 2.0f) < 0.0001f, "TimeScale get");
+
+        Expect(
+            Native.blunder_animation_player_set_slot(7, 1, "walk") == Native.Ok,
+            "Native set_slot after register");
+        Expect(
+            Native.blunder_animation_player_get_slot(7, 1, out string slotClip) == Native.Ok &&
+            slotClip == "walk",
+            "Native get_slot after register");
+        Expect(
+            Native.blunder_animation_player_set_blend_weight(7, 0.1f) == Native.Ok,
+            "Native set_blend_weight after register");
+        Expect(
+            Native.blunder_animation_player_get_blend_weight(7, out float weight) == Native.Ok &&
+            Math.Abs(weight - 0.1f) < 0.0001f,
+            "Native get_blend_weight after register");
+        Expect(
+            Native.blunder_animation_player_set_time_scale(7, 0.5f) == Native.Ok,
+            "Native set_time_scale after register");
+        Expect(
+            Native.blunder_animation_player_get_time_scale(7, out float scale) == Native.Ok &&
+            Math.Abs(scale - 0.5f) < 0.0001f,
+            "Native get_time_scale after register");
+        Expect(
+            Native.blunder_animation_player_play_with_fade(7, "trot", 1.25f) == Native.Ok,
+            "Native play_with_fade after register");
     }
 
     static void Expect(bool condition, string label)
@@ -256,7 +327,136 @@ static unsafe class Program
         id == 0 || clipName == null ? Native.Error : Native.Ok;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationPlayWithFade(ulong id, byte* clipName, float fadeSeconds)
+    {
+        if (id == 0 || clipName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastFadeSeconds = fadeSeconds;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     static int StubAnimationStop(ulong id) => id == 0 ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationSetSlot(ulong id, int slotIndex, byte* clipName)
+    {
+        if (id == 0 || clipName == null || slotIndex < 0 || slotIndex > 1)
+        {
+            return Native.Error;
+        }
+
+        s_lastSlotIndex = slotIndex;
+        s_lastSlotClip = Utf8ToString(clipName);
+        if (slotIndex == 0)
+        {
+            s_slot0Clip = s_lastSlotClip;
+        }
+        else
+        {
+            s_slot1Clip = s_lastSlotClip;
+        }
+
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetSlot(ulong id, int slotIndex, byte* outName, int nameCapacity)
+    {
+        if (id == 0 || outName == null || nameCapacity <= 0 || slotIndex < 0 || slotIndex > 1)
+        {
+            return Native.Error;
+        }
+
+        string clip = slotIndex == 0 ? s_slot0Clip : s_slot1Clip;
+        WriteUtf8(clip, outName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationSetBlendWeight(ulong id, float weight)
+    {
+        if (id == 0)
+        {
+            return Native.Error;
+        }
+
+        s_blendWeight = weight;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetBlendWeight(ulong id, float* outWeight)
+    {
+        if (id == 0 || outWeight == null)
+        {
+            return Native.Error;
+        }
+
+        *outWeight = s_blendWeight;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationSetTimeScale(ulong id, float scale)
+    {
+        if (id == 0)
+        {
+            return Native.Error;
+        }
+
+        s_timeScale = scale;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetTimeScale(ulong id, float* outScale)
+    {
+        if (id == 0 || outScale == null)
+        {
+            return Native.Error;
+        }
+
+        *outScale = s_timeScale;
+        return Native.Ok;
+    }
+
+    static string Utf8ToString(byte* utf8)
+    {
+        if (utf8 == null)
+        {
+            return "";
+        }
+
+        int length = 0;
+        while (utf8[length] != 0)
+        {
+            ++length;
+        }
+
+        return length == 0 ? "" : System.Text.Encoding.UTF8.GetString(utf8, length);
+    }
+
+    static void WriteUtf8(string value, byte* outBuffer, int capacity)
+    {
+        outBuffer[0] = 0;
+        if (capacity <= 0)
+        {
+            return;
+        }
+
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(value);
+        int copyLen = bytes.Length < capacity - 1 ? bytes.Length : capacity - 1;
+        for (int i = 0; i < copyLen; ++i)
+        {
+            outBuffer[i] = bytes[i];
+        }
+
+        outBuffer[copyLen] = 0;
+    }
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     static int StubAnimationSetLoop(ulong id, int loop) =>

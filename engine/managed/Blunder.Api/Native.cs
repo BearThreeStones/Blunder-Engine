@@ -64,7 +64,14 @@ internal static unsafe class Native
         abi.message_set_hook != null &&
         abi.message_clear_hook != null &&
         abi.animation_player_play != null &&
+        abi.animation_player_play_with_fade != null &&
         abi.animation_player_stop != null &&
+        abi.animation_player_set_slot != null &&
+        abi.animation_player_get_slot != null &&
+        abi.animation_player_set_blend_weight != null &&
+        abi.animation_player_get_blend_weight != null &&
+        abi.animation_player_set_time_scale != null &&
+        abi.animation_player_get_time_scale != null &&
         abi.animation_player_set_loop != null &&
         abi.animation_player_get_playback_position != null &&
         abi.animation_player_get_clip_length != null &&
@@ -297,10 +304,90 @@ internal static unsafe class Native
         }
     }
 
+    public static int blunder_animation_player_play_with_fade(
+        ulong id, string clipName, float fadeSeconds)
+    {
+        EnsureRegistered();
+        byte[] clipUtf8 = ToUtf8(clipName);
+        fixed (byte* clipPtr = clipUtf8)
+        {
+            return s_abi.animation_player_play_with_fade(id, clipPtr, fadeSeconds);
+        }
+    }
+
     public static int blunder_animation_player_stop(ulong id)
     {
         EnsureRegistered();
         return s_abi.animation_player_stop(id);
+    }
+
+    public static int blunder_animation_player_set_slot(
+        ulong id, int slotIndex, string clipName)
+    {
+        EnsureRegistered();
+        byte[] clipUtf8 = ToUtf8(clipName);
+        fixed (byte* clipPtr = clipUtf8)
+        {
+            return s_abi.animation_player_set_slot(id, slotIndex, clipPtr);
+        }
+    }
+
+    public static int blunder_animation_player_get_slot(
+        ulong id, int slotIndex, out string clipName)
+    {
+        EnsureRegistered();
+        clipName = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.animation_player_get_slot(id, slotIndex, namePtr, capacity);
+            if (rc != Ok)
+            {
+                return rc;
+            }
+
+            int length = 0;
+            while (length < capacity - 1 && buffer[length] != 0)
+            {
+                ++length;
+            }
+
+            clipName = length == 0 ? "" : Encoding.UTF8.GetString(buffer, 0, length);
+            return rc;
+        }
+    }
+
+    public static int blunder_animation_player_set_blend_weight(ulong id, float weight)
+    {
+        EnsureRegistered();
+        return s_abi.animation_player_set_blend_weight(id, weight);
+    }
+
+    public static int blunder_animation_player_get_blend_weight(ulong id, out float weight)
+    {
+        EnsureRegistered();
+        weight = 0;
+        float value = 0;
+        int rc = s_abi.animation_player_get_blend_weight(id, &value);
+        weight = value;
+        return rc;
+    }
+
+    public static int blunder_animation_player_set_time_scale(ulong id, float scale)
+    {
+        EnsureRegistered();
+        return s_abi.animation_player_set_time_scale(id, scale);
+    }
+
+    public static int blunder_animation_player_get_time_scale(ulong id, out float scale)
+    {
+        EnsureRegistered();
+        scale = 0;
+        float value = 0;
+        int rc = s_abi.animation_player_get_time_scale(id, &value);
+        scale = value;
+        return rc;
     }
 
     public static int blunder_animation_player_set_loop(ulong id, int loop)

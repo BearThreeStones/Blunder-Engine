@@ -21,4 +21,7 @@ Task 2.2: complete (8415604)
 Task 2.3: complete (0933eec)
 ## Group 2 COMPLETE
 
-Task 3.1: complete (22c22b4)
+Task 3.1: complete (22c22b4..432d2db)
+
+Task 3.2: complete
+Task 3.3: complete
