@@ -15,4 +15,25 @@ bool isCompanionAnimationGltf(const std::filesystem::path& gltf_absolute);
 std::vector<std::filesystem::path> enumerateNearDiskCompanionGltfCandidates(
     const std::filesystem::path& mesh_gltf_absolute);
 
+/// Returns true when `gltf_absolute` is a skinned mesh host candidate (skins present).
+bool isSkinnedMeshHostCandidateGltf(const std::filesystem::path& gltf_absolute);
+
+struct CompanionGltfBatchHostPairing {
+  std::filesystem::path host_path;
+  std::vector<std::filesystem::path> companion_paths;
+};
+
+struct CompanionGltfMultiSelectBatchPairingResult {
+  /// One entry per skinned mesh host. Exactly one host includes companions; multiple
+  /// hosts each get an entry with empty companions.
+  std::vector<CompanionGltfBatchHostPairing> host_pairings;
+  /// Companion-accepted glTFs with no single unambiguous host (caller may log).
+  std::vector<std::filesystem::path> orphan_companion_paths;
+};
+
+/// Multi-select batch pairing (ADR 0021): classify glTF/GLB paths into skinned mesh
+/// hosts and companion animations. Non-glTF paths are ignored.
+CompanionGltfMultiSelectBatchPairingResult pairCompanionAnimationGltfMultiSelectBatch(
+    const std::vector<std::filesystem::path>& gltf_absolute_paths);
+
 }  // namespace Blunder

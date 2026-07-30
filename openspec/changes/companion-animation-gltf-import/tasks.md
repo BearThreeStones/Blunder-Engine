@@ -2,7 +2,7 @@
 
 - [x] 1.1 TDD: companion acceptance — animations ∧ meshes=0 (skins allowed); reject skinned mesh-with-geometry
 - [x] 1.2 TDD: near-disk candidate enumeration (mesh dir + parent immediate child dirs); exclude self; no deep recursion
-- [ ] 1.3 TDD: multi-select batch pairing — one skinned host; companions attach; orphans warn; multiple skinned hosts split
+- [x] 1.3 TDD: multi-select batch pairing — one skinned host; companions attach; orphans warn; multiple skinned hosts split
 
 ## 2. Import integration
 

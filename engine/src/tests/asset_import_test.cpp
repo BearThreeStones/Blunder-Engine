@@ -334,6 +334,51 @@ void writeSkinnedMeshWithGeometryGltfFixture(const fs::path& gltf_path) {
   writeTextFile(gltf_path, gltf);
 }
 
+// skins>=1, meshes>=1, animations=0 - Chocomel-shaped mesh host (no embedded anims).
+void writeSkinnedMeshHostGltfFixture(const fs::path& gltf_path) {
+  const std::string gltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "name": "Hips", "mesh": 0, "skin": 0 }],
+  "skins": [{
+    "joints": [0],
+    "skeleton": 0
+  }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 0 },
+      "indices": 1
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+  ],
+  "buffers": [{
+    "byteLength": 42,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIA"
+  }]
+})";
+  writeTextFile(gltf_path, gltf);
+}
+
 // Task 1.1 (ADR 0021): Companion Animation glTF acceptance fixtures.
 constexpr const char* kCompanionLoopGltf = R"({
   "asset": { "version": "2.0" },
@@ -492,6 +537,84 @@ void nearDiskCompanionGltfCandidateEnumeration() {
               !pathSetsEqual(pack_candidates, {pack_mesh}));
 
   fs::remove_all(pack_root);
+}
+
+// Task 1.3 (ADR 0021): multi-select batch host/companion pairing.
+void companionAnimationGltfMultiSelectBatchPairing() {
+  using namespace Blunder;
+
+  const fs::path root =
+      fs::temp_directory_path() /
+      ("blunder_companion_batch_pair_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+
+  const fs::path host_path = root / "Chocomel.gltf";
+  const fs::path idle_path = root / "LOOP-idle.gltf";
+  const fs::path walk_path = root / "LOOP-walk.gltf";
+  const fs::path mesh_only_path = root / "triangle.gltf";
+
+  writeSkinnedMeshHostGltfFixture(host_path);
+  writeTextFile(idle_path, kCompanionLoopGltf);
+  writeTextFile(walk_path, kCompanionAnimOnlyGltf);
+  writeTextFile(mesh_only_path, kTriangleGltf);
+
+  const CompanionGltfMultiSelectBatchPairingResult one_host =
+      pairCompanionAnimationGltfMultiSelectBatch(
+          {host_path, idle_path, walk_path, mesh_only_path});
+
+  expect_true("one host: single pairing",
+              one_host.host_pairings.size() == 1);
+  expect_true("one host: correct host path",
+              normalizePathForCompare(one_host.host_pairings[0].host_path) ==
+                  normalizePathForCompare(host_path));
+  expect_true("one host: companions attach",
+              pathSetsEqual(one_host.host_pairings[0].companion_paths,
+                            {idle_path, walk_path}));
+  expect_true("one host: no orphan companions",
+              one_host.orphan_companion_paths.empty());
+
+  const fs::path host_a = root / "host_a.gltf";
+  const fs::path host_b = root / "host_b.gltf";
+  writeSkinnedMeshHostGltfFixture(host_a);
+  writeSkinnedMeshHostGltfFixture(host_b);
+
+  const CompanionGltfMultiSelectBatchPairingResult multi_host =
+      pairCompanionAnimationGltfMultiSelectBatch(
+          {host_a, host_b, idle_path, walk_path});
+
+  expect_true("multi host: split into two pairings",
+              multi_host.host_pairings.size() == 2);
+  expect_true("multi host: each pairing has empty companions",
+              multi_host.host_pairings[0].companion_paths.empty() &&
+                  multi_host.host_pairings[1].companion_paths.empty());
+  expect_true("multi host: companions become orphans",
+              pathSetsEqual(multi_host.orphan_companion_paths,
+                            {idle_path, walk_path}));
+
+  const CompanionGltfMultiSelectBatchPairingResult orphans_only =
+      pairCompanionAnimationGltfMultiSelectBatch({idle_path, walk_path});
+
+  expect_true("orphans only: no invented host",
+              orphans_only.host_pairings.empty());
+  expect_true("orphans only: companions reported as orphans",
+              pathSetsEqual(orphans_only.orphan_companion_paths,
+                            {idle_path, walk_path}));
+
+  const fs::path texture_path = root / "albedo.png";
+  writeBinaryFile(texture_path, "PNG", 3);
+
+  const CompanionGltfMultiSelectBatchPairingResult ignores_non_gltf =
+      pairCompanionAnimationGltfMultiSelectBatch(
+          {host_path, idle_path, texture_path});
+
+  expect_true("non-glTF paths ignored for pairing",
+              ignores_non_gltf.host_pairings.size() == 1);
+  expect_true("non-glTF batch still pairs host + companion",
+              pathSetsEqual(ignores_non_gltf.host_pairings[0].companion_paths,
+                            {idle_path}));
+
+  fs::remove_all(root);
 }
 
 void companionAnimationGltfAcceptance() {
@@ -2332,6 +2455,7 @@ void reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers() {
 int main() {
   companionAnimationGltfAcceptance();
   nearDiskCompanionGltfCandidateEnumeration();
+  companionAnimationGltfMultiSelectBatchPairing();
   meshExtensionRoutingTables();
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();

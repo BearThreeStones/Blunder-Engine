@@ -17,6 +17,13 @@ bool isCompanionAnimationGltfDocument(const cgltf_data* data) {
   return data->animations_count > 0 && data->meshes_count == 0;
 }
 
+bool isSkinnedMeshHostCandidateGltfDocument(const cgltf_data* data) {
+  if (data == nullptr) {
+    return false;
+  }
+  return data->skins_count > 0;
+}
+
 bool readFileBytes(const std::filesystem::path& path,
                    std::vector<std::uint8_t>& out_bytes) {
   std::ifstream input(path, std::ios::binary);
@@ -32,6 +39,24 @@ bool readFileBytes(const std::filesystem::path& path,
   input.seekg(0, std::ios::beg);
   input.read(reinterpret_cast<char*>(out_bytes.data()), size);
   return static_cast<bool>(input);
+}
+
+bool parseGltfDocument(const std::filesystem::path& gltf_absolute,
+                       cgltf_data** out_data) {
+  if (out_data == nullptr) {
+    return false;
+  }
+  *out_data = nullptr;
+
+  std::vector<std::uint8_t> bytes;
+  if (!readFileBytes(gltf_absolute, bytes) || bytes.empty()) {
+    return false;
+  }
+
+  cgltf_options options{};
+  const cgltf_result parse_result =
+      cgltf_parse(&options, bytes.data(), bytes.size(), out_data);
+  return parse_result == cgltf_result_success && *out_data != nullptr;
 }
 
 bool isGltfOrGlbExtension(const std::filesystem::path& path) {
@@ -84,20 +109,23 @@ void collectGltfGlbsInDirectory(const std::filesystem::path& directory,
 }  // namespace
 
 bool isCompanionAnimationGltf(const std::filesystem::path& gltf_absolute) {
-  std::vector<std::uint8_t> bytes;
-  if (!readFileBytes(gltf_absolute, bytes) || bytes.empty()) {
-    return false;
-  }
-
-  cgltf_options options{};
   cgltf_data* data = nullptr;
-  const cgltf_result parse_result =
-      cgltf_parse(&options, bytes.data(), bytes.size(), &data);
-  if (parse_result != cgltf_result_success || data == nullptr) {
+  if (!parseGltfDocument(gltf_absolute, &data)) {
     return false;
   }
 
   const bool accepted = isCompanionAnimationGltfDocument(data);
+  cgltf_free(data);
+  return accepted;
+}
+
+bool isSkinnedMeshHostCandidateGltf(const std::filesystem::path& gltf_absolute) {
+  cgltf_data* data = nullptr;
+  if (!parseGltfDocument(gltf_absolute, &data)) {
+    return false;
+  }
+
+  const bool accepted = isSkinnedMeshHostCandidateGltfDocument(data);
   cgltf_free(data);
   return accepted;
 }
@@ -144,6 +172,45 @@ std::vector<std::filesystem::path> enumerateNearDiskCompanionGltfCandidates(
   }
 
   return candidates;
+}
+
+CompanionGltfMultiSelectBatchPairingResult pairCompanionAnimationGltfMultiSelectBatch(
+    const std::vector<std::filesystem::path>& gltf_absolute_paths) {
+  CompanionGltfMultiSelectBatchPairingResult result;
+
+  std::vector<std::filesystem::path> host_paths;
+  std::vector<std::filesystem::path> companion_paths;
+
+  for (const std::filesystem::path& path : gltf_absolute_paths) {
+    if (!isGltfOrGlbExtension(path)) {
+      continue;
+    }
+
+    const std::filesystem::path absolute = normalizeAbsolutePath(path);
+    if (isCompanionAnimationGltf(absolute)) {
+      companion_paths.push_back(absolute);
+      continue;
+    }
+    if (isSkinnedMeshHostCandidateGltf(absolute)) {
+      host_paths.push_back(absolute);
+    }
+  }
+
+  if (host_paths.size() == 1) {
+    CompanionGltfBatchHostPairing pairing;
+    pairing.host_path = host_paths.front();
+    pairing.companion_paths = companion_paths;
+    result.host_pairings.push_back(std::move(pairing));
+    return result;
+  }
+
+  for (const std::filesystem::path& host_path : host_paths) {
+    CompanionGltfBatchHostPairing pairing;
+    pairing.host_path = host_path;
+    result.host_pairings.push_back(std::move(pairing));
+  }
+  result.orphan_companion_paths = std::move(companion_paths);
+  return result;
 }
 
 }  // namespace Blunder
