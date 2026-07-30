@@ -809,6 +809,152 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
   fs::remove_all(external_root);
 }
 
+// Task 2.4 (ADR 0021): single-mesh Import discovers near-disk companions,
+// filters acceptance, and routes through the same copy+extract path as
+// multi-select. Disconnected deep trees remain out of scope.
+void singleMeshImportDiscoversNearDiskCompanions() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path external_root =
+      fs::temp_directory_path() /
+      ("blunder_companion_near_disk_import_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+
+  const fs::path host_path =
+      external_root / "assets" / "char" / "chocomel" / "Chocomel.gltf";
+  const fs::path idle_path =
+      external_root / "assets" / "char" / "animations" / "LOOP-idle.gltf";
+  const fs::path walk_path =
+      external_root / "assets" / "char" / "animations" / "LOOP-walk.gltf";
+  const fs::path deep_disconnected =
+      external_root / "assets" / "char" / "animations" / "world" / "deep.gltf";
+  const fs::path co_located_stub =
+      external_root / "assets" / "char" / "chocomel" / "not_a_companion.gltf";
+
+  writeSkinnedMeshHostGltfFixture(host_path);
+  writeTextFile(idle_path, kCompanionLoopGltf);
+  writeTextFile(walk_path, kCompanionAnimOnlyGltf);
+  writeEmptyGltfStub(deep_disconnected);
+  writeEmptyGltfStub(co_located_stub);
+
+  const std::vector<fs::path> accepted =
+      discoverAcceptedNearDiskCompanionAnimationGltfs(host_path);
+  expect_true("near-disk filter accepts sibling child companions",
+              pathSetsEqual(accepted, {idle_path, walk_path}));
+  expect_true("near-disk filter rejects empty stub in mesh dir",
+              !pathSetsEqual(accepted, {co_located_stub}));
+  expect_true("near-disk filter excludes disconnected deep tree",
+              !pathSetsEqual(accepted, {deep_disconnected}));
+
+  const fs::path project = makeTempProject();
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  const eastl::vector<eastl::string> single_host = {
+      eastl::string(host_path.generic_string().c_str())};
+
+  MeshImportSettings enabled{};
+  enabled.animations = true;
+  const eastl::vector<ImportResult> enabled_results =
+      import_service.importExternalFiles(single_host, "assets/Meshes", enabled);
+
+  expect_true("single-mesh near-disk imports one Mesh and three clips",
+              enabled_results.size() == 4);
+  expect_true("single-mesh near-disk returns successful host",
+              !enabled_results.empty() && enabled_results[0].success);
+  expect_true("single-mesh near-disk merges discovered companion clips",
+              !enabled_results.empty() &&
+                  enabled_results[0].animation_clips.size() == 3);
+  expect_true("single-mesh near-disk registers idle clip by stem",
+              fs::exists(project / "Assets" / "Animations" /
+                         "LOOP-idle.animation.yaml"));
+  expect_true("single-mesh near-disk registers walk clip by stem",
+              fs::exists(project / "Assets" / "Animations" /
+                         "LOOP-walk.animation.yaml"));
+
+  const fs::path idle_intermediate =
+      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      "LOOP-idle.gltf";
+  const fs::path walk_intermediate =
+      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      "LOOP-walk.gltf";
+  expect_true("single-mesh near-disk persists companion Intermediates",
+              !enabled_results.empty() &&
+                  pathSetsEqual(enabled_results[0].companion_animation_paths,
+                                {idle_intermediate, walk_intermediate}));
+  expect_true("single-mesh near-disk copies idle companion body",
+              fs::exists(idle_intermediate) &&
+                  readTextFile(idle_intermediate) == kCompanionLoopGltf);
+  expect_true("single-mesh near-disk copies walk companion body",
+              fs::exists(walk_intermediate) &&
+                  readTextFile(walk_intermediate) == kCompanionAnimOnlyGltf);
+  expect_true("single-mesh near-disk does not register disconnected deep clip",
+              !fs::exists(project / "Assets" / "Animations" /
+                          "deep.animation.yaml"));
+
+  eastl::string mesh_yaml;
+  expect_true("single-mesh near-disk mesh descriptor is readable",
+              file_system.readText(project / "Assets" / "Meshes" /
+                                       "Chocomel.mesh.yaml",
+                                   mesh_yaml));
+  MeshAssetDescriptor mesh_descriptor{};
+  expect_true("single-mesh near-disk mesh descriptor parses",
+              AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
+  expect_true("single-mesh near-disk records both companion sources",
+              mesh_descriptor.companion_animation_sources.size() == 2);
+
+  const fs::path disabled_project = makeTempProject();
+  FileSystem disabled_file_system;
+  FileSystemInitInfo disabled_fs_init{};
+  disabled_fs_init.project_root = disabled_project;
+  disabled_file_system.initialize(disabled_fs_init);
+
+  AssetRegistry disabled_registry;
+  disabled_registry.initialize(&disabled_file_system);
+
+  AssetImportService disabled_import_service;
+  AssetImportServiceInit disabled_import_init{};
+  disabled_import_init.file_system = &disabled_file_system;
+  disabled_import_init.asset_registry = &disabled_registry;
+  disabled_import_service.initialize(disabled_import_init);
+
+  MeshImportSettings disabled{};
+  disabled.animations = false;
+  const eastl::vector<ImportResult> disabled_results =
+      disabled_import_service.importExternalFiles(single_host, "assets/Meshes",
+                                                  disabled);
+
+  expect_true("single-mesh animations disabled imports only host Mesh",
+              disabled_results.size() == 1);
+  expect_true("single-mesh animations disabled skips near-disk companions",
+              !disabled_results.empty() &&
+                  disabled_results[0].companion_animation_paths.empty());
+
+  disabled_import_service.shutdown();
+  disabled_registry.shutdown();
+  disabled_file_system.shutdown();
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(disabled_project);
+  fs::remove_all(external_root);
+}
+
 void companionAnimationGltfAcceptance() {
   using namespace Blunder;
 
@@ -2649,6 +2795,7 @@ int main() {
   nearDiskCompanionGltfCandidateEnumeration();
   companionAnimationGltfMultiSelectBatchPairing();
   importExternalFilesPairsCompanionsIntoMeshImport();
+  singleMeshImportDiscoversNearDiskCompanions();
   meshExtensionRoutingTables();
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();

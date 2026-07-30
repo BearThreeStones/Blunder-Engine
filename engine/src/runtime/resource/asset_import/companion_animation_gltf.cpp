@@ -237,6 +237,18 @@ std::vector<std::filesystem::path> enumerateNearDiskCompanionGltfCandidates(
   return candidates;
 }
 
+std::vector<std::filesystem::path> discoverAcceptedNearDiskCompanionAnimationGltfs(
+    const std::filesystem::path& mesh_gltf_absolute) {
+  std::vector<std::filesystem::path> accepted;
+  for (const std::filesystem::path& candidate :
+       enumerateNearDiskCompanionGltfCandidates(mesh_gltf_absolute)) {
+    if (isCompanionAnimationGltf(candidate)) {
+      accepted.push_back(candidate);
+    }
+  }
+  return accepted;
+}
+
 CompanionGltfMultiSelectBatchPairingResult pairCompanionAnimationGltfMultiSelectBatch(
     const std::vector<std::filesystem::path>& gltf_absolute_paths) {
   CompanionGltfMultiSelectBatchPairingResult result;

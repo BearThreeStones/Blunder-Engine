@@ -15,6 +15,10 @@ bool isCompanionAnimationGltf(const std::filesystem::path& gltf_absolute);
 std::vector<std::filesystem::path> enumerateNearDiskCompanionGltfCandidates(
     const std::filesystem::path& mesh_gltf_absolute);
 
+/// Near-disk candidates filtered by Companion Animation acceptance (ADR 0021).
+std::vector<std::filesystem::path> discoverAcceptedNearDiskCompanionAnimationGltfs(
+    const std::filesystem::path& mesh_gltf_absolute);
+
 /// Returns true when `gltf_absolute` is a skinned mesh host candidate (skins present).
 bool isSkinnedMeshHostCandidateGltf(const std::filesystem::path& gltf_absolute);
 

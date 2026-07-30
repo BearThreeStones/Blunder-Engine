@@ -9,7 +9,7 @@
 - [x] 2.1 Wire `importExternalFiles` / mesh Import: host + companions when animations enabled; skip companions when animations disabled
 - [x] 2.2 Copy accepted companions under Resources Intermediate (not Mesh Assets); record paths for Reimport (descriptor list or convention — pick one, document)
 - [x] 2.3 Extract/register clips from companions via existing extractor; clip names prefer companion file stem; bone mismatch warn+register
-- [ ] 2.4 Near-disk discovery on single-mesh Import (secondary); merge with embedded clips under same mesh stem
+- [x] 2.4 Near-disk discovery on single-mesh Import (secondary); merge with embedded clips under same mesh stem
 
 ## 3. Reimport
 

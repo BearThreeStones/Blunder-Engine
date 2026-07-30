@@ -1018,12 +1018,25 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
                                                    candidate.host_path);
                      });
 
+    const eastl::string pending_ext = extensionLower(pending_path);
+    std::vector<fs::path> companion_paths_for_host;
+    if (mesh_settings.animations) {
+      if (host_pairing != pairing.host_pairings.end() &&
+          !host_pairing->companion_paths.empty()) {
+        companion_paths_for_host = host_pairing->companion_paths;
+      } else if (isMeshIntermediateExtension(pending_ext) &&
+                 isSkinnedMeshHostCandidateGltf(pending_path)) {
+        companion_paths_for_host =
+            discoverAcceptedNearDiskCompanionAnimationGltfs(pending_path);
+      }
+    }
+
     ImportResult imported;
-    if (mesh_settings.animations &&
-        host_pairing != pairing.host_pairings.end()) {
+    if (!companion_paths_for_host.empty() &&
+        isMeshIntermediateExtension(pending_ext)) {
       imported = importMeshIntermediate(pending_path, assets_folder_virtual,
                                         mesh_settings,
-                                        host_pairing->companion_paths);
+                                        companion_paths_for_host);
     } else {
       imported =
           importMesh(pending_path, assets_folder_virtual, mesh_settings);
