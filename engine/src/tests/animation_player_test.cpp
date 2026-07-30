@@ -1,5 +1,6 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/class_db.h"
 
 #include <cmath>
@@ -18,6 +19,34 @@ void expect_true(const char* label, bool ok) {
 
 bool float_near(float a, float b, float eps = 1e-5f) {
   return std::fabs(a - b) < eps;
+}
+
+bool vec3_near(const Blunder::Vec3& a, const Blunder::Vec3& b,
+                 float eps = 1e-4f) {
+  return float_near(a.x, b.x, eps) && float_near(a.y, b.y, eps) &&
+         float_near(a.z, b.z, eps);
+}
+
+Blunder::AnimationTrack makeTranslationTrack(
+    const char* bone, Blunder::AnimationInterpolation interpolation,
+    std::initializer_list<std::pair<float, Blunder::Vec3>> keys) {
+  Blunder::AnimationTrack track;
+  track.bone = bone;
+  track.channel = Blunder::AnimationChannel::Translation;
+  track.interpolation = interpolation;
+  for (const auto& key : keys) {
+    Blunder::AnimationKeyframe frame;
+    frame.time = key.first;
+    frame.value = {key.second.x, key.second.y, key.second.z};
+    track.keys.push_back(frame);
+  }
+  return track;
+}
+
+Blunder::Skeleton makeSingleBoneSkeleton(const char* bone_name) {
+  Blunder::Skeleton skeleton;
+  skeleton.addBone(bone_name, -1);
+  return skeleton;
 }
 
 Blunder::AnimationClipData make_test_clip(const char* name, float duration) {
@@ -193,6 +222,109 @@ void test_global_time_scale_default_and_set() {
   expect_true("time scale updated", float_near(player.getTimeScale(), 2.0f));
 }
 
+void test_dual_slot_weighted_blend_on_skeleton() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.setSlot(0, "idle");
+  player.setSlot(1, "walk");
+  player.setBlendWeight(0.5f);
+
+  expect_true("play starts sampling", player.play("idle"));
+  player.advance(0.0f);
+  expect_true("weighted dual-slot pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+}
+
+void test_single_slot_fallback() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(3.0f, 0.0f, 0.0f)}, {1.0f, Vec3(3.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.injectClipData(idle_guid, idle);
+  player.setSlot(0, "idle");
+  player.setBlendWeight(1.0f);
+
+  expect_true("play slot0 only", player.play("idle"));
+  player.advance(0.0f);
+  expect_true("slot0 only pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(3.0f, 0.0f, 0.0f)));
+}
+
+void test_pose_applied_after_dual_slot_sample() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(4.0f, 0.0f, 0.0f)}, {1.0f, Vec3(4.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.setSlot(0, "idle");
+  player.setSlot(1, "walk");
+  player.setBlendWeight(0.25f);
+
+  int pose_count = 0;
+  player.addPoseAppliedListener(
+      [](AnimationPlayer&, void* userdata) {
+        ++*static_cast<int*>(userdata);
+      },
+      &pose_count);
+
+  expect_true("play", player.play("idle"));
+  player.advance(0.0f);
+  expect_true("pose applied once", pose_count == 1);
+}
+
 void test_classdb_animation_player_registration() {
   using namespace Blunder;
 
@@ -236,6 +368,9 @@ int main() {
   test_hard_cut_between_clips();
   test_two_slot_assignment_and_blend_weight();
   test_global_time_scale_default_and_set();
+  test_dual_slot_weighted_blend_on_skeleton();
+  test_single_slot_fallback();
+  test_pose_applied_after_dual_slot_sample();
   test_unknown_play_name_no_crash();
   test_object_hosts_animation_player();
   test_classdb_animation_player_registration();

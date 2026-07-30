@@ -1,7 +1,7 @@
 ## 1. Runtime two-slot + TimeScale
 
 - [x] 1.1 Extend AnimationPlayer with slot0/slot1 clip assignment, blendWeight ∈ [0,1], and global TimeScale
-- [ ] 1.2 Sample both active slots and combine local TRS (lerp) / rotation (slerp) onto the co-located Skeleton
+- [x] 1.2 Sample both active slots and combine local TRS (lerp) / rotation (slerp) onto the co-located Skeleton
 - [ ] 1.3 Implement Crossfade as time-driven weight ramp on the two slots; Play(name, fade) sugar; fade=0 hard cut
 - [ ] 1.4 Advance slots under global TimeScale; expose dominant-slot playback position for step sync
 - [ ] 1.5 Keep PoseApplied after combined sample; preserve Tick → sample → PoseApplied order

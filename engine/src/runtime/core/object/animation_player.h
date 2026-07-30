@@ -66,6 +66,9 @@ class AnimationPlayer {
   };
 
   bool resolveClip(const eastl::string& guid, AnimationClipData& out_clip);
+  bool resolveSlotClip(int slot_index, AnimationClipData& out_clip) const;
+  bool hasActiveSlot() const;
+  void advanceSlot(int slot_index, float delta_seconds);
   void beginClip(const eastl::string& name, const AnimationClipData& clip);
   void sampleBoundSkeleton();
   static float clamp01(float value);
@@ -86,6 +89,7 @@ class AnimationPlayer {
   bool m_playing{false};
   bool m_loop{false};
   eastl::string m_slot_clip_names[k_slot_count];
+  float m_slot_positions[k_slot_count]{0.0f, 0.0f};
   float m_blend_weight{0.0f};
   float m_time_scale{1.0f};
   eastl::vector<PoseAppliedListener> m_pose_applied_listeners;

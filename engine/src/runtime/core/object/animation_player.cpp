@@ -93,6 +93,28 @@ void AnimationPlayer::notifyPoseApplied() {
 }
 
 void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
+  AnimationClipData clip0;
+  AnimationClipData clip1;
+  const bool has_slot0 = resolveSlotClip(0, clip0);
+  const bool has_slot1 = resolveSlotClip(1, clip1);
+
+  if (has_slot0 && has_slot1) {
+    blendClipsOntoSkeleton(skeleton, clip0, m_slot_positions[0], clip1,
+                           m_slot_positions[1], m_blend_weight);
+    notifyPoseApplied();
+    return;
+  }
+  if (has_slot0) {
+    sampleClipOntoSkeleton(skeleton, clip0, m_slot_positions[0]);
+    notifyPoseApplied();
+    return;
+  }
+  if (has_slot1) {
+    sampleClipOntoSkeleton(skeleton, clip1, m_slot_positions[1]);
+    notifyPoseApplied();
+    return;
+  }
+
   if (!m_has_current_clip) {
     return;
   }
@@ -101,7 +123,10 @@ void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
 }
 
 void AnimationPlayer::sampleBoundSkeleton() {
-  if (m_sampling_skeleton != nullptr && m_has_current_clip && m_playing) {
+  if (m_sampling_skeleton == nullptr || !m_playing) {
+    return;
+  }
+  if (hasActiveSlot() || m_has_current_clip) {
     sampleOntoSkeleton(*m_sampling_skeleton);
   }
 }
@@ -124,6 +149,56 @@ bool AnimationPlayer::play(const eastl::string& name) {
 void AnimationPlayer::stop() {
   m_playing = false;
   m_position = 0.0f;
+  m_slot_positions[0] = 0.0f;
+  m_slot_positions[1] = 0.0f;
+}
+
+bool AnimationPlayer::resolveSlotClip(int slot_index,
+                                      AnimationClipData& out_clip) const {
+  if (slot_index < 0 || slot_index >= k_slot_count) {
+    return false;
+  }
+  const eastl::string& name = m_slot_clip_names[slot_index];
+  if (name.empty()) {
+    return false;
+  }
+  eastl::string guid;
+  if (!getClipGuid(name, guid)) {
+    return false;
+  }
+  return const_cast<AnimationPlayer*>(this)->resolveClip(guid, out_clip);
+}
+
+bool AnimationPlayer::hasActiveSlot() const {
+  for (int slot = 0; slot < k_slot_count; ++slot) {
+    if (!m_slot_clip_names[slot].empty()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void AnimationPlayer::advanceSlot(int slot_index, float delta_seconds) {
+  AnimationClipData clip;
+  if (!resolveSlotClip(slot_index, clip) || clip.duration <= 0.0f) {
+    return;
+  }
+
+  float& position = m_slot_positions[slot_index];
+  position += delta_seconds;
+  if (position < clip.duration) {
+    return;
+  }
+
+  if (m_loop) {
+    position = std::fmod(position, clip.duration);
+    if (position < 0.0f) {
+      position += clip.duration;
+    }
+    return;
+  }
+
+  position = clip.duration;
 }
 
 bool AnimationPlayer::setSlot(int slot_index, const eastl::string& name) {
@@ -135,6 +210,7 @@ bool AnimationPlayer::setSlot(int slot_index, const eastl::string& name) {
     return false;
   }
   m_slot_clip_names[slot_index] = name;
+  m_slot_positions[slot_index] = 0.0f;
   return true;
 }
 
@@ -163,7 +239,21 @@ float AnimationPlayer::clamp01(float value) {
 void AnimationPlayer::setTimeScale(float scale) { m_time_scale = scale; }
 
 void AnimationPlayer::advance(float delta_seconds) {
-  if (!m_playing || delta_seconds <= 0.0f || m_clip_length <= 0.0f) {
+  if (!m_playing || delta_seconds <= 0.0f) {
+    return;
+  }
+
+  if (hasActiveSlot()) {
+    for (int slot = 0; slot < k_slot_count; ++slot) {
+      if (!m_slot_clip_names[slot].empty()) {
+        advanceSlot(slot, delta_seconds);
+      }
+    }
+    sampleBoundSkeleton();
+    return;
+  }
+
+  if (m_clip_length <= 0.0f) {
     return;
   }
 

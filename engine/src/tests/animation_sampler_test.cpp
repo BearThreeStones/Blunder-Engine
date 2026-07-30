@@ -43,6 +43,28 @@ Blunder::AnimationTrack makeTranslationTrack(
   return track;
 }
 
+Blunder::AnimationTrack makeRotationTrack(
+    const char* bone, Blunder::AnimationInterpolation interpolation,
+    std::initializer_list<std::pair<float, Blunder::Quat>> keys) {
+  Blunder::AnimationTrack track;
+  track.bone = bone;
+  track.channel = Blunder::AnimationChannel::Rotation;
+  track.interpolation = interpolation;
+  for (const auto& key : keys) {
+    Blunder::AnimationKeyframe frame;
+    frame.time = key.first;
+    frame.value = {key.second.x, key.second.y, key.second.z, key.second.w};
+    track.keys.push_back(frame);
+  }
+  return track;
+}
+
+bool quat_near(const Blunder::Quat& a, const Blunder::Quat& b,
+               float eps = 1e-4f) {
+  return float_near(a.x, b.x, eps) && float_near(a.y, b.y, eps) &&
+         float_near(a.z, b.z, eps) && float_near(a.w, b.w, eps);
+}
+
 Blunder::Skeleton makeSingleBoneSkeleton(const char* bone_name) {
   Blunder::Skeleton skeleton;
   skeleton.addBone(bone_name, -1);
@@ -182,6 +204,80 @@ void test_end_pose_sampled_on_terminal_advance() {
                         Vec3(6.0f, 0.0f, 0.0f)));
 }
 
+void test_blend_translation_mid_weight() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  blendClipsOntoSkeleton(skeleton, idle, 0.0f, walk, 0.0f, 0.5f);
+  expect_true("translation blended at 0.5",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+}
+
+void test_blend_weight_extremes() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationClipData clip0;
+  clip0.duration = 1.0f;
+  clip0.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData clip1;
+  clip1.duration = 1.0f;
+  clip1.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  blendClipsOntoSkeleton(skeleton, clip0, 0.0f, clip1, 0.0f, 0.0f);
+  expect_true("weight 0 is slot0 only",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(2.0f, 0.0f, 0.0f)));
+
+  blendClipsOntoSkeleton(skeleton, clip0, 0.0f, clip1, 0.0f, 1.0f);
+  expect_true("weight 1 is slot1 only",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(8.0f, 0.0f, 0.0f)));
+}
+
+void test_blend_rotation_slerp() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  const Quat identity = glm::identity<Quat>();
+  const Quat half_turn = glm::angleAxis(glm::pi<float>(), Vec3(0.0f, 1.0f, 0.0f));
+
+  AnimationClipData clip0;
+  clip0.duration = 1.0f;
+  clip0.tracks.push_back(makeRotationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, identity}, {1.0f, identity}}));
+
+  AnimationClipData clip1;
+  clip1.duration = 1.0f;
+  clip1.tracks.push_back(makeRotationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, half_turn}, {1.0f, half_turn}}));
+
+  blendClipsOntoSkeleton(skeleton, clip0, 0.0f, clip1, 0.0f, 0.5f);
+  const Quat expected = glm::slerp(identity, half_turn, 0.5f);
+  expect_true("rotation slerped at 0.5",
+              quat_near(skeleton.getBonePoseLocal(0).rotation, expected));
+}
+
 void test_object_colocated_sampling() {
   using namespace Blunder;
 
@@ -222,6 +318,9 @@ int main() {
   test_constant_hold_mid_interval();
   test_linear_midpoint();
   test_missing_bone_ignored_safely();
+  test_blend_translation_mid_weight();
+  test_blend_weight_extremes();
+  test_blend_rotation_slerp();
   test_hard_cut_and_sample_via_player();
   test_end_pose_sampled_on_terminal_advance();
   test_no_skeleton_binding_is_no_op();

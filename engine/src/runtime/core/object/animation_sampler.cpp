@@ -110,6 +110,15 @@ void applyTrack(Skeleton& skeleton, const AnimationTrack& track, float time,
   }
 }
 
+BoneTransform blendBoneTransforms(const BoneTransform& a, const BoneTransform& b,
+                                  float weight) {
+  BoneTransform result;
+  result.translation = lerp(a.translation, b.translation, weight);
+  result.rotation = slerp(a.rotation, b.rotation, weight);
+  result.scale = lerp(a.scale, b.scale, weight);
+  return result;
+}
+
 }  // namespace
 
 void sampleClipOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip,
@@ -118,6 +127,30 @@ void sampleClipOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip,
   eastl::vector<float> scratch;
   for (const AnimationTrack& track : clip.tracks) {
     applyTrack(skeleton, track, time, scratch);
+  }
+}
+
+void blendClipsOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip0,
+                            float time0, const AnimationClipData& clip1,
+                            float time1, float blend_weight) {
+  const size_t bone_count = skeleton.getBoneCount();
+  eastl::vector<BoneTransform> pose0(bone_count);
+  eastl::vector<BoneTransform> pose1(bone_count);
+
+  sampleClipOntoSkeleton(skeleton, clip0, time0);
+  for (size_t i = 0; i < bone_count; ++i) {
+    pose0[i] = skeleton.getBonePoseLocal(i);
+  }
+
+  sampleClipOntoSkeleton(skeleton, clip1, time1);
+  for (size_t i = 0; i < bone_count; ++i) {
+    pose1[i] = skeleton.getBonePoseLocal(i);
+  }
+
+  skeleton.resetPoseToRest();
+  for (size_t i = 0; i < bone_count; ++i) {
+    skeleton.setBonePoseLocal(
+        i, blendBoneTransforms(pose0[i], pose1[i], blend_weight));
   }
 }
 
