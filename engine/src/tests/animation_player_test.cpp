@@ -325,6 +325,117 @@ void test_pose_applied_after_dual_slot_sample() {
   expect_true("pose applied once", pose_count == 1);
 }
 
+void test_play_with_zero_fade_is_hard_cut() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 1.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 3.0f));
+
+  expect_true("play idle", player.play("idle"));
+  player.advance(0.7f);
+  expect_true("idle advanced", float_near(player.getPlaybackPosition(), 0.7f));
+
+  expect_true("zero fade hard cut", player.play("walk", 0.0f));
+  expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
+  expect_true("walk length", float_near(player.getClipLength(), 3.0f));
+  expect_true("current walk", player.getCurrentClipName() == "walk");
+  expect_true("not crossfading", !player.isCrossfading());
+}
+
+void test_crossfade_ramps_blend_weight_over_time() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 2.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 2.0f));
+
+  expect_true("play idle", player.play("idle"));
+  player.setSlot(0, "idle");
+  player.setBlendWeight(0.0f);
+
+  expect_true("crossfade to walk", player.play("walk", 1.0f));
+  expect_true("crossfading", player.isCrossfading());
+  expect_true("weight starts at zero", float_near(player.getBlendWeight(), 0.0f));
+  expect_true("target slot1 walk", player.getSlotClipName(1) == "walk");
+
+  player.advance(0.5f);
+  expect_true("weight halfway", float_near(player.getBlendWeight(), 0.5f, 1e-4f));
+  expect_true("still crossfading", player.isCrossfading());
+
+  player.advance(0.5f);
+  expect_true("weight complete", float_near(player.getBlendWeight(), 1.0f, 1e-4f));
+  expect_true("crossfade done", !player.isCrossfading());
+}
+
+void test_crossfade_blends_pose_mid_ramp() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.setSlot(0, "idle");
+  player.setBlendWeight(0.0f);
+
+  expect_true("crossfade play", player.play("walk", 1.0f));
+  player.advance(0.5f);
+  expect_true("mid-ramp pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(4.0f, 0.0f, 0.0f), 1e-3f));
+}
+
+void test_crossfade_from_phase1_single_clip() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 1.0f));
+  player.injectClipData(walk_guid, make_test_clip("walk", 2.0f));
+
+  expect_true("phase1 play idle", player.play("idle"));
+  player.advance(0.3f);
+  expect_true("no slots yet", player.getSlotClipName(0).empty());
+
+  expect_true("crossfade from phase1", player.play("walk", 0.5f));
+  expect_true("source seeded slot0", player.getSlotClipName(0) == "idle");
+  expect_true("target on slot1", player.getSlotClipName(1) == "walk");
+  expect_true("crossfading", player.isCrossfading());
+
+  player.advance(0.5f);
+  expect_true("ramp complete", float_near(player.getBlendWeight(), 1.0f, 1e-4f));
+}
+
 void test_classdb_animation_player_registration() {
   using namespace Blunder;
 
@@ -371,6 +482,10 @@ int main() {
   test_dual_slot_weighted_blend_on_skeleton();
   test_single_slot_fallback();
   test_pose_applied_after_dual_slot_sample();
+  test_play_with_zero_fade_is_hard_cut();
+  test_crossfade_ramps_blend_weight_over_time();
+  test_crossfade_blends_pose_mid_ramp();
+  test_crossfade_from_phase1_single_clip();
   test_unknown_play_name_no_crash();
   test_object_hosts_animation_player();
   test_classdb_animation_player_registration();

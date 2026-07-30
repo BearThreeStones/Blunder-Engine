@@ -142,6 +142,7 @@ bool AnimationPlayer::play(const eastl::string& name) {
     return false;
   }
 
+  clearCrossfade();
   beginClip(name, clip);
   return true;
 }
@@ -151,6 +152,7 @@ void AnimationPlayer::stop() {
   m_position = 0.0f;
   m_slot_positions[0] = 0.0f;
   m_slot_positions[1] = 0.0f;
+  clearCrossfade();
 }
 
 bool AnimationPlayer::resolveSlotClip(int slot_index,
@@ -222,10 +224,6 @@ const eastl::string& AnimationPlayer::getSlotClipName(int slot_index) const {
   return m_slot_clip_names[slot_index];
 }
 
-void AnimationPlayer::setBlendWeight(float weight) {
-  m_blend_weight = clamp01(weight);
-}
-
 float AnimationPlayer::clamp01(float value) {
   if (value < 0.0f) {
     return 0.0f;
@@ -236,12 +234,98 @@ float AnimationPlayer::clamp01(float value) {
   return value;
 }
 
+float AnimationPlayer::lerp(float a, float b, float t) {
+  return a + (b - a) * clamp01(t);
+}
+
+void AnimationPlayer::clearCrossfade() {
+  m_crossfade_active = false;
+  m_crossfade_elapsed = 0.0f;
+  m_crossfade_duration = 0.0f;
+  m_crossfade_start_weight = 0.0f;
+  m_crossfade_target_weight = 0.0f;
+}
+
+void AnimationPlayer::advanceCrossfade(float delta_seconds) {
+  if (!m_crossfade_active || m_crossfade_duration <= 0.0f) {
+    return;
+  }
+
+  m_crossfade_elapsed += delta_seconds;
+  const float t = m_crossfade_elapsed / m_crossfade_duration;
+  m_blend_weight =
+      lerp(m_crossfade_start_weight, m_crossfade_target_weight, t);
+  if (m_crossfade_elapsed >= m_crossfade_duration) {
+    m_blend_weight = m_crossfade_target_weight;
+    m_crossfade_active = false;
+  }
+}
+
+bool AnimationPlayer::beginCrossfade(const eastl::string& name,
+                                     float fade_seconds) {
+  eastl::string guid;
+  if (!getClipGuid(name, guid)) {
+    return false;
+  }
+
+  AnimationClipData clip;
+  if (!resolveClip(guid, clip)) {
+    return false;
+  }
+
+  if (!hasActiveSlot() && m_has_current_clip) {
+    m_slot_clip_names[0] = m_current_clip_name;
+    m_slot_positions[0] = m_position;
+  }
+
+  const int target_slot = (m_blend_weight < 0.5f) ? 1 : 0;
+  const int source_slot = 1 - target_slot;
+  const float target_weight = (target_slot == 1) ? 1.0f : 0.0f;
+
+  if (!setSlot(target_slot, name)) {
+    return false;
+  }
+
+  if (m_slot_clip_names[source_slot].empty() && m_has_current_clip) {
+    m_slot_clip_names[source_slot] = m_current_clip_name;
+    m_slot_positions[source_slot] = m_position;
+  }
+
+  m_current_clip_name = name;
+  m_current_clip = clip;
+  m_has_current_clip = true;
+  m_clip_length = clip.duration;
+  m_playing = true;
+
+  m_crossfade_active = true;
+  m_crossfade_elapsed = 0.0f;
+  m_crossfade_duration = fade_seconds;
+  m_crossfade_start_weight = m_blend_weight;
+  m_crossfade_target_weight = target_weight;
+
+  sampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPlayer::play(const eastl::string& name, float fade_seconds) {
+  if (fade_seconds <= 0.0f) {
+    return play(name);
+  }
+  return beginCrossfade(name, fade_seconds);
+}
+
+void AnimationPlayer::setBlendWeight(float weight) {
+  m_blend_weight = clamp01(weight);
+}
+
 void AnimationPlayer::setTimeScale(float scale) { m_time_scale = scale; }
 
 void AnimationPlayer::advance(float delta_seconds) {
   if (!m_playing || delta_seconds <= 0.0f) {
     return;
   }
+
+  advanceCrossfade(delta_seconds);
 
   if (hasActiveSlot()) {
     for (int slot = 0; slot < k_slot_count; ++slot) {

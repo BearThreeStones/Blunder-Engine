@@ -28,7 +28,11 @@ class AnimationPlayer {
   void injectClipData(const eastl::string& guid, AnimationClipData clip);
 
   bool play(const eastl::string& name);
+  /// Play with optional crossfade. fade_seconds <= 0 is a hard cut (Phase 1).
+  bool play(const eastl::string& name, float fade_seconds);
   void stop();
+
+  bool isCrossfading() const { return m_crossfade_active; }
 
   /// Assign a mapped clip name to slot 0 or 1 (Phase 2 two-slot model).
   bool setSlot(int slot_index, const eastl::string& name);
@@ -71,7 +75,11 @@ class AnimationPlayer {
   void advanceSlot(int slot_index, float delta_seconds);
   void beginClip(const eastl::string& name, const AnimationClipData& clip);
   void sampleBoundSkeleton();
+  void clearCrossfade();
+  void advanceCrossfade(float delta_seconds);
+  bool beginCrossfade(const eastl::string& name, float fade_seconds);
   static float clamp01(float value);
+  static float lerp(float a, float b, float t);
 
   static constexpr int k_slot_count = 2;
 
@@ -92,6 +100,11 @@ class AnimationPlayer {
   float m_slot_positions[k_slot_count]{0.0f, 0.0f};
   float m_blend_weight{0.0f};
   float m_time_scale{1.0f};
+  bool m_crossfade_active{false};
+  float m_crossfade_elapsed{0.0f};
+  float m_crossfade_duration{0.0f};
+  float m_crossfade_start_weight{0.0f};
+  float m_crossfade_target_weight{0.0f};
   eastl::vector<PoseAppliedListener> m_pose_applied_listeners;
 };
 
