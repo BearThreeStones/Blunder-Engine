@@ -32,18 +32,33 @@ that omit `companion_animation_sources`.
 
 ## Validation
 
-Focused build command:
+### RED
 
 ```powershell
-cmake --build build/vs2026-debug --config Debug --target asset_yaml_test asset_import_test
+cmake --build build/vs2026-debug --config Debug --target asset_yaml_test
 ```
 
-Both focused test executables compiled and linked successfully once. The
-chained execution then exited with Windows status `0xC0000005` before producing
-test output. Subsequent rebuild attempts were blocked by pre-existing generated
-build instability: MSVC required `CL=/Zm200` to create the large PCH, then a
-generated Slint `editor_window.h` disappeared during the runtime build. The
-Task 2.2 production sources themselves compiled without errors in that retry.
+The new descriptor test failed as expected because
+`MeshAssetDescriptor::companion_animation_sources` did not exist.
+
+### GREEN
+
+The MSBuild targets were built sequentially to avoid racing their shared
+runtime PCH:
+
+```powershell
+cmake --build build/vs2026-debug --config Debug --target asset_import_test -- /m:1
+cmake --build build/vs2026-debug --config Debug --target asset_yaml_test -- /m:1
+.\build\vs2026-debug\engine\src\tests\Debug\asset_yaml_test.exe
+.\build\vs2026-debug\engine\src\tests\Debug\asset_import_test.exe
+cmake --build build/vs2026-debug --config Debug --target engine_editor -- /m:1
+```
+
+Results:
+
+- `asset_yaml_test` exited `0`.
+- `asset_import_test: all passed`.
+- `engine_editor` built successfully.
 
 `git diff --check` passes (apart from the existing line-ending warning for
 `.superpowers/sdd/progress.md`).
@@ -64,7 +79,7 @@ Task 2.2 production sources themselves compiled without errors in that retry.
 
 - Task 3.1 must consume `companion_animation_sources` when refreshing clips on
   Mesh Reimport.
-- The focused executables need a clean successful run once the worktree's PCH
-  and generated Slint-header instability is resolved.
+- Requesting both test targets in one MSBuild invocation raced their shared
+  runtime PCH/generated Slint objects; sequential `/m:1` builds passed.
 - Existing dirty submodules and `.superpowers/sdd/progress.md` are unrelated to
   this task and are intentionally excluded from the commit.
