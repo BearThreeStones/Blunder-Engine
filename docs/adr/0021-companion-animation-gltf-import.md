@@ -1,0 +1,5 @@
+# Companion Animation glTF Import (no AnimationLibrary)
+
+Skeletal Import may attach **Companion Animation glTFs** to a skinned **Mesh** Import: files with animations and **no meshes** (skins allowed — DogWalk Chocomel LOOP exports are skins=1, meshes=0). Primary path is **multi-select** (one skinned mesh host + companions); near-disk auto-scan (mesh dir + parent’s immediate child dirs) is secondary. Accepted companions copy under Resources as Intermediate bodies (not Mesh Assets); clips remain **AnimationClip** YAML Assets named from the companion file stem. Bone mismatch warns but still registers. **Godot AnimationLibrary** is rejected for this slice — flat name→GUID on AnimationPlayer stays. Hard-coded `animations/world` tree walks and filename-fuzzy host pairing are rejected.
+
+**See also:** [CONTEXT.md — Companion Animation glTF](../../CONTEXT.md), [ADR 0019](0019-gltf-intermediate.md) (glTF Intermediate + clip YAML), [ADR 0020](0020-animation-player-two-slot-blend.md) (two-slot playback — orthogonal).
