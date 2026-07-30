@@ -20,9 +20,9 @@
 
 ## 4. Automated validation
 
-- [ ] 4.1 Unit tests: weighted dual-track pose combine; Crossfade ramp; fade=0 hard cut
-- [ ] 4.2 Unit tests: TimeScale advances both slots; dominant-slot playback position under blend
-- [ ] 4.3 Scene defaults round-trip test for TimeScale / slots / weight
+- [x] 4.1 Unit tests: weighted dual-track pose combine; Crossfade ramp; fade=0 hard cut
+- [x] 4.2 Unit tests: TimeScale advances both slots; dominant-slot playback position under blend
+- [x] 4.3 Scene defaults round-trip test for TimeScale / slots / weight
 
 ## 5. Content gates
 

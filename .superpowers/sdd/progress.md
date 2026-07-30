@@ -25,3 +25,8 @@ Task 3.1: complete (22c22b4..432d2db)
 
 Task 3.2: complete
 Task 3.3: complete
+Task 3.2+3.3: complete (cf315b3)
+## Group 3 COMPLETE
+
+Task 4.1–4.3: complete (audit + dual-slot TimeScale gap test)
+## Group 4 COMPLETE (automated validation)

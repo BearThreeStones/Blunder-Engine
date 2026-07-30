@@ -428,6 +428,45 @@ void test_time_scale_scales_slot_advance() {
               float_near(player.getPlaybackPosition(), 1.0f));
 }
 
+void test_time_scale_advances_both_slots_via_blend_pose() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 10.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {10.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 10.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {10.0f, Vec3(20.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.setSlot(0, "idle");
+  player.setSlot(1, "walk");
+  player.setBlendWeight(0.5f);
+  player.setTimeScale(2.0f);
+
+  expect_true("play dual slots", player.play("idle"));
+  player.advance(0.5f);
+  // 0.5 real seconds * 2.0 time scale = 1.0s on both slots → blend (1 + 2) / 2.
+  expect_true("both slots scaled via blend pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(1.5f, 0.0f, 0.0f), 1e-3f));
+}
+
 void test_time_scale_scales_phase1_advance() {
   using namespace Blunder;
 
@@ -590,6 +629,7 @@ int main() {
   test_crossfade_ramps_blend_weight_over_time();
   test_crossfade_blends_pose_mid_ramp();
   test_time_scale_scales_slot_advance();
+  test_time_scale_advances_both_slots_via_blend_pose();
   test_time_scale_scales_phase1_advance();
   test_time_scale_scales_crossfade_ramp();
   test_playback_position_dominant_slot_by_weight();
