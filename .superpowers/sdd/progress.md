@@ -1,105 +1,26 @@
-﻿Change: dogwalk-animation-phase-1
-Branch: feat/dogwalk-animation-phase-1
-OpenSpec: openspec/changes/dogwalk-animation-phase-1/
-Worktree: E:/Dev/Blunder-Engine/.worktrees/dogwalk-animation-phase-1
-Models: composer-2.5 only for implementer/reviewer subagents
+﻿# SDD progress — companion-animation-gltf-import
+Branch: feat/companion-animation-gltf-import
+Worktree: E:\Dev\Blunder-Engine\.worktrees\companion-animation-gltf-import
+Models: composer-2.5 default; gpt/claude only for hard blockers
 
-Task 1.1: complete (commits cd8e051..6544e20, review Approved; model=composer-2.5)
-Task 1.2: complete (commits 6544e20..7ab6dc7, review Approved; model=composer-2.5)
-Task 1.3: complete (commit f1a7a7f; model=composer-2.5)
-Task 1.4: complete (commits f1a7a7f..1635a68, review Approved; model=composer-2.5)
-Task 1.5: complete (commits 1635a68..9460917, review Approved; model=composer-2.5)
+Task 1.1: complete (70368e5..abdfbde, review clean after fixture fix)
 
-Task 2.1: complete — AnimationClipAssetDescriptor + AnimationClipData YAML parse/serialize (asset_descriptor.h, asset_yaml.h/.cpp); asset_yaml_test round-trip + reject Cubic; CONTENT_LAYOUT.md extension docs; blunder_engine_c_static linked into asset_yaml_test.
+Task 1.2: complete (abdfbde..cf49586, review clean)
 
-## Group 1 (pipeline flip) COMPLETE + VERIFIED
+Task 1.3: pending review HEAD 5077cf60eb94defa4ccdf4a05a18271ad3c5befc
 
-Build note: worktree Slint cargo OOM — build with /p:BuildProjectReferences=false using main .cmake_deps/slint-build + local Slint fork header patches synced from main working tree.
-Tests run (exit 0): asset_import_test, asset_manager_fast_path_test, asset_pipeline_smoke_test
-Follow-up: link blunder_engine_c_static into those three test targets (pre-existing LNK2019).
+Task 1.3: complete (cf49586..5077cf6, review clean)
 
-Task 2.1: complete (commit 1cfd979, review Approved; model=composer-2.5)
-  Minor: round-trip tests shallow on float equality; scale channel untested
+Task 2.1: complete (5077cf6..9bfcea8, review clean)
 
-Task 2.2: complete — glTF Import extracts AnimationClip YAML via cgltf (gltf_animation_clip_extractor); importMeshIntermediate + importMeshSourceExport register clips under assets/Animations/; ImportResult.animation_clips; asset_import_test dual-animation fixture (idle STEP→Constant, walk LINEAR).
-Task 2.2: complete (commit 6f422c0, review Approved; model=composer-2.5)
+Task 2.1: complete (5077cf6..9bfcea8, review clean)
 
-Task 2.3: complete — mesh Reimport calls refreshAnimationClipsFromGltf with filesystem-discovered clip bindings (name→GUID); overwrites Intermediate YAML preserving GUIDs; orphan clips left in place + logged; registry scan includes .animation.yaml; asset_import_test reimportPreservesAnimationClipGuidsAndRefreshesYaml.
-Task 2.3: complete (commit dfac6e3, pending review; model=composer-2.5)
+Task 2.2: complete (9bfcea8..206c7a3)
+Task 2.3: pending review 2a7429737af6a4dd8e34d24499682d2a8fbe5cc5
 
-Task 2.4: complete — AssetDependencyGraph registers `.animation.yaml` leaves + Scene→Clip edges via `animation_clip_guids`; guidsForArchivedSourcePath matches clip descriptors; scene serializer parse/serialize hook; asset_dependency_graph_test + asset_watch_path_test clip cases; blunder_engine_c_static linked into both test targets.
+Task 2.3: complete (206c7a3..2a74297)
+Task 2.4: complete (f03c7b6)
 
-## Env unblocked
-- cmake OK; asset_import_test all passed
+Task 3.1-3.2: complete (d9090e0)
 
-
-- asset_manager_fast_path_test: all passed
-- asset_pipeline_smoke_test: all passed
-
-## Starting Group 2
-
-
-Task 2.4: complete (commit 2af29bc, review Approved; model=composer-2.5)
-## Group 2 COMPLETE
-
-## Starting Group 3
-
-Task 3.1: complete (commit 3d73b84, review pending; model=composer-2.5)
-  Skeleton runtime (bone hierarchy, rest/bind, pose, inverse bind); Object hosts at most one Skeleton; ClassDB registers Skeleton with bone_count; skeleton_test pass.
-
-Task 3.2: complete (commit 5387286, review pending; model=composer-2.5)
-  AnimationPlayer on Object (name→GUID map, Play/Stop/Loop, hard cut, advance/position/length); injectClipData + ClipResolver seam; ClassDB is_playing/is_looping/playback_position/clip_length; animation_player_test pass.
-
-Task 3.3: complete (commit 90773d0, review pending; model=composer-2.5)
-  Constant/Linear sampler onto co-located Skeleton; sampleClipOntoSkeleton + AnimationPlayer bindSamplingSkeleton; play/advance sample poses; Object wires binding; animation_sampler_test pass.
-
-Task 3.4: complete (commit 07dccc4, review pending; model=composer-2.5)
-  PoseApplied listener API on AnimationPlayer; tickObjectAnimationPlayFrame / tickObjectAnimationPreviewFrame helpers; engine play loop uses ordered Tick → advance/sample → PoseApplied; animation_frame_order_test pass.
-
-Task 3.5: complete (commit 413c36e, review pending; model=composer-2.5)
-  C-ABI v5: AnimationPlayer Play/Stop/Loop, playback position/length, PoseApplied subscribe/clear; BlunderNativeAbi table + Blunder.Api AnimationPlayer façade; animation_player_c_abi_test pass.
-
-Task 3.6: complete (pending commit; model=composer-2.5)
-  Scene serializer round-trips `hasSkeleton` + `animationPlayer.clips` name→GUID map; `animation_clip_guids` derived from map on save/load for dependency-graph edges; scene_serializer_test pass.
-
-Task 3.6: complete (commit d570297, review Approved; model=composer-2.5)
-Task 3.5 fix: ef25b3a clear PoseApplied bindings on destroy
-## Group 3 COMPLETE
-
-## Starting Group 4
-
-Task 4.1: complete (commit c4ccbde, review pending; model=composer-2.5)
-  MeshSkinData on MeshAsset from glTF JOINTS_0/WEIGHTS_0; populateSkeletonFromSkin on glTF import; applyCpuSkinning + syncSceneToRender Fast Path upload; cpu_skinning_test pass.
-
-Task 4.2: complete (commits 8313875, 236f7ce; model=composer-2.5)
-  meshbin v2 skin section (joint_to_bone + per-vertex influences); cook writes skin payload; loadCookedMeshAsset restores MeshSkinData; glTF loadMesh resolves node skin; mesh_skin_cook_test pass.
-
-Task 4.3: complete (pending commit; model=composer-2.5)
-  GPU skinned draw for cooked Final: pbr_skinned/shadow_depth_skinned shaders, bone palette UBO (128 joints), SkinnedMeshVertex upload; scene_render_bridge routes cooked Final→GPU / Intermediate→CPU; gpu_skinning_test pass.
-
-Task 4.4: complete (pending commit; model=composer-2.5)
-  `applyGpuReferenceSkinning` mirrors pbr_skinned.slang position path; `skinning_pose_parity_test` compares CPU deformed positions + bone palette vs GPU reference at k_pose_parity_abs_eps=1e-3; cpu/gpu_skinning_test regression pass.
-
-
-Task 4.4: complete (commit 8fab359)
-## Group 4 COMPLETE (pending 4.4 review)
-
-## Starting Group 5
-
-Task 5.1: complete (commit 24b823e; model=composer-2.5)
-  AnimationPreviewController + viewport AnimationPreviewToolbar (Play/Pause/Stop/Loop); tickObjectAnimationPreviewFrame in editor loop; asset clip resolver; scene_instance wires AnimationPlayer clips; animation_preview_controller_test pass.
-
-## Env verify (2026-07-30)
-cmake --preset vs2026-debug OK; Slint blunder/v1.16.1 ancestor check passes
-asset_import_test: all passed
-asset_manager_fast_path_test: all passed
-asset_pipeline_smoke_test: all passed
-
-## Note
-Tasks 2.1-5.1 already complete on branch (commits beyond Group 1); resume at 5.2
-
-Task 5.2: complete (commits 24b823e..ea0f927, tests passed; model=composer-2.5)
-  Edit preview uses tickObjectAnimationPreviewFrame; no Behaviour Tick
-
-Task 6.1: complete (commit 504116f; dogwalk_import_test_rig PASS; model=composer-2.5)
-
+Task 4.1-4.3: complete (pending commit)

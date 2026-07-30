@@ -18,9 +18,9 @@
 
 ## 4. Validation + content unblock
 
-- [ ] 4.1 Integration test fixture: synthetic mesh (skins, no anim) + companion LOOP-shaped glTF (anim, meshes=0) multi-select Import → Mesh + Clip Assets
-- [ ] 4.2 Document Chocomel multi-select Import steps for Test Project (paths under dogwalk-repo); do not claim Phase Done until Play acceptance elsewhere
-- [ ] 4.3 Confirm CONTEXT + ADR 0021 match apply (prefer no churn)
+- [x] 4.1 Integration test fixture: synthetic mesh (skins, no anim) + companion LOOP-shaped glTF (anim, meshes=0) multi-select Import → Mesh + Clip Assets
+- [x] 4.2 Document Chocomel multi-select Import steps for Test Project (paths under dogwalk-repo); do not claim Phase Done until Play acceptance elsewhere
+- [x] 4.3 Confirm CONTEXT + ADR 0021 match apply (prefer no churn)
 
 ## 5. Manual checklist
 
