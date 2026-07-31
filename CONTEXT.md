@@ -346,7 +346,23 @@ _Avoid_: Editor Camera widget; Play view HUD camera; treating Navigate gizmo as 
 
 **Camera Preview**:
 An authorship-only floating panel over the editor viewport that shows a live view through a selected scene **Camera Component** (pose + FOV + near/far). It is Slint chrome plus a dedicated preview image, not an OverlaySystem draw into the main viewport offscreen, and never appears in the Player.
-_Avoid_: Game View dock; Play window; Editor Camera widget; baking the PiP into `viewport-image`
+_Avoid_: Game View dock; Play window; Editor Camera widget; baking the PiP into `viewport-image`; using Camera Preview to preview a Mesh Asset (that is **Mesh Preview**)
+
+**Mesh Preview Render**:
+The shared authorship render path that draws a **Mesh Asset** (Final preferred when fresh, otherwise Fast Path Intermediate) with automatic bounds framing and fixed studio lighting into a dedicated offscreen target — not the main viewport offscreen and not the **Camera Preview** target. It produces still frames for **Content Browser Thumbnails** and live frames for **Mesh Preview**. Skinned meshes use bind-pose (or equivalent rest) stills in the first slice; it does not play AnimationPlayer clips for thumbnails.
+_Avoid_: Using a material base-color texture alone as the Mesh thumbnail; sharing the Camera Preview or main viewport render target for Mesh Asset frames; requiring Cook before any 3D Mesh thumbnail; embedding AnimationPlayer playback into thumbnail generation as the first slice
+
+**Content Browser Thumbnail**:
+The cached still image shown for a Content Browser grid entry. For Mesh Assets the product image is a **Mesh Preview Render** frame written into the project thumbnail cache; Texture Assets keep image thumbnails; other types use placeholders as today.
+_Avoid_: Treating Mesh thumbnails as texture atlases by default; synchronous GPU generation that blocks the whole Browser refresh as the product path (generation is asynchronous with visible-item priority)
+
+**Mesh Preview**:
+An authorship-only interactive view of a **Mesh Asset** embedded in the Inspector when that Asset is selected in the Content Browser (**Asset Inspector** mode): orbit, zoom, and reset to default framing. Orbit orientation is session-ephemeral (not persisted). It consumes **Mesh Preview Render** and never appears in the Player.
+_Avoid_: Floating Camera Preview panel for Mesh Assets; requiring a scene Entity selection to preview a Mesh Asset; persisting orbit angles as Asset or scene data in the first slice; middle-mouse pan as a first-slice requirement
+
+**Asset Inspector**:
+Inspector presentation when the selection is a Content Browser **Asset** rather than a scene Entity. The first slice covers Mesh Assets: **Mesh Preview** plus read-only identity (display name, GUID, type, Intermediate `source` path). It is not the Import-settings editor and not a dependency-graph browser.
+_Avoid_: Equating Asset Inspector with full Import/Reimport UX; requiring Asset Inspector for every Asset type in the first slice; driving Mesh Preview only from MeshRenderer Entity selection
 
 **View frame**:
 The rectangular wire on a **Camera Gizmo** that represents the camera’s imaged bounds at the gizmo’s fixed display distance, sized from vertical FOV and the editor viewport aspect.
