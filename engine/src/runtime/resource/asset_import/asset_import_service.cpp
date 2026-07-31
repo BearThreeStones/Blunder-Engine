@@ -143,10 +143,10 @@ bool collectExternalGltfResourcePaths(
   return valid;
 }
 
-bool copyCompanionGltfResources(
-    FileSystem* file_system, const fs::path& source_gltf,
-    const fs::path& destination_gltf,
-    std::vector<fs::path>& copied_paths) {
+bool copyGltfExternalResources(FileSystem* file_system,
+                               const fs::path& source_gltf,
+                               const fs::path& destination_gltf,
+                               std::vector<fs::path>& copied_paths) {
   std::vector<fs::path> relative_resources;
   if (!collectExternalGltfResourcePaths(source_gltf, relative_resources)) {
     return false;
@@ -318,8 +318,8 @@ bool registerCompanionAnimationIntermediates(
       }
       copied_paths.push_back(destination_absolute);
     }
-    if (!copyCompanionGltfResources(file_system, input, destination_absolute,
-                                    copied_paths)) {
+    if (!copyGltfExternalResources(file_system, input, destination_absolute,
+                                   copied_paths)) {
       return fail();
     }
 
@@ -824,6 +824,23 @@ ImportResult AssetImportService::importMeshIntermediate(
       registerIntermediateBody(m_file_system, input_absolute, "Models");
   if (resource_virtual_path.empty()) {
     LOG_WARN("[AssetImport] failed to place mesh Intermediate {}",
+             input_absolute.generic_string());
+    return result;
+  }
+  const fs::path resource_absolute =
+      resolveResourcesVirtualPath(m_file_system, resource_virtual_path);
+  std::vector<fs::path> host_resource_copies;
+  if (!copyGltfExternalResources(m_file_system, input_absolute,
+                                 resource_absolute, host_resource_copies)) {
+    for (const fs::path& copied : host_resource_copies) {
+      std::error_code ec;
+      fs::remove(copied, ec);
+    }
+    if (!pathsReferToSameFile(input_absolute, resource_absolute)) {
+      std::error_code ec;
+      fs::remove(resource_absolute, ec);
+    }
+    LOG_WARN("[AssetImport] failed to place mesh glTF sidecars for {}",
              input_absolute.generic_string());
     return result;
   }

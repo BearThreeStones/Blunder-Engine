@@ -8,7 +8,7 @@ Human verification only. Automated coverage lives in `asset_import_test` (`impor
 |------|-------|
 | Build | Debug `engine_editor` from this branch (`cmake --build build/vs2026-debug --config Debug --target engine_editor`) |
 | Project | `E:\Blunder Projects\Test` (or another Blunder Project with Content Browser + Import) |
-| Source tree | Godot DogWalk repo on disk (workspace sibling: `../../Godot Projects/DogWalk` from engine root). Paths below are relative to that repo root. |
+| Source tree | Godot DogWalk repo on disk. Paths below are relative to the repo root (`E:\Godot Projects\dogwalk-repo` on the verification machine). |
 | Import target | Content Browser folder `assets/Meshes` selected before Import |
 | Mesh dialog | **Import Animations** checked in the Import Mesh dialog |
 
@@ -16,9 +16,9 @@ DogWalk Chocomel layout (disconnected tree — multi-select required):
 
 | Role | Path |
 |------|------|
-| Host mesh | `assets/char/chocomel/Chocomel.gltf` |
-| Idle companion | `animations/world/LOOP-chocomel-idle.gltf` |
-| Walk companion | `animations/world/LOOP-chocomel-walk.gltf` |
+| Host mesh | `pro/game/assets/char/chocomel/Chocomel.gltf` |
+| Idle companion | `pro/game/animations/world/LOOP-chocomel-idle/LOOP-chocomel-idle.gltf` |
+| Walk companion | `pro/game/animations/world/LOOP-chocomel-walk/LOOP-chocomel-walk.gltf` |
 
 ---
 
@@ -31,9 +31,9 @@ DogWalk Chocomel layout (disconnected tree — multi-select required):
 1. Launch `engine_editor` with the Test Project.
 2. Open Content Browser; select folder `assets/Meshes`.
 3. **Import Asset** (or OS drag-drop onto Content Browser) and multi-select exactly:
-   - `assets/char/chocomel/Chocomel.gltf`
-   - `animations/world/LOOP-chocomel-idle.gltf`
-   - `animations/world/LOOP-chocomel-walk.gltf`
+   - `pro/game/assets/char/chocomel/Chocomel.gltf`
+   - `pro/game/animations/world/LOOP-chocomel-idle/LOOP-chocomel-idle.gltf`
+   - `pro/game/animations/world/LOOP-chocomel-walk/LOOP-chocomel-walk.gltf`
 4. In **Import Mesh**, leave **Import Animations** enabled; confirm Import.
 5. After Content Browser refresh, inspect Assets:
 
@@ -101,7 +101,7 @@ Use a **local test folder** (outside the Project) mirroring the integration-test
 
 1. **Delete** or use a fresh Project subfolder so prior Chocomel Import does not mask results.
 2. Content Browser → `assets/Meshes`.
-3. Import **only** DogWalk `assets/char/chocomel/Chocomel.gltf` (do **not** multi-select LOOP files).
+3. Import **only** DogWalk `pro/game/assets/char/chocomel/Chocomel.gltf` (do **not** multi-select LOOP files).
 4. **Import Animations** enabled; confirm.
 
 **Expected (disconnected — must NOT attach):**

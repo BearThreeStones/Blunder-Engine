@@ -23,4 +23,11 @@ Task 2.4: complete (f03c7b6)
 
 Task 3.1-3.2: complete (d9090e0)
 
-Task 4.1-4.3: complete (pending commit)
+Task 4.1-4.3: complete (ef5bb9a)
+Task 4.1-4.3: complete (ef5bb9a)
+Task 5.1-5.2: checklist authored c464058; human pending
+
+Final-review fixes: 8565442 sidecar bins; 8972edd near-disk gate
+
+Tasks 5.1a/5.2a: real Chocomel Import gate automated; Content Browser and
+Edit/Play human checklist remains open

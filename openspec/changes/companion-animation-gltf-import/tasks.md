@@ -25,4 +25,6 @@
 ## 5. Manual checklist
 
 - [ ] 5.1 Content Browser: multi-select Chocomel + idle + walk → clips appear; Play/Edit can address stem names
+  - [x] 5.1a Import-side gate automated with the real DogWalk Chocomel host + idle + walk files; Content Browser and Edit/Play remain human checks
 - [ ] 5.2 Co-located near-disk pack (if available) still attaches; disconnected trees without multi-select do not falsely attach
+  - [x] 5.2a Real-file single-host disconnected negative and co-located near-disk positive automated; Content Browser remains a human check

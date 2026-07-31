@@ -12,6 +12,7 @@
 
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -911,6 +912,292 @@ void importExternalBufferCompanionPersistsSidecarAndExtractsClip() {
   g_runtime_global_context.m_logger_system.reset();
   fs::remove_all(project);
   fs::remove_all(external_root);
+}
+
+// Tasks 5.1/5.2 Import gate: exercise the real DogWalk Chocomel source pack
+// when it is available locally. Interactive Content Browser and Edit/Play
+// checks remain in the human checklist.
+void importRealDogWalkChocomelSources() {
+  using namespace Blunder;
+
+  const char* game_root_override = std::getenv("BLUNDER_DOGWALK_GAME_ROOT");
+  const fs::path game_root =
+      game_root_override != nullptr && game_root_override[0] != '\0'
+          ? fs::path(game_root_override)
+          : fs::path("E:/Godot Projects/dogwalk-repo/pro/game");
+  const fs::path host =
+      game_root / "assets" / "char" / "chocomel" / "Chocomel.gltf";
+  const fs::path host_bin = host.parent_path() / "Chocomel.bin";
+  const fs::path host_normal =
+      host.parent_path() / "textures" / "chocomel_normal.png";
+  const fs::path host_albedo =
+      host.parent_path() / "textures" / "chocomel-albedo.png";
+  const fs::path idle = game_root / "animations" / "world" /
+                        "LOOP-chocomel-idle" / "LOOP-chocomel-idle.gltf";
+  const fs::path idle_bin =
+      idle.parent_path() / "LOOP-chocomel-idle.bin";
+  const fs::path walk = game_root / "animations" / "world" /
+                        "LOOP-chocomel-walk" / "LOOP-chocomel-walk.gltf";
+  const fs::path walk_bin =
+      walk.parent_path() / "LOOP-chocomel-walk.bin";
+
+  const std::vector<fs::path> required = {
+      host,        host_bin, host_normal, host_albedo,
+      idle,        idle_bin, walk,        walk_bin};
+  for (const fs::path& path : required) {
+    if (!fs::is_regular_file(path)) {
+      std::fprintf(stdout,
+                   "SKIP real Chocomel Import: missing %s "
+                   "(set BLUNDER_DOGWALK_GAME_ROOT)\n",
+                   path.generic_string().c_str());
+      return;
+    }
+  }
+
+  std::fprintf(stdout, "RUN real Chocomel Import from %s\n",
+               game_root.generic_string().c_str());
+  ensureLogger();
+  MeshImportSettings settings{};
+  settings.animations = true;
+
+  // A: the disconnected DogWalk files attach only through multi-select.
+  const fs::path batch_project = makeTempProject();
+  FileSystem batch_file_system;
+  FileSystemInitInfo batch_fs_init{};
+  batch_fs_init.project_root = batch_project;
+  batch_file_system.initialize(batch_fs_init);
+  AssetRegistry batch_registry;
+  batch_registry.initialize(&batch_file_system);
+  AssetImportService batch_import_service;
+  AssetImportServiceInit batch_import_init{};
+  batch_import_init.file_system = &batch_file_system;
+  batch_import_init.asset_registry = &batch_registry;
+  batch_import_service.initialize(batch_import_init);
+
+  const eastl::vector<eastl::string> batch_paths = {
+      eastl::string(host.generic_string().c_str()),
+      eastl::string(idle.generic_string().c_str()),
+      eastl::string(walk.generic_string().c_str())};
+  const eastl::vector<ImportResult> batch_results =
+      batch_import_service.importExternalFiles(batch_paths, "assets/Meshes",
+                                               settings);
+
+  expect_true("real Chocomel batch returns successful host Mesh",
+              !batch_results.empty() && batch_results[0].success);
+  size_t mesh_descriptor_count = 0;
+  for (const auto& entry :
+       fs::recursive_directory_iterator(batch_project / "Assets")) {
+    if (entry.is_regular_file() &&
+        entry.path().filename().generic_string().find(".mesh.yaml") !=
+            std::string::npos) {
+      ++mesh_descriptor_count;
+    }
+  }
+  expect_true("real Chocomel batch creates exactly one Mesh descriptor",
+              mesh_descriptor_count == 1);
+  expect_true("real Chocomel batch creates no LOOP Mesh descriptors",
+              !fs::exists(batch_project / "Assets" / "Meshes" /
+                          "LOOP-chocomel-idle.mesh.yaml") &&
+                  !fs::exists(batch_project / "Assets" / "Meshes" /
+                              "LOOP-chocomel-walk.mesh.yaml"));
+  expect_true("real Chocomel host Mesh persists its bin sidecar",
+              fs::exists(batch_project / "Resources" / "Models" /
+                         "Chocomel" / host_bin.filename()));
+  expect_true("real Chocomel batch registers idle clip by companion stem",
+              fs::exists(batch_project / "Assets" / "Animations" /
+                         "LOOP-chocomel-idle.animation.yaml"));
+  expect_true("real Chocomel batch registers walk clip by companion stem",
+              fs::exists(batch_project / "Assets" / "Animations" /
+                         "LOOP-chocomel-walk.animation.yaml"));
+  const auto expect_registered_clip =
+      [&](const fs::path& descriptor_path, const char* read_label,
+          const char* parse_label, const char* registry_label) {
+        eastl::string yaml;
+        expect_true(read_label,
+                    batch_file_system.readText(descriptor_path, yaml));
+        AnimationClipAssetDescriptor descriptor{};
+        const bool parsed =
+            AssetYaml::parseAnimationClipDescriptor(yaml, descriptor);
+        expect_true(parse_label, parsed);
+        if (parsed) {
+          eastl::string relative(
+              fs::relative(descriptor_path, batch_project / "Assets")
+                  .generic_string()
+                  .c_str());
+          eastl::string virtual_path("assets/");
+          virtual_path.append(relative);
+          expect_true(registry_label,
+                      batch_registry.resolveGuid(descriptor.guid) ==
+                          virtual_path);
+        }
+      };
+  expect_registered_clip(
+      batch_project / "Assets" / "Animations" /
+          "LOOP-chocomel-idle.animation.yaml",
+      "real Chocomel idle clip descriptor is readable",
+      "real Chocomel idle clip descriptor parses",
+      "real Chocomel idle clip is registered by GUID");
+  expect_registered_clip(
+      batch_project / "Assets" / "Animations" /
+          "LOOP-chocomel-walk.animation.yaml",
+      "real Chocomel walk clip descriptor is readable",
+      "real Chocomel walk clip descriptor parses",
+      "real Chocomel walk clip is registered by GUID");
+
+  const fs::path batch_companions =
+      batch_project / "Resources" / "Models" / "Chocomel" / "companions";
+  expect_true("real Chocomel batch persists idle glTF and bin",
+              fs::exists(batch_companions / idle.filename()) &&
+                  fs::exists(batch_companions / idle_bin.filename()) &&
+                  fs::file_size(batch_companions / idle_bin.filename()) ==
+                      fs::file_size(idle_bin));
+  expect_true("real Chocomel batch persists walk glTF and bin",
+              fs::exists(batch_companions / walk.filename()) &&
+                  fs::exists(batch_companions / walk_bin.filename()) &&
+                  fs::file_size(batch_companions / walk_bin.filename()) ==
+                      fs::file_size(walk_bin));
+
+  eastl::string batch_mesh_yaml;
+  expect_true(
+      "real Chocomel batch Mesh descriptor is readable",
+      batch_file_system.readText(batch_project / "Assets" / "Meshes" /
+                                     "Chocomel.mesh.yaml",
+                                 batch_mesh_yaml));
+  MeshAssetDescriptor batch_mesh_descriptor{};
+  expect_true("real Chocomel batch Mesh descriptor parses",
+              AssetYaml::parseMeshDescriptor(batch_mesh_yaml,
+                                             batch_mesh_descriptor));
+  expect_true("real Chocomel batch records both companion sources",
+              batch_mesh_descriptor.companion_animation_sources.size() == 2);
+
+  // B: importing only the disconnected host must not discover world animations.
+  const fs::path disconnected_project = makeTempProject();
+  FileSystem disconnected_file_system;
+  FileSystemInitInfo disconnected_fs_init{};
+  disconnected_fs_init.project_root = disconnected_project;
+  disconnected_file_system.initialize(disconnected_fs_init);
+  AssetRegistry disconnected_registry;
+  disconnected_registry.initialize(&disconnected_file_system);
+  AssetImportService disconnected_import_service;
+  AssetImportServiceInit disconnected_import_init{};
+  disconnected_import_init.file_system = &disconnected_file_system;
+  disconnected_import_init.asset_registry = &disconnected_registry;
+  disconnected_import_service.initialize(disconnected_import_init);
+
+  const eastl::vector<eastl::string> host_only = {
+      eastl::string(host.generic_string().c_str())};
+  const eastl::vector<ImportResult> disconnected_results =
+      disconnected_import_service.importExternalFiles(
+          host_only, "assets/Meshes", settings);
+  expect_true("real disconnected Chocomel host Import succeeds",
+              !disconnected_results.empty() &&
+                  disconnected_results[0].success);
+  expect_true("real disconnected Chocomel host attaches no companions",
+              !disconnected_results.empty() &&
+                  disconnected_results[0].companion_animation_paths.empty());
+  expect_true("real disconnected Chocomel host registers no LOOP clips",
+              !fs::exists(disconnected_project / "Assets" / "Animations" /
+                          "LOOP-chocomel-idle.animation.yaml") &&
+                  !fs::exists(disconnected_project / "Assets" / "Animations" /
+                              "LOOP-chocomel-walk.animation.yaml"));
+
+  eastl::string disconnected_mesh_yaml;
+  expect_true(
+      "real disconnected Chocomel Mesh descriptor is readable",
+      disconnected_file_system.readText(
+          disconnected_project / "Assets" / "Meshes" / "Chocomel.mesh.yaml",
+          disconnected_mesh_yaml));
+  MeshAssetDescriptor disconnected_mesh_descriptor{};
+  expect_true("real disconnected Chocomel Mesh descriptor parses",
+              AssetYaml::parseMeshDescriptor(disconnected_mesh_yaml,
+                                             disconnected_mesh_descriptor));
+  expect_true("real disconnected Chocomel descriptor has no companions",
+              disconnected_mesh_descriptor.companion_animation_sources.empty());
+
+  // C: copy the same real files into the supported near-disk layout and verify
+  // that a single host selection discovers the two sibling child folders.
+  const fs::path co_located_root =
+      fs::temp_directory_path() /
+      ("blunder_real_chocomel_near_disk_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path co_located_host =
+      co_located_root / "chocomel" / host.filename();
+  const fs::path co_located_idle =
+      co_located_root / "idle" / idle.filename();
+  const fs::path co_located_walk =
+      co_located_root / "walk" / walk.filename();
+  fs::create_directories(co_located_host.parent_path());
+  fs::create_directories(co_located_idle.parent_path());
+  fs::create_directories(co_located_walk.parent_path());
+  fs::copy_file(host, co_located_host);
+  fs::copy_file(host_bin, co_located_host.parent_path() / host_bin.filename());
+  fs::create_directories(co_located_host.parent_path() / "textures");
+  fs::copy_file(host_normal, co_located_host.parent_path() / "textures" /
+                                    host_normal.filename());
+  fs::copy_file(host_albedo, co_located_host.parent_path() / "textures" /
+                                    host_albedo.filename());
+  fs::copy_file(idle, co_located_idle);
+  fs::copy_file(idle_bin, co_located_idle.parent_path() / idle_bin.filename());
+  fs::copy_file(walk, co_located_walk);
+  fs::copy_file(walk_bin, co_located_walk.parent_path() / walk_bin.filename());
+
+  const fs::path co_located_project = makeTempProject();
+  FileSystem co_located_file_system;
+  FileSystemInitInfo co_located_fs_init{};
+  co_located_fs_init.project_root = co_located_project;
+  co_located_file_system.initialize(co_located_fs_init);
+  AssetRegistry co_located_registry;
+  co_located_registry.initialize(&co_located_file_system);
+  AssetImportService co_located_import_service;
+  AssetImportServiceInit co_located_import_init{};
+  co_located_import_init.file_system = &co_located_file_system;
+  co_located_import_init.asset_registry = &co_located_registry;
+  co_located_import_service.initialize(co_located_import_init);
+
+  const eastl::vector<eastl::string> co_located_host_only = {
+      eastl::string(co_located_host.generic_string().c_str())};
+  const eastl::vector<ImportResult> co_located_results =
+      co_located_import_service.importExternalFiles(
+          co_located_host_only, "assets/Meshes", settings);
+  expect_true("real co-located Chocomel host Import succeeds",
+              !co_located_results.empty() && co_located_results[0].success);
+  expect_true("real co-located Chocomel host attaches two companions",
+              !co_located_results.empty() &&
+                  co_located_results[0].companion_animation_paths.size() == 2);
+  expect_true("real co-located Chocomel registers both LOOP clips",
+              fs::exists(co_located_project / "Assets" / "Animations" /
+                         "LOOP-chocomel-idle.animation.yaml") &&
+                  fs::exists(co_located_project / "Assets" / "Animations" /
+                             "LOOP-chocomel-walk.animation.yaml"));
+  eastl::string co_located_mesh_yaml;
+  expect_true(
+      "real co-located Chocomel Mesh descriptor is readable",
+      co_located_file_system.readText(
+          co_located_project / "Assets" / "Meshes" / "Chocomel.mesh.yaml",
+          co_located_mesh_yaml));
+  MeshAssetDescriptor co_located_mesh_descriptor{};
+  expect_true("real co-located Chocomel Mesh descriptor parses",
+              AssetYaml::parseMeshDescriptor(co_located_mesh_yaml,
+                                             co_located_mesh_descriptor));
+  expect_true("real co-located Chocomel descriptor records two companions",
+              co_located_mesh_descriptor.companion_animation_sources.size() ==
+                  2);
+
+  co_located_import_service.shutdown();
+  co_located_registry.shutdown();
+  co_located_file_system.shutdown();
+  disconnected_import_service.shutdown();
+  disconnected_registry.shutdown();
+  disconnected_file_system.shutdown();
+  batch_import_service.shutdown();
+  batch_registry.shutdown();
+  batch_file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(co_located_project);
+  fs::remove_all(co_located_root);
+  fs::remove_all(disconnected_project);
+  fs::remove_all(batch_project);
 }
 
 void multiHostBatchDoesNotRediscoverOrphanCompanions() {
@@ -3088,6 +3375,7 @@ int main() {
   companionAnimationGltfMultiSelectBatchPairing();
   importExternalFilesPairsCompanionsIntoMeshImport();
   importExternalBufferCompanionPersistsSidecarAndExtractsClip();
+  importRealDogWalkChocomelSources();
   multiHostBatchDoesNotRediscoverOrphanCompanions();
   singleMeshImportDiscoversNearDiskCompanions();
   meshExtensionRoutingTables();
