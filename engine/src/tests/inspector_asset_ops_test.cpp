@@ -23,6 +23,10 @@ void expect_true(const char* label, bool ok) {
   }
 }
 
+void expect_false(const char* label, bool ok) {
+  expect_true(label, !ok);
+}
+
 void expect_eq_str(const char* label, const eastl::string& actual,
                    const char* expected) {
   if (actual != expected) {
@@ -96,6 +100,36 @@ int main() {
   expect_eq_str("identity type", identity.type_label, "Mesh");
   expect_eq_str("identity intermediate path", identity.intermediate_path,
                 kIntermediate);
+
+  expect_true("mesh path enters asset inspector",
+              shouldEnterAssetInspectorForBrowserPath(
+                  eastl::string("assets/Meshes/Sponza.mesh.yaml")));
+  expect_false("texture path rejected for asset inspector",
+               shouldEnterAssetInspectorForBrowserPath(
+                   eastl::string("assets/Textures/brick.texture.yaml")));
+  expect_false("scene asset rejected for asset inspector",
+               shouldEnterAssetInspectorForBrowserPath(
+                   eastl::string("assets/Scenes/main.scene.asset")));
+  expect_false("folder path rejected for asset inspector",
+               shouldEnterAssetInspectorForBrowserPath(
+                   eastl::string("assets/Meshes")));
+
+  expect_true("mesh select clears entity selection",
+              shouldClearEntitySelectionForBrowserAssetPath(
+                  eastl::string("assets/Meshes/foo.mesh.yaml")));
+  expect_false("texture select does not clear entity selection",
+               shouldClearEntitySelectionForBrowserAssetPath(
+                   eastl::string("assets/Textures/foo.texture.yaml")));
+
+  expect_true("entity pick exits asset mode when active",
+              shouldExitAssetInspectorOnEntitySelection(true));
+  expect_false("entity pick no-op when not in asset mode",
+               shouldExitAssetInspectorOnEntitySelection(false));
+
+  expect_true("mesh preview captures pointer in asset mode",
+              inspectorMeshPreviewPointerCaptureActive(true));
+  expect_false("mesh preview inactive outside asset mode",
+               inspectorMeshPreviewPointerCaptureActive(false));
 
   file_system.shutdown();
   fs::remove_all(project);

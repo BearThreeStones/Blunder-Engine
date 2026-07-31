@@ -67,6 +67,11 @@ int main() {
 
   camera.orbit(10.0f, 10.0f);
   expect_true("orbit state ephemeral in memory", camera.hasUserOrbit());
+  const MeshPreviewOrbitState orbit_state = camera.orbitState();
+  expect_true("orbit yaw offset non-zero", std::fabs(orbit_state.yaw_offset_rad) > 1e-6f);
+  MeshPreviewOrbitCamera restarted;
+  restarted.setDefaultFrame(default_frame);
+  expect_false("new camera session has no persisted orbit", restarted.hasUserOrbit());
   camera.clear();
   expect_false("clear drops orbit state", camera.hasUserOrbit());
   expect_false("clear invalidates frame", camera.currentFrame().ok);

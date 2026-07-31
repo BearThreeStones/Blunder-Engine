@@ -2291,6 +2291,9 @@ void SlintSystem::syncHierarchy() {
 
 void SlintSystem::setAssetInspectorSelection(
     const eastl::string& mesh_descriptor_path) {
+  if (!shouldEnterAssetInspectorForBrowserPath(mesh_descriptor_path)) {
+    return;
+  }
   m_inspector_asset_mode = true;
   m_inspector_asset_virtual_path = mesh_descriptor_path;
   m_inspector_mesh_preview.bindMesh(mesh_descriptor_path);
@@ -4390,6 +4393,7 @@ bool SlintSystem::trySelectHierarchyEntity(float window_x, float window_y) {
       selection);
   if (selected) {
     m_hierarchy_handled_by_slint = true;
+    clearAssetInspectorSelection();
     syncInspectorFromSelection();
     syncHierarchy();
   }

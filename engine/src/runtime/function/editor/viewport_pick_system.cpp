@@ -69,7 +69,11 @@ void ViewportPickSystem::applySelection(const EntityId entity_id,
 }
 
 void ViewportPickSystem::notifyEditorUi() const {
+  EditorSelectionSystem* selection = g_runtime_global_context.m_editor_selection.get();
   if (g_runtime_global_context.m_slint_system) {
+    if (selection && selection->hasSelection()) {
+      g_runtime_global_context.m_slint_system->clearAssetInspectorSelection();
+    }
     g_runtime_global_context.m_slint_system->syncInspectorFromSelection();
     // Viewport pick is SDL-driven; unlike Slint hierarchy clicks it does not
     // invalidate the window. Force a Skia composite so outline/gizmo appear without

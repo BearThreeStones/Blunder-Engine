@@ -25,4 +25,26 @@ bool resolveMeshAssetInspectorIdentity(
     const eastl::string& descriptor_virtual_path, const AssetRegistry* registry,
     FileSystem* file_system, AssetInspectorIdentity& out_identity);
 
+/// Content Browser selection enters Asset Inspector only for Mesh descriptors.
+inline bool shouldEnterAssetInspectorForBrowserPath(
+    const eastl::string& virtual_path) {
+  return isMeshAssetDescriptorPath(virtual_path);
+}
+
+/// Browser Mesh selection should clear scene entity selection.
+inline bool shouldClearEntitySelectionForBrowserAssetPath(
+    const eastl::string& virtual_path) {
+  return shouldEnterAssetInspectorForBrowserPath(virtual_path);
+}
+
+/// Scene entity selection should exit Asset Inspector when it is active.
+inline bool shouldExitAssetInspectorOnEntitySelection(bool inspector_asset_mode) {
+  return inspector_asset_mode;
+}
+
+/// Mesh Preview captures pointer input while Asset Inspector is active.
+inline bool inspectorMeshPreviewPointerCaptureActive(bool asset_mode) {
+  return asset_mode;
+}
+
 }  // namespace Blunder

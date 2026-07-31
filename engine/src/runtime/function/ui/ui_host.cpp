@@ -7,6 +7,7 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/inspector_asset_ops.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -382,8 +383,16 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       break;
     case UiEventKind::browserMeshAssetSelected:
-      if (!event.path.empty() && m_presentation) {
-        m_presentation->setAssetInspectorSelection(event.path);
+      if (!event.path.empty() &&
+          shouldEnterAssetInspectorForBrowserPath(event.path)) {
+        if (services.selection &&
+            shouldClearEntitySelectionForBrowserAssetPath(event.path)) {
+          services.selection->clearSelection();
+        }
+        if (m_presentation) {
+          m_presentation->setAssetInspectorSelection(event.path);
+        }
+        m_panels.markDirty(EditorPanelDirty::hierarchy);
       }
       m_panels.markDirty(EditorPanelDirty::inspector);
       break;
