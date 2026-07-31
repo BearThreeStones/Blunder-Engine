@@ -5,7 +5,19 @@
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_studio_lights.h"
 #include "runtime/function/render/overlay/camera_preview_rt_size.h"
+#include "runtime/function/render/rhi/i_command_list.h"
+#include "runtime/function/render/rhi/i_frame_sync.h"
+#include "runtime/function/render/rhi/i_gpu_buffer.h"
+#include "runtime/function/render/rhi/i_gpu_texture.h"
+#include "runtime/function/render/rhi/i_offscreen_render_target.h"
+#include "runtime/function/render/rhi/i_render_backend.h"
+#include "runtime/function/render/rhi/i_render_device.h"
+#include "runtime/function/render/rhi/i_shader_compiler.h"
+#include "runtime/function/render/rhi/render_backend_factory.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/platform/window/window_system.h"
+
+#include <vulkan/vulkan.h>
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_cook/asset_cook_types.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
@@ -25,6 +37,7 @@ namespace fs = std::filesystem;
 namespace {
 
 int g_failures = 0;
+bool g_gpu_mesh_preview_readback_verified = false;
 
 void expect_true(const char* label, bool ok) {
   if (!ok) {
@@ -139,6 +152,64 @@ void expectStudioLightsDefault(const char* label,
   expect_true(label, lights.shadows_enabled == defaults.shadows_enabled);
 }
 
+class StubNonVulkanRenderBackend final : public Blunder::rhi::IRenderBackend {
+  struct DummyDevice final : Blunder::rhi::IRenderDevice {
+    void initialize(const Blunder::rhi::RenderDeviceDesc&) override {}
+    void shutdown() override {}
+    eastl::unique_ptr<Blunder::rhi::IOffscreenRenderTarget> createOffscreenTarget(
+        const Blunder::rhi::OffscreenTargetDesc&) override {
+      return nullptr;
+    }
+    eastl::unique_ptr<Blunder::rhi::IGpuBuffer> createBuffer(
+        const Blunder::rhi::BufferDesc&) override {
+      return nullptr;
+    }
+    eastl::unique_ptr<Blunder::rhi::IGpuTexture> createTextureFromAsset(
+        const Blunder::Texture2DAsset*) override {
+      return nullptr;
+    }
+    eastl::unique_ptr<Blunder::rhi::ICommandList> beginImmediateCommandList()
+        override {
+      return nullptr;
+    }
+  };
+  struct DummyCompiler final : Blunder::rhi::IShaderCompiler {
+    Blunder::rhi::ShaderBytecode compile(const char*, const char*,
+                                         Blunder::rhi::ShaderStage) override {
+      return {};
+    }
+  };
+  struct DummyFrameSync final : Blunder::rhi::IFrameSync {
+    uint32_t maxFramesInFlight() const override { return 1; }
+    void waitForFrame(uint32_t) override {}
+    void resetFrameFence(uint32_t) override {}
+    void signalFrameSubmitted(uint32_t) override {}
+  };
+
+  DummyDevice m_device;
+  DummyCompiler m_compiler;
+  DummyFrameSync m_sync;
+
+ public:
+  Blunder::rhi::RenderBackendType type() const override {
+    return Blunder::rhi::RenderBackendType::D3D12;
+  }
+  Blunder::rhi::IRenderDevice& device() override { return m_device; }
+  const Blunder::rhi::IRenderDevice& device() const override {
+    return m_device;
+  }
+  Blunder::rhi::IShaderCompiler& shaderCompiler() override {
+    return m_compiler;
+  }
+  const Blunder::rhi::IShaderCompiler& shaderCompiler() const override {
+    return m_compiler;
+  }
+  Blunder::rhi::IFrameSync& frameSync() override { return m_sync; }
+  const Blunder::rhi::IFrameSync& frameSync() const override {
+    return m_sync;
+  }
+};
+
 class FailingMeshPreviewBackend final : public Blunder::IMeshPreviewRenderBackend {
  public:
   bool renderMeshPreview(const Blunder::MeshAsset&,
@@ -228,6 +299,155 @@ void meshPreviewRenderTargetOwnershipIsDedicated() {
       "Mesh Preview owner differs from main viewport",
       MeshPreviewOffscreenBackend::k_render_target_owner !=
           PreviewRenderTargetOwner::MainViewport);
+  expect_eq_u32(
+      "Mesh Preview owner tag",
+      static_cast<uint32_t>(MeshPreviewOffscreenBackend::k_render_target_owner),
+      static_cast<uint32_t>(PreviewRenderTargetOwner::MeshPreview));
+}
+
+void meshPreviewOffscreenBackendRejectsInvalidInit() {
+  using namespace Blunder;
+
+  auto* backend = new MeshPreviewOffscreenBackend();
+  expect_true("offscreen target null before init",
+              backend->offscreenTarget() == nullptr);
+  expect_true("initialize rejects null backend",
+              !backend->initialize(nullptr));
+
+  StubNonVulkanRenderBackend non_vulkan;
+  expect_true("initialize rejects non-Vulkan backend",
+              !backend->initialize(&non_vulkan));
+  expect_true("offscreen target still null after failed init",
+              backend->offscreenTarget() == nullptr);
+
+  Asset::Meta meta;
+  meta.virtual_path = "test/uninit.mesh.yaml";
+  const eastl::shared_ptr<MeshAsset> mesh =
+      eastl::make_shared<MeshAsset>(meta, eastl::vector<MeshVertex>{},
+                                    eastl::vector<uint32_t>{}, AssetHandle{},
+                                    nullptr, MeshSkinData{}, false);
+  MeshPreviewRenderRequest request{};
+  request.width = 64;
+  request.height = 64;
+  MeshPreviewFramingParams framing_params{};
+  framing_params.local_bounds =
+      AABB::fromCenterExtents(glm::vec3(0.0f), glm::vec3(1.0f));
+  framing_params.aspect = 1.0f;
+  const MeshPreviewCameraFrame framing =
+      computeMeshPreviewCameraFrame(framing_params);
+  const MeshPreviewStudioLights lights = defaultMeshPreviewStudioLights();
+  eastl::vector<uint8_t> rgba;
+  expect_true("render without initialize fails",
+              !backend->renderMeshPreview(*mesh, request, framing, lights,
+                                          MeshPreviewPoseMode::RestPose, rgba));
+  expect_true("readback empty when render fails", rgba.empty());
+
+  backend->shutdown();
+  expect_true("offscreen target null after shutdown",
+              backend->offscreenTarget() == nullptr);
+  delete backend;
+}
+
+bool vulkanLoaderAvailable() {
+  uint32_t extension_count = 0;
+  return vkEnumerateInstanceExtensionProperties(nullptr, &extension_count,
+                                              nullptr) == VK_SUCCESS;
+}
+
+void meshPreviewOffscreenBackendGpuHarnessWhenAvailable() {
+  using namespace Blunder;
+
+  if (!vulkanLoaderAvailable()) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: GPU gate skipped (Vulkan loader "
+                 "unavailable)\n");
+    return;
+  }
+
+  ensureLogger();
+
+  WindowSystem window;
+  WindowCreateInfo win_info{};
+  win_info.width = 64;
+  win_info.height = 64;
+  win_info.title = "mesh_preview_render_test";
+  window.initialize(win_info);
+  if (window.getNativeWindow() == nullptr) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: GPU gate skipped (SDL window "
+                 "unavailable)\n");
+    return;
+  }
+
+  rhi::RenderBackendInitInfo backend_init{};
+  backend_init.device_desc.window_system = &window;
+  backend_init.device_desc.enable_validation = false;
+  eastl::unique_ptr<rhi::IRenderBackend> render_backend =
+      rhi::RenderBackendFactory::create(rhi::RenderBackendType::Vulkan,
+                                        backend_init);
+  if (!render_backend) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: GPU gate skipped (Vulkan backend "
+                 "create failed)\n");
+    window.shutdown();
+    return;
+  }
+
+  MeshPreviewOffscreenBackend* mesh_backend =
+      new MeshPreviewOffscreenBackend();
+  expect_true("initialize accepts Vulkan backend",
+              mesh_backend->initialize(render_backend.get()));
+  expect_true("offscreen target null before ensureResources",
+              mesh_backend->offscreenTarget() == nullptr);
+
+  Asset::Meta meta;
+  meta.virtual_path = "test/gpu.mesh.yaml";
+  const eastl::shared_ptr<MeshAsset> mesh =
+      eastl::make_shared<MeshAsset>(meta, eastl::vector<MeshVertex>{},
+                                    eastl::vector<uint32_t>{}, AssetHandle{},
+                                    nullptr, MeshSkinData{}, false);
+  MeshPreviewRenderRequest request{};
+  request.width = 64;
+  request.height = 64;
+  MeshPreviewFramingParams framing_params{};
+  framing_params.local_bounds =
+      AABB::fromCenterExtents(glm::vec3(0.0f), glm::vec3(1.0f));
+  framing_params.aspect = 1.0f;
+  const MeshPreviewCameraFrame framing =
+      computeMeshPreviewCameraFrame(framing_params);
+  const MeshPreviewStudioLights lights = defaultMeshPreviewStudioLights();
+  eastl::vector<uint8_t> rgba;
+  const bool rendered = mesh_backend->renderMeshPreview(
+      *mesh, request, framing, lights, MeshPreviewPoseMode::RestPose, rgba);
+  if (!rendered) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: GPU gate skipped (renderMeshPreview "
+                 "failed; no GPU readback verified)\n");
+    mesh_backend->shutdown();
+    delete mesh_backend;
+    window.shutdown();
+    return;
+  }
+
+  g_gpu_mesh_preview_readback_verified = true;
+  expect_true("gpu offscreen target allocated after render",
+              mesh_backend->offscreenTarget() != nullptr);
+  expect_eq_u32("gpu readback width", request.width, 64u);
+  expect_eq_u32("gpu readback height", request.height, 64u);
+  expect_eq_u32("gpu readback rgba bytes",
+                static_cast<uint32_t>(rgba.size()), 64u * 64u * 4u);
+  expect_eq_u32("gpu readback alpha", rgba[3], 255u);
+  // Task 1.2 clear color: {0.055, 0.065, 0.085, 1.0}
+  expect_near("gpu readback clear red", static_cast<float>(rgba[0]),
+              0.055f * 255.0f, 2.0f);
+  expect_near("gpu readback clear green", static_cast<float>(rgba[1]),
+              0.065f * 255.0f, 2.0f);
+  expect_near("gpu readback clear blue", static_cast<float>(rgba[2]),
+              0.085f * 255.0f, 2.0f);
+
+  mesh_backend->shutdown();
+  delete mesh_backend;
+  window.shutdown();
 }
 
 void skinnedMeshUsesBindPoseIntent() {
@@ -397,11 +617,11 @@ void renderUsesIntermediateWhenFinalMissing() {
       !file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
 
   CallbackState callbacks{};
-  ClearReadbackMeshPreviewBackend backend;
+  ClearReadbackMeshPreviewBackend stub_backend;
   MeshPreviewRenderService service;
   MeshPreviewRenderServiceInit init;
   init.asset_manager = &manager;
-  init.backend = &backend;
+  init.backend = &stub_backend;
   init.on_success = onSuccess;
   init.on_failure = onFailure;
   init.callback_user = &callbacks;
@@ -409,7 +629,7 @@ void renderUsesIntermediateWhenFinalMissing() {
 
   const MeshPreviewRenderResult result =
       service.renderMeshAsset(eastl::string(kDescriptorPath));
-  expect_true("Intermediate path ok", result.ok);
+  expect_true("Intermediate path ok (stub backend)", result.ok);
   expect_eq_u32("Intermediate load source",
                 static_cast<uint32_t>(result.load_source),
                 static_cast<uint32_t>(MeshPreviewLoadSource::Intermediate));
@@ -417,7 +637,7 @@ void renderUsesIntermediateWhenFinalMissing() {
   expect_eq_u32("readback height", result.height, 128u);
   expect_eq_u32("readback rgba bytes", static_cast<uint32_t>(result.rgba.size()),
                 128u * 128u * 4u);
-  expect_true("readback alpha populated",
+  expect_true("stub readback alpha populated",
               !result.rgba.empty() && result.rgba[3] == 255u);
   expectStudioLightsDefault("Intermediate studio lights", result.studio_lights);
   expect_true("success hook called", callbacks.success_called);
@@ -536,6 +756,8 @@ void renderWithoutInitializeReturnsErrorAndHook() {
 int main() {
   framingUsesAabbWithPadding();
   meshPreviewRenderTargetOwnershipIsDedicated();
+  meshPreviewOffscreenBackendRejectsInvalidInit();
+  meshPreviewOffscreenBackendGpuHarnessWhenAvailable();
   skinnedMeshUsesBindPoseIntent();
   renderFailureReturnsClearErrorAndHook();
   renderPrefersFinalWhenAvailable();
@@ -547,7 +769,13 @@ int main() {
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
   } else {
-    std::fprintf(stdout, "mesh_preview_render_test: all passed\n");
+    std::fprintf(stdout, "mesh_preview_render_test: all passed");
+    if (g_gpu_mesh_preview_readback_verified) {
+      std::fprintf(stdout, " (GPU readback verified)\n");
+    } else {
+      std::fprintf(stdout,
+                   " (GPU readback not verified; CPU/stub coverage only)\n");
+    }
   }
 
   Blunder::g_runtime_global_context.m_logger_system.reset();

@@ -25,7 +25,7 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend {
   static constexpr PreviewRenderTargetOwner k_render_target_owner =
       PreviewRenderTargetOwner::MeshPreview;
 
-  MeshPreviewOffscreenBackend() = default;
+  MeshPreviewOffscreenBackend();
   ~MeshPreviewOffscreenBackend() override;
 
   bool initialize(rhi::IRenderBackend* render_backend);
