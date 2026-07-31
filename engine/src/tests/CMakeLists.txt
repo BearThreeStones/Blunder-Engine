@@ -813,6 +813,31 @@ target_precompile_headers(mesh_preview_render_test
 add_test(NAME mesh_preview_render_test
          COMMAND mesh_preview_render_test)
 
+add_executable(thumbnail_generator_test
+    "thumbnail_generator_test.cpp"
+)
+
+target_link_libraries(thumbnail_generator_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(thumbnail_generator_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(thumbnail_generator_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(thumbnail_generator_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME thumbnail_generator_test
+         COMMAND thumbnail_generator_test)
+
 add_executable(play_ipc_test
     "play_ipc_test.cpp"
     "../runtime/project/play_ipc.cpp"

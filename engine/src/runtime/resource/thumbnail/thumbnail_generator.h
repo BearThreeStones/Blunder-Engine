@@ -12,11 +12,13 @@ namespace Blunder {
 
 class AssetManager;
 class FileSystem;
+class MeshPreviewRenderService;
 struct ContentEntry;
 
 struct ThumbnailGeneratorInit {
   FileSystem* file_system{nullptr};
   AssetManager* asset_manager{nullptr};
+  MeshPreviewRenderService* mesh_preview_service{nullptr};
   uint32_t thumbnail_size{128};
 };
 
@@ -27,8 +29,14 @@ class ThumbnailGenerator final {
   void initialize(const ThumbnailGeneratorInit& init);
   void shutdown();
 
+  void setMeshPreviewService(MeshPreviewRenderService* service);
+
   ThumbnailResult ensureThumbnail(const ContentEntry& entry);
   void ensureThumbnails(const ContentEntry* entries, uint32_t entry_count);
+
+  /// Synchronous RGBA generation without touching the disk cache (tests / hooks).
+  bool generateThumbnailRgba(const ContentEntry& entry,
+                             eastl::vector<uint8_t>& out_rgba);
 
  private:
   bool generateRgbaForEntry(const ContentEntry& entry,
@@ -48,6 +56,7 @@ class ThumbnailGenerator final {
 
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};
+  MeshPreviewRenderService* m_mesh_preview_service{nullptr};
   ThumbnailCache m_cache;
   uint32_t m_thumbnail_size{128};
   bool m_is_initialized{false};

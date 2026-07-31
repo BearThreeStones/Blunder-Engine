@@ -3,6 +3,7 @@
 #include <cstring>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset/material_asset.h"
@@ -21,6 +22,7 @@ void ThumbnailGenerator::initialize(const ThumbnailGeneratorInit& init) {
   ASSERT(init.asset_manager);
   m_file_system = init.file_system;
   m_asset_manager = init.asset_manager;
+  m_mesh_preview_service = init.mesh_preview_service;
   m_thumbnail_size = init.thumbnail_size > 0 ? init.thumbnail_size : 128;
   m_cache.bind(m_file_system);
   m_is_initialized = true;
@@ -30,7 +32,13 @@ void ThumbnailGenerator::shutdown() {
   m_is_initialized = false;
   m_file_system = nullptr;
   m_asset_manager = nullptr;
+  m_mesh_preview_service = nullptr;
   m_cache.bind(nullptr);
+}
+
+void ThumbnailGenerator::setMeshPreviewService(
+    MeshPreviewRenderService* service) {
+  m_mesh_preview_service = service;
 }
 
 bool ThumbnailGenerator::endsWithSuffix(const eastl::string& value,
@@ -85,20 +93,23 @@ bool ThumbnailGenerator::generateImageThumbnail(
 
 bool ThumbnailGenerator::generateMeshThumbnail(const eastl::string& virtual_path,
                                                eastl::vector<uint8_t>& out_rgba) {
+  if (m_mesh_preview_service != nullptr) {
+    MeshPreviewRenderRequest request{};
+    request.mesh_virtual_path = virtual_path;
+    request.width = m_thumbnail_size;
+    request.height = m_thumbnail_size;
+    const MeshPreviewRenderResult preview =
+        m_mesh_preview_service->renderMeshAsset(virtual_path, request);
+    if (preview.ok && !preview.rgba.empty()) {
+      out_rgba = eastl::move(preview.rgba);
+      return true;
+    }
+    return generatePlaceholder(ThumbnailPlaceholderKind::Mesh, out_rgba);
+  }
+
   const eastl::shared_ptr<MeshAsset> mesh = m_asset_manager->loadMesh(virtual_path);
   if (!mesh) {
     return false;
-  }
-
-  const eastl::shared_ptr<MaterialAsset>& material = mesh->getMaterialAsset();
-  if (material && material->hasBaseColorTexture()) {
-    const eastl::shared_ptr<Texture2DAsset>& texture =
-        material->getBaseColorTextureAsset();
-    if (texture) {
-      resizeTexture2DAssetToRgba8(*texture, m_thumbnail_size, m_thumbnail_size,
-                                  out_rgba);
-      return !out_rgba.empty();
-    }
   }
 
   return generatePlaceholder(ThumbnailPlaceholderKind::Mesh, out_rgba);
@@ -154,6 +165,17 @@ bool ThumbnailGenerator::generateRgbaForEntry(const ContentEntry& entry,
   }
 
   return generatePlaceholder(ThumbnailPlaceholderKind::File, out_rgba);
+}
+
+bool ThumbnailGenerator::generateThumbnailRgba(const ContentEntry& entry,
+                                               eastl::vector<uint8_t>& out_rgba) {
+  if (!m_is_initialized) {
+    return false;
+  }
+  if (shouldSkipEntry(entry)) {
+    return false;
+  }
+  return generateRgbaForEntry(entry, out_rgba);
 }
 
 ThumbnailResult ThumbnailGenerator::ensureThumbnail(const ContentEntry& entry) {

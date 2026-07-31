@@ -24,6 +24,8 @@ class AssetRegistry;
 class AssetImportService;
 class AssetCompilerService;
 class ThumbnailGenerator;
+class MeshPreviewOffscreenBackend;
+class MeshPreviewRenderService;
 class ContentBrowserSystem;
 class EditorSelectionSystem;
 class HierarchySystem;
@@ -71,6 +73,8 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<AssetCompilerService> m_asset_compiler;
   eastl::shared_ptr<SceneSystem> m_scene_system;
   eastl::shared_ptr<ThumbnailGenerator> m_thumbnail_generator;
+  eastl::unique_ptr<MeshPreviewOffscreenBackend> m_mesh_preview_backend;
+  eastl::unique_ptr<MeshPreviewRenderService> m_mesh_preview_service;
   eastl::shared_ptr<ContentBrowserSystem> m_content_browser;
   eastl::shared_ptr<EditorSelectionSystem> m_editor_selection;
   eastl::shared_ptr<HierarchySystem> m_hierarchy;

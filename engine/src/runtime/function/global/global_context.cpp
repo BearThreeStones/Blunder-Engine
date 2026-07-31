@@ -10,6 +10,7 @@
 // #include "runtime/function/framework/world/world_manager.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/rhi/i_render_backend.h"
 #include "runtime/function/script/dotnet_host.h"
 #include "runtime/function/script/scene_behaviour_mount.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -31,6 +32,8 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -133,6 +136,32 @@ void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
       }
     }
   }
+}
+
+void wireMeshPreviewThumbnails(RuntimeGlobalContext& ctx) {
+  if (!ctx.m_render_system || !ctx.m_thumbnail_generator ||
+      !ctx.m_asset_manager) {
+    return;
+  }
+  rhi::IRenderBackend* backend = ctx.m_render_system->getRenderBackend();
+  if (backend == nullptr) {
+    return;
+  }
+
+  ctx.m_mesh_preview_backend = eastl::make_unique<MeshPreviewOffscreenBackend>();
+  if (!ctx.m_mesh_preview_backend->initialize(backend,
+                                            ctx.m_asset_manager.get())) {
+    ctx.m_mesh_preview_backend.reset();
+    return;
+  }
+
+  ctx.m_mesh_preview_service = eastl::make_unique<MeshPreviewRenderService>();
+  MeshPreviewRenderServiceInit preview_init{};
+  preview_init.asset_manager = ctx.m_asset_manager.get();
+  preview_init.backend = ctx.m_mesh_preview_backend.get();
+  ctx.m_mesh_preview_service->initialize(preview_init);
+  ctx.m_thumbnail_generator->setMeshPreviewService(
+      ctx.m_mesh_preview_service.get());
 }
 
 }  // namespace
@@ -299,6 +328,7 @@ void RuntimeGlobalContext::startSystems(
         "shell");
     m_render_system->initializeBackend(render_init_info);
     m_render_system->initialize(render_init_info);
+    wireMeshPreviewThumbnails(*this);
   } else {
     m_ui_host = eastl::make_shared<UiHost>();
 
@@ -337,6 +367,7 @@ void RuntimeGlobalContext::startSystems(
 
     // 3) Finish render system init (offscreen target, pipelines, overlays, ...).
     m_render_system->initialize(render_init_info);
+    wireMeshPreviewThumbnails(*this);
 
     EditorServiceHandles ui_handles{};
     ui_handles.selection = m_editor_selection;
@@ -410,8 +441,18 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   if (m_thumbnail_generator) {
+    m_thumbnail_generator->setMeshPreviewService(nullptr);
     m_thumbnail_generator->shutdown();
     m_thumbnail_generator.reset();
+  }
+
+  if (m_mesh_preview_service) {
+    m_mesh_preview_service->shutdown();
+    m_mesh_preview_service.reset();
+  }
+  if (m_mesh_preview_backend) {
+    m_mesh_preview_backend->shutdown();
+    m_mesh_preview_backend.reset();
   }
 
   if (m_render_system) {
