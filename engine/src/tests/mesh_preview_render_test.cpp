@@ -1,8 +1,10 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_framing.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_studio_lights.h"
+#include "runtime/function/render/overlay/camera_preview_rt_size.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_cook/asset_cook_types.h"
@@ -149,6 +151,24 @@ class FailingMeshPreviewBackend final : public Blunder::IMeshPreviewRenderBacken
   }
 };
 
+class ClearReadbackMeshPreviewBackend final
+    : public Blunder::IMeshPreviewRenderBackend {
+ public:
+  bool renderMeshPreview(const Blunder::MeshAsset&,
+                         const Blunder::MeshPreviewRenderRequest& request,
+                         const Blunder::MeshPreviewCameraFrame&,
+                         const Blunder::MeshPreviewStudioLights&,
+                         Blunder::MeshPreviewPoseMode,
+                         eastl::vector<uint8_t>& out_rgba) override {
+    out_rgba.assign(static_cast<size_t>(request.width) * request.height * 4u,
+                    0u);
+    for (size_t i = 3; i < out_rgba.size(); i += 4u) {
+      out_rgba[i] = 255u;
+    }
+    return true;
+  }
+};
+
 struct CallbackState {
   bool success_called{false};
   bool failure_called{false};
@@ -195,6 +215,19 @@ void framingUsesAabbWithPadding() {
   const float padded_dist =
       glm::length(padded_frame.eye - padded_frame.target);
   expect_true("padding increases camera distance", padded_dist > tight_dist);
+}
+
+void meshPreviewRenderTargetOwnershipIsDedicated() {
+  using namespace Blunder;
+
+  expect_true(
+      "Mesh Preview owner differs from Camera Preview",
+      MeshPreviewOffscreenBackend::k_render_target_owner !=
+          kCameraPreviewRenderTargetOwner);
+  expect_true(
+      "Mesh Preview owner differs from main viewport",
+      MeshPreviewOffscreenBackend::k_render_target_owner !=
+          PreviewRenderTargetOwner::MainViewport);
 }
 
 void skinnedMeshUsesBindPoseIntent() {
@@ -364,9 +397,11 @@ void renderUsesIntermediateWhenFinalMissing() {
       !file_system.exists(cookedMeshPath(file_system, eastl::string(kGuid))));
 
   CallbackState callbacks{};
+  ClearReadbackMeshPreviewBackend backend;
   MeshPreviewRenderService service;
   MeshPreviewRenderServiceInit init;
   init.asset_manager = &manager;
+  init.backend = &backend;
   init.on_success = onSuccess;
   init.on_failure = onFailure;
   init.callback_user = &callbacks;
@@ -378,6 +413,12 @@ void renderUsesIntermediateWhenFinalMissing() {
   expect_eq_u32("Intermediate load source",
                 static_cast<uint32_t>(result.load_source),
                 static_cast<uint32_t>(MeshPreviewLoadSource::Intermediate));
+  expect_eq_u32("readback width", result.width, 128u);
+  expect_eq_u32("readback height", result.height, 128u);
+  expect_eq_u32("readback rgba bytes", static_cast<uint32_t>(result.rgba.size()),
+                128u * 128u * 4u);
+  expect_true("readback alpha populated",
+              !result.rgba.empty() && result.rgba[3] == 255u);
   expectStudioLightsDefault("Intermediate studio lights", result.studio_lights);
   expect_true("success hook called", callbacks.success_called);
 
@@ -494,6 +535,7 @@ void renderWithoutInitializeReturnsErrorAndHook() {
 
 int main() {
   framingUsesAabbWithPadding();
+  meshPreviewRenderTargetOwnershipIsDedicated();
   skinnedMeshUsesBindPoseIntent();
   renderFailureReturnsClearErrorAndHook();
   renderPrefersFinalWhenAvailable();

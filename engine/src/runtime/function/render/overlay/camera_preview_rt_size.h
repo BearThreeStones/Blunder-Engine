@@ -3,9 +3,15 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "runtime/function/render/preview_render_target_owner.h"
+
 namespace Blunder {
 
 inline constexpr uint32_t kCameraPreviewMaxLongEdgePx = 480;
+/// Camera Preview owns its secondary RT/readback in RenderSystem. Mesh Preview
+/// uses MeshPreviewOffscreenBackend and must not borrow these resources.
+inline constexpr PreviewRenderTargetOwner kCameraPreviewRenderTargetOwner =
+    PreviewRenderTargetOwner::CameraPreview;
 
 struct CameraPreviewRtSize {
   uint32_t width{0};

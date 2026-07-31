@@ -151,8 +151,11 @@ set(RENDER_SOURCES
     "function/render/gizmo/transform_gizmo_overlay.cpp"
     "function/render/overlay/overlay_anti_aliasing.cpp"
     "function/render/overlay/overlay_anti_aliasing.h"
+    "function/render/preview_render_target_owner.h"
     "function/render/mesh_preview/mesh_preview_framing.h"
     "function/render/mesh_preview/mesh_preview_studio_lights.h"
+    "function/render/mesh_preview/mesh_preview_offscreen_backend.h"
+    "function/render/mesh_preview/mesh_preview_offscreen_backend.cpp"
     "function/render/mesh_preview/mesh_preview_render.h"
     "function/render/mesh_preview/mesh_preview_render.cpp"
 )
