@@ -243,6 +243,9 @@ export component InspectorPanel inherits Rectangle {
                                     event.kind == PointerEventKind.up) {
                                     preview-touch.orbiting = false;
                                 }
+                                if (event.kind == PointerEventKind.cancel) {
+                                    preview-touch.orbiting = false;
+                                }
                             }
                             double-clicked => { root.mesh-preview-reset(); }
                             scroll-event(event) => {
