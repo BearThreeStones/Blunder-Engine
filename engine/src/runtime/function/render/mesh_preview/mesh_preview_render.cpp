@@ -20,9 +20,6 @@ void MeshPreviewRenderService::shutdown() {
   m_is_initialized = false;
   m_asset_manager = nullptr;
   m_backend = nullptr;
-  m_on_success = nullptr;
-  m_on_failure = nullptr;
-  m_callback_user = nullptr;
 }
 
 void MeshPreviewRenderService::notifyFailure(const eastl::string& error) {

@@ -2,6 +2,7 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_framing.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_studio_lights.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_cook/asset_cook_types.h"
@@ -112,6 +113,41 @@ bool pathContains(const fs::path& path, const char* needle) {
   const std::string s = path.generic_string();
   return s.find(needle) != std::string::npos;
 }
+
+bool stringContains(const eastl::string& haystack, const char* needle) {
+  return haystack.find(needle) != eastl::string::npos;
+}
+
+bool vec3Near(const glm::vec3& actual, const glm::vec3& expected,
+              float epsilon = 1e-4f) {
+  return glm::length(actual - expected) <= epsilon;
+}
+
+void expectStudioLightsDefault(const char* label,
+                               const Blunder::MeshPreviewStudioLights& lights) {
+  const Blunder::MeshPreviewStudioLights defaults =
+      Blunder::defaultMeshPreviewStudioLights();
+  expect_true(label, vec3Near(lights.key_light_direction,
+                              defaults.key_light_direction));
+  expect_true(label, vec3Near(lights.key_light_color, defaults.key_light_color));
+  expect_true(label, vec3Near(lights.fill_light_direction,
+                              defaults.fill_light_direction));
+  expect_true(label, vec3Near(lights.fill_light_color, defaults.fill_light_color));
+  expect_true(label, vec3Near(lights.ambient_color, defaults.ambient_color));
+  expect_true(label, lights.shadows_enabled == defaults.shadows_enabled);
+}
+
+class FailingMeshPreviewBackend final : public Blunder::IMeshPreviewRenderBackend {
+ public:
+  bool renderMeshPreview(const Blunder::MeshAsset&,
+                         const Blunder::MeshPreviewRenderRequest&,
+                         const Blunder::MeshPreviewCameraFrame&,
+                         const Blunder::MeshPreviewStudioLights&,
+                         Blunder::MeshPreviewPoseMode,
+                         eastl::vector<uint8_t>&) override {
+    return false;
+  }
+};
 
 struct CallbackState {
   bool success_called{false};
@@ -274,6 +310,7 @@ void renderPrefersFinalWhenAvailable() {
                 static_cast<uint32_t>(result.load_source),
                 static_cast<uint32_t>(MeshPreviewLoadSource::Final));
   expect_true("framing ok", result.framing.ok);
+  expectStudioLightsDefault("Final studio lights", result.studio_lights);
   expect_true("success hook called", callbacks.success_called);
   expect_true("failure hook not called", !callbacks.failure_called);
 
@@ -341,6 +378,7 @@ void renderUsesIntermediateWhenFinalMissing() {
   expect_eq_u32("Intermediate load source",
                 static_cast<uint32_t>(result.load_source),
                 static_cast<uint32_t>(MeshPreviewLoadSource::Intermediate));
+  expectStudioLightsDefault("Intermediate studio lights", result.studio_lights);
   expect_true("success hook called", callbacks.success_called);
 
   const eastl::shared_ptr<MeshAsset> mesh =
@@ -357,6 +395,101 @@ void renderUsesIntermediateWhenFinalMissing() {
   fs::remove_all(project);
 }
 
+void renderBackendFailureReturnsGpuErrorAndHook() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "33333333-4444-4555-8666-777777777703";
+  const char* kDescriptorPath = "assets/Meshes/backend_fail.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "backend_fail.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "backend_fail.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/backend_fail.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  FailingMeshPreviewBackend backend;
+  CallbackState callbacks{};
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit init;
+  init.asset_manager = &manager;
+  init.backend = &backend;
+  init.on_success = onSuccess;
+  init.on_failure = onFailure;
+  init.callback_user = &callbacks;
+  service.initialize(init);
+
+  const MeshPreviewRenderResult result =
+      service.renderMeshAsset(eastl::string(kDescriptorPath));
+  expect_true("backend failure !ok", !result.ok);
+  expect_true("backend failure error non-empty", !result.error.empty());
+  expect_true("backend failure error mentions GPU",
+              stringContains(result.error, "GPU") ||
+                  stringContains(result.error, "backend"));
+  expect_true("backend failure hook called", callbacks.failure_called);
+  expect_true("backend success hook not called", !callbacks.success_called);
+  expect_true("backend failure hook message non-empty",
+              !callbacks.last_error.empty());
+
+  service.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void renderWithoutInitializeReturnsErrorAndHook() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  CallbackState callbacks{};
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit init;
+  init.asset_manager = &manager;
+  init.on_success = onSuccess;
+  init.on_failure = onFailure;
+  init.callback_user = &callbacks;
+  service.initialize(init);
+  service.shutdown();
+
+  const MeshPreviewRenderResult result =
+      service.renderMeshAsset(eastl::string("assets/Meshes/any.mesh.yaml"));
+  expect_true("not initialized !ok", !result.ok);
+  expect_true("not initialized error mentions initialized",
+              stringContains(result.error, "not initialized"));
+  expect_true("not initialized failure hook called", callbacks.failure_called);
+  expect_true("not initialized success hook not called",
+              !callbacks.success_called);
+
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -365,6 +498,8 @@ int main() {
   renderFailureReturnsClearErrorAndHook();
   renderPrefersFinalWhenAvailable();
   renderUsesIntermediateWhenFinalMissing();
+  renderBackendFailureReturnsGpuErrorAndHook();
+  renderWithoutInitializeReturnsErrorAndHook();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {
