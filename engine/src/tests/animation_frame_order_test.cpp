@@ -174,6 +174,136 @@ void test_preview_frame_skips_tick() {
   LifecycleDispatch::clear();
 }
 
+void test_dual_slot_play_frame_order_tick_before_pose_applied() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  reset_spies();
+
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object created", object != nullptr);
+  if (object == nullptr) {
+    return;
+  }
+
+  int peer = 0;
+  object->addBehaviour("Object");
+  object->setBehaviourScriptPeer(object->getBehaviourIdAt(0), &peer);
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  AnimationPlayer* player = object->ensureAnimationPlayer();
+  g_test_skeleton = skeleton;
+  skeleton->addBone("Hips", -1);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 2.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {2.0f, Vec3(4.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 2.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {2.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  player->setClipGuid("idle", idle_guid);
+  player->setClipGuid("walk", walk_guid);
+  player->injectClipData(idle_guid, idle);
+  player->injectClipData(walk_guid, walk);
+  player->setSlot(0, "idle");
+  player->setSlot(1, "walk");
+  player->setBlendWeight(0.5f);
+  player->addPoseAppliedListener(on_pose_applied, nullptr);
+  expect_true("play idle", player->play("idle"));
+
+  reset_spies();
+  tickObjectAnimationPlayFrame(object, 1.0f, /*play_paused=*/false);
+
+  expect_true("tick ran", g_tick_calls == 1);
+  expect_true("pose applied ran", g_pose_applied_calls == 1);
+  expect_true("tick before pose applied", g_tick_event_order < g_pose_event_order);
+  expect_true("pose not final at tick", float_near(g_bone_x_at_tick, 0.0f));
+  expect_true("dual-slot blended pose at pose applied",
+              float_near(g_bone_x_at_pose_applied, 3.0f));
+  expect_true("dominant slot position readable",
+              float_near(player->getPlaybackPosition(), 1.0f));
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_crossfade_play_frame_order_tick_before_pose_applied() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  reset_spies();
+
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object created", object != nullptr);
+  if (object == nullptr) {
+    return;
+  }
+
+  int peer = 0;
+  object->addBehaviour("Object");
+  object->setBehaviourScriptPeer(object->getBehaviourIdAt(0), &peer);
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  AnimationPlayer* player = object->ensureAnimationPlayer();
+  g_test_skeleton = skeleton;
+  skeleton->addBone("Hips", -1);
+
+  const eastl::string idle_guid = "33333333-3333-3333-3333-333333333333";
+  const eastl::string walk_guid = "44444444-4444-4444-4444-444444444444";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  player->setClipGuid("idle", idle_guid);
+  player->setClipGuid("walk", walk_guid);
+  player->injectClipData(idle_guid, idle);
+  player->injectClipData(walk_guid, walk);
+  player->setSlot(0, "idle");
+  player->setBlendWeight(0.0f);
+  player->addPoseAppliedListener(on_pose_applied, nullptr);
+  expect_true("crossfade play", player->play("walk", 1.0f));
+
+  reset_spies();
+  tickObjectAnimationPlayFrame(object, 0.5f, /*play_paused=*/false);
+
+  expect_true("tick ran", g_tick_calls == 1);
+  expect_true("pose applied ran", g_pose_applied_calls == 1);
+  expect_true("tick before pose applied", g_tick_event_order < g_pose_event_order);
+  expect_true("pose not final at tick", float_near(g_bone_x_at_tick, 0.0f));
+  expect_true("crossfade blended pose at pose applied",
+              float_near(g_bone_x_at_pose_applied, 4.0f));
+  expect_true("crossfade mid-ramp", player->isCrossfading());
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
 void test_pause_skips_tick_and_advance() {
   using namespace Blunder;
 
@@ -226,6 +356,8 @@ void test_pause_skips_tick_and_advance() {
 
 int main() {
   test_play_frame_order_tick_before_pose_applied();
+  test_dual_slot_play_frame_order_tick_before_pose_applied();
+  test_crossfade_play_frame_order_tick_before_pose_applied();
   test_preview_frame_skips_tick();
   test_pause_skips_tick_and_advance();
 

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v2 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v6 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -36,7 +36,14 @@ public unsafe struct BlunderNativeAbi
         message_set_hook;
     public delegate* unmanaged[Cdecl]<int> message_clear_hook;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_player_play;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float, int> animation_player_play_with_fade;
     public delegate* unmanaged[Cdecl]<ulong, int> animation_player_stop;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int> animation_player_set_slot;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int> animation_player_get_slot;
+    public delegate* unmanaged[Cdecl]<ulong, float, int> animation_player_set_blend_weight;
+    public delegate* unmanaged[Cdecl]<ulong, float*, int> animation_player_get_blend_weight;
+    public delegate* unmanaged[Cdecl]<ulong, float, int> animation_player_set_time_scale;
+    public delegate* unmanaged[Cdecl]<ulong, float*, int> animation_player_get_time_scale;
     public delegate* unmanaged[Cdecl]<ulong, int, int> animation_player_set_loop;
     public delegate* unmanaged[Cdecl]<ulong, float*, int>
         animation_player_get_playback_position;

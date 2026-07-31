@@ -16,6 +16,8 @@
 #include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
+#include <cstring>
+
 #if defined(_WIN32) || defined(_WIN64)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -404,6 +406,97 @@ int blunder_animation_player_play(BlunderObjectId id, const char* clip_name) {
                                                 : BLUNDER_ENGINE_ERROR;
 }
 
+int blunder_animation_player_play_with_fade(BlunderObjectId id,
+                                          const char* clip_name,
+                                          float fade_seconds) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return player->play(eastl::string(clip_name), fade_seconds)
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_player_set_slot(BlunderObjectId id, int slot_index,
+                                      const char* clip_name) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return player->setSlot(slot_index, eastl::string(clip_name))
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_player_get_slot(BlunderObjectId id, int slot_index,
+                                      char* out_name, int name_capacity) {
+  if (out_name == nullptr || name_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const eastl::string& slot_name = player->getSlotClipName(slot_index);
+  out_name[0] = '\0';
+  if (slot_name.empty()) {
+    return BLUNDER_ENGINE_OK;
+  }
+  const size_t copy_len =
+      static_cast<size_t>(name_capacity - 1) < slot_name.size()
+          ? static_cast<size_t>(name_capacity - 1)
+          : slot_name.size();
+  std::memcpy(out_name, slot_name.c_str(), copy_len);
+  out_name[copy_len] = '\0';
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_set_blend_weight(BlunderObjectId id,
+                                              float weight) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  player->setBlendWeight(weight);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_get_blend_weight(BlunderObjectId id,
+                                              float* out_weight) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr || out_weight == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_weight = player->getBlendWeight();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_set_time_scale(BlunderObjectId id, float scale) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  player->setTimeScale(scale);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_get_time_scale(BlunderObjectId id,
+                                            float* out_scale) {
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr || out_scale == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_scale = player->getTimeScale();
+  return BLUNDER_ENGINE_OK;
+}
+
 int blunder_animation_player_stop(BlunderObjectId id) {
   AnimationPlayer* player = animationPlayerForObject(id);
   if (player == nullptr) {
@@ -500,7 +593,16 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->message_set_hook = &blunder_message_set_hook;
   out->message_clear_hook = &blunder_message_clear_hook;
   out->animation_player_play = &blunder_animation_player_play;
+  out->animation_player_play_with_fade = &blunder_animation_player_play_with_fade;
   out->animation_player_stop = &blunder_animation_player_stop;
+  out->animation_player_set_slot = &blunder_animation_player_set_slot;
+  out->animation_player_get_slot = &blunder_animation_player_get_slot;
+  out->animation_player_set_blend_weight =
+      &blunder_animation_player_set_blend_weight;
+  out->animation_player_get_blend_weight =
+      &blunder_animation_player_get_blend_weight;
+  out->animation_player_set_time_scale = &blunder_animation_player_set_time_scale;
+  out->animation_player_get_time_scale = &blunder_animation_player_get_time_scale;
   out->animation_player_set_loop = &blunder_animation_player_set_loop;
   out->animation_player_get_playback_position =
       &blunder_animation_player_get_playback_position;
@@ -574,7 +676,21 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
   BLUNDER_NATIVE_ABI_LOAD(message_set_hook, "blunder_message_set_hook");
   BLUNDER_NATIVE_ABI_LOAD(message_clear_hook, "blunder_message_clear_hook");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_play, "blunder_animation_player_play");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_play_with_fade,
+                          "blunder_animation_player_play_with_fade");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_stop, "blunder_animation_player_stop");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_set_slot,
+                          "blunder_animation_player_set_slot");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_slot,
+                          "blunder_animation_player_get_slot");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_set_blend_weight,
+                          "blunder_animation_player_set_blend_weight");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_blend_weight,
+                          "blunder_animation_player_get_blend_weight");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_set_time_scale,
+                          "blunder_animation_player_set_time_scale");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_time_scale,
+                          "blunder_animation_player_get_time_scale");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_set_loop,
                           "blunder_animation_player_set_loop");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_get_playback_position,

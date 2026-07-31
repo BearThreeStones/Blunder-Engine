@@ -2,6 +2,7 @@
 
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/object.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/script/animation_frame.h"
@@ -48,10 +49,30 @@ float AnimationPreviewController::clipLength() const {
   return player != nullptr ? player->getClipLength() : 0.0f;
 }
 
+float AnimationPreviewController::timeScale() const {
+  const AnimationPlayer* player = playerFor(m_target_object);
+  return player != nullptr ? player->getTimeScale() : 1.0f;
+}
+
+float AnimationPreviewController::blendWeight() const {
+  const AnimationPlayer* player = playerFor(m_target_object);
+  return player != nullptr ? player->getBlendWeight() : 0.0f;
+}
+
+const eastl::string& AnimationPreviewController::slotClipName(int slot_index) const {
+  static const eastl::string k_empty;
+  const AnimationPlayer* player = playerFor(m_target_object);
+  if (player == nullptr) {
+    return k_empty;
+  }
+  return player->getSlotClipName(slot_index);
+}
+
 void AnimationPreviewController::bindObject(Object* object,
                                             const eastl::string& default_clip_name) {
   m_target_object = nullptr;
   m_default_clip_name.clear();
+  m_fade_seconds = 0.0f;
   m_state = AnimationPreviewState::Stopped;
 
   if (object == nullptr || !object->hasAnimationPlayer()) {
@@ -67,6 +88,7 @@ void AnimationPreviewController::bindSelection(SceneInstance* scene,
                                              EntityId entity_id) {
   m_target_object = nullptr;
   m_default_clip_name.clear();
+  m_fade_seconds = 0.0f;
   m_state = AnimationPreviewState::Stopped;
 
   if (scene == nullptr || !isValid(entity_id)) {
@@ -88,6 +110,7 @@ void AnimationPreviewController::clearTarget() {
   stop();
   m_target_object = nullptr;
   m_default_clip_name.clear();
+  m_fade_seconds = 0.0f;
 }
 
 bool AnimationPreviewController::play(const eastl::string& clip_name) {
@@ -107,7 +130,11 @@ bool AnimationPreviewController::play(const eastl::string& clip_name) {
     }
   }
 
-  if (!player->play(resolved_name)) {
+  const bool started =
+      m_fade_seconds > 0.0f
+          ? player->play(resolved_name, m_fade_seconds)
+          : player->play(resolved_name);
+  if (!started) {
     return false;
   }
 
@@ -149,6 +176,48 @@ void AnimationPreviewController::setLoop(const bool loop) {
   if (AnimationPlayer* player = playerFor(m_target_object)) {
     player->setLoop(loop);
   }
+}
+
+void AnimationPreviewController::setTimeScale(const float scale) {
+  if (AnimationPlayer* player = playerFor(m_target_object)) {
+    player->setTimeScale(scale);
+  }
+}
+
+void AnimationPreviewController::setBlendWeight(const float weight) {
+  if (AnimationPlayer* player = playerFor(m_target_object)) {
+    player->setBlendWeight(weight);
+    resampleBoundSkeleton();
+  }
+}
+
+void AnimationPreviewController::setFadeSeconds(const float fade_seconds) {
+  m_fade_seconds = fade_seconds < 0.0f ? 0.0f : fade_seconds;
+}
+
+bool AnimationPreviewController::setSlot(const int slot_index,
+                                       const eastl::string& name) {
+  AnimationPlayer* player = playerFor(m_target_object);
+  if (player == nullptr) {
+    return false;
+  }
+  if (!player->setSlot(slot_index, name)) {
+    return false;
+  }
+  resampleBoundSkeleton();
+  return true;
+}
+
+void AnimationPreviewController::resampleBoundSkeleton() {
+  if (m_target_object == nullptr) {
+    return;
+  }
+  AnimationPlayer* player = playerFor(m_target_object);
+  Skeleton* skeleton = m_target_object->getSkeleton();
+  if (player == nullptr || skeleton == nullptr) {
+    return;
+  }
+  player->sampleOntoSkeleton(*skeleton);
 }
 
 void AnimationPreviewController::tick(const float delta_time) {

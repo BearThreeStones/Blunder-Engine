@@ -1,17 +1,24 @@
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_db.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
 
+#include <cmath>
 #include <cstdio>
 
 namespace {
 
 int g_failures = 0;
+
+bool float_near(float a, float b, float eps = 1e-4f) {
+  return std::fabs(a - b) < eps;
+}
 
 void expect_true(const char* label, bool ok) {
   if (!ok) {
@@ -136,6 +143,82 @@ void exportWritesBehavioursFromBoundObjects() {
   ObjectDB::clear();
 }
 
+void exportWritesAnimationPlayerPhase2Defaults() {
+  using namespace Blunder;
+  ensureLogger();
+  ObjectDB::clear();
+
+  const char* kJson = R"({
+  "type": "Scene",
+  "guid": "cccccccc-dddd-4eee-8fff-eeeeeeeeeeee",
+  "entities": [
+    {
+      "name": "Dog",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "hasSkeleton": true,
+      "animationPlayer": {
+        "clips": {
+          "idle": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+          "walk": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        }
+      }
+    }
+  ]
+}
+)";
+
+  Scene scene;
+  expect_true("deserialize",
+              SceneSerializer::deserialize(eastl::string(kJson), scene));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+
+  const EntityId dog_id = instance.findEntityByName("Dog");
+  expect_true("dog entity", isValid(dog_id));
+  Object* dog = ObjectDB::findByEntityId(dog_id);
+  expect_true("dog Object bound", dog != nullptr);
+  if (dog == nullptr) {
+    ObjectDB::clear();
+    return;
+  }
+
+  expect_true("has skeleton", dog->hasSkeleton());
+  AnimationPlayer* player = dog->getAnimationPlayer();
+  expect_true("has player", player != nullptr);
+  if (player == nullptr) {
+    ObjectDB::clear();
+    return;
+  }
+
+  player->setTimeScale(0.5f);
+  expect_true("slot0 idle", player->setSlot(0, "idle"));
+  expect_true("slot1 walk", player->setSlot(1, "walk"));
+  player->setBlendWeight(0.35f);
+
+  Scene exported;
+  expect_true("export ok", instance.exportToScene(exported));
+  expect_true("one entity", exported.getEntities().size() == 1);
+  if (exported.getEntities().size() != 1) {
+    ObjectDB::clear();
+    return;
+  }
+
+  const SceneEntityDefinition& def = exported.getEntities()[0];
+  expect_true("has_skeleton", def.has_skeleton);
+  expect_true("two clip bindings", def.animation_player_clips.size() == 2);
+  expect_true("timeScale exported",
+              float_near(def.animation_player_time_scale, 0.5f));
+  expect_true("slot0 exported", def.animation_player_slot0 == "idle");
+  expect_true("slot1 exported", def.animation_player_slot1 == "walk");
+  expect_true("blendWeight exported",
+              float_near(def.animation_player_blend_weight, 0.35f));
+
+  ObjectDB::clear();
+}
+
 void exportWritesCamerasFromSceneInstance() {
   using namespace Blunder;
   ensureLogger();
@@ -180,6 +263,7 @@ void exportWritesCamerasFromSceneInstance() {
 
 int main() {
   exportWritesBehavioursFromBoundObjects();
+  exportWritesAnimationPlayerPhase2Defaults();
   exportWritesCamerasFromSceneInstance();
 
   using namespace Blunder;

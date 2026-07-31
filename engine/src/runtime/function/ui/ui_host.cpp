@@ -348,6 +348,11 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       preview->toggleLoop();
       break;
     }
+    case UiEventKind::animPreviewParamsEdited:
+      if (m_presentation) {
+        m_presentation->applyAnimationPreviewParams();
+      }
+      break;
     case UiEventKind::browserRefresh:
       if (services.content_browser) {
         services.content_browser->refresh();

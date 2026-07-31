@@ -71,6 +71,14 @@ void SceneInstance::instantiate(const Scene& scene) {
             m_default_animation_clip_names[id] = binding.name;
           }
         }
+        player->setTimeScale(definition.animation_player_time_scale);
+        if (!definition.animation_player_slot0.empty()) {
+          player->setSlot(0, definition.animation_player_slot0);
+        }
+        if (!definition.animation_player_slot1.empty()) {
+          player->setSlot(1, definition.animation_player_slot1);
+        }
+        player->setBlendWeight(definition.animation_player_blend_weight);
       }
       for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
         if (!object->restoreBehaviour(decl.id, decl.type)) {
@@ -335,6 +343,29 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
           decl.properties = *properties;
         }
         definition.behaviours.push_back(eastl::move(decl));
+      }
+
+      definition.has_skeleton = bound->hasSkeleton();
+      if (AnimationPlayer* player = bound->getAnimationPlayer()) {
+        struct ClipExportContext {
+          SceneEntityDefinition* definition;
+        };
+        ClipExportContext ctx{&definition};
+        player->visitClipBindings(
+            [](const eastl::string& name, const eastl::string& guid,
+               void* userdata) {
+              auto* export_ctx = static_cast<ClipExportContext*>(userdata);
+              SceneEntityDefinition::AnimationClipBinding binding;
+              binding.name = name;
+              binding.guid = guid;
+              export_ctx->definition->animation_player_clips.push_back(
+                  eastl::move(binding));
+            },
+            &ctx);
+        definition.animation_player_time_scale = player->getTimeScale();
+        definition.animation_player_slot0 = player->getSlotClipName(0);
+        definition.animation_player_slot1 = player->getSlotClipName(1);
+        definition.animation_player_blend_weight = player->getBlendWeight();
       }
     }
 

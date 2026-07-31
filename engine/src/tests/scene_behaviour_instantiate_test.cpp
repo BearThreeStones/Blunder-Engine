@@ -1,4 +1,5 @@
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/function/global/global_context.h"
@@ -7,6 +8,7 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
 
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -18,6 +20,10 @@ void expect_true(const char* label, bool ok) {
     std::fprintf(stderr, "FAIL %s\n", label);
     ++g_failures;
   }
+}
+
+bool float_near(float a, float b, float epsilon = 1e-5f) {
+  return std::fabs(a - b) <= epsilon;
 }
 
 void ensureLogger() {
@@ -229,11 +235,71 @@ void reinstantiateDestroysStaleBoundObjects() {
   ObjectDB::clear();
 }
 
+/// Instantiate applies Phase 2 defaults onto AnimationPlayer after clip map bind.
+void instantiateRestoresAnimationPlayerPhase2Defaults() {
+  using namespace Blunder;
+  ensureLogger();
+  ObjectDB::clear();
+
+  const char* kJson = R"({
+  "type": "Scene",
+  "guid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "entities": [
+    {
+      "name": "Dog",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "hasSkeleton": true,
+      "animationPlayer": {
+        "clips": {
+          "idle": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+          "walk": "11111111-2222-4333-8444-555555555555"
+        },
+        "timeScale": 0.5,
+        "slot0": "idle",
+        "slot1": "walk",
+        "blendWeight": 0.35
+      }
+    }
+  ]
+}
+)";
+
+  Scene scene;
+  expect_true("deserialize phase 2 defaults json",
+              SceneSerializer::deserialize(eastl::string(kJson), scene));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  expect_true("dog entity created", instance.getEntityCount() == 1);
+
+  const EntityId dog_id = instance.getEntityIdAtIndex(0);
+  Object* object = ObjectDB::findByEntityId(dog_id);
+  expect_true("dog has bound object", object != nullptr);
+  AnimationPlayer* player =
+      object != nullptr ? object->getAnimationPlayer() : nullptr;
+  expect_true("dog has animation player", player != nullptr);
+  if (player != nullptr) {
+    expect_true("timeScale applied on instantiate",
+                float_near(player->getTimeScale(), 0.5f));
+    expect_true("slot0 applied on instantiate",
+                player->getSlotClipName(0) == "idle");
+    expect_true("slot1 applied on instantiate",
+                player->getSlotClipName(1) == "walk");
+    expect_true("blendWeight applied on instantiate",
+                float_near(player->getBlendWeight(), 0.35f));
+  }
+
+  ObjectDB::clear();
+}
+
 }  // namespace
 
 int main() {
   instantiateRestoresBehaviourSlotsWithoutHost();
   reinstantiateDestroysStaleBoundObjects();
+  instantiateRestoresAnimationPlayerPhase2Defaults();
 
   using namespace Blunder;
   ObjectDB::clear();

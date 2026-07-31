@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 5
+#define BLUNDER_ENGINE_C_ABI_VERSION 6
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -110,7 +110,24 @@ typedef void (*BlunderPoseAppliedHook)(BlunderObjectId object_id, void* userdata
 
 BLUNDER_ENGINE_C_API int blunder_animation_player_play(BlunderObjectId id,
                                                        const char* clip_name);
+BLUNDER_ENGINE_C_API int blunder_animation_player_play_with_fade(
+    BlunderObjectId id, const char* clip_name, float fade_seconds);
 BLUNDER_ENGINE_C_API int blunder_animation_player_stop(BlunderObjectId id);
+BLUNDER_ENGINE_C_API int blunder_animation_player_set_slot(BlunderObjectId id,
+                                                           int slot_index,
+                                                           const char* clip_name);
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_slot(BlunderObjectId id,
+                                                           int slot_index,
+                                                           char* out_name,
+                                                           int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_animation_player_set_blend_weight(
+    BlunderObjectId id, float weight);
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_blend_weight(
+    BlunderObjectId id, float* out_weight);
+BLUNDER_ENGINE_C_API int blunder_animation_player_set_time_scale(
+    BlunderObjectId id, float scale);
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_time_scale(
+    BlunderObjectId id, float* out_scale);
 BLUNDER_ENGINE_C_API int blunder_animation_player_set_loop(BlunderObjectId id,
                                                            int loop);
 BLUNDER_ENGINE_C_API int blunder_animation_player_get_playback_position(
@@ -166,7 +183,19 @@ typedef struct BlunderNativeAbi {
   int (*message_set_hook)(BlunderMessageHook hook);
   int (*message_clear_hook)(void);
   int (*animation_player_play)(BlunderObjectId id, const char* clip_name);
+  int (*animation_player_play_with_fade)(BlunderObjectId id,
+                                         const char* clip_name,
+                                         float fade_seconds);
   int (*animation_player_stop)(BlunderObjectId id);
+  int (*animation_player_set_slot)(BlunderObjectId id, int slot_index,
+                                   const char* clip_name);
+  int (*animation_player_get_slot)(BlunderObjectId id, int slot_index,
+                                   char* out_name, int name_capacity);
+  int (*animation_player_set_blend_weight)(BlunderObjectId id, float weight);
+  int (*animation_player_get_blend_weight)(BlunderObjectId id,
+                                           float* out_weight);
+  int (*animation_player_set_time_scale)(BlunderObjectId id, float scale);
+  int (*animation_player_get_time_scale)(BlunderObjectId id, float* out_scale);
   int (*animation_player_set_loop)(BlunderObjectId id, int loop);
   int (*animation_player_get_playback_position)(BlunderObjectId id,
                                               float* out_position);

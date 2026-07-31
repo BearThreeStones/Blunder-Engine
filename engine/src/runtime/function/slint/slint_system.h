@@ -238,6 +238,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncInspectorBehavioursFromSelection();
   void syncContentBrowser() override;
   void applyInspectorTransform() override;
+  void applyAnimationPreviewParams() override;
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
   void applyInspectorCamera();
   void applyInspectorAddCamera();
