@@ -788,6 +788,31 @@ endif()
 add_test(NAME camera_preview_rt_size_test
          COMMAND camera_preview_rt_size_test)
 
+add_executable(mesh_preview_render_test
+    "mesh_preview_render_test.cpp"
+)
+
+target_link_libraries(mesh_preview_render_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(mesh_preview_render_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(mesh_preview_render_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(mesh_preview_render_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME mesh_preview_render_test
+         COMMAND mesh_preview_render_test)
+
 add_executable(play_ipc_test
     "play_ipc_test.cpp"
     "../runtime/project/play_ipc.cpp"
