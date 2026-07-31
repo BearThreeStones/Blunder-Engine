@@ -31,6 +31,8 @@ struct MeshPreviewRenderRequest {
   uint32_t height{128};
   float framing_padding{1.15f};
   MeshPreviewPoseMode pose_mode{MeshPreviewPoseMode::BindPose};
+  bool override_framing{false};
+  MeshPreviewCameraFrame framing_override{};
 };
 
 struct MeshPreviewRenderResult {

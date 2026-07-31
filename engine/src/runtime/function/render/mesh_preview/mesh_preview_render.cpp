@@ -69,18 +69,23 @@ MeshPreviewRenderResult MeshPreviewRenderService::renderMeshAsset(
   MeshPreviewRenderRequest backend_request = request;
   backend_request.mesh_virtual_path = mesh_virtual_path;
 
-  MeshPreviewFramingParams framing_params{};
-  framing_params.local_bounds = mesh->getLocalBounds();
-  framing_params.padding = request.framing_padding;
-  framing_params.aspect =
-      request.height > 0
-          ? static_cast<float>(request.width) / static_cast<float>(request.height)
-          : 1.0f;
-  result.framing = computeMeshPreviewCameraFrame(framing_params);
-  if (!result.framing.ok) {
-    result.error = "Mesh Preview Render: failed to compute camera framing";
-    notifyFailure(result.error);
-    return result;
+  if (request.override_framing && request.framing_override.ok) {
+    result.framing = request.framing_override;
+  } else {
+    MeshPreviewFramingParams framing_params{};
+    framing_params.local_bounds = mesh->getLocalBounds();
+    framing_params.padding = request.framing_padding;
+    framing_params.aspect =
+        request.height > 0
+            ? static_cast<float>(request.width) /
+                  static_cast<float>(request.height)
+            : 1.0f;
+    result.framing = computeMeshPreviewCameraFrame(framing_params);
+    if (!result.framing.ok) {
+      result.error = "Mesh Preview Render: failed to compute camera framing";
+      notifyFailure(result.error);
+      return result;
+    }
   }
 
   if (m_backend != nullptr) {

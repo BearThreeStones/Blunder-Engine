@@ -21,6 +21,7 @@
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_manager.h"
 #include "runtime/function/ui/editor_ui_presentation.h"
+#include "runtime/function/editor/inspector_mesh_preview.h"
 #include "runtime/function/ui/ui_context.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 
@@ -238,6 +239,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) override;
   void clearAssetInspectorSelection() override;
   void syncInspectorAssetMode();
+  void tickInspectorMeshPreview();
+  void pushInspectorMeshPreviewToSlint();
+  void clearInspectorMeshPreviewImage();
   void syncInspectorBehavioursFromSelection();
   void syncContentBrowser() override;
   void applyInspectorTransform() override;
@@ -601,6 +605,13 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_camera_preview_slint_image_bound{false};
   uint32_t m_camera_preview_image_w{0};
   uint32_t m_camera_preview_image_h{0};
+
+  InspectorMeshPreview m_inspector_mesh_preview;
+  std::optional<slint::SharedPixelBuffer<slint::Rgba8Pixel>>
+      m_inspector_mesh_preview_pixel_buffer;
+  bool m_inspector_mesh_preview_slint_image_bound{false};
+  uint32_t m_inspector_mesh_preview_image_w{0};
+  uint32_t m_inspector_mesh_preview_image_h{0};
 };
 
 }  // namespace Blunder

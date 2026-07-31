@@ -153,6 +153,7 @@ set(RENDER_SOURCES
     "function/render/overlay/overlay_anti_aliasing.h"
     "function/render/preview_render_target_owner.h"
     "function/render/mesh_preview/mesh_preview_framing.h"
+    "function/render/mesh_preview/mesh_preview_orbit_camera.h"
     "function/render/mesh_preview/mesh_preview_frame_state.h"
     "function/render/mesh_preview/mesh_preview_studio_lights.h"
     "function/render/mesh_preview/mesh_preview_draw_builder.h"

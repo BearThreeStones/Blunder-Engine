@@ -150,6 +150,12 @@ export component MainEditorWindow inherits Window {
     in property <string> inspector-asset-type: "";
     in property <string> inspector-asset-intermediate-path: "";
 
+    in property <image> inspector-mesh-preview-image;
+    in property <bool> inspector-mesh-preview-has-image: false;
+    callback inspector-mesh-preview-orbit(float, float);
+    callback inspector-mesh-preview-zoom(float);
+    callback inspector-mesh-preview-reset();
+
     callback inspector-transform-edited();
     callback inspector-field-text-committed(int, string);
     callback inspector-field-focus-changed(int, bool);
@@ -518,6 +524,11 @@ export component MainEditorWindow inherits Window {
                         asset-guid: root.inspector-asset-guid;
                         asset-type: root.inspector-asset-type;
                         asset-intermediate-path: root.inspector-asset-intermediate-path;
+                        mesh-preview-image: root.inspector-mesh-preview-image;
+                        mesh-preview-has-image: root.inspector-mesh-preview-has-image;
+                        mesh-preview-orbit(dx, dy) => { root.inspector-mesh-preview-orbit(dx, dy); }
+                        mesh-preview-zoom(delta) => { root.inspector-mesh-preview-zoom(delta); }
+                        mesh-preview-reset => { root.inspector-mesh-preview-reset(); }
                         pos-x <=> root.inspector-pos-x;
                         pos-y <=> root.inspector-pos-y;
                         pos-z <=> root.inspector-pos-z;
@@ -809,6 +820,11 @@ export component MainEditorWindow inherits Window {
                         asset-guid: root.inspector-asset-guid;
                         asset-type: root.inspector-asset-type;
                         asset-intermediate-path: root.inspector-asset-intermediate-path;
+                        mesh-preview-image: root.inspector-mesh-preview-image;
+                        mesh-preview-has-image: root.inspector-mesh-preview-has-image;
+                        mesh-preview-orbit(dx, dy) => { root.inspector-mesh-preview-orbit(dx, dy); }
+                        mesh-preview-zoom(delta) => { root.inspector-mesh-preview-zoom(delta); }
+                        mesh-preview-reset => { root.inspector-mesh-preview-reset(); }
                         pos-x <=> root.inspector-pos-x;
                         pos-y <=> root.inspector-pos-y;
                         pos-z <=> root.inspector-pos-z;

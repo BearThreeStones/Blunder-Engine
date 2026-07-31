@@ -31,6 +31,7 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/align_camera_actions.h"
 #include "runtime/function/editor/animation_preview_controller.h"
@@ -44,6 +45,7 @@
 #include "runtime/function/editor/inspector_behaviour_ops.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/editor/inspector_asset_ops.h"
+#include "runtime/function/editor/inspector_mesh_preview.h"
 #include "runtime/core/object/object.h"
 #include "runtime/function/script/behaviour_type_catalog.h"
 #include "runtime/function/scene/entity.h"
@@ -923,6 +925,19 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host,
         [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited)); }));
 
+    component->on_inspector_mesh_preview_orbit([this](float delta_x, float delta_y) {
+      m_inspector_mesh_preview.orbit(delta_x, delta_y);
+      tickInspectorMeshPreview();
+    });
+    component->on_inspector_mesh_preview_zoom([this](float delta) {
+      m_inspector_mesh_preview.zoom(delta);
+      tickInspectorMeshPreview();
+    });
+    component->on_inspector_mesh_preview_reset([this]() {
+      m_inspector_mesh_preview.resetView();
+      tickInspectorMeshPreview();
+    });
+
     component->on_inspector_field_focus_changed([this](int field_id, bool focused) {
       if (focused) {
         m_inspector_focused_field = field_id;
@@ -1577,6 +1592,80 @@ void SlintSystem::clearCameraPreviewImage() {
   }
 }
 
+void SlintSystem::clearInspectorMeshPreviewImage() {
+  m_inspector_mesh_preview_image_w = 0;
+  m_inspector_mesh_preview_image_h = 0;
+  m_inspector_mesh_preview_pixel_buffer.reset();
+  m_inspector_mesh_preview_slint_image_bound = false;
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_inspector_mesh_preview_image(slint::Image());
+    ui->set_inspector_mesh_preview_has_image(false);
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+  } catch (...) {
+  }
+}
+
+void SlintSystem::pushInspectorMeshPreviewToSlint() {
+  if (!m_window_component || !m_inspector_mesh_preview.hasRenderableImage()) {
+    return;
+  }
+  const uint8_t* pixels = m_inspector_mesh_preview.rgba().data();
+  const uint32_t width = m_inspector_mesh_preview.width();
+  const uint32_t height = m_inspector_mesh_preview.height();
+  if (pixels == nullptr || width == 0 || height == 0) {
+    return;
+  }
+
+  const size_t byte_count = static_cast<size_t>(width) * height * 4u;
+  const bool size_changed =
+      width != m_inspector_mesh_preview_image_w ||
+      height != m_inspector_mesh_preview_image_h;
+  if (!m_inspector_mesh_preview_pixel_buffer || size_changed) {
+    m_inspector_mesh_preview_pixel_buffer =
+        slint::SharedPixelBuffer<slint::Rgba8Pixel>(width, height);
+    m_inspector_mesh_preview_slint_image_bound = false;
+  }
+  std::memcpy(m_inspector_mesh_preview_pixel_buffer->begin(), pixels, byte_count);
+  m_inspector_mesh_preview_image_w = width;
+  m_inspector_mesh_preview_image_h = height;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    if (!m_inspector_mesh_preview_slint_image_bound) {
+      ui->set_inspector_mesh_preview_image(
+          slint::Image(*m_inspector_mesh_preview_pixel_buffer));
+      m_inspector_mesh_preview_slint_image_bound = true;
+    }
+    ui->set_inspector_mesh_preview_has_image(true);
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::pushInspectorMeshPreviewToSlint] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::pushInspectorMeshPreviewToSlint] unknown exception");
+  }
+}
+
+void SlintSystem::tickInspectorMeshPreview() {
+  if (!m_inspector_asset_mode) {
+    return;
+  }
+  MeshPreviewRenderService* service =
+      g_runtime_global_context.m_mesh_preview_service.get();
+  if (m_inspector_mesh_preview.tick(service)) {
+    pushInspectorMeshPreviewToSlint();
+  }
+}
+
 void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
                                              uint32_t layout, uint32_t width,
                                              uint32_t height,
@@ -2204,7 +2293,9 @@ void SlintSystem::setAssetInspectorSelection(
     const eastl::string& mesh_descriptor_path) {
   m_inspector_asset_mode = true;
   m_inspector_asset_virtual_path = mesh_descriptor_path;
+  m_inspector_mesh_preview.bindMesh(mesh_descriptor_path);
   syncInspectorFromSelection();
+  tickInspectorMeshPreview();
 }
 
 void SlintSystem::clearAssetInspectorSelection() {
@@ -2213,6 +2304,8 @@ void SlintSystem::clearAssetInspectorSelection() {
   }
   m_inspector_asset_mode = false;
   m_inspector_asset_virtual_path.clear();
+  m_inspector_mesh_preview.clear();
+  clearInspectorMeshPreviewImage();
   syncInspectorFromSelection();
 }
 

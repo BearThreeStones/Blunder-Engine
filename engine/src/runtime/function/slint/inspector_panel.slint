@@ -128,6 +128,11 @@ export component InspectorPanel inherits Rectangle {
     in property <string> asset-type: "";
     in property <string> asset-intermediate-path: "";
 
+    in property <image> mesh-preview-image;
+    in property <bool> mesh-preview-has-image: false;
+    callback mesh-preview-orbit(float, float);
+    callback mesh-preview-zoom(float);
+    callback mesh-preview-reset();
     callback transform-edited();
     callback field-text-committed(int, string);
     callback field-focus-changed(int, bool);
@@ -189,18 +194,61 @@ export component InspectorPanel inherits Rectangle {
                     }
 
                     Rectangle {
-                        min-height: 160px;
+                        min-height: 200px;
                         background: #1a1a1a;
                         border-color: #3a3a3a;
                         border-width: 1px;
                         border-radius: 3px;
+                        clip: true;
 
-                        Text {
-                            text: "Preview (task 3.2)";
+                        if root.mesh-preview-has-image: Image {
+                            width: 100%;
+                            height: 100%;
+                            source: root.mesh-preview-image;
+                            image-fit: contain;
+                        }
+                        if !root.mesh-preview-has-image: Text {
+                            text: "Loading preview…";
                             color: #707070;
                             font-size: 11px;
                             horizontal-alignment: center;
                             vertical-alignment: center;
+                        }
+
+                        preview-touch := TouchArea {
+                            width: 100%;
+                            height: 100%;
+                            mouse-cursor: default;
+                            property <bool> orbiting: false;
+                            property <length> orbit-anchor-x: 0px;
+                            property <length> orbit-anchor-y: 0px;
+
+                            moved => {
+                                if (preview-touch.orbiting) {
+                                    root.mesh-preview-orbit(
+                                        (self.mouse-x - preview-touch.orbit-anchor-x) / 1px,
+                                        (self.mouse-y - preview-touch.orbit-anchor-y) / 1px);
+                                    preview-touch.orbit-anchor-x = self.mouse-x;
+                                    preview-touch.orbit-anchor-y = self.mouse-y;
+                                }
+                            }
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left &&
+                                    event.kind == PointerEventKind.down) {
+                                    preview-touch.orbiting = true;
+                                    preview-touch.orbit-anchor-x = self.mouse-x;
+                                    preview-touch.orbit-anchor-y = self.mouse-y;
+                                }
+                                if (event.button == PointerEventButton.left &&
+                                    event.kind == PointerEventKind.up) {
+                                    preview-touch.orbiting = false;
+                                }
+                            }
+                            double-clicked => { root.mesh-preview-reset(); }
+                            scroll-event(event) => {
+                                root.mesh-preview-zoom(event.delta-y / 1px);
+                                accept
+                            }
                         }
                     }
 

@@ -93,6 +93,25 @@ endif()
 add_test(NAME inspector_asset_ops_test
          COMMAND inspector_asset_ops_test)
 
+add_executable(mesh_preview_orbit_camera_test
+    "mesh_preview_orbit_camera_test.cpp"
+)
+
+target_link_libraries(mesh_preview_orbit_camera_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(mesh_preview_orbit_camera_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(mesh_preview_orbit_camera_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME mesh_preview_orbit_camera_test
+         COMMAND mesh_preview_orbit_camera_test)
+
 add_executable(classdb_test
     "classdb_test.cpp"
 )

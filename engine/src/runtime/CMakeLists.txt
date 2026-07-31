@@ -218,6 +218,8 @@ add_library(engine_runtime STATIC
     "function/editor/inspector_transform_ops.cpp"
     "function/editor/inspector_asset_ops.h"
     "function/editor/inspector_asset_ops.cpp"
+    "function/editor/inspector_mesh_preview.h"
+    "function/editor/inspector_mesh_preview.cpp"
     "function/editor/hierarchy_types.h"
     "function/editor/hierarchy_system.h"
     "function/editor/hierarchy_system.cpp"
