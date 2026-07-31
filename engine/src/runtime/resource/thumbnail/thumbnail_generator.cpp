@@ -25,6 +25,7 @@ void ThumbnailGenerator::initialize(const ThumbnailGeneratorInit& init) {
   m_mesh_preview_service = init.mesh_preview_service;
   m_thumbnail_size = init.thumbnail_size > 0 ? init.thumbnail_size : 128;
   m_cache.bind(m_file_system);
+  m_queue.bind(this);
   m_is_initialized = true;
 }
 
@@ -33,6 +34,7 @@ void ThumbnailGenerator::shutdown() {
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_mesh_preview_service = nullptr;
+  m_queue.clear();
   m_cache.bind(nullptr);
 }
 
@@ -176,6 +178,52 @@ bool ThumbnailGenerator::generateThumbnailRgba(const ContentEntry& entry,
     return false;
   }
   return generateRgbaForEntry(entry, out_rgba);
+}
+
+ThumbnailResult ThumbnailGenerator::probeThumbnailStatus(
+    const ContentEntry& entry) {
+  ThumbnailResult result{};
+  if (!m_is_initialized) {
+    result.status = ThumbnailStatus::Failed;
+    return result;
+  }
+
+  if (shouldSkipEntry(entry)) {
+    result.status = ThumbnailStatus::Skipped;
+    return result;
+  }
+
+  const ThumbnailCachePaths paths = m_cache.pathsForEntry(entry);
+  if (m_cache.isCacheValid(entry, paths)) {
+    result.status = ThumbnailStatus::CacheHit;
+    result.cache_path = paths.png_path;
+    return result;
+  }
+
+  result.status = ThumbnailStatus::None;
+  return result;
+}
+
+void ThumbnailGenerator::enqueueThumbnail(const ContentEntry& entry,
+                                          ThumbnailQueuePriority priority) {
+  if (!m_is_initialized || shouldSkipEntry(entry)) {
+    return;
+  }
+  const ThumbnailResult probe = probeThumbnailStatus(entry);
+  if (probe.status == ThumbnailStatus::CacheHit ||
+      probe.status == ThumbnailStatus::Skipped) {
+    return;
+  }
+  m_queue.enqueue(entry, priority);
+}
+
+eastl::vector<ThumbnailQueueCompleted> ThumbnailGenerator::tickThumbnailQueue(
+    uint32_t max_items) {
+  return m_queue.tick(max_items);
+}
+
+bool ThumbnailGenerator::hasQueuedThumbnails() const {
+  return m_queue.pendingCount() > 0;
 }
 
 ThumbnailResult ThumbnailGenerator::ensureThumbnail(const ContentEntry& entry) {

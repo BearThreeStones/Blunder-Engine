@@ -8,7 +8,7 @@
 ## 2. Content Browser Mesh thumbnails
 
 - [x] 2.1 Replace Mesh `ThumbnailGenerator` base-color shortcut with Mesh Preview Render still on success
-- [ ] 2.2 Async generation queue with visible-grid priority; keep Texture path unchanged
+- [x] 2.2 Async generation queue with visible-grid priority; keep Texture path unchanged
 - [ ] 2.3 On successful regenerate, cache stores 3D still (invalidate/replace old texture-based Mesh cache entries via existing mtime rules)
 - [ ] 2.4 Tests: Mesh thumbnail path prefers 3D still; Texture path unchanged; failure → Mesh placeholder not base-color success
 

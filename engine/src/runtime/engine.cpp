@@ -389,6 +389,13 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       }
     }
 
+    if (g_runtime_global_context.m_content_browser &&
+        g_runtime_global_context.m_content_browser->tickThumbnailQueue()) {
+      if (slint_system) {
+        slint_system->syncContentBrowser();
+      }
+    }
+
     g_runtime_global_context.m_input_system->tick();
 
     {

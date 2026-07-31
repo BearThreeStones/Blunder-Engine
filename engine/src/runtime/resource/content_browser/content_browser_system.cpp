@@ -7,6 +7,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content/content_index.h"
+#include "runtime/resource/thumbnail/thumbnail_generation_queue.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/function/global/global_context.h"
 
@@ -281,6 +282,62 @@ bool ContentBrowserSystem::tickFileWatch() {
   return m_file_watch.consumeRefreshRequest();
 }
 
+void ContentBrowserSystem::applyThumbnailCompletion(
+    const ThumbnailQueueCompleted& completed) {
+  const auto entry_it = m_entry_index.find(completed.virtual_path);
+  if (entry_it != m_entry_index.end()) {
+    ContentEntry& entry = m_entries[entry_it->second];
+    entry.thumbnail_status = completed.result.status;
+    entry.thumbnail_cache_path = completed.result.cache_path;
+  }
+
+  for (ContentBrowserGridItem& item : m_grid_items) {
+    if (item.virtual_path == completed.virtual_path) {
+      item.thumbnail_status = completed.result.status;
+      item.thumbnail_cache_path = completed.result.cache_path;
+    }
+  }
+}
+
+bool ContentBrowserSystem::tickThumbnailQueue(uint32_t max_items) {
+  if (!m_is_initialized || m_thumbnail_generator == nullptr) {
+    return false;
+  }
+
+  const eastl::vector<ThumbnailQueueCompleted> completed =
+      m_thumbnail_generator->tickThumbnailQueue(max_items);
+  if (completed.empty()) {
+    return false;
+  }
+
+  for (const ThumbnailQueueCompleted& item : completed) {
+    applyThumbnailCompletion(item);
+  }
+  return true;
+}
+
+void ContentBrowserSystem::enqueueVisibleGridThumbnails() {
+  if (!m_is_initialized || m_thumbnail_generator == nullptr) {
+    return;
+  }
+
+  for (const ContentBrowserGridItem& item : m_grid_items) {
+    if (item.is_directory) {
+      continue;
+    }
+    if (item.thumbnail_status == ThumbnailStatus::CacheHit ||
+        item.thumbnail_status == ThumbnailStatus::Skipped) {
+      continue;
+    }
+    const ContentEntry* entry = findEntry(item.virtual_path);
+    if (entry == nullptr) {
+      continue;
+    }
+    m_thumbnail_generator->enqueueThumbnail(*entry,
+                                            ThumbnailQueuePriority::Visible);
+  }
+}
+
 ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
   ContentBrowserRefreshStats stats{};
   if (!m_is_initialized) {
@@ -289,22 +346,24 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
 
   m_file_watch.suppressNotificationsFor(std::chrono::milliseconds(750));
 
-  m_entries = buildContentIndexWithThumbnails(
-      *m_file_system, *m_asset_manager, *m_thumbnail_generator);
+  m_entries = ContentIndex::scan(*m_file_system);
   stats.entry_count = static_cast<uint32_t>(m_entries.size());
-  for (const ContentEntry& entry : m_entries) {
+  for (ContentEntry& entry : m_entries) {
+    const ThumbnailResult thumb =
+        m_thumbnail_generator->probeThumbnailStatus(entry);
+    entry.thumbnail_status = thumb.status;
+    entry.thumbnail_cache_path = thumb.cache_path;
+    if (entry.thumbnail_status != ThumbnailStatus::CacheHit &&
+        entry.thumbnail_status != ThumbnailStatus::Skipped) {
+      m_thumbnail_generator->enqueueThumbnail(entry,
+                                              ThumbnailQueuePriority::Background);
+    }
     switch (entry.thumbnail_status) {
-      case ThumbnailStatus::Generated:
-        ++stats.thumbnails_generated;
-        break;
       case ThumbnailStatus::CacheHit:
         ++stats.thumbnails_cached;
         break;
       case ThumbnailStatus::Skipped:
         ++stats.thumbnails_skipped;
-        break;
-      case ThumbnailStatus::Failed:
-        ++stats.thumbnails_failed;
         break;
       default:
         break;
@@ -395,6 +454,7 @@ void ContentBrowserSystem::rebuildGrid() {
   m_grid_items.reserve(dir_items.size() + file_items.size());
   m_grid_items.insert(m_grid_items.end(), dir_items.begin(), dir_items.end());
   m_grid_items.insert(m_grid_items.end(), file_items.begin(), file_items.end());
+  enqueueVisibleGridThumbnails();
 }
 
 void ContentBrowserSystem::rebuildPathSegments() {

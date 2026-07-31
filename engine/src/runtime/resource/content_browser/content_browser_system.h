@@ -11,6 +11,7 @@
 #include "runtime/resource/content_browser/content_browser_drag.h"
 #include "runtime/resource/content_browser/content_browser_types.h"
 #include "runtime/resource/content_browser/content_browser_watch.h"
+#include "runtime/resource/thumbnail/thumbnail_generation_queue.h"
 
 namespace Blunder {
 
@@ -43,6 +44,9 @@ class ContentBrowserSystem final {
   /// Debounced refresh / Intermediate invalidation / Source Reimport;
   /// call once per frame on the main thread.
   bool tickFileWatch();
+
+  /// Drain async thumbnail queue; returns true when grid thumbnails changed.
+  bool tickThumbnailQueue(uint32_t max_items = 2);
 
   ContentBrowserRefreshStats refresh();
 
@@ -105,6 +109,8 @@ class ContentBrowserSystem final {
   void rebuildPathSegments();
   void indexEntries();
   bool isFolderExpanded(const eastl::string& virtual_path) const;
+  void enqueueVisibleGridThumbnails();
+  void applyThumbnailCompletion(const ThumbnailQueueCompleted& completed);
 
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};

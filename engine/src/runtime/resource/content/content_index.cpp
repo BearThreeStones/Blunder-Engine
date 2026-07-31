@@ -92,7 +92,7 @@ eastl::vector<ContentEntry> buildContentIndexWithThumbnails(
   (void)asset_manager;
   eastl::vector<ContentEntry> entries = ContentIndex::scan(file_system, max_depth);
   for (ContentEntry& entry : entries) {
-    const ThumbnailResult thumb = thumbnail_generator.ensureThumbnail(entry);
+    const ThumbnailResult thumb = thumbnail_generator.probeThumbnailStatus(entry);
     entry.thumbnail_status = thumb.status;
     entry.thumbnail_cache_path = thumb.cache_path;
   }

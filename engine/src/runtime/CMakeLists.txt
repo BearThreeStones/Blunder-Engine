@@ -182,6 +182,8 @@ add_library(engine_runtime STATIC
     "resource/thumbnail/thumbnail_resize.cpp"
     "resource/thumbnail/thumbnail_placeholders.h"
     "resource/thumbnail/thumbnail_placeholders.cpp"
+    "resource/thumbnail/thumbnail_generation_queue.h"
+    "resource/thumbnail/thumbnail_generation_queue.cpp"
     "resource/thumbnail/thumbnail_generator.h"
     "resource/thumbnail/thumbnail_generator.cpp"
     "resource/content_browser/content_browser_types.h"
