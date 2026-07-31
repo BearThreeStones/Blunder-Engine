@@ -40,6 +40,8 @@ class ThumbnailGenerator final {
 
   void enqueueThumbnail(const ContentEntry& entry,
                         ThumbnailQueuePriority priority);
+  void demoteAllQueuedThumbnails(ThumbnailQueuePriority priority);
+  void clearThumbnailQueue();
   eastl::vector<ThumbnailQueueCompleted> tickThumbnailQueue(uint32_t max_items);
   bool hasQueuedThumbnails() const;
 

@@ -217,6 +217,15 @@ void ThumbnailGenerator::enqueueThumbnail(const ContentEntry& entry,
   m_queue.enqueue(entry, priority);
 }
 
+void ThumbnailGenerator::demoteAllQueuedThumbnails(
+    ThumbnailQueuePriority priority) {
+  m_queue.demoteAll(priority);
+}
+
+void ThumbnailGenerator::clearThumbnailQueue() {
+  m_queue.clear();
+}
+
 eastl::vector<ThumbnailQueueCompleted> ThumbnailGenerator::tickThumbnailQueue(
     uint32_t max_items) {
   return m_queue.tick(max_items);

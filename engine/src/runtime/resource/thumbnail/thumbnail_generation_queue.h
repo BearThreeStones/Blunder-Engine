@@ -32,6 +32,7 @@ class ThumbnailGenerationQueue final {
   void enqueue(const ContentEntry& entry, ThumbnailQueuePriority priority);
   void setPriority(const eastl::string& virtual_path,
                    ThumbnailQueuePriority priority);
+  void demoteAll(ThumbnailQueuePriority priority);
 
   uint32_t pendingCount() const {
     return static_cast<uint32_t>(m_items.size());

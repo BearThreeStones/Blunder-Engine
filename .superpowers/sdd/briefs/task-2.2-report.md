@@ -27,3 +27,8 @@ Added `ThumbnailGenerationQueue` with `Visible` vs `Background` priority. `Thumb
 
 ## tasks.md
 2.2 marked `[x]`.
+
+## Fix pass (review)
+- **Critical:** `ThumbnailGenerationQueue::demoteAll(Background)` at start of `enqueueVisibleGridThumbnails()` so stale Visible items from prior folder/search are demoted before grid promotion. `refresh()` clears queue before re-enqueue to avoid duplicate/stale backlog.
+- **Test:** `demoteAllResetsStaleVisiblePriority` — A Visible, B Background → demoteAll → promote B → B ticks first.
+- **Verified:** `thumbnail_generation_queue_test`, `thumbnail_generator_test` pass.

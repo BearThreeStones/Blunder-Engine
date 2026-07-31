@@ -271,10 +271,82 @@ void texturePathUnchangedThroughQueue() {
   fs::remove_all(project);
 }
 
+void demoteAllResetsStaleVisiblePriority() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  setupMeshDescriptor(project, "mesh_a.mesh.yaml",
+                      "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01", "mesh_a.gltf",
+                      "assets/Meshes/mesh_a.mesh.yaml");
+  setupMeshDescriptor(project, "mesh_b.mesh.yaml",
+                      "bbbbbbbb-cccc-4ddd-8eee-ffffffffff02", "mesh_b.gltf",
+                      "assets/Meshes/mesh_b.mesh.yaml");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init{};
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  OrderedMeshPreviewBackend backend;
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit service_init{};
+  service_init.asset_manager = &manager;
+  service_init.backend = &backend;
+  service.initialize(service_init);
+
+  ThumbnailGenerator generator;
+  ThumbnailGeneratorInit thumb_init{};
+  thumb_init.file_system = &file_system;
+  thumb_init.asset_manager = &manager;
+  thumb_init.mesh_preview_service = &service;
+  thumb_init.thumbnail_size = 16;
+  generator.initialize(thumb_init);
+
+  ThumbnailGenerationQueue queue;
+  queue.bind(&generator);
+
+  ContentEntry mesh_a{};
+  mesh_a.virtual_path = "assets/Meshes/mesh_a.mesh.yaml";
+  mesh_a.is_directory = false;
+  mesh_a.modified_time = 1;
+
+  ContentEntry mesh_b{};
+  mesh_b.virtual_path = "assets/Meshes/mesh_b.mesh.yaml";
+  mesh_b.is_directory = false;
+  mesh_b.modified_time = 2;
+
+  queue.enqueue(mesh_a, ThumbnailQueuePriority::Visible);
+  queue.enqueue(mesh_b, ThumbnailQueuePriority::Background);
+
+  queue.demoteAll(ThumbnailQueuePriority::Background);
+  queue.setPriority(mesh_b.virtual_path, ThumbnailQueuePriority::Visible);
+
+  const eastl::vector<ThumbnailQueueCompleted> first = queue.tick(1u);
+  expect_true("demote then promote processes one item", first.size() == 1u);
+  expect_true("newly visible mesh_b processed first",
+              first[0].virtual_path == mesh_b.virtual_path);
+  expect_true("mesh_b rendered first",
+              backend.rendered_paths.size() == 1u &&
+                  backend.rendered_paths[0] == "resources/Models/mesh_b.gltf");
+
+  generator.shutdown();
+  service.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
   queuePrioritizesVisibleMeshOverOffScreen();
+  demoteAllResetsStaleVisiblePriority();
   texturePathUnchangedThroughQueue();
 
   if (g_failures != 0) {

@@ -53,6 +53,12 @@ void ThumbnailGenerationQueue::setPriority(const eastl::string& virtual_path,
   }
 }
 
+void ThumbnailGenerationQueue::demoteAll(ThumbnailQueuePriority priority) {
+  for (Item& item : m_items) {
+    item.priority = priority;
+  }
+}
+
 size_t ThumbnailGenerationQueue::findBestItemIndex() const {
   size_t best = 0;
   ThumbnailQueuePriority best_priority = m_items[0].priority;

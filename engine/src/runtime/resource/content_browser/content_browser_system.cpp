@@ -321,6 +321,9 @@ void ContentBrowserSystem::enqueueVisibleGridThumbnails() {
     return;
   }
 
+  m_thumbnail_generator->demoteAllQueuedThumbnails(
+      ThumbnailQueuePriority::Background);
+
   for (const ContentBrowserGridItem& item : m_grid_items) {
     if (item.is_directory) {
       continue;
@@ -345,6 +348,8 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
   }
 
   m_file_watch.suppressNotificationsFor(std::chrono::milliseconds(750));
+
+  m_thumbnail_generator->clearThumbnailQueue();
 
   m_entries = ContentIndex::scan(*m_file_system);
   stats.entry_count = static_cast<uint32_t>(m_entries.size());
