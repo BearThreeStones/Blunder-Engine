@@ -2,7 +2,7 @@
 
 - [x] 1.1 Add Mesh Preview Render service API (load Mesh Final→Fast Path, frame AABB, studio lights, bind-pose for skinned) with unit/integration hooks for success/fail
 - [x] 1.2 Allocate dedicated offscreen RT + readback path (not Camera Preview / main viewport RT); document ownership next to Camera Preview
-- [ ] 1.3 Draw all submeshes with materials into RT; return CPU image buffer suitable for Slint/thumbnail PNG
+- [x] 1.3 Draw all submeshes with materials into RT; return CPU image buffer suitable for Slint/thumbnail PNG
 - [ ] 1.4 Tests: Final preferred over Intermediate; Intermediate used when Final missing; failure returns clear error (placeholder allowed upstream)
 
 ## 2. Content Browser Mesh thumbnails

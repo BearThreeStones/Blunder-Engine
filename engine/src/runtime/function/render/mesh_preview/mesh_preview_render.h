@@ -26,6 +26,7 @@ enum class MeshPreviewPoseMode {
 };
 
 struct MeshPreviewRenderRequest {
+  eastl::string mesh_virtual_path;
   uint32_t width{128};
   uint32_t height{128};
   float framing_padding{1.15f};

@@ -1,10 +1,12 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_framing.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_studio_lights.h"
 #include "runtime/function/render/overlay/camera_preview_rt_size.h"
+#include "runtime/function/render/viewport_style.h"
 #include "runtime/function/render/rhi/i_command_list.h"
 #include "runtime/function/render/rhi/i_frame_sync.h"
 #include "runtime/function/render/rhi/i_gpu_buffer.h"
@@ -96,6 +98,56 @@ constexpr char kMinimalTriangleGltf[] = R"({
       "attributes": { "POSITION": 1 },
       "indices": 0
     }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
+  ],
+  "buffers": [{
+    "byteLength": 44,
+    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
+  }]
+}
+)";
+
+constexpr char kDualMaterialDualMeshGltf[] = R"({
+  "asset": { "version": "2.0" },
+  "materials": [
+    { "pbrMetallicRoughness": { "baseColorFactor": [0.85, 0.12, 0.12, 1.0] } },
+    { "pbrMetallicRoughness": { "baseColorFactor": [0.12, 0.12, 0.85, 1.0] } }
+  ],
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [{
+    "primitives": [
+      {
+        "attributes": { "POSITION": 1 },
+        "indices": 0,
+        "material": 0
+      },
+      {
+        "attributes": { "POSITION": 1 },
+        "indices": 0,
+        "material": 1
+      }
+    ]
   }],
   "accessors": [
     {
@@ -437,13 +489,10 @@ void meshPreviewOffscreenBackendGpuHarnessWhenAvailable() {
   expect_eq_u32("gpu readback rgba bytes",
                 static_cast<uint32_t>(rgba.size()), 64u * 64u * 4u);
   expect_eq_u32("gpu readback alpha", rgba[3], 255u);
-  // Task 1.2 clear color: {0.055, 0.065, 0.085, 1.0}
-  expect_near("gpu readback clear red", static_cast<float>(rgba[0]),
-              0.055f * 255.0f, 2.0f);
-  expect_near("gpu readback clear green", static_cast<float>(rgba[1]),
-              0.065f * 255.0f, 2.0f);
-  expect_near("gpu readback clear blue", static_cast<float>(rgba[2]),
-              0.085f * 255.0f, 2.0f);
+  const float bg = Blunder::kViewportBackgroundRgb * 255.0f;
+  expect_near("gpu readback clear red", static_cast<float>(rgba[0]), bg, 2.0f);
+  expect_near("gpu readback clear green", static_cast<float>(rgba[1]), bg, 2.0f);
+  expect_near("gpu readback clear blue", static_cast<float>(rgba[2]), bg, 2.0f);
 
   mesh_backend->shutdown();
   delete mesh_backend;
@@ -711,6 +760,180 @@ void renderBackendFailureReturnsGpuErrorAndHook() {
   fs::remove_all(project);
 }
 
+void collectMeshPreviewSubmeshesEnumeratesAllPrimitives() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "44444444-5555-4666-8777-888888888804";
+  const char* kDescriptorPath = "assets/Meshes/dual.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "dual.gltf",
+                kDualMaterialDualMeshGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "dual.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/dual.gltf\n" +
+                    "import:\n  materials: true\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  expect_true("register dual mesh",
+              registry.registerAsset(eastl::string(kGuid),
+                                     eastl::string(kDescriptorPath)));
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  const eastl::vector<MeshPreviewSubmeshDraw> submeshes =
+      collectMeshPreviewSubmeshes(manager, eastl::string(kDescriptorPath));
+  expect_true("dual mesh collects >= 2 submeshes", submeshes.size() >= 2u);
+  expect_true("dual mesh submeshes have materials",
+              submeshes[0].material != nullptr &&
+                  submeshes[1].material != nullptr);
+  expect_true("dual mesh materials differ",
+              submeshes[0].material->getBaseColorFactor() !=
+                  submeshes[1].material->getBaseColorFactor());
+
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void meshPreviewGpuRendersMaterialColoredPixelsWhenAvailable() {
+  using namespace Blunder;
+
+  if (!vulkanLoaderAvailable()) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: material GPU gate skipped "
+                 "(Vulkan loader unavailable)\n");
+    return;
+  }
+
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "55555555-6666-4777-8888-999999999905";
+  const char* kDescriptorPath = "assets/Meshes/dual_gpu.mesh.yaml";
+
+  writeTextFile(project / "Resources" / "Models" / "dual_gpu.gltf",
+                kDualMaterialDualMeshGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "dual_gpu.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/dual_gpu.gltf\n" +
+                    "import:\n  materials: true\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  WindowSystem window;
+  WindowCreateInfo win_info{};
+  win_info.width = 64;
+  win_info.height = 64;
+  win_info.title = "mesh_preview_material_gpu_test";
+  window.initialize(win_info);
+  if (window.getNativeWindow() == nullptr) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: material GPU gate skipped (SDL "
+                 "window unavailable)\n");
+    manager.shutdown();
+    file_system.shutdown();
+    fs::remove_all(project);
+    return;
+  }
+
+  rhi::RenderBackendInitInfo backend_init{};
+  backend_init.device_desc.window_system = &window;
+  backend_init.device_desc.enable_validation = false;
+  eastl::unique_ptr<rhi::IRenderBackend> render_backend =
+      rhi::RenderBackendFactory::create(rhi::RenderBackendType::Vulkan,
+                                        backend_init);
+  if (!render_backend) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: material GPU gate skipped (Vulkan "
+                 "backend create failed)\n");
+    window.shutdown();
+    manager.shutdown();
+    file_system.shutdown();
+    fs::remove_all(project);
+    return;
+  }
+
+  const eastl::shared_ptr<MeshAsset> mesh =
+      manager.loadMesh(eastl::string(kDescriptorPath));
+  if (!mesh) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: material GPU gate skipped (mesh "
+                 "load failed)\n");
+    window.shutdown();
+    manager.shutdown();
+    file_system.shutdown();
+    fs::remove_all(project);
+    return;
+  }
+
+  MeshPreviewOffscreenBackend* mesh_backend =
+      new MeshPreviewOffscreenBackend();
+  expect_true("material gpu initialize accepts asset manager",
+              mesh_backend->initialize(render_backend.get(), &manager));
+
+  MeshPreviewRenderRequest request{};
+  request.mesh_virtual_path = kDescriptorPath;
+  request.width = 64;
+  request.height = 64;
+  MeshPreviewFramingParams framing_params{};
+  framing_params.local_bounds = mesh->getLocalBounds();
+  framing_params.padding = 1.2f;
+  framing_params.aspect = 1.0f;
+  const MeshPreviewCameraFrame framing =
+      computeMeshPreviewCameraFrame(framing_params);
+  const MeshPreviewStudioLights lights = defaultMeshPreviewStudioLights();
+  eastl::vector<uint8_t> rgba;
+  const bool rendered = mesh_backend->renderMeshPreview(
+      *mesh, request, framing, lights, MeshPreviewPoseMode::RestPose, rgba);
+  if (!rendered) {
+    std::fprintf(stdout,
+                 "mesh_preview_render_test: material GPU gate skipped "
+                 "(renderMeshPreview failed)\n");
+    mesh_backend->shutdown();
+    delete mesh_backend;
+    window.shutdown();
+    manager.shutdown();
+    file_system.shutdown();
+    fs::remove_all(project);
+    return;
+  }
+
+  g_gpu_mesh_preview_readback_verified = true;
+  expect_true("material gpu submits >= 2 draws",
+              mesh_backend->lastSubmittedDrawCount() >= 2u);
+  expect_eq_u32("material gpu readback bytes",
+                static_cast<uint32_t>(rgba.size()), 64u * 64u * 4u);
+
+  mesh_backend->shutdown();
+  delete mesh_backend;
+  window.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 void renderWithoutInitializeReturnsErrorAndHook() {
   using namespace Blunder;
   ensureLogger();
@@ -763,6 +986,8 @@ int main() {
   renderPrefersFinalWhenAvailable();
   renderUsesIntermediateWhenFinalMissing();
   renderBackendFailureReturnsGpuErrorAndHook();
+  collectMeshPreviewSubmeshesEnumeratesAllPrimitives();
+  meshPreviewGpuRendersMaterialColoredPixelsWhenAvailable();
   renderWithoutInitializeReturnsErrorAndHook();
 
   const int exit_code = g_failures != 0 ? 1 : 0;

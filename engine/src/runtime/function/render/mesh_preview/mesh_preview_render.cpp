@@ -66,6 +66,9 @@ MeshPreviewRenderResult MeshPreviewRenderService::renderMeshAsset(
   result.load_source = resolveMeshPreviewLoadSource(*mesh);
   result.pose_mode = resolveMeshPreviewPoseMode(*mesh, request.pose_mode);
 
+  MeshPreviewRenderRequest backend_request = request;
+  backend_request.mesh_virtual_path = mesh_virtual_path;
+
   MeshPreviewFramingParams framing_params{};
   framing_params.local_bounds = mesh->getLocalBounds();
   framing_params.padding = request.framing_padding;
@@ -81,7 +84,7 @@ MeshPreviewRenderResult MeshPreviewRenderService::renderMeshAsset(
   }
 
   if (m_backend != nullptr) {
-    if (!m_backend->renderMeshPreview(*mesh, request, result.framing,
+    if (!m_backend->renderMeshPreview(*mesh, backend_request, result.framing,
                                       result.studio_lights, result.pose_mode,
                                       result.rgba)) {
       result.error =
