@@ -550,6 +550,8 @@ void renderFailureReturnsClearErrorAndHook() {
       service.renderMeshAsset(eastl::string("assets/Meshes/missing.mesh.yaml"));
   expect_true("missing mesh !ok", !result.ok);
   expect_true("missing mesh error non-empty", !result.error.empty());
+  expect_true("missing mesh rgba empty (upstream placeholder)",
+              result.rgba.empty());
   expect_true("failure hook called", callbacks.failure_called);
   expect_true("success hook not called", !callbacks.success_called);
   expect_true("failure hook message non-empty", !callbacks.last_error.empty());
@@ -746,6 +748,8 @@ void renderBackendFailureReturnsGpuErrorAndHook() {
       service.renderMeshAsset(eastl::string(kDescriptorPath));
   expect_true("backend failure !ok", !result.ok);
   expect_true("backend failure error non-empty", !result.error.empty());
+  expect_true("backend failure rgba empty (upstream placeholder)",
+              result.rgba.empty());
   expect_true("backend failure error mentions GPU",
               stringContains(result.error, "GPU") ||
                   stringContains(result.error, "backend"));
@@ -934,6 +938,47 @@ void meshPreviewGpuRendersMaterialColoredPixelsWhenAvailable() {
   fs::remove_all(project);
 }
 
+void renderEmptyPathReturnsClearErrorAndHook() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  CallbackState callbacks{};
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit init;
+  init.asset_manager = &manager;
+  init.on_success = onSuccess;
+  init.on_failure = onFailure;
+  init.callback_user = &callbacks;
+  service.initialize(init);
+
+  const MeshPreviewRenderResult result = service.renderMeshAsset(eastl::string());
+  expect_true("empty path !ok", !result.ok);
+  expect_true("empty path error non-empty", !result.error.empty());
+  expect_true("empty path error mentions empty",
+              stringContains(result.error, "empty"));
+  expect_true("empty path rgba empty (upstream placeholder)",
+              result.rgba.empty());
+  expect_true("empty path failure hook called", callbacks.failure_called);
+  expect_true("empty path success hook not called", !callbacks.success_called);
+
+  service.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 void renderWithoutInitializeReturnsErrorAndHook() {
   using namespace Blunder;
   ensureLogger();
@@ -988,6 +1033,7 @@ int main() {
   renderBackendFailureReturnsGpuErrorAndHook();
   collectMeshPreviewSubmeshesEnumeratesAllPrimitives();
   meshPreviewGpuRendersMaterialColoredPixelsWhenAvailable();
+  renderEmptyPathReturnsClearErrorAndHook();
   renderWithoutInitializeReturnsErrorAndHook();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
