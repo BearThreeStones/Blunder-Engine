@@ -242,6 +242,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyInspectorCamera();
   void applyInspectorAddCamera();
   void syncInspectorCameraFromSelection();
+  void syncInspectorAnimationPlayerFromSelection();
+  void applyInspectorAnimationClipCommit(int entry_index, const eastl::string& clip_name,
+                                         const eastl::string& clip_guid);
   void applyInspectorRemoveBehaviour(BehaviourId behaviour_id);
   void applyInspectorReorderBehaviours(size_t from_index, size_t to_index);
   void applyInspectorBehaviourPropertyCommit(BehaviourId behaviour_id,

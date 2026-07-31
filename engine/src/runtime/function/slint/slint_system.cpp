@@ -42,6 +42,7 @@
 #include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/inspector_behaviour_ops.h"
+#include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/core/object/object.h"
 #include "runtime/function/script/behaviour_type_catalog.h"
 #include "runtime/function/scene/entity.h"
@@ -1045,6 +1046,12 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         });
     component->on_inspector_camera_edited([this]() { applyInspectorCamera(); });
     component->on_inspector_add_camera([this]() { applyInspectorAddCamera(); });
+    component->on_inspector_commit_animation_clip(
+        [this](int entry_index, const slint::SharedString& clip_name,
+               const slint::SharedString& clip_guid) {
+          applyInspectorAnimationClipCommit(entry_index, eastl::string(clip_name.data()),
+                                          eastl::string(clip_guid.data()));
+        });
 
     component->on_transform_mode_selected([](int mode) {
       if (!g_runtime_global_context.m_render_system) {
@@ -2069,6 +2076,19 @@ std::shared_ptr<slint::VectorModel<slint::SharedString>> makeBehaviourTypeChoice
   return model;
 }
 
+std::shared_ptr<slint::VectorModel<AnimationClipRow>> makeAnimationClipRowModel(
+    const eastl::vector<InspectorAnimationClipRowData>& rows) {
+  auto model = std::make_shared<slint::VectorModel<AnimationClipRow>>();
+  for (const InspectorAnimationClipRowData& row : rows) {
+    AnimationClipRow slint_row{};
+    slint_row.entry_index = row.entry_index;
+    slint_row.clip_name = slint::SharedString(row.clip_name.c_str());
+    slint_row.clip_guid = slint::SharedString(row.clip_guid.c_str());
+    model->push_back(slint_row);
+  }
+  return model;
+}
+
 size_t findBehaviourIndex(Object* object, BehaviourId behaviour_id) {
   if (object == nullptr) {
     return static_cast<size_t>(-1);
@@ -2202,6 +2222,7 @@ void SlintSystem::syncInspectorFromSelection() {
       }
       syncInspectorBehavioursFromSelection();
       syncInspectorCameraFromSelection();
+      syncInspectorAnimationPlayerFromSelection();
       return;
     }
 
@@ -2215,6 +2236,7 @@ void SlintSystem::syncInspectorFromSelection() {
       selection->clearDirty();
       syncInspectorBehavioursFromSelection();
       syncInspectorCameraFromSelection();
+      syncInspectorAnimationPlayerFromSelection();
       return;
     }
 
@@ -2344,6 +2366,7 @@ void SlintSystem::syncInspectorFromSelection() {
     m_applying_inspector_sync = false;
     syncInspectorBehavioursFromSelection();
     syncInspectorCameraFromSelection();
+    syncInspectorAnimationPlayerFromSelection();
   } catch (const std::exception& e) {
     m_applying_inspector_sync = false;
     LOG_ERROR("[SlintSystem::syncInspectorFromSelection] {}", e.what());
@@ -2741,6 +2764,114 @@ void SlintSystem::applyInspectorAddCamera() {
     LOG_ERROR("[SlintSystem::applyInspectorAddCamera] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::applyInspectorAddCamera] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorAnimationPlayerFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_has_animation_player(false);
+      ui->set_inspector_animation_clips(makeAnimationClipRowModel({}));
+      return;
+    }
+
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    if (ids.size() != 1) {
+      ui->set_inspector_has_animation_player(false);
+      ui->set_inspector_animation_clips(makeAnimationClipRowModel({}));
+      return;
+    }
+
+    Object* object = scene->findBoundObject(ids[0]);
+    if (object == nullptr || !object->hasAnimationPlayer()) {
+      ui->set_inspector_has_animation_player(false);
+      ui->set_inspector_animation_clips(makeAnimationClipRowModel({}));
+      return;
+    }
+
+    eastl::vector<InspectorAnimationClipRowData> rows;
+    buildInspectorAnimationClipRows(object, rows);
+    ui->set_inspector_has_animation_player(true);
+    ui->set_inspector_animation_clips(makeAnimationClipRowModel(rows));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorAnimationPlayerFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorAnimationPlayerFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorAnimationClipCommit(int entry_index,
+                                                     const eastl::string& clip_name,
+                                                     const eastl::string& clip_guid) {
+  if (!m_window_component || m_applying_inspector_sync || entry_index < 0 ||
+      clip_name.empty()) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  Object* object = scene->findBoundObject(entity_id);
+  if (object == nullptr || !object->hasAnimationPlayer()) {
+    return;
+  }
+
+  try {
+    const eastl::vector<AnimationPlayer::ClipBinding> before_bindings =
+        clipBindingsFromObject(object);
+    if (entry_index >= static_cast<int>(before_bindings.size())) {
+      return;
+    }
+
+    eastl::vector<AnimationPlayer::ClipBinding> after_bindings = before_bindings;
+    after_bindings[static_cast<size_t>(entry_index)].name = clip_name;
+    after_bindings[static_cast<size_t>(entry_index)].guid = clip_guid;
+    const AnimationPlayer::ClipBinding& before_entry =
+        before_bindings[static_cast<size_t>(entry_index)];
+    const AnimationPlayer::ClipBinding& after_entry =
+        after_bindings[static_cast<size_t>(entry_index)];
+    if (before_entry.name == after_entry.name && before_entry.guid == after_entry.guid) {
+      return;
+    }
+
+    applyClipBindingsToObject(object, after_bindings);
+    pushDocumentCommand(makeSetAnimationPlayerClipBindingsCommand(
+        scene, entity_id, before_bindings, after_bindings,
+        currentSelectionSnapshot(), currentSelectionSnapshot()));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
+    syncInspectorAnimationPlayerFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorAnimationClipCommit] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorAnimationClipCommit] unknown exception");
   }
 }
 
@@ -4906,6 +5037,21 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_camera_far = main.get_inspector_camera_far();
         snapshot.inspector_camera_is_main = main.get_inspector_camera_is_main();
         snapshot.inspector_camera_expanded = main.get_inspector_camera_expanded();
+        snapshot.inspector_has_animation_player =
+            main.get_inspector_has_animation_player();
+        snapshot.inspector_animation_clips.clear();
+        if (const auto clip_rows = main.get_inspector_animation_clips()) {
+          for (std::size_t ci = 0; ci < clip_rows->row_count(); ++ci) {
+            const AnimationClipRow row = clip_rows->row_data(ci).value();
+            NativeFloatAnimationClipRow copy{};
+            copy.entry_index = row.entry_index;
+            copy.clip_name = row.clip_name.data();
+            copy.clip_guid = row.clip_guid.data();
+            snapshot.inspector_animation_clips.push_back(eastl::move(copy));
+          }
+        }
+        snapshot.inspector_animation_player_expanded =
+            main.get_inspector_animation_player_expanded();
         snapshot.light_dir_x = main.get_light_dir_x();
         snapshot.light_dir_y = main.get_light_dir_y();
         snapshot.light_dir_z = main.get_light_dir_z();
@@ -5170,6 +5316,12 @@ void SlintSystem::wireNativeFloatingCallbacks() {
       };
   callbacks.on_inspector_camera_edited = [this]() { applyInspectorCamera(); };
   callbacks.on_inspector_add_camera = [this]() { applyInspectorAddCamera(); };
+  callbacks.on_inspector_commit_animation_clip =
+      [this](int entry_index, const slint::SharedString& clip_name,
+             const slint::SharedString& clip_guid) {
+        applyInspectorAnimationClipCommit(entry_index, eastl::string(clip_name.data()),
+                                        eastl::string(clip_guid.data()));
+      };
   callbacks.on_browser_folder_selected = UiCallbackBinder::bind(
       m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
         m_tree_folder_handled_by_slint = true;

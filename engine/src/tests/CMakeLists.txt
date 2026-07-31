@@ -1000,6 +1000,25 @@ target_precompile_headers(scene_behaviour_export_test
 add_test(NAME scene_behaviour_export_test
          COMMAND scene_behaviour_export_test)
 
+add_executable(inspector_animation_player_clip_map_test
+    "inspector_animation_player_clip_map_test.cpp"
+)
+
+target_link_libraries(inspector_animation_player_clip_map_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(inspector_animation_player_clip_map_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(inspector_animation_player_clip_map_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME inspector_animation_player_clip_map_test
+         COMMAND inspector_animation_player_clip_map_test)
+
 # Scene instantiate + mountSceneBehaviours with process ObjectDB / ProbeBehaviour.
 add_executable(scene_behaviour_mount_test
     "scene_behaviour_mount_test.cpp"

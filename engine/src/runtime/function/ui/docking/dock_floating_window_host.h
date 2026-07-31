@@ -66,6 +66,12 @@ struct NativeFloatBehaviourRow {
   eastl::vector<NativeFloatBehaviourPropRow> props;
 };
 
+struct NativeFloatAnimationClipRow {
+  int entry_index{0};
+  eastl::string clip_name;
+  eastl::string clip_guid;
+};
+
 struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
@@ -108,6 +114,9 @@ struct NativeFloatPanelSnapshot {
   float inspector_camera_far{1000.0f};
   bool inspector_camera_is_main{false};
   bool inspector_camera_expanded{true};
+  bool inspector_has_animation_player{false};
+  eastl::vector<NativeFloatAnimationClipRow> inspector_animation_clips;
+  bool inspector_animation_player_expanded{true};
   float light_dir_x{0.45f};
   float light_dir_y{0.7f};
   float light_dir_z{0.55f};
@@ -175,6 +184,8 @@ class DockFloatingWindowHost final {
         on_inspector_commit_behaviour_prop;
     std::function<void()> on_inspector_camera_edited;
     std::function<void()> on_inspector_add_camera;
+    std::function<void(int, const slint::SharedString&, const slint::SharedString&)>
+        on_inspector_commit_animation_clip;
     std::function<void(const slint::SharedString&)> on_browser_folder_selected;
     std::function<void(const slint::SharedString&)> on_browser_folder_toggle;
     std::function<void()> on_browser_refresh_requested;

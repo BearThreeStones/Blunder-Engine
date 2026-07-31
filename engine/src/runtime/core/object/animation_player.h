@@ -17,12 +17,19 @@ using PoseAppliedFn = void (*)(AnimationPlayer& player, void* userdata);
 
 class AnimationPlayer {
  public:
+  struct ClipBinding final {
+    eastl::string name;
+    eastl::string guid;
+  };
+
   size_t getClipMapEntryCount() const { return m_name_to_guid.size(); }
 
   void setClipGuid(const eastl::string& name, const eastl::string& guid);
   bool getClipGuid(const eastl::string& name, eastl::string& out_guid) const;
   void clearClipGuid(const eastl::string& name);
   void clearAllClipGuids();
+  eastl::vector<ClipBinding> getClipBindings() const;
+  void setClipBindings(const eastl::vector<ClipBinding>& bindings);
 
   void setClipResolver(AnimationClipResolveFn resolver, void* userdata);
   void injectClipData(const eastl::string& guid, AnimationClipData clip);
