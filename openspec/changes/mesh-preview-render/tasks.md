@@ -22,6 +22,6 @@
 
 ## 4. Docs / validation
 
-- [ ] 4.1 Confirm CONTEXT terms + ADR 0022 stay aligned with implementation
-- [ ] 4.2 Manual check: Sponza (or multi-material Mesh) thumbnail + Inspector preview show framed geometry, not atlas-only
-- [ ] 4.3 `/validate` relevant targets (thumbnail/inspector tests + smoke as available)
+- [x] 4.1 Confirm CONTEXT terms + ADR 0022 stay aligned with implementation
+- [x] 4.2 Manual check: Sponza (or multi-material Mesh) thumbnail + Inspector preview show framed geometry, not atlas-only
+- [x] 4.3 `/validate` relevant targets (thumbnail/inspector tests + smoke as available)

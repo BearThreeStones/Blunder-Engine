@@ -102,7 +102,8 @@ class MeshPreviewRenderService final {
   void shutdown();
 
   /// Load mesh (Final preferred, else Fast Path Intermediate), compute framing
-  /// and studio lights. GPU draw is stubbed until task 1.3 when no backend.
+  /// and studio lights. GPU draw/readback runs when a backend is wired; otherwise
+  /// returns framing metadata without an image buffer.
   MeshPreviewRenderResult renderMeshAsset(
       const eastl::string& mesh_virtual_path,
       const MeshPreviewRenderRequest& request = {});
