@@ -235,6 +235,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) override;
   void syncHierarchy() override;
   void syncInspectorFromSelection() override;
+  void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) override;
+  void clearAssetInspectorSelection() override;
+  void syncInspectorAssetMode();
   void syncInspectorBehavioursFromSelection();
   void syncContentBrowser() override;
   void applyInspectorTransform() override;
@@ -506,6 +509,8 @@ class SlintSystem final : public IEditorUiPresentation {
   int m_inspector_focused_field{-1};
   /// Last Transform field that triggered an edit (Absolute multi applies only this axis).
   int m_inspector_last_edited_field{-1};
+  bool m_inspector_asset_mode{false};
+  eastl::string m_inspector_asset_virtual_path;
   bool m_force_window_commit{false};
   bool m_window_resize_active{false};
   uint32_t m_resize_events_pumped{0};

@@ -117,6 +117,11 @@ struct NativeFloatPanelSnapshot {
   bool inspector_has_animation_player{false};
   eastl::vector<NativeFloatAnimationClipRow> inspector_animation_clips;
   bool inspector_animation_player_expanded{true};
+  bool inspector_asset_mode{false};
+  eastl::string inspector_asset_display_name;
+  eastl::string inspector_asset_guid;
+  eastl::string inspector_asset_type;
+  eastl::string inspector_asset_intermediate_path;
   float light_dir_x{0.45f};
   float light_dir_y{0.7f};
   float light_dir_z{0.55f};

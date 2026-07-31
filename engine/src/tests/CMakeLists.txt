@@ -73,6 +73,26 @@ target_precompile_headers(inspector_transform_ops_test
 add_test(NAME inspector_transform_ops_test
          COMMAND inspector_transform_ops_test)
 
+add_executable(inspector_asset_ops_test
+    "inspector_asset_ops_test.cpp"
+)
+
+target_link_libraries(inspector_asset_ops_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(inspector_asset_ops_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(inspector_asset_ops_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME inspector_asset_ops_test
+         COMMAND inspector_asset_ops_test)
+
 add_executable(classdb_test
     "classdb_test.cpp"
 )

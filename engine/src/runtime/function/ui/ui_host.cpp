@@ -128,6 +128,9 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (!services.selection) {
         return;
       }
+      if (m_presentation) {
+        m_presentation->clearAssetInspectorSelection();
+      }
       switch (event.selection_mode) {
         case UiSelectionMode::add:
           services.selection->addToSelection(event.entity_id);
@@ -377,6 +380,12 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         services.content_browser->setSearchFilter(event.path);
         m_panels.markDirty(EditorPanelDirty::content_browser);
       }
+      break;
+    case UiEventKind::browserMeshAssetSelected:
+      if (!event.path.empty() && m_presentation) {
+        m_presentation->setAssetInspectorSelection(event.path);
+      }
+      m_panels.markDirty(EditorPanelDirty::inspector);
       break;
     case UiEventKind::openSceneAsset:
       if (services.editor_scene_edit && !event.path.empty()) {

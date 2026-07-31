@@ -25,6 +25,7 @@ enum class UiEventKind : uint8_t {
   browserFolderToggle,
   browserSearchChanged,
   browserPathSegmentClicked,
+  browserMeshAssetSelected,
   openSceneAsset,
   openDirtySaveAndOpen,
   openDirtyDiscardAndOpen,

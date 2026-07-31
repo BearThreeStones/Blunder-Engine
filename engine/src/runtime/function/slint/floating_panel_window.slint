@@ -54,6 +54,11 @@ export component FloatingPanelWindow inherits Window {
     in property <bool> inspector-has-animation-player: false;
     in property <[AnimationClipRow]> inspector-animation-clips: [];
     in-out property <bool> inspector-animation-player-expanded: true;
+    in property <bool> inspector-asset-mode: false;
+    in property <string> inspector-asset-display-name: "";
+    in property <string> inspector-asset-guid: "";
+    in property <string> inspector-asset-type: "";
+    in property <string> inspector-asset-intermediate-path: "";
     in-out property <float> light-dir-x: 0.45;
     in-out property <float> light-dir-y: 0.7;
     in-out property <float> light-dir-z: 0.55;
@@ -195,6 +200,11 @@ export component FloatingPanelWindow inherits Window {
                 height: 100%;
                 has-selection: root.inspector-has-selection;
                 entity-name: root.inspector-entity-name;
+                asset-mode: root.inspector-asset-mode;
+                asset-display-name: root.inspector-asset-display-name;
+                asset-guid: root.inspector-asset-guid;
+                asset-type: root.inspector-asset-type;
+                asset-intermediate-path: root.inspector-asset-intermediate-path;
                 pos-x <=> root.inspector-pos-x;
                 pos-y <=> root.inspector-pos-y;
                 pos-z <=> root.inspector-pos-z;

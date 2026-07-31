@@ -14,7 +14,7 @@
 
 ## 3. Asset Inspector + Mesh Preview UI
 
-- [ ] 3.1 Content Browser Mesh selection enters Asset Inspector mode (identity: name, GUID, type, Intermediate path)
+- [x] 3.1 Content Browser Mesh selection enters Asset Inspector mode (identity: name, GUID, type, Intermediate path)
 - [ ] 3.2 Embed interactive Mesh Preview (dedicated RT frames → Slint image); LMB orbit, wheel zoom, double-click reset; ephemeral camera
 - [ ] 3.3 Entity selection (viewport/Hierarchy) exits Asset mode and restores Entity Inspector
 - [ ] 3.4 Non-Mesh Browser selection does not open Mesh Preview

@@ -256,6 +256,13 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       }
       ui.set_inspector_animation_player_expanded(
           snapshot.inspector_animation_player_expanded);
+      ui.set_inspector_asset_mode(snapshot.inspector_asset_mode);
+      ui.set_inspector_asset_display_name(
+          toSharedString(snapshot.inspector_asset_display_name));
+      ui.set_inspector_asset_guid(toSharedString(snapshot.inspector_asset_guid));
+      ui.set_inspector_asset_type(toSharedString(snapshot.inspector_asset_type));
+      ui.set_inspector_asset_intermediate_path(
+          toSharedString(snapshot.inspector_asset_intermediate_path));
       ui.set_light_dir_x(snapshot.light_dir_x);
       ui.set_light_dir_y(snapshot.light_dir_y);
       ui.set_light_dir_z(snapshot.light_dir_z);

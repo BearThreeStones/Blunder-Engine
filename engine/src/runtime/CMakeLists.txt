@@ -216,6 +216,8 @@ add_library(engine_runtime STATIC
     "function/editor/editor_selection_system.cpp"
     "function/editor/inspector_transform_ops.h"
     "function/editor/inspector_transform_ops.cpp"
+    "function/editor/inspector_asset_ops.h"
+    "function/editor/inspector_asset_ops.cpp"
     "function/editor/hierarchy_types.h"
     "function/editor/hierarchy_system.h"
     "function/editor/hierarchy_system.cpp"

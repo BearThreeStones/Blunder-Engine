@@ -43,6 +43,7 @@
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/inspector_behaviour_ops.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
+#include "runtime/function/editor/inspector_asset_ops.h"
 #include "runtime/core/object/object.h"
 #include "runtime/function/script/behaviour_type_catalog.h"
 #include "runtime/function/scene/entity.h"
@@ -1193,6 +1194,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
               host->enqueue(
                   UiEvent::withPath(UiEventKind::openSceneAsset, path_str));
             }
+            return;
+          }
+
+          if (isMeshAssetDescriptorPath(path_str)) {
+            if (const auto host = m_ui_host.lock()) {
+              host->enqueue(UiEvent::withPath(UiEventKind::browserMeshAssetSelected,
+                                              path_str));
+            }
           }
         });
 
@@ -2191,8 +2200,71 @@ void SlintSystem::syncHierarchy() {
   }
 }
 
+void SlintSystem::setAssetInspectorSelection(
+    const eastl::string& mesh_descriptor_path) {
+  m_inspector_asset_mode = true;
+  m_inspector_asset_virtual_path = mesh_descriptor_path;
+  syncInspectorFromSelection();
+}
+
+void SlintSystem::clearAssetInspectorSelection() {
+  if (!m_inspector_asset_mode) {
+    return;
+  }
+  m_inspector_asset_mode = false;
+  m_inspector_asset_virtual_path.clear();
+  syncInspectorFromSelection();
+}
+
+void SlintSystem::syncInspectorAssetMode() {
+  if (!m_window_component) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+
+  AssetInspectorIdentity identity{};
+  resolveMeshAssetInspectorIdentity(
+      m_inspector_asset_virtual_path,
+      g_runtime_global_context.m_asset_registry.get(),
+      g_runtime_global_context.m_file_system.get(), identity);
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_applying_inspector_sync = true;
+    auto& ui = *m_window_component;
+
+    ui->set_inspector_asset_mode(true);
+    ui->set_inspector_has_selection(false);
+    ui->set_inspector_entity_name(slint::SharedString(""));
+    ui->set_inspector_multi_edit_visible(false);
+    ui->set_inspector_asset_display_name(
+        slint::SharedString(identity.display_name.c_str()));
+    ui->set_inspector_asset_guid(slint::SharedString(identity.guid.c_str()));
+    ui->set_inspector_asset_type(slint::SharedString(identity.type_label.c_str()));
+    ui->set_inspector_asset_intermediate_path(
+        slint::SharedString(identity.intermediate_path.c_str()));
+
+    m_applying_inspector_sync = false;
+  } catch (const std::exception& e) {
+    m_applying_inspector_sync = false;
+    LOG_ERROR("[SlintSystem::syncInspectorAssetMode] {}", e.what());
+  } catch (...) {
+    m_applying_inspector_sync = false;
+    LOG_ERROR("[SlintSystem::syncInspectorAssetMode] unknown exception");
+  }
+}
+
 void SlintSystem::syncInspectorFromSelection() {
   if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  if (m_inspector_asset_mode) {
+    syncInspectorAssetMode();
     return;
   }
 
@@ -2217,6 +2289,7 @@ void SlintSystem::syncInspectorFromSelection() {
     };
 
     if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_asset_mode(false);
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
       ui->set_inspector_multi_edit_visible(false);
@@ -2233,6 +2306,7 @@ void SlintSystem::syncInspectorFromSelection() {
     const eastl::vector<EntityId> ids = selection->getSelectedIds();
     Entity* primary = scene->getEntity(selection->getPrimarySelection());
     if (primary == nullptr || ids.empty()) {
+      ui->set_inspector_asset_mode(false);
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
       ui->set_inspector_multi_edit_visible(false);
@@ -2250,6 +2324,7 @@ void SlintSystem::syncInspectorFromSelection() {
     const bool euler_mode =
         multi || m_inspector_rotation_mode == InspectorRotationEditMode::euler;
 
+    ui->set_inspector_asset_mode(false);
     ui->set_inspector_has_selection(true);
     if (multi) {
       char label[64];
@@ -5106,6 +5181,13 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         }
         snapshot.inspector_animation_player_expanded =
             main.get_inspector_animation_player_expanded();
+        snapshot.inspector_asset_mode = main.get_inspector_asset_mode();
+        snapshot.inspector_asset_display_name =
+            main.get_inspector_asset_display_name().data();
+        snapshot.inspector_asset_guid = main.get_inspector_asset_guid().data();
+        snapshot.inspector_asset_type = main.get_inspector_asset_type().data();
+        snapshot.inspector_asset_intermediate_path =
+            main.get_inspector_asset_intermediate_path().data();
         snapshot.light_dir_x = main.get_light_dir_x();
         snapshot.light_dir_y = main.get_light_dir_y();
         snapshot.light_dir_z = main.get_light_dir_z();

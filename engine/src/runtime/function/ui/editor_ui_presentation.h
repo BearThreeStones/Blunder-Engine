@@ -17,6 +17,8 @@ class IEditorUiPresentation {
 
   virtual void syncHierarchy() = 0;
   virtual void syncInspectorFromSelection() = 0;
+  virtual void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) = 0;
+  virtual void clearAssetInspectorSelection() = 0;
   virtual void syncContentBrowser() = 0;
   virtual void applyInspectorTransform() = 0;
   virtual void applyAnimationPreviewParams() = 0;

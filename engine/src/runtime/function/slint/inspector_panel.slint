@@ -122,6 +122,12 @@ export component InspectorPanel inherits Rectangle {
     in-out property <float> ssao-strength;
     in property <bool> layout-drag-active: false;
 
+    in property <bool> asset-mode: false;
+    in property <string> asset-display-name: "";
+    in property <string> asset-guid: "";
+    in property <string> asset-type: "";
+    in property <string> asset-intermediate-path: "";
+
     callback transform-edited();
     callback field-text-committed(int, string);
     callback field-focus-changed(int, bool);
@@ -172,6 +178,116 @@ export component InspectorPanel inherits Rectangle {
                 width: parent.width;
                 spacing: 6px;
                 padding-right: 4px;
+
+                if root.asset-mode: VerticalBox {
+                    spacing: 8px;
+
+                    Text {
+                        text: "Mesh Preview";
+                        color: #f0f0f0;
+                        font-size: 13px;
+                    }
+
+                    Rectangle {
+                        min-height: 160px;
+                        background: #1a1a1a;
+                        border-color: #3a3a3a;
+                        border-width: 1px;
+                        border-radius: 3px;
+
+                        Text {
+                            text: "Preview (task 3.2)";
+                            color: #707070;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: "Asset";
+                        color: #f0f0f0;
+                        font-size: 13px;
+                    }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Name";
+                            color: #a8a8a8;
+                            font-size: 11px;
+                            width: 72px;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.asset-display-name;
+                            color: #d8d8d8;
+                            font-size: 11px;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "GUID";
+                            color: #a8a8a8;
+                            font-size: 11px;
+                            width: 72px;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.asset-guid != "" ? root.asset-guid : "(unknown)";
+                            color: #d8d8d8;
+                            font-size: 11px;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Type";
+                            color: #a8a8a8;
+                            font-size: 11px;
+                            width: 72px;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.asset-type;
+                            color: #d8d8d8;
+                            font-size: 11px;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text {
+                            text: "Intermediate";
+                            color: #a8a8a8;
+                            font-size: 11px;
+                            width: 72px;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.asset-intermediate-path != ""
+                                ? root.asset-intermediate-path
+                                : "(unknown)";
+                            color: #d8d8d8;
+                            font-size: 11px;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+
+                    Rectangle { background: #2a2a2a; height: 1px; }
+                }
+
+                if !root.asset-mode: VerticalBox {
+                    spacing: 6px;
 
                 // --- Transform header ---
                 TouchArea {
@@ -1060,6 +1176,11 @@ export component InspectorPanel inherits Rectangle {
                 ShadingSlider { label: "Radius"; minimum: 0.05; maximum: 1.0; value <=> root.ssao-radius; }
                 ShadingSlider { label: "Bias"; minimum: 0.0; maximum: 0.1; value <=> root.ssao-bias; }
                 ShadingSlider { label: "Strength"; minimum: 0.0; maximum: 1.0; value <=> root.ssao-strength; }
+                }
+
+                if root.asset-mode: Rectangle {
+                    height: 0px;
+                }
             }
         }
     }
