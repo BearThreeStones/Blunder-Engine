@@ -23,6 +23,12 @@ export struct BehaviourRow {
     props: [BehaviourPropRow],
 }
 
+export struct AnimationClipRow {
+    entry-index: int,
+    clip-name: string,
+    clip-guid: string,
+}
+
 export component ShadingSlider inherits VerticalBox {
     spacing: 2px;
     in property <string> label;
@@ -141,6 +147,11 @@ export component InspectorPanel inherits Rectangle {
     in-out property <bool> camera-expanded: true;
     callback camera-edited();
     callback add-camera();
+
+    in property <bool> has-animation-player: false;
+    in property <[AnimationClipRow]> animation-clips: [];
+    in-out property <bool> animation-player-expanded: true;
+    callback commit-animation-clip(int, string, string);
 
     background: #2d2d2d;
     border-color: #2a2a2a;
@@ -895,6 +906,107 @@ export component InspectorPanel inherits Rectangle {
                                 font-size: 11px;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                // --- Animation Player header ---
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.animation-player-expanded = !root.animation-player-expanded; }
+                    HorizontalBox {
+                        spacing: 6px;
+                        if root.animation-player-expanded: EditorIconTreeArrowDown {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        if !root.animation-player-expanded: EditorIconTreeArrowRight {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        Text {
+                            text: "Animation Player";
+                            color: #f0f0f0;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.animation-player-expanded: VerticalBox {
+                    spacing: 6px;
+
+                    if !root.has-selection || root.multi-edit-visible: Text {
+                        text: root.has-selection ? "Select one entity" : "Select an entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+
+                    if root.has-selection && !root.multi-edit-visible && !root.has-animation-player: Text {
+                        text: "No AnimationPlayer on entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+
+                    if root.has-selection && !root.multi-edit-visible && root.has-animation-player: VerticalBox {
+                        spacing: 6px;
+
+                        for clip[i] in root.animation-clips: VerticalBox {
+                            spacing: 4px;
+                            HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: "Name";
+                                    color: #a8a8a8;
+                                    font-size: 11px;
+                                    width: 48px;
+                                    vertical-alignment: center;
+                                }
+                                clip-name-input := LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: clip.clip-name;
+                                    accepted => {
+                                        root.commit-animation-clip(
+                                            clip.entry-index, self.text, clip.clip-guid);
+                                    }
+                                    changed has-focus => {
+                                        if (!self.has-focus) {
+                                            root.commit-animation-clip(
+                                                clip.entry-index, self.text, clip.clip-guid);
+                                        }
+                                    }
+                                }
+                            }
+                            HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: "GUID";
+                                    color: #a8a8a8;
+                                    font-size: 11px;
+                                    width: 48px;
+                                    vertical-alignment: center;
+                                }
+                                clip-guid-input := LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: clip.clip-guid;
+                                    accepted => {
+                                        root.commit-animation-clip(
+                                            clip.entry-index, clip.clip-name, self.text);
+                                    }
+                                    changed has-focus => {
+                                        if (!self.has-focus) {
+                                            root.commit-animation-clip(
+                                                clip.entry-index, clip.clip-name, self.text);
+                                        }
+                                    }
+                                }
+                            }
+                            if i + 1 < root.animation-clips.length: Rectangle {
+                                background: #333333;
+                                height: 1px;
                             }
                         }
                     }

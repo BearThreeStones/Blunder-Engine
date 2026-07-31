@@ -9,7 +9,7 @@ import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
 import { AnimationPreviewToolbar } from "animation_preview_toolbar.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
-import { InspectorPanel, BehaviourRow } from "inspector_panel.slint";
+import { InspectorPanel, BehaviourRow, AnimationClipRow } from "inspector_panel.slint";
 import { FloatingPanelWindow } from "floating_panel_window.slint";
 export { FloatingPanelWindow }
 import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, DockHostGuidesLayer, DockAutoHideDropPreviewLayer, DockAutoHideTabsLayer, DockAutoHideOverlaysLayer, DockFloatingDragPreviewLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockHostGuide, DockPreview, DockAutoHideDropPreview, DockDragPreview, DockFloating, DockAutoHideTab, DockAutoHideOverlay } from "docking_panel.slint";
@@ -140,6 +140,10 @@ export component MainEditorWindow inherits Window {
     in-out property <bool> inspector-camera-is-main: false;
     in-out property <bool> inspector-camera-expanded: true;
 
+    in property <bool> inspector-has-animation-player: false;
+    in property <[AnimationClipRow]> inspector-animation-clips: [];
+    in-out property <bool> inspector-animation-player-expanded: true;
+
     callback inspector-transform-edited();
     callback inspector-field-text-committed(int, string);
     callback inspector-field-focus-changed(int, bool);
@@ -152,6 +156,7 @@ export component MainEditorWindow inherits Window {
     callback inspector-commit-behaviour-prop(int, string, string, float, bool);
     callback inspector-camera-edited();
     callback inspector-add-camera();
+    callback inspector-commit-animation-clip(int, string, string);
     callback save-scene-requested();
     callback edit-undo-requested();
     callback edit-redo-requested();
@@ -562,6 +567,12 @@ export component MainEditorWindow inherits Window {
                         camera-expanded <=> root.inspector-camera-expanded;
                         camera-edited => { root.inspector-camera-edited(); }
                         add-camera => { root.inspector-add-camera(); }
+                        has-animation-player: root.inspector-has-animation-player;
+                        animation-clips: root.inspector-animation-clips;
+                        animation-player-expanded <=> root.inspector-animation-player-expanded;
+                        commit-animation-clip(index, name, guid) => {
+                            root.inspector-commit-animation-clip(index, name, guid);
+                        }
                         sync-requested => { root.sync-shading-from-asset(); }
                         reset-requested => { root.reset-shading-defaults(); }
                     }
@@ -842,6 +853,12 @@ export component MainEditorWindow inherits Window {
                         camera-expanded <=> root.inspector-camera-expanded;
                         camera-edited => { root.inspector-camera-edited(); }
                         add-camera => { root.inspector-add-camera(); }
+                        has-animation-player: root.inspector-has-animation-player;
+                        animation-clips: root.inspector-animation-clips;
+                        animation-player-expanded <=> root.inspector-animation-player-expanded;
+                        commit-animation-clip(index, name, guid) => {
+                            root.inspector-commit-animation-clip(index, name, guid);
+                        }
                         sync-requested => { root.sync-shading-from-asset(); }
                         reset-requested => { root.reset-shading-defaults(); }
                     }

@@ -309,6 +309,18 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
       }
     }
     if (bound != nullptr) {
+      if (bound->hasSkeleton()) {
+        definition.has_skeleton = true;
+      }
+      if (AnimationPlayer* player = bound->getAnimationPlayer()) {
+        for (const AnimationPlayer::ClipBinding& binding :
+             player->getClipBindings()) {
+          SceneEntityDefinition::AnimationClipBinding clip_binding;
+          clip_binding.name = binding.name;
+          clip_binding.guid = binding.guid;
+          definition.animation_player_clips.push_back(eastl::move(clip_binding));
+        }
+      }
       const size_t behaviour_count = bound->getBehaviourCount();
       definition.behaviours.reserve(behaviour_count);
       for (size_t bi = 0; bi < behaviour_count; ++bi) {

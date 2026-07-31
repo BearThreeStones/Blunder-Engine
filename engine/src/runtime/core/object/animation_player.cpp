@@ -3,6 +3,7 @@
 #include "runtime/core/object/animation_sampler.h"
 #include "runtime/core/object/skeleton.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace Blunder {
@@ -30,6 +31,33 @@ void AnimationPlayer::clearClipGuid(const eastl::string& name) {
 }
 
 void AnimationPlayer::clearAllClipGuids() { m_name_to_guid.clear(); }
+
+eastl::vector<AnimationPlayer::ClipBinding> AnimationPlayer::getClipBindings()
+    const {
+  eastl::vector<ClipBinding> bindings;
+  bindings.reserve(m_name_to_guid.size());
+  for (const auto& entry : m_name_to_guid) {
+    ClipBinding binding;
+    binding.name = entry.first;
+    binding.guid = entry.second;
+    bindings.push_back(eastl::move(binding));
+  }
+  std::sort(bindings.begin(), bindings.end(),
+            [](const ClipBinding& a, const ClipBinding& b) {
+              return a.name < b.name;
+            });
+  return bindings;
+}
+
+void AnimationPlayer::setClipBindings(
+    const eastl::vector<ClipBinding>& bindings) {
+  m_name_to_guid.clear();
+  for (const ClipBinding& binding : bindings) {
+    if (!binding.name.empty()) {
+      m_name_to_guid[binding.name] = binding.guid;
+    }
+  }
+}
 
 void AnimationPlayer::setClipResolver(AnimationClipResolveFn resolver,
                                       void* userdata) {

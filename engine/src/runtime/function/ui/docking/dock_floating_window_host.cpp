@@ -242,6 +242,20 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_camera_far(snapshot.inspector_camera_far);
       ui.set_inspector_camera_is_main(snapshot.inspector_camera_is_main);
       ui.set_inspector_camera_expanded(snapshot.inspector_camera_expanded);
+      ui.set_inspector_has_animation_player(snapshot.inspector_has_animation_player);
+      {
+        auto clip_model = std::make_shared<slint::VectorModel<AnimationClipRow>>();
+        for (const NativeFloatAnimationClipRow& row : snapshot.inspector_animation_clips) {
+          AnimationClipRow slint_row{};
+          slint_row.entry_index = row.entry_index;
+          slint_row.clip_name = toSharedString(row.clip_name);
+          slint_row.clip_guid = toSharedString(row.clip_guid);
+          clip_model->push_back(slint_row);
+        }
+        ui.set_inspector_animation_clips(clip_model);
+      }
+      ui.set_inspector_animation_player_expanded(
+          snapshot.inspector_animation_player_expanded);
       ui.set_light_dir_x(snapshot.light_dir_x);
       ui.set_light_dir_y(snapshot.light_dir_y);
       ui.set_light_dir_z(snapshot.light_dir_z);
@@ -514,6 +528,14 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_inspector_add_camera();
       }
     });
+    component->on_inspector_commit_animation_clip(
+        [this](int entry_index, const slint::SharedString& clip_name,
+               const slint::SharedString& clip_guid) {
+          if (m_callbacks.on_inspector_commit_animation_clip) {
+            m_callbacks.on_inspector_commit_animation_clip(entry_index, clip_name,
+                                                         clip_guid);
+          }
+        });
     component->on_browser_folder_selected([this](const slint::SharedString& path) {
       if (m_callbacks.on_browser_folder_selected) {
         m_callbacks.on_browser_folder_selected(path);

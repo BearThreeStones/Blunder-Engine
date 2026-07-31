@@ -5,6 +5,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/reflection/variant.h"
 #include "runtime/function/editor/document_history.h"
@@ -27,6 +28,12 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
     SceneInstance* scene, EntityId entity_id, const CameraComponent& before_camera,
     const CameraComponent& after_camera, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
+    SceneInstance* scene, EntityId entity_id,
+    eastl::vector<AnimationPlayer::ClipBinding> before_bindings,
+    eastl::vector<AnimationPlayer::ClipBinding> after_bindings,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
 
 eastl::unique_ptr<IEditorCommand> makeAlignCameraToViewCommand(
     SceneInstance* scene, EntityId entity_id, const Vec3& before_position,

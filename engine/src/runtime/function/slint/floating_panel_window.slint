@@ -1,5 +1,5 @@
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
-import { InspectorPanel, BehaviourRow } from "inspector_panel.slint";
+import { InspectorPanel, BehaviourRow, AnimationClipRow } from "inspector_panel.slint";
 import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { DockChromeBar, DockChromeMetrics, DockTab } from "docking_panel.slint";
@@ -51,6 +51,9 @@ export component FloatingPanelWindow inherits Window {
     in-out property <float> inspector-camera-far: 1000.0;
     in-out property <bool> inspector-camera-is-main: false;
     in-out property <bool> inspector-camera-expanded: true;
+    in property <bool> inspector-has-animation-player: false;
+    in property <[AnimationClipRow]> inspector-animation-clips: [];
+    in-out property <bool> inspector-animation-player-expanded: true;
     in-out property <float> light-dir-x: 0.45;
     in-out property <float> light-dir-y: 0.7;
     in-out property <float> light-dir-z: 0.55;
@@ -112,6 +115,7 @@ export component FloatingPanelWindow inherits Window {
     callback inspector-commit-behaviour-prop(int, string, string, float, bool);
     callback inspector-camera-edited();
     callback inspector-add-camera();
+    callback inspector-commit-animation-clip(int, string, string);
     callback browser-folder-selected(string);
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
@@ -262,6 +266,12 @@ export component FloatingPanelWindow inherits Window {
                 camera-expanded <=> root.inspector-camera-expanded;
                 camera-edited => { root.inspector-camera-edited(); }
                 add-camera => { root.inspector-add-camera(); }
+                has-animation-player: root.inspector-has-animation-player;
+                animation-clips: root.inspector-animation-clips;
+                animation-player-expanded <=> root.inspector-animation-player-expanded;
+                commit-animation-clip(index, name, guid) => {
+                    root.inspector-commit-animation-clip(index, name, guid);
+                }
             }
 
             if root.panel-kind == 4 : FilesystemHistoryHost {

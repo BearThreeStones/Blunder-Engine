@@ -1,6 +1,8 @@
 #include "runtime/function/editor/editor_commands.h"
 
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/object.h"
+#include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -98,6 +100,30 @@ class SetCameraComponentCommand final : public IEditorCommand {
       clearOtherMainCameras(*scene, entity_id);
     }
     scene->setCamera(entity_id, camera);
+  }
+};
+
+class SetAnimationPlayerClipBindingsCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  eastl::vector<AnimationPlayer::ClipBinding> before_bindings;
+  eastl::vector<AnimationPlayer::ClipBinding> after_bindings;
+
+  void undo() override { apply(before_bindings); }
+
+  void redo() override { apply(after_bindings); }
+
+ private:
+  void apply(const eastl::vector<AnimationPlayer::ClipBinding>& bindings) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    Object* object = scene->ensureBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    applyClipBindingsToObject(object, bindings);
   }
 };
 
@@ -321,6 +347,21 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
   command->entity_id = entity_id;
   command->before_camera = before_camera;
   command->after_camera = after_camera;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
+    SceneInstance* scene, EntityId entity_id,
+    eastl::vector<AnimationPlayer::ClipBinding> before_bindings,
+    eastl::vector<AnimationPlayer::ClipBinding> after_bindings,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetAnimationPlayerClipBindingsCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_bindings = eastl::move(before_bindings);
+  command->after_bindings = eastl::move(after_bindings);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   return command;
