@@ -142,11 +142,7 @@ bool ThumbnailGenerator::generateRgbaForEntry(const ContentEntry& entry,
 
   const eastl::string ext = extensionLower(entry.virtual_path);
   if (endsWithSuffix(entry.virtual_path, ".mesh.yaml")) {
-    eastl::string source_path;
-    if (resolveDescriptorSource(entry.virtual_path, source_path)) {
-      return generateMeshThumbnail(source_path, out_rgba);
-    }
-    return generatePlaceholder(ThumbnailPlaceholderKind::Mesh, out_rgba);
+    return generateMeshThumbnail(entry.virtual_path, out_rgba);
   }
   if (endsWithSuffix(entry.virtual_path, ".texture.yaml")) {
     eastl::string source_path;

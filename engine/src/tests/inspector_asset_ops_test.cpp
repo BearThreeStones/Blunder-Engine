@@ -136,10 +136,12 @@ int main() {
 
   if (g_failures != 0) {
     std::fprintf(stderr, "inspector_asset_ops_test: %d failure(s)\n", g_failures);
+    g_runtime_global_context.m_logger_system.reset();
     return 1;
   }
 
   std::fprintf(stdout, "inspector_asset_ops_test: all passed\n");
   std::fflush(stdout);
+  g_runtime_global_context.m_logger_system.reset();
   return 0;
 }

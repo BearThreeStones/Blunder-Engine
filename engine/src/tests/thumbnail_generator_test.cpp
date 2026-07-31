@@ -161,6 +161,7 @@ bool rgbaIsSolidColor(const eastl::vector<uint8_t>& rgba, uint8_t r, uint8_t g,
 class TrackingMeshPreviewBackend final : public Blunder::IMeshPreviewRenderBackend {
  public:
   uint32_t call_count{0};
+  eastl::string last_mesh_virtual_path;
 
   bool renderMeshPreview(const Blunder::MeshAsset&,
                          const Blunder::MeshPreviewRenderRequest& request,
@@ -169,6 +170,7 @@ class TrackingMeshPreviewBackend final : public Blunder::IMeshPreviewRenderBacke
                          Blunder::MeshPreviewPoseMode,
                          eastl::vector<uint8_t>& out_rgba) override {
     ++call_count;
+    last_mesh_virtual_path = request.mesh_virtual_path;
     out_rgba.assign(static_cast<size_t>(request.width) * request.height * 4u,
                     0u);
     for (size_t i = 0; i < out_rgba.size(); i += 4u) {
@@ -204,6 +206,60 @@ void setupTexturedMeshProject(const fs::path& project, const char* kGuid,
                     "source: resources/Models/textured.gltf\n" +
                     "import:\n  materials: true\n  animations: false\n"
                     "  scale: 1\n");
+}
+
+void meshThumbnailDescriptorUsesDescriptorVirtualPath() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbb04";
+  const char* kDescriptorPath = "assets/Meshes/textured.mesh.yaml";
+  setupTexturedMeshProject(project, kGuid, kDescriptorPath);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init{};
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  TrackingMeshPreviewBackend backend;
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit service_init{};
+  service_init.asset_manager = &manager;
+  service_init.backend = &backend;
+  service.initialize(service_init);
+
+  ThumbnailGenerator generator;
+  ThumbnailGeneratorInit thumb_init{};
+  thumb_init.file_system = &file_system;
+  thumb_init.asset_manager = &manager;
+  thumb_init.mesh_preview_service = &service;
+  thumb_init.thumbnail_size = 32;
+  generator.initialize(thumb_init);
+
+  ContentEntry entry{};
+  entry.virtual_path = kDescriptorPath;
+  entry.is_directory = false;
+  entry.modified_time = 1;
+
+  eastl::vector<uint8_t> rgba;
+  expect_true("mesh descriptor thumbnail generation succeeds",
+              generator.generateThumbnailRgba(entry, rgba));
+  expect_true("mesh preview backend invoked", backend.call_count == 1u);
+  expect_true("thumbnail passes descriptor virtual path",
+              backend.last_mesh_virtual_path ==
+                  eastl::string(kDescriptorPath));
+
+  generator.shutdown();
+  service.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
 }
 
 void meshThumbnailUsesMeshPreviewRenderOnSuccess() {
@@ -564,6 +620,7 @@ void textureThumbnailPathUnchanged() {
 }  // namespace
 
 int main() {
+  meshThumbnailDescriptorUsesDescriptorVirtualPath();
   meshThumbnailUsesMeshPreviewRenderOnSuccess();
   meshThumbnailFailureUsesPlaceholderNotBaseColor();
   meshThumbnailCacheStoresPreviewStillOnRegenerate();
