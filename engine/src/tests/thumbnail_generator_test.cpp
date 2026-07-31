@@ -6,9 +6,12 @@
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content/content_entry.h"
+#include "runtime/resource/thumbnail/thumbnail_cache.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/resource/thumbnail/thumbnail_placeholders.h"
 #include "runtime/resource/thumbnail/thumbnail_resize.h"
+
+#include "../../3rdparty/stb/stb_image.h"
 
 #include <chrono>
 #include <cstdio>
@@ -126,6 +129,20 @@ constexpr char kTexturedTriangleGltf[] = R"({
   }]
 }
 )";
+
+bool loadRgbaFromPngFile(const fs::path& path, eastl::vector<uint8_t>& out_rgba,
+                         int& out_w, int& out_h) {
+  int comp = 0;
+  unsigned char* pixels =
+      stbi_load(path.string().c_str(), &out_w, &out_h, &comp, STBI_rgb_alpha);
+  if (pixels == nullptr) {
+    return false;
+  }
+  out_rgba.assign(pixels,
+                  pixels + static_cast<size_t>(out_w) * static_cast<size_t>(out_h) * 4u);
+  stbi_image_free(pixels);
+  return true;
+}
 
 bool rgbaIsSolidColor(const eastl::vector<uint8_t>& rgba, uint8_t r, uint8_t g,
                       uint8_t b) {
@@ -317,6 +334,173 @@ void meshThumbnailFailureUsesPlaceholderNotBaseColor() {
   fs::remove_all(project);
 }
 
+void meshThumbnailCacheStoresPreviewStillOnRegenerate() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "dddddddd-eeee-4fff-8aaa-bbbbbbbbbbb04";
+  const char* kDescriptorPath = "assets/Meshes/textured.mesh.yaml";
+  setupTexturedMeshProject(project, kGuid, kDescriptorPath);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init{};
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  TrackingMeshPreviewBackend backend;
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit service_init{};
+  service_init.asset_manager = &manager;
+  service_init.backend = &backend;
+  service.initialize(service_init);
+
+  ThumbnailGenerator generator;
+  ThumbnailGeneratorInit thumb_init{};
+  thumb_init.file_system = &file_system;
+  thumb_init.asset_manager = &manager;
+  thumb_init.mesh_preview_service = &service;
+  thumb_init.thumbnail_size = 32;
+  generator.initialize(thumb_init);
+
+  ContentEntry entry{};
+  entry.virtual_path = kDescriptorPath;
+  entry.is_directory = false;
+  entry.modified_time = 42;
+
+  const ThumbnailResult generated = generator.ensureThumbnail(entry);
+  expect_true("ensureThumbnail reports generated",
+              generated.status == ThumbnailStatus::Generated);
+  expect_true("generated cache path set", !generated.cache_path.empty());
+
+  const ThumbnailResult cached = generator.probeThumbnailStatus(entry);
+  expect_true("probe reports cache hit after write",
+              cached.status == ThumbnailStatus::CacheHit);
+  expect_true("cache hit path matches generated path",
+              cached.cache_path == generated.cache_path);
+  expect_true("cache png exists on disk",
+              fs::exists(fs::path(generated.cache_path.c_str())));
+
+  eastl::vector<uint8_t> cached_rgba;
+  int width = 0;
+  int height = 0;
+  expect_true("cached png decodes",
+              loadRgbaFromPngFile(fs::path(generated.cache_path.c_str()),
+                                  cached_rgba, width, height));
+  expect_true("cached png dimensions match thumbnail size", width == 32 && height == 32);
+  expect_eq_u8("cached still red channel", cached_rgba[0], 42u);
+  expect_eq_u8("cached still green channel", cached_rgba[1], 43u);
+  expect_eq_u8("cached still blue channel", cached_rgba[2], 44u);
+  expect_true("cached still is not texture resize red",
+              !rgbaIsSolidColor(cached_rgba, 255u, 0u, 0u));
+
+  generator.shutdown();
+  service.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void meshThumbnailMtimeInvalidatesOldTextureCache() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "eeeeeeee-ffff-4aaa-8bbb-cccccccccc05";
+  const char* kDescriptorPath = "assets/Meshes/textured.mesh.yaml";
+  setupTexturedMeshProject(project, kGuid, kDescriptorPath);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init{};
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  ContentEntry stale_entry{};
+  stale_entry.virtual_path = kDescriptorPath;
+  stale_entry.is_directory = false;
+  stale_entry.modified_time = 1;
+
+  ThumbnailCache legacy_cache;
+  legacy_cache.bind(&file_system);
+  const ThumbnailCachePaths stale_paths = legacy_cache.pathsForEntry(stale_entry);
+  eastl::vector<uint8_t> legacy_texture_rgba(
+      static_cast<size_t>(32) * 32 * 4u, 0u);
+  for (size_t i = 0; i < legacy_texture_rgba.size(); i += 4u) {
+    legacy_texture_rgba[i + 0] = 255u;
+    legacy_texture_rgba[i + 1] = 0u;
+    legacy_texture_rgba[i + 2] = 0u;
+    legacy_texture_rgba[i + 3] = 255u;
+  }
+  expect_true("legacy texture cache write succeeds",
+              legacy_cache.writePng(stale_paths, 32, 32, legacy_texture_rgba.data(),
+                                    stale_entry.modified_time));
+  expect_true("legacy cache valid for old mtime",
+              legacy_cache.isCacheValid(stale_entry, stale_paths));
+
+  TrackingMeshPreviewBackend backend;
+  MeshPreviewRenderService service;
+  MeshPreviewRenderServiceInit service_init{};
+  service_init.asset_manager = &manager;
+  service_init.backend = &backend;
+  service.initialize(service_init);
+
+  ThumbnailGenerator generator;
+  ThumbnailGeneratorInit thumb_init{};
+  thumb_init.file_system = &file_system;
+  thumb_init.asset_manager = &manager;
+  thumb_init.mesh_preview_service = &service;
+  thumb_init.thumbnail_size = 32;
+  generator.initialize(thumb_init);
+
+  ContentEntry fresh_entry = stale_entry;
+  fresh_entry.modified_time = 2;
+
+  const ThumbnailResult stale_probe = generator.probeThumbnailStatus(fresh_entry);
+  expect_true("new mtime misses legacy texture cache",
+              stale_probe.status == ThumbnailStatus::None);
+
+  const ThumbnailResult regenerated = generator.ensureThumbnail(fresh_entry);
+  expect_true("regenerate reports generated",
+              regenerated.status == ThumbnailStatus::Generated);
+  expect_true("regenerated path differs from legacy path",
+              regenerated.cache_path != stale_paths.png_path);
+  expect_true("mesh preview invoked for regenerate", backend.call_count == 1u);
+
+  eastl::vector<uint8_t> cached_rgba;
+  int width = 0;
+  int height = 0;
+  expect_true("regenerated png decodes",
+              loadRgbaFromPngFile(fs::path(regenerated.cache_path.c_str()),
+                                  cached_rgba, width, height));
+  expect_eq_u8("regenerated still red channel", cached_rgba[0], 42u);
+  expect_eq_u8("regenerated still green channel", cached_rgba[1], 43u);
+  expect_eq_u8("regenerated still blue channel", cached_rgba[2], 44u);
+  expect_true("regenerated still is not legacy texture red",
+              !rgbaIsSolidColor(cached_rgba, 255u, 0u, 0u));
+
+  const ThumbnailResult fresh_probe = generator.probeThumbnailStatus(fresh_entry);
+  expect_true("fresh mtime probes regenerated cache",
+              fresh_probe.status == ThumbnailStatus::CacheHit);
+  expect_true("fresh probe path matches regenerated path",
+              fresh_probe.cache_path == regenerated.cache_path);
+
+  generator.shutdown();
+  service.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 void textureThumbnailPathUnchanged() {
   using namespace Blunder;
   ensureLogger();
@@ -382,6 +566,8 @@ void textureThumbnailPathUnchanged() {
 int main() {
   meshThumbnailUsesMeshPreviewRenderOnSuccess();
   meshThumbnailFailureUsesPlaceholderNotBaseColor();
+  meshThumbnailCacheStoresPreviewStillOnRegenerate();
+  meshThumbnailMtimeInvalidatesOldTextureCache();
   textureThumbnailPathUnchanged();
 
   if (g_failures != 0) {
