@@ -75,6 +75,12 @@ class AnimationTree {
     return m_current_state_name;
   }
 
+  /// OneShot: insert a clip over the base graph, then return when finished.
+  bool requestOneShot(const eastl::string& clip_name);
+  bool isOneShotActive() const { return m_oneshot_active; }
+
+  void advance(float delta_seconds);
+
   void sampleOntoSkeleton(Skeleton& skeleton);
   void sampleBoundSkeleton();
 
@@ -106,6 +112,9 @@ class AnimationTree {
   eastl::string m_base_blend_space_node;
   eastl::hash_map<eastl::string, AnimationStateDefinition> m_states;
   eastl::string m_current_state_name;
+  bool m_oneshot_active{false};
+  eastl::string m_oneshot_clip_name;
+  float m_oneshot_time{0.0f};
 };
 
 }  // namespace Blunder

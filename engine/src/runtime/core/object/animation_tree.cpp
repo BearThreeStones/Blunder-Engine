@@ -263,6 +263,50 @@ bool AnimationTree::start(const eastl::string& state_name) {
   return true;
 }
 
+bool AnimationTree::requestOneShot(const eastl::string& clip_name) {
+  if (clip_name.empty()) {
+    return false;
+  }
+  eastl::string guid;
+  if (!resolveClipGuid(clip_name, guid)) {
+    return false;
+  }
+  m_oneshot_clip_name = clip_name;
+  m_oneshot_time = 0.0f;
+  m_oneshot_active = true;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+void AnimationTree::advance(float delta_seconds) {
+  if (delta_seconds <= 0.0f) {
+    return;
+  }
+
+  m_sample_time += delta_seconds;
+
+  if (m_oneshot_active) {
+    m_oneshot_time += delta_seconds;
+    AnimationClipData clip;
+    if (resolveClipForName(m_oneshot_clip_name, clip) &&
+        m_oneshot_time >= clip.duration) {
+      m_oneshot_active = false;
+      m_oneshot_clip_name.clear();
+      m_oneshot_time = 0.0f;
+    } else if (!resolveClipForName(m_oneshot_clip_name, clip)) {
+      m_oneshot_active = false;
+      m_oneshot_clip_name.clear();
+      m_oneshot_time = 0.0f;
+    }
+  }
+
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
 bool AnimationTree::sampleBlendSpace1DOntoSkeleton(
     Skeleton& skeleton, const eastl::string& node_name, float scalar) {
   const auto space_it = m_blend_spaces.find(node_name);
@@ -297,6 +341,14 @@ bool AnimationTree::sampleBlendSpace1DOntoSkeleton(
 }
 
 void AnimationTree::sampleBaseOntoSkeleton(Skeleton& skeleton) {
+  if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
+    AnimationClipData clip;
+    if (resolveClipForName(m_oneshot_clip_name, clip)) {
+      sampleClipOntoSkeleton(skeleton, clip, m_oneshot_time);
+      return;
+    }
+  }
+
   if (!m_base_blend_space_node.empty()) {
     const float scalar = getBlendSpaceScalar(m_base_blend_space_node);
     if (sampleBlendSpace1DOntoSkeleton(skeleton, m_base_blend_space_node,
