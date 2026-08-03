@@ -1,7 +1,7 @@
 # Acceptance checklist — DogWalk animation Phase 3
 
 Human-oriented Done bar for grilled Phase 3 (SYNC + CINE). Complements `tasks.md` and `manual-checklist.md`.  
-**Status:** Draft from grilling — not executed. Check boxes when a human completes each item after implement.
+**Status:** Engineering gates automated (`dogwalk_phase3_sync_cine_gate_test`, `dogwalk_phase3_mini_play_acceptance_test`). Human product Done not executed — check boxes when a human completes each item.
 
 ## Product Done (must all pass)
 
@@ -24,7 +24,8 @@ Human-oriented Done bar for grilled Phase 3 (SYNC + CINE). Complements `tasks.md
   Character + prop/partner sync start + CINE handoff returning control (simplified props OK).
 
 - [ ] **P7 — Parallel tracking**  
-  Phase 2 Chocomel weighted acceptance still tracked if open (not dropped by Phase 3).
+  Phase 2 Chocomel weighted acceptance still tracked if open (not dropped by Phase 3).  
+  **Tracked:** Phase 2 `tasks.md` **5.3** remains **open** — Phase 3 does not close it.
 
 ## Explicitly not required for Phase 3 Done
 

@@ -1778,3 +1778,53 @@ target_precompile_headers(dogwalk_phase2_blend_gate_test
 add_test(NAME dogwalk_phase2_blend_gate_test
          COMMAND dogwalk_phase2_blend_gate_test)
 
+add_executable(dogwalk_phase3_sync_cine_gate_test
+    "dogwalk_phase3_sync_cine_gate_test.cpp"
+)
+
+target_link_libraries(dogwalk_phase3_sync_cine_gate_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_phase3_sync_cine_gate_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_phase3_sync_cine_gate_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_phase3_sync_cine_gate_test
+  REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_phase3_sync_cine_gate_test
+         COMMAND dogwalk_phase3_sync_cine_gate_test)
+
+add_executable(dogwalk_phase3_mini_play_acceptance_test
+    "dogwalk_phase3_mini_play_acceptance_test.cpp"
+)
+
+target_link_libraries(dogwalk_phase3_mini_play_acceptance_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_phase3_mini_play_acceptance_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_phase3_mini_play_acceptance_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_phase3_mini_play_acceptance_test
+  REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_phase3_mini_play_acceptance_test
+         COMMAND dogwalk_phase3_mini_play_acceptance_test)
+

@@ -26,11 +26,15 @@
 
 ## 5. Content gates
 
-- [ ] 5.1 Engineering gate: multi-Player Sync Group Fire + CINE Enter/End on a test harness / mini scene
+- [x] 5.1 Engineering gate: multi-Player Sync Group Fire + CINE Enter/End on a test harness / mini scene (`dogwalk_phase3_sync_cine_gate_test`)
 - [ ] 5.2 Mini Play acceptance: character + prop/partner synchronized start; CINE handoff returns control (simplified props OK)
-- [ ] 5.3 Keep Phase 2 Chocomel weighted acceptance tracked separately if still open (do not drop)
+  - **Automated (engineering):** `dogwalk_phase3_mini_play_acceptance_test` — Play-path tick harness for sync start, CINE suppress/restore, explicit End.
+  - **Human-pending:** Test Project scene + `engine_player` Play pass (see `manual-checklist.md` §B). No dedicated Phase 3 scene wired yet.
+- [x] 5.3 Keep Phase 2 Chocomel weighted acceptance tracked separately if still open (do not drop)
+
+  Phase 2 `openspec/changes/dogwalk-animation-phase-2/tasks.md` **5.3** (Chocomel weighted idle↔walk Play acceptance) remains **open** — not dropped by Phase 3. Phase 3 mini acceptance does **not** mark Phase 2 Done.
 
 ## 6. Docs / closeout
 
-- [ ] 6.1 Confirm CONTEXT + ADR 0023 match apply (prefer no churn)
-- [ ] 6.2 Manual checklist: Edit Fire/CINE marks; Play mini SYNC+CINE acceptance; Phase 2 gate still tracked
+- [x] 6.1 Confirm CONTEXT + ADR 0023 match apply (prefer no churn)
+- [x] 6.2 Manual checklist: Edit Fire/CINE marks; Play mini SYNC+CINE acceptance; Phase 2 gate still tracked
