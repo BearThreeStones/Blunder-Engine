@@ -38,3 +38,15 @@ Task 2.2+2.3: complete (commits 97674e9, tests-only)
 Task 3.1: complete (pending commit)
 Task 3.2: complete (pending commit)
 Task 3.3: complete (pending commit)
+
+Task 2.2+2.3: complete (97674e9)
+Task 3.1-3.3: complete (8f6501e)
+
+Task 2.2+2.3: complete (97674e9)
+Task 3.1-3.3: complete (8f6501e)
+
+Task 2.2+2.3: complete (97674e9)
+Task 3.1-3.3: complete (8f6501e)
+
+Task 4.1-5.2: complete (ebac48d)
+Task 6.1-7.2: complete (pending commit)

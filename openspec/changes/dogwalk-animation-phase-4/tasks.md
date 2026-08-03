@@ -36,13 +36,15 @@
 
 ## 6. Content gates
 
-- [ ] 6.1 Engineering gate: harness/mini scene for Travel, BlendSpace1D, OneShot (incl. Sync Fire→tree), Add2, exclusive sampling, PoseApplied/dominant clock, TimeScale, Edit scrub
+- [x] 6.1 Engineering gate: harness/mini scene for Travel, BlendSpace1D, OneShot (incl. Sync Fire→tree), Add2, exclusive sampling, PoseApplied/dominant clock, TimeScale, Edit scrub
 - [ ] 6.2 Chocomel (or agreed subset) Play acceptance: perceptible BlendSpace motion, visible additive turn, OneShot return-to-base, stepped facing on base dominant clock
-- [ ] 6.3 Keep Phase 1–3 content Done gates tracked separately if still open (do not drop)
+  - **Automated (engineering):** `dogwalk_phase4_mini_play_acceptance_test` — Play-path tick harness for BlendSpace scalar motion, Add2 overlay, OneShot return-to-base, dominant base clock, Sync Fire→OneShot.
+  - **Human-pending:** Chocomel (or agreed subset) scene + `engine_player` Play pass (see `manual-checklist.md` §B). Full Chocomel content not required in worktree for engineering bar.
+- [x] 6.3 Keep Phase 1–3 content Done gates tracked separately if still open (do not drop)
 
-  Phase 1 Chocomel hard-cut, Phase 2 weighted (`dogwalk-animation-phase-2` tasks **5.3**), and Phase 3 mini Play (`dogwalk-animation-phase-3` tasks **5.2**) remain **open** if unfinished — not cancelled by Phase 4.
+  Phase 1 Chocomel hard-cut (`dogwalk-animation-phase-1` tasks **6.4**), Phase 2 weighted (`dogwalk-animation-phase-2` tasks **5.3**), and Phase 3 mini Play (`dogwalk-animation-phase-3` tasks **5.2**) remain **open** if unfinished — not cancelled by Phase 4. See `manual-checklist.md` §C.
 
 ## 7. Docs / closeout
 
-- [ ] 7.1 Confirm CONTEXT + ADR 0025 match apply (prefer no churn)
-- [ ] 7.2 Manual checklist: Edit tree scrub; Play Chocomel-subset acceptance; earlier phase gates still tracked
+- [x] 7.1 Confirm CONTEXT + ADR 0025 match apply (prefer no churn)
+- [x] 7.2 Manual checklist: Edit tree scrub; Play Chocomel-subset acceptance; earlier phase gates still tracked
