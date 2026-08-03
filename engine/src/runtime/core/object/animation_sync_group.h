@@ -14,7 +14,9 @@ using SyncGroupId = uint64_t;
 
 constexpr SyncGroupId k_invalid_sync_group_id = 0u;
 
-inline bool isValid(SyncGroupId id) { return id != k_invalid_sync_group_id; }
+inline bool isValidSyncGroupId(SyncGroupId id) {
+  return id != k_invalid_sync_group_id;
+}
 
 /// Per-member Fire instruction: player, clip logical name, optional seek.
 struct SyncGroupFireInstruction {

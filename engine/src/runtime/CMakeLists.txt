@@ -239,6 +239,8 @@ add_library(engine_runtime STATIC
     "function/editor/animation_clip_resolve.cpp"
     "function/editor/animation_preview_controller.h"
     "function/editor/animation_preview_controller.cpp"
+    "function/editor/animation_sync_cine_preview_controller.h"
+    "function/editor/animation_sync_cine_preview_controller.cpp"
     "function/editor/document_history_helpers.h"
     "function/editor/document_history_helpers.cpp"
     "function/editor/viewport_pick_system.h"

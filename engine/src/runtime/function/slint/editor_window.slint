@@ -197,6 +197,8 @@ export component MainEditorWindow inherits Window {
     in-out property <float> anim-preview-fade-seconds: 0.0;
     in-out property <string> anim-preview-slot0: "";
     in-out property <string> anim-preview-slot1: "";
+    in property <bool> anim-preview-in-cine: false;
+    in property <bool> anim-preview-input-suppressed: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
     callback play-dirty-save-and-play();
@@ -444,6 +446,8 @@ export component MainEditorWindow inherits Window {
                             preview-fade-seconds <=> root.anim-preview-fade-seconds;
                             preview-slot0 <=> root.anim-preview-slot0;
                             preview-slot1 <=> root.anim-preview-slot1;
+                            preview-in-cine: root.anim-preview-in-cine;
+                            preview-input-suppressed: root.anim-preview-input-suppressed;
                             preview-play-requested => { root.anim-preview-play-requested(); }
                             preview-pause-requested => { root.anim-preview-pause-requested(); }
                             preview-stop-requested => { root.anim-preview-stop-requested(); }

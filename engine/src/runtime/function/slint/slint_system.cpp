@@ -35,6 +35,8 @@
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/align_camera_actions.h"
 #include "runtime/function/editor/animation_preview_controller.h"
+#include "runtime/function/editor/animation_sync_cine_preview_controller.h"
+#include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/inspector_transform_ops.h"
 #include "runtime/function/editor/viewport_pick_system.h"
@@ -3489,6 +3491,37 @@ void SlintSystem::syncTransformToolbarFromEngine() {
       ui->set_anim_preview_stop_enabled(preview->stopEnabled());
       ui->set_anim_preview_paused(preview->isPaused());
       ui->set_anim_preview_looping(preview->isLooping());
+    }
+    if (AnimationSyncCinePreviewController* sync_cine_preview =
+            g_runtime_global_context.m_animation_sync_cine_preview.get()) {
+      if (g_runtime_global_context.m_editor_selection &&
+          g_runtime_global_context.m_scene_system) {
+        SceneInstance* scene =
+            g_runtime_global_context.m_scene_system->getActiveInstance();
+        if (g_runtime_global_context.m_editor_selection->isDirty()) {
+          eastl::vector<Object*> objects;
+          if (scene != nullptr) {
+            for (EntityId entity_id :
+                 g_runtime_global_context.m_editor_selection->getSelectedIds()) {
+              if (!isValid(entity_id)) {
+                continue;
+              }
+              Object* object = scene->findBoundObject(entity_id);
+              if (object == nullptr) {
+                object = scene->ensureBoundObject(entity_id);
+              }
+              if (object != nullptr && object->hasAnimationPlayer()) {
+                wireAnimationPlayerAssetResolver(*object->getAnimationPlayer());
+                objects.push_back(object);
+              }
+            }
+          }
+          sync_cine_preview->bindObjects(objects);
+        }
+      }
+      ui->set_anim_preview_in_cine(sync_cine_preview->isInCine());
+      ui->set_anim_preview_input_suppressed(
+          sync_cine_preview->isGameplayInputSuppressed());
     }
   } catch (...) {
   }

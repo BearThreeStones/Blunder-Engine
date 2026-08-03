@@ -1,6 +1,10 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_sync_group.h"
+#include "runtime/core/object/cine_segment_service.h"
+#include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/reflection/lifecycle.h"
+#include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/resource/asset/asset_descriptor.h"
 
 #include <cmath>
@@ -737,6 +741,164 @@ void test_get_member_at_stable_insertion_order() {
   expect_true("out of range null", service.getMemberAt(group, 3) == nullptr);
 }
 
+namespace {
+
+int g_preview_tick_calls = 0;
+int g_preview_ready_calls = 0;
+
+void on_preview_tick(void* /*peer*/, float /*dt*/) { ++g_preview_tick_calls; }
+
+void on_preview_ready(void* /*peer*/) { ++g_preview_ready_calls; }
+
+Blunder::Object* makePreviewSkinnedObject(const char* clip_name, const char* guid,
+                                          float duration,
+                                          const Blunder::Vec3& end_translation,
+                                          Blunder::Skeleton** out_skeleton) {
+  using namespace Blunder;
+
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  if (object == nullptr) {
+    return nullptr;
+  }
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  AnimationPlayer* player = object->ensureAnimationPlayer();
+  skeleton->addBone("Hips", -1);
+
+  AnimationClipData clip;
+  clip.duration = duration;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {duration, end_translation}}));
+
+  player->setClipGuid(clip_name, guid);
+  player->injectClipData(guid, clip);
+
+  if (out_skeleton != nullptr) {
+    *out_skeleton = skeleton;
+  }
+  return object;
+}
+
+void resetPreviewServices() {
+  Blunder::animationSyncGroupService().clearAll();
+  Blunder::cineSegmentService().resetForTests();
+}
+
+}  // namespace
+
+void test_sync_cine_preview_fire_without_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  resetPreviewServices();
+  g_preview_tick_calls = 0;
+  g_preview_ready_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_preview_tick);
+  LifecycleDispatch::setReadyHook("Object", on_preview_ready);
+
+  Skeleton* skeleton_a = nullptr;
+  Skeleton* skeleton_b = nullptr;
+  Object* object_a = makePreviewSkinnedObject(
+      "CINE-character", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1.0f,
+      Vec3(2.0f, 0.0f, 0.0f), &skeleton_a);
+  Object* object_b = makePreviewSkinnedObject(
+      "CINE-prop", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1.0f,
+      Vec3(0.0f, 3.0f, 0.0f), &skeleton_b);
+
+  int peer = 0;
+  object_a->addBehaviour("Object");
+  object_a->setBehaviourScriptPeer(object_a->getBehaviourIdAt(0), &peer);
+  object_b->addBehaviour("Object");
+  object_b->setBehaviourScriptPeer(object_b->getBehaviourIdAt(0), &peer);
+
+  AnimationSyncCinePreviewController controller;
+  controller.bindObjects({object_a, object_b});
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(
+      SyncGroupFireInstruction{object_a->getAnimationPlayer(), "CINE-character"});
+  instructions.push_back(
+      SyncGroupFireInstruction{object_b->getAnimationPlayer(), "CINE-prop"});
+
+  expect_true("fire", controller.fire(instructions));
+  expect_true("preview tick skipped", g_preview_tick_calls == 0);
+  expect_true("preview ready skipped", g_preview_ready_calls == 0);
+
+  controller.tick(0.5f);
+  expect_true("tick still skips behaviour", g_preview_tick_calls == 0);
+  expect_true("multi skeleton a",
+              float_near(skeleton_a->getBonePoseLocal(0).translation.x, 1.0f));
+  expect_true("multi skeleton b",
+              float_near(skeleton_b->getBonePoseLocal(0).translation.y, 1.5f));
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  resetPreviewServices();
+}
+
+void test_sync_cine_preview_enter_end_marks() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  resetPreviewServices();
+
+  Object* object = makePreviewSkinnedObject(
+      "walk", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1.0f,
+      Vec3(1.0f, 0.0f, 0.0f), nullptr);
+
+  AnimationSyncCinePreviewController controller;
+  controller.bindObjects({object});
+
+  expect_true("enter", controller.enterCine(true));
+  expect_true("in cine", controller.isInCine());
+  expect_true("suppressed", controller.isGameplayInputSuppressed());
+  expect_true("end", controller.endCine());
+  expect_true("cleared", !controller.isInCine());
+  expect_true("input restored", !controller.isGameplayInputSuppressed());
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  resetPreviewServices();
+}
+
+void test_sync_cine_preview_no_auto_trs_snap() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  resetPreviewServices();
+
+  Object* object_a = makePreviewSkinnedObject(
+      "walk", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1.0f,
+      Vec3(1.0f, 0.0f, 0.0f), nullptr);
+  Object* object_b = makePreviewSkinnedObject(
+      "idle", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1.0f,
+      Vec3(0.0f, 1.0f, 0.0f), nullptr);
+
+  const Vec3 pos_a{5.0f, 2.0f, -1.0f};
+  const Vec3 pos_b{-3.0f, 4.0f, 2.0f};
+  object_a->setPosition(pos_a);
+  object_b->setPosition(pos_b);
+
+  AnimationSyncCinePreviewController controller;
+  controller.bindObjects({object_a, object_b});
+  expect_true("enter", controller.enterCine(true));
+  expect_true("trs a unchanged", vec3_near(object_a->getPosition(), pos_a));
+  expect_true("trs b unchanged", vec3_near(object_b->getPosition(), pos_b));
+  controller.tick(0.25f);
+  expect_true("trs a after tick", vec3_near(object_a->getPosition(), pos_a));
+  expect_true("end", controller.endCine());
+  expect_true("trs a after end", vec3_near(object_a->getPosition(), pos_a));
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  resetPreviewServices();
+}
+
 int main() {
   test_create_returns_valid_id();
   test_join_and_leave_members();
@@ -761,6 +923,9 @@ int main() {
   test_sync_group_api_has_no_skeleton_parameters();
   test_fire_samples_only_colocated_skeletons();
   test_get_member_at_stable_insertion_order();
+  test_sync_cine_preview_fire_without_behaviour_tick();
+  test_sync_cine_preview_enter_end_marks();
+  test_sync_cine_preview_no_auto_trs_snap();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

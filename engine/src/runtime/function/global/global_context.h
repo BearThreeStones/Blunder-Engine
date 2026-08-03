@@ -41,6 +41,7 @@ class LayerStack;
 class DotNetHost;
 class PlaySessionController;
 class AnimationPreviewController;
+class AnimationSyncCinePreviewController;
 // class ParticleManager;
 
 struct EngineInitParams;
@@ -99,6 +100,8 @@ class RuntimeGlobalContext {
   eastl::unique_ptr<PlaySessionController> m_play_session;
   /// Edit Mode AnimationPlayer viewport preview (no DotNetHost).
   eastl::unique_ptr<AnimationPreviewController> m_animation_preview;
+  /// Edit Mode Sync Group + CINE preview (no DotNetHost / Behaviour Tick).
+  eastl::unique_ptr<AnimationSyncCinePreviewController> m_animation_sync_cine_preview;
   // eastl::shared_ptr<ParticleManager> m_particle_manager;
 
  private:

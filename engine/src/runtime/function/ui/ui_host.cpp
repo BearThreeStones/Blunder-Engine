@@ -1,8 +1,11 @@
 #include "runtime/function/ui/ui_host.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/object/object.h"
 #include "runtime/function/editor/align_camera_actions.h"
 #include "runtime/function/editor/animation_preview_controller.h"
+#include "runtime/function/editor/animation_sync_cine_preview_controller.h"
+#include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -152,6 +155,28 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
             services.scene ? services.scene->getActiveInstance() : nullptr;
         preview->bindSelection(scene, services.selection->getPrimarySelection());
       }
+      if (AnimationSyncCinePreviewController* sync_cine_preview =
+              g_runtime_global_context.m_animation_sync_cine_preview.get()) {
+        SceneInstance* scene =
+            services.scene ? services.scene->getActiveInstance() : nullptr;
+        eastl::vector<Object*> objects;
+        if (scene != nullptr && services.selection) {
+          for (EntityId entity_id : services.selection->getSelectedIds()) {
+            if (!isValid(entity_id)) {
+              continue;
+            }
+            Object* object = scene->findBoundObject(entity_id);
+            if (object == nullptr) {
+              object = scene->ensureBoundObject(entity_id);
+            }
+            if (object != nullptr && object->hasAnimationPlayer()) {
+              wireAnimationPlayerAssetResolver(*object->getAnimationPlayer());
+              objects.push_back(object);
+            }
+          }
+        }
+        sync_cine_preview->bindObjects(objects);
+      }
       break;
     }
     case UiEventKind::toggleHierarchyNode: {
@@ -214,6 +239,11 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (AnimationPreviewController* preview =
               g_runtime_global_context.m_animation_preview.get()) {
         preview->stop();
+      }
+      if (AnimationSyncCinePreviewController* sync_cine_preview =
+              g_runtime_global_context.m_animation_sync_cine_preview.get()) {
+        sync_cine_preview->stop();
+        sync_cine_preview->endCine();
       }
       PlaySessionController* session =
           g_runtime_global_context.m_play_session.get();

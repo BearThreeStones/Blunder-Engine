@@ -31,7 +31,7 @@ bool AnimationSyncGroupService::destroy(SyncGroupId id) {
 }
 
 bool AnimationSyncGroupService::join(SyncGroupId id, AnimationPlayer* player) {
-  if (player == nullptr || !isValid(id)) {
+  if (player == nullptr || !isValidSyncGroupId(id)) {
     return false;
   }
 
@@ -52,7 +52,7 @@ bool AnimationSyncGroupService::join(SyncGroupId id, AnimationPlayer* player) {
 }
 
 bool AnimationSyncGroupService::leave(SyncGroupId id, AnimationPlayer* player) {
-  if (player == nullptr || !isValid(id)) {
+  if (player == nullptr || !isValidSyncGroupId(id)) {
     return false;
   }
 
@@ -75,7 +75,7 @@ bool AnimationSyncGroupService::leave(SyncGroupId id, AnimationPlayer* player) {
 
 bool AnimationSyncGroupService::isMember(SyncGroupId id,
                                          const AnimationPlayer* player) const {
-  if (player == nullptr || !isValid(id)) {
+  if (player == nullptr || !isValidSyncGroupId(id)) {
     return false;
   }
 
@@ -114,7 +114,7 @@ AnimationPlayer* AnimationSyncGroupService::getMemberAt(SyncGroupId id,
 
 bool AnimationSyncGroupService::fire(
     SyncGroupId id, const eastl::vector<SyncGroupFireInstruction>& instructions) {
-  if (!isValid(id) || instructions.empty()) {
+  if (!isValidSyncGroupId(id) || instructions.empty()) {
     return false;
   }
 
@@ -164,7 +164,7 @@ bool AnimationSyncGroupService::fire(
 
 bool AnimationSyncGroupService::fireSameName(SyncGroupId id,
                                              const eastl::string& clip_name) {
-  if (!isValid(id) || clip_name.empty()) {
+  if (!isValidSyncGroupId(id) || clip_name.empty()) {
     return false;
   }
 
@@ -185,7 +185,7 @@ bool AnimationSyncGroupService::fireSameName(SyncGroupId id,
 bool AnimationSyncGroupService::fireSameName(SyncGroupId id,
                                              const eastl::string& clip_name,
                                              float seek_seconds) {
-  if (!isValid(id) || clip_name.empty()) {
+  if (!isValidSyncGroupId(id) || clip_name.empty()) {
     return false;
   }
 

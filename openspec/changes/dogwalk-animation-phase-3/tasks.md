@@ -15,9 +15,9 @@
 
 ## 3. Edit Mode preview
 
-- [ ] 3.1 Edit can Fire a Sync Group and Enter/End CINE without DotNetHost / Behaviour Tick
-- [ ] 3.2 Edit shows in-CINE / suppression marking and multi-Skeleton playback
-- [ ] 3.3 Verify Edit does **not** auto-snap Object TRS or run gameplay state machines
+- [x] 3.1 Edit can Fire a Sync Group and Enter/End CINE without DotNetHost / Behaviour Tick
+- [x] 3.2 Edit shows in-CINE / suppression marking and multi-Skeleton playback
+- [x] 3.3 Verify Edit does **not** auto-snap Object TRS or run gameplay state machines
 
 ## 4. C-ABI + Blunder.Api
 
