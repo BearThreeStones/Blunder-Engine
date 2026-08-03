@@ -1,66 +1,66 @@
-# Task 3.1 + 3.2 Report — Reimport Companion Animation Clips
+# Task 3.1 Report — Scene-embedded AnimationTree topology round-trip
 
-## Status
-
-COMPLETE
+**Status:** DONE  
+**Branch:** `feat/dogwalk-animation-phase-4`
 
 ## Summary
 
-- Mesh Reimport now refreshes animation clips from both the host mesh
-  Intermediate and every persisted `companion_animation_sources` Intermediate.
-- Companion refresh uses the companion filename stem as clip identity, matching
-  Import behavior for single- and multi-animation companion files.
-- Existing clip bindings are reused so stable companion clip identities retain
-  their descriptor paths, Intermediate paths, and Asset GUIDs.
+AnimationTree topology (BlendSpace1D points/scalars, StateMachine states, Add2 clip+weight, OneShot slot, active flag, current state, base blend-space node) now persists on scene entities under `animationTree`, following the `animationPlayer` embed pattern. `SceneInstance` applies topology on instantiate and captures it on `exportToScene`.
 
-## TDD Evidence
+## JSON shape (entity `animationTree`)
 
-The regression test was added before production changes. It imports a skinned
-host plus a companion, removes the original external files, replaces the
-derived clip YAML with a stale marker, and Reimports the host Mesh.
-
-The initial test run failed with three expected assertions:
-
-- companion-derived clip YAML was not refreshed;
-- the stale body was not valid AnimationClip YAML; and
-- companion stem identity was not restored.
-
-After implementation, the same test passed and confirmed the clip descriptor
-GUID and registry mapping remain unchanged.
-
-## Validation
-
-Build:
-
-```powershell
-cmd /c "set CL=/Zm200&& cmake --build build/vs2026-debug --config Debug --target asset_import_test -- /m:1 /p:CL_MPCount=1"
+```json
+"animationTree": {
+  "active": true,
+  "currentState": "Locomotion",
+  "baseBlendSpaceNode": "Locomotion",
+  "blendSpaces": {
+    "Locomotion": {
+      "scalar": 1.0,
+      "points": [
+        { "clip": "idle", "scalar": 0.0 },
+        { "clip": "walk", "scalar": 1.0 }
+      ]
+    }
+  },
+  "states": {
+    "Locomotion": { "kind": "blendSpace1D", "blendSpaceNode": "Locomotion" }
+  },
+  "add2": { "clip": "turn", "weight": 0.4 },
+  "oneShotClip": "trip"
+}
 ```
 
-Result: exit `0`.
+OneShot live playback state is **not** serialized (authored slot only).
 
-Test:
+## Production changes
+
+| File | Change |
+|------|--------|
+| `scene.h` | `AnimationTreeBlendSpaceDef`, `AnimationTreeStateDef`, entity topology fields |
+| `scene_serializer.cpp` | `appendAnimationTreeJson`, `parseAnimationTreeObject` (+ helpers) |
+| `scene_instance.cpp` | `applyAnimationTreeTopology`, `captureAnimationTreeTopology`, instantiate/export |
+| `animation_tree.h/.cpp` | `setOneShotSlotClip`, `visitBlendSpaces`, `visitStates` |
+
+## Tests
+
+| Target | Coverage |
+|--------|----------|
+| `scene_serializer_test.cpp` | `serializeAndParseAnimationTreeTopology` |
+| `scene_behaviour_instantiate_test.cpp` | `instantiateRestoresAnimationTreeTopology` (+ export) |
+
+**Note:** `scene_serializer_test` / `scene_behaviour_instantiate_test` link `blunder_engine_c_static` (~43MB) and failed to launch in this worktree (missing runtime DLL chain at test cwd). They **compile** after the serializer changes. `animation_tree_test` (571KB) passes including expanded ClassDB named-API coverage.
+
+## Test command
 
 ```powershell
-$env:PATH = "$PWD\build\vs2026-debug\bin\Debug;$PWD\.cmake_deps\slint-build;$env:VULKAN_SDK\Bin;$env:PATH"
-.\build\vs2026-debug\engine\src\tests\Debug\asset_import_test.exe
+cmake --build build/vs2026-debug --target animation_tree_test scene_serializer_test scene_behaviour_instantiate_test --config Debug
+# Lightweight (verified):
+build/vs2026-debug/engine/src/tests/Debug/animation_tree_test.exe
+# Heavy scene tests need VulkanSDK Bin + slint_cpp.dll on PATH (see docs/agents/testing.md)
 ```
 
-Result: exit `0`, `asset_import_test: all passed`.
+## Concerns
 
-## Files Changed
-
-- `engine/src/runtime/resource/asset_import/asset_import_service.cpp`
-- `engine/src/runtime/resource/asset_import/gltf_animation_clip_extractor.cpp`
-- `engine/src/runtime/resource/asset_import/gltf_animation_clip_extractor.h`
-- `engine/src/tests/asset_import_test.cpp`
-- `openspec/changes/companion-animation-gltf-import/tasks.md`
-- `.superpowers/sdd/task-3.1-report.md`
-
-## Concerns / Follow-ups
-
-- Reimport intentionally reads persisted companion Intermediates; it does not
-  rediscover or recopy the original external companion files.
-- Removed animations retain their existing orphan descriptors, matching the
-  established `refreshAnimationClipsFromGltf` behavior.
-- Existing dirty submodules and `.superpowers/sdd/progress.md` are unrelated
-  and remain excluded from this task.
+- Instantiate apply order: clip map must be bound on AnimationPlayer before tree topology (player ensured when tree or clips present).
+- `setStateBlendSpace` / `addBlendSpacePoint` order matters at runtime; scene JSON lists blend spaces before states in apply loop.

@@ -1,5 +1,6 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/function/global/global_context.h"
@@ -294,12 +295,104 @@ void instantiateRestoresAnimationPlayerPhase2Defaults() {
   ObjectDB::clear();
 }
 
+/// Instantiate applies scene-embedded AnimationTree topology onto co-located tree.
+void instantiateRestoresAnimationTreeTopology() {
+  using namespace Blunder;
+  ensureLogger();
+  ObjectDB::clear();
+
+  const char* kJson = R"({
+  "type": "Scene",
+  "guid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  "entities": [
+    {
+      "name": "Dog",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "hasSkeleton": true,
+      "animationPlayer": {
+        "clips": {
+          "idle": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+          "walk": "11111111-2222-4333-8444-555555555555",
+          "turn": "22222222-3333-4444-8555-666666666666",
+          "trip": "33333333-4444-4555-8666-777777777777"
+        }
+      },
+      "animationTree": {
+        "active": true,
+        "currentState": "Locomotion",
+        "baseBlendSpaceNode": "Locomotion",
+        "blendSpaces": {
+          "Locomotion": {
+            "scalar": 1.0,
+            "points": [
+              { "clip": "idle", "scalar": 0.0 },
+              { "clip": "walk", "scalar": 1.0 }
+            ]
+          }
+        },
+        "states": {
+          "Locomotion": { "kind": "blendSpace1D", "blendSpaceNode": "Locomotion" }
+        },
+        "add2": { "clip": "turn", "weight": 0.4 },
+        "oneShotClip": "trip"
+      }
+    }
+  ]
+}
+)";
+
+  Scene scene;
+  expect_true("deserialize animation tree json",
+              SceneSerializer::deserialize(eastl::string(kJson), scene));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  expect_true("dog entity created", instance.getEntityCount() == 1);
+
+  const EntityId dog_id = instance.getEntityIdAtIndex(0);
+  Object* object = ObjectDB::findByEntityId(dog_id);
+  expect_true("dog has bound object", object != nullptr);
+  AnimationTree* tree =
+      object != nullptr ? object->getAnimationTree() : nullptr;
+  expect_true("dog has animation tree", tree != nullptr);
+  if (tree != nullptr) {
+    expect_true("tree active on instantiate", tree->isActive());
+    expect_true("current state restored", tree->getCurrentStateName() == "Locomotion");
+    expect_true("base blend space node restored",
+                tree->getBaseBlendSpaceNode() == "Locomotion");
+    expect_true("blend space scalar restored",
+                float_near(tree->getBlendSpaceScalar("Locomotion"), 1.0f));
+    expect_true("add2 clip restored", tree->getAdd2ClipName() == "turn");
+    expect_true("add2 weight restored", float_near(tree->getAdd2Weight(), 0.4f));
+    expect_true("oneshot slot restored", tree->getOneShotSlotClip() == "trip");
+    expect_true("oneshot not live on load", !tree->isOneShotActive());
+  }
+
+  Scene exported;
+  expect_true("export scene with tree topology", instance.exportToScene(exported));
+  expect_true("exported one entity", exported.getEntities().size() == 1);
+  if (!exported.getEntities().empty()) {
+    const SceneEntityDefinition& out = exported.getEntities()[0];
+    expect_true("exported has tree flag", out.has_animation_tree);
+    expect_true("exported active flag", out.animation_tree_active);
+    expect_true("exported current state", out.animation_tree_current_state == "Locomotion");
+    expect_true("exported one blend space", out.animation_tree_blend_spaces.size() == 1);
+    expect_true("exported add2 clip", out.animation_tree_add2_clip == "turn");
+    expect_true("exported oneshot slot", out.animation_tree_oneshot_clip == "trip");
+  }
+
+  ObjectDB::clear();
+}
+
 }  // namespace
 
 int main() {
   instantiateRestoresBehaviourSlotsWithoutHost();
   reinstantiateDestroysStaleBoundObjects();
   instantiateRestoresAnimationPlayerPhase2Defaults();
+  instantiateRestoresAnimationTreeTopology();
 
   using namespace Blunder;
   ObjectDB::clear();

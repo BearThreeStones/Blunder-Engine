@@ -16,9 +16,11 @@
 
 ## 3. Scene embed + named API
 
-- [ ] 3.1 Persist scene-embedded topology (states, BlendSpace points, OneShot/Add2 slots); round-trip load
-- [ ] 3.2 Narrow named script/native API: Travel/Start, per-node BlendSpace scalar, RequestOneShot, Add2 setters (no parameter-path primary surface)
-- [ ] 3.3 Confirm Phase 4 does not require visual graph editor or standalone AnimationTree Asset
+- [x] 3.1 Persist scene-embedded topology (states, BlendSpace points, OneShot/Add2 slots); round-trip load
+- [x] 3.2 Narrow named script/native API: Travel/Start, per-node BlendSpace scalar, RequestOneShot, Add2 setters (no parameter-path primary surface)
+- [x] 3.3 Confirm Phase 4 does not require visual graph editor or standalone AnimationTree Asset
+
+**Phase 4 Done scope (3.3):** Scene-embedded `animationTree` JSON on entities is sufficient. A visual node-graph editor and a standalone AnimationTree Asset type are explicitly **non-goals** for Phase 4 (see `design.md` Non-Goals, ADR 0025, `specs/animation-tree/spec.md` Scene-embedded topology).
 
 ## 4. Edit Mode preview
 

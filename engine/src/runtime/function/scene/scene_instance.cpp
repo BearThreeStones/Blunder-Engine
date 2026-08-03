@@ -5,6 +5,7 @@
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -20,6 +21,112 @@ Mat4 composeTrs(const Vec3& position, const Quat& rotation, const Vec3& scale) {
   const Mat4 rot = glm::mat4_cast(rotation);
   const Mat4 scl = glm::scale(Mat4(1.0f), scale);
   return translation * rot * scl;
+}
+
+bool entityHasAnimationTreeTopology(const SceneEntityDefinition& definition) {
+  return definition.has_animation_tree ||
+         !definition.animation_tree_blend_spaces.empty() ||
+         !definition.animation_tree_states.empty() ||
+         !definition.animation_tree_current_state.empty() ||
+         !definition.animation_tree_base_blend_space_node.empty() ||
+         !definition.animation_tree_add2_clip.empty() ||
+         !definition.animation_tree_oneshot_clip.empty() ||
+         definition.animation_tree_active ||
+         definition.animation_tree_add2_weight != 0.0f;
+}
+
+void applyAnimationTreeTopology(AnimationTree& tree,
+                                const SceneEntityDefinition& definition) {
+  for (const SceneEntityDefinition::AnimationTreeBlendSpaceDef& space :
+       definition.animation_tree_blend_spaces) {
+    for (const SceneEntityDefinition::AnimationTreeBlendSpacePointDef& point :
+         space.points) {
+      tree.addBlendSpacePoint(space.node_name, point.clip_name, point.scalar);
+    }
+    tree.setBlendSpaceScalar(space.node_name, space.scalar);
+  }
+  for (const SceneEntityDefinition::AnimationTreeStateDef& state :
+       definition.animation_tree_states) {
+    if (state.kind == "blendSpace1D") {
+      tree.setStateBlendSpace(state.name, state.blend_space_node);
+    } else {
+      tree.setStateClip(state.name, state.clip_name);
+    }
+  }
+  if (!definition.animation_tree_base_blend_space_node.empty()) {
+    tree.setBaseBlendSpaceNode(definition.animation_tree_base_blend_space_node);
+  }
+  if (!definition.animation_tree_add2_clip.empty()) {
+    tree.setAdd2ClipName(definition.animation_tree_add2_clip);
+    tree.setAdd2Weight(definition.animation_tree_add2_weight);
+  }
+  if (!definition.animation_tree_oneshot_clip.empty()) {
+    tree.setOneShotSlotClip(definition.animation_tree_oneshot_clip);
+  }
+  if (!definition.animation_tree_current_state.empty()) {
+    tree.travel(definition.animation_tree_current_state);
+  }
+  if (definition.animation_tree_active) {
+    tree.setActive(true);
+  }
+}
+
+void captureAnimationTreeTopology(const AnimationTree& tree,
+                                  SceneEntityDefinition& definition) {
+  definition.has_animation_tree = true;
+  definition.animation_tree_active = tree.isActive();
+  definition.animation_tree_current_state = tree.getCurrentStateName();
+  definition.animation_tree_base_blend_space_node =
+      tree.getBaseBlendSpaceNode();
+  definition.animation_tree_add2_clip = tree.getAdd2ClipName();
+  definition.animation_tree_add2_weight = tree.getAdd2Weight();
+  definition.animation_tree_oneshot_clip = tree.getOneShotSlotClip();
+
+  struct BlendExportContext {
+    SceneEntityDefinition* definition;
+  };
+  BlendExportContext blend_ctx{&definition};
+  tree.visitBlendSpaces(
+      [](const eastl::string& node_name,
+         const eastl::vector<BlendSpace1DPoint>& points, float scalar,
+         void* userdata) {
+        auto* ctx = static_cast<BlendExportContext*>(userdata);
+        SceneEntityDefinition::AnimationTreeBlendSpaceDef space;
+        space.node_name = node_name;
+        space.scalar = scalar;
+        for (const BlendSpace1DPoint& point : points) {
+          SceneEntityDefinition::AnimationTreeBlendSpacePointDef point_def;
+          point_def.clip_name = point.clip_name;
+          point_def.scalar = point.scalar;
+          space.points.push_back(eastl::move(point_def));
+        }
+        ctx->definition->animation_tree_blend_spaces.push_back(
+            eastl::move(space));
+      },
+      &blend_ctx);
+
+  struct StateExportContext {
+    SceneEntityDefinition* definition;
+  };
+  StateExportContext state_ctx{&definition};
+  tree.visitStates(
+      [](const eastl::string& state_name, AnimationStatePlaybackKind kind,
+         const eastl::string& clip_name, const eastl::string& blend_space_node,
+         void* userdata) {
+        auto* ctx = static_cast<StateExportContext*>(userdata);
+        SceneEntityDefinition::AnimationTreeStateDef state_def;
+        state_def.name = state_name;
+        if (kind == AnimationStatePlaybackKind::BlendSpace1D) {
+          state_def.kind = "blendSpace1D";
+          state_def.blend_space_node = blend_space_node;
+        } else {
+          state_def.kind = "clip";
+          state_def.clip_name = clip_name;
+        }
+        ctx->definition->animation_tree_states.push_back(
+            eastl::move(state_def));
+      },
+      &state_ctx);
 }
 
 }  // namespace
@@ -45,7 +152,8 @@ void SceneInstance::instantiate(const Scene& scene) {
     // Peers stay null here; mountSceneBehaviours attaches when DotNetHost runs.
     const bool needs_object =
         !definition.behaviours.empty() || definition.has_skeleton ||
-        !definition.animation_player_clips.empty();
+        !definition.animation_player_clips.empty() ||
+        entityHasAnimationTreeTopology(definition);
     if (needs_object) {
       const ObjectId object_id = ObjectDB::create();
       Object* object = ObjectDB::get(object_id);
@@ -60,7 +168,8 @@ void SceneInstance::instantiate(const Scene& scene) {
       if (definition.has_skeleton) {
         object->ensureSkeleton();
       }
-      if (!definition.animation_player_clips.empty()) {
+      if (!definition.animation_player_clips.empty() ||
+          entityHasAnimationTreeTopology(definition)) {
         AnimationPlayer* player = object->ensureAnimationPlayer();
         wireAnimationPlayerAssetResolver(*player);
         for (const SceneEntityDefinition::AnimationClipBinding& binding :
@@ -71,14 +180,20 @@ void SceneInstance::instantiate(const Scene& scene) {
             m_default_animation_clip_names[id] = binding.name;
           }
         }
-        player->setTimeScale(definition.animation_player_time_scale);
-        if (!definition.animation_player_slot0.empty()) {
-          player->setSlot(0, definition.animation_player_slot0);
+        if (!definition.animation_player_clips.empty()) {
+          player->setTimeScale(definition.animation_player_time_scale);
+          if (!definition.animation_player_slot0.empty()) {
+            player->setSlot(0, definition.animation_player_slot0);
+          }
+          if (!definition.animation_player_slot1.empty()) {
+            player->setSlot(1, definition.animation_player_slot1);
+          }
+          player->setBlendWeight(definition.animation_player_blend_weight);
         }
-        if (!definition.animation_player_slot1.empty()) {
-          player->setSlot(1, definition.animation_player_slot1);
-        }
-        player->setBlendWeight(definition.animation_player_blend_weight);
+      }
+      if (entityHasAnimationTreeTopology(definition)) {
+        AnimationTree* tree = object->ensureAnimationTree();
+        applyAnimationTreeTopology(*tree, definition);
       }
       for (const SceneBehaviourDeclaration& decl : definition.behaviours) {
         if (!object->restoreBehaviour(decl.id, decl.type)) {
@@ -366,6 +481,9 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
         definition.animation_player_slot0 = player->getSlotClipName(0);
         definition.animation_player_slot1 = player->getSlotClipName(1);
         definition.animation_player_blend_weight = player->getBlendWeight();
+      }
+      if (AnimationTree* tree = bound->getAnimationTree()) {
+        captureAnimationTreeTopology(*tree, definition);
       }
     }
 

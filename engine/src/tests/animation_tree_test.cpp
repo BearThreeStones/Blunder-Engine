@@ -185,7 +185,7 @@ void test_object_tree_resolves_through_hosted_player() {
   ObjectDB::clear();
 }
 
-void test_classdb_animation_tree_registration() {
+void test_classdb_animation_tree_named_api() {
   using namespace Blunder;
 
   ClassDB::initialize();
@@ -195,17 +195,113 @@ void test_classdb_animation_tree_registration() {
   AnimationTree tree;
   tree.bindAnimationPlayer(&player);
 
-  const eastl::string walk_guid = "55555555-5555-5555-5555-555555555555";
-  player.setClipGuid("LOOP-chocomel-walk", walk_guid);
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  const eastl::string turn_guid = "33333333-3333-3333-3333-333333333333";
+  const eastl::string trip_guid = "44444444-4444-4444-4444-444444444444";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("turn", turn_guid);
+  player.setClipGuid("trip", trip_guid);
 
-  eastl::string resolved_guid;
-  tree.resolveClipGuid("LOOP-chocomel-walk", resolved_guid);
+  tree.addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree.setStateBlendSpace("Locomotion", "Locomotion");
 
   Variant has_player;
   expect_true("has_animation_player property",
               ClassDB::getProperty(&tree, "AnimationTree", "has_animation_player",
                                    has_player));
   expect_true("has_animation_player true", has_player.asBool());
+
+  expect_true("set active property",
+              ClassDB::setProperty(&tree, "AnimationTree", "active", Variant(true)));
+  Variant active;
+  expect_true("get active property",
+              ClassDB::getProperty(&tree, "AnimationTree", "active", active));
+  expect_true("active true", active.asBool());
+
+  expect_true("set current_state property",
+              ClassDB::setProperty(&tree, "AnimationTree", "current_state",
+                                   Variant(eastl::string("Locomotion"))));
+  Variant current_state;
+  expect_true("get current_state property",
+              ClassDB::getProperty(&tree, "AnimationTree", "current_state",
+                                   current_state));
+  expect_true("current_state locomotion",
+              current_state.asString() == "Locomotion");
+
+  MethodBind* travel_method =
+      ClassDB::getMethod("AnimationTree", "travel");
+  expect_true("travel method registered", travel_method != nullptr);
+  if (travel_method != nullptr) {
+    Variant travel_arg(eastl::string("Locomotion"));
+    const void* travel_args[] = {&travel_arg};
+    Variant travel_ret;
+    travel_method->ptrcall(&tree, travel_args, &travel_ret);
+    expect_true("travel method ok", travel_ret.asBool());
+  }
+
+  MethodBind* start_method = ClassDB::getMethod("AnimationTree", "start");
+  expect_true("start method registered", start_method != nullptr);
+  if (start_method != nullptr) {
+    Variant start_arg(eastl::string("Locomotion"));
+    const void* start_args[] = {&start_arg};
+    Variant start_ret;
+    start_method->ptrcall(&tree, start_args, &start_ret);
+    expect_true("start method ok", start_ret.asBool());
+    expect_true("start resets sample time", tree.getSampleTime() == 0.0f);
+  }
+
+  MethodBind* scalar_method =
+      ClassDB::getMethod("AnimationTree", "set_blend_space_scalar");
+  expect_true("set_blend_space_scalar method registered", scalar_method != nullptr);
+  if (scalar_method != nullptr) {
+    Variant node_arg(eastl::string("Locomotion"));
+    Variant scalar_arg(0.75f);
+    const void* scalar_args[] = {&node_arg, &scalar_arg};
+    Variant scalar_ret;
+    scalar_method->ptrcall(&tree, scalar_args, &scalar_ret);
+    expect_true("scalar method ok", scalar_ret.asBool());
+    expect_true("scalar applied", tree.getBlendSpaceScalar("Locomotion") == 0.75f);
+  }
+
+  expect_true("set add2_clip property",
+              ClassDB::setProperty(&tree, "AnimationTree", "add2_clip",
+                                   Variant(eastl::string("turn"))));
+  expect_true("set add2_weight property",
+              ClassDB::setProperty(&tree, "AnimationTree", "add2_weight",
+                                   Variant(0.25f)));
+  Variant add2_clip;
+  Variant add2_weight;
+  expect_true("get add2_clip property",
+              ClassDB::getProperty(&tree, "AnimationTree", "add2_clip", add2_clip));
+  expect_true("get add2_weight property",
+              ClassDB::getProperty(&tree, "AnimationTree", "add2_weight",
+                                   add2_weight));
+  expect_true("add2_clip turn", add2_clip.asString() == "turn");
+  expect_true("add2_weight 0.25", add2_weight.asFloat() == 0.25f);
+
+  expect_true("set oneshot_slot_clip property",
+              ClassDB::setProperty(&tree, "AnimationTree", "oneshot_slot_clip",
+                                   Variant(eastl::string("trip"))));
+  Variant oneshot_slot;
+  expect_true("get oneshot_slot_clip property",
+              ClassDB::getProperty(&tree, "AnimationTree", "oneshot_slot_clip",
+                                   oneshot_slot));
+  expect_true("oneshot_slot trip", oneshot_slot.asString() == "trip");
+
+  MethodBind* oneshot_method =
+      ClassDB::getMethod("AnimationTree", "request_oneshot");
+  expect_true("request_oneshot method registered", oneshot_method != nullptr);
+  if (oneshot_method != nullptr) {
+    Variant oneshot_arg(eastl::string("trip"));
+    const void* oneshot_args[] = {&oneshot_arg};
+    Variant oneshot_ret;
+    oneshot_method->ptrcall(&tree, oneshot_args, &oneshot_ret);
+    expect_true("request_oneshot ok", oneshot_ret.asBool());
+    expect_true("oneshot active", tree.isOneShotActive());
+  }
 
   ClassDB::shutdown();
 }
@@ -1336,7 +1432,7 @@ int main() {
   test_tree_resolves_clip_guid_via_player_map();
   test_tree_resolves_clip_data_via_player_map();
   test_object_tree_resolves_through_hosted_player();
-  test_classdb_animation_tree_registration();
+  test_classdb_animation_tree_named_api();
   test_active_tree_blocks_player_play_and_two_slot_bone_writes();
   test_inactive_tree_restores_player_two_slot_sampling();
   test_base_then_add2_bind_rest_additive_not_lerp_dual_track();

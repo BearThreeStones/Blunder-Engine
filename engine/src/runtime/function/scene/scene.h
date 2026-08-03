@@ -52,6 +52,36 @@ struct SceneEntityDefinition final {
   eastl::string animation_player_slot0;
   eastl::string animation_player_slot1;
   float animation_player_blend_weight{0.0f};
+  /// BlendSpace1D point on a named node (serialized under `animationTree`).
+  struct AnimationTreeBlendSpacePointDef final {
+    eastl::string clip_name;
+    float scalar{0.0f};
+  };
+  /// BlendSpace1D node topology + authored scalar drive.
+  struct AnimationTreeBlendSpaceDef final {
+    eastl::string node_name;
+    eastl::vector<AnimationTreeBlendSpacePointDef> points;
+    float scalar{0.0f};
+  };
+  /// StateMachine state: single clip or BlendSpace1D node playback.
+  struct AnimationTreeStateDef final {
+    eastl::string name;
+    /// `"clip"` or `"blendSpace1D"`.
+    eastl::string kind;
+    eastl::string clip_name;
+    eastl::string blend_space_node;
+  };
+  /// Scene-embedded AnimationTree topology (no standalone Tree Asset).
+  bool has_animation_tree{false};
+  bool animation_tree_active{false};
+  eastl::string animation_tree_current_state;
+  eastl::string animation_tree_base_blend_space_node;
+  eastl::string animation_tree_add2_clip;
+  float animation_tree_add2_weight{0.0f};
+  /// Authored OneShot clip slot (not live playback state).
+  eastl::string animation_tree_oneshot_clip;
+  eastl::vector<AnimationTreeBlendSpaceDef> animation_tree_blend_spaces;
+  eastl::vector<AnimationTreeStateDef> animation_tree_states;
   /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
   eastl::vector<SceneBehaviourDeclaration> behaviours;
   bool has_camera{false};

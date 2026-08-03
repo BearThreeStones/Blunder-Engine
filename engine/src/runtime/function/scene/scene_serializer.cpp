@@ -734,6 +734,9 @@ bool parseCameraObject(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseAnimationTreeObject(const char* object_start, const char* object_end,
+                              SceneEntityDefinition& out_entity);
+
 bool parseEntityObject(const char* object_start, const char* object_end,
                        SceneEntityDefinition& out_entity) {
   eastl::string name;
@@ -802,6 +805,16 @@ bool parseEntityObject(const char* object_start, const char* object_end,
     if (parseFloatField(player_content, player_end, "\"blendWeight\"",
                         blend_weight)) {
       out_entity.animation_player_blend_weight = blend_weight;
+    }
+  }
+
+  const char* tree_end = nullptr;
+  const char* tree_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"animationTree\"",
+                                &tree_end);
+  if (tree_content != nullptr) {
+    if (!parseAnimationTreeObject(tree_content, tree_end, out_entity)) {
+      return false;
     }
   }
 
@@ -1097,6 +1110,436 @@ void appendAnimationPlayerJson(eastl::string& out,
   out.append("\n      }");
 }
 
+bool entityHasAnimationTreeTopology(const SceneEntityDefinition& entity) {
+  return entity.has_animation_tree || entity.animation_tree_active ||
+         !entity.animation_tree_current_state.empty() ||
+         !entity.animation_tree_base_blend_space_node.empty() ||
+         !entity.animation_tree_add2_clip.empty() ||
+         !entity.animation_tree_oneshot_clip.empty() ||
+         entity.animation_tree_add2_weight != 0.0f ||
+         !entity.animation_tree_blend_spaces.empty() ||
+         !entity.animation_tree_states.empty();
+}
+
+void appendAnimationTreeBlendSpacePointsJson(
+    eastl::string& out,
+    const eastl::vector<SceneEntityDefinition::AnimationTreeBlendSpacePointDef>&
+        points) {
+  out.append("          \"points\": [\n");
+  for (size_t i = 0; i < points.size(); ++i) {
+    const SceneEntityDefinition::AnimationTreeBlendSpacePointDef& point =
+        points[i];
+    out.append("            {\n");
+    out.append("              \"clip\": ");
+    appendJsonString(out, point.clip_name);
+    out.append(",\n              \"scalar\": ");
+    char buffer[64];
+    std::snprintf(buffer, sizeof(buffer), "%.6g",
+                  static_cast<double>(point.scalar));
+    out.append(buffer);
+    out.append(i + 1 == points.size() ? "\n            }\n" : "\n            },\n");
+  }
+  out.append("          ]");
+}
+
+void appendAnimationTreeBlendSpacesJson(
+    eastl::string& out,
+    const eastl::vector<SceneEntityDefinition::AnimationTreeBlendSpaceDef>&
+        blend_spaces) {
+  out.append("        \"blendSpaces\": {\n");
+  for (size_t i = 0; i < blend_spaces.size(); ++i) {
+    const SceneEntityDefinition::AnimationTreeBlendSpaceDef& space =
+        blend_spaces[i];
+    out.append("          ");
+    appendJsonString(out, space.node_name);
+    out.append(": {\n");
+    if (space.scalar != 0.0f) {
+      char buffer[64];
+      std::snprintf(buffer, sizeof(buffer), "            \"scalar\": %.6g,\n",
+                    static_cast<double>(space.scalar));
+      out.append(buffer);
+    }
+    appendAnimationTreeBlendSpacePointsJson(out, space.points);
+    out.append(i + 1 == blend_spaces.size() ? "\n          }\n" : "\n          },\n");
+  }
+  out.append("        }");
+}
+
+void appendAnimationTreeStatesJson(
+    eastl::string& out,
+    const eastl::vector<SceneEntityDefinition::AnimationTreeStateDef>& states) {
+  out.append("        \"states\": {\n");
+  for (size_t i = 0; i < states.size(); ++i) {
+    const SceneEntityDefinition::AnimationTreeStateDef& state = states[i];
+    out.append("          ");
+    appendJsonString(out, state.name);
+    out.append(": {\n");
+    out.append("            \"kind\": ");
+    appendJsonString(out, state.kind);
+    if (state.kind == "blendSpace1D") {
+      out.append(",\n            \"blendSpaceNode\": ");
+      appendJsonString(out, state.blend_space_node);
+    } else {
+      out.append(",\n            \"clip\": ");
+      appendJsonString(out, state.clip_name);
+    }
+    out.append(i + 1 == states.size() ? "\n          }\n" : "\n          },\n");
+  }
+  out.append("        }");
+}
+
+void appendAnimationTreeJson(eastl::string& out,
+                             const SceneEntityDefinition& entity) {
+  if (!entityHasAnimationTreeTopology(entity)) {
+    return;
+  }
+
+  out.append(",\n      \"animationTree\": {\n");
+  bool need_comma = false;
+
+  if (entity.animation_tree_active) {
+    out.append("        \"active\": true");
+    need_comma = true;
+  }
+
+  if (!entity.animation_tree_current_state.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n        \"currentState\": ");
+    appendJsonString(out, entity.animation_tree_current_state);
+    need_comma = true;
+  }
+
+  if (!entity.animation_tree_base_blend_space_node.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n        \"baseBlendSpaceNode\": ");
+    appendJsonString(out, entity.animation_tree_base_blend_space_node);
+    need_comma = true;
+  }
+
+  if (!entity.animation_tree_blend_spaces.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n");
+    appendAnimationTreeBlendSpacesJson(out, entity.animation_tree_blend_spaces);
+    need_comma = true;
+  }
+
+  if (!entity.animation_tree_states.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n");
+    appendAnimationTreeStatesJson(out, entity.animation_tree_states);
+    need_comma = true;
+  }
+
+  if (!entity.animation_tree_add2_clip.empty() ||
+      entity.animation_tree_add2_weight != 0.0f) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n        \"add2\": {\n");
+    out.append("          \"clip\": ");
+    appendJsonString(out, entity.animation_tree_add2_clip);
+    if (entity.animation_tree_add2_weight != 0.0f) {
+      char buffer[64];
+      std::snprintf(buffer, sizeof(buffer), ",\n          \"weight\": %.6g",
+                    static_cast<double>(entity.animation_tree_add2_weight));
+      out.append(buffer);
+    }
+    out.append("\n        }");
+    need_comma = true;
+  }
+
+  if (!entity.animation_tree_oneshot_clip.empty()) {
+    if (need_comma) {
+      out.append(",");
+    }
+    out.append("\n        \"oneShotClip\": ");
+    appendJsonString(out, entity.animation_tree_oneshot_clip);
+  }
+
+  out.append("\n      }");
+}
+
+bool parseAnimationTreeBlendSpacePoints(
+    const char* array_start, const char* array_end,
+    eastl::vector<SceneEntityDefinition::AnimationTreeBlendSpacePointDef>&
+        out_points) {
+  out_points.clear();
+  const char* p = array_start;
+  while (p < array_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= array_end - 1 || *p == ']') {
+      break;
+    }
+    if (*p != '{') {
+      ++p;
+      continue;
+    }
+
+    const char* object_start = p;
+    int depth = 0;
+    do {
+      if (*p == '{') {
+        ++depth;
+      } else if (*p == '}') {
+        --depth;
+      }
+      ++p;
+    } while (p < array_end && depth > 0);
+
+    if (depth != 0) {
+      return false;
+    }
+
+    SceneEntityDefinition::AnimationTreeBlendSpacePointDef point;
+    eastl::string clip_name;
+    if (!parseStringField(object_start, p, "\"clip\"", clip_name)) {
+      return false;
+    }
+    point.clip_name = eastl::move(clip_name);
+    float scalar = 0.0f;
+    parseFloatField(object_start, p, "\"scalar\"", scalar);
+    point.scalar = scalar;
+    out_points.push_back(eastl::move(point));
+
+    p = skipWhitespace(p);
+    if (p < array_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
+bool parseAnimationTreeBlendSpacesObject(
+    const char* object_start, const char* object_end,
+    eastl::vector<SceneEntityDefinition::AnimationTreeBlendSpaceDef>&
+        out_blend_spaces) {
+  out_blend_spaces.clear();
+  const char* p = object_start;
+  while (p < object_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= object_end - 1 || *p == '}') {
+      break;
+    }
+    if (*p != '"') {
+      return false;
+    }
+
+    SceneEntityDefinition::AnimationTreeBlendSpaceDef space;
+    const char* after_key = nullptr;
+    if (!parseJsonString(p, object_end, space.node_name, &after_key)) {
+      return false;
+    }
+    p = skipWhitespace(after_key);
+    if (p >= object_end || *p != ':') {
+      return false;
+    }
+    ++p;
+    p = skipWhitespace(p);
+    if (p >= object_end || *p != '{') {
+      return false;
+    }
+
+    const char* node_start = p;
+    int depth = 0;
+    do {
+      if (*p == '{') {
+        ++depth;
+      } else if (*p == '}') {
+        --depth;
+      }
+      ++p;
+    } while (p < object_end && depth > 0);
+    if (depth != 0) {
+      return false;
+    }
+
+    float scalar = 0.0f;
+    parseFloatField(node_start, p, "\"scalar\"", scalar);
+    space.scalar = scalar;
+
+    const char* points_end = nullptr;
+    const char* points_content =
+        findArrayAfterKeyBounded(node_start, p, "\"points\"", &points_end);
+    if (points_content != nullptr) {
+      if (!parseAnimationTreeBlendSpacePoints(points_content, points_end,
+                                              space.points)) {
+        return false;
+      }
+    }
+
+    if (!space.node_name.empty()) {
+      out_blend_spaces.push_back(eastl::move(space));
+    }
+
+    p = skipWhitespace(p);
+    if (p < object_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
+bool parseAnimationTreeStateObject(const char* object_start,
+                                   const char* object_end,
+                                   SceneEntityDefinition::AnimationTreeStateDef&
+                                       out_state) {
+  eastl::string kind;
+  if (!parseStringField(object_start, object_end, "\"kind\"", kind)) {
+    return false;
+  }
+  out_state.kind = eastl::move(kind);
+
+  if (out_state.kind == "blendSpace1D") {
+    eastl::string blend_space_node;
+    if (!parseStringField(object_start, object_end, "\"blendSpaceNode\"",
+                          blend_space_node)) {
+      return false;
+    }
+    out_state.blend_space_node = eastl::move(blend_space_node);
+  } else {
+    eastl::string clip_name;
+    if (!parseStringField(object_start, object_end, "\"clip\"", clip_name)) {
+      return false;
+    }
+    out_state.clip_name = eastl::move(clip_name);
+  }
+  return true;
+}
+
+bool parseAnimationTreeStatesObject(
+    const char* object_start, const char* object_end,
+    eastl::vector<SceneEntityDefinition::AnimationTreeStateDef>& out_states) {
+  out_states.clear();
+  const char* p = object_start;
+  while (p < object_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= object_end - 1 || *p == '}') {
+      break;
+    }
+    if (*p != '"') {
+      return false;
+    }
+
+    SceneEntityDefinition::AnimationTreeStateDef state;
+    const char* after_key = nullptr;
+    if (!parseJsonString(p, object_end, state.name, &after_key)) {
+      return false;
+    }
+    p = skipWhitespace(after_key);
+    if (p >= object_end || *p != ':') {
+      return false;
+    }
+    ++p;
+    p = skipWhitespace(p);
+    if (p >= object_end || *p != '{') {
+      return false;
+    }
+
+    const char* state_start = p;
+    int depth = 0;
+    do {
+      if (*p == '{') {
+        ++depth;
+      } else if (*p == '}') {
+        --depth;
+      }
+      ++p;
+    } while (p < object_end && depth > 0);
+    if (depth != 0) {
+      return false;
+    }
+
+    if (!parseAnimationTreeStateObject(state_start, p, state)) {
+      return false;
+    }
+    if (!state.name.empty()) {
+      out_states.push_back(eastl::move(state));
+    }
+
+    p = skipWhitespace(p);
+    if (p < object_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
+bool parseAnimationTreeObject(const char* object_start, const char* object_end,
+                              SceneEntityDefinition& out_entity) {
+  out_entity.has_animation_tree = true;
+
+  bool active = false;
+  if (parseBoolField(object_start, object_end, "\"active\"", active)) {
+    out_entity.animation_tree_active = active;
+  }
+
+  eastl::string current_state;
+  if (parseStringField(object_start, object_end, "\"currentState\"",
+                       current_state)) {
+    out_entity.animation_tree_current_state = eastl::move(current_state);
+  }
+
+  eastl::string base_blend_space_node;
+  if (parseStringField(object_start, object_end, "\"baseBlendSpaceNode\"",
+                       base_blend_space_node)) {
+    out_entity.animation_tree_base_blend_space_node =
+        eastl::move(base_blend_space_node);
+  }
+
+  const char* blend_spaces_end = nullptr;
+  const char* blend_spaces_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"blendSpaces\"",
+                                &blend_spaces_end);
+  if (blend_spaces_content != nullptr) {
+    if (!parseAnimationTreeBlendSpacesObject(
+            blend_spaces_content, blend_spaces_end,
+            out_entity.animation_tree_blend_spaces)) {
+      return false;
+    }
+  }
+
+  const char* states_end = nullptr;
+  const char* states_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"states\"",
+                                &states_end);
+  if (states_content != nullptr) {
+    if (!parseAnimationTreeStatesObject(states_content, states_end,
+                                        out_entity.animation_tree_states)) {
+      return false;
+    }
+  }
+
+  const char* add2_end = nullptr;
+  const char* add2_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"add2\"", &add2_end);
+  if (add2_content != nullptr) {
+    eastl::string add2_clip;
+    if (parseStringField(add2_content, add2_end, "\"clip\"", add2_clip)) {
+      out_entity.animation_tree_add2_clip = eastl::move(add2_clip);
+    }
+    float add2_weight = 0.0f;
+    if (parseFloatField(add2_content, add2_end, "\"weight\"", add2_weight)) {
+      out_entity.animation_tree_add2_weight = add2_weight;
+    }
+  }
+
+  eastl::string one_shot_clip;
+  if (parseStringField(object_start, object_end, "\"oneShotClip\"",
+                       one_shot_clip)) {
+    out_entity.animation_tree_oneshot_clip = eastl::move(one_shot_clip);
+  }
+
+  return true;
+}
+
 void appendCameraJson(eastl::string& out, const CameraComponent& camera) {
   char buffer[128];
   out.append(",\n      \"camera\": {\n");
@@ -1181,6 +1624,8 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
   }
 
   appendAnimationPlayerJson(out, entity);
+
+  appendAnimationTreeJson(out, entity);
 
   const eastl::vector<eastl::string> clip_guids =
       animationClipGuidsForSerialize(entity);

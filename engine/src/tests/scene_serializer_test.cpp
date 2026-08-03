@@ -592,6 +592,84 @@ void serializeAndParseEscapedBehaviourStrings() {
   }
 }
 
+/// Scene-embedded AnimationTree topology round-trips through serialize/deserialize.
+void serializeAndParseAnimationTreeTopology() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kIdleGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const char* kWalkGuid = "11111111-2222-4333-8444-555555555555";
+  const char* kTurnGuid = "22222222-3333-4444-8555-666666666666";
+  const char* kTripGuid = "33333333-4444-4555-8666-777777777777";
+
+  Scene scene;
+  scene.setGuid("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+
+  SceneEntityDefinition entity;
+  entity.name = "Dog";
+  entity.has_skeleton = true;
+  entity.animation_player_clips.push_back({"idle", eastl::string(kIdleGuid)});
+  entity.animation_player_clips.push_back({"walk", eastl::string(kWalkGuid)});
+  entity.animation_player_clips.push_back({"turn", eastl::string(kTurnGuid)});
+  entity.animation_player_clips.push_back({"trip", eastl::string(kTripGuid)});
+  entity.has_animation_tree = true;
+  entity.animation_tree_active = true;
+  entity.animation_tree_current_state = "Locomotion";
+  entity.animation_tree_base_blend_space_node = "Locomotion";
+  SceneEntityDefinition::AnimationTreeBlendSpaceDef locomotion;
+  locomotion.node_name = "Locomotion";
+  locomotion.scalar = 1.0f;
+  locomotion.points.push_back({"idle", 0.0f});
+  locomotion.points.push_back({"walk", 1.0f});
+  entity.animation_tree_blend_spaces.push_back(eastl::move(locomotion));
+  SceneEntityDefinition::AnimationTreeStateDef locomotion_state;
+  locomotion_state.name = "Locomotion";
+  locomotion_state.kind = "blendSpace1D";
+  locomotion_state.blend_space_node = "Locomotion";
+  entity.animation_tree_states.push_back(eastl::move(locomotion_state));
+  entity.animation_tree_add2_clip = "turn";
+  entity.animation_tree_add2_weight = 0.4f;
+  entity.animation_tree_oneshot_clip = "trip";
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize animation tree topology",
+              SceneSerializer::serialize(scene, json));
+  expect_true("json contains animationTree",
+              json.find("\"animationTree\"") != eastl::string::npos);
+  expect_true("json contains blendSpaces",
+              json.find("\"blendSpaces\"") != eastl::string::npos);
+  expect_true("json contains oneShotClip",
+              json.find("\"oneShotClip\"") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize animation tree topology",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("one entity after tree deserialize",
+              loaded.getEntities().size() == 1);
+
+  const SceneEntityDefinition& out = loaded.getEntities()[0];
+  expect_true("has_animation_tree restored", out.has_animation_tree);
+  expect_true("active restored", out.animation_tree_active);
+  expect_true("current state restored",
+              out.animation_tree_current_state == "Locomotion");
+  expect_true("base blend space restored",
+              out.animation_tree_base_blend_space_node == "Locomotion");
+  expect_true("one blend space restored",
+              out.animation_tree_blend_spaces.size() == 1);
+  if (out.animation_tree_blend_spaces.size() == 1) {
+    const SceneEntityDefinition::AnimationTreeBlendSpaceDef& space =
+        out.animation_tree_blend_spaces[0];
+    expect_true("blend space node name", space.node_name == "Locomotion");
+    expect_true("blend space scalar", float_near(space.scalar, 1.0f));
+    expect_true("two blend points", space.points.size() == 2);
+  }
+  expect_true("one state restored", out.animation_tree_states.size() == 1);
+  expect_true("add2 clip restored", out.animation_tree_add2_clip == "turn");
+  expect_true("add2 weight restored", float_near(out.animation_tree_add2_weight, 0.4f));
+  expect_true("oneshot slot restored", out.animation_tree_oneshot_clip == "trip");
+}
+
 }  // namespace
 
 int main() {
@@ -605,6 +683,7 @@ int main() {
   serializeAndParseCamera();
   serializeAndParseAnimationPlayerAndSkeleton();
   serializeAndParseAnimationPlayerPhase2Defaults();
+  serializeAndParseAnimationTreeTopology();
   deserializeLegacyEntityWithoutAnimation();
   deserializeLegacyEntityWithoutCamera();
 

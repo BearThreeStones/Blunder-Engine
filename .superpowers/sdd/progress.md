@@ -29,5 +29,12 @@ Task 1.7: complete (commits df0f6a0, pending review)
 
 Task 1.7: complete (commits df0f6a0, review clean)
 Task 2.1: complete (commits 9d90999, pending review)
-Task 2.2: complete (pending commit)
-Task 2.3: complete (pending commit)
+Task 2.2: complete (commits 97674e9, pending review)
+Task 2.3: complete (commits 97674e9, pending review)
+
+Task 2.1: complete (commits 9d90999)
+Task 2.2+2.3: complete (commits 97674e9, tests-only)
+
+Task 3.1: complete (pending commit)
+Task 3.2: complete (pending commit)
+Task 3.3: complete (pending commit)

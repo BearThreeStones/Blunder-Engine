@@ -286,6 +286,41 @@ bool AnimationTree::requestOneShot(const eastl::string& clip_name) {
   return true;
 }
 
+bool AnimationTree::setOneShotSlotClip(const eastl::string& clip_name) {
+  if (clip_name.empty()) {
+    m_oneshot_slot_clip.clear();
+    return false;
+  }
+  eastl::string guid;
+  if (!resolveClipGuid(clip_name, guid)) {
+    return false;
+  }
+  m_oneshot_slot_clip = clip_name;
+  return true;
+}
+
+void AnimationTree::visitBlendSpaces(BlendSpaceVisitor visitor,
+                                     void* userdata) const {
+  if (visitor == nullptr) {
+    return;
+  }
+  for (const auto& entry : m_blend_spaces) {
+    const float scalar = getBlendSpaceScalar(entry.first);
+    visitor(entry.first, entry.second, scalar, userdata);
+  }
+}
+
+void AnimationTree::visitStates(StateVisitor visitor, void* userdata) const {
+  if (visitor == nullptr) {
+    return;
+  }
+  for (const auto& entry : m_states) {
+    const AnimationStateDefinition& state = entry.second;
+    visitor(entry.first, state.kind, state.clip_name, state.blend_space_node,
+            userdata);
+  }
+}
+
 void AnimationTree::advance(float delta_seconds) {
   if (delta_seconds <= 0.0f) {
     return;

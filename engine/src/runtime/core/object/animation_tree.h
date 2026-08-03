@@ -78,6 +78,21 @@ class AnimationTree {
   /// OneShot: insert a clip over the base graph, then return when finished.
   bool requestOneShot(const eastl::string& clip_name);
   bool isOneShotActive() const { return m_oneshot_active; }
+  /// Authored OneShot clip slot (scene embed); does not start playback.
+  bool setOneShotSlotClip(const eastl::string& clip_name);
+  const eastl::string& getOneShotSlotClip() const { return m_oneshot_slot_clip; }
+
+  using BlendSpaceVisitor = void (*)(const eastl::string& node_name,
+                                     const eastl::vector<BlendSpace1DPoint>& points,
+                                     float scalar, void* userdata);
+  void visitBlendSpaces(BlendSpaceVisitor visitor, void* userdata) const;
+
+  using StateVisitor = void (*)(const eastl::string& state_name,
+                                AnimationStatePlaybackKind kind,
+                                const eastl::string& clip_name,
+                                const eastl::string& blend_space_node,
+                                void* userdata);
+  void visitStates(StateVisitor visitor, void* userdata) const;
 
   void advance(float delta_seconds);
 
@@ -119,6 +134,7 @@ class AnimationTree {
   bool m_oneshot_active{false};
   eastl::string m_oneshot_clip_name;
   float m_oneshot_time{0.0f};
+  eastl::string m_oneshot_slot_clip;
 };
 
 }  // namespace Blunder
