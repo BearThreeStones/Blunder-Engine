@@ -17,12 +17,12 @@ Human-run validation for task **6.2**. Automated gates (`dogwalk_phase3_sync_cin
 | Binaries | `build\vs2026-debug\bin\Debug\engine_editor.exe`, `engine_player.exe` (after full editor/player build) |
 | Automated gates | `build\vs2026-debug\engine\src\tests\Debug\dogwalk_phase3_sync_cine_gate_test.exe`, `dogwalk_phase3_mini_play_acceptance_test.exe` |
 | Test Project | `E:\Blunder Projects\Test` (or agreed harness project) |
-| Entry scene | TBD — multi-Object scene with character + prop/partner (co-located Skeleton + AnimationPlayer each); use Edit preview toolbar / Inspector Sync Group + CINE hooks when scene lands |
+| Entry scene | `E:\Blunder Projects\Test\Assets\Scenes\phase3_sync_cine.scene.asset` (Character + Partner; see `PHASE3_SYNC_CINE.md`) |
 | Edit host policy | **Do not** set `BLUNDER_DOTNET_SCRIPTS=1` for Edit preview (Behaviour Tick must stay off) |
 
 1. Open the Test Project in `engine_editor.exe` from this worktree build.
-2. Load the Phase 3 mini acceptance scene (character + prop/partner).
-3. Confirm at least two Objects with co-located Skeleton + AnimationPlayer.
+2. Load the Phase 3 mini acceptance scene (character + prop/partner): `Assets/Scenes/phase3_sync_cine.scene.asset`.
+3. Confirm at least two Objects with co-located Skeleton + AnimationPlayer (`Character`, `Partner`).
 
 **Run automated gates first (engineering bar):**
 
