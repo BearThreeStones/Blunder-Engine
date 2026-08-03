@@ -2,7 +2,7 @@
 
 - [x] 1.1 TDD: AnimationTree co-located with AnimationPlayer + Skeleton; resolves clips via player name→GUID map
 - [x] 1.2 TDD: active tree exclusively samples Skeleton; Player Play/two-slot do not write bones while active; inactive restores Player path
-- [ ] 1.3 TDD: sample stack base then Add2; additive deltas relative to bind/rest
+- [x] 1.3 TDD: sample stack base then Add2; additive deltas relative to bind/rest
 - [ ] 1.4 TDD: BlendSpace1D neighbor blend (local TRS lerp / rotation slerp) from per-node scalar
 - [ ] 1.5 TDD: StateMachine Travel/Start selects named states (BlendSpace1D or single clip)
 - [ ] 1.6 TDD: OneShot inserts then returns to base

@@ -154,4 +154,53 @@ void blendClipsOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip0,
   }
 }
 
+void applyAdditiveClipOntoSkeleton(Skeleton& skeleton,
+                                   const AnimationClipData& clip, float time,
+                                   float weight) {
+  if (weight <= 0.0f) {
+    return;
+  }
+
+  eastl::vector<float> scratch;
+  for (const AnimationTrack& track : clip.tracks) {
+    const int bone_index = skeleton.findBoneIndex(track.bone);
+    if (bone_index < 0) {
+      continue;
+    }
+
+    const AnimationKeyframe* key = sampleKeyframeValue(track, time, scratch);
+    const eastl::vector<float>* sampled_value =
+        key != nullptr ? &key->value : nullptr;
+    if (sampled_value == nullptr && scratch.empty()) {
+      continue;
+    }
+    const eastl::vector<float>& value =
+        sampled_value != nullptr ? *sampled_value : scratch;
+
+    const BoneTransform rest =
+        skeleton.getBoneRestLocal(static_cast<size_t>(bone_index));
+    BoneTransform pose =
+        skeleton.getBonePoseLocal(static_cast<size_t>(bone_index));
+
+    switch (track.channel) {
+      case AnimationChannel::Translation:
+        pose.translation +=
+            weight * (vec3FromValue(value) - rest.translation);
+        break;
+      case AnimationChannel::Rotation: {
+        const Quat delta =
+            quatFromValue(value) * glm::inverse(rest.rotation);
+        pose.rotation =
+            pose.rotation * slerp(glm::identity<Quat>(), delta, weight);
+        break;
+      }
+      case AnimationChannel::Scale:
+        pose.scale += weight * (vec3FromValue(value) - rest.scale);
+        break;
+    }
+
+    skeleton.setBonePoseLocal(static_cast<size_t>(bone_index), pose);
+  }
+}
+
 }  // namespace Blunder

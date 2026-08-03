@@ -23,6 +23,13 @@ class AnimationTree {
   bool setSampleClipName(const eastl::string& name);
   const eastl::string& getSampleClipName() const { return m_sample_clip_name; }
 
+  bool setAdd2ClipName(const eastl::string& name);
+  const eastl::string& getAdd2ClipName() const { return m_add2_clip_name; }
+  void setAdd2Weight(float weight);
+  float getAdd2Weight() const { return m_add2_weight; }
+  void setAdd2Time(float time) { m_add2_time = time; }
+  float getAdd2Time() const { return m_add2_time; }
+
   void setSampleTime(float time) { m_sample_time = time; }
   float getSampleTime() const { return m_sample_time; }
 
@@ -44,6 +51,9 @@ class AnimationTree {
   bool m_active{false};
   eastl::string m_sample_clip_name;
   float m_sample_time{0.0f};
+  eastl::string m_add2_clip_name;
+  float m_add2_weight{0.0f};
+  float m_add2_time{0.0f};
 };
 
 }  // namespace Blunder

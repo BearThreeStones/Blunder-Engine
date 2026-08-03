@@ -42,6 +42,29 @@ bool AnimationTree::setSampleClipName(const eastl::string& name) {
   return true;
 }
 
+bool AnimationTree::setAdd2ClipName(const eastl::string& name) {
+  if (name.empty()) {
+    m_add2_clip_name.clear();
+    return false;
+  }
+  eastl::string guid;
+  if (!resolveClipGuid(name, guid)) {
+    return false;
+  }
+  m_add2_clip_name = name;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+void AnimationTree::setAdd2Weight(float weight) {
+  m_add2_weight = weight;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
 void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
   if (!m_active || m_sample_clip_name.empty()) {
     return;
@@ -51,6 +74,14 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
     return;
   }
   sampleClipOntoSkeleton(skeleton, clip, m_sample_time);
+
+  if (m_add2_weight > 0.0f && !m_add2_clip_name.empty()) {
+    AnimationClipData add2_clip;
+    if (resolveClipForName(m_add2_clip_name, add2_clip)) {
+      applyAdditiveClipOntoSkeleton(skeleton, add2_clip, m_add2_time,
+                                    m_add2_weight);
+    }
+  }
 }
 
 void AnimationTree::sampleBoundSkeleton() {

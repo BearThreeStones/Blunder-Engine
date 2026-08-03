@@ -16,4 +16,9 @@ void blendClipsOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip0,
                             float time0, const AnimationClipData& clip1,
                             float time1, float blend_weight);
 
+/// Applies clip tracks as bind/rest-relative additive deltas onto the current pose.
+/// Translation/scale: pose += weight * (sampled - rest). Rotation: pose *= slerp(id, sampled * inverse(rest), weight).
+void applyAdditiveClipOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip,
+                                   float time, float weight);
+
 }  // namespace Blunder

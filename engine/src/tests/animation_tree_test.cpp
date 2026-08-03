@@ -307,6 +307,57 @@ void test_inactive_tree_restores_player_two_slot_sampling() {
                         Vec3(5.0f, 0.0f, 0.0f)));
 }
 
+void test_base_then_add2_bind_rest_additive_not_lerp_dual_track() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  skeleton.setBoneRestLocal(0, BoneTransform{});
+
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string base_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string add2_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData base_clip;
+  base_clip.duration = 1.0f;
+  base_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(4.0f, 0.0f, 0.0f)}, {1.0f, Vec3(4.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData add2_clip;
+  add2_clip.duration = 1.0f;
+  add2_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("locomotion", base_guid);
+  player.setClipGuid("turn_add", add2_guid);
+  player.injectClipData(base_guid, base_clip);
+  player.injectClipData(add2_guid, add2_clip);
+
+  expect_true("set base clip", tree.setSampleClipName("locomotion"));
+  expect_true("set add2 clip", tree.setAdd2ClipName("turn_add"));
+  tree.setAdd2Weight(0.5f);
+  expect_true("activate tree", tree.setActive(true));
+
+  const Vec3 additive_expected(5.0f, 0.0f, 0.0f);
+  expect_true("base then bind/rest additive",
+              vec3_near(skeleton.getBonePoseLocal(0).translation, additive_expected));
+
+  const Vec3 lerp_dual_track(3.0f, 0.0f, 0.0f);
+  expect_true("not phase2 lerp dual-track",
+              !vec3_near(skeleton.getBonePoseLocal(0).translation, lerp_dual_track));
+
+  tree.setAdd2Weight(0.0f);
+  tree.sampleBoundSkeleton();
+  expect_true("add2 weight zero skips additive",
+              vec3_near(skeleton.getBonePoseLocal(0).translation, Vec3(4.0f, 0.0f, 0.0f)));
+}
+
 void test_object_binding_blocks_player_while_tree_active() {
   using namespace Blunder;
 
@@ -384,6 +435,7 @@ int main() {
   test_classdb_animation_tree_registration();
   test_active_tree_blocks_player_play_and_two_slot_bone_writes();
   test_inactive_tree_restores_player_two_slot_sampling();
+  test_base_then_add2_bind_rest_additive_not_lerp_dual_track();
   test_object_binding_blocks_player_while_tree_active();
 
   if (g_failures != 0) {
