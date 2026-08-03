@@ -1554,6 +1554,30 @@ target_precompile_headers(animation_sync_group_test
 add_test(NAME animation_sync_group_test
          COMMAND animation_sync_group_test)
 
+add_executable(cine_segment_service_test
+    "cine_segment_service_test.cpp"
+)
+
+target_link_libraries(cine_segment_service_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(cine_segment_service_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(cine_segment_service_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(cine_segment_service_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME cine_segment_service_test
+         COMMAND cine_segment_service_test)
+
 add_executable(animation_sampler_test
     "animation_sampler_test.cpp"
 )
