@@ -1,5 +1,7 @@
 #include "runtime/platform/input/gameplay_input.h"
 
+#include "runtime/core/object/cine_segment_service.h"
+
 #include <cmath>
 
 namespace Blunder {
@@ -10,8 +12,8 @@ void GameplayInputState::reset() {
 }
 
 GameplayInputSnapshot GameplayInputState::sample(const GameplayInputKeys& keys) {
-  const bool authoritative =
-      keys.player_host && keys.focused && !keys.paused;
+  const bool authoritative = keys.player_host && keys.focused && !keys.paused &&
+                             !cineSegmentService().isGameplayInputSuppressed();
 
   if (!authoritative) {
     m_space_was_down = keys.space;

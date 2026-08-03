@@ -15,18 +15,24 @@ class CineSegmentService {
   CineSegmentService& operator=(const CineSegmentService&) = delete;
 
   /// Enter an active CINE segment and set the in-CINE mark.
-  bool enter();
+  /// When @p suppress_gameplay_input is true, gameplay Move/Jump sampling is
+  /// suppressed until explicit end().
+  bool enter(bool suppress_gameplay_input = false);
 
-  /// Explicit segment end; clears the in-CINE mark when active.
+  /// Explicit segment end; clears the in-CINE mark and input suppression.
   bool end();
 
   bool isInCine() const;
+
+  /// True while in-CINE with gameplay input suppression enabled at enter.
+  bool isGameplayInputSuppressed() const;
 
   /// Clears in-CINE state (unit tests).
   void resetForTests();
 
  private:
   bool m_in_cine{false};
+  bool m_suppress_gameplay_input{false};
 };
 
 CineSegmentService& cineSegmentService();

@@ -1,5 +1,7 @@
 #include "runtime/platform/input/gameplay_input.h"
 
+#include "runtime/core/object/cine_segment_service.h"
+
 #include <cmath>
 #include <cstdio>
 
@@ -119,6 +121,47 @@ int main() {
     k.paused = false;
     k.space = false;
     expect_true("resume no buffer", !state.sample(k).jump_pressed);
+  }
+
+  // CINE suppression yields idle gameplay input
+  {
+    CineSegmentService& cine = cineSegmentService();
+    cine.resetForTests();
+    state.reset();
+    auto k = base;
+    k.d = true;
+    k.space = true;
+
+    expect_true("cine enter with suppress", cine.enter(true));
+    auto suppressed = state.sample(k);
+    expect_true("cine suppress move x", near0(suppressed.move_x));
+    expect_true("cine suppress move y", near0(suppressed.move_y));
+    expect_true("cine suppress jump", !suppressed.jump_pressed);
+
+    k.space = false;
+    state.sample(k);
+    expect_true("cine end restores input", cine.end());
+    k.space = true;
+    auto restored = state.sample(k);
+    expect_true("cine restore move", near1(restored.move_x) && near0(restored.move_y));
+    expect_true("cine restore jump edge", restored.jump_pressed);
+
+    cine.resetForTests();
+  }
+
+  // CINE without suppress does not gate gameplay input
+  {
+    CineSegmentService& cine = cineSegmentService();
+    cine.resetForTests();
+    state.reset();
+    auto k = base;
+    k.w = true;
+
+    expect_true("cine enter without suppress", cine.enter(false));
+    auto snap = state.sample(k);
+    expect_true("no suppress move y", near1(snap.move_y));
+
+    cine.resetForTests();
   }
 
   if (g_failures != 0) {

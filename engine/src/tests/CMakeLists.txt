@@ -340,6 +340,7 @@ add_test(NAME native_abi_test
 add_executable(gameplay_input_test
     "gameplay_input_test.cpp"
     "${CMAKE_SOURCE_DIR}/engine/src/runtime/platform/input/gameplay_input.cpp"
+    "${CMAKE_SOURCE_DIR}/engine/src/runtime/core/object/cine_segment_service.cpp"
 )
 
 target_include_directories(gameplay_input_test PRIVATE
