@@ -38,7 +38,7 @@ public sealed class AnimationSyncGroup
     {
         if (instructions.IsEmpty)
         {
-            return Native.blunder_sync_group_fire(_groupId, null, 0) == Native.Ok;
+            return false;
         }
 
         int count = instructions.Length;

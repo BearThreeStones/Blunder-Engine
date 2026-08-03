@@ -875,6 +875,18 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::animPreviewParamsEdited));
         }));
+    component->on_anim_preview_sync_fire_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewSyncFire));
+        }));
+    component->on_anim_preview_enter_cine_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewEnterCine));
+        }));
+    component->on_anim_preview_end_cine_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::animPreviewEndCine));
+        }));
     component->on_play_dirty_save_and_play(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playDirtySaveAndPlay));
@@ -2781,6 +2793,42 @@ void SlintSystem::applyAnimationPreviewParams() {
   }
 }
 
+void SlintSystem::fireAnimationSyncPreview() {
+  if (!m_window_component) {
+    return;
+  }
+
+  AnimationSyncCinePreviewController* sync_cine_preview =
+      g_runtime_global_context.m_animation_sync_cine_preview.get();
+  if (sync_cine_preview == nullptr || !sync_cine_preview->hasMembers()) {
+    return;
+  }
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    const slint::SharedString slot0 = ui->get_anim_preview_slot0();
+    if (slot0.empty()) {
+      return;
+    }
+
+    if (!sync_cine_preview->fireSameName(eastl::string(slot0.data()))) {
+      return;
+    }
+
+    if (const auto services = lockServices()) {
+      if (services->render_system) {
+        services->render_system->requestViewportRedraw();
+      }
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::fireAnimationSyncPreview] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::fireAnimationSyncPreview] unknown exception");
+  }
+}
+
 void SlintSystem::syncInspectorBehavioursFromSelection() {
   if (!m_window_component || m_applying_inspector_sync) {
     return;
@@ -3522,6 +3570,11 @@ void SlintSystem::syncTransformToolbarFromEngine() {
       ui->set_anim_preview_in_cine(sync_cine_preview->isInCine());
       ui->set_anim_preview_input_suppressed(
           sync_cine_preview->isGameplayInputSuppressed());
+      const bool sync_fire_enabled =
+          sync_cine_preview->hasMembers() && sync_cine_preview->memberCount() >= 2;
+      ui->set_anim_preview_sync_fire_enabled(sync_fire_enabled);
+      ui->set_anim_preview_enter_cine_enabled(!sync_cine_preview->isInCine());
+      ui->set_anim_preview_end_cine_enabled(sync_cine_preview->isInCine());
     }
   } catch (...) {
   }

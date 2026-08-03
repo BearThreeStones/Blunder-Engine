@@ -387,6 +387,33 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         m_presentation->applyAnimationPreviewParams();
       }
       break;
+    case UiEventKind::animPreviewSyncFire:
+      if (m_presentation) {
+        m_presentation->fireAnimationSyncPreview();
+      }
+      break;
+    case UiEventKind::animPreviewEnterCine: {
+      AnimationSyncCinePreviewController* sync_cine_preview =
+          g_runtime_global_context.m_animation_sync_cine_preview.get();
+      if (sync_cine_preview != nullptr) {
+        sync_cine_preview->enterCine(false);
+      }
+      if (services.render_system) {
+        services.render_system->requestViewportRedraw();
+      }
+      break;
+    }
+    case UiEventKind::animPreviewEndCine: {
+      AnimationSyncCinePreviewController* sync_cine_preview =
+          g_runtime_global_context.m_animation_sync_cine_preview.get();
+      if (sync_cine_preview != nullptr) {
+        sync_cine_preview->endCine();
+      }
+      if (services.render_system) {
+        services.render_system->requestViewportRedraw();
+      }
+      break;
+    }
     case UiEventKind::browserRefresh:
       if (services.content_browser) {
         services.content_browser->refresh();

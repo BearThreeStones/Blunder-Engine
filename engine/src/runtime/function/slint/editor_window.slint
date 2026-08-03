@@ -187,6 +187,9 @@ export component MainEditorWindow inherits Window {
     callback anim-preview-stop-requested();
     callback anim-preview-loop-toggled();
     callback anim-preview-params-edited();
+    callback anim-preview-sync-fire-requested();
+    callback anim-preview-enter-cine-requested();
+    callback anim-preview-end-cine-requested();
     in property <bool> anim-preview-enabled: false;
     in property <bool> anim-preview-pause-enabled: false;
     in property <bool> anim-preview-stop-enabled: false;
@@ -199,6 +202,9 @@ export component MainEditorWindow inherits Window {
     in-out property <string> anim-preview-slot1: "";
     in property <bool> anim-preview-in-cine: false;
     in property <bool> anim-preview-input-suppressed: false;
+    in property <bool> anim-preview-sync-fire-enabled: false;
+    in property <bool> anim-preview-enter-cine-enabled: false;
+    in property <bool> anim-preview-end-cine-enabled: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
     callback play-dirty-save-and-play();
@@ -448,11 +454,17 @@ export component MainEditorWindow inherits Window {
                             preview-slot1 <=> root.anim-preview-slot1;
                             preview-in-cine: root.anim-preview-in-cine;
                             preview-input-suppressed: root.anim-preview-input-suppressed;
+                            preview-sync-fire-enabled: root.anim-preview-sync-fire-enabled;
+                            preview-enter-cine-enabled: root.anim-preview-enter-cine-enabled;
+                            preview-end-cine-enabled: root.anim-preview-end-cine-enabled;
                             preview-play-requested => { root.anim-preview-play-requested(); }
                             preview-pause-requested => { root.anim-preview-pause-requested(); }
                             preview-stop-requested => { root.anim-preview-stop-requested(); }
                             preview-loop-toggled => { root.anim-preview-loop-toggled(); }
                             preview-params-edited => { root.anim-preview-params-edited(); }
+                            preview-sync-fire-requested => { root.anim-preview-sync-fire-requested(); }
+                            preview-enter-cine-requested => { root.anim-preview-enter-cine-requested(); }
+                            preview-end-cine-requested => { root.anim-preview-end-cine-requested(); }
                         }
 
                         CameraPreviewPanel {

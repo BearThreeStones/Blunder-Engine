@@ -16,14 +16,20 @@ export component AnimationPreviewToolbar inherits Rectangle {
 
     in property <bool> preview-in-cine: false;
     in property <bool> preview-input-suppressed: false;
+    in property <bool> preview-sync-fire-enabled: false;
+    in property <bool> preview-enter-cine-enabled: false;
+    in property <bool> preview-end-cine-enabled: false;
 
     callback preview-play-requested();
     callback preview-pause-requested();
     callback preview-stop-requested();
     callback preview-loop-toggled();
     callback preview-params-edited();
+    callback preview-sync-fire-requested();
+    callback preview-enter-cine-requested();
+    callback preview-end-cine-requested();
 
-    visible: root.preview-enabled || root.preview-in-cine;
+    visible: root.preview-enabled || root.preview-in-cine || root.preview-sync-fire-enabled;
     y: 48px;
     x: 8px;
     height: 58px;
@@ -181,6 +187,71 @@ export component AnimationPreviewToolbar inherits Rectangle {
                 height: 22px;
                 text <=> root.preview-slot1;
                 edited => { root.preview-params-edited(); }
+            }
+
+            Rectangle { width: 8px; }
+
+            Rectangle {
+                width: 40px;
+                height: 24px;
+                border-radius: 3px;
+                background: fire-touch.has-hover ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: #444444;
+                visible: root.preview-sync-fire-enabled;
+                Text {
+                    text: "Fire";
+                    color: root.preview-sync-fire-enabled && root.preview-slot0 != "" ? #e8e8e8 : #707070;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                fire-touch := TouchArea {
+                    enabled: root.preview-sync-fire-enabled && root.preview-slot0 != "";
+                    clicked => { root.preview-sync-fire-requested(); }
+                }
+            }
+
+            Rectangle {
+                width: 48px;
+                height: 24px;
+                border-radius: 3px;
+                background: enter-cine-touch.has-hover ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: #444444;
+                visible: root.preview-enter-cine-enabled;
+                Text {
+                    text: "Enter";
+                    color: #e8e8e8;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                enter-cine-touch := TouchArea {
+                    enabled: root.preview-enter-cine-enabled;
+                    clicked => { root.preview-enter-cine-requested(); }
+                }
+            }
+
+            Rectangle {
+                width: 36px;
+                height: 24px;
+                border-radius: 3px;
+                background: end-cine-touch.has-hover ? #3d6b9a : #2a2a2a;
+                border-width: 1px;
+                border-color: #444444;
+                visible: root.preview-end-cine-enabled;
+                Text {
+                    text: "End";
+                    color: #e8e8e8;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                end-cine-touch := TouchArea {
+                    enabled: root.preview-end-cine-enabled;
+                    clicked => { root.preview-end-cine-requested(); }
+                }
             }
 
             Rectangle { width: 8px; }

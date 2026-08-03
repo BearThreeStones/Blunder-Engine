@@ -231,6 +231,9 @@ static unsafe class Program
         ];
         Expect(group.Fire(instructions), "AnimationSyncGroup.Fire");
         Expect(s_lastFireCount == 1, "Fire forwarded instruction count");
+        Expect(
+            !group.Fire(ReadOnlySpan<SyncGroupFireInstruction>.Empty),
+            "AnimationSyncGroup.Fire empty");
 
         Expect(group.FireSameName("idle"), "AnimationSyncGroup.FireSameName");
         Expect(s_lastFireSameNameClip == "idle", "FireSameName clip forwarded");

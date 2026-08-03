@@ -22,6 +22,7 @@ class IEditorUiPresentation {
   virtual void syncContentBrowser() = 0;
   virtual void applyInspectorTransform() = 0;
   virtual void applyAnimationPreviewParams() = 0;
+  virtual void fireAnimationSyncPreview() = 0;
   virtual void refreshEditorScenePanels() = 0;
 
   virtual void setBlinnPhongMaterialSource(const MaterialAsset* material) = 0;
