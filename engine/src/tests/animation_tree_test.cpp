@@ -681,6 +681,211 @@ void test_blend_space1d_base_then_add2_stacks() {
               vec3_near(skeleton.getBonePoseLocal(0).translation, expected));
 }
 
+void test_state_machine_travel_clip_state_feeds_base_pose() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(9.0f, 0.0f, 0.0f)}, {1.0f, Vec3(9.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+
+  expect_true("register idle clip state",
+              tree.setStateClip("Idle", "idle"));
+  expect_true("register walk clip state",
+              tree.setStateClip("Walk", "walk"));
+  expect_true("activate tree", tree.setActive(true));
+  expect_true("travel to walk clip state", tree.travel("Walk"));
+  expect_true("current state is walk", tree.getCurrentStateName() == "Walk");
+
+  expect_true("walk clip pose after travel",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(9.0f, 0.0f, 0.0f)));
+
+  expect_true("travel to idle clip state", tree.travel("Idle"));
+  expect_true("idle clip pose after travel",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+}
+
+void test_state_machine_travel_blend_space_state_feeds_base_pose() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+
+  tree.addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree.setBlendSpaceScalar("Locomotion", 0.5f);
+  expect_true("register locomotion blend space state",
+              tree.setStateBlendSpace("Locomotion", "Locomotion"));
+  expect_true("activate tree", tree.setActive(true));
+  expect_true("travel to locomotion state", tree.travel("Locomotion"));
+  expect_true("current state is locomotion",
+              tree.getCurrentStateName() == "Locomotion");
+
+  expect_true("blend space midpoint after travel",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+}
+
+void test_state_machine_start_resets_sample_time() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string move_guid = "11111111-1111-1111-1111-111111111111";
+
+  AnimationClipData move;
+  move.duration = 1.0f;
+  move.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("move", move_guid);
+  player.injectClipData(move_guid, move);
+
+  expect_true("register move clip state", tree.setStateClip("Move", "move"));
+  expect_true("activate tree", tree.setActive(true));
+  expect_true("travel to move", tree.travel("Move"));
+
+  tree.setSampleTime(0.5f);
+  tree.sampleBoundSkeleton();
+  expect_true("midpoint after scrub",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+
+  expect_true("start resets time", tree.start("Move"));
+  expect_true("sample time zero after start", tree.getSampleTime() == 0.0f);
+  expect_true("origin pose after start",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+}
+
+void test_state_machine_travel_unknown_state_fails() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  AnimationTree tree;
+  tree.bindAnimationPlayer(&player);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  player.setClipGuid("idle", idle_guid);
+  player.injectClipData(idle_guid, make_test_clip("idle", 1.0f));
+
+  tree.setStateClip("Idle", "idle");
+  expect_true("unknown travel fails", !tree.travel("Missing"));
+  expect_true("unknown start fails", !tree.start("Missing"));
+  expect_true("current state unchanged", tree.getCurrentStateName().empty());
+}
+
+void test_state_machine_travel_switches_clip_to_blend_space() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  const eastl::string pose_guid = "33333333-3333-3333-3333-333333333333";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData pose;
+  pose.duration = 1.0f;
+  pose.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(3.0f, 0.0f, 0.0f)}, {1.0f, Vec3(3.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("pose", pose_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(pose_guid, pose);
+
+  tree.setStateClip("Pose", "pose");
+  tree.addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree.setBlendSpaceScalar("Locomotion", 1.0f);
+  tree.setStateBlendSpace("Locomotion", "Locomotion");
+
+  expect_true("activate tree", tree.setActive(true));
+  expect_true("travel to clip state", tree.travel("Pose"));
+  expect_true("clip state pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(3.0f, 0.0f, 0.0f)));
+
+  expect_true("travel to blend space state", tree.travel("Locomotion"));
+  expect_true("blend space state pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+}
+
 }  // namespace
 
 int main() {
@@ -698,6 +903,11 @@ int main() {
   test_blend_space1d_scalar_by_node_logical_name();
   test_blend_space1d_rotation_uses_slerp();
   test_blend_space1d_base_then_add2_stacks();
+  test_state_machine_travel_clip_state_feeds_base_pose();
+  test_state_machine_travel_blend_space_state_feeds_base_pose();
+  test_state_machine_start_resets_sample_time();
+  test_state_machine_travel_unknown_state_fails();
+  test_state_machine_travel_switches_clip_to_blend_space();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

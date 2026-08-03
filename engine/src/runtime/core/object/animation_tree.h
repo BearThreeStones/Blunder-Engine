@@ -16,6 +16,17 @@ struct BlendSpace1DPoint {
   float scalar{0.0f};
 };
 
+enum class AnimationStatePlaybackKind {
+  Clip,
+  BlendSpace1D,
+};
+
+struct AnimationStateDefinition {
+  AnimationStatePlaybackKind kind{AnimationStatePlaybackKind::Clip};
+  eastl::string clip_name;
+  eastl::string blend_space_node;
+};
+
 class AnimationTree {
  public:
   void bindAnimationPlayer(AnimationPlayer* player);
@@ -53,6 +64,17 @@ class AnimationTree {
   }
   void clearBaseBlendSpaceNode() { m_base_blend_space_node.clear(); }
 
+  /// StateMachine: named states with single-clip or BlendSpace1D playback.
+  bool setStateClip(const eastl::string& state_name,
+                    const eastl::string& clip_name);
+  bool setStateBlendSpace(const eastl::string& state_name,
+                          const eastl::string& blend_space_node);
+  bool travel(const eastl::string& state_name);
+  bool start(const eastl::string& state_name);
+  const eastl::string& getCurrentStateName() const {
+    return m_current_state_name;
+  }
+
   void sampleOntoSkeleton(Skeleton& skeleton);
   void sampleBoundSkeleton();
 
@@ -66,6 +88,7 @@ class AnimationTree {
  private:
   void syncPlayerSamplingBlock();
   void sampleBaseOntoSkeleton(Skeleton& skeleton);
+  bool applyStatePlayback(const AnimationStateDefinition& state);
   bool sampleBlendSpace1DOntoSkeleton(Skeleton& skeleton,
                                     const eastl::string& node_name,
                                     float scalar);
@@ -81,6 +104,8 @@ class AnimationTree {
   eastl::hash_map<eastl::string, eastl::vector<BlendSpace1DPoint>> m_blend_spaces;
   eastl::hash_map<eastl::string, float> m_blend_space_scalars;
   eastl::string m_base_blend_space_node;
+  eastl::hash_map<eastl::string, AnimationStateDefinition> m_states;
+  eastl::string m_current_state_name;
 };
 
 }  // namespace Blunder

@@ -194,6 +194,75 @@ bool AnimationTree::setBaseBlendSpaceNode(const eastl::string& node_name) {
   return true;
 }
 
+bool AnimationTree::setStateClip(const eastl::string& state_name,
+                               const eastl::string& clip_name) {
+  if (state_name.empty() || clip_name.empty()) {
+    return false;
+  }
+  eastl::string guid;
+  if (!resolveClipGuid(clip_name, guid)) {
+    return false;
+  }
+  AnimationStateDefinition state;
+  state.kind = AnimationStatePlaybackKind::Clip;
+  state.clip_name = clip_name;
+  m_states[state_name] = state;
+  return true;
+}
+
+bool AnimationTree::setStateBlendSpace(const eastl::string& state_name,
+                                       const eastl::string& blend_space_node) {
+  if (state_name.empty() || blend_space_node.empty()) {
+    return false;
+  }
+  const auto it = m_blend_spaces.find(blend_space_node);
+  if (it == m_blend_spaces.end() || it->second.empty()) {
+    return false;
+  }
+  AnimationStateDefinition state;
+  state.kind = AnimationStatePlaybackKind::BlendSpace1D;
+  state.blend_space_node = blend_space_node;
+  m_states[state_name] = state;
+  return true;
+}
+
+bool AnimationTree::applyStatePlayback(const AnimationStateDefinition& state) {
+  if (state.kind == AnimationStatePlaybackKind::BlendSpace1D) {
+    m_base_blend_space_node = state.blend_space_node;
+    m_sample_clip_name.clear();
+    return true;
+  }
+  m_base_blend_space_node.clear();
+  m_sample_clip_name = state.clip_name;
+  return true;
+}
+
+bool AnimationTree::travel(const eastl::string& state_name) {
+  const auto it = m_states.find(state_name);
+  if (it == m_states.end()) {
+    return false;
+  }
+  if (!applyStatePlayback(it->second)) {
+    return false;
+  }
+  m_current_state_name = state_name;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+bool AnimationTree::start(const eastl::string& state_name) {
+  if (!travel(state_name)) {
+    return false;
+  }
+  m_sample_time = 0.0f;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
 bool AnimationTree::sampleBlendSpace1DOntoSkeleton(
     Skeleton& skeleton, const eastl::string& node_name, float scalar) {
   const auto space_it = m_blend_spaces.find(node_name);
