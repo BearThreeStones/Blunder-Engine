@@ -1,0 +1,5 @@
+# AnimationTree for DogWalk animation Phase 4
+
+DogWalk animation Phase 4 needs BlendSpace1D locomotion, StateMachine/OneShot, and Add2 overlays without shipping full Godot AnimationTree parity. We decided on a co-located **AnimationTree** ClassDB type (not growing AnimationPlayer into the graph host): when **active** it **exclusively** samples the Skeleton; Sync Group **Fire** on an active-tree member applies as **OneShot** (not tree deactivate); sample order is **base then Add2** with additive deltas vs **bind/rest**; scripts use a **narrow named API** (per-node BlendSpace scalars); topology is **scene-embedded** (no required visual editor or Tree Asset in Phase 4); PoseApplied / Stepped use the **base dominant clip** clock; advance uses AnimationPlayer **TimeScale** globally.
+
+**Considered options:** player-hosted graph; C#-only topology; Fire deactivates tree or fails; Tree output feeds two-slot; Godot parameter paths; standalone Tree Asset / visual editor as Phase 4 Done; blended step clocks; per-node TimeScale. Rejected for API/sync complexity and scope creep past the lean Chocomel locomotion bar.
