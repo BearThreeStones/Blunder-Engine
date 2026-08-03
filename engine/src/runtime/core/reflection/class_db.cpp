@@ -138,6 +138,7 @@ void ClassDB::initialize() {
   register_reflection_generated();
   register_skeleton_reflection();
   register_animation_player_reflection();
+  register_animation_tree_reflection();
 }
 
 void ClassDB::shutdown() { clear(); }

@@ -1,6 +1,6 @@
 ## 1. AnimationTree runtime core
 
-- [ ] 1.1 TDD: AnimationTree co-located with AnimationPlayer + Skeleton; resolves clips via player name→GUID map
+- [x] 1.1 TDD: AnimationTree co-located with AnimationPlayer + Skeleton; resolves clips via player name→GUID map
 - [ ] 1.2 TDD: active tree exclusively samples Skeleton; Player Play/two-slot do not write bones while active; inactive restores Player path
 - [ ] 1.3 TDD: sample stack base then Add2; additive deltas relative to bind/rest
 - [ ] 1.4 TDD: BlendSpace1D neighbor blend (local TRS lerp / rotation slerp) from per-node scalar

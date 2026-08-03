@@ -5,6 +5,7 @@
 #include "runtime/core/object/entity_store.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
 
 namespace Blunder {
@@ -335,11 +336,26 @@ void Object::clearAnimationPlayer() {
   updateAnimationSamplingBinding();
 }
 
-void Object::updateAnimationSamplingBinding() {
-  if (m_animation_player == nullptr) {
-    return;
+AnimationTree* Object::ensureAnimationTree() {
+  if (m_animation_tree == nullptr) {
+    m_animation_tree = eastl::make_unique<AnimationTree>();
   }
-  m_animation_player->bindSamplingSkeleton(m_skeleton.get());
+  updateAnimationSamplingBinding();
+  return m_animation_tree.get();
+}
+
+void Object::clearAnimationTree() {
+  m_animation_tree.reset();
+  updateAnimationSamplingBinding();
+}
+
+void Object::updateAnimationSamplingBinding() {
+  if (m_animation_player != nullptr) {
+    m_animation_player->bindSamplingSkeleton(m_skeleton.get());
+  }
+  if (m_animation_tree != nullptr) {
+    m_animation_tree->bindAnimationPlayer(m_animation_player.get());
+  }
 }
 
 void Object::syncLocalTransformFromStore() {

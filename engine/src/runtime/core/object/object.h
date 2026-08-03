@@ -8,6 +8,7 @@
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object_id.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/export_macros.h"
 #include "runtime/function/scene/entity_id.h"
@@ -92,6 +93,14 @@ class Object {
   AnimationPlayer* ensureAnimationPlayer();
   void clearAnimationPlayer();
 
+  bool hasAnimationTree() const { return m_animation_tree != nullptr; }
+  AnimationTree* getAnimationTree() { return m_animation_tree.get(); }
+  const AnimationTree* getAnimationTree() const {
+    return m_animation_tree.get();
+  }
+  AnimationTree* ensureAnimationTree();
+  void clearAnimationTree();
+
  private:
   friend class ObjectDB;
 
@@ -127,6 +136,7 @@ class Object {
   bool m_has_local_trs{false};
   eastl::unique_ptr<Skeleton> m_skeleton;
   eastl::unique_ptr<AnimationPlayer> m_animation_player;
+  eastl::unique_ptr<AnimationTree> m_animation_tree;
 };
 
 }  // namespace Blunder
