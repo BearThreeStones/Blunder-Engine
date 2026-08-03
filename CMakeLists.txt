@@ -20,6 +20,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # 将 FetchContent 下载目录固定在项目根目录下的 .cmake_deps，避免删除 build 目录后重复下载
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.cmake_deps" CACHE PATH "Directory to store FetchContent data")
 
+# Debug engine_editor opens this Project when launched without --project-root (ADR 0010).
+# Engine checkout is not a Project — do not point this at CMAKE_SOURCE_DIR.
+set(BLUNDER_DEFAULT_PROJECT_ROOT "E:/Blunder Projects/Test" CACHE PATH
+    "Debug BLUNDER_PROJECT_ROOT for engine_editor (no --project-root)")
+
 if(DEFINED CMAKE_GENERATOR_INSTANCE AND NOT CMAKE_GENERATOR_INSTANCE STREQUAL "")
     file(TO_CMAKE_PATH "${CMAKE_GENERATOR_INSTANCE}" _blunder_generator_instance)
     file(GLOB _blunder_fetchcontent_caches

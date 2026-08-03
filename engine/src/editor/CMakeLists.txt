@@ -13,6 +13,8 @@ target_link_libraries(engine_editor
 option(BLUNDER_EDITOR_PROFILE_EXE "Link editor to engine_editor_profile.exe in profile/" OFF)
 
 # Ship beside project_manager in bin/<Config>/ (ADR 0009 Open via relaunch).
+# Working directory stays the engine checkout so Slang can find engine/shaders/
+# via cwd walk; Debug project root comes from BLUNDER_PROJECT_ROOT (Test Project).
 set_target_properties(engine_editor PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"

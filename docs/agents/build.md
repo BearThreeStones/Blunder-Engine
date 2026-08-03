@@ -27,7 +27,11 @@ start build/vs2026-debug/BlunderEngine.sln
 # Run editor
 ./build/vs2026-debug/engine/src/editor/Debug/engine_editor.exe
 
-# Default scene is `assets/Scenes/pick_test.scene.asset`; override:
+# Debug builds open E:/Blunder Projects/Test by default (BLUNDER_DEFAULT_PROJECT_ROOT).
+# Override:
+# cmake --preset vs2026-debug -DBLUNDER_DEFAULT_PROJECT_ROOT="E:/Blunder Projects/Other"
+# Or at launch: engine_editor.exe --project-root "E:/Blunder Projects/Other"
+# Default scene under that Project is assets/Scenes/pick_test.scene.asset; override:
 # set BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset
 ```
 

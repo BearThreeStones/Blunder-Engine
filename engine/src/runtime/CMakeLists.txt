@@ -336,12 +336,19 @@ if(TARGET efsw)
     target_link_libraries(engine_runtime PRIVATE efsw)
 endif()
 
-# Inject the project source root so FileSystem can resolve asset/shader paths
-# during dev builds without relying on the executable's working directory.
+# Debug-only: silent Editor Session root when no --project-root (ADR 0010).
+# PUBLIC so engine_editor main.cpp sees the define (PRIVATE would not propagate).
+# Product content lives under Projects dir — not the engine checkout (CONTEXT).
+# Release omits this define so packaged builds require --project-root / Project Manager.
+if(NOT DEFINED BLUNDER_DEFAULT_PROJECT_ROOT OR BLUNDER_DEFAULT_PROJECT_ROOT STREQUAL "")
+    set(BLUNDER_DEFAULT_PROJECT_ROOT "E:/Blunder Projects/Test")
+endif()
 target_compile_definitions(engine_runtime
-    PRIVATE
-        BLUNDER_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+    PUBLIC
+        $<$<CONFIG:Debug>:BLUNDER_PROJECT_ROOT="${BLUNDER_DEFAULT_PROJECT_ROOT}">
 )
+message(STATUS
+    "[Blunder] Debug BLUNDER_PROJECT_ROOT=${BLUNDER_DEFAULT_PROJECT_ROOT}")
 
 if(BLUNDER_RENDER_BACKEND STREQUAL "d3d12")
     target_compile_definitions(engine_runtime PRIVATE BLUNDER_RENDER_BACKEND_D3D12=1)
