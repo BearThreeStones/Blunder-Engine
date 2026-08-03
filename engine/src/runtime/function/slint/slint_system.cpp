@@ -3522,8 +3522,18 @@ void SlintSystem::syncTransformToolbarFromEngine() {
         SceneInstance* scene =
             g_runtime_global_context.m_scene_system->getActiveInstance();
         if (g_runtime_global_context.m_editor_selection->isDirty()) {
-          preview->bindSelection(
-              scene, g_runtime_global_context.m_editor_selection->getSelection());
+          const EntityId selection =
+              g_runtime_global_context.m_editor_selection->getSelection();
+          preview->bindSelection(scene, selection);
+          if (scene != nullptr && isValid(selection)) {
+            Object* object = scene->findBoundObject(selection);
+            if (object == nullptr) {
+              object = scene->ensureBoundObject(selection);
+            }
+            if (object != nullptr && object->hasAnimationPlayer()) {
+              wireAnimationPlayerAssetResolver(*object->getAnimationPlayer());
+            }
+          }
           g_runtime_global_context.m_editor_selection->clearDirty();
           ui->set_anim_preview_time_scale(preview->timeScale());
           ui->set_anim_preview_blend_weight(preview->blendWeight());

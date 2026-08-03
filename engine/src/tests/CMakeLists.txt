@@ -1666,11 +1666,13 @@ target_include_directories(animation_preview_controller_test
 
 if(MSVC)
     target_compile_options(animation_preview_controller_test PRIVATE /Zc:preprocessor)
+    # Avoid ~50MB incremental link + multi-minute Debug startup hang (task 4.1).
+    set_target_properties(animation_preview_controller_test PROPERTIES
+        LINK_FLAGS "/INCREMENTAL:NO")
 endif()
 
-target_precompile_headers(animation_preview_controller_test
-    REUSE_FROM engine_runtime
-)
+# No PCH reuse: this TU + engine_runtime PCH produced a ~250MB PDB and hung ctest
+# on Debug startup (see dogwalk-animation-phase-4 task 4.1).
 
 add_test(NAME animation_preview_controller_test
          COMMAND animation_preview_controller_test)
