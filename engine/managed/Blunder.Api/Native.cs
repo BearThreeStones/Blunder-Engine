@@ -76,7 +76,18 @@ internal static unsafe class Native
         abi.animation_player_get_playback_position != null &&
         abi.animation_player_get_clip_length != null &&
         abi.animation_player_add_pose_applied_listener != null &&
-        abi.animation_player_clear_pose_applied_listeners != null;
+        abi.animation_player_clear_pose_applied_listeners != null &&
+        abi.sync_group_create != null &&
+        abi.sync_group_destroy != null &&
+        abi.sync_group_join != null &&
+        abi.sync_group_leave != null &&
+        abi.sync_group_fire != null &&
+        abi.sync_group_fire_same_name != null &&
+        abi.sync_group_fire_same_name_seek != null &&
+        abi.cine_enter != null &&
+        abi.cine_end != null &&
+        abi.cine_is_in_cine != null &&
+        abi.cine_is_gameplay_input_suppressed != null;
 
     static void EnsureRegistered()
     {
@@ -430,6 +441,90 @@ internal static unsafe class Native
     {
         EnsureRegistered();
         return s_abi.animation_player_clear_pose_applied_listeners(id);
+    }
+
+    public static ulong blunder_sync_group_create()
+    {
+        EnsureRegistered();
+        return s_abi.sync_group_create();
+    }
+
+    public static int blunder_sync_group_destroy(ulong id)
+    {
+        EnsureRegistered();
+        return s_abi.sync_group_destroy(id);
+    }
+
+    public static int blunder_sync_group_join(ulong groupId, ulong playerObjectId)
+    {
+        EnsureRegistered();
+        return s_abi.sync_group_join(groupId, playerObjectId);
+    }
+
+    public static int blunder_sync_group_leave(ulong groupId, ulong playerObjectId)
+    {
+        EnsureRegistered();
+        return s_abi.sync_group_leave(groupId, playerObjectId);
+    }
+
+    public static int blunder_sync_group_fire(
+        ulong groupId, BlunderSyncGroupFireInstruction* instructions, int instructionCount)
+    {
+        EnsureRegistered();
+        return s_abi.sync_group_fire(groupId, instructions, instructionCount);
+    }
+
+    public static int blunder_sync_group_fire_same_name(ulong groupId, string clipName)
+    {
+        EnsureRegistered();
+        byte[] clipUtf8 = ToUtf8(clipName);
+        fixed (byte* clipPtr = clipUtf8)
+        {
+            return s_abi.sync_group_fire_same_name(groupId, clipPtr);
+        }
+    }
+
+    public static int blunder_sync_group_fire_same_name_seek(
+        ulong groupId, string clipName, float seekSeconds)
+    {
+        EnsureRegistered();
+        byte[] clipUtf8 = ToUtf8(clipName);
+        fixed (byte* clipPtr = clipUtf8)
+        {
+            return s_abi.sync_group_fire_same_name_seek(groupId, clipPtr, seekSeconds);
+        }
+    }
+
+    public static int blunder_cine_enter(int suppressGameplayInput)
+    {
+        EnsureRegistered();
+        return s_abi.cine_enter(suppressGameplayInput);
+    }
+
+    public static int blunder_cine_end()
+    {
+        EnsureRegistered();
+        return s_abi.cine_end();
+    }
+
+    public static int blunder_cine_is_in_cine(out int inCine)
+    {
+        EnsureRegistered();
+        inCine = 0;
+        int value = 0;
+        int rc = s_abi.cine_is_in_cine(&value);
+        inCine = value;
+        return rc;
+    }
+
+    public static int blunder_cine_is_gameplay_input_suppressed(out int suppressed)
+    {
+        EnsureRegistered();
+        suppressed = 0;
+        int value = 0;
+        int rc = s_abi.cine_is_gameplay_input_suppressed(&value);
+        suppressed = value;
+        return rc;
     }
 
     static byte[] ToUtf8(string value)

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v6 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v7 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -53,4 +53,32 @@ public unsafe struct BlunderNativeAbi
         animation_player_add_pose_applied_listener;
     public delegate* unmanaged[Cdecl]<ulong, int>
         animation_player_clear_pose_applied_listeners;
+    public delegate* unmanaged[Cdecl]<ulong> sync_group_create;
+    public delegate* unmanaged[Cdecl]<ulong, int> sync_group_destroy;
+    public delegate* unmanaged[Cdecl]<ulong, ulong, int> sync_group_join;
+    public delegate* unmanaged[Cdecl]<ulong, ulong, int> sync_group_leave;
+    public delegate* unmanaged[Cdecl]<ulong, BlunderSyncGroupFireInstruction*, int, int>
+        sync_group_fire;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> sync_group_fire_same_name;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float, int>
+        sync_group_fire_same_name_seek;
+    public delegate* unmanaged[Cdecl]<int, int> cine_enter;
+    public delegate* unmanaged[Cdecl]<int> cine_end;
+    public delegate* unmanaged[Cdecl]<int*, int> cine_is_in_cine;
+    public delegate* unmanaged[Cdecl]<int*, int> cine_is_gameplay_input_suppressed;
+}
+
+/// <summary>
+/// Managed mirror of native <c>BlunderSyncGroupFireInstruction</c>.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct BlunderSyncGroupFireInstruction
+{
+    public ulong player_object_id;
+    public byte* clip_name;
+    public float seek_seconds;
+    public byte has_seek;
+    public byte _padding0;
+    public byte _padding1;
+    public byte _padding2;
 }

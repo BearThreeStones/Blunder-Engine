@@ -21,8 +21,8 @@
 
 ## 4. C-ABI + Blunder.Api
 
-- [ ] 4.1 C-ABI for Sync Group lifecycle + Fire; CINE Enter/End / in-CINE query; bump ABI; NativeAbi table
-- [ ] 4.2 Blunder.Api façades + completeness tests
+- [x] 4.1 C-ABI for Sync Group lifecycle + Fire; CINE Enter/End / in-CINE query; bump ABI; NativeAbi table
+- [x] 4.2 Blunder.Api façades + completeness tests
 
 ## 5. Content gates
 

@@ -2,6 +2,8 @@
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_sync_group.h"
+#include "runtime/core/object/cine_segment_service.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/object_id.h"
@@ -564,6 +566,119 @@ int blunder_animation_player_clear_pose_applied_listeners(BlunderObjectId id) {
   return BLUNDER_ENGINE_OK;
 }
 
+BlunderSyncGroupId blunder_sync_group_create(void) {
+  return animationSyncGroupService().create();
+}
+
+int blunder_sync_group_destroy(BlunderSyncGroupId id) {
+  return animationSyncGroupService().destroy(id) ? BLUNDER_ENGINE_OK
+                                                   : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_sync_group_join(BlunderSyncGroupId id,
+                            BlunderObjectId player_object_id) {
+  AnimationPlayer* player = animationPlayerForObject(player_object_id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return animationSyncGroupService().join(id, player) ? BLUNDER_ENGINE_OK
+                                                      : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_sync_group_leave(BlunderSyncGroupId id,
+                             BlunderObjectId player_object_id) {
+  AnimationPlayer* player = animationPlayerForObject(player_object_id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return animationSyncGroupService().leave(id, player) ? BLUNDER_ENGINE_OK
+                                                       : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_sync_group_fire(BlunderSyncGroupId id,
+                            const BlunderSyncGroupFireInstruction* instructions,
+                            int instruction_count) {
+  if (instruction_count < 0 || (instruction_count > 0 && instructions == nullptr)) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+
+  eastl::vector<SyncGroupFireInstruction> native_instructions;
+  native_instructions.reserve(static_cast<size_t>(instruction_count));
+
+  for (int i = 0; i < instruction_count; ++i) {
+    const BlunderSyncGroupFireInstruction& src = instructions[i];
+    if (src.clip_name == nullptr) {
+      return BLUNDER_ENGINE_ERROR;
+    }
+
+    AnimationPlayer* player = animationPlayerForObject(src.player_object_id);
+    if (player == nullptr) {
+      return BLUNDER_ENGINE_ERROR;
+    }
+
+    SyncGroupFireInstruction instruction;
+    instruction.player = player;
+    instruction.clip_name = eastl::string(src.clip_name);
+    if (src.has_seek != 0) {
+      instruction.seek_seconds = src.seek_seconds;
+      instruction.has_seek = true;
+    }
+    native_instructions.push_back(instruction);
+  }
+
+  return animationSyncGroupService().fire(id, native_instructions)
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_sync_group_fire_same_name(BlunderSyncGroupId id,
+                                      const char* clip_name) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return animationSyncGroupService().fireSameName(id, eastl::string(clip_name))
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_sync_group_fire_same_name_seek(BlunderSyncGroupId id,
+                                           const char* clip_name,
+                                           float seek_seconds) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return animationSyncGroupService()
+             .fireSameName(id, eastl::string(clip_name), seek_seconds)
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_cine_enter(int suppress_gameplay_input) {
+  return cineSegmentService().enter(suppress_gameplay_input != 0)
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_cine_end(void) {
+  return cineSegmentService().end() ? BLUNDER_ENGINE_OK : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_cine_is_in_cine(int* out_value) {
+  if (out_value == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_value = cineSegmentService().isInCine() ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_cine_is_gameplay_input_suppressed(int* out_value) {
+  if (out_value == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_value = cineSegmentService().isGameplayInputSuppressed() ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
 void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   if (out == nullptr) {
     return;
@@ -612,6 +727,18 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
       &blunder_animation_player_add_pose_applied_listener;
   out->animation_player_clear_pose_applied_listeners =
       &blunder_animation_player_clear_pose_applied_listeners;
+  out->sync_group_create = &blunder_sync_group_create;
+  out->sync_group_destroy = &blunder_sync_group_destroy;
+  out->sync_group_join = &blunder_sync_group_join;
+  out->sync_group_leave = &blunder_sync_group_leave;
+  out->sync_group_fire = &blunder_sync_group_fire;
+  out->sync_group_fire_same_name = &blunder_sync_group_fire_same_name;
+  out->sync_group_fire_same_name_seek = &blunder_sync_group_fire_same_name_seek;
+  out->cine_enter = &blunder_cine_enter;
+  out->cine_end = &blunder_cine_end;
+  out->cine_is_in_cine = &blunder_cine_is_in_cine;
+  out->cine_is_gameplay_input_suppressed =
+      &blunder_cine_is_gameplay_input_suppressed;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -701,6 +828,20 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_animation_player_add_pose_applied_listener");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_clear_pose_applied_listeners,
                           "blunder_animation_player_clear_pose_applied_listeners");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_create, "blunder_sync_group_create");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_destroy, "blunder_sync_group_destroy");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_join, "blunder_sync_group_join");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_leave, "blunder_sync_group_leave");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_fire, "blunder_sync_group_fire");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_fire_same_name,
+                          "blunder_sync_group_fire_same_name");
+  BLUNDER_NATIVE_ABI_LOAD(sync_group_fire_same_name_seek,
+                          "blunder_sync_group_fire_same_name_seek");
+  BLUNDER_NATIVE_ABI_LOAD(cine_enter, "blunder_cine_enter");
+  BLUNDER_NATIVE_ABI_LOAD(cine_end, "blunder_cine_end");
+  BLUNDER_NATIVE_ABI_LOAD(cine_is_in_cine, "blunder_cine_is_in_cine");
+  BLUNDER_NATIVE_ABI_LOAD(cine_is_gameplay_input_suppressed,
+                          "blunder_cine_is_gameplay_input_suppressed");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

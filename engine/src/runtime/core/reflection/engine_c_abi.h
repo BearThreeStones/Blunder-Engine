@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 6
+#define BLUNDER_ENGINE_C_ABI_VERSION 7
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -139,6 +139,35 @@ BLUNDER_ENGINE_C_API int blunder_animation_player_add_pose_applied_listener(
 BLUNDER_ENGINE_C_API int blunder_animation_player_clear_pose_applied_listeners(
     BlunderObjectId id);
 
+typedef uint64_t BlunderSyncGroupId;
+
+typedef struct BlunderSyncGroupFireInstruction {
+  BlunderObjectId player_object_id;
+  const char* clip_name;
+  float seek_seconds;
+  uint8_t has_seek;
+  uint8_t _padding[3];
+} BlunderSyncGroupFireInstruction;
+
+BLUNDER_ENGINE_C_API BlunderSyncGroupId blunder_sync_group_create(void);
+BLUNDER_ENGINE_C_API int blunder_sync_group_destroy(BlunderSyncGroupId id);
+BLUNDER_ENGINE_C_API int blunder_sync_group_join(BlunderSyncGroupId id,
+                                                 BlunderObjectId player_object_id);
+BLUNDER_ENGINE_C_API int blunder_sync_group_leave(BlunderSyncGroupId id,
+                                                 BlunderObjectId player_object_id);
+BLUNDER_ENGINE_C_API int blunder_sync_group_fire(
+    BlunderSyncGroupId id, const BlunderSyncGroupFireInstruction* instructions,
+    int instruction_count);
+BLUNDER_ENGINE_C_API int blunder_sync_group_fire_same_name(BlunderSyncGroupId id,
+                                                          const char* clip_name);
+BLUNDER_ENGINE_C_API int blunder_sync_group_fire_same_name_seek(
+    BlunderSyncGroupId id, const char* clip_name, float seek_seconds);
+
+BLUNDER_ENGINE_C_API int blunder_cine_enter(int suppress_gameplay_input);
+BLUNDER_ENGINE_C_API int blunder_cine_end(void);
+BLUNDER_ENGINE_C_API int blunder_cine_is_in_cine(int* out_value);
+BLUNDER_ENGINE_C_API int blunder_cine_is_gameplay_input_suppressed(int* out_value);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
@@ -204,6 +233,21 @@ typedef struct BlunderNativeAbi {
   int (*animation_player_add_pose_applied_listener)(
       BlunderObjectId id, BlunderPoseAppliedHook hook, void* userdata);
   int (*animation_player_clear_pose_applied_listeners)(BlunderObjectId id);
+  BlunderSyncGroupId (*sync_group_create)(void);
+  int (*sync_group_destroy)(BlunderSyncGroupId id);
+  int (*sync_group_join)(BlunderSyncGroupId id, BlunderObjectId player_object_id);
+  int (*sync_group_leave)(BlunderSyncGroupId id, BlunderObjectId player_object_id);
+  int (*sync_group_fire)(BlunderSyncGroupId id,
+                         const BlunderSyncGroupFireInstruction* instructions,
+                         int instruction_count);
+  int (*sync_group_fire_same_name)(BlunderSyncGroupId id, const char* clip_name);
+  int (*sync_group_fire_same_name_seek)(BlunderSyncGroupId id,
+                                        const char* clip_name,
+                                        float seek_seconds);
+  int (*cine_enter)(int suppress_gameplay_input);
+  int (*cine_end)(void);
+  int (*cine_is_in_cine)(int* out_value);
+  int (*cine_is_gameplay_input_suppressed)(int* out_value);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).

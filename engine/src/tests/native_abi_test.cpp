@@ -107,6 +107,27 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.animation_player_set_time_scale != nullptr);
   expect_true((std::string(label) + ": animation_player_get_time_scale").c_str(),
               abi.animation_player_get_time_scale != nullptr);
+  expect_true((std::string(label) + ": sync_group_create").c_str(),
+              abi.sync_group_create != nullptr);
+  expect_true((std::string(label) + ": sync_group_destroy").c_str(),
+              abi.sync_group_destroy != nullptr);
+  expect_true((std::string(label) + ": sync_group_join").c_str(),
+              abi.sync_group_join != nullptr);
+  expect_true((std::string(label) + ": sync_group_leave").c_str(),
+              abi.sync_group_leave != nullptr);
+  expect_true((std::string(label) + ": sync_group_fire").c_str(),
+              abi.sync_group_fire != nullptr);
+  expect_true((std::string(label) + ": sync_group_fire_same_name").c_str(),
+              abi.sync_group_fire_same_name != nullptr);
+  expect_true((std::string(label) + ": sync_group_fire_same_name_seek").c_str(),
+              abi.sync_group_fire_same_name_seek != nullptr);
+  expect_true((std::string(label) + ": cine_enter").c_str(),
+              abi.cine_enter != nullptr);
+  expect_true((std::string(label) + ": cine_end").c_str(), abi.cine_end != nullptr);
+  expect_true((std::string(label) + ": cine_is_in_cine").c_str(),
+              abi.cine_is_in_cine != nullptr);
+  expect_true((std::string(label) + ": cine_is_gameplay_input_suppressed").c_str(),
+              abi.cine_is_gameplay_input_suppressed != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -126,7 +147,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 6", BLUNDER_ENGINE_C_ABI_VERSION >= 6);
+  expect_true("abi version >= 7", BLUNDER_ENGINE_C_ABI_VERSION >= 7);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

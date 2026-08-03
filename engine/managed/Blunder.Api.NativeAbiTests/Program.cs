@@ -19,11 +19,23 @@ static unsafe class Program
     static float s_blendWeight = 0.5f;
     static float s_timeScale = 1.0f;
 
+    static ulong s_syncGroupId = 100;
+    static int s_lastSuppressFlag = -1;
+    static int s_inCine;
+    static int s_inputSuppressed;
+    static ulong s_lastJoinGroupId;
+    static ulong s_lastJoinPlayerId;
+    static ulong s_lastLeaveGroupId;
+    static ulong s_lastLeavePlayerId;
+    static int s_lastFireCount;
+    static string s_lastFireSameNameClip = "";
+    static float s_lastFireSameNameSeek = -1f;
+
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 37 * sizeof(nint),
-            "BlunderNativeAbi layout size is 37 pointers");
+            sizeof(BlunderNativeAbi) == 48 * sizeof(nint),
+            "BlunderNativeAbi layout size is 48 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -84,6 +96,17 @@ static unsafe class Program
         abi.animation_player_get_clip_length = &StubAnimationGetLength;
         abi.animation_player_add_pose_applied_listener = &StubAnimationAddPoseListener;
         abi.animation_player_clear_pose_applied_listeners = &StubAnimationClearPoseListeners;
+        abi.sync_group_create = &StubSyncGroupCreate;
+        abi.sync_group_destroy = &StubSyncGroupDestroy;
+        abi.sync_group_join = &StubSyncGroupJoin;
+        abi.sync_group_leave = &StubSyncGroupLeave;
+        abi.sync_group_fire = &StubSyncGroupFire;
+        abi.sync_group_fire_same_name = &StubSyncGroupFireSameName;
+        abi.sync_group_fire_same_name_seek = &StubSyncGroupFireSameNameSeek;
+        abi.cine_enter = &StubCineEnter;
+        abi.cine_end = &StubCineEnd;
+        abi.cine_is_in_cine = &StubCineIsInCine;
+        abi.cine_is_gameplay_input_suppressed = &StubCineIsGameplayInputSuppressed;
 
         Native.Register(in abi);
 
@@ -113,6 +136,7 @@ static unsafe class Program
         Expect(rejected, "Register must reject incomplete (null) tables");
 
         RunAnimationPlayerSmokeTests();
+        RunSyncGroupAndCineSmokeTests();
 
         if (s_failures == 0)
         {
@@ -177,6 +201,65 @@ static unsafe class Program
         Expect(
             Native.blunder_animation_player_play_with_fade(7, "trot", 1.25f) == Native.Ok,
             "Native play_with_fade after register");
+    }
+
+    static void RunSyncGroupAndCineSmokeTests()
+    {
+        s_syncGroupId = 100;
+        s_lastSuppressFlag = -1;
+        s_inCine = 0;
+        s_inputSuppressed = 0;
+        s_lastFireCount = 0;
+        s_lastFireSameNameClip = "";
+        s_lastFireSameNameSeek = -1f;
+
+        AnimationSyncGroup group = AnimationSyncGroup.Create();
+        Expect(group.GroupId == 101UL, "AnimationSyncGroup.Create");
+
+        ObjectHandle player = ObjectHandle.GetOrCreate(7);
+        Expect(group.Join(player), "AnimationSyncGroup.Join");
+        Expect(s_lastJoinGroupId == 101UL && s_lastJoinPlayerId == 7UL, "Join forwarded");
+
+        SyncGroupFireInstruction[] instructions =
+        [
+            new SyncGroupFireInstruction
+            {
+                Player = player,
+                ClipName = "walk",
+                SeekSeconds = 0.25f,
+            },
+        ];
+        Expect(group.Fire(instructions), "AnimationSyncGroup.Fire");
+        Expect(s_lastFireCount == 1, "Fire forwarded instruction count");
+
+        Expect(group.FireSameName("idle"), "AnimationSyncGroup.FireSameName");
+        Expect(s_lastFireSameNameClip == "idle", "FireSameName clip forwarded");
+        Expect(group.FireSameName("run", 0.5f), "AnimationSyncGroup.FireSameName seek");
+        Expect(
+            s_lastFireSameNameClip == "run" &&
+            Math.Abs(s_lastFireSameNameSeek - 0.5f) < 0.0001f,
+            "FireSameName seek forwarded");
+
+        Expect(group.Leave(player), "AnimationSyncGroup.Leave");
+        Expect(s_lastLeaveGroupId == 101UL && s_lastLeavePlayerId == 7UL, "Leave forwarded");
+        Expect(group.Destroy(), "AnimationSyncGroup.Destroy");
+
+        Expect(CineSegment.Enter(), "CineSegment.Enter");
+        Expect(s_lastSuppressFlag == 0, "Enter default suppress flag");
+        Expect(CineSegment.IsInCine, "CineSegment.IsInCine");
+        Expect(!CineSegment.IsGameplayInputSuppressed, "CineSegment not suppressed");
+        Expect(CineSegment.Enter(suppressGameplayInput: true), "CineSegment.Enter suppress");
+        Expect(s_lastSuppressFlag == 1, "Enter suppress forwarded");
+        Expect(CineSegment.IsGameplayInputSuppressed, "CineSegment suppressed");
+        Expect(CineSegment.End(), "CineSegment.End");
+        Expect(!CineSegment.IsInCine, "CineSegment not in cine after End");
+
+        Expect(
+            Native.blunder_sync_group_create() == 102UL,
+            "Native sync_group_create after register");
+        Expect(
+            Native.blunder_cine_enter(1) == Native.Ok,
+            "Native cine_enter after register");
     }
 
     static void Expect(bool condition, string label)
@@ -496,4 +579,125 @@ static unsafe class Program
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     static int StubAnimationClearPoseListeners(ulong id) =>
         id == 0 ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static ulong StubSyncGroupCreate()
+    {
+        ++s_syncGroupId;
+        return s_syncGroupId;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSyncGroupDestroy(ulong id) => id == 0 ? Native.Error : Native.Ok;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSyncGroupJoin(ulong groupId, ulong playerObjectId)
+    {
+        if (groupId == 0 || playerObjectId == 0)
+        {
+            return Native.Error;
+        }
+
+        s_lastJoinGroupId = groupId;
+        s_lastJoinPlayerId = playerObjectId;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSyncGroupLeave(ulong groupId, ulong playerObjectId)
+    {
+        if (groupId == 0 || playerObjectId == 0)
+        {
+            return Native.Error;
+        }
+
+        s_lastLeaveGroupId = groupId;
+        s_lastLeavePlayerId = playerObjectId;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSyncGroupFire(
+        ulong groupId, BlunderSyncGroupFireInstruction* instructions, int instructionCount)
+    {
+        if (groupId == 0 || instructionCount < 0 ||
+            (instructionCount > 0 && instructions == null))
+        {
+            return Native.Error;
+        }
+
+        s_lastFireCount = instructionCount;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSyncGroupFireSameName(ulong groupId, byte* clipName)
+    {
+        if (groupId == 0 || clipName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastFireSameNameClip = Utf8ToString(clipName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSyncGroupFireSameNameSeek(ulong groupId, byte* clipName, float seekSeconds)
+    {
+        if (groupId == 0 || clipName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastFireSameNameClip = Utf8ToString(clipName);
+        s_lastFireSameNameSeek = seekSeconds;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCineEnter(int suppressGameplayInput)
+    {
+        s_lastSuppressFlag = suppressGameplayInput;
+        s_inCine = 1;
+        s_inputSuppressed = suppressGameplayInput;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCineEnd()
+    {
+        if (s_inCine == 0)
+        {
+            return Native.Error;
+        }
+
+        s_inCine = 0;
+        s_inputSuppressed = 0;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCineIsInCine(int* outValue)
+    {
+        if (outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_inCine;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCineIsGameplayInputSuppressed(int* outValue)
+    {
+        if (outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_inputSuppressed;
+        return Native.Ok;
+    }
 }
