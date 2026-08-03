@@ -72,7 +72,9 @@ class AnimationPlayer {
 
   const eastl::string& getCurrentClipName() const { return m_current_clip_name; }
   float getPlaybackPosition() const;
-  float getClipLength() const { return m_clip_length; }
+  float getClipLength() const {
+    return m_tree_blocks_sampling ? m_tree_clip_length : m_clip_length;
+  }
 
   void advance(float delta_seconds);
 
@@ -90,6 +92,10 @@ class AnimationPlayer {
   /// When an active AnimationTree owns sampling, Player SHALL NOT write bones.
   void setTreeBlocksSampling(bool blocks);
   bool isTreeBlockingSampling() const { return m_tree_blocks_sampling; }
+
+  /// Active-tree dominant-clip clock mirrored for PlaybackPosition / ClipLength.
+  void syncTreePlaybackClock(float position, float clip_length);
+  void notifyPoseAppliedFromTree();
 
   /// Re-apply current playback state to the bound skeleton (e.g. tree deactivated).
   void resampleBoundSkeleton();
@@ -148,6 +154,8 @@ class AnimationPlayer {
   eastl::vector<PoseAppliedListener> m_pose_applied_listeners;
   eastl::vector<FinishedListener> m_finished_listeners;
   bool m_tree_blocks_sampling{false};
+  float m_tree_playback_position{0.0f};
+  float m_tree_clip_length{0.0f};
 };
 
 }  // namespace Blunder

@@ -285,10 +285,19 @@ void AnimationTree::advance(float delta_seconds) {
     return;
   }
 
-  m_sample_time += delta_seconds;
+  float time_scale = 1.0f;
+  if (m_animation_player != nullptr) {
+    time_scale = m_animation_player->getTimeScale();
+  }
+  const float scaled_delta = delta_seconds * time_scale;
+  if (scaled_delta <= 0.0f) {
+    return;
+  }
+
+  m_sample_time += scaled_delta;
 
   if (m_oneshot_active) {
-    m_oneshot_time += delta_seconds;
+    m_oneshot_time += scaled_delta;
     AnimationClipData clip;
     if (resolveClipForName(m_oneshot_clip_name, clip) &&
         m_oneshot_time >= clip.duration) {
@@ -392,7 +401,70 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
 void AnimationTree::sampleBoundSkeleton() {
   if (m_sampling_skeleton != nullptr && m_active) {
     sampleOntoSkeleton(*m_sampling_skeleton);
+    syncPlayerPlaybackClock();
+    notifyPlayerPoseApplied();
   }
+}
+
+void AnimationTree::syncPlayerPlaybackClock() {
+  if (m_animation_player == nullptr || !m_active) {
+    return;
+  }
+  m_animation_player->syncTreePlaybackClock(getDominantBasePlaybackPosition(),
+                                            getDominantBaseClipLength());
+}
+
+void AnimationTree::notifyPlayerPoseApplied() {
+  if (m_animation_player == nullptr || !m_active) {
+    return;
+  }
+  m_animation_player->notifyPoseAppliedFromTree();
+}
+
+float AnimationTree::getDominantBasePlaybackPosition() const {
+  if (m_oneshot_active) {
+    return m_oneshot_time;
+  }
+  return m_sample_time;
+}
+
+float AnimationTree::getDominantBaseClipLength() const {
+  if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
+    AnimationClipData clip;
+    if (resolveClipForName(m_oneshot_clip_name, clip)) {
+      return clip.duration;
+    }
+    return 0.0f;
+  }
+
+  if (!m_base_blend_space_node.empty()) {
+    const auto space_it = m_blend_spaces.find(m_base_blend_space_node);
+    if (space_it != m_blend_spaces.end() && !space_it->second.empty()) {
+      const float scalar = getBlendSpaceScalar(m_base_blend_space_node);
+      const BlendSpaceNeighbor neighbors =
+          findBlendSpaceNeighbors(space_it->second, scalar);
+      if (neighbors.left != nullptr) {
+        const BlendSpace1DPoint* dominant = neighbors.left;
+        if (neighbors.right != nullptr && neighbors.left != neighbors.right &&
+            neighbors.blend_weight > 0.5f) {
+          dominant = neighbors.right;
+        }
+        AnimationClipData clip;
+        if (resolveClipForName(dominant->clip_name, clip)) {
+          return clip.duration;
+        }
+      }
+    }
+  }
+
+  if (!m_sample_clip_name.empty()) {
+    AnimationClipData clip;
+    if (resolveClipForName(m_sample_clip_name, clip)) {
+      return clip.duration;
+    }
+  }
+
+  return 0.0f;
 }
 
 void AnimationTree::syncPlayerSamplingBlock() {

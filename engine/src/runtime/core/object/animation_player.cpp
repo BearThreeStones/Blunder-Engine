@@ -122,7 +122,18 @@ void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
 
 void AnimationPlayer::setTreeBlocksSampling(bool blocks) {
   m_tree_blocks_sampling = blocks;
+  if (!blocks) {
+    m_tree_playback_position = 0.0f;
+    m_tree_clip_length = 0.0f;
+  }
 }
+
+void AnimationPlayer::syncTreePlaybackClock(float position, float clip_length) {
+  m_tree_playback_position = position;
+  m_tree_clip_length = clip_length;
+}
+
+void AnimationPlayer::notifyPoseAppliedFromTree() { notifyPoseApplied(); }
 
 void AnimationPlayer::resampleBoundSkeleton() {
   sampleBoundSkeleton();
@@ -428,6 +439,9 @@ int AnimationPlayer::getDominantSlotIndex() const {
 }
 
 float AnimationPlayer::getPlaybackPosition() const {
+  if (m_tree_blocks_sampling) {
+    return m_tree_playback_position;
+  }
   if (hasActiveSlot()) {
     return m_slot_positions[getDominantSlotIndex()];
   }

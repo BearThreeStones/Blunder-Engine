@@ -6,7 +6,7 @@
 - [x] 1.4 TDD: BlendSpace1D neighbor blend (local TRS lerp / rotation slerp) from per-node scalar
 - [x] 1.5 TDD: StateMachine Travel/Start selects named states (BlendSpace1D or single clip)
 - [x] 1.6 TDD: OneShot inserts then returns to base
-- [ ] 1.7 TDD: PoseApplied fires under active tree; playback position follows base dominant clip; Add2 is not the step clock; TimeScale uses AnimationPlayer global
+- [x] 1.7 TDD: PoseApplied fires under active tree; playback position follows base dominant clip; Add2 is not the step clock; TimeScale uses AnimationPlayer global
 
 ## 2. Sync Fire → OneShot
 

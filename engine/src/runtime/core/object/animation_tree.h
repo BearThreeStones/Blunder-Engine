@@ -93,6 +93,10 @@ class AnimationTree {
 
  private:
   void syncPlayerSamplingBlock();
+  void syncPlayerPlaybackClock();
+  void notifyPlayerPoseApplied();
+  float getDominantBasePlaybackPosition() const;
+  float getDominantBaseClipLength() const;
   void sampleBaseOntoSkeleton(Skeleton& skeleton);
   bool applyStatePlayback(const AnimationStateDefinition& state);
   bool sampleBlendSpace1DOntoSkeleton(Skeleton& skeleton,
