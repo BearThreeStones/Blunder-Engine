@@ -376,6 +376,92 @@ void test_fire_atomic_on_resolve_failure() {
   expect_true("player_b not playing", !player_b.isPlaying());
 }
 
+void test_fire_same_name_resolves_per_member_map() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "walk", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  bind_clip(player_b, "walk", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 3.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join player_a", service.join(group, &player_a));
+  expect_true("join player_b", service.join(group, &player_b));
+
+  expect_true("fireSameName succeeds", service.fireSameName(group, "walk"));
+
+  expect_true("player_a playing", player_a.isPlaying());
+  expect_true("player_b playing", player_b.isPlaying());
+  expect_true("player_a clip", player_a.getCurrentClipName() == "walk");
+  expect_true("player_b clip", player_b.getCurrentClipName() == "walk");
+  expect_true("player_a position zero",
+              float_near(player_a.getPlaybackPosition(), 0.0f));
+  expect_true("player_b position zero",
+              float_near(player_b.getPlaybackPosition(), 0.0f));
+}
+
+void test_fire_same_name_with_seek() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "clip", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 4.0f);
+  bind_clip(player_b, "clip", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 5.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join players", service.join(group, &player_a) &&
+                                   service.join(group, &player_b));
+
+  expect_true("fireSameName with seek succeeds",
+              service.fireSameName(group, "clip", 1.75f));
+  expect_true("player_a seek position",
+              float_near(player_a.getPlaybackPosition(), 1.75f));
+  expect_true("player_b seek position",
+              float_near(player_b.getPlaybackPosition(), 1.75f));
+}
+
+void test_fire_same_name_validation() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer member;
+  bind_clip(member, "clip", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join member", service.join(group, &member));
+
+  expect_true("invalid group fails",
+              !service.fireSameName(k_invalid_sync_group_id, "clip"));
+  expect_true("empty clip name fails", !service.fireSameName(group, ""));
+
+  const SyncGroupId empty_group = service.create();
+  expect_true("empty group fails", !service.fireSameName(empty_group, "clip"));
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "walk", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  player_b.setClipGuid("walk", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+  const SyncGroupId mixed = service.create();
+  expect_true("join mixed players", service.join(mixed, &player_a) &&
+                                         service.join(mixed, &player_b));
+  expect_true("play old clip", player_a.play("walk"));
+  player_a.advance(0.5f);
+
+  expect_true("resolve failure is atomic",
+              !service.fireSameName(mixed, "walk"));
+  expect_true("player_a unchanged",
+              float_near(player_a.getPlaybackPosition(), 0.5f));
+}
+
 void test_get_member_at_stable_insertion_order() {
   using namespace Blunder;
 
@@ -416,6 +502,9 @@ int main() {
   test_fire_from_mid_playback();
   test_fire_validation();
   test_fire_atomic_on_resolve_failure();
+  test_fire_same_name_resolves_per_member_map();
+  test_fire_same_name_with_seek();
+  test_fire_same_name_validation();
   test_get_member_at_stable_insertion_order();
 
   if (g_failures != 0) {

@@ -6,4 +6,6 @@ Models: composer-2.5 only (no fast)
 
 
 Task 1.1: complete (commits 7076b98..52653fa, review clean)
-Task 1.2: complete — Fire per-member hard cut (animation_sync_group_test 14 tests GREEN)
+Task 1.2: complete (commits 85bf2d4..a99f290, review clean after atomic fix)
+Task 1.3: complete — fireSameName sugar (animation_sync_group_test 18 tests GREEN)
+

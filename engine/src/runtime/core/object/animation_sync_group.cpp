@@ -161,6 +161,52 @@ bool AnimationSyncGroupService::fire(
   return true;
 }
 
+bool AnimationSyncGroupService::fireSameName(SyncGroupId id,
+                                             const eastl::string& clip_name) {
+  if (!isValid(id) || clip_name.empty()) {
+    return false;
+  }
+
+  const Group* group = findGroup(id);
+  if (group == nullptr || group->members.empty()) {
+    return false;
+  }
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.reserve(group->members.size());
+  for (AnimationPlayer* player : group->members) {
+    instructions.push_back(SyncGroupFireInstruction{player, clip_name});
+  }
+
+  return fire(id, instructions);
+}
+
+bool AnimationSyncGroupService::fireSameName(SyncGroupId id,
+                                             const eastl::string& clip_name,
+                                             float seek_seconds) {
+  if (!isValid(id) || clip_name.empty()) {
+    return false;
+  }
+
+  const Group* group = findGroup(id);
+  if (group == nullptr || group->members.empty()) {
+    return false;
+  }
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.reserve(group->members.size());
+  for (AnimationPlayer* player : group->members) {
+    SyncGroupFireInstruction instruction;
+    instruction.player = player;
+    instruction.clip_name = clip_name;
+    instruction.seek_seconds = seek_seconds;
+    instruction.has_seek = true;
+    instructions.push_back(instruction);
+  }
+
+  return fire(id, instructions);
+}
+
 void AnimationSyncGroupService::clearAll() { m_storage->groups.clear(); }
 
 const AnimationSyncGroupService::Group*

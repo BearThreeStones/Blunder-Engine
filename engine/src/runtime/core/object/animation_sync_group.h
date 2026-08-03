@@ -52,6 +52,12 @@ class AnimationSyncGroupService {
   bool fire(SyncGroupId id,
             const eastl::vector<SyncGroupFireInstruction>& instructions);
 
+  /// Fire the same clip logical name on every group member (each resolves via own map).
+  bool fireSameName(SyncGroupId id, const eastl::string& clip_name);
+  /// Same with seek applied to all members.
+  bool fireSameName(SyncGroupId id, const eastl::string& clip_name,
+                    float seek_seconds);
+
   /// Clears every live group (unit tests). Does not reset the id counter;
   /// subsequent create() ids remain monotonically increasing.
   void clearAll();
