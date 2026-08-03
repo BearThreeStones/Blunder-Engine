@@ -79,7 +79,13 @@ BlendSpaceNeighbor findBlendSpaceNeighbors(
 }  // namespace
 
 void AnimationTree::bindAnimationPlayer(AnimationPlayer* player) {
+  if (m_animation_player != nullptr) {
+    m_animation_player->bindAnimationTree(nullptr);
+  }
   m_animation_player = player;
+  if (m_animation_player != nullptr) {
+    m_animation_player->bindAnimationTree(this);
+  }
   syncPlayerSamplingBlock();
 }
 

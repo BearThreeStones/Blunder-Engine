@@ -120,6 +120,10 @@ void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
   m_sampling_skeleton = skeleton;
 }
 
+void AnimationPlayer::bindAnimationTree(AnimationTree* tree) {
+  m_bound_tree = tree;
+}
+
 void AnimationPlayer::setTreeBlocksSampling(bool blocks) {
   m_tree_blocks_sampling = blocks;
   if (!blocks) {

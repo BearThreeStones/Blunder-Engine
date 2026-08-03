@@ -8,6 +8,7 @@
 
 namespace Blunder {
 
+class AnimationTree;
 class Skeleton;
 class AnimationPlayer;
 
@@ -89,6 +90,11 @@ class AnimationPlayer {
   void bindSamplingSkeleton(Skeleton* skeleton);
   void sampleOntoSkeleton(Skeleton& skeleton);
 
+  /// Co-located AnimationTree (set by Object / tree bind). Non-owning.
+  void bindAnimationTree(AnimationTree* tree);
+  AnimationTree* getAnimationTree() { return m_bound_tree; }
+  const AnimationTree* getAnimationTree() const { return m_bound_tree; }
+
   /// When an active AnimationTree owns sampling, Player SHALL NOT write bones.
   void setTreeBlocksSampling(bool blocks);
   bool isTreeBlockingSampling() const { return m_tree_blocks_sampling; }
@@ -138,6 +144,7 @@ class AnimationPlayer {
   AnimationClipData m_current_clip;
   bool m_has_current_clip{false};
   Skeleton* m_sampling_skeleton{nullptr};
+  AnimationTree* m_bound_tree{nullptr};
   float m_position{0.0f};
   float m_clip_length{0.0f};
   bool m_playing{false};

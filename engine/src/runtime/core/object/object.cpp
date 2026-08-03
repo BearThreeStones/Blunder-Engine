@@ -360,6 +360,7 @@ void Object::updateAnimationSamplingBinding() {
       m_animation_player->setTreeBlocksSampling(m_animation_tree->isActive());
     }
   } else if (m_animation_player != nullptr) {
+    m_animation_player->bindAnimationTree(nullptr);
     m_animation_player->setTreeBlocksSampling(false);
   }
 }

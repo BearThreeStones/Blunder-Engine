@@ -1,83 +1,46 @@
-# Task 2.1 Report — Wire Companion Pairing into Import
+# Task 2.1 Report — Sync Fire → active tree OneShot
 
-## Status
-
-COMPLETE
+**Status:** DONE  
+**Branch:** `feat/dogwalk-animation-phase-4`
 
 ## Summary
 
-- `AssetImportService::importExternalFiles` now classifies the selected glTF/GLB
-  batch with `pairCompanionAnimationGltfMultiSelectBatch`.
-- Accepted companion-only glTFs are removed from ordinary Mesh registration.
-- With animations enabled, the unambiguous host Mesh Import receives the paired
-  companion paths through `ImportResult::companion_animation_paths`.
-- With animations disabled, the host still imports but companion association is
-  empty and companion-only glTFs are skipped.
-- Orphan companions are skipped and logged with `LOG_WARN` when animations are
-  enabled.
-- Multiple skinned hosts retain the helper's existing behavior: each imports as
-  a Mesh with no companions, while ambiguous companions are warned and skipped.
+`AnimationSyncGroupService::fire` now detects when a member's co-located **AnimationTree** is **active** and routes the clip instruction through `requestOneShot` instead of `snapPlayWithClip` hard-cut. The tree remains active; Player sampling stays blocked. Members without an active tree keep Phase 3 hard-cut semantics.
 
-This task deliberately does not copy companion Intermediate bodies or extract
-their clips. Those remain Tasks 2.2 and 2.3.
+## TDD evidence
 
-## TDD Evidence
+1. **RED:** Four failing test groups added for active-tree OneShot, tree stays active, inactive-tree hard-cut regression, and Object-bound tree path.
+2. **GREEN:** `animation_sync_group_test.exe` exits 0 (all groups including new task 2.1 tests).
 
-### RED
+### New tests
 
-Added `importExternalFilesPairsCompanionsIntoMeshImport` to
-`engine/src/tests/asset_import_test.cpp` before production changes.
+| Test | Proves |
+|------|--------|
+| `test_fire_active_tree_member_applies_oneshot` | Fire on active-tree member activates OneShot, samples trip pose, does not hard-cut Player |
+| `test_fire_active_tree_does_not_deactivate_tree` | Tree stays active and bound after Fire |
+| `test_fire_inactive_tree_member_still_hard_cut` | Inactive tree → Phase 3 snap Play (no OneShot) |
+| `test_fire_active_tree_via_object_binding` | Object `ensureAnimationTree` path wires player↔tree; Fire applies OneShot |
 
-Command:
+## Production changes
 
-```powershell
-cmake --build build/vs2026-debug --config Debug --target asset_import_test
-```
+| File | Change |
+|------|--------|
+| `animation_sync_group.cpp` | `fire()` branches: active tree → `requestOneShot`; else `snapPlayWithClip` |
+| `animation_player.h/.cpp` | `bindAnimationTree` / `getAnimationTree` back-pointer |
+| `animation_tree.cpp` | `bindAnimationPlayer` sets/clears player back-pointer |
+| `object.cpp` | Clears player tree binding when AnimationTree removed |
+| `animation_sync_group_test.cpp` | Four task 2.1 tests |
+| `tasks.md` | 2.1 marked `[x]` |
 
-Expected failure observed:
-
-```text
-error C2039: "companion_animation_paths": is not a member of "Blunder::ImportResult"
-```
-
-The test covered:
-
-- one host plus two companions produces one Mesh result;
-- both companions reach the host Mesh Import handoff;
-- companions are not registered as Mesh descriptors;
-- disabling animations leaves the host companion handoff empty and still skips
-  companion Mesh registration.
-
-### GREEN
-
-Commands:
+## Test command
 
 ```powershell
-cmake --build build/vs2026-debug --config Debug --target asset_import_test
-.\build\vs2026-debug\engine\src\tests\Debug\asset_import_test.exe
-cmake --build build/vs2026-debug --config Debug --target engine_editor
+cmake --build build/vs2026-debug --target animation_sync_group_test --config Debug
+build/vs2026-debug/engine/src/tests/Debug/animation_sync_group_test.exe
 ```
 
-Results:
+## Concerns
 
-- Build succeeded.
-- `asset_import_test: all passed`.
-- `engine_editor` build succeeded.
-
-## Files Changed
-
-- `engine/src/runtime/resource/asset_import/asset_import_service.h`
-- `engine/src/runtime/resource/asset_import/asset_import_service.cpp`
-- `engine/src/tests/asset_import_test.cpp`
-- `openspec/changes/companion-animation-gltf-import/tasks.md`
-- `.superpowers/sdd/task-2.1-report.md`
-
-## Concerns / Follow-ups
-
-- Companion paths are currently an in-memory handoff only. Task 2.2 must copy
-  them under Resources and persist their association for Reimport.
-- Task 2.3 must consume the persisted companion bodies through the existing
-  clip extractor.
-- Near-disk discovery remains intentionally unwired until Task 2.4.
-- The build emits pre-existing MSVC PCH macro mismatch warnings for the test
-  target; they did not fail the build or test.
+- **Seek on active-tree Fire:** `has_seek` is ignored for OneShot members (no `setOneShotTime` API yet); hard-cut members still honor seek.
+- **Mixed groups** (tree + no-tree) covered at unit level; task 2.2/2.3 add explicit mixed-alignment tests.
+- **Managed API** (task 5.2) inherits semantics once C-ABI Fire path uses the same service.

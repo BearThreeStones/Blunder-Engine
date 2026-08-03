@@ -1,6 +1,7 @@
 #include "runtime/core/object/animation_sync_group.h"
 
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 
 #include "EASTL/hash_map.h"
 #include "EASTL/vector.h"
@@ -149,9 +150,18 @@ bool AnimationSyncGroupService::fire(
     }
   }
 
-  // Co-located Skeleton only: each player snaps and samples its own bound skeleton.
+  // Co-located Skeleton only: each player snaps and samples its own bound skeleton,
+  // or active AnimationTree members receive OneShot (tree stays active).
   for (size_t i = 0; i < instructions.size(); ++i) {
     const SyncGroupFireInstruction& instruction = instructions[i];
+    AnimationTree* tree = instruction.player->getAnimationTree();
+    if (tree != nullptr && tree->isActive()) {
+      if (!tree->requestOneShot(instruction.clip_name)) {
+        return false;
+      }
+      continue;
+    }
+
     instruction.player->snapPlayWithClip(instruction.clip_name,
                                          resolved_clips[i]);
     if (instruction.has_seek) {

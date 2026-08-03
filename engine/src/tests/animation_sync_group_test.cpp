@@ -1,5 +1,6 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_sync_group.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/cine_segment_service.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
@@ -899,6 +900,170 @@ void test_sync_cine_preview_no_auto_trs_snap() {
   resetPreviewServices();
 }
 
+void test_fire_active_tree_member_applies_oneshot() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string trip_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData trip;
+  trip.duration = 0.5f;
+  trip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(42.0f, 0.0f, 0.0f)}, {0.5f, Vec3(42.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("trip", trip_guid);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(trip_guid, trip);
+
+  expect_true("register locomotion state",
+              tree.setStateClip("Locomotion", "walk"));
+  expect_true("activate tree", tree.setActive(true));
+  expect_true("travel locomotion", tree.travel("Locomotion"));
+
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, &player));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player, "trip"});
+  expect_true("fire active-tree member", service.fire(group, instructions));
+
+  expect_true("tree stays active", tree.isActive());
+  expect_true("one-shot active", tree.isOneShotActive());
+  expect_true("player blocks sampling", player.isTreeBlockingSampling());
+  expect_true("player not hard-cut playing", !player.isPlaying());
+  expect_true("state unchanged", tree.getCurrentStateName() == "Locomotion");
+  expect_true("trip pose sampled",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(42.0f, 0.0f, 0.0f)));
+}
+
+void test_fire_active_tree_does_not_deactivate_tree() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  bind_clip(player, "walk", "11111111-1111-1111-1111-111111111111", 1.0f);
+  bind_clip(player, "trip", "22222222-2222-2222-2222-222222222222", 0.5f);
+
+  tree.setStateClip("Locomotion", "walk");
+  expect_true("activate tree", tree.setActive(true));
+  tree.travel("Locomotion");
+
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, &player));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player, "trip"});
+  expect_true("fire", service.fire(group, instructions));
+  expect_true("tree still active after fire", tree.isActive());
+  expect_true("tree still bound on player", player.getAnimationTree() == &tree);
+}
+
+void test_fire_inactive_tree_member_still_hard_cut() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  bind_clip(player, "idle", "11111111-1111-1111-1111-111111111111", 2.0f);
+  bind_clip(player, "cine", "22222222-2222-2222-2222-222222222222", 3.0f);
+
+  tree.setStateClip("Locomotion", "idle");
+  tree.setActive(false);
+  expect_true("tree inactive", !tree.isActive());
+
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, &player));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player, "cine"});
+  expect_true("fire hard cut", service.fire(group, instructions));
+
+  expect_true("one-shot not used", !tree.isOneShotActive());
+  expect_true("cine playing", player.isPlaying());
+  expect_true("cine clip", player.getCurrentClipName() == "cine");
+  expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
+}
+
+void test_fire_active_tree_via_object_binding() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object created", object != nullptr);
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  AnimationPlayer* player = object->ensureAnimationPlayer();
+  AnimationTree* tree = object->ensureAnimationTree();
+  skeleton->addBone("Hips", -1);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string trip_guid = "22222222-2222-2222-2222-222222222222";
+  player->setClipGuid("walk", walk_guid);
+  player->setClipGuid("trip", trip_guid);
+  player->injectClipData(walk_guid, makeTranslationClip("walk", 1.0f,
+                                                        Vec3(1.0f, 0.0f, 0.0f)));
+  player->injectClipData(trip_guid, makeTranslationClip("trip", 0.5f,
+                                                        Vec3(9.0f, 0.0f, 0.0f)));
+
+  tree->setStateClip("Locomotion", "walk");
+  expect_true("activate tree", tree->setActive(true));
+  tree->travel("Locomotion");
+  expect_true("player bound to tree", player->getAnimationTree() == tree);
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, player));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{player, "trip"});
+  expect_true("fire via object", service.fire(group, instructions));
+
+  expect_true("tree stays active", tree->isActive());
+  expect_true("one-shot active", tree->isOneShotActive());
+  expect_true("trip pose on skeleton",
+              vec3_near(skeleton->getBonePoseLocal(0).translation,
+                        Vec3(9.0f, 0.0f, 0.0f)));
+
+  ObjectDB::clear();
+}
+
 int main() {
   test_create_returns_valid_id();
   test_join_and_leave_members();
@@ -926,6 +1091,10 @@ int main() {
   test_sync_cine_preview_fire_without_behaviour_tick();
   test_sync_cine_preview_enter_end_marks();
   test_sync_cine_preview_no_auto_trs_snap();
+  test_fire_active_tree_member_applies_oneshot();
+  test_fire_active_tree_does_not_deactivate_tree();
+  test_fire_inactive_tree_member_still_hard_cut();
+  test_fire_active_tree_via_object_binding();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
