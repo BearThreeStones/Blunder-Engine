@@ -8,7 +8,7 @@
 
 ## 2. CINE segment contract
 
-- [ ] 2.1 TDD: Enter CINE sets in-CINE mark; End clears it (explicit End authoritative)
+- [x] 2.1 TDD: Enter CINE sets in-CINE mark; End clears it (explicit End authoritative)
 - [ ] 2.2 TDD: optional gameplay-input suppression while in-CINE; restores on End
 - [ ] 2.3 TDD: member `finished` may signal but does not alone End the segment
 - [ ] 2.4 Document that pose snap / gameplay state transitions remain C# Behaviour responsibilities
