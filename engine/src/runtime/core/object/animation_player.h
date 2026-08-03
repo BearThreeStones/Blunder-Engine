@@ -41,6 +41,8 @@ class AnimationPlayer {
   bool play(const eastl::string& name);
   /// Play with optional crossfade. fade_seconds <= 0 is a hard cut (Phase 1).
   bool play(const eastl::string& name, float fade_seconds);
+  /// Hard snap: clears crossfade and dual-slot blend, then plays \a name from the start.
+  bool snapPlay(const eastl::string& name);
   void stop();
 
   bool isCrossfading() const { return m_crossfade_active; }
@@ -58,6 +60,9 @@ class AnimationPlayer {
   bool isPlaying() const { return m_playing; }
   void setLoop(bool loop) { m_loop = loop; }
   bool isLooping() const { return m_loop; }
+
+  /// Seek the active clip to \a seconds (clamped). No-op if not playing.
+  void seekPlayback(float seconds);
 
   const eastl::string& getCurrentClipName() const { return m_current_clip_name; }
   float getPlaybackPosition() const;

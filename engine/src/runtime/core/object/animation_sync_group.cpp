@@ -112,6 +112,51 @@ AnimationPlayer* AnimationSyncGroupService::getMemberAt(SyncGroupId id,
   return group->members[index];
 }
 
+bool AnimationSyncGroupService::fire(
+    SyncGroupId id, const eastl::vector<SyncGroupFireInstruction>& instructions) {
+  if (!isValid(id) || instructions.empty()) {
+    return false;
+  }
+
+  const Group* group = findGroup(id);
+  if (group == nullptr) {
+    return false;
+  }
+
+  for (const SyncGroupFireInstruction& instruction : instructions) {
+    if (instruction.player == nullptr || instruction.clip_name.empty()) {
+      return false;
+    }
+
+    bool member = false;
+    for (const AnimationPlayer* candidate : group->members) {
+      if (candidate == instruction.player) {
+        member = true;
+        break;
+      }
+    }
+    if (!member) {
+      return false;
+    }
+
+    eastl::string guid;
+    if (!instruction.player->getClipGuid(instruction.clip_name, guid)) {
+      return false;
+    }
+  }
+
+  for (const SyncGroupFireInstruction& instruction : instructions) {
+    if (!instruction.player->snapPlay(instruction.clip_name)) {
+      return false;
+    }
+    if (instruction.has_seek) {
+      instruction.player->seekPlayback(instruction.seek_seconds);
+    }
+  }
+
+  return true;
+}
+
 void AnimationSyncGroupService::clearAll() { m_storage->groups.clear(); }
 
 const AnimationSyncGroupService::Group*

@@ -1,6 +1,8 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_sync_group.h"
+#include "runtime/resource/asset/asset_descriptor.h"
 
+#include <cmath>
 #include <cstdio>
 
 namespace {
@@ -12,6 +14,24 @@ void expect_true(const char* label, bool ok) {
     std::fprintf(stderr, "FAIL %s\n", label);
     ++g_failures;
   }
+}
+
+bool float_near(float a, float b, float eps = 1e-5f) {
+  return std::fabs(a - b) < eps;
+}
+
+Blunder::AnimationClipData make_test_clip(const char* name, float duration) {
+  Blunder::AnimationClipData clip;
+  clip.name = name;
+  clip.duration = duration;
+  return clip;
+}
+
+void bind_clip(Blunder::AnimationPlayer& player, const char* clip_name,
+               const char* guid, float duration) {
+  eastl::string guid_str(guid);
+  player.setClipGuid(clip_name, guid_str);
+  player.injectClipData(guid_str, make_test_clip(clip_name, duration));
 }
 
 }  // namespace
@@ -161,6 +181,171 @@ void test_create_returns_distinct_ids() {
               group_a != group_b && group_b != group_c && group_a != group_c);
 }
 
+void test_fire_heterogeneous_clips_hard_cut() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "CINE-character-attach",
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  bind_clip(player_b, "CINE-prop-attach",
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 3.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join player_a", service.join(group, &player_a));
+  expect_true("join player_b", service.join(group, &player_b));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player_a, "CINE-character-attach"});
+  instructions.push_back(SyncGroupFireInstruction{&player_b, "CINE-prop-attach"});
+
+  expect_true("fire succeeds", service.fire(group, instructions));
+
+  expect_true("player_a playing", player_a.isPlaying());
+  expect_true("player_b playing", player_b.isPlaying());
+  expect_true("player_a clip",
+              player_a.getCurrentClipName() == "CINE-character-attach");
+  expect_true("player_b clip",
+              player_b.getCurrentClipName() == "CINE-prop-attach");
+  expect_true("player_a position zero",
+              float_near(player_a.getPlaybackPosition(), 0.0f));
+  expect_true("player_b position zero",
+              float_near(player_b.getPlaybackPosition(), 0.0f));
+  expect_true("player_a not crossfading", !player_a.isCrossfading());
+  expect_true("player_b not crossfading", !player_b.isCrossfading());
+}
+
+void test_fire_with_seek() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "clip_a", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 4.0f);
+  bind_clip(player_b, "clip_b", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 5.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join players", service.join(group, &player_a) &&
+                                   service.join(group, &player_b));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  SyncGroupFireInstruction inst_a;
+  inst_a.player = &player_a;
+  inst_a.clip_name = "clip_a";
+  inst_a.seek_seconds = 1.5f;
+  inst_a.has_seek = true;
+  instructions.push_back(inst_a);
+
+  SyncGroupFireInstruction inst_b;
+  inst_b.player = &player_b;
+  inst_b.clip_name = "clip_b";
+  inst_b.seek_seconds = 2.25f;
+  inst_b.has_seek = true;
+  instructions.push_back(inst_b);
+
+  expect_true("fire with seek succeeds", service.fire(group, instructions));
+  expect_true("player_a seek position",
+              float_near(player_a.getPlaybackPosition(), 1.5f));
+  expect_true("player_b seek position",
+              float_near(player_b.getPlaybackPosition(), 2.25f));
+}
+
+void test_fire_hard_cut_interrupts_crossfade() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player;
+  bind_clip(player, "idle", "11111111-1111-1111-1111-111111111111", 2.0f);
+  bind_clip(player, "walk", "22222222-2222-2222-2222-222222222222", 3.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, &player));
+
+  expect_true("crossfade to walk", player.play("walk", 1.0f));
+  expect_true("crossfading", player.isCrossfading());
+  player.advance(0.3f);
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player, "idle"});
+  expect_true("fire hard cut", service.fire(group, instructions));
+
+  expect_true("idle playing", player.getCurrentClipName() == "idle");
+  expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
+  expect_true("not crossfading", !player.isCrossfading());
+}
+
+void test_fire_from_mid_playback() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "old_a", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  bind_clip(player_a, "new_a", "cccccccc-cccc-cccc-cccc-cccccccccccc", 2.5f);
+  bind_clip(player_b, "old_b", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 2.0f);
+  bind_clip(player_b, "new_b", "dddddddd-dddd-dddd-dddd-dddddddddddd", 3.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join players", service.join(group, &player_a) &&
+                                   service.join(group, &player_b));
+
+  expect_true("play old_a", player_a.play("old_a"));
+  expect_true("play old_b", player_b.play("old_b"));
+  player_a.advance(0.8f);
+  player_b.advance(1.1f);
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player_a, "new_a"});
+  instructions.push_back(SyncGroupFireInstruction{&player_b, "new_b"});
+  expect_true("fire new clips", service.fire(group, instructions));
+
+  expect_true("player_a new clip", player_a.getCurrentClipName() == "new_a");
+  expect_true("player_b new clip", player_b.getCurrentClipName() == "new_b");
+  expect_true("player_a reset", float_near(player_a.getPlaybackPosition(), 0.0f));
+  expect_true("player_b reset", float_near(player_b.getPlaybackPosition(), 0.0f));
+}
+
+void test_fire_validation() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer member;
+  AnimationPlayer outsider;
+  bind_clip(member, "clip", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join member", service.join(group, &member));
+
+  eastl::vector<SyncGroupFireInstruction> empty;
+  expect_true("empty instructions fail", !service.fire(group, empty));
+  expect_true("invalid group fail",
+              !service.fire(k_invalid_sync_group_id, empty));
+
+  eastl::vector<SyncGroupFireInstruction> null_player;
+  null_player.push_back(SyncGroupFireInstruction{nullptr, "clip"});
+  expect_true("null player fail", !service.fire(group, null_player));
+
+  eastl::vector<SyncGroupFireInstruction> non_member;
+  bind_clip(outsider, "clip", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1.0f);
+  non_member.push_back(SyncGroupFireInstruction{&outsider, "clip"});
+  expect_true("non-member fail", !service.fire(group, non_member));
+
+  eastl::vector<SyncGroupFireInstruction> unknown_clip;
+  unknown_clip.push_back(SyncGroupFireInstruction{&member, "missing"});
+  expect_true("unknown clip fail", !service.fire(group, unknown_clip));
+}
+
 void test_get_member_at_stable_insertion_order() {
   using namespace Blunder;
 
@@ -195,6 +380,11 @@ int main() {
   test_destroy_invalid_and_unknown_ids();
   test_join_unknown_group_id();
   test_create_returns_distinct_ids();
+  test_fire_heterogeneous_clips_hard_cut();
+  test_fire_with_seek();
+  test_fire_hard_cut_interrupts_crossfade();
+  test_fire_from_mid_playback();
+  test_fire_validation();
   test_get_member_at_stable_insertion_order();
 
   if (g_failures != 0) {

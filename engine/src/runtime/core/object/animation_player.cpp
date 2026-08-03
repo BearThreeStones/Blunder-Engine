@@ -185,6 +185,27 @@ bool AnimationPlayer::play(const eastl::string& name) {
   return true;
 }
 
+bool AnimationPlayer::snapPlay(const eastl::string& name) {
+  eastl::string guid;
+  if (!getClipGuid(name, guid)) {
+    return false;
+  }
+
+  AnimationClipData clip;
+  if (!resolveClip(guid, clip)) {
+    return false;
+  }
+
+  clearCrossfade();
+  m_slot_clip_names[0].clear();
+  m_slot_clip_names[1].clear();
+  m_slot_positions[0] = 0.0f;
+  m_slot_positions[1] = 0.0f;
+  m_blend_weight = 0.0f;
+  beginClip(name, clip);
+  return true;
+}
+
 void AnimationPlayer::stop() {
   m_playing = false;
   m_position = 0.0f;
@@ -372,6 +393,27 @@ float AnimationPlayer::getPlaybackPosition() const {
     return m_slot_positions[getDominantSlotIndex()];
   }
   return m_position;
+}
+
+void AnimationPlayer::seekPlayback(float seconds) {
+  if (!m_playing) {
+    return;
+  }
+
+  if (seconds < 0.0f) {
+    seconds = 0.0f;
+  }
+  if (m_clip_length > 0.0f && seconds > m_clip_length) {
+    seconds = m_clip_length;
+  }
+
+  if (hasActiveSlot()) {
+    m_slot_positions[getDominantSlotIndex()] = seconds;
+  } else {
+    m_position = seconds;
+  }
+
+  sampleBoundSkeleton();
 }
 
 void AnimationPlayer::advance(float delta_seconds) {

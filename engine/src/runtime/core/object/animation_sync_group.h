@@ -2,6 +2,9 @@
 
 #include <cstdint>
 
+#include "EASTL/string.h"
+#include "EASTL/vector.h"
+
 namespace Blunder {
 
 class AnimationPlayer;
@@ -12,6 +15,14 @@ using SyncGroupId = uint64_t;
 constexpr SyncGroupId k_invalid_sync_group_id = 0u;
 
 inline bool isValid(SyncGroupId id) { return id != k_invalid_sync_group_id; }
+
+/// Per-member Fire instruction: player, clip logical name, optional seek.
+struct SyncGroupFireInstruction {
+  AnimationPlayer* player{nullptr};
+  eastl::string clip_name;
+  float seek_seconds{0.0f};
+  bool has_seek{false};
+};
 
 /// Runtime registry of Sync Groups whose members are AnimationPlayers.
 ///
@@ -36,6 +47,10 @@ class AnimationSyncGroupService {
 
   /// Test / debug helper: member pointer at stable insertion order.
   AnimationPlayer* getMemberAt(SyncGroupId id, size_t index) const;
+
+  /// Fire per-member clip instructions at the same logical moment (default hard cut).
+  bool fire(SyncGroupId id,
+            const eastl::vector<SyncGroupFireInstruction>& instructions);
 
   /// Clears every live group (unit tests). Does not reset the id counter;
   /// subsequent create() ids remain monotonically increasing.
