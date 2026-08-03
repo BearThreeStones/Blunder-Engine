@@ -26,6 +26,10 @@ struct SyncGroupFireInstruction {
 
 /// Runtime registry of Sync Groups whose members are AnimationPlayers.
 ///
+/// Phase 1 rule: Fire coordinates players only; each AnimationPlayer samples
+/// onto its co-located Skeleton (via bindSamplingSkeleton). This API has no
+/// Skeleton* parameters and cannot drive a remote Skeleton on another Object.
+///
 /// Member pointers are non-owning; callers must leave or destroy groups before
 /// an AnimationPlayer is destroyed (no automatic lifetime tracking).
 class AnimationSyncGroupService {

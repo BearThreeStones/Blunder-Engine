@@ -1,9 +1,11 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_sync_group.h"
+#include "runtime/core/object/skeleton.h"
 #include "runtime/resource/asset/asset_descriptor.h"
 
 #include <cmath>
 #include <cstdio>
+#include <type_traits>
 
 namespace {
 
@@ -18,6 +20,45 @@ void expect_true(const char* label, bool ok) {
 
 bool float_near(float a, float b, float eps = 1e-5f) {
   return std::fabs(a - b) < eps;
+}
+
+bool vec3_near(const Blunder::Vec3& a, const Blunder::Vec3& b,
+               float eps = 1e-4f) {
+  return float_near(a.x, b.x, eps) && float_near(a.y, b.y, eps) &&
+         float_near(a.z, b.z, eps);
+}
+
+Blunder::AnimationTrack makeTranslationTrack(
+    const char* bone, Blunder::AnimationInterpolation interpolation,
+    std::initializer_list<std::pair<float, Blunder::Vec3>> keys) {
+  Blunder::AnimationTrack track;
+  track.bone = bone;
+  track.channel = Blunder::AnimationChannel::Translation;
+  track.interpolation = interpolation;
+  for (const auto& key : keys) {
+    Blunder::AnimationKeyframe frame;
+    frame.time = key.first;
+    frame.value = {key.second.x, key.second.y, key.second.z};
+    track.keys.push_back(frame);
+  }
+  return track;
+}
+
+Blunder::Skeleton makeSingleBoneSkeleton(const char* bone_name) {
+  Blunder::Skeleton skeleton;
+  skeleton.addBone(bone_name, -1);
+  return skeleton;
+}
+
+Blunder::AnimationClipData makeTranslationClip(const char* name, float duration,
+                                               const Blunder::Vec3& translation) {
+  Blunder::AnimationClipData clip;
+  clip.name = name;
+  clip.duration = duration;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", Blunder::AnimationInterpolation::Constant,
+      {{0.0f, translation}, {duration, translation}}));
+  return clip;
 }
 
 Blunder::AnimationClipData make_test_clip(const char* name, float duration) {
@@ -594,6 +635,83 @@ void test_fire_same_name_validation() {
               float_near(player_a.getPlaybackPosition(), 0.5f));
 }
 
+void test_sync_group_api_has_no_skeleton_parameters() {
+  using namespace Blunder;
+
+  static_assert(
+      std::is_same_v<decltype(std::declval<SyncGroupFireInstruction>().player),
+                     AnimationPlayer*>,
+      "SyncGroupFireInstruction must reference AnimationPlayer only");
+  static_assert(
+      !std::is_invocable_v<decltype(&AnimationSyncGroupService::join),
+                           AnimationSyncGroupService*, SyncGroupId, Skeleton*>,
+      "Sync Group join must not accept Skeleton*");
+  static_assert(
+      !std::is_invocable_v<decltype(&AnimationSyncGroupService::fire),
+                           AnimationSyncGroupService*, SyncGroupId,
+                           eastl::vector<Skeleton*>&>,
+      "Sync Group fire must not accept Skeleton* instructions");
+
+  expect_true("fire instruction uses AnimationPlayer*",
+              std::is_same_v<decltype(SyncGroupFireInstruction{}.player),
+                             AnimationPlayer*>);
+}
+
+void test_fire_samples_only_colocated_skeletons() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  Skeleton skeleton_a = makeSingleBoneSkeleton("Hips");
+  Skeleton skeleton_b = makeSingleBoneSkeleton("Hips");
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  player_a.bindSamplingSkeleton(&skeleton_a);
+  player_b.bindSamplingSkeleton(&skeleton_b);
+
+  const eastl::string guid_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const eastl::string guid_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  player_a.setClipGuid("clip_a", guid_a);
+  player_b.setClipGuid("clip_b", guid_b);
+  player_a.injectClipData(guid_a, makeTranslationClip("clip_a", 1.0f,
+                                                       Vec3(10.0f, 0.0f, 0.0f)));
+  player_b.injectClipData(guid_b, makeTranslationClip("clip_b", 1.0f,
+                                                       Vec3(20.0f, 0.0f, 0.0f)));
+
+  const SyncGroupId group = service.create();
+  expect_true("join player_a", service.join(group, &player_a));
+  expect_true("join player_b", service.join(group, &player_b));
+
+  skeleton_a.resetPoseToRest();
+  skeleton_b.resetPoseToRest();
+  expect_true("skeleton_a at rest",
+              vec3_near(skeleton_a.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+  expect_true("skeleton_b at rest",
+              vec3_near(skeleton_b.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player_a, "clip_a"});
+  instructions.push_back(SyncGroupFireInstruction{&player_b, "clip_b"});
+  expect_true("fire heterogeneous clips", service.fire(group, instructions));
+
+  expect_true("player_a drives skeleton_a",
+              vec3_near(skeleton_a.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+  expect_true("player_b drives skeleton_b",
+              vec3_near(skeleton_b.getBonePoseLocal(0).translation,
+                        Vec3(20.0f, 0.0f, 0.0f)));
+  expect_true("skeleton_a not driven by player_b",
+              !vec3_near(skeleton_a.getBonePoseLocal(0).translation,
+                         Vec3(20.0f, 0.0f, 0.0f)));
+  expect_true("skeleton_b not driven by player_a",
+              !vec3_near(skeleton_b.getBonePoseLocal(0).translation,
+                         Vec3(10.0f, 0.0f, 0.0f)));
+}
+
 void test_get_member_at_stable_insertion_order() {
   using namespace Blunder;
 
@@ -640,6 +758,8 @@ int main() {
   test_fire_same_name_clears_dual_slot_blend();
   test_fire_same_name_with_seek();
   test_fire_same_name_validation();
+  test_sync_group_api_has_no_skeleton_parameters();
+  test_fire_samples_only_colocated_skeletons();
   test_get_member_at_stable_insertion_order();
 
   if (g_failures != 0) {

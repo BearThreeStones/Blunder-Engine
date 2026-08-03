@@ -149,6 +149,7 @@ bool AnimationSyncGroupService::fire(
     }
   }
 
+  // Co-located Skeleton only: each player snaps and samples its own bound skeleton.
   for (size_t i = 0; i < instructions.size(); ++i) {
     const SyncGroupFireInstruction& instruction = instructions[i];
     instruction.player->snapPlayWithClip(instruction.clip_name,
