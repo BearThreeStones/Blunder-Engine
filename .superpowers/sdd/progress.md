@@ -23,3 +23,11 @@ Task 1.5: complete (commits 42e6b63, pending review)
 Task 1.5: complete (commits 42e6b63, review clean)
 Task 1.6: complete (commits a60819a, pending review)
 Task 1.7: complete (pending commit)
+
+Task 1.6: complete (commits a60819a, review clean)
+Task 1.7: complete (commits df0f6a0, pending review)
+
+Task 1.7: complete (commits df0f6a0, review clean)
+Task 2.1: complete (commits 9d90999, pending review)
+Task 2.2: complete (pending commit)
+Task 2.3: complete (pending commit)

@@ -1,85 +1,54 @@
-# Task 2.2 Report — Persist Companion Intermediates
+# Task 2.2 Report — Fire on no-tree member remains Phase 3 hard-cut Play
 
-## Status
-
-COMPLETE
+**Status:** DONE  
+**Branch:** `feat/dogwalk-animation-phase-4`
 
 ## Summary
 
-- Accepted companion glTF/GLB files are copied beneath the host mesh
-  Intermediate at `resources/Models/{mesh}/companions/{filename}`.
-- Companion-only files remain Resources data bodies and do not receive Mesh
-  descriptors under `Assets/`.
-- Mesh descriptors now persist the authoritative
-  `companion_animation_sources` list for later Reimport work.
-- `ImportResult::companion_animation_paths` now returns the persisted absolute
-  Intermediate paths rather than the external input paths.
-- Destination filename collisions receive a numeric suffix, and a failed
-  companion batch removes copies already made by that batch.
-- Clip extraction from companion bodies remains Task 2.3.
+Sync Group `fire` on a member that **never had** an AnimationTree continues Phase 3 hard-cut `snapPlayWithClip` semantics: clears crossfade and dual-slot blend, resets playback to clip start, and samples the bound skeleton immediately. Task 2.1 already covered inactive-tree members; this task adds an explicit no-tree path with strengthened assertions.
 
-## TDD Coverage
+## TDD evidence
 
-The Task 2.1 integration test was extended first to require:
+1. **RED:** `test_fire_no_tree_member_phase3_hard_cut` added — dual-slot weighted blend before Fire, player with `getAnimationTree() == nullptr`.
+2. **GREEN:** `animation_sync_group_test.exe` exits 0 (no production changes required; routing from task 2.1 `else` branch already handles `tree == nullptr`).
 
-- copied companion contents under Resources;
-- persisted paths returned from Mesh Import;
-- no companion Mesh descriptors under Assets; and
-- both virtual companion paths recorded in the parsed Mesh descriptor.
+### New test
 
-Descriptor YAML tests cover list round-trip and compatibility with descriptors
-that omit `companion_animation_sources`.
+| Test | Proves |
+|------|--------|
+| `test_fire_no_tree_member_phase3_hard_cut` | No-tree member: Fire clears dual-slot blend, hard-cuts `SYNC-attach`, samples skeleton pose, never touches OneShot |
 
-## Validation
+### Strengthened assertions vs 2.1 inactive-tree test
 
-### RED
+- `getAnimationTree() == nullptr` (never bound, not merely inactive)
+- Dual-slot blend active before Fire → slots and blend weight cleared after
+- Skeleton translation pose matches fired clip at time zero
+- Crossfade cleared, playback position reset
 
-```powershell
-cmake --build build/vs2026-debug --config Debug --target asset_yaml_test
+## Production changes
+
+| File | Change |
+|------|--------|
+| `animation_sync_group_test.cpp` | `test_fire_no_tree_member_phase3_hard_cut` |
+| `tasks.md` | 2.2 marked `[x]` |
+
+No runtime code changes — existing `fire()` branch:
+
+```cpp
+if (tree != nullptr && tree->isActive()) { requestOneShot(...); }
+else { snapPlayWithClip(...); }
 ```
 
-The new descriptor test failed as expected because
-`MeshAssetDescriptor::companion_animation_sources` did not exist.
+covers `tree == nullptr`.
 
-### GREEN
-
-The MSBuild targets were built sequentially to avoid racing their shared
-runtime PCH:
+## Test command
 
 ```powershell
-cmake --build build/vs2026-debug --config Debug --target asset_import_test -- /m:1
-cmake --build build/vs2026-debug --config Debug --target asset_yaml_test -- /m:1
-.\build\vs2026-debug\engine\src\tests\Debug\asset_yaml_test.exe
-.\build\vs2026-debug\engine\src\tests\Debug\asset_import_test.exe
-cmake --build build/vs2026-debug --config Debug --target engine_editor -- /m:1
+cmake --build build/vs2026-debug --target animation_sync_group_test --config Debug
+build/vs2026-debug/engine/src/tests/Debug/animation_sync_group_test.exe
 ```
 
-Results:
+## Concerns
 
-- `asset_yaml_test` exited `0`.
-- `asset_import_test: all passed`.
-- `engine_editor` built successfully.
-
-`git diff --check` passes (apart from the existing line-ending warning for
-`.superpowers/sdd/progress.md`).
-
-## Files Changed
-
-- `CONTENT_LAYOUT.md`
-- `engine/src/runtime/resource/asset/asset_descriptor.h`
-- `engine/src/runtime/resource/asset/asset_yaml.cpp`
-- `engine/src/runtime/resource/asset_import/asset_import_service.h`
-- `engine/src/runtime/resource/asset_import/asset_import_service.cpp`
-- `engine/src/tests/asset_import_test.cpp`
-- `engine/src/tests/asset_yaml_test.cpp`
-- `openspec/changes/companion-animation-gltf-import/tasks.md`
-- `.superpowers/sdd/task-2.2-report.md`
-
-## Concerns / Follow-ups
-
-- Task 3.1 must consume `companion_animation_sources` when refreshing clips on
-  Mesh Reimport.
-- Requesting both test targets in one MSBuild invocation raced their shared
-  runtime PCH/generated Slint objects; sequential `/m:1` builds passed.
-- Existing dirty submodules and `.superpowers/sdd/progress.md` are unrelated to
-  this task and are intentionally excluded from the commit.
+- **Inactive vs no-tree:** Both route through the same hard-cut path; only test setup differs.
+- **Seek on hard-cut Fire:** `has_seek` honored for no-tree members (unchanged from Phase 3).

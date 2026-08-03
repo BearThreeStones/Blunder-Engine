@@ -1018,6 +1018,144 @@ void test_fire_inactive_tree_member_still_hard_cut() {
   expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
 }
 
+void test_fire_no_tree_member_phase3_hard_cut() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  player.bindSamplingSkeleton(&skeleton);
+  expect_true("no tree bound", player.getAnimationTree() == nullptr);
+
+  bind_clip(player, "idle", "11111111-1111-1111-1111-111111111111", 2.0f);
+  bind_clip(player, "walk", "22222222-2222-2222-2222-222222222222", 3.0f);
+  bind_clip(player, "SYNC-attach", "33333333-3333-3333-3333-333333333333", 1.5f);
+
+  const eastl::string sync_guid = "33333333-3333-3333-3333-333333333333";
+  player.injectClipData(
+      sync_guid,
+      makeTranslationClip("SYNC-attach", 1.5f, Vec3(17.0f, 0.0f, 0.0f)));
+
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, &player));
+
+  expect_true("slot0 idle", player.setSlot(0, "idle"));
+  expect_true("slot1 walk", player.setSlot(1, "walk"));
+  player.setBlendWeight(0.55f);
+  expect_true("play idle", player.play("idle"));
+  player.advance(0.35f);
+  expect_true("dual slot active",
+              !player.getSlotClipName(0).empty() &&
+                  !player.getSlotClipName(1).empty());
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player, "SYNC-attach"});
+  expect_true("fire hard cut", service.fire(group, instructions));
+
+  expect_true("still no tree", player.getAnimationTree() == nullptr);
+  expect_true("sync playing", player.isPlaying());
+  expect_true("sync clip", player.getCurrentClipName() == "SYNC-attach");
+  expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
+  expect_true("not crossfading", !player.isCrossfading());
+  expect_true("blend weight cleared", float_near(player.getBlendWeight(), 0.0f));
+  expect_true("slot0 cleared", player.getSlotClipName(0).empty());
+  expect_true("slot1 cleared", player.getSlotClipName(1).empty());
+  expect_true("sync pose sampled",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(17.0f, 0.0f, 0.0f)));
+}
+
+void test_fire_mixed_group_aligns_same_logical_moment() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  Skeleton skeleton_character = makeSingleBoneSkeleton("Hips");
+  Skeleton skeleton_prop = makeSingleBoneSkeleton("Hips");
+
+  AnimationPlayer character_player;
+  AnimationPlayer prop_player;
+  AnimationTree character_tree;
+
+  character_player.bindSamplingSkeleton(&skeleton_character);
+  prop_player.bindSamplingSkeleton(&skeleton_prop);
+  character_tree.bindAnimationPlayer(&character_player);
+  character_tree.bindSamplingSkeleton(&skeleton_character);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string sync_attach_guid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const eastl::string sync_prop_guid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+
+  character_player.setClipGuid("walk", walk_guid);
+  character_player.setClipGuid("SYNC-attach", sync_attach_guid);
+  character_player.injectClipData(
+      walk_guid, makeTranslationClip("walk", 2.0f, Vec3(3.0f, 0.0f, 0.0f)));
+  character_player.injectClipData(
+      sync_attach_guid,
+      makeTranslationClip("SYNC-attach", 1.0f, Vec3(50.0f, 0.0f, 0.0f)));
+
+  prop_player.setClipGuid("SYNC-prop", sync_prop_guid);
+  AnimationClipData sync_prop_clip;
+  sync_prop_clip.duration = 1.0f;
+  sync_prop_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 25.0f, 0.0f)}}));
+  prop_player.injectClipData(sync_prop_guid, sync_prop_clip);
+
+  expect_true("character locomotion state",
+              character_tree.setStateClip("Locomotion", "walk"));
+  expect_true("activate character tree", character_tree.setActive(true));
+  character_tree.travel("Locomotion");
+  character_tree.advance(0.4f);
+  expect_true("prop has no tree", prop_player.getAnimationTree() == nullptr);
+
+  const SyncGroupId group = service.create();
+  expect_true("join character", service.join(group, &character_player));
+  expect_true("join prop", service.join(group, &prop_player));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(
+      SyncGroupFireInstruction{&character_player, "SYNC-attach"});
+  instructions.push_back(
+      SyncGroupFireInstruction{&prop_player, "SYNC-prop"});
+  expect_true("mixed fire succeeds", service.fire(group, instructions));
+
+  expect_true("character tree active", character_tree.isActive());
+  expect_true("character one-shot active", character_tree.isOneShotActive());
+  expect_true("character player blocks sampling",
+              character_player.isTreeBlockingSampling());
+  expect_true("character not hard-cut playing", !character_player.isPlaying());
+  expect_true("character state unchanged",
+              character_tree.getCurrentStateName() == "Locomotion");
+  expect_true("character attach pose at fire moment",
+              vec3_near(skeleton_character.getBonePoseLocal(0).translation,
+                        Vec3(50.0f, 0.0f, 0.0f)));
+
+  expect_true("prop hard-cut playing", prop_player.isPlaying());
+  expect_true("prop sync clip", prop_player.getCurrentClipName() == "SYNC-prop");
+  expect_true("prop position zero",
+              float_near(prop_player.getPlaybackPosition(), 0.0f));
+  expect_true("prop not crossfading", !prop_player.isCrossfading());
+  expect_true("prop pose at fire moment",
+              vec3_near(skeleton_prop.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+
+  character_tree.advance(0.25f);
+  prop_player.advance(0.25f);
+  expect_true("character one-shot still active", character_tree.isOneShotActive());
+  expect_true("prop advanced playback",
+              float_near(prop_player.getPlaybackPosition(), 0.25f));
+  expect_true("character attach pose mid one-shot",
+              vec3_near(skeleton_character.getBonePoseLocal(0).translation,
+                        Vec3(50.0f, 0.0f, 0.0f)));
+  expect_true("prop pose mid playback",
+              vec3_near(skeleton_prop.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 6.25f, 0.0f)));
+}
+
 void test_fire_active_tree_via_object_binding() {
   using namespace Blunder;
 
@@ -1094,6 +1232,8 @@ int main() {
   test_fire_active_tree_member_applies_oneshot();
   test_fire_active_tree_does_not_deactivate_tree();
   test_fire_inactive_tree_member_still_hard_cut();
+  test_fire_no_tree_member_phase3_hard_cut();
+  test_fire_mixed_group_aligns_same_logical_moment();
   test_fire_active_tree_via_object_binding();
 
   if (g_failures != 0) {

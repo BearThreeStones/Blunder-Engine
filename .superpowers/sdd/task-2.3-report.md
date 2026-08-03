@@ -1,77 +1,53 @@
-# Task 2.3 Report — Extract Companion Animation Clips
+# Task 2.3 Report — Mixed group aligns at same logical moment
 
-## Status
-
-COMPLETE
+**Status:** DONE  
+**Branch:** `feat/dogwalk-animation-phase-4`
 
 ## Summary
 
-- Mesh Import now extracts and registers clips from every copied companion
-  Intermediate glTF after embedded mesh clips.
-- Companion clip logical names prefer the companion filename stem. Files with
-  multiple animations use the stem for the first clip and `_1`, `_2`, ...
-  suffixes for later clips.
-- Companion clips share the host mesh stem for their
-  `resources/Animations/{mesh}/` Intermediate folder and are merged into the
-  host `ImportResult::animation_clips`.
-- Animation targets absent from the host skin emit a warning, while extraction
-  and registration continue.
+A single Sync Group `fire` call on a **mixed group** (character with active AnimationTree + prop with no tree) applies **OneShot** on the character (`SYNC-attach`) and **hard-cut Play** on the prop (`SYNC-prop`) in one batch. Both co-located skeletons receive starting poses at the fire moment; subsequent `advance` on each member progresses independently from that shared logical instant.
 
-## TDD Evidence
+## TDD evidence
 
-The existing companion Import integration test was extended before production
-changes to require:
+1. **RED:** `test_fire_mixed_group_aligns_same_logical_moment` added — spec scenario: character OneShot `SYNC-attach` + prop hard-cut `SYNC-prop` same Fire.
+2. **GREEN:** `animation_sync_group_test.exe` exits 0 (routing from task 2.1 handles per-member branching in one `fire()` loop).
 
-- one host Mesh result plus all companion clip results;
-- filename-stem naming for a single-animation companion;
-- numeric suffix disambiguation for a multi-animation companion; and
-- successful registration and retained track data for a `Tail` animation
-  targeting a host whose skin only contains `Hips`.
+### New test
 
-The first run failed with 10 focused assertions because no companion clips were
-registered. After implementation and correction of the synthetic fixture's
-embedded buffer layout, the same test passed.
+| Test | Proves |
+|------|--------|
+| `test_fire_mixed_group_aligns_same_logical_moment` | Single Fire: character tree stays active + OneShot samples attach pose; prop hard-cuts `SYNC-prop` at t=0; both skeletons posed; joint advance continues from fire moment |
 
-## Validation
+### Assertions at fire moment
 
-Build:
+| Member | Route | Post-fire state |
+|--------|-------|-----------------|
+| Character (active tree) | `requestOneShot("SYNC-attach")` | Tree active, OneShot active, Player blocked, locomotion state unchanged, attach pose on skeleton |
+| Prop (no tree) | `snapPlayWithClip("SYNC-prop")` | Playing, position 0, not crossfading, start pose on skeleton |
 
-```powershell
-cmd /c "set CL=/Zm200&& cmake --build build/vs2026-debug --config Debug --target asset_import_test -- /m:1 /p:CL_MPCount=1"
-```
+### Post-advance (0.25s)
 
-Result: exit `0`.
+- Character OneShot still active; attach pose held (constant clip)
+- Prop playback at 0.25s; linear clip pose interpolated
 
-Test:
+## Production changes
+
+| File | Change |
+|------|--------|
+| `animation_sync_group_test.cpp` | `test_fire_mixed_group_aligns_same_logical_moment` |
+| `tasks.md` | 2.3 marked `[x]` |
+
+No runtime code changes — per-member routing in `animation_sync_group.cpp::fire()` already processes heterogeneous instructions in one atomic batch.
+
+## Test command
 
 ```powershell
-$env:PATH = "<worktree>/build/vs2026-debug/bin/Debug;<worktree>/.cmake_deps/slint-build;$env:VULKAN_SDK/Bin;$env:PATH"
-.\build\vs2026-debug\engine\src\tests\Debug\asset_import_test.exe
+cmake --build build/vs2026-debug --target animation_sync_group_test --config Debug
+build/vs2026-debug/engine/src/tests/Debug/animation_sync_group_test.exe
 ```
 
-Result: exit `0`, `asset_import_test: all passed`.
+## Concerns
 
-The passing output includes the expected mismatch warning:
-
-```text
-[AssetImport] companion animation bone 'Tail' is absent from host skeleton ...;
-registering clip anyway (...)
-```
-
-## Files Changed
-
-- `engine/src/runtime/resource/asset_import/asset_import_service.cpp`
-- `engine/src/runtime/resource/asset_import/companion_animation_gltf.cpp`
-- `engine/src/runtime/resource/asset_import/companion_animation_gltf.h`
-- `engine/src/runtime/resource/asset_import/gltf_animation_clip_extractor.cpp`
-- `engine/src/runtime/resource/asset_import/gltf_animation_clip_extractor.h`
-- `engine/src/tests/asset_import_test.cpp`
-- `openspec/changes/companion-animation-gltf-import/tasks.md`
-- `.superpowers/sdd/task-2.3-report.md`
-
-## Concerns / Follow-ups
-
-- Task 3.1 still needs to refresh companion-derived clips from the persisted
-  `companion_animation_sources` list while preserving GUIDs.
-- Existing dirty submodules and `.superpowers/sdd/progress.md` are unrelated to
-  Task 2.3 and are intentionally excluded from this commit.
+- **Atomic failure:** If prop clip fails to resolve, entire `fire` fails before any member changes (existing `test_fire_atomic_on_resolve_failure`).
+- **Seek asymmetry:** `has_seek` applies to hard-cut members only; OneShot members ignore seek until `setOneShotTime` exists.
+- **Managed API:** Task 5.2 must expose same per-member routing through C-ABI / Blunder.Api.

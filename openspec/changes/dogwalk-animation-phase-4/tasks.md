@@ -11,8 +11,8 @@
 ## 2. Sync Fire → OneShot
 
 - [x] 2.1 TDD: Sync Group Fire on active-tree member applies OneShot; tree stays active
-- [ ] 2.2 TDD: Fire on no-tree member remains Phase 3 hard-cut Play
-- [ ] 2.3 TDD: mixed group (tree character + player prop) aligns at same logical moment
+- [x] 2.2 TDD: Fire on no-tree member remains Phase 3 hard-cut Play
+- [x] 2.3 TDD: mixed group (tree character + player prop) aligns at same logical moment
 
 ## 3. Scene embed + named API
 
