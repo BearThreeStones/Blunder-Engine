@@ -110,12 +110,92 @@ void test_player_may_join_multiple_groups() {
   expect_true("still in group_b", service.isMember(group_b, &player));
 }
 
+void test_destroy_invalid_and_unknown_ids() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  expect_true("destroy invalid id fails",
+              !service.destroy(k_invalid_sync_group_id));
+
+  const SyncGroupId live = service.create();
+  expect_true("destroy unknown id fails", !service.destroy(live + 1000));
+  expect_true("live group still usable", service.getMemberCount(live) == 0);
+}
+
+void test_join_unknown_group_id() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player;
+  const SyncGroupId live = service.create();
+
+  expect_true("join unknown id fails", !service.join(live + 1000, &player));
+  expect_true("leave unknown id fails", !service.leave(live + 1000, &player));
+  expect_true("not member of unknown id",
+              !service.isMember(live + 1000, &player));
+  expect_true("unknown id member count zero",
+              service.getMemberCount(live + 1000) == 0);
+  expect_true("getMemberAt unknown id null",
+              service.getMemberAt(live + 1000, 0) == nullptr);
+}
+
+void test_create_returns_distinct_ids() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  const SyncGroupId group_a = service.create();
+  const SyncGroupId group_b = service.create();
+  const SyncGroupId group_c = service.create();
+
+  expect_true("ids non-zero",
+              group_a != k_invalid_sync_group_id &&
+                  group_b != k_invalid_sync_group_id &&
+                  group_c != k_invalid_sync_group_id);
+  expect_true("ids distinct",
+              group_a != group_b && group_b != group_c && group_a != group_c);
+}
+
+void test_get_member_at_stable_insertion_order() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  AnimationPlayer player_c;
+  const SyncGroupId group = service.create();
+
+  expect_true("join order a", service.join(group, &player_a));
+  expect_true("join order b", service.join(group, &player_b));
+  expect_true("join order c", service.join(group, &player_c));
+  expect_true("member count three", service.getMemberCount(group) == 3);
+
+  expect_true("index 0 is player_a",
+              service.getMemberAt(group, 0) == &player_a);
+  expect_true("index 1 is player_b",
+              service.getMemberAt(group, 1) == &player_b);
+  expect_true("index 2 is player_c",
+              service.getMemberAt(group, 2) == &player_c);
+  expect_true("out of range null", service.getMemberAt(group, 3) == nullptr);
+}
+
 int main() {
   test_create_returns_valid_id();
   test_join_and_leave_members();
   test_destroy_releases_group();
   test_join_leave_validation();
   test_player_may_join_multiple_groups();
+  test_destroy_invalid_and_unknown_ids();
+  test_join_unknown_group_id();
+  test_create_returns_distinct_ids();
+  test_get_member_at_stable_insertion_order();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
