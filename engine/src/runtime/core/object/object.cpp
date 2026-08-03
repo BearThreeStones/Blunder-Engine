@@ -355,6 +355,12 @@ void Object::updateAnimationSamplingBinding() {
   }
   if (m_animation_tree != nullptr) {
     m_animation_tree->bindAnimationPlayer(m_animation_player.get());
+    m_animation_tree->bindSamplingSkeleton(m_skeleton.get());
+    if (m_animation_player != nullptr) {
+      m_animation_player->setTreeBlocksSampling(m_animation_tree->isActive());
+    }
+  } else if (m_animation_player != nullptr) {
+    m_animation_player->setTreeBlocksSampling(false);
   }
 }
 

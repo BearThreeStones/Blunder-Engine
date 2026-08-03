@@ -120,6 +120,14 @@ void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
   m_sampling_skeleton = skeleton;
 }
 
+void AnimationPlayer::setTreeBlocksSampling(bool blocks) {
+  m_tree_blocks_sampling = blocks;
+}
+
+void AnimationPlayer::resampleBoundSkeleton() {
+  sampleBoundSkeleton();
+}
+
 void AnimationPlayer::addPoseAppliedListener(PoseAppliedFn fn, void* userdata) {
   if (fn == nullptr) {
     return;
@@ -159,6 +167,9 @@ void AnimationPlayer::notifyFinished() {
 }
 
 void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
+  if (m_tree_blocks_sampling) {
+    return;
+  }
   AnimationClipData clip0;
   AnimationClipData clip1;
   const bool has_slot0 = resolveSlotClip(0, clip0);
@@ -189,7 +200,7 @@ void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
 }
 
 void AnimationPlayer::sampleBoundSkeleton() {
-  if (m_sampling_skeleton == nullptr || !m_playing) {
+  if (m_sampling_skeleton == nullptr || !m_playing || m_tree_blocks_sampling) {
     return;
   }
   if (hasActiveSlot() || m_has_current_clip) {

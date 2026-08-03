@@ -87,6 +87,13 @@ class AnimationPlayer {
   void bindSamplingSkeleton(Skeleton* skeleton);
   void sampleOntoSkeleton(Skeleton& skeleton);
 
+  /// When an active AnimationTree owns sampling, Player SHALL NOT write bones.
+  void setTreeBlocksSampling(bool blocks);
+  bool isTreeBlockingSampling() const { return m_tree_blocks_sampling; }
+
+  /// Re-apply current playback state to the bound skeleton (e.g. tree deactivated).
+  void resampleBoundSkeleton();
+
  private:
   void notifyPoseApplied();
   void notifyFinished();
@@ -140,6 +147,7 @@ class AnimationPlayer {
   float m_crossfade_target_weight{0.0f};
   eastl::vector<PoseAppliedListener> m_pose_applied_listeners;
   eastl::vector<FinishedListener> m_finished_listeners;
+  bool m_tree_blocks_sampling{false};
 };
 
 }  // namespace Blunder
