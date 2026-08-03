@@ -18,6 +18,13 @@ static unsafe class Program
     static string s_slot1Clip = "";
     static float s_blendWeight = 0.5f;
     static float s_timeScale = 1.0f;
+    static int s_treeActive;
+    static string s_lastTravelState = "";
+    static string s_lastStartState = "";
+    static string s_lastBlendNode = "";
+    static float s_blendSpaceScalar;
+    static string s_lastOneShotClip = "";
+    static float s_add2Weight;
 
     static ulong s_syncGroupId = 100;
     static int s_lastSuppressFlag = -1;
@@ -34,8 +41,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 48 * sizeof(nint),
-            "BlunderNativeAbi layout size is 48 pointers");
+            sizeof(BlunderNativeAbi) == 57 * sizeof(nint),
+            "BlunderNativeAbi layout size is 57 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -96,6 +103,15 @@ static unsafe class Program
         abi.animation_player_get_clip_length = &StubAnimationGetLength;
         abi.animation_player_add_pose_applied_listener = &StubAnimationAddPoseListener;
         abi.animation_player_clear_pose_applied_listeners = &StubAnimationClearPoseListeners;
+        abi.animation_tree_set_active = &StubAnimationTreeSetActive;
+        abi.animation_tree_get_active = &StubAnimationTreeGetActive;
+        abi.animation_tree_travel = &StubAnimationTreeTravel;
+        abi.animation_tree_start = &StubAnimationTreeStart;
+        abi.animation_tree_set_blend_space_scalar = &StubAnimationTreeSetBlendSpaceScalar;
+        abi.animation_tree_get_blend_space_scalar = &StubAnimationTreeGetBlendSpaceScalar;
+        abi.animation_tree_request_one_shot = &StubAnimationTreeRequestOneShot;
+        abi.animation_tree_set_add2_weight = &StubAnimationTreeSetAdd2Weight;
+        abi.animation_tree_get_add2_weight = &StubAnimationTreeGetAdd2Weight;
         abi.sync_group_create = &StubSyncGroupCreate;
         abi.sync_group_destroy = &StubSyncGroupDestroy;
         abi.sync_group_join = &StubSyncGroupJoin;
@@ -136,7 +152,9 @@ static unsafe class Program
         Expect(rejected, "Register must reject incomplete (null) tables");
 
         RunAnimationPlayerSmokeTests();
+        RunAnimationTreeSmokeTests();
         RunSyncGroupAndCineSmokeTests();
+        RunSyncFireOneShotSmokeTests();
 
         if (s_failures == 0)
         {
@@ -201,6 +219,75 @@ static unsafe class Program
         Expect(
             Native.blunder_animation_player_play_with_fade(7, "trot", 1.25f) == Native.Ok,
             "Native play_with_fade after register");
+    }
+
+    static void RunAnimationTreeSmokeTests()
+    {
+        s_treeActive = 0;
+        s_lastTravelState = "";
+        s_lastStartState = "";
+        s_lastBlendNode = "";
+        s_blendSpaceScalar = 0.5f;
+        s_lastOneShotClip = "";
+        s_add2Weight = 0.25f;
+
+        ObjectHandle handle = ObjectHandle.GetOrCreate(7);
+        AnimationTree tree = handle.EnsureAnimationTree();
+
+        tree.Active = true;
+        Expect(s_treeActive == 1, "AnimationTree.Active set");
+        Expect(tree.Active, "AnimationTree.Active get");
+
+        Expect(tree.Travel("Locomotion"), "AnimationTree.Travel");
+        Expect(s_lastTravelState == "Locomotion", "Travel forwarded to native");
+        Expect(tree.Start("Locomotion"), "AnimationTree.Start");
+        Expect(s_lastStartState == "Locomotion", "Start forwarded to native");
+
+        tree.SetBlendSpaceScalar("Locomotion", 0.75f);
+        Expect(s_lastBlendNode == "Locomotion" &&
+               Math.Abs(s_blendSpaceScalar - 0.75f) < 0.0001f,
+            "SetBlendSpaceScalar forwarded");
+        Expect(Math.Abs(tree.GetBlendSpaceScalar("Locomotion") - 0.75f) < 0.0001f,
+            "GetBlendSpaceScalar forwarded");
+
+        Expect(tree.RequestOneShot("trip"), "AnimationTree.RequestOneShot");
+        Expect(s_lastOneShotClip == "trip", "RequestOneShot forwarded");
+
+        tree.Add2Weight = 0.9f;
+        Expect(Math.Abs(s_add2Weight - 0.9f) < 0.0001f, "Add2Weight set");
+        Expect(Math.Abs(tree.Add2Weight - 0.9f) < 0.0001f, "Add2Weight get");
+
+        Expect(
+            Native.blunder_animation_tree_set_active(7, 0) == Native.Ok,
+            "Native animation_tree_set_active after register");
+        Expect(
+            Native.blunder_animation_tree_get_active(7, out int active) == Native.Ok &&
+            active == 0,
+            "Native animation_tree_get_active after register");
+    }
+
+    static void RunSyncFireOneShotSmokeTests()
+    {
+        s_treeActive = 1;
+        s_lastOneShotClip = "";
+
+        AnimationSyncGroup group = AnimationSyncGroup.Create();
+        ObjectHandle player = ObjectHandle.GetOrCreate(7);
+        Expect(group.Join(player), "Sync Fire OneShot group join");
+
+        SyncGroupFireInstruction[] instructions =
+        [
+            new SyncGroupFireInstruction
+            {
+                Player = player,
+                ClipName = "trip",
+            },
+        ];
+        Expect(group.Fire(instructions), "Sync Fire on active-tree member");
+        Expect(s_lastOneShotClip == "trip", "Sync Fire routes to native OneShot path");
+        Expect(s_treeActive == 1, "Sync Fire keeps tree active");
+
+        Expect(group.Destroy(), "Sync Fire OneShot group destroy");
     }
 
     static void RunSyncGroupAndCineSmokeTests()
@@ -584,6 +671,115 @@ static unsafe class Program
         id == 0 ? Native.Error : Native.Ok;
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetActive(ulong id, int active)
+    {
+        if (id == 0)
+        {
+            return Native.Error;
+        }
+
+        s_treeActive = active;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetActive(ulong id, int* outActive)
+    {
+        if (id == 0 || outActive == null)
+        {
+            return Native.Error;
+        }
+
+        *outActive = s_treeActive;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeTravel(ulong id, byte* stateName)
+    {
+        if (id == 0 || stateName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastTravelState = Utf8ToString(stateName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeStart(ulong id, byte* stateName)
+    {
+        if (id == 0 || stateName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastStartState = Utf8ToString(stateName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetBlendSpaceScalar(ulong id, byte* nodeName, float scalar)
+    {
+        if (id == 0 || nodeName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastBlendNode = Utf8ToString(nodeName);
+        s_blendSpaceScalar = scalar;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetBlendSpaceScalar(ulong id, byte* nodeName, float* outScalar)
+    {
+        if (id == 0 || nodeName == null || outScalar == null)
+        {
+            return Native.Error;
+        }
+
+        *outScalar = s_blendSpaceScalar;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeRequestOneShot(ulong id, byte* clipName)
+    {
+        if (id == 0 || clipName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastOneShotClip = Utf8ToString(clipName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetAdd2Weight(ulong id, float weight)
+    {
+        if (id == 0)
+        {
+            return Native.Error;
+        }
+
+        s_add2Weight = weight;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetAdd2Weight(ulong id, float* outWeight)
+    {
+        if (id == 0 || outWeight == null)
+        {
+            return Native.Error;
+        }
+
+        *outWeight = s_add2Weight;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     static ulong StubSyncGroupCreate()
     {
         ++s_syncGroupId;
@@ -630,6 +826,10 @@ static unsafe class Program
         }
 
         s_lastFireCount = instructionCount;
+        if (s_treeActive != 0 && instructionCount > 0 && instructions != null)
+        {
+            s_lastOneShotClip = Utf8ToString(instructions[0].clip_name);
+        }
         return Native.Ok;
     }
 

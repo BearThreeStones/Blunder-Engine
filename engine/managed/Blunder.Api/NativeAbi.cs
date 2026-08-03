@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v7 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v8 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -53,6 +53,17 @@ public unsafe struct BlunderNativeAbi
         animation_player_add_pose_applied_listener;
     public delegate* unmanaged[Cdecl]<ulong, int>
         animation_player_clear_pose_applied_listeners;
+    public delegate* unmanaged[Cdecl]<ulong, int, int> animation_tree_set_active;
+    public delegate* unmanaged[Cdecl]<ulong, int*, int> animation_tree_get_active;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_travel;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_start;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float, int>
+        animation_tree_set_blend_space_scalar;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float*, int>
+        animation_tree_get_blend_space_scalar;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_request_one_shot;
+    public delegate* unmanaged[Cdecl]<ulong, float, int> animation_tree_set_add2_weight;
+    public delegate* unmanaged[Cdecl]<ulong, float*, int> animation_tree_get_add2_weight;
     public delegate* unmanaged[Cdecl]<ulong> sync_group_create;
     public delegate* unmanaged[Cdecl]<ulong, int> sync_group_destroy;
     public delegate* unmanaged[Cdecl]<ulong, ulong, int> sync_group_join;

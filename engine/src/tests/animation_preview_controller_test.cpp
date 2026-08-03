@@ -1,4 +1,5 @@
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/lifecycle.h"
@@ -15,6 +16,7 @@ int g_ready_calls = 0;
 
 constexpr const char* kWalkGuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 constexpr const char* kIdleGuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+constexpr const char* kTurnGuid = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
 void expect_true(const char* label, bool ok) {
   if (!ok) {
@@ -89,6 +91,26 @@ Blunder::Object* makePreviewObject(Blunder::Skeleton** out_skeleton,
   if (out_skeleton != nullptr) {
     *out_skeleton = skeleton;
   }
+  return object;
+}
+
+Blunder::Object* makeTreePreviewObject(Blunder::Skeleton** out_skeleton) {
+  using namespace Blunder;
+
+  Object* object = makePreviewObject(out_skeleton, true);
+  if (object == nullptr) {
+    return nullptr;
+  }
+
+  AnimationTree* tree = object->ensureAnimationTree();
+  AnimationPlayer* player = object->getAnimationPlayer();
+  if (tree == nullptr || player == nullptr) {
+    return nullptr;
+  }
+
+  tree->addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree->addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree->setStateBlendSpace("Locomotion", "Locomotion");
   return object;
 }
 
@@ -302,12 +324,138 @@ void test_preview_scrub_paths_skip_behaviour_tick() {
   LifecycleDispatch::clear();
 }
 
+void test_tree_activate_and_scrub_without_behaviour_lifecycle() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  g_ready_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+  LifecycleDispatch::setReadyHook("Object", on_ready);
+
+  Skeleton* skeleton = nullptr;
+  Object* object = makeTreePreviewObject(&skeleton);
+  expect_true("object created", object != nullptr);
+
+  int peer = 0;
+  object->addBehaviour("Object");
+  object->setBehaviourScriptPeer(object->getBehaviourIdAt(0), &peer);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  expect_true("has tree", controller.hasTree());
+  expect_true("activate tree", controller.setTreeActive(true));
+  expect_true("tree active", controller.isTreeActive());
+  expect_true("activate skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  expect_true("travel", controller.travel("Locomotion"));
+  expect_true("start", controller.start("Locomotion"));
+  expect_true("travel skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  controller.setBlendSpaceScalar("Locomotion", 0.5f);
+  expect_true("blend scalar applied",
+              float_near(controller.blendSpaceScalar("Locomotion"), 0.5f));
+  expect_true("blend scalar skips tick", g_tick_calls == 0);
+  expect_true("blend sampled midpoint",
+              float_near(skeleton->getBonePoseLocal(0).translation.x, 2.0f));
+
+  controller.setTimeScale(2.0f);
+  expect_true("play", controller.play());
+  controller.tick(0.25f);
+  expect_true("tree preview tick skips behaviour", g_tick_calls == 0);
+  expect_true("tree preview tick skips ready", g_ready_calls == 0);
+  expect_true("timeScale advances tree preview",
+              float_near(controller.playbackPosition(), 0.5f));
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_tree_oneshot_and_add2_scrub_without_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  g_ready_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+  LifecycleDispatch::setReadyHook("Object", on_ready);
+
+  Skeleton* skeleton = nullptr;
+  Object* object = makeTreePreviewObject(&skeleton);
+  AnimationTree* tree = object->getAnimationTree();
+  expect_true("tree", tree != nullptr);
+
+  AnimationClipData turn_clip;
+  turn_clip.duration = 1.0f;
+  turn_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(6.0f, 0.0f, 0.0f)}}));
+  object->getAnimationPlayer()->setClipGuid("turn", kTurnGuid);
+  object->getAnimationPlayer()->injectClipData(kTurnGuid, turn_clip);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  expect_true("activate", controller.setTreeActive(true));
+  expect_true("travel", controller.travel("Locomotion"));
+
+  expect_true("set add2 clip", controller.setAdd2ClipName("turn"));
+  controller.setAdd2Weight(0.5f);
+  expect_true("add2 weight", float_near(controller.add2Weight(), 0.5f));
+  expect_true("add2 scrub skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  expect_true("request oneshot", controller.requestOneShot("walk"));
+  expect_true("oneshot active", tree->isOneShotActive());
+  expect_true("oneshot scrub skips tick", g_tick_calls == 0 && g_ready_calls == 0);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_edit_tree_scrub_requires_no_graph_editor_or_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  g_ready_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+  LifecycleDispatch::setReadyHook("Object", on_ready);
+
+  Object* object = makeTreePreviewObject(nullptr);
+  int peer = 0;
+  object->addBehaviour("Object");
+  object->setBehaviourScriptPeer(object->getBehaviourIdAt(0), &peer);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+
+  expect_true("scene-embedded tree only (no graph editor API)",
+              controller.hasTree());
+  expect_true("setTreeActive", controller.setTreeActive(true));
+  controller.setBlendSpaceScalar("Locomotion", 0.25f);
+  controller.setTimeScale(1.5f);
+  expect_true("play", controller.play());
+  controller.tick(0.1f);
+
+  expect_true("no behaviour tick during tree edit scrub", g_tick_calls == 0);
+  expect_true("no behaviour ready during tree edit scrub", g_ready_calls == 0);
+  expect_true("tree still active after scrub", controller.isTreeActive());
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
 }  // namespace
 
 int main() {
   test_play_pause_stop_state_machine();
   test_tick_advances_without_behaviour_lifecycle();
   test_preview_scrub_paths_skip_behaviour_tick();
+  test_tree_activate_and_scrub_without_behaviour_lifecycle();
+  test_tree_oneshot_and_add2_scrub_without_behaviour_tick();
+  test_edit_tree_scrub_requires_no_graph_editor_or_behaviour_tick();
   test_time_scale_scrub_affects_tick();
   test_blend_weight_scrub_updates_player();
   test_play_uses_fade_duration();

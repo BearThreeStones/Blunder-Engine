@@ -36,6 +36,11 @@ class AnimationPreviewController final {
   float fadeSeconds() const { return m_fade_seconds; }
   const eastl::string& slotClipName(int slot_index) const;
 
+  bool hasTree() const;
+  bool isTreeActive() const;
+  float blendSpaceScalar(const eastl::string& node_name) const;
+  float add2Weight() const;
+
   void bindObject(Object* object, const eastl::string& default_clip_name = {});
   void bindSelection(SceneInstance* scene, EntityId entity_id);
   void clearTarget();
@@ -51,6 +56,14 @@ class AnimationPreviewController final {
   void setBlendWeight(float weight);
   void setFadeSeconds(float fade_seconds);
   bool setSlot(int slot_index, const eastl::string& name);
+
+  bool setTreeActive(bool active);
+  bool travel(const eastl::string& state_name);
+  bool start(const eastl::string& state_name);
+  void setBlendSpaceScalar(const eastl::string& node_name, float scalar);
+  bool requestOneShot(const eastl::string& clip_name);
+  void setAdd2Weight(float weight);
+  bool setAdd2ClipName(const eastl::string& name);
 
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);

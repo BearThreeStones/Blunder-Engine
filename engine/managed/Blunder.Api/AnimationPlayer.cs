@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for an Object's co-located AnimationPlayer (C-ABI v7).
+/// Managed façade for an Object's co-located AnimationPlayer (C-ABI v8).
 /// </summary>
 public sealed class AnimationPlayer
 {

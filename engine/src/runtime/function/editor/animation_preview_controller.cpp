@@ -1,6 +1,7 @@
 #include "runtime/function/editor/animation_preview_controller.h"
 
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
@@ -16,6 +17,13 @@ AnimationPlayer* playerFor(Object* object) {
     return nullptr;
   }
   return object->getAnimationPlayer();
+}
+
+AnimationTree* treeFor(Object* object) {
+  if (object == nullptr || !object->hasAnimationTree()) {
+    return nullptr;
+  }
+  return object->getAnimationTree();
 }
 
 }  // namespace
@@ -208,10 +216,89 @@ bool AnimationPreviewController::setSlot(const int slot_index,
   return true;
 }
 
+bool AnimationPreviewController::hasTree() const {
+  return treeFor(m_target_object) != nullptr;
+}
+
+bool AnimationPreviewController::isTreeActive() const {
+  const AnimationTree* tree = treeFor(m_target_object);
+  return tree != nullptr && tree->isActive();
+}
+
+float AnimationPreviewController::blendSpaceScalar(
+    const eastl::string& node_name) const {
+  const AnimationTree* tree = treeFor(m_target_object);
+  return tree != nullptr ? tree->getBlendSpaceScalar(node_name) : 0.0f;
+}
+
+float AnimationPreviewController::add2Weight() const {
+  const AnimationTree* tree = treeFor(m_target_object);
+  return tree != nullptr ? tree->getAdd2Weight() : 0.0f;
+}
+
+bool AnimationPreviewController::setTreeActive(const bool active) {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    return false;
+  }
+  return tree->setActive(active);
+}
+
+bool AnimationPreviewController::travel(const eastl::string& state_name) {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    return false;
+  }
+  return tree->travel(state_name);
+}
+
+bool AnimationPreviewController::start(const eastl::string& state_name) {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    return false;
+  }
+  return tree->start(state_name);
+}
+
+void AnimationPreviewController::setBlendSpaceScalar(
+    const eastl::string& node_name, const float scalar) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->setBlendSpaceScalar(node_name, scalar);
+  }
+}
+
+bool AnimationPreviewController::requestOneShot(const eastl::string& clip_name) {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    return false;
+  }
+  return tree->requestOneShot(clip_name);
+}
+
+void AnimationPreviewController::setAdd2Weight(const float weight) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->setAdd2Weight(weight);
+  }
+}
+
+bool AnimationPreviewController::setAdd2ClipName(const eastl::string& name) {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    return false;
+  }
+  return tree->setAdd2ClipName(name);
+}
+
 void AnimationPreviewController::resampleBoundSkeleton() {
   if (m_target_object == nullptr) {
     return;
   }
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree != nullptr && tree->isActive()) {
+    tree->sampleBoundSkeleton();
+    return;
+  }
+
   AnimationPlayer* player = playerFor(m_target_object);
   Skeleton* skeleton = m_target_object->getSkeleton();
   if (player == nullptr || skeleton == nullptr) {

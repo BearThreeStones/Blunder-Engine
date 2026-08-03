@@ -4,7 +4,7 @@ using System.Text;
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for a native Sync Group (C-ABI v7).
+/// Managed façade for a native Sync Group (C-ABI v8).
 /// Members are co-located AnimationPlayers on Objects.
 /// </summary>
 public sealed class AnimationSyncGroup

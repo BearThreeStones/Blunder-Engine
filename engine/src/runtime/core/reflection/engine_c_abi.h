@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 7
+#define BLUNDER_ENGINE_C_ABI_VERSION 8
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -139,6 +139,25 @@ BLUNDER_ENGINE_C_API int blunder_animation_player_add_pose_applied_listener(
 BLUNDER_ENGINE_C_API int blunder_animation_player_clear_pose_applied_listeners(
     BlunderObjectId id);
 
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_active(BlunderObjectId id,
+                                                           int active);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_active(BlunderObjectId id,
+                                                           int* out_active);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_travel(BlunderObjectId id,
+                                                       const char* state_name);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_start(BlunderObjectId id,
+                                                      const char* state_name);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_blend_space_scalar(
+    BlunderObjectId id, const char* node_name, float scalar);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_blend_space_scalar(
+    BlunderObjectId id, const char* node_name, float* out_scalar);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_request_one_shot(
+    BlunderObjectId id, const char* clip_name);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_add2_weight(
+    BlunderObjectId id, float weight);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_add2_weight(
+    BlunderObjectId id, float* out_weight);
+
 typedef uint64_t BlunderSyncGroupId;
 
 typedef struct BlunderSyncGroupFireInstruction {
@@ -233,6 +252,20 @@ typedef struct BlunderNativeAbi {
   int (*animation_player_add_pose_applied_listener)(
       BlunderObjectId id, BlunderPoseAppliedHook hook, void* userdata);
   int (*animation_player_clear_pose_applied_listeners)(BlunderObjectId id);
+  int (*animation_tree_set_active)(BlunderObjectId id, int active);
+  int (*animation_tree_get_active)(BlunderObjectId id, int* out_active);
+  int (*animation_tree_travel)(BlunderObjectId id, const char* state_name);
+  int (*animation_tree_start)(BlunderObjectId id, const char* state_name);
+  int (*animation_tree_set_blend_space_scalar)(BlunderObjectId id,
+                                               const char* node_name,
+                                               float scalar);
+  int (*animation_tree_get_blend_space_scalar)(BlunderObjectId id,
+                                               const char* node_name,
+                                               float* out_scalar);
+  int (*animation_tree_request_one_shot)(BlunderObjectId id,
+                                         const char* clip_name);
+  int (*animation_tree_set_add2_weight)(BlunderObjectId id, float weight);
+  int (*animation_tree_get_add2_weight)(BlunderObjectId id, float* out_weight);
   BlunderSyncGroupId (*sync_group_create)(void);
   int (*sync_group_destroy)(BlunderSyncGroupId id);
   int (*sync_group_join)(BlunderSyncGroupId id, BlunderObjectId player_object_id);

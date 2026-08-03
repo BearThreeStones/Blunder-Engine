@@ -24,13 +24,15 @@
 
 ## 4. Edit Mode preview
 
-- [ ] 4.1 Edit can activate AnimationTree and scrub named drives + TimeScale without DotNetHost / Behaviour Tick
-- [ ] 4.2 Verify Edit does **not** require Behaviour Tick or visual graph editor for scrub Done
+- [x] 4.1 Edit can activate AnimationTree and scrub named drives + TimeScale without DotNetHost / Behaviour Tick
+- [x] 4.2 Verify Edit does **not** require Behaviour Tick or visual graph editor for scrub Done
+
+**Phase 4 Edit scrub (4.2):** `AnimationPreviewController` + `tickObjectAnimationPreviewFrame` drive active-tree BlendSpace scalar, Travel/Start, OneShot, Add2 weight, and Player TimeScale with no Behaviour Tick and no visual graph editor — scene-embedded topology only (see task 3.3).
 
 ## 5. C-ABI + Blunder.Api
 
-- [ ] 5.1 C-ABI for AnimationTree activation + named drives; bump ABI; NativeAbi table
-- [ ] 5.2 Blunder.Api façades + completeness tests; Sync Fire OneShot semantics from managed API
+- [x] 5.1 C-ABI for AnimationTree activation + named drives; bump ABI; NativeAbi table
+- [x] 5.2 Blunder.Api façades + completeness tests; Sync Fire OneShot semantics from managed API
 
 ## 6. Content gates
 

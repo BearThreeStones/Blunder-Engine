@@ -77,6 +77,15 @@ internal static unsafe class Native
         abi.animation_player_get_clip_length != null &&
         abi.animation_player_add_pose_applied_listener != null &&
         abi.animation_player_clear_pose_applied_listeners != null &&
+        abi.animation_tree_set_active != null &&
+        abi.animation_tree_get_active != null &&
+        abi.animation_tree_travel != null &&
+        abi.animation_tree_start != null &&
+        abi.animation_tree_set_blend_space_scalar != null &&
+        abi.animation_tree_get_blend_space_scalar != null &&
+        abi.animation_tree_request_one_shot != null &&
+        abi.animation_tree_set_add2_weight != null &&
+        abi.animation_tree_get_add2_weight != null &&
         abi.sync_group_create != null &&
         abi.sync_group_destroy != null &&
         abi.sync_group_join != null &&
@@ -441,6 +450,94 @@ internal static unsafe class Native
     {
         EnsureRegistered();
         return s_abi.animation_player_clear_pose_applied_listeners(id);
+    }
+
+    public static int blunder_animation_tree_set_active(ulong id, int active)
+    {
+        EnsureRegistered();
+        return s_abi.animation_tree_set_active(id, active);
+    }
+
+    public static int blunder_animation_tree_get_active(ulong id, out int active)
+    {
+        EnsureRegistered();
+        active = 0;
+        int value = 0;
+        int rc = s_abi.animation_tree_get_active(id, &value);
+        active = value;
+        return rc;
+    }
+
+    public static int blunder_animation_tree_travel(ulong id, string stateName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(stateName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_travel(id, namePtr);
+        }
+    }
+
+    public static int blunder_animation_tree_start(ulong id, string stateName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(stateName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_start(id, namePtr);
+        }
+    }
+
+    public static int blunder_animation_tree_set_blend_space_scalar(
+        ulong id, string nodeName, float scalar)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(nodeName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_set_blend_space_scalar(id, namePtr, scalar);
+        }
+    }
+
+    public static int blunder_animation_tree_get_blend_space_scalar(
+        ulong id, string nodeName, out float scalar)
+    {
+        EnsureRegistered();
+        scalar = 0;
+        byte[] utf8 = ToUtf8(nodeName);
+        fixed (byte* namePtr = utf8)
+        {
+            float value = 0;
+            int rc = s_abi.animation_tree_get_blend_space_scalar(id, namePtr, &value);
+            scalar = value;
+            return rc;
+        }
+    }
+
+    public static int blunder_animation_tree_request_one_shot(ulong id, string clipName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(clipName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_request_one_shot(id, namePtr);
+        }
+    }
+
+    public static int blunder_animation_tree_set_add2_weight(ulong id, float weight)
+    {
+        EnsureRegistered();
+        return s_abi.animation_tree_set_add2_weight(id, weight);
+    }
+
+    public static int blunder_animation_tree_get_add2_weight(ulong id, out float weight)
+    {
+        EnsureRegistered();
+        weight = 0;
+        float value = 0;
+        int rc = s_abi.animation_tree_get_add2_weight(id, &value);
+        weight = value;
+        return rc;
     }
 
     public static ulong blunder_sync_group_create()

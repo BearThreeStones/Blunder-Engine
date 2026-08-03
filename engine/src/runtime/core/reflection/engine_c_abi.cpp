@@ -2,6 +2,7 @@
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/animation_sync_group.h"
 #include "runtime/core/object/cine_segment_service.h"
 #include "runtime/core/object/object.h"
@@ -53,6 +54,14 @@ AnimationPlayer* animationPlayerForObject(BlunderObjectId id) {
   return object->ensureAnimationPlayer();
 }
 
+AnimationTree* animationTreeForObject(BlunderObjectId id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return nullptr;
+  }
+  return object->getAnimationTree();
+}
+
 void pose_applied_c_abi_bridge(AnimationPlayer& /*player*/, void* userdata) {
   auto* binding = static_cast<PoseAppliedCAbiBinding*>(userdata);
   if (binding == nullptr || binding->hook == nullptr) {
@@ -71,6 +80,9 @@ void* propertyInstance(Object* object, const char* class_name) {
   }
   if (eastl::string(class_name) == "AnimationPlayer") {
     return object->getAnimationPlayer();
+  }
+  if (eastl::string(class_name) == "AnimationTree") {
+    return object->getAnimationTree();
   }
   return object;
 }
@@ -566,6 +578,113 @@ int blunder_animation_player_clear_pose_applied_listeners(BlunderObjectId id) {
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_animation_tree_set_active(BlunderObjectId id, int active) {
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return tree->setActive(active != 0) ? BLUNDER_ENGINE_OK : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_tree_get_active(BlunderObjectId id, int* out_active) {
+  if (out_active == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_active = tree->isActive() ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_travel(BlunderObjectId id, const char* state_name) {
+  if (state_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return tree->travel(eastl::string(state_name)) ? BLUNDER_ENGINE_OK
+                                                  : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_tree_start(BlunderObjectId id, const char* state_name) {
+  if (state_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return tree->start(eastl::string(state_name)) ? BLUNDER_ENGINE_OK
+                                                : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_tree_set_blend_space_scalar(BlunderObjectId id,
+                                                  const char* node_name,
+                                                  float scalar) {
+  if (node_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  tree->setBlendSpaceScalar(eastl::string(node_name), scalar);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_get_blend_space_scalar(BlunderObjectId id,
+                                                  const char* node_name,
+                                                  float* out_scalar) {
+  if (node_name == nullptr || out_scalar == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_scalar = tree->getBlendSpaceScalar(eastl::string(node_name));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_request_one_shot(BlunderObjectId id,
+                                            const char* clip_name) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return tree->requestOneShot(eastl::string(clip_name)) ? BLUNDER_ENGINE_OK
+                                                        : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_tree_set_add2_weight(BlunderObjectId id, float weight) {
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  tree->setAdd2Weight(weight);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_get_add2_weight(BlunderObjectId id,
+                                           float* out_weight) {
+  if (out_weight == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_weight = tree->getAdd2Weight();
+  return BLUNDER_ENGINE_OK;
+}
+
 BlunderSyncGroupId blunder_sync_group_create(void) {
   return animationSyncGroupService().create();
 }
@@ -727,6 +846,17 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
       &blunder_animation_player_add_pose_applied_listener;
   out->animation_player_clear_pose_applied_listeners =
       &blunder_animation_player_clear_pose_applied_listeners;
+  out->animation_tree_set_active = &blunder_animation_tree_set_active;
+  out->animation_tree_get_active = &blunder_animation_tree_get_active;
+  out->animation_tree_travel = &blunder_animation_tree_travel;
+  out->animation_tree_start = &blunder_animation_tree_start;
+  out->animation_tree_set_blend_space_scalar =
+      &blunder_animation_tree_set_blend_space_scalar;
+  out->animation_tree_get_blend_space_scalar =
+      &blunder_animation_tree_get_blend_space_scalar;
+  out->animation_tree_request_one_shot = &blunder_animation_tree_request_one_shot;
+  out->animation_tree_set_add2_weight = &blunder_animation_tree_set_add2_weight;
+  out->animation_tree_get_add2_weight = &blunder_animation_tree_get_add2_weight;
   out->sync_group_create = &blunder_sync_group_create;
   out->sync_group_destroy = &blunder_sync_group_destroy;
   out->sync_group_join = &blunder_sync_group_join;
@@ -828,6 +958,22 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_animation_player_add_pose_applied_listener");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_clear_pose_applied_listeners,
                           "blunder_animation_player_clear_pose_applied_listeners");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_active,
+                          "blunder_animation_tree_set_active");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_active,
+                          "blunder_animation_tree_get_active");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_travel, "blunder_animation_tree_travel");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_start, "blunder_animation_tree_start");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_blend_space_scalar,
+                          "blunder_animation_tree_set_blend_space_scalar");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_blend_space_scalar,
+                          "blunder_animation_tree_get_blend_space_scalar");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_request_one_shot,
+                          "blunder_animation_tree_request_one_shot");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_add2_weight,
+                          "blunder_animation_tree_set_add2_weight");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_add2_weight,
+                          "blunder_animation_tree_get_add2_weight");
   BLUNDER_NATIVE_ABI_LOAD(sync_group_create, "blunder_sync_group_create");
   BLUNDER_NATIVE_ABI_LOAD(sync_group_destroy, "blunder_sync_group_destroy");
   BLUNDER_NATIVE_ABI_LOAD(sync_group_join, "blunder_sync_group_join");

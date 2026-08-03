@@ -14,6 +14,7 @@ public sealed class ObjectHandle
 
     readonly List<Behaviour> _behaviours = new();
     AnimationPlayer? _animationPlayer;
+    AnimationTree? _animationTree;
 
     ObjectHandle(ulong id)
     {
@@ -79,6 +80,7 @@ public sealed class ObjectHandle
             {
                 handle._animationPlayer?.DetachNativeListeners();
                 handle._animationPlayer = null;
+                handle._animationTree = null;
                 handle._behaviours.Clear();
             }
 
@@ -142,6 +144,7 @@ public sealed class ObjectHandle
     {
         _animationPlayer?.DetachNativeListeners();
         _animationPlayer = null;
+        _animationTree = null;
         int rc = Native.blunder_object_destroy(Id);
         lock (s_byId)
         {
@@ -157,4 +160,8 @@ public sealed class ObjectHandle
     /// <summary>Cached co-located AnimationPlayer façade for this Object.</summary>
     public AnimationPlayer EnsureAnimationPlayer() =>
         _animationPlayer ??= new AnimationPlayer(this);
+
+    /// <summary>Cached co-located AnimationTree façade for this Object.</summary>
+    public AnimationTree EnsureAnimationTree() =>
+        _animationTree ??= new AnimationTree(this);
 }

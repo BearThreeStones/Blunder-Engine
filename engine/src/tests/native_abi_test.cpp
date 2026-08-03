@@ -107,6 +107,26 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.animation_player_set_time_scale != nullptr);
   expect_true((std::string(label) + ": animation_player_get_time_scale").c_str(),
               abi.animation_player_get_time_scale != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_active").c_str(),
+              abi.animation_tree_set_active != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_active").c_str(),
+              abi.animation_tree_get_active != nullptr);
+  expect_true((std::string(label) + ": animation_tree_travel").c_str(),
+              abi.animation_tree_travel != nullptr);
+  expect_true((std::string(label) + ": animation_tree_start").c_str(),
+              abi.animation_tree_start != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_blend_space_scalar")
+                  .c_str(),
+              abi.animation_tree_set_blend_space_scalar != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_blend_space_scalar")
+                  .c_str(),
+              abi.animation_tree_get_blend_space_scalar != nullptr);
+  expect_true((std::string(label) + ": animation_tree_request_one_shot").c_str(),
+              abi.animation_tree_request_one_shot != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_add2_weight").c_str(),
+              abi.animation_tree_set_add2_weight != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_add2_weight").c_str(),
+              abi.animation_tree_get_add2_weight != nullptr);
   expect_true((std::string(label) + ": sync_group_create").c_str(),
               abi.sync_group_create != nullptr);
   expect_true((std::string(label) + ": sync_group_destroy").c_str(),
@@ -147,7 +167,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 7", BLUNDER_ENGINE_C_ABI_VERSION >= 7);
+  expect_true("abi version >= 8", BLUNDER_ENGINE_C_ABI_VERSION >= 8);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

@@ -26,7 +26,7 @@ int main() {
   ObjectDB::clear();
   ClassDB::initialize();
 
-  expect_true("abi version", blunder_engine_abi_version() == 7);
+  expect_true("abi version", blunder_engine_abi_version() == 8);
 
   const BlunderObjectId id = blunder_object_create();
   expect_true("create", blunder_object_is_valid(id) == 1);
