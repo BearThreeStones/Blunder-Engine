@@ -38,11 +38,16 @@ class AnimationPlayer {
   void setClipResolver(AnimationClipResolveFn resolver, void* userdata);
   void injectClipData(const eastl::string& guid, AnimationClipData clip);
 
+  /// Resolve clip data for a mapped logical name (injected clips or resolver).
+  bool resolveClipForName(const eastl::string& name, AnimationClipData& out_clip);
+
   bool play(const eastl::string& name);
   /// Play with optional crossfade. fade_seconds <= 0 is a hard cut (Phase 1).
   bool play(const eastl::string& name, float fade_seconds);
   /// Hard snap: clears crossfade and dual-slot blend, then plays \a name from the start.
   bool snapPlay(const eastl::string& name);
+  /// Hard snap using already-resolved clip data (used by Sync Group Fire batch apply).
+  void snapPlayWithClip(const eastl::string& name, const AnimationClipData& clip);
   void stop();
 
   bool isCrossfading() const { return m_crossfade_active; }

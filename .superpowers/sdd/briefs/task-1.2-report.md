@@ -4,7 +4,7 @@
 
 ## Commit
 
-- (pending) — Add Sync Group Fire with per-member hard-cut instructions.
+- `afc9a26` — Add Sync Group Fire with per-member hard-cut instructions.
 
 ## TDD evidence
 
@@ -43,8 +43,8 @@ bool AnimationSyncGroupService::fire(
 
 ### Fire semantics
 
-1. Validate group id, non-empty instructions, non-null players, group membership, clip name mapped.
-2. Apply all instructions in one call (same logical moment): `snapPlay` then optional `seekPlayback`.
+1. Validate group id, non-empty instructions, non-null players, group membership, clip resolvable (`resolveClipForName`).
+2. Apply all instructions in one call (same logical moment): `snapPlayWithClip` then optional `seekPlayback`.
 3. Default path is hard cut (no Crossfade ramp).
 
 ## Test coverage
@@ -56,6 +56,7 @@ bool AnimationSyncGroupService::fire(
 | `test_fire_hard_cut_interrupts_crossfade` | Fire snaps out of mid-crossfade to new clip |
 | `test_fire_from_mid_playback` | Fire replaces in-progress clips with new clips at 0 |
 | `test_fire_validation` | Empty list, invalid id, null player, non-member, unknown clip all fail |
+| `test_fire_atomic_on_resolve_failure` | Resolve failure leaves no member mutated (atomic apply) |
 
 ## Spec alignment
 
@@ -70,9 +71,31 @@ bool AnimationSyncGroupService::fire(
 
 ## Concerns
 
-1. **Partial fire on mid-batch `snapPlay` failure** — validation checks clip name mapping only; if `resolveClip` fails during apply, earlier members may already have fired. Unlikely in normal use; could add pre-resolve pass later.
+1. ~~**Partial fire on mid-batch `snapPlay` failure**~~ — **Fixed** (see Atomic Fire fix below).
 2. **`snapPlay` vs `play(name, 0)`** — `play` does not clear dual-slot state; Fire uses `snapPlay` so crossfade/slot blend is fully cleared. Task 1.4 may want `play(,0)` aligned with `snapPlay` for non-Sync paths.
 3. **`seekPlayback` is new public API** — minimal; no dedicated unit test on AnimationPlayer (covered indirectly via sync group seek test).
+
+## Atomic Fire fix (Important finding)
+
+### Issue
+
+`fire()` validated clip name→GUID mapping only, then applied via `snapPlay`. If a later member's clip could not be resolved (GUID mapped but no injected/resolver data), earlier members were already mutated while `fire()` returned `false`.
+
+### Fix
+
+1. **Pre-resolve in validation** — `resolveClipForName` checks full clip resolution before any player mutation.
+2. **Pre-resolved batch apply** — resolved clips stored in a vector; apply uses `snapPlayWithClip` so apply does not re-resolve.
+3. **New API** — `AnimationPlayer::resolveClipForName`, `AnimationPlayer::snapPlayWithClip`.
+
+### TDD
+
+- **RED:** `test_fire_atomic_on_resolve_failure` — player_a resolvable + mid-playback; player_b GUID-only (no clip data); fire fails; player_a clip/position unchanged.
+- **GREEN:** `animation_sync_group_test.exe` exit 0, 0 failures (**15 tests**).
+
+### Commit
+
+- `db695ca` — Make Sync Group Fire atomic: pre-resolve clips before apply.
+
 
 ## Out of scope (confirmed not implemented)
 

@@ -123,7 +123,11 @@ bool AnimationSyncGroupService::fire(
     return false;
   }
 
-  for (const SyncGroupFireInstruction& instruction : instructions) {
+  eastl::vector<AnimationClipData> resolved_clips;
+  resolved_clips.resize(instructions.size());
+
+  for (size_t i = 0; i < instructions.size(); ++i) {
+    const SyncGroupFireInstruction& instruction = instructions[i];
     if (instruction.player == nullptr || instruction.clip_name.empty()) {
       return false;
     }
@@ -139,16 +143,16 @@ bool AnimationSyncGroupService::fire(
       return false;
     }
 
-    eastl::string guid;
-    if (!instruction.player->getClipGuid(instruction.clip_name, guid)) {
+    if (!instruction.player->resolveClipForName(instruction.clip_name,
+                                                resolved_clips[i])) {
       return false;
     }
   }
 
-  for (const SyncGroupFireInstruction& instruction : instructions) {
-    if (!instruction.player->snapPlay(instruction.clip_name)) {
-      return false;
-    }
+  for (size_t i = 0; i < instructions.size(); ++i) {
+    const SyncGroupFireInstruction& instruction = instructions[i];
+    instruction.player->snapPlayWithClip(instruction.clip_name,
+                                         resolved_clips[i]);
     if (instruction.has_seek) {
       instruction.player->seekPlayback(instruction.seek_seconds);
     }

@@ -346,6 +346,36 @@ void test_fire_validation() {
   expect_true("unknown clip fail", !service.fire(group, unknown_clip));
 }
 
+void test_fire_atomic_on_resolve_failure() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "old_a", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  bind_clip(player_a, "new_a", "cccccccc-cccc-cccc-cccc-cccccccccccc", 2.5f);
+  player_b.setClipGuid("clip_b", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+  const SyncGroupId group = service.create();
+  expect_true("join players", service.join(group, &player_a) &&
+                                   service.join(group, &player_b));
+
+  expect_true("play old_a", player_a.play("old_a"));
+  player_a.advance(0.75f);
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player_a, "new_a"});
+  instructions.push_back(SyncGroupFireInstruction{&player_b, "clip_b"});
+  expect_true("fire fails when clip cannot resolve", !service.fire(group, instructions));
+
+  expect_true("player_a unchanged clip", player_a.getCurrentClipName() == "old_a");
+  expect_true("player_a unchanged position",
+              float_near(player_a.getPlaybackPosition(), 0.75f));
+  expect_true("player_b not playing", !player_b.isPlaying());
+}
+
 void test_get_member_at_stable_insertion_order() {
   using namespace Blunder;
 
@@ -385,6 +415,7 @@ int main() {
   test_fire_hard_cut_interrupts_crossfade();
   test_fire_from_mid_playback();
   test_fire_validation();
+  test_fire_atomic_on_resolve_failure();
   test_get_member_at_stable_insertion_order();
 
   if (g_failures != 0) {

@@ -96,6 +96,15 @@ bool AnimationPlayer::resolveClip(const eastl::string& guid,
   return false;
 }
 
+bool AnimationPlayer::resolveClipForName(const eastl::string& name,
+                                         AnimationClipData& out_clip) {
+  eastl::string guid;
+  if (!getClipGuid(name, guid)) {
+    return false;
+  }
+  return resolveClip(guid, out_clip);
+}
+
 void AnimationPlayer::beginClip(const eastl::string& name,
                                 const AnimationClipData& clip) {
   m_current_clip_name = name;
@@ -186,16 +195,17 @@ bool AnimationPlayer::play(const eastl::string& name) {
 }
 
 bool AnimationPlayer::snapPlay(const eastl::string& name) {
-  eastl::string guid;
-  if (!getClipGuid(name, guid)) {
-    return false;
-  }
-
   AnimationClipData clip;
-  if (!resolveClip(guid, clip)) {
+  if (!resolveClipForName(name, clip)) {
     return false;
   }
 
+  snapPlayWithClip(name, clip);
+  return true;
+}
+
+void AnimationPlayer::snapPlayWithClip(const eastl::string& name,
+                                       const AnimationClipData& clip) {
   clearCrossfade();
   m_slot_clip_names[0].clear();
   m_slot_clip_names[1].clear();
@@ -203,7 +213,6 @@ bool AnimationPlayer::snapPlay(const eastl::string& name) {
   m_slot_positions[1] = 0.0f;
   m_blend_weight = 0.0f;
   beginClip(name, clip);
-  return true;
 }
 
 void AnimationPlayer::stop() {
