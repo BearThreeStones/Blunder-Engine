@@ -15,7 +15,7 @@ Human-oriented Done bar for grilled Phase 3 (SYNC + CINE). Complements `tasks.md
   Enter sets in-CINE; explicit End clears it; clip `finished` alone does not End.
 
 - [ ] **P4 — Input / control**  
-  Optional gameplay-input suppression while in-CINE; End restores; pose/state handoff owned by C# on Play.
+  Optional gameplay-input suppression while in-CINE; End restores; pose/state handoff owned by C# Behaviours on Play (CONTEXT **CINE**; `cine_segment_service.h`).
 
 - [ ] **P5 — Edit preview**  
   Edit can Fire + Enter/End; in-CINE visible; multi-Skeleton plays; **no** Behaviour Tick; **no** auto Object TRS snap.

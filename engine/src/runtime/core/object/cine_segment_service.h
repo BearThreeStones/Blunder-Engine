@@ -4,8 +4,15 @@ namespace Blunder {
 
 /// Runtime CINE segment state: thin enter/exit hooks and in-CINE marking.
 ///
+/// Pose alignment (Object TRS snap/restore), gameplay state-machine transitions,
+/// and control handoff on Enter/End remain **C# Behaviour** responsibilities —
+/// this service does not auto-snap transforms or drive DogWalk state machines
+/// (CONTEXT **CINE**; [ADR 0023](../../../docs/adr/0023-animation-sync-group.md);
+/// acceptance-checklist P4).
+///
 /// Segment end is authoritative via explicit end(); member AnimationPlayer
-/// finished notifications do not alone clear the in-CINE mark (task 2.3+).
+/// finished notifications may assist authors but do not alone clear the
+/// in-CINE mark.
 class CineSegmentService {
  public:
   CineSegmentService();
