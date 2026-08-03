@@ -1,0 +1,3 @@
+# Phase 3 SYNC uses a runtime Sync Group with per-member Fire
+
+DogWalk animation Phase 3 needs multi-Object AnimationPlayer starts (character + prop + partner) without a cutscene director or AnimationTree. We decided **Sync Group** is a **runtime** engine set (create / join / fire / release by script — not a required serialized scene member graph), and **Fire** carries **per-member** `(AnimationPlayer, clipName[, seek])` instructions so heterogeneous clip names are first-class; same-name Fire across members may exist only as sugar. Rejected: ad-hoc same-Tick Play as the product path, a shared continuous playback head, master/follower Players, and requiring identical logical clip names for every member.
