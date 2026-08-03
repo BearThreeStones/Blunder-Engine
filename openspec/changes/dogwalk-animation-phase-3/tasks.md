@@ -2,7 +2,7 @@
 
 - [x] 1.1 TDD: create / join / leave / destroy Sync Group; members are AnimationPlayers
 - [x] 1.2 TDD: Fire with per-member `(player, clipName[, seek])`; heterogeneous names; same logical moment start (hard cut)
-- [ ] 1.3 TDD: same-name Fire sugar (optional) resolves via each player’s name→GUID map
+- [x] 1.3 TDD: same-name Fire sugar (optional) resolves via each player’s name→GUID map
 - [ ] 1.4 TDD: Fire does not use Crossfade by default; fade=0 / snap semantics under Phase 2 player
 - [ ] 1.5 Confirm Phase 1 rule: each Player still drives only co-located Skeleton (no remote Skeleton via Sync Group)
 
