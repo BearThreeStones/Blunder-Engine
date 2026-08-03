@@ -279,6 +279,90 @@ void test_fire_hard_cut_interrupts_crossfade() {
   expect_true("idle playing", player.getCurrentClipName() == "idle");
   expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
   expect_true("not crossfading", !player.isCrossfading());
+  expect_true("blend weight cleared", float_near(player.getBlendWeight(), 0.0f));
+  expect_true("slot0 cleared", player.getSlotClipName(0).empty());
+  expect_true("slot1 cleared", player.getSlotClipName(1).empty());
+}
+
+void test_fire_clears_dual_slot_weighted_blend() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player;
+  bind_clip(player, "idle", "11111111-1111-1111-1111-111111111111", 2.0f);
+  bind_clip(player, "walk", "22222222-2222-2222-2222-222222222222", 3.0f);
+  bind_clip(player, "cine", "33333333-3333-3333-3333-333333333333", 4.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join player", service.join(group, &player));
+
+  expect_true("slot0 idle", player.setSlot(0, "idle"));
+  expect_true("slot1 walk", player.setSlot(1, "walk"));
+  player.setBlendWeight(0.65f);
+  expect_true("play idle", player.play("idle"));
+  player.advance(0.4f);
+  expect_true("dual slot active",
+              !player.getSlotClipName(0).empty() &&
+                  !player.getSlotClipName(1).empty());
+  expect_true("blend weight mid-ramp", float_near(player.getBlendWeight(), 0.65f));
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player, "cine"});
+  expect_true("fire snaps dual-slot blend", service.fire(group, instructions));
+
+  expect_true("cine playing", player.getCurrentClipName() == "cine");
+  expect_true("position reset", float_near(player.getPlaybackPosition(), 0.0f));
+  expect_true("not crossfading", !player.isCrossfading());
+  expect_true("blend weight cleared", float_near(player.getBlendWeight(), 0.0f));
+  expect_true("slot0 cleared", player.getSlotClipName(0).empty());
+  expect_true("slot1 cleared", player.getSlotClipName(1).empty());
+}
+
+void test_fire_clears_mid_crossfade_multiple_members() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "idle", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  bind_clip(player_a, "walk", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 3.0f);
+  bind_clip(player_a, "cine_a", "cccccccc-cccc-cccc-cccc-cccccccccccc", 2.5f);
+  bind_clip(player_b, "idle", "dddddddd-dddd-dddd-dddd-dddddddddddd", 2.0f);
+  bind_clip(player_b, "walk", "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", 3.0f);
+  bind_clip(player_b, "cine_b", "ffffffff-ffff-ffff-ffff-ffffffffffff", 3.5f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join players", service.join(group, &player_a) &&
+                                   service.join(group, &player_b));
+
+  expect_true("player_a crossfade", player_a.play("walk", 1.0f));
+  expect_true("player_b crossfade", player_b.play("walk", 0.8f));
+  expect_true("player_a crossfading", player_a.isCrossfading());
+  expect_true("player_b crossfading", player_b.isCrossfading());
+  player_a.advance(0.25f);
+  player_b.advance(0.35f);
+
+  eastl::vector<SyncGroupFireInstruction> instructions;
+  instructions.push_back(SyncGroupFireInstruction{&player_a, "cine_a"});
+  instructions.push_back(SyncGroupFireInstruction{&player_b, "cine_b"});
+  expect_true("fire heterogeneous hard cut", service.fire(group, instructions));
+
+  expect_true("player_a cine", player_a.getCurrentClipName() == "cine_a");
+  expect_true("player_b cine", player_b.getCurrentClipName() == "cine_b");
+  expect_true("player_a position zero",
+              float_near(player_a.getPlaybackPosition(), 0.0f));
+  expect_true("player_b position zero",
+              float_near(player_b.getPlaybackPosition(), 0.0f));
+  expect_true("player_a not crossfading", !player_a.isCrossfading());
+  expect_true("player_b not crossfading", !player_b.isCrossfading());
+  expect_true("player_a blend cleared",
+              float_near(player_a.getBlendWeight(), 0.0f));
+  expect_true("player_b blend cleared",
+              float_near(player_b.getBlendWeight(), 0.0f));
 }
 
 void test_fire_from_mid_playback() {
@@ -401,6 +485,54 @@ void test_fire_same_name_resolves_per_member_map() {
               float_near(player_a.getPlaybackPosition(), 0.0f));
   expect_true("player_b position zero",
               float_near(player_b.getPlaybackPosition(), 0.0f));
+  expect_true("player_a not crossfading", !player_a.isCrossfading());
+  expect_true("player_b not crossfading", !player_b.isCrossfading());
+}
+
+void test_fire_same_name_clears_dual_slot_blend() {
+  using namespace Blunder;
+
+  AnimationSyncGroupService& service = animationSyncGroupService();
+  service.clearAll();
+
+  AnimationPlayer player_a;
+  AnimationPlayer player_b;
+  bind_clip(player_a, "idle", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 2.0f);
+  bind_clip(player_a, "walk", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 3.0f);
+  bind_clip(player_a, "sync", "cccccccc-cccc-cccc-cccc-cccccccccccc", 2.0f);
+  bind_clip(player_b, "idle", "dddddddd-dddd-dddd-dddd-dddddddddddd", 2.0f);
+  bind_clip(player_b, "walk", "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", 3.0f);
+  bind_clip(player_b, "sync", "ffffffff-ffff-ffff-ffff-ffffffffffff", 2.0f);
+
+  const SyncGroupId group = service.create();
+  expect_true("join players", service.join(group, &player_a) &&
+                                   service.join(group, &player_b));
+
+  expect_true("player_a slots", player_a.setSlot(0, "idle") &&
+                                    player_a.setSlot(1, "walk"));
+  expect_true("player_b slots", player_b.setSlot(0, "idle") &&
+                                    player_b.setSlot(1, "walk"));
+  player_a.setBlendWeight(0.4f);
+  player_b.setBlendWeight(0.75f);
+  expect_true("play player_a", player_a.play("idle"));
+  expect_true("play player_b", player_b.play("idle"));
+  player_a.advance(0.5f);
+  player_b.advance(0.6f);
+
+  expect_true("fireSameName hard cut", service.fireSameName(group, "sync"));
+
+  expect_true("player_a sync", player_a.getCurrentClipName() == "sync");
+  expect_true("player_b sync", player_b.getCurrentClipName() == "sync");
+  expect_true("player_a not crossfading", !player_a.isCrossfading());
+  expect_true("player_b not crossfading", !player_b.isCrossfading());
+  expect_true("player_a blend cleared",
+              float_near(player_a.getBlendWeight(), 0.0f));
+  expect_true("player_b blend cleared",
+              float_near(player_b.getBlendWeight(), 0.0f));
+  expect_true("player_a slots cleared", player_a.getSlotClipName(0).empty() &&
+                                           player_a.getSlotClipName(1).empty());
+  expect_true("player_b slots cleared", player_b.getSlotClipName(0).empty() &&
+                                           player_b.getSlotClipName(1).empty());
 }
 
 void test_fire_same_name_with_seek() {
@@ -499,10 +631,13 @@ int main() {
   test_fire_heterogeneous_clips_hard_cut();
   test_fire_with_seek();
   test_fire_hard_cut_interrupts_crossfade();
+  test_fire_clears_dual_slot_weighted_blend();
+  test_fire_clears_mid_crossfade_multiple_members();
   test_fire_from_mid_playback();
   test_fire_validation();
   test_fire_atomic_on_resolve_failure();
   test_fire_same_name_resolves_per_member_map();
+  test_fire_same_name_clears_dual_slot_blend();
   test_fire_same_name_with_seek();
   test_fire_same_name_validation();
   test_get_member_at_stable_insertion_order();
