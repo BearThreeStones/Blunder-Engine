@@ -24,6 +24,11 @@ void bind_clip(Blunder::AnimationPlayer& player, const char* clip_name,
   player.injectClipData(guid_str, clip);
 }
 
+void on_finished_notify(Blunder::AnimationPlayer& /*player*/, void* userdata) {
+  bool* flag = static_cast<bool*>(userdata);
+  *flag = true;
+}
+
 }  // namespace
 
 void test_initially_not_in_cine() {
@@ -112,6 +117,9 @@ void test_finished_clip_does_not_auto_end_segment() {
   AnimationPlayer player;
   bind_clip(player, "CINE-lead", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 0.05f);
 
+  bool finished_notified = false;
+  player.addFinishedListener(on_finished_notify, &finished_notified);
+
   expect_true("enter cine", service.enter());
   expect_true("play lead clip", player.play("CINE-lead"));
 
@@ -120,9 +128,34 @@ void test_finished_clip_does_not_auto_end_segment() {
   }
 
   expect_true("clip finished", !player.isPlaying());
+  expect_true("finished listener fired", finished_notified);
   expect_true("segment still active without end", service.isInCine());
 
   expect_true("explicit end clears mark", service.end());
+  expect_true("not in cine after end", !service.isInCine());
+}
+
+void test_finished_listener_does_not_call_end() {
+  using namespace Blunder;
+
+  CineSegmentService& service = cineSegmentService();
+  service.resetForTests();
+
+  AnimationPlayer player;
+  bind_clip(player, "CINE-lead", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 0.04f);
+
+  bool finished_notified = false;
+  player.addFinishedListener(on_finished_notify, &finished_notified);
+
+  expect_true("enter cine", service.enter());
+  expect_true("play lead clip", player.play("CINE-lead"));
+  player.advance(0.05f);
+
+  expect_true("finished listener fired", finished_notified);
+  expect_true("still in cine after finished notify", service.isInCine());
+  expect_true("clip stopped", !player.isPlaying());
+
+  expect_true("explicit end required", service.end());
   expect_true("not in cine after end", !service.isInCine());
 }
 
@@ -195,6 +228,7 @@ int main() {
   test_reenter_after_end();
   test_enter_while_active_stays_in_cine();
   test_finished_clip_does_not_auto_end_segment();
+  test_finished_listener_does_not_call_end();
   test_enter_without_suppress_does_not_suppress_input();
   test_enter_with_suppress_sets_flag();
   test_end_restores_gameplay_input();

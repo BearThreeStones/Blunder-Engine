@@ -131,8 +131,27 @@ void AnimationPlayer::clearPoseAppliedListeners() {
   m_pose_applied_listeners.clear();
 }
 
+void AnimationPlayer::addFinishedListener(FinishedFn fn, void* userdata) {
+  if (fn == nullptr) {
+    return;
+  }
+  m_finished_listeners.push_back(FinishedListener{fn, userdata});
+}
+
+void AnimationPlayer::clearFinishedListeners() {
+  m_finished_listeners.clear();
+}
+
 void AnimationPlayer::notifyPoseApplied() {
   for (const PoseAppliedListener& listener : m_pose_applied_listeners) {
+    if (listener.fn != nullptr) {
+      listener.fn(*this, listener.userdata);
+    }
+  }
+}
+
+void AnimationPlayer::notifyFinished() {
+  for (const FinishedListener& listener : m_finished_listeners) {
     if (listener.fn != nullptr) {
       listener.fn(*this, listener.userdata);
     }
@@ -469,6 +488,7 @@ void AnimationPlayer::advance(float delta_seconds) {
   m_position = m_clip_length;
   sampleBoundSkeleton();
   m_playing = false;
+  notifyFinished();
 }
 
 }  // namespace Blunder

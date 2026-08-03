@@ -14,6 +14,7 @@ class AnimationPlayer;
 using AnimationClipResolveFn = bool (*)(void* userdata, const eastl::string& guid,
                                         AnimationClipData& out_clip);
 using PoseAppliedFn = void (*)(AnimationPlayer& player, void* userdata);
+using FinishedFn = void (*)(AnimationPlayer& player, void* userdata);
 
 class AnimationPlayer {
  public:
@@ -78,15 +79,25 @@ class AnimationPlayer {
   void addPoseAppliedListener(PoseAppliedFn fn, void* userdata);
   void clearPoseAppliedListeners();
 
+  /// Raised when a non-looping clip reaches its natural end (not on stop()).
+  void addFinishedListener(FinishedFn fn, void* userdata);
+  void clearFinishedListeners();
+
   /// Co-located Skeleton only (set by Object). When bound, play/advance sample poses.
   void bindSamplingSkeleton(Skeleton* skeleton);
   void sampleOntoSkeleton(Skeleton& skeleton);
 
  private:
   void notifyPoseApplied();
+  void notifyFinished();
 
   struct PoseAppliedListener {
     PoseAppliedFn fn{nullptr};
+    void* userdata{nullptr};
+  };
+
+  struct FinishedListener {
+    FinishedFn fn{nullptr};
     void* userdata{nullptr};
   };
 
@@ -128,6 +139,7 @@ class AnimationPlayer {
   float m_crossfade_start_weight{0.0f};
   float m_crossfade_target_weight{0.0f};
   eastl::vector<PoseAppliedListener> m_pose_applied_listeners;
+  eastl::vector<FinishedListener> m_finished_listeners;
 };
 
 }  // namespace Blunder
