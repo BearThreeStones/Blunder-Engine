@@ -4,6 +4,7 @@
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/class_db.h"
 
+#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 #include <cstdio>
 
@@ -42,6 +43,28 @@ Blunder::AnimationTrack makeTranslationTrack(
     track.keys.push_back(frame);
   }
   return track;
+}
+
+Blunder::AnimationTrack makeRotationTrack(
+    const char* bone, Blunder::AnimationInterpolation interpolation,
+    std::initializer_list<std::pair<float, Blunder::Quat>> keys) {
+  Blunder::AnimationTrack track;
+  track.bone = bone;
+  track.channel = Blunder::AnimationChannel::Rotation;
+  track.interpolation = interpolation;
+  for (const auto& key : keys) {
+    Blunder::AnimationKeyframe frame;
+    frame.time = key.first;
+    frame.value = {key.second.x, key.second.y, key.second.z, key.second.w};
+    track.keys.push_back(frame);
+  }
+  return track;
+}
+
+bool quat_near(const Blunder::Quat& a, const Blunder::Quat& b,
+               float eps = 1e-4f) {
+  const float dot = std::fabs(glm::dot(a, b));
+  return float_near(dot, 1.0f, eps);
 }
 
 Blunder::Skeleton makeSingleBoneSkeleton(const char* bone_name) {
@@ -425,6 +448,239 @@ void test_object_binding_blocks_player_while_tree_active() {
   ObjectDB::clear();
 }
 
+void test_blend_space1d_neighbor_lerp_feeds_base_pose() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+
+  expect_true("add idle point", tree.addBlendSpacePoint("Locomotion", "idle", 0.0f));
+  expect_true("add walk point", tree.addBlendSpacePoint("Locomotion", "walk", 1.0f));
+  expect_true("set base blend space", tree.setBaseBlendSpaceNode("Locomotion"));
+  tree.setBlendSpaceScalar("Locomotion", 0.5f);
+  expect_true("activate tree", tree.setActive(true));
+
+  expect_true("neighbor lerp midpoint",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+}
+
+void test_blend_space1d_clamps_endpoints() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+
+  tree.addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree.setBaseBlendSpaceNode("Locomotion");
+  expect_true("activate tree", tree.setActive(true));
+
+  tree.setBlendSpaceScalar("Locomotion", -1.0f);
+  tree.sampleBoundSkeleton();
+  expect_true("clamp below min",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+
+  tree.setBlendSpaceScalar("Locomotion", 2.0f);
+  tree.sampleBoundSkeleton();
+  expect_true("clamp above max",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+}
+
+void test_blend_space1d_scalar_by_node_logical_name() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string slow_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string fast_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData slow;
+  slow.duration = 1.0f;
+  slow.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData fast;
+  fast.duration = 1.0f;
+  fast.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("slow", slow_guid);
+  player.setClipGuid("fast", fast_guid);
+  player.injectClipData(slow_guid, slow);
+  player.injectClipData(fast_guid, fast);
+
+  tree.addBlendSpacePoint("Locomotion", "slow", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "fast", 1.0f);
+  tree.addBlendSpacePoint("UpperBody", "slow", 0.0f);
+  tree.addBlendSpacePoint("UpperBody", "fast", 1.0f);
+  tree.setBaseBlendSpaceNode("Locomotion");
+  tree.setBlendSpaceScalar("Locomotion", 1.0f);
+  tree.setBlendSpaceScalar("UpperBody", 0.0f);
+  expect_true("locomotion scalar stored", tree.getBlendSpaceScalar("Locomotion") == 1.0f);
+  expect_true("upper body scalar stored", tree.getBlendSpaceScalar("UpperBody") == 0.0f);
+  expect_true("activate tree", tree.setActive(true));
+
+  expect_true("base uses locomotion scalar only",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(8.0f, 0.0f, 0.0f)));
+}
+
+void test_blend_space1d_rotation_uses_slerp() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string left_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string right_guid = "22222222-2222-2222-2222-222222222222";
+
+  const Quat rot_a = glm::angleAxis(glm::radians(0.0f), Vec3(0.0f, 1.0f, 0.0f));
+  const Quat rot_b = glm::angleAxis(glm::radians(90.0f), Vec3(0.0f, 1.0f, 0.0f));
+  const Quat expected = glm::slerp(rot_a, rot_b, 0.5f);
+
+  AnimationClipData clip_a;
+  clip_a.duration = 1.0f;
+  clip_a.tracks.push_back(makeRotationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, rot_a}, {1.0f, rot_a}}));
+
+  AnimationClipData clip_b;
+  clip_b.duration = 1.0f;
+  clip_b.tracks.push_back(makeRotationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, rot_b}, {1.0f, rot_b}}));
+
+  player.setClipGuid("left", left_guid);
+  player.setClipGuid("right", right_guid);
+  player.injectClipData(left_guid, clip_a);
+  player.injectClipData(right_guid, clip_b);
+
+  tree.addBlendSpacePoint("Locomotion", "left", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "right", 1.0f);
+  tree.setBaseBlendSpaceNode("Locomotion");
+  tree.setBlendSpaceScalar("Locomotion", 0.5f);
+  expect_true("activate tree", tree.setActive(true));
+
+  expect_true("rotation slerp midpoint",
+              quat_near(skeleton.getBonePoseLocal(0).rotation, expected));
+}
+
+void test_blend_space1d_base_then_add2_stacks() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  skeleton.setBoneRestLocal(0, BoneTransform{});
+
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string slow_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string fast_guid = "22222222-2222-2222-2222-222222222222";
+  const eastl::string add2_guid = "33333333-3333-3333-3333-333333333333";
+
+  AnimationClipData slow;
+  slow.duration = 1.0f;
+  slow.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData fast;
+  fast.duration = 1.0f;
+  fast.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData add2_clip;
+  add2_clip.duration = 1.0f;
+  add2_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("slow", slow_guid);
+  player.setClipGuid("fast", fast_guid);
+  player.setClipGuid("turn_add", add2_guid);
+  player.injectClipData(slow_guid, slow);
+  player.injectClipData(fast_guid, fast);
+  player.injectClipData(add2_guid, add2_clip);
+
+  tree.addBlendSpacePoint("Locomotion", "slow", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "fast", 1.0f);
+  tree.setBaseBlendSpaceNode("Locomotion");
+  tree.setBlendSpaceScalar("Locomotion", 0.5f);
+  expect_true("set add2 clip", tree.setAdd2ClipName("turn_add"));
+  tree.setAdd2Weight(0.5f);
+  expect_true("activate tree", tree.setActive(true));
+
+  const Vec3 expected(5.0f, 0.0f, 0.0f);
+  expect_true("blend space base then add2 additive",
+              vec3_near(skeleton.getBonePoseLocal(0).translation, expected));
+}
+
 }  // namespace
 
 int main() {
@@ -437,6 +693,11 @@ int main() {
   test_inactive_tree_restores_player_two_slot_sampling();
   test_base_then_add2_bind_rest_additive_not_lerp_dual_track();
   test_object_binding_blocks_player_while_tree_active();
+  test_blend_space1d_neighbor_lerp_feeds_base_pose();
+  test_blend_space1d_clamps_endpoints();
+  test_blend_space1d_scalar_by_node_logical_name();
+  test_blend_space1d_rotation_uses_slerp();
+  test_blend_space1d_base_then_add2_stacks();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
