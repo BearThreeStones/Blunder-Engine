@@ -1555,6 +1555,30 @@ target_precompile_headers(animation_tree_test
 add_test(NAME animation_tree_test
          COMMAND animation_tree_test)
 
+add_executable(animation_blend_space_2d_test
+    "animation_blend_space_2d_test.cpp"
+)
+
+target_link_libraries(animation_blend_space_2d_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_blend_space_2d_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(animation_blend_space_2d_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(animation_blend_space_2d_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME animation_blend_space_2d_test
+         COMMAND animation_blend_space_2d_test)
+
 add_executable(animation_sync_group_test
     "animation_sync_group_test.cpp"
 )

@@ -16,10 +16,10 @@
 
 ## 3. Gate C — BlendSpace2D
 
-- [ ] 3.1 TDD: BlendSpace2D points + triangulation; barycentric TRS lerp/slerp
-- [ ] 3.2 TDD: per-node `(x,y)` named API
-- [ ] 3.3 TDD: StateMachine state may use BlendSpace2D as playback
-- [ ] 3.4 TDD: dominant-clip clock under BlendSpace2D (define tie-break)
+- [x] 3.1 TDD: BlendSpace2D points + triangulation; barycentric TRS lerp/slerp
+- [x] 3.2 TDD: per-node `(x,y)` named API
+- [x] 3.3 TDD: StateMachine state may use BlendSpace2D as playback
+- [x] 3.4 TDD: dominant-clip clock under BlendSpace2D (define tie-break)
 
 ## 4. Gate D — AnimationTree Asset
 

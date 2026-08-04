@@ -154,6 +154,83 @@ void blendClipsOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip0,
   }
 }
 
+namespace {
+
+Quat nlerpThree(const Quat& a, float wa, const Quat& b, float wb, const Quat& c,
+                float wc) {
+  Quat qb = b;
+  Quat qc = c;
+  if (glm::dot(a, qb) < 0.0f) {
+    qb = -qb;
+  }
+  if (glm::dot(a, qc) < 0.0f) {
+    qc = -qc;
+  }
+  Quat mixed = a * wa + qb * wb + qc * wc;
+  const float len = glm::length(mixed);
+  if (len <= 1.0e-8f) {
+    return a;
+  }
+  return mixed / len;
+}
+
+BoneTransform blendBoneTransformsThree(const BoneTransform& a, float wa,
+                                       const BoneTransform& b, float wb,
+                                       const BoneTransform& c, float wc) {
+  BoneTransform result;
+  result.translation = a.translation * wa + b.translation * wb + c.translation * wc;
+  result.scale = a.scale * wa + b.scale * wb + c.scale * wc;
+  result.rotation = nlerpThree(a.rotation, wa, b.rotation, wb, c.rotation, wc);
+  return result;
+}
+
+}  // namespace
+
+void blendThreeClipsOntoSkeleton(Skeleton& skeleton,
+                                 const AnimationClipData& clip0, float time0,
+                                 float weight0, const AnimationClipData& clip1,
+                                 float time1, float weight1,
+                                 const AnimationClipData& clip2, float time2,
+                                 float weight2) {
+  const float sum = weight0 + weight1 + weight2;
+  float w0 = weight0;
+  float w1 = weight1;
+  float w2 = weight2;
+  if (sum > 1.0e-8f) {
+    w0 /= sum;
+    w1 /= sum;
+    w2 /= sum;
+  } else {
+    w0 = 1.0f;
+    w1 = 0.0f;
+    w2 = 0.0f;
+  }
+
+  const size_t bone_count = skeleton.getBoneCount();
+  eastl::vector<BoneTransform> pose0(bone_count);
+  eastl::vector<BoneTransform> pose1(bone_count);
+  eastl::vector<BoneTransform> pose2(bone_count);
+
+  sampleClipOntoSkeleton(skeleton, clip0, time0);
+  for (size_t i = 0; i < bone_count; ++i) {
+    pose0[i] = skeleton.getBonePoseLocal(i);
+  }
+  sampleClipOntoSkeleton(skeleton, clip1, time1);
+  for (size_t i = 0; i < bone_count; ++i) {
+    pose1[i] = skeleton.getBonePoseLocal(i);
+  }
+  sampleClipOntoSkeleton(skeleton, clip2, time2);
+  for (size_t i = 0; i < bone_count; ++i) {
+    pose2[i] = skeleton.getBonePoseLocal(i);
+  }
+
+  skeleton.resetPoseToRest();
+  for (size_t i = 0; i < bone_count; ++i) {
+    skeleton.setBonePoseLocal(
+        i, blendBoneTransformsThree(pose0[i], w0, pose1[i], w1, pose2[i], w2));
+  }
+}
+
 void applyAdditiveClipOntoSkeleton(Skeleton& skeleton,
                                    const AnimationClipData& clip, float time,
                                    float weight) {

@@ -119,6 +119,9 @@ void captureAnimationTreeTopology(const AnimationTree& tree,
         if (kind == AnimationStatePlaybackKind::BlendSpace1D) {
           state_def.kind = "blendSpace1D";
           state_def.blend_space_node = blend_space_node;
+        } else if (kind == AnimationStatePlaybackKind::BlendSpace2D) {
+          state_def.kind = "blendSpace2D";
+          state_def.blend_space_node = blend_space_node;
         } else {
           state_def.kind = "clip";
           state_def.clip_name = clip_name;
