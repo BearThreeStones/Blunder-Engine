@@ -7,6 +7,7 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
@@ -399,6 +400,11 @@ SkeletonLookAtModifier* Object::addSkeletonLookAtModifier() {
 SkeletonPaperMouthModifier* Object::addSkeletonPaperMouthModifier() {
   return static_cast<SkeletonPaperMouthModifier*>(
       addSkeletonModifier(eastl::make_unique<SkeletonPaperMouthModifier>()));
+}
+
+SkeletonAttachModifier* Object::addSkeletonAttachModifier() {
+  return static_cast<SkeletonAttachModifier*>(
+      addSkeletonModifier(eastl::make_unique<SkeletonAttachModifier>()));
 }
 
 bool Object::moveSkeletonModifier(size_t from_index, size_t to_index) {

@@ -9,5 +9,6 @@ void register_animation_tree_reflection();
 void register_skeleton_modifier_reflection();
 void register_skeleton_look_at_modifier_reflection();
 void register_skeleton_paper_mouth_modifier_reflection();
+void register_skeleton_attach_modifier_reflection();
 
 }  // namespace Blunder

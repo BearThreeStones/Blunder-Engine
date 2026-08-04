@@ -1,66 +1,28 @@
-# Task 3.1 Report — Scene-embedded AnimationTree topology round-trip
+# Task 3.1 Report — SkeletonAttachModifier host bone → child Object Transform
 
-**Status:** DONE  
-**Branch:** `feat/dogwalk-animation-phase-4`
+## Status
+**Done.** `SkeletonAttachModifier` ClassDB product copies host attachment bone world TRS onto a configured child Object's Transform after skeleton sample / modifier apply.
 
-## Summary
-
-AnimationTree topology (BlendSpace1D points/scalars, StateMachine states, Add2 clip+weight, OneShot slot, active flag, current state, base blend-space node) now persists on scene entities under `animationTree`, following the `animationPlayer` embed pattern. `SceneInstance` applies topology on instantiate and captures it on `exportToScene`.
-
-## JSON shape (entity `animationTree`)
-
-```json
-"animationTree": {
-  "active": true,
-  "currentState": "Locomotion",
-  "baseBlendSpaceNode": "Locomotion",
-  "blendSpaces": {
-    "Locomotion": {
-      "scalar": 1.0,
-      "points": [
-        { "clip": "idle", "scalar": 0.0 },
-        { "clip": "walk", "scalar": 1.0 }
-      ]
-    }
-  },
-  "states": {
-    "Locomotion": { "kind": "blendSpace1D", "blendSpaceNode": "Locomotion" }
-  },
-  "add2": { "clip": "turn", "weight": 0.4 },
-  "oneShotClip": "trip"
-}
-```
-
-OneShot live playback state is **not** serialized (authored slot only).
-
-## Production changes
-
-| File | Change |
-|------|--------|
-| `scene.h` | `AnimationTreeBlendSpaceDef`, `AnimationTreeStateDef`, entity topology fields |
-| `scene_serializer.cpp` | `appendAnimationTreeJson`, `parseAnimationTreeObject` (+ helpers) |
-| `scene_instance.cpp` | `applyAnimationTreeTopology`, `captureAnimationTreeTopology`, instantiate/export |
-| `animation_tree.h/.cpp` | `setOneShotSlotClip`, `visitBlendSpaces`, `visitStates` |
+## Commit
+`feat(animation): SkeletonAttachModifier copies bone world transform to child Object (task 3.1)`
 
 ## Tests
+`dogwalk_phase6_skeleton_attach_test: all passed` (2 cases: direct apply + post-AnimationPlayer sample chain)
 
-| Target | Coverage |
-|--------|----------|
-| `scene_serializer_test.cpp` | `serializeAndParseAnimationTreeTopology` |
-| `scene_behaviour_instantiate_test.cpp` | `instantiateRestoresAnimationTreeTopology` (+ export) |
+## Implementation summary
+- **Class:** `SkeletonAttachModifier` (`skeleton_attach_modifier.h/.cpp`)
+- **ClassDB:** `bone_name`, `child_object_id` (Int ↔ `ObjectId`)
+- **Factory:** `Object::addSkeletonAttachModifier()`
+- **Apply:** decomposes `getBoneGlobalPoseMatrix(bone)` → `child->setPosition/Rotation/Scale`
+- **Wiring:** registration, `class_db.cpp`, runtime + test CMake
 
-**Note:** `scene_serializer_test` / `scene_behaviour_instantiate_test` link `blunder_engine_c_static` (~43MB) and failed to launch in this worktree (missing runtime DLL chain at test cwd). They **compile** after the serializer changes. `animation_tree_test` (571KB) passes including expanded ClassDB named-API coverage.
+## Semantics
+- Writes **child Object Transform** only — does not touch another Object's Skeleton poses.
+- Runs in existing post-sample modifier chain via `Object::applySkeletonModifiers`.
+- Child should be parented under host so bone-space TRS maps to local Object Transform.
 
-## Test command
-
-```powershell
-cmake --build build/vs2026-debug --target animation_tree_test scene_serializer_test scene_behaviour_instantiate_test --config Debug
-# Lightweight (verified):
-build/vs2026-debug/engine/src/tests/Debug/animation_tree_test.exe
-# Heavy scene tests need VulkanSDK Bin + slint_cpp.dll on PATH (see docs/agents/testing.md)
-```
-
-## Concerns
-
-- Instantiate apply order: clip map must be bound on AnimationPlayer before tree topology (player ensured when tree or clips present).
-- `setStateBlendSpace` / `addBlendSpacePoint` order matters at runtime; scene JSON lists blend spaces before states in apply loop.
+## Concerns / deferred (3.2–3.4)
+- **3.2:** invalid child/bone currently no-op silently — need error/log path.
+- **3.3:** no explicit guard test that remote Skeleton is untouched.
+- **3.4:** `AnimationPreviewController` edit-scrub for Attach not added yet.
+- **Serialize / Inspector / C-ABI:** tasks 4.x / 5.x still open.

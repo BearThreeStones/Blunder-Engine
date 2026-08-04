@@ -142,6 +142,7 @@ void ClassDB::initialize() {
   register_skeleton_modifier_reflection();
   register_skeleton_look_at_modifier_reflection();
   register_skeleton_paper_mouth_modifier_reflection();
+  register_skeleton_attach_modifier_reflection();
 }
 
 void ClassDB::shutdown() { clear(); }

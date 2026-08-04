@@ -17,6 +17,7 @@
 
 namespace Blunder {
 
+class SkeletonAttachModifier;
 class SkeletonLookAtModifier;
 class SkeletonPaperMouthModifier;
 
@@ -112,6 +113,7 @@ class Object {
   SkeletonModifier* addSkeletonModifier(eastl::unique_ptr<SkeletonModifier> modifier);
   SkeletonLookAtModifier* addSkeletonLookAtModifier();
   SkeletonPaperMouthModifier* addSkeletonPaperMouthModifier();
+  SkeletonAttachModifier* addSkeletonAttachModifier();
   bool moveSkeletonModifier(size_t from_index, size_t to_index);
   void applySkeletonModifiers(Skeleton& skeleton);
 
