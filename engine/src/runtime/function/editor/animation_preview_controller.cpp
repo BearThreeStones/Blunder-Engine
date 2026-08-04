@@ -4,6 +4,7 @@
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
@@ -351,6 +352,38 @@ bool AnimationPreviewController::moveSkeletonModifier(const size_t from_index,
   if (!m_target_object->moveSkeletonModifier(from_index, to_index)) {
     return false;
   }
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::setSkeletonLookAtTarget(
+    const size_t modifier_index, const Vec3& target) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(modifier_index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  auto* look_at = static_cast<SkeletonLookAtModifier*>(modifier);
+  look_at->setTarget(target);
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::setSkeletonLookAtBoneName(
+    const size_t modifier_index, const eastl::string& bone_name) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(modifier_index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  auto* look_at = static_cast<SkeletonLookAtModifier*>(modifier);
+  look_at->setBoneName(bone_name);
   resampleBoundSkeleton();
   return true;
 }

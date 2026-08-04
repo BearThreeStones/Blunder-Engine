@@ -2,6 +2,7 @@
 
 #include "EASTL/string.h"
 
+#include "runtime/core/math/math_types.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/resource/asset/asset_descriptor.h"
 
@@ -78,6 +79,9 @@ class AnimationPreviewController final {
   bool setSkeletonModifierEnabled(size_t index, bool enabled);
   bool isSkeletonModifierEnabled(size_t index) const;
   bool moveSkeletonModifier(size_t from_index, size_t to_index);
+  bool setSkeletonLookAtTarget(size_t modifier_index, const Vec3& target);
+  bool setSkeletonLookAtBoneName(size_t modifier_index,
+                                 const eastl::string& bone_name);
 
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);
