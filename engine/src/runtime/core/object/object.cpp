@@ -8,6 +8,7 @@
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
+#include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 
 namespace Blunder {
@@ -393,6 +394,11 @@ SkeletonModifier* Object::addSkeletonModifier(
 SkeletonLookAtModifier* Object::addSkeletonLookAtModifier() {
   return static_cast<SkeletonLookAtModifier*>(
       addSkeletonModifier(eastl::make_unique<SkeletonLookAtModifier>()));
+}
+
+SkeletonPaperMouthModifier* Object::addSkeletonPaperMouthModifier() {
+  return static_cast<SkeletonPaperMouthModifier*>(
+      addSkeletonModifier(eastl::make_unique<SkeletonPaperMouthModifier>()));
 }
 
 bool Object::moveSkeletonModifier(size_t from_index, size_t to_index) {

@@ -2096,6 +2096,30 @@ target_precompile_headers(dogwalk_phase6_look_at_product_test
 add_test(NAME dogwalk_phase6_look_at_product_test
          COMMAND dogwalk_phase6_look_at_product_test)
 
+add_executable(dogwalk_phase6_paper_mouth_test
+    "dogwalk_phase6_paper_mouth_test.cpp"
+)
+
+target_link_libraries(dogwalk_phase6_paper_mouth_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_phase6_paper_mouth_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_phase6_paper_mouth_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_phase6_paper_mouth_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_phase6_paper_mouth_test
+         COMMAND dogwalk_phase6_paper_mouth_test)
+
 add_executable(animation_method_track_gate_a_test
     "animation_method_track_gate_a_test.cpp"
 )
