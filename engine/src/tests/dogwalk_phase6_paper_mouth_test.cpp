@@ -84,10 +84,89 @@ void test_paper_mouth_open_amount_changes_jaw_pose() {
   ClassDB::shutdown();
 }
 
+/// Task 2.2: bone_name switches which bone openAmount affects.
+void test_paper_mouth_configurable_bone_name() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+
+  ObjectDB::clear();
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object created", object != nullptr);
+  if (object == nullptr) {
+    ClassDB::shutdown();
+    return;
+  }
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  const int head = skeleton->addBone("Head", -1);
+  const int jaw = skeleton->addBone("Jaw", head);
+  skeleton->setBoneRestLocal(static_cast<size_t>(jaw),
+                             BoneTransform{Vec3(0.0f, 0.0f, 0.2f),
+                                           glm::identity<Quat>(), Vec3(1.0f)});
+  skeleton->resetPoseToRest();
+
+  SkeletonPaperMouthModifier* paper_mouth = object->addSkeletonPaperMouthModifier();
+  expect_true("paper mouth created", paper_mouth != nullptr);
+  if (paper_mouth == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  expect_true("open_amount open via ClassDB",
+              ClassDB::setProperty(paper_mouth, "PaperMouth", "open_amount",
+                                   Variant(1.0f)));
+
+  Variant bone_name;
+  expect_true("default bone_name get via ClassDB",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "bone_name",
+                                   bone_name));
+  expect_true("default bone_name is Jaw", bone_name.asString() == "Jaw");
+
+  skeleton->resetPoseToRest();
+  paper_mouth->apply(*skeleton);
+  const Quat jaw_rotation_default_bone =
+      skeleton->getBonePoseLocal(static_cast<size_t>(jaw)).rotation;
+  const Quat head_rotation_before_switch =
+      skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
+  expect_true("default Jaw bone rotates when open",
+              std::fabs(glm::dot(jaw_rotation_default_bone,
+                                 glm::identity<Quat>())) < 0.999f);
+
+  expect_true("bone_name switched to Head via ClassDB",
+              ClassDB::setProperty(paper_mouth, "PaperMouth", "bone_name",
+                                   Variant(eastl::string("Head"))));
+  expect_true("bone_name get after switch",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "bone_name",
+                                   bone_name));
+  expect_true("bone_name round-trip Head", bone_name.asString() == "Head");
+
+  skeleton->resetPoseToRest();
+  const Quat jaw_rotation_before =
+      skeleton->getBonePoseLocal(static_cast<size_t>(jaw)).rotation;
+  paper_mouth->apply(*skeleton);
+  const Quat jaw_rotation_after =
+      skeleton->getBonePoseLocal(static_cast<size_t>(jaw)).rotation;
+  const Quat head_rotation_after =
+      skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
+  expect_true("Head rotates after bone_name switch",
+              std::fabs(glm::dot(head_rotation_before_switch,
+                                 head_rotation_after)) < 0.999f);
+  expect_true("Jaw rotation unchanged when targeting Head",
+              std::fabs(glm::dot(jaw_rotation_before, jaw_rotation_after)) >
+                  0.999f);
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
 }  // namespace
 
 int main() {
   test_paper_mouth_open_amount_changes_jaw_pose();
+  test_paper_mouth_configurable_bone_name();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

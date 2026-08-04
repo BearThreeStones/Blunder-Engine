@@ -1,54 +1,49 @@
-# Task 2.2 Report — Fire on no-tree member remains Phase 3 hard-cut Play
+# Task 2.2 Report — Configurable jaw bone name on PaperMouth
 
-**Status:** DONE  
-**Branch:** `feat/dogwalk-animation-phase-4`
+## Status
+**Done** — TDD GREEN on `feat/dogwalk-animation-phase-6`.
 
 ## Summary
-
-Sync Group `fire` on a member that **never had** an AnimationTree continues Phase 3 hard-cut `snapPlayWithClip` semantics: clears crossfade and dual-slot blend, resets playback to clip start, and samples the bound skeleton immediately. Task 2.1 already covered inactive-tree members; this task adds an explicit no-tree path with strengthened assertions.
+Proved that PaperMouth `bone_name` switches which skeleton bone `openAmount` rotates. Runtime and ClassDB wiring from 2.1 already supported `bone_name` (default `"Jaw"`); this task adds the bone-switch regression test and marks tasks.md 2.2 complete.
 
 ## TDD evidence
 
-1. **RED:** `test_fire_no_tree_member_phase3_hard_cut` added — dual-slot weighted blend before Fire, player with `getAnimationTree() == nullptr`.
-2. **GREEN:** `animation_sync_group_test.exe` exits 0 (no production changes required; routing from task 2.1 `else` branch already handles `tree == nullptr`).
+1. **RED (conceptual):** `test_paper_mouth_configurable_bone_name` added — default `"Jaw"` rotates Jaw; switching to `"Head"` rotates Head while Jaw stays at rest.
+2. **GREEN:** No production changes required; `SkeletonPaperMouthModifier::apply` already resolves `m_bone_name` via `skeleton.findBoneIndex`.
 
 ### New test
 
 | Test | Proves |
 |------|--------|
-| `test_fire_no_tree_member_phase3_hard_cut` | No-tree member: Fire clears dual-slot blend, hard-cuts `SYNC-attach`, samples skeleton pose, never touches OneShot |
-
-### Strengthened assertions vs 2.1 inactive-tree test
-
-- `getAnimationTree() == nullptr` (never bound, not merely inactive)
-- Dual-slot blend active before Fire → slots and blend weight cleared after
-- Skeleton translation pose matches fired clip at time zero
-- Crossfade cleared, playback position reset
+| `test_paper_mouth_configurable_bone_name` | Default `bone_name` is `"Jaw"`; ClassDB set/get round-trip; Jaw rotates at openAmount=1; after switch to `"Head"`, Head rotates and Jaw unchanged |
 
 ## Production changes
 
 | File | Change |
 |------|--------|
-| `animation_sync_group_test.cpp` | `test_fire_no_tree_member_phase3_hard_cut` |
+| `dogwalk_phase6_paper_mouth_test.cpp` | `test_paper_mouth_configurable_bone_name` |
 | `tasks.md` | 2.2 marked `[x]` |
 
-No runtime code changes — existing `fire()` branch:
+No runtime code changes — existing apply path:
 
 ```cpp
-if (tree != nullptr && tree->isActive()) { requestOneShot(...); }
-else { snapPlayWithClip(...); }
+const int bone_index = skeleton.findBoneIndex(m_bone_name);
 ```
-
-covers `tree == nullptr`.
 
 ## Test command
 
 ```powershell
-cmake --build build/vs2026-debug --target animation_sync_group_test --config Debug
-build/vs2026-debug/engine/src/tests/Debug/animation_sync_group_test.exe
+cmake --build build/vs2026-debug --config Debug --target dogwalk_phase6_paper_mouth_test
+build/vs2026-debug/engine/src/tests/Debug/dogwalk_phase6_paper_mouth_test.exe
 ```
 
-## Concerns
+Output: `dogwalk_phase6_paper_mouth_test: all passed`
 
-- **Inactive vs no-tree:** Both route through the same hard-cut path; only test setup differs.
-- **Seek on hard-cut Fire:** `has_seek` honored for no-tree members (unchanged from Phase 3).
+## Out of scope (deferred)
+- 2.3 attach-driven mode
+- 2.4 Edit scrub without Behaviour Tick
+- C-ABI / scene serialize / Inspector
+
+## Concerns
+- Jaw open axis remains fixed local +X at 45° max; content rigs with differently oriented jaw bones may need axis tuning beyond bone naming.
+- Invalid/missing `bone_name` fails silently (no-op apply); scene serialize / Inspector validation deferred to task 4.x.
