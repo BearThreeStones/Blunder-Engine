@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 8
+#define BLUNDER_ENGINE_C_ABI_VERSION 9
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -157,6 +157,31 @@ BLUNDER_ENGINE_C_API int blunder_animation_tree_set_add2_weight(
     BlunderObjectId id, float weight);
 BLUNDER_ENGINE_C_API int blunder_animation_tree_get_add2_weight(
     BlunderObjectId id, float* out_weight);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_blend_space_2d_param(
+    BlunderObjectId id, const char* node_name, float x, float y);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_blend_space_2d_param(
+    BlunderObjectId id, const char* node_name, float* out_x, float* out_y);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_asset_guid(
+    BlunderObjectId id, const char* guid);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_asset_guid(
+    BlunderObjectId id, char* out_guid, int guid_capacity);
+
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_count(BlunderObjectId id,
+                                                         int* out_count);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_enabled(
+    BlunderObjectId id, int index, int enabled);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_enabled(
+    BlunderObjectId id, int index, int* out_enabled);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_move(BlunderObjectId id,
+                                                        int from_index,
+                                                        int to_index);
+
+/// Method-track query surface (Edit markers / tooling). Product dispatch uses Message.
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_method_key_count(
+    BlunderObjectId id, const char* clip_name, int* out_count);
+BLUNDER_ENGINE_C_API int blunder_animation_player_get_method_key(
+    BlunderObjectId id, const char* clip_name, int index, char* out_name,
+    int name_capacity, float* out_time);
 
 typedef uint64_t BlunderSyncGroupId;
 
@@ -266,6 +291,29 @@ typedef struct BlunderNativeAbi {
                                          const char* clip_name);
   int (*animation_tree_set_add2_weight)(BlunderObjectId id, float weight);
   int (*animation_tree_get_add2_weight)(BlunderObjectId id, float* out_weight);
+  int (*animation_tree_set_blend_space_2d_param)(BlunderObjectId id,
+                                                 const char* node_name, float x,
+                                                 float y);
+  int (*animation_tree_get_blend_space_2d_param)(BlunderObjectId id,
+                                                 const char* node_name,
+                                                 float* out_x, float* out_y);
+  int (*animation_tree_set_asset_guid)(BlunderObjectId id, const char* guid);
+  int (*animation_tree_get_asset_guid)(BlunderObjectId id, char* out_guid,
+                                       int guid_capacity);
+  int (*skeleton_modifier_count)(BlunderObjectId id, int* out_count);
+  int (*skeleton_modifier_set_enabled)(BlunderObjectId id, int index,
+                                       int enabled);
+  int (*skeleton_modifier_get_enabled)(BlunderObjectId id, int index,
+                                       int* out_enabled);
+  int (*skeleton_modifier_move)(BlunderObjectId id, int from_index,
+                                int to_index);
+  int (*animation_player_get_method_key_count)(BlunderObjectId id,
+                                               const char* clip_name,
+                                               int* out_count);
+  int (*animation_player_get_method_key)(BlunderObjectId id,
+                                         const char* clip_name, int index,
+                                         char* out_name, int name_capacity,
+                                         float* out_time);
   BlunderSyncGroupId (*sync_group_create)(void);
   int (*sync_group_destroy)(BlunderSyncGroupId id);
   int (*sync_group_join)(BlunderSyncGroupId id, BlunderObjectId player_object_id);

@@ -164,4 +164,35 @@ public sealed class ObjectHandle
     /// <summary>Cached co-located AnimationTree façade for this Object.</summary>
     public AnimationTree EnsureAnimationTree() =>
         _animationTree ??= new AnimationTree(this);
+
+    public int SkeletonModifierCount
+    {
+        get
+        {
+            if (Native.blunder_skeleton_modifier_count(Id, out int count) != Native.Ok)
+            {
+                return 0;
+            }
+
+            return count;
+        }
+    }
+
+    public bool SetSkeletonModifierEnabled(int index, bool enabled) =>
+        Native.blunder_skeleton_modifier_set_enabled(Id, index, enabled ? 1 : 0) ==
+        Native.Ok;
+
+    public bool IsSkeletonModifierEnabled(int index)
+    {
+        if (Native.blunder_skeleton_modifier_get_enabled(Id, index, out int enabled) !=
+            Native.Ok)
+        {
+            return false;
+        }
+
+        return enabled != 0;
+    }
+
+    public bool MoveSkeletonModifier(int fromIndex, int toIndex) =>
+        Native.blunder_skeleton_modifier_move(Id, fromIndex, toIndex) == Native.Ok;
 }

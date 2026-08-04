@@ -1,7 +1,7 @@
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for an Object's co-located AnimationTree (C-ABI v8).
+/// Managed façade for an Object's co-located AnimationTree (C-ABI v9).
 /// </summary>
 public sealed class AnimationTree
 {
@@ -24,6 +24,21 @@ public sealed class AnimationTree
         set => Native.blunder_animation_tree_set_active(_owner.Id, value ? 1 : 0);
     }
 
+    public string AssetGuid
+    {
+        get
+        {
+            if (Native.blunder_animation_tree_get_asset_guid(_owner.Id, out string guid) !=
+                Native.Ok)
+            {
+                return "";
+            }
+
+            return guid;
+        }
+        set => Native.blunder_animation_tree_set_asset_guid(_owner.Id, value ?? "");
+    }
+
     public bool Travel(string stateName) =>
         Native.blunder_animation_tree_travel(_owner.Id, stateName) == Native.Ok;
 
@@ -42,6 +57,20 @@ public sealed class AnimationTree
         }
 
         return value;
+    }
+
+    public void SetBlendSpace2DParam(string nodeName, float x, float y) =>
+        Native.blunder_animation_tree_set_blend_space_2d_param(_owner.Id, nodeName, x, y);
+
+    public (float X, float Y) GetBlendSpace2DParam(string nodeName)
+    {
+        if (Native.blunder_animation_tree_get_blend_space_2d_param(
+                _owner.Id, nodeName, out float x, out float y) != Native.Ok)
+        {
+            return (0f, 0f);
+        }
+
+        return (x, y);
     }
 
     public bool RequestOneShot(string clipName) =>

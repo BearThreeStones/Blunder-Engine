@@ -127,6 +127,29 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.animation_tree_set_add2_weight != nullptr);
   expect_true((std::string(label) + ": animation_tree_get_add2_weight").c_str(),
               abi.animation_tree_get_add2_weight != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_blend_space_2d_param")
+                  .c_str(),
+              abi.animation_tree_set_blend_space_2d_param != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_blend_space_2d_param")
+                  .c_str(),
+              abi.animation_tree_get_blend_space_2d_param != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_asset_guid").c_str(),
+              abi.animation_tree_set_asset_guid != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_asset_guid").c_str(),
+              abi.animation_tree_get_asset_guid != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_count").c_str(),
+              abi.skeleton_modifier_count != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_enabled").c_str(),
+              abi.skeleton_modifier_set_enabled != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_enabled").c_str(),
+              abi.skeleton_modifier_get_enabled != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_move").c_str(),
+              abi.skeleton_modifier_move != nullptr);
+  expect_true((std::string(label) + ": animation_player_get_method_key_count")
+                  .c_str(),
+              abi.animation_player_get_method_key_count != nullptr);
+  expect_true((std::string(label) + ": animation_player_get_method_key").c_str(),
+              abi.animation_player_get_method_key != nullptr);
   expect_true((std::string(label) + ": sync_group_create").c_str(),
               abi.sync_group_create != nullptr);
   expect_true((std::string(label) + ": sync_group_destroy").c_str(),
@@ -167,7 +190,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 8", BLUNDER_ENGINE_C_ABI_VERSION >= 8);
+  expect_true("abi version >= 9", BLUNDER_ENGINE_C_ABI_VERSION >= 9);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

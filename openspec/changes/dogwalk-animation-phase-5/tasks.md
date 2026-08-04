@@ -39,8 +39,8 @@
 
 ## 6. C-ABI + Blunder.Api
 
-- [ ] 6.1 C-ABI for modifiers / method hooks / BlendSpace2D / Tree Asset; bump ABI; NativeAbi table
-- [ ] 6.2 Blunder.Api façades + completeness tests
+- [x] 6.1 C-ABI for modifiers / method hooks / BlendSpace2D / Tree Asset; bump ABI; NativeAbi table
+- [x] 6.2 Blunder.Api façades + completeness tests
 
 ## 7. Content gates
 

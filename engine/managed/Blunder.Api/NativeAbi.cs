@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v8 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v9 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -64,6 +64,20 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_request_one_shot;
     public delegate* unmanaged[Cdecl]<ulong, float, int> animation_tree_set_add2_weight;
     public delegate* unmanaged[Cdecl]<ulong, float*, int> animation_tree_get_add2_weight;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float, float, int>
+        animation_tree_set_blend_space_2d_param;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float*, float*, int>
+        animation_tree_get_blend_space_2d_param;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_set_asset_guid;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, int> animation_tree_get_asset_guid;
+    public delegate* unmanaged[Cdecl]<ulong, int*, int> skeleton_modifier_count;
+    public delegate* unmanaged[Cdecl]<ulong, int, int, int> skeleton_modifier_set_enabled;
+    public delegate* unmanaged[Cdecl]<ulong, int, int*, int> skeleton_modifier_get_enabled;
+    public delegate* unmanaged[Cdecl]<ulong, int, int, int> skeleton_modifier_move;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int*, int>
+        animation_player_get_method_key_count;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, byte*, int, float*, int>
+        animation_player_get_method_key;
     public delegate* unmanaged[Cdecl]<ulong> sync_group_create;
     public delegate* unmanaged[Cdecl]<ulong, int> sync_group_destroy;
     public delegate* unmanaged[Cdecl]<ulong, ulong, int> sync_group_join;

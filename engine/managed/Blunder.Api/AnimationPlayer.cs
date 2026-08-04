@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for an Object's co-located AnimationPlayer (C-ABI v8).
+/// Managed façade for an Object's co-located AnimationPlayer (C-ABI v9).
 /// </summary>
 public sealed class AnimationPlayer
 {
@@ -145,6 +145,30 @@ public sealed class AnimationPlayer
 
             return value;
         }
+    }
+
+    public int GetMethodKeyCount(string clipName)
+    {
+        if (Native.blunder_animation_player_get_method_key_count(
+                _owner.Id, clipName, out int count) != Native.Ok)
+        {
+            return 0;
+        }
+
+        return count;
+    }
+
+    public bool TryGetMethodKey(string clipName, int index, out string name, out float time)
+    {
+        if (Native.blunder_animation_player_get_method_key(
+                _owner.Id, clipName, index, out name, out time) != Native.Ok)
+        {
+            name = "";
+            time = 0f;
+            return false;
+        }
+
+        return true;
     }
 
     internal void DetachNativeListeners()

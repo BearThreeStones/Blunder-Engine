@@ -86,6 +86,16 @@ internal static unsafe class Native
         abi.animation_tree_request_one_shot != null &&
         abi.animation_tree_set_add2_weight != null &&
         abi.animation_tree_get_add2_weight != null &&
+        abi.animation_tree_set_blend_space_2d_param != null &&
+        abi.animation_tree_get_blend_space_2d_param != null &&
+        abi.animation_tree_set_asset_guid != null &&
+        abi.animation_tree_get_asset_guid != null &&
+        abi.skeleton_modifier_count != null &&
+        abi.skeleton_modifier_set_enabled != null &&
+        abi.skeleton_modifier_get_enabled != null &&
+        abi.skeleton_modifier_move != null &&
+        abi.animation_player_get_method_key_count != null &&
+        abi.animation_player_get_method_key != null &&
         abi.sync_group_create != null &&
         abi.sync_group_destroy != null &&
         abi.sync_group_join != null &&
@@ -538,6 +548,147 @@ internal static unsafe class Native
         int rc = s_abi.animation_tree_get_add2_weight(id, &value);
         weight = value;
         return rc;
+    }
+
+    public static int blunder_animation_tree_set_blend_space_2d_param(
+        ulong id, string nodeName, float x, float y)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(nodeName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_set_blend_space_2d_param(id, namePtr, x, y);
+        }
+    }
+
+    public static int blunder_animation_tree_get_blend_space_2d_param(
+        ulong id, string nodeName, out float x, out float y)
+    {
+        EnsureRegistered();
+        x = 0;
+        y = 0;
+        byte[] utf8 = ToUtf8(nodeName);
+        fixed (byte* namePtr = utf8)
+        {
+            float ox = 0;
+            float oy = 0;
+            int rc = s_abi.animation_tree_get_blend_space_2d_param(id, namePtr, &ox, &oy);
+            x = ox;
+            y = oy;
+            return rc;
+        }
+    }
+
+    public static int blunder_animation_tree_set_asset_guid(ulong id, string guid)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(guid ?? "");
+        fixed (byte* guidPtr = utf8)
+        {
+            return s_abi.animation_tree_set_asset_guid(id, guidPtr);
+        }
+    }
+
+    public static int blunder_animation_tree_get_asset_guid(ulong id, out string guid)
+    {
+        EnsureRegistered();
+        guid = "";
+        const int capacity = 128;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* guidPtr = buffer)
+        {
+            int rc = s_abi.animation_tree_get_asset_guid(id, guidPtr, capacity);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                guid = Encoding.UTF8.GetString(buffer, 0, len);
+            }
+
+            return rc;
+        }
+    }
+
+    public static int blunder_skeleton_modifier_count(ulong id, out int count)
+    {
+        EnsureRegistered();
+        count = 0;
+        int value = 0;
+        int rc = s_abi.skeleton_modifier_count(id, &value);
+        count = value;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_enabled(ulong id, int index, int enabled)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_enabled(id, index, enabled);
+    }
+
+    public static int blunder_skeleton_modifier_get_enabled(ulong id, int index, out int enabled)
+    {
+        EnsureRegistered();
+        enabled = 0;
+        int value = 0;
+        int rc = s_abi.skeleton_modifier_get_enabled(id, index, &value);
+        enabled = value;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_move(ulong id, int fromIndex, int toIndex)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_move(id, fromIndex, toIndex);
+    }
+
+    public static int blunder_animation_player_get_method_key_count(
+        ulong id, string clipName, out int count)
+    {
+        EnsureRegistered();
+        count = 0;
+        byte[] utf8 = ToUtf8(clipName);
+        fixed (byte* namePtr = utf8)
+        {
+            int value = 0;
+            int rc = s_abi.animation_player_get_method_key_count(id, namePtr, &value);
+            count = value;
+            return rc;
+        }
+    }
+
+    public static int blunder_animation_player_get_method_key(
+        ulong id, string clipName, int index, out string name, out float time)
+    {
+        EnsureRegistered();
+        name = "";
+        time = 0;
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        byte[] utf8 = ToUtf8(clipName);
+        fixed (byte* clipPtr = utf8)
+        fixed (byte* namePtr = buffer)
+        {
+            float value = 0;
+            int rc = s_abi.animation_player_get_method_key(
+                id, clipPtr, index, namePtr, capacity, &value);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                name = Encoding.UTF8.GetString(buffer, 0, len);
+                time = value;
+            }
+
+            return rc;
+        }
     }
 
     public static ulong blunder_sync_group_create()

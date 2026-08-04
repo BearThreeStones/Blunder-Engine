@@ -8,6 +8,7 @@
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/object_id.h"
+#include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/reflection/message_dispatch.h"
@@ -685,6 +686,176 @@ int blunder_animation_tree_get_add2_weight(BlunderObjectId id,
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_animation_tree_set_blend_space_2d_param(BlunderObjectId id,
+                                                    const char* node_name,
+                                                    float x, float y) {
+  if (node_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  tree->setBlendSpace2DParam(eastl::string(node_name), x, y);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_get_blend_space_2d_param(BlunderObjectId id,
+                                                    const char* node_name,
+                                                    float* out_x,
+                                                    float* out_y) {
+  if (node_name == nullptr || out_x == nullptr || out_y == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const BlendSpace2DParam param =
+      tree->getBlendSpace2DParam(eastl::string(node_name));
+  *out_x = param.x;
+  *out_y = param.y;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_set_asset_guid(BlunderObjectId id, const char* guid) {
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  tree->setAssetGuid(guid != nullptr ? eastl::string(guid) : eastl::string());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_get_asset_guid(BlunderObjectId id, char* out_guid,
+                                          int guid_capacity) {
+  if (out_guid == nullptr || guid_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const eastl::string& guid = tree->getAssetGuid();
+  out_guid[0] = '\0';
+  if (guid.empty()) {
+    return BLUNDER_ENGINE_OK;
+  }
+  const size_t copy_len =
+      static_cast<size_t>(guid_capacity - 1) < guid.size()
+          ? static_cast<size_t>(guid_capacity - 1)
+          : guid.size();
+  std::memcpy(out_guid, guid.c_str(), copy_len);
+  out_guid[copy_len] = '\0';
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_count(BlunderObjectId id, int* out_count) {
+  if (out_count == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_count = static_cast<int>(object->getSkeletonModifierCount());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_enabled(BlunderObjectId id, int index,
+                                          int enabled) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr || index < 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  SkeletonModifier* modifier =
+      object->getSkeletonModifierAt(static_cast<size_t>(index));
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setEnabled(enabled != 0);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_enabled(BlunderObjectId id, int index,
+                                          int* out_enabled) {
+  if (out_enabled == nullptr || index < 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonModifier* modifier =
+      object->getSkeletonModifierAt(static_cast<size_t>(index));
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_enabled = modifier->isEnabled() ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_move(BlunderObjectId id, int from_index,
+                                   int to_index) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr || from_index < 0 || to_index < 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return object->moveSkeletonModifier(static_cast<size_t>(from_index),
+                                     static_cast<size_t>(to_index))
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_player_get_method_key_count(BlunderObjectId id,
+                                                  const char* clip_name,
+                                                  int* out_count) {
+  if (clip_name == nullptr || out_count == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationClipData clip;
+  if (!player->resolveClipForName(eastl::string(clip_name), clip)) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_count = static_cast<int>(clip.method_keys.size());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_player_get_method_key(BlunderObjectId id,
+                                            const char* clip_name, int index,
+                                            char* out_name, int name_capacity,
+                                            float* out_time) {
+  if (clip_name == nullptr || out_name == nullptr || name_capacity <= 0 ||
+      out_time == nullptr || index < 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationPlayer* player = animationPlayerForObject(id);
+  if (player == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationClipData clip;
+  if (!player->resolveClipForName(eastl::string(clip_name), clip)) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  if (static_cast<size_t>(index) >= clip.method_keys.size()) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const AnimationMethodKey& key = clip.method_keys[static_cast<size_t>(index)];
+  *out_time = key.time;
+  out_name[0] = '\0';
+  const size_t copy_len =
+      static_cast<size_t>(name_capacity - 1) < key.name.size()
+          ? static_cast<size_t>(name_capacity - 1)
+          : key.name.size();
+  std::memcpy(out_name, key.name.c_str(), copy_len);
+  out_name[copy_len] = '\0';
+  return BLUNDER_ENGINE_OK;
+}
+
 BlunderSyncGroupId blunder_sync_group_create(void) {
   return animationSyncGroupService().create();
 }
@@ -857,6 +1028,20 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->animation_tree_request_one_shot = &blunder_animation_tree_request_one_shot;
   out->animation_tree_set_add2_weight = &blunder_animation_tree_set_add2_weight;
   out->animation_tree_get_add2_weight = &blunder_animation_tree_get_add2_weight;
+  out->animation_tree_set_blend_space_2d_param =
+      &blunder_animation_tree_set_blend_space_2d_param;
+  out->animation_tree_get_blend_space_2d_param =
+      &blunder_animation_tree_get_blend_space_2d_param;
+  out->animation_tree_set_asset_guid = &blunder_animation_tree_set_asset_guid;
+  out->animation_tree_get_asset_guid = &blunder_animation_tree_get_asset_guid;
+  out->skeleton_modifier_count = &blunder_skeleton_modifier_count;
+  out->skeleton_modifier_set_enabled = &blunder_skeleton_modifier_set_enabled;
+  out->skeleton_modifier_get_enabled = &blunder_skeleton_modifier_get_enabled;
+  out->skeleton_modifier_move = &blunder_skeleton_modifier_move;
+  out->animation_player_get_method_key_count =
+      &blunder_animation_player_get_method_key_count;
+  out->animation_player_get_method_key =
+      &blunder_animation_player_get_method_key;
   out->sync_group_create = &blunder_sync_group_create;
   out->sync_group_destroy = &blunder_sync_group_destroy;
   out->sync_group_join = &blunder_sync_group_join;
@@ -974,6 +1159,26 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_animation_tree_set_add2_weight");
   BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_add2_weight,
                           "blunder_animation_tree_get_add2_weight");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_blend_space_2d_param,
+                          "blunder_animation_tree_set_blend_space_2d_param");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_blend_space_2d_param,
+                          "blunder_animation_tree_get_blend_space_2d_param");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_asset_guid,
+                          "blunder_animation_tree_set_asset_guid");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_asset_guid,
+                          "blunder_animation_tree_get_asset_guid");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_count,
+                          "blunder_skeleton_modifier_count");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_enabled,
+                          "blunder_skeleton_modifier_set_enabled");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_enabled,
+                          "blunder_skeleton_modifier_get_enabled");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_move,
+                          "blunder_skeleton_modifier_move");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_method_key_count,
+                          "blunder_animation_player_get_method_key_count");
+  BLUNDER_NATIVE_ABI_LOAD(animation_player_get_method_key,
+                          "blunder_animation_player_get_method_key");
   BLUNDER_NATIVE_ABI_LOAD(sync_group_create, "blunder_sync_group_create");
   BLUNDER_NATIVE_ABI_LOAD(sync_group_destroy, "blunder_sync_group_destroy");
   BLUNDER_NATIVE_ABI_LOAD(sync_group_join, "blunder_sync_group_join");

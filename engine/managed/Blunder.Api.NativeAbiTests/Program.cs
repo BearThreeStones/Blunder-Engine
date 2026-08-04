@@ -23,8 +23,16 @@ static unsafe class Program
     static string s_lastStartState = "";
     static string s_lastBlendNode = "";
     static float s_blendSpaceScalar;
+    static float s_blendSpace2DX;
+    static float s_blendSpace2DY;
+    static string s_lastBlend2DNode = "";
+    static string s_treeAssetGuid = "";
     static string s_lastOneShotClip = "";
     static float s_add2Weight;
+    static int s_modifierCount;
+    static bool[] s_modifierEnabled = [true, true];
+    static string s_methodKeyName = "FootStep";
+    static float s_methodKeyTime = 0.25f;
 
     static ulong s_syncGroupId = 100;
     static int s_lastSuppressFlag = -1;
@@ -41,8 +49,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 57 * sizeof(nint),
-            "BlunderNativeAbi layout size is 57 pointers");
+            sizeof(BlunderNativeAbi) == 67 * sizeof(nint),
+            "BlunderNativeAbi layout size is 67 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -112,6 +120,16 @@ static unsafe class Program
         abi.animation_tree_request_one_shot = &StubAnimationTreeRequestOneShot;
         abi.animation_tree_set_add2_weight = &StubAnimationTreeSetAdd2Weight;
         abi.animation_tree_get_add2_weight = &StubAnimationTreeGetAdd2Weight;
+        abi.animation_tree_set_blend_space_2d_param = &StubAnimationTreeSetBlendSpace2DParam;
+        abi.animation_tree_get_blend_space_2d_param = &StubAnimationTreeGetBlendSpace2DParam;
+        abi.animation_tree_set_asset_guid = &StubAnimationTreeSetAssetGuid;
+        abi.animation_tree_get_asset_guid = &StubAnimationTreeGetAssetGuid;
+        abi.skeleton_modifier_count = &StubSkeletonModifierCount;
+        abi.skeleton_modifier_set_enabled = &StubSkeletonModifierSetEnabled;
+        abi.skeleton_modifier_get_enabled = &StubSkeletonModifierGetEnabled;
+        abi.skeleton_modifier_move = &StubSkeletonModifierMove;
+        abi.animation_player_get_method_key_count = &StubAnimationGetMethodKeyCount;
+        abi.animation_player_get_method_key = &StubAnimationGetMethodKey;
         abi.sync_group_create = &StubSyncGroupCreate;
         abi.sync_group_destroy = &StubSyncGroupDestroy;
         abi.sync_group_join = &StubSyncGroupJoin;
@@ -219,6 +237,13 @@ static unsafe class Program
         Expect(
             Native.blunder_animation_player_play_with_fade(7, "trot", 1.25f) == Native.Ok,
             "Native play_with_fade after register");
+
+        Expect(player.GetMethodKeyCount("walk") == 1, "AnimationPlayer.GetMethodKeyCount");
+        Expect(
+            player.TryGetMethodKey("walk", 0, out string methodName, out float methodTime) &&
+            methodName == "FootStep" &&
+            Math.Abs(methodTime - 0.25f) < 0.0001f,
+            "AnimationPlayer.TryGetMethodKey");
     }
 
     static void RunAnimationTreeSmokeTests()
@@ -228,8 +253,14 @@ static unsafe class Program
         s_lastStartState = "";
         s_lastBlendNode = "";
         s_blendSpaceScalar = 0.5f;
+        s_lastBlend2DNode = "";
+        s_blendSpace2DX = 0.1f;
+        s_blendSpace2DY = 0.2f;
+        s_treeAssetGuid = "";
         s_lastOneShotClip = "";
         s_add2Weight = 0.25f;
+        s_modifierCount = 2;
+        s_modifierEnabled = [true, true];
 
         ObjectHandle handle = ObjectHandle.GetOrCreate(7);
         AnimationTree tree = handle.EnsureAnimationTree();
@@ -250,12 +281,34 @@ static unsafe class Program
         Expect(Math.Abs(tree.GetBlendSpaceScalar("Locomotion") - 0.75f) < 0.0001f,
             "GetBlendSpaceScalar forwarded");
 
+        tree.SetBlendSpace2DParam("Locomotion2D", 0.4f, 0.6f);
+        Expect(s_lastBlend2DNode == "Locomotion2D" &&
+               Math.Abs(s_blendSpace2DX - 0.4f) < 0.0001f &&
+               Math.Abs(s_blendSpace2DY - 0.6f) < 0.0001f,
+            "SetBlendSpace2DParam forwarded");
+        (float bx, float by) = tree.GetBlendSpace2DParam("Locomotion2D");
+        Expect(Math.Abs(bx - 0.4f) < 0.0001f && Math.Abs(by - 0.6f) < 0.0001f,
+            "GetBlendSpace2DParam forwarded");
+
+        tree.AssetGuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        Expect(s_treeAssetGuid == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "AssetGuid set forwarded");
+        Expect(tree.AssetGuid == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "AssetGuid get forwarded");
+
         Expect(tree.RequestOneShot("trip"), "AnimationTree.RequestOneShot");
         Expect(s_lastOneShotClip == "trip", "RequestOneShot forwarded");
 
         tree.Add2Weight = 0.9f;
         Expect(Math.Abs(s_add2Weight - 0.9f) < 0.0001f, "Add2Weight set");
         Expect(Math.Abs(tree.Add2Weight - 0.9f) < 0.0001f, "Add2Weight get");
+
+        Expect(handle.SkeletonModifierCount == 2, "ObjectHandle.SkeletonModifierCount");
+        Expect(handle.SetSkeletonModifierEnabled(1, false), "SetSkeletonModifierEnabled");
+        Expect(!handle.IsSkeletonModifierEnabled(1), "IsSkeletonModifierEnabled false");
+        Expect(handle.MoveSkeletonModifier(0, 1), "MoveSkeletonModifier");
+        Expect(handle.IsSkeletonModifierEnabled(0) == false, "Move preserves enabled flags");
+        Expect(handle.IsSkeletonModifierEnabled(1), "Move swaps enabled flags");
 
         Expect(
             Native.blunder_animation_tree_set_active(7, 0) == Native.Ok,
@@ -776,6 +829,138 @@ static unsafe class Program
         }
 
         *outWeight = s_add2Weight;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetBlendSpace2DParam(
+        ulong id, byte* nodeName, float x, float y)
+    {
+        if (id == 0 || nodeName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastBlend2DNode = Utf8ToString(nodeName);
+        s_blendSpace2DX = x;
+        s_blendSpace2DY = y;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetBlendSpace2DParam(
+        ulong id, byte* nodeName, float* outX, float* outY)
+    {
+        if (id == 0 || nodeName == null || outX == null || outY == null)
+        {
+            return Native.Error;
+        }
+
+        *outX = s_blendSpace2DX;
+        *outY = s_blendSpace2DY;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetAssetGuid(ulong id, byte* guid)
+    {
+        if (id == 0 || guid == null)
+        {
+            return Native.Error;
+        }
+
+        s_treeAssetGuid = Utf8ToString(guid);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetAssetGuid(ulong id, byte* outGuid, int capacity)
+    {
+        if (id == 0 || outGuid == null || capacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_treeAssetGuid, outGuid, capacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierCount(ulong id, int* outCount)
+    {
+        if (id == 0 || outCount == null)
+        {
+            return Native.Error;
+        }
+
+        *outCount = s_modifierCount;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetEnabled(ulong id, int index, int enabled)
+    {
+        if (id == 0 || index < 0 || index >= s_modifierEnabled.Length)
+        {
+            return Native.Error;
+        }
+
+        s_modifierEnabled[index] = enabled != 0;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetEnabled(ulong id, int index, int* outEnabled)
+    {
+        if (id == 0 || outEnabled == null || index < 0 ||
+            index >= s_modifierEnabled.Length)
+        {
+            return Native.Error;
+        }
+
+        *outEnabled = s_modifierEnabled[index] ? 1 : 0;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierMove(ulong id, int fromIndex, int toIndex)
+    {
+        if (id == 0 || fromIndex < 0 || toIndex < 0 ||
+            fromIndex >= s_modifierEnabled.Length ||
+            toIndex >= s_modifierEnabled.Length)
+        {
+            return Native.Error;
+        }
+
+        (s_modifierEnabled[fromIndex], s_modifierEnabled[toIndex]) =
+            (s_modifierEnabled[toIndex], s_modifierEnabled[fromIndex]);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetMethodKeyCount(ulong id, byte* clipName, int* outCount)
+    {
+        if (id == 0 || clipName == null || outCount == null)
+        {
+            return Native.Error;
+        }
+
+        *outCount = 1;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationGetMethodKey(
+        ulong id, byte* clipName, int index, byte* outName, int nameCapacity, float* outTime)
+    {
+        if (id == 0 || clipName == null || outName == null || outTime == null ||
+            nameCapacity <= 0 || index != 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_methodKeyName, outName, nameCapacity);
+        *outTime = s_methodKeyTime;
         return Native.Ok;
     }
 

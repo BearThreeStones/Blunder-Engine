@@ -66,6 +66,10 @@ void setup_tree_object(Blunder::ObjectId id, Blunder::Object* object) {
   tree->addBlendSpacePoint("Locomotion", "idle", 0.0f);
   tree->addBlendSpacePoint("Locomotion", "walk", 1.0f);
   tree->setStateBlendSpace("Locomotion", "Locomotion");
+  tree->addBlendSpace2DPoint("Locomotion2D", "idle", 0.0f, 0.0f);
+  tree->addBlendSpace2DPoint("Locomotion2D", "walk", 1.0f, 0.0f);
+  tree->addBlendSpace2DPoint("Locomotion2D", "trip", 0.0f, 1.0f);
+  tree->setStateBlendSpace2D("Move2D", "Locomotion2D");
 }
 
 }  // namespace
@@ -77,7 +81,7 @@ int main() {
   ClassDB::initialize();
   animationSyncGroupService().clearAll();
 
-  expect_true("abi version is 8", blunder_engine_abi_version() == 8);
+  expect_true("abi version is 9", blunder_engine_abi_version() == 9);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);
@@ -87,6 +91,10 @@ int main() {
               abi.animation_tree_request_one_shot != nullptr);
   expect_true("abi tree set add2 weight",
               abi.animation_tree_set_add2_weight != nullptr);
+  expect_true("abi tree set blend 2d",
+              abi.animation_tree_set_blend_space_2d_param != nullptr);
+  expect_true("abi tree set asset guid",
+              abi.animation_tree_set_asset_guid != nullptr);
 
   const ObjectId native_id = ObjectDB::create();
   const BlunderObjectId id = static_cast<BlunderObjectId>(native_id);
@@ -123,6 +131,30 @@ int main() {
                                                             &scalar) ==
                   BLUNDER_ENGINE_OK);
   expect_true("scalar value", float_near(scalar, 0.5f));
+
+  expect_true("set blend 2d",
+              blunder_animation_tree_set_blend_space_2d_param(
+                  id, "Locomotion2D", 0.25f, 0.75f) == BLUNDER_ENGINE_OK);
+  float blend_x = 0.0f;
+  float blend_y = 0.0f;
+  expect_true("get blend 2d",
+              blunder_animation_tree_get_blend_space_2d_param(
+                  id, "Locomotion2D", &blend_x, &blend_y) == BLUNDER_ENGINE_OK);
+  expect_true("blend 2d x", float_near(blend_x, 0.25f));
+  expect_true("blend 2d y", float_near(blend_y, 0.75f));
+
+  expect_true("set asset guid",
+              blunder_animation_tree_set_asset_guid(
+                  id, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa") ==
+                  BLUNDER_ENGINE_OK);
+  char guid_buf[64] = {};
+  expect_true("get asset guid",
+              blunder_animation_tree_get_asset_guid(
+                  id, guid_buf, static_cast<int>(sizeof(guid_buf))) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("asset guid value",
+              std::strcmp(guid_buf, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa") ==
+                  0);
 
   expect_true("set add2 weight",
               blunder_animation_tree_set_add2_weight(id, 0.25f) ==

@@ -75,7 +75,7 @@ int main() {
   ObjectDB::clear();
   ClassDB::initialize();
 
-  expect_true("abi version >= 8", blunder_engine_abi_version() >= 8);
+  expect_true("abi version >= 9", blunder_engine_abi_version() >= 9);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);
@@ -235,6 +235,54 @@ int main() {
   expect_true("play after clear listeners",
               blunder_animation_player_play(id, "walk") == BLUNDER_ENGINE_OK);
   expect_true("no pose after clear", g_pose_applied_hits == 0);
+
+  AnimationClipData walk_clip;
+  expect_true(
+      "resolve walk clip",
+      object->getAnimationPlayer()->resolveClipForName("walk", walk_clip));
+  AnimationMethodKey method_key;
+  method_key.name = "FootStep";
+  method_key.time = 0.4f;
+  walk_clip.method_keys.push_back(method_key);
+  object->getAnimationPlayer()->injectClipData(
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", walk_clip);
+  int method_count = 0;
+  expect_true("method key count",
+              blunder_animation_player_get_method_key_count(id, "walk",
+                                                           &method_count) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("method key count value", method_count == 1);
+  char method_name[64] = {};
+  float method_time = 0.0f;
+  expect_true("get method key",
+              blunder_animation_player_get_method_key(
+                  id, "walk", 0, method_name,
+                  static_cast<int>(sizeof(method_name)), &method_time) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("method key name", std::strcmp(method_name, "FootStep") == 0);
+  expect_true("method key time", float_near(method_time, 0.4f));
+
+  expect_true("add modifier a", object->addSkeletonModifier() != nullptr);
+  expect_true("add modifier b", object->addSkeletonModifier() != nullptr);
+  int modifier_count = 0;
+  expect_true("modifier count",
+              blunder_skeleton_modifier_count(id, &modifier_count) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("modifier count value", modifier_count == 2);
+  expect_true("disable modifier 1",
+              blunder_skeleton_modifier_set_enabled(id, 1, 0) ==
+                  BLUNDER_ENGINE_OK);
+  int enabled = 1;
+  expect_true("get modifier 1 enabled",
+              blunder_skeleton_modifier_get_enabled(id, 1, &enabled) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("modifier 1 disabled", enabled == 0);
+  expect_true("move modifier 0->1",
+              blunder_skeleton_modifier_move(id, 0, 1) == BLUNDER_ENGINE_OK);
+  expect_true("get modifier 0 after move",
+              blunder_skeleton_modifier_get_enabled(id, 0, &enabled) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("modifier 0 disabled after move", enabled == 0);
 
   // Destroy with active PoseApplied listener — bindings must be removed (no leak / dangling hook).
   g_pose_applied_hits = 0;
