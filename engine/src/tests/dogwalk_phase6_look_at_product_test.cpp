@@ -270,6 +270,8 @@ void test_edit_scrub_look_at_without_behaviour_tick() {
   AnimationPreviewController controller;
   controller.bindObject(object, "idle");
   expect_true("travel locomotion", controller.travel("Locomotion"));
+  const Quat head_sampled_rest =
+      skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
   expect_true("activate tree", controller.setTreeActive(true));
   controller.setBlendSpaceScalar("Locomotion", 0.0f);
 
@@ -297,17 +299,20 @@ void test_edit_scrub_look_at_without_behaviour_tick() {
               std::fabs(glm::dot(rotation_target_a, rotation_target_b)) <
                   0.999f);
 
+  // Pre-bone-scrub baseline: head pose while LookAt still drives Head (target B).
+  const Quat head_rotation_before_bone_scrub = rotation_target_b;
   expect_true("scrub bone to Neck",
               controller.setSkeletonLookAtBoneName(look_at_index, "Neck"));
-  const Quat head_rotation_before =
-      skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
   const float neck_aim =
       aim_dot_for_bone(*skeleton, static_cast<size_t>(neck), target_b);
   expect_true("neck aims after bone scrub", neck_aim > 0.95f);
   const Quat head_rotation_after =
       skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
+  expect_true("head look-at released after bone scrub",
+              std::fabs(glm::dot(head_rotation_before_bone_scrub,
+                                 head_rotation_after)) < 0.999f);
   expect_true("head unchanged when aiming neck via edit scrub",
-              std::fabs(glm::dot(head_rotation_before, head_rotation_after)) >
+              std::fabs(glm::dot(head_sampled_rest, head_rotation_after)) >
                   0.999f);
 
   expect_true("no behaviour tick during look-at edit scrub", g_tick_calls == 0);
