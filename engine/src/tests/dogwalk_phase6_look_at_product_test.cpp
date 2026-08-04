@@ -237,6 +237,73 @@ Blunder::Object* makeLookAtPreviewObject(Blunder::Skeleton** out_skeleton) {
   return object;
 }
 
+/// Task 1.3: Phase 5 post-sample LookAt via ClassDB product path (no regression).
+void test_look_at_classdb_product_after_sample() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+  expect_true("SkeletonLookAtModifier registered",
+              ClassDB::hasClass("SkeletonLookAtModifier"));
+
+  ObjectDB::clear();
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object created", object != nullptr);
+  if (object == nullptr) {
+    ClassDB::shutdown();
+    return;
+  }
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  AnimationPlayer* player = object->ensureAnimationPlayer();
+  const int hips = skeleton->addBone("Hips", -1);
+  const int head = skeleton->addBone("Head", hips);
+  skeleton->setBoneRestLocal(static_cast<size_t>(head),
+                             BoneTransform{Vec3(0.0f, 0.0f, 1.0f),
+                                           glm::identity<Quat>(), Vec3(1.0f)});
+  skeleton->resetPoseToRest();
+
+  SkeletonLookAtModifier* look_at = object->addSkeletonLookAtModifier();
+  expect_true("look-at product created", look_at != nullptr);
+  if (look_at == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  const Vec3 target(1.0f, 1.0f, 1.0f);
+  expect_true("bone_name set via ClassDB",
+              ClassDB::setProperty(look_at, "SkeletonLookAtModifier", "bone_name",
+                                   Variant(eastl::string("Head"))));
+  expect_true("target set via ClassDB",
+              set_look_at_target_via_classdb(look_at, target));
+
+  const eastl::string guid = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+  AnimationClipData clip;
+  clip.duration = 1.0f;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+  player->setClipGuid("idle", guid);
+  player->injectClipData(guid, clip);
+
+  const Quat head_rotation_before =
+      skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
+  expect_true("play", player->play("idle"));
+  const Quat head_rotation_after =
+      skeleton->getBonePoseLocal(static_cast<size_t>(head)).rotation;
+
+  const float aim =
+      aim_dot_for_bone(*skeleton, static_cast<size_t>(head), target);
+  expect_true("look-at changed head rotation after sample",
+              std::fabs(glm::dot(head_rotation_before, head_rotation_after)) <
+                  0.999f);
+  expect_true("head aims toward target after sample", aim > 0.95f);
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
 /// Task 1.2: Edit scrub LookAt via AnimationPreviewController without Behaviour Tick.
 void test_edit_scrub_look_at_without_behaviour_tick() {
   using namespace Blunder;
@@ -325,6 +392,7 @@ void test_edit_scrub_look_at_without_behaviour_tick() {
 
 int main() {
   test_look_at_product_configurable_bone_and_target();
+  test_look_at_classdb_product_after_sample();
   test_edit_scrub_look_at_without_behaviour_tick();
 
   if (g_failures != 0) {

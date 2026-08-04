@@ -2,7 +2,7 @@
 
 - [x] 1.1 TDD: configurable bone name + target (and apply-time min field set) on LookAt
 - [x] 1.2 TDD: Edit scrub LookAt without Behaviour Tick
-- [ ] 1.3 Confirm sample-era LookAt remains a valid ClassDB product path (no regression)
+- [x] 1.3 Confirm sample-era LookAt remains a valid ClassDB product path (no regression)
 
 ## 2. PaperMouth
 
