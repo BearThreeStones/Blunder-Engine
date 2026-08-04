@@ -44,17 +44,17 @@
 
 ## 7. Content gates
 
-- [ ] 7.1 Engineering gate A harness (modifier + method)
-- [ ] 7.2 Engineering gate C harness (BlendSpace2D)
-- [ ] 7.3 Engineering gate D harness (Asset + Inspector + overrides)
-- [ ] 7.4 Lean Play A: visible modifier effect + observable method dispatch
-- [ ] 7.5 Lean Play C: perceptible 2D blend (Pinda subset or test field OK)
-- [ ] 7.6 Lean Play D: Asset reference + Inspector + override without Behaviour
-- [ ] 7.7 Keep Phase 1–4 content Done gates tracked separately if still open
+- [x] 7.1 Engineering gate A harness (modifier + method)
+- [x] 7.2 Engineering gate C harness (BlendSpace2D)
+- [x] 7.3 Engineering gate D harness (Asset + Inspector + overrides)
+- [x] 7.4 Lean Play A: visible modifier effect + observable method dispatch
+- [x] 7.5 Lean Play C: perceptible 2D blend (Pinda subset or test field OK)
+- [x] 7.6 Lean Play D: Asset reference + Inspector + override without Behaviour
+- [x] 7.7 Keep Phase 1–4 content Done gates tracked separately if still open
 
   Phase 4 Chocomel-subset (`dogwalk-animation-phase-4` **6.2**), Phase 3 mini Play, Phase 2 weighted, Phase 1 hard-cut remain open if unfinished — not cancelled by Phase 5.
 
 ## 8. Docs / closeout
 
-- [ ] 8.1 Confirm CONTEXT + ADR 0026 match apply (prefer no churn)
-- [ ] 8.2 Manual checklist: Edit A/C/D scrub; Play lean bars; earlier gates tracked
+- [x] 8.1 Confirm CONTEXT + ADR 0026 match apply (prefer no churn)
+- [x] 8.2 Manual checklist: Edit A/C/D scrub; Play lean bars; earlier gates tracked
