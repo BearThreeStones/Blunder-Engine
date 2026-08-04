@@ -1,10 +1,10 @@
 ## 1. Gate A — SkeletonModifier
 
 - [x] 1.1 TDD: SkeletonModifier runs after Player/Tree sample and before PoseApplied
-- [ ] 1.2 TDD: ordered modifier chain on same Object
-- [ ] 1.3 TDD: extension point + test double modifier
-- [ ] 1.4 TDD: minimal LookAt/aim sample modifier produces visible post-pose change
-- [ ] 1.5 Confirm Add2 remains in-tree additive and distinct from SkeletonModifier
+- [x] 1.2 TDD: ordered modifier chain on same Object
+- [x] 1.3 TDD: extension point + test double modifier
+- [x] 1.4 TDD: minimal LookAt/aim sample modifier produces visible post-pose change
+- [x] 1.5 Confirm Add2 remains in-tree additive and distinct from SkeletonModifier
 
 ## 2. Gate A — Method tracks
 

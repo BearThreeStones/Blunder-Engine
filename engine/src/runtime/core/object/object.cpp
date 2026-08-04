@@ -376,7 +376,15 @@ const SkeletonModifier* Object::getSkeletonModifierAt(size_t index) const {
 }
 
 SkeletonModifier* Object::addSkeletonModifier() {
-  m_skeleton_modifiers.push_back(eastl::make_unique<SkeletonModifier>());
+  return addSkeletonModifier(eastl::make_unique<SkeletonModifier>());
+}
+
+SkeletonModifier* Object::addSkeletonModifier(
+    eastl::unique_ptr<SkeletonModifier> modifier) {
+  if (modifier == nullptr) {
+    return nullptr;
+  }
+  m_skeleton_modifiers.push_back(eastl::move(modifier));
   updateAnimationSamplingBinding();
   return m_skeleton_modifiers.back().get();
 }

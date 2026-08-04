@@ -140,6 +140,7 @@ void ClassDB::initialize() {
   register_animation_player_reflection();
   register_animation_tree_reflection();
   register_skeleton_modifier_reflection();
+  register_skeleton_look_at_modifier_reflection();
 }
 
 void ClassDB::shutdown() { clear(); }

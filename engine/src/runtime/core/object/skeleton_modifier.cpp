@@ -9,11 +9,13 @@ void SkeletonModifier::setApplyFn(SkeletonModifierApplyFn fn, void* userdata) {
   m_apply_userdata = userdata;
 }
 
-void SkeletonModifier::apply(Skeleton& skeleton) const {
-  if (!m_enabled || m_apply_fn == nullptr) {
+void SkeletonModifier::apply(Skeleton& skeleton) {
+  if (!m_enabled) {
     return;
   }
-  m_apply_fn(skeleton, m_apply_userdata);
+  if (m_apply_fn != nullptr) {
+    m_apply_fn(skeleton, m_apply_userdata);
+  }
 }
 
 }  // namespace Blunder
