@@ -115,6 +115,9 @@ class AnimationTree {
   void notifyPlayerPoseApplied();
   float getDominantBasePlaybackPosition() const;
   float getDominantBaseClipLength() const;
+  bool resolveDominantBaseClip(AnimationClipData& out_clip) const;
+  void dispatchDominantMethodKeysCrossed(float prev_time, float new_time);
+  void resetMethodDispatchClock(float clock = 0.0f);
   void sampleBaseOntoSkeleton(Skeleton& skeleton);
   bool applyStatePlayback(const AnimationStateDefinition& state);
   bool sampleBlendSpace1DOntoSkeleton(Skeleton& skeleton,
@@ -140,6 +143,7 @@ class AnimationTree {
   eastl::string m_oneshot_clip_name;
   float m_oneshot_time{0.0f};
   eastl::string m_oneshot_slot_clip;
+  float m_method_prev_clock{0.0f};
 };
 
 }  // namespace Blunder

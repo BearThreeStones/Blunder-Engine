@@ -315,9 +315,6 @@ bool validateTrackKeyTimes(const AnimationTrack& track) {
 }
 
 bool validateClipDuration(const AnimationClipData& data) {
-  if (data.tracks.empty()) {
-    return data.duration >= 0.0f;
-  }
   float last_key_time = 0.0f;
   for (const AnimationTrack& track : data.tracks) {
     if (!track.keys.empty()) {
@@ -327,7 +324,58 @@ bool validateClipDuration(const AnimationClipData& data) {
       }
     }
   }
+  for (const AnimationMethodKey& key : data.method_keys) {
+    if (key.time > last_key_time) {
+      last_key_time = key.time;
+    }
+  }
+  if (data.tracks.empty() && data.method_keys.empty()) {
+    return data.duration >= 0.0f;
+  }
   return data.duration >= last_key_time;
+}
+
+bool parseMethodKeys(const YAML::Node& keys_node,
+                     eastl::vector<AnimationMethodKey>& out_keys) {
+  if (!keys_node || !keys_node.IsSequence()) {
+    return false;
+  }
+
+  out_keys.clear();
+  float previous_time = -1.0f;
+  for (const auto& key_node : keys_node) {
+    if (!key_node || !key_node.IsMap()) {
+      return false;
+    }
+
+    AnimationMethodKey key;
+    if (!readStringField(key_node, "name", key.name)) {
+      return false;
+    }
+
+    const YAML::Node time_node = key_node["time"];
+    if (!time_node || !time_node.IsScalar()) {
+      return false;
+    }
+    key.time = time_node.as<float>();
+    if (key.time < previous_time) {
+      return false;
+    }
+    previous_time = key.time;
+
+    const YAML::Node args_node = key_node["args"];
+    if (args_node && args_node.IsSequence()) {
+      for (const auto& arg_node : args_node) {
+        if (!arg_node || !arg_node.IsScalar()) {
+          return false;
+        }
+        key.args.push_back(arg_node.as<float>());
+      }
+    }
+
+    out_keys.push_back(key);
+  }
+  return true;
 }
 
 }  // namespace
@@ -459,6 +507,14 @@ bool AssetYaml::parseAnimationClipData(const eastl::string& yaml_text,
       out_data.tracks.push_back(track);
     }
 
+    out_data.method_keys.clear();
+    const YAML::Node method_keys = root["method_keys"];
+    if (method_keys) {
+      if (!parseMethodKeys(method_keys, out_data.method_keys)) {
+        return false;
+      }
+    }
+
     if (!validateClipDuration(out_data)) {
       return false;
     }
@@ -499,6 +555,23 @@ eastl::string AssetYaml::serializeAnimationClipData(
     emitter << YAML::EndMap;
   }
   emitter << YAML::EndSeq;
+  if (!data.method_keys.empty()) {
+    emitter << YAML::Key << "method_keys" << YAML::Value << YAML::BeginSeq;
+    for (const AnimationMethodKey& key : data.method_keys) {
+      emitter << YAML::BeginMap;
+      emitter << YAML::Key << "name" << YAML::Value << key.name.c_str();
+      emitter << YAML::Key << "time" << YAML::Value << key.time;
+      if (!key.args.empty()) {
+        emitter << YAML::Key << "args" << YAML::Value << YAML::BeginSeq;
+        for (float arg : key.args) {
+          emitter << arg;
+        }
+        emitter << YAML::EndSeq;
+      }
+      emitter << YAML::EndMap;
+    }
+    emitter << YAML::EndSeq;
+  }
   emitter << YAML::EndMap;
   return eastl::string(emitter.c_str());
 }

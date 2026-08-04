@@ -1,5 +1,6 @@
 #include "runtime/core/object/animation_player.h"
 
+#include "runtime/core/object/animation_method_dispatch.h"
 #include "runtime/core/object/animation_sampler.h"
 #include "runtime/core/object/skeleton.h"
 
@@ -113,7 +114,39 @@ void AnimationPlayer::beginClip(const eastl::string& name,
   m_clip_length = clip.duration;
   m_position = 0.0f;
   m_playing = true;
+  resetMethodDispatchClock(0.0f);
   sampleBoundSkeleton();
+}
+
+void AnimationPlayer::resetMethodDispatchClock(float clock) {
+  m_method_prev_clock = clock;
+}
+
+bool AnimationPlayer::resolveDominantClip(AnimationClipData& out_clip) const {
+  if (m_tree_blocks_sampling) {
+    return false;
+  }
+  if (hasActiveSlot()) {
+    return resolveSlotClip(getDominantSlotIndex(), out_clip);
+  }
+  if (m_has_current_clip) {
+    out_clip = m_current_clip;
+    return true;
+  }
+  return false;
+}
+
+void AnimationPlayer::dispatchDominantMethodKeysCrossed(float prev_time,
+                                                        float new_time) {
+  if (!isValid(m_owner_object_id)) {
+    return;
+  }
+  AnimationClipData clip;
+  if (!resolveDominantClip(clip)) {
+    return;
+  }
+  dispatchAnimationMethodKeysCrossed(m_owner_object_id, clip, prev_time,
+                                     new_time, m_loop);
 }
 
 void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
@@ -279,6 +312,7 @@ void AnimationPlayer::stop() {
   m_slot_positions[0] = 0.0f;
   m_slot_positions[1] = 0.0f;
   clearCrossfade();
+  resetMethodDispatchClock(0.0f);
 }
 
 bool AnimationPlayer::resolveSlotClip(int slot_index,
@@ -483,6 +517,7 @@ void AnimationPlayer::seekPlayback(float seconds) {
     m_position = seconds;
   }
 
+  resetMethodDispatchClock(seconds);
   sampleBoundSkeleton();
 }
 
@@ -498,12 +533,16 @@ void AnimationPlayer::advance(float delta_seconds) {
 
   advanceCrossfade(scaled_delta);
 
+  const float prev_clock = getPlaybackPosition();
+
   if (hasActiveSlot()) {
     for (int slot = 0; slot < k_slot_count; ++slot) {
       if (!m_slot_clip_names[slot].empty()) {
         advanceSlot(slot, scaled_delta);
       }
     }
+    dispatchDominantMethodKeysCrossed(prev_clock, getPlaybackPosition());
+    resetMethodDispatchClock(getPlaybackPosition());
     sampleBoundSkeleton();
     return;
   }
@@ -514,20 +553,24 @@ void AnimationPlayer::advance(float delta_seconds) {
 
   m_position += scaled_delta;
   if (m_position < m_clip_length) {
+    dispatchDominantMethodKeysCrossed(prev_clock, m_position);
+    resetMethodDispatchClock(m_position);
     sampleBoundSkeleton();
     return;
   }
 
   if (m_loop) {
-    m_position = std::fmod(m_position, m_clip_length);
-    if (m_position < 0.0f) {
-      m_position += m_clip_length;
-    }
+    const float wrapped = std::fmod(m_position, m_clip_length);
+    m_position = wrapped < 0.0f ? wrapped + m_clip_length : wrapped;
+    dispatchDominantMethodKeysCrossed(prev_clock, m_position);
+    resetMethodDispatchClock(m_position);
     sampleBoundSkeleton();
     return;
   }
 
+  dispatchDominantMethodKeysCrossed(prev_clock, m_clip_length);
   m_position = m_clip_length;
+  resetMethodDispatchClock(m_position);
   sampleBoundSkeleton();
   m_playing = false;
   notifyFinished();

@@ -6,6 +6,7 @@
 
 #include "runtime/resource/asset/asset_descriptor.h"
 
+#include "runtime/core/object/object_id.h"
 #include "runtime/core/object/skeleton_modifier.h"
 
 namespace Blunder {
@@ -98,6 +99,9 @@ class AnimationPlayer {
   AnimationTree* getAnimationTree() { return m_bound_tree; }
   const AnimationTree* getAnimationTree() const { return m_bound_tree; }
 
+  void bindOwnerObject(ObjectId owner_id) { m_owner_object_id = owner_id; }
+  ObjectId getOwnerObjectId() const { return m_owner_object_id; }
+
   /// When an active AnimationTree owns sampling, Player SHALL NOT write bones.
   void setTreeBlocksSampling(bool blocks);
   bool isTreeBlockingSampling() const { return m_tree_blocks_sampling; }
@@ -125,6 +129,9 @@ class AnimationPlayer {
   };
 
   bool resolveClip(const eastl::string& guid, AnimationClipData& out_clip);
+  bool resolveDominantClip(AnimationClipData& out_clip) const;
+  void dispatchDominantMethodKeysCrossed(float prev_time, float new_time);
+  void resetMethodDispatchClock(float clock = 0.0f);
   bool resolveSlotClip(int slot_index, AnimationClipData& out_clip) const;
   bool hasActiveSlot() const;
   void advanceSlot(int slot_index, float delta_seconds);
@@ -151,6 +158,8 @@ class AnimationPlayer {
   SkeletonModifierChainFn m_skeleton_modifier_chain_fn{nullptr};
   void* m_skeleton_modifier_chain_userdata{nullptr};
   AnimationTree* m_bound_tree{nullptr};
+  ObjectId m_owner_object_id{k_invalid_object_id};
+  float m_method_prev_clock{0.0f};
   float m_position{0.0f};
   float m_clip_length{0.0f};
   bool m_playing{false};

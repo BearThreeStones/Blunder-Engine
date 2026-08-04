@@ -116,6 +116,8 @@ add_library(engine_runtime STATIC
     "core/object/animation_player.cpp"
     "core/object/animation_tree.h"
     "core/object/animation_tree.cpp"
+    "core/object/animation_method_dispatch.h"
+    "core/object/animation_method_dispatch.cpp"
     "core/object/animation_sync_group.h"
     "core/object/animation_sync_group.cpp"
     "core/object/cine_segment_service.h"

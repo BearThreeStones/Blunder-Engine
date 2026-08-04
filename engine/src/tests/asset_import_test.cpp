@@ -262,7 +262,80 @@ void writeDualAnimationGltfFixture(const fs::path& gltf_path) {
   writeTextFile(gltf_path, gltf);
 }
 
-// skins>=1, meshes>=1, animations>=1 - full skinned character (reject as companion).
+void writeMethodKeysAnimationGltfFixture(const fs::path& gltf_path) {
+  const std::string gltf = R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "name": "Hips", "mesh": 0 }],
+  "meshes": [{
+    "primitives": [{
+      "attributes": { "POSITION": 0 },
+      "indices": 1
+    }]
+  }],
+  "animations": [{
+    "name": "events",
+    "extras": {
+      "method_keys": [
+        { "name": "Footstep", "time": 0.5, "args": [1.5] }
+      ]
+    },
+    "channels": [{
+      "sampler": 0,
+      "target": { "node": 0, "path": "translation" }
+    }],
+    "samplers": [{
+      "input": 2,
+      "interpolation": "STEP",
+      "output": 3
+    }]
+  }],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 2,
+      "type": "SCALAR",
+      "max": [1.0],
+      "min": [0.0]
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 2,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 42, "byteLength": 8 },
+    { "buffer": 0, "byteOffset": 50, "byteLength": 24 }
+  ],
+  "buffers": [{
+    "byteLength": 74,
+    "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAAAAAACAPw=="
+  }]
+})";
+  writeTextFile(gltf_path, gltf);
+}
+
+// Skinned mesh with geometry and animations>=1 - full skinned character (reject as companion).
 void writeSkinnedMeshWithGeometryGltfFixture(const fs::path& gltf_path) {
   const std::string gltf = R"({
   "asset": { "version": "2.0" },
@@ -1566,6 +1639,100 @@ void importGltfWithTwoAnimationsRegistersMeshAndClips() {
 
   expect_true("dual anim import registered idle clip", saw_idle);
   expect_true("dual anim import registered walk clip", saw_walk);
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external.parent_path());
+}
+
+// Phase 5 task 2.2: glTF animation extras method_keys preserved in Intermediate YAML.
+void importMethodKeysFromGltfExtrasPreservesYaml() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_import_method_keys_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count()))) /
+      "events_rig.gltf";
+  writeMethodKeysAnimationGltfFixture(external);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const ImportResult result =
+      import_service.importMesh(external, "assets/Meshes", settings);
+
+  expect_true("method keys import mesh succeeds", result.success);
+  expect_true("method keys clip extracted", result.animation_clips.size() == 1);
+  if (result.animation_clips.empty()) {
+    import_service.shutdown();
+    registry.shutdown();
+    file_system.shutdown();
+    g_runtime_global_context.m_logger_system.reset();
+    fs::remove_all(project);
+    fs::remove_all(external.parent_path());
+    return;
+  }
+
+  const ImportResult& clip = result.animation_clips[0];
+  eastl::string desc_rel = clip.descriptor_virtual_path;
+  if (startsWith(desc_rel, "assets/")) {
+    desc_rel.erase(0, 7);
+  }
+  const fs::path descriptor_absolute =
+      file_system.resolveAsset(fs::path(desc_rel.c_str()));
+  eastl::string descriptor_yaml;
+  expect_true("read method keys clip descriptor",
+              file_system.readText(descriptor_absolute, descriptor_yaml));
+
+  AnimationClipAssetDescriptor clip_descriptor{};
+  expect_true("parse method keys clip descriptor",
+              AssetYaml::parseAnimationClipDescriptor(descriptor_yaml,
+                                                      clip_descriptor));
+
+  eastl::string intermediate_rel = clip_descriptor.source;
+  if (startsWith(intermediate_rel, "resources/")) {
+    intermediate_rel.erase(0, 10);
+  }
+  const fs::path intermediate_absolute =
+      file_system.resolveResource(fs::path(intermediate_rel.c_str()));
+  eastl::string intermediate_yaml;
+  expect_true("read method keys intermediate yaml",
+              file_system.readText(intermediate_absolute, intermediate_yaml));
+  expect_true("intermediate yaml contains method_keys",
+              intermediate_yaml.find("method_keys") != eastl::string::npos);
+  expect_true("intermediate yaml contains Footstep",
+              intermediate_yaml.find("Footstep") != eastl::string::npos);
+
+  AnimationClipData clip_data{};
+  expect_true("parse method keys intermediate yaml",
+              AssetYaml::parseAnimationClipData(intermediate_yaml, clip_data));
+  expect_true("imported method_keys size", clip_data.method_keys.size() == 1);
+  expect_true("imported method key name",
+              clip_data.method_keys[0].name == "Footstep");
+  expect_true("imported method key time", clip_data.method_keys[0].time == 0.5f);
+  expect_true("imported method key arg",
+              clip_data.method_keys[0].args.size() == 1 &&
+                  clip_data.method_keys[0].args[0] == 1.5f);
 
   import_service.shutdown();
   registry.shutdown();
@@ -3382,6 +3549,7 @@ int main() {
   importColladaMeshRejected();
   importMeshWritesIntermediateAndDescriptor();
   importGltfWithTwoAnimationsRegistersMeshAndClips();
+  importMethodKeysFromGltfExtrasPreservesYaml();
   reimportCompanionClipPreservesGuidAndRefreshesYaml();
   reimportPreservesAnimationClipGuidsAndRefreshesYaml();
   reimportPreservesClipGuidsWhenMeshDescriptorStemDiffers();

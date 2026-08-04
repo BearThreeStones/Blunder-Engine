@@ -1976,3 +1976,72 @@ target_precompile_headers(skeleton_modifier_gate_a_test
 add_test(NAME skeleton_modifier_gate_a_test
          COMMAND skeleton_modifier_gate_a_test)
 
+add_executable(animation_method_track_gate_a_test
+    "animation_method_track_gate_a_test.cpp"
+)
+
+target_link_libraries(animation_method_track_gate_a_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_method_track_gate_a_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(animation_method_track_gate_a_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(animation_method_track_gate_a_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME animation_method_track_gate_a_test
+         COMMAND animation_method_track_gate_a_test)
+
+add_executable(method_track_yaml_test
+    "method_track_yaml_test.cpp"
+)
+
+target_link_libraries(method_track_yaml_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+if(MSVC)
+    target_compile_options(method_track_yaml_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(method_track_yaml_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME method_track_yaml_test
+         COMMAND method_track_yaml_test)
+
+add_executable(method_track_gltf_import_test
+    "method_track_gltf_import_test.cpp"
+)
+
+target_link_libraries(method_track_gltf_import_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(method_track_gltf_import_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(method_track_gltf_import_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(method_track_gltf_import_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME method_track_gltf_import_test
+         COMMAND method_track_gltf_import_test)
+

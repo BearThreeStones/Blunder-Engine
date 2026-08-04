@@ -8,11 +8,11 @@
 
 ## 2. Gate A — Method tracks
 
-- [ ] 2.1 TDD: AnimationClip YAML stores method keys (name + time + optional args)
-- [ ] 2.2 TDD: Import/extract path preserves method tracks (glTF extras / companion as applicable)
-- [ ] 2.3 TDD: key-crossing dispatch on base dominant-clip clock to co-located Behaviours (Message optional)
-- [ ] 2.4 TDD: while OneShot active, method dispatch uses OneShot clock
-- [ ] 2.5 Confirm engine does not PtrCall arbitrary C# methods by string as product path
+- [x] 2.1 TDD: AnimationClip YAML stores method keys (name + time + optional args)
+- [x] 2.2 TDD: Import/extract path preserves method tracks (glTF extras / companion as applicable)
+- [x] 2.3 TDD: key-crossing dispatch on base dominant-clip clock to co-located Behaviours (Message optional)
+- [x] 2.4 TDD: while OneShot active, method dispatch uses OneShot clock
+- [x] 2.5 Confirm engine does not PtrCall arbitrary C# methods by string as product path
 
 ## 3. Gate C — BlendSpace2D
 

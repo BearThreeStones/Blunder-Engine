@@ -14,6 +14,8 @@
 #include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 
+#include <yaml-cpp/yaml.h>
+
 namespace Blunder {
 
 namespace fs = std::filesystem;
@@ -221,8 +223,48 @@ bool buildClipData(const cgltf_animation& animation, AnimationClipData& out_data
     out_data.tracks.push_back(track);
   }
 
+  if (animation.extras.data != nullptr && animation.extras.data[0] != '\0') {
+    try {
+      const YAML::Node extras = YAML::Load(animation.extras.data);
+      const YAML::Node method_keys = extras["method_keys"];
+      if (method_keys && method_keys.IsSequence()) {
+        for (const auto& key_node : method_keys) {
+          if (!key_node || !key_node.IsMap()) {
+            continue;
+          }
+          AnimationMethodKey key;
+          const YAML::Node name_node = key_node["name"];
+          const YAML::Node time_node = key_node["time"];
+          if (!name_node || !name_node.IsScalar() || !time_node ||
+              !time_node.IsScalar()) {
+            continue;
+          }
+          key.name = name_node.as<std::string>().c_str();
+          key.time = time_node.as<float>();
+          const YAML::Node args_node = key_node["args"];
+          if (args_node && args_node.IsSequence()) {
+            for (const auto& arg_node : args_node) {
+              if (arg_node && arg_node.IsScalar()) {
+                key.args.push_back(arg_node.as<float>());
+              }
+            }
+          }
+          if (!key.name.empty()) {
+            out_data.method_keys.push_back(key);
+            if (key.time > max_time) {
+              max_time = key.time;
+            }
+          }
+        }
+      }
+    } catch (const YAML::Exception& exception) {
+      LOG_WARN("[AssetImport] failed to parse animation extras method_keys: {}",
+               exception.what());
+    }
+  }
+
   out_data.duration = max_time;
-  return !out_data.tracks.empty();
+  return !out_data.tracks.empty() || !out_data.method_keys.empty();
 }
 
 bool loadGltfDocument(FileSystem* file_system,

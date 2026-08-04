@@ -2,6 +2,7 @@
 
 #include <cfloat>
 
+#include "runtime/core/object/animation_method_dispatch.h"
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_sampler.h"
 #include "runtime/core/object/skeleton.h"
@@ -269,6 +270,7 @@ bool AnimationTree::start(const eastl::string& state_name) {
     return false;
   }
   m_sample_time = 0.0f;
+  resetMethodDispatchClock(0.0f);
   if (m_active) {
     sampleBoundSkeleton();
   }
@@ -286,6 +288,7 @@ bool AnimationTree::requestOneShot(const eastl::string& clip_name) {
   m_oneshot_clip_name = clip_name;
   m_oneshot_time = 0.0f;
   m_oneshot_active = true;
+  resetMethodDispatchClock(0.0f);
   if (m_active) {
     sampleBoundSkeleton();
   }
@@ -341,6 +344,18 @@ void AnimationTree::advance(float delta_seconds) {
     return;
   }
 
+  const float prev_clock = getDominantBasePlaybackPosition();
+  const bool was_oneshot = m_oneshot_active;
+  eastl::string ended_oneshot_clip_name;
+  float ended_oneshot_duration = 0.0f;
+  if (was_oneshot) {
+    ended_oneshot_clip_name = m_oneshot_clip_name;
+    AnimationClipData oneshot_clip;
+    if (resolveClipForName(ended_oneshot_clip_name, oneshot_clip)) {
+      ended_oneshot_duration = oneshot_clip.duration;
+    }
+  }
+
   m_sample_time += scaled_delta;
 
   if (m_oneshot_active) {
@@ -358,9 +373,89 @@ void AnimationTree::advance(float delta_seconds) {
     }
   }
 
+  const float new_clock = getDominantBasePlaybackPosition();
+  const bool oneshot_ended = was_oneshot && !m_oneshot_active;
+
+  if (was_oneshot && m_oneshot_active) {
+    dispatchDominantMethodKeysCrossed(prev_clock, new_clock);
+    resetMethodDispatchClock(new_clock);
+  } else if (oneshot_ended && !ended_oneshot_clip_name.empty() &&
+             ended_oneshot_duration > 0.0f &&
+             m_animation_player != nullptr &&
+             isValid(m_animation_player->getOwnerObjectId())) {
+    AnimationClipData oneshot_clip;
+    if (resolveClipForName(ended_oneshot_clip_name, oneshot_clip)) {
+      const bool looping =
+          m_animation_player != nullptr && m_animation_player->isLooping();
+      dispatchAnimationMethodKeysCrossed(m_animation_player->getOwnerObjectId(),
+                                         oneshot_clip, prev_clock,
+                                         ended_oneshot_duration, looping);
+    }
+    resetMethodDispatchClock(new_clock);
+  } else if (!was_oneshot) {
+    dispatchDominantMethodKeysCrossed(prev_clock, new_clock);
+    resetMethodDispatchClock(new_clock);
+  } else {
+    resetMethodDispatchClock(new_clock);
+  }
+
   if (m_active) {
     sampleBoundSkeleton();
   }
+}
+
+void AnimationTree::resetMethodDispatchClock(float clock) {
+  m_method_prev_clock = clock;
+}
+
+void AnimationTree::dispatchDominantMethodKeysCrossed(float prev_time,
+                                                    float new_time) {
+  if (m_animation_player == nullptr) {
+    return;
+  }
+  const ObjectId owner_id = m_animation_player->getOwnerObjectId();
+  if (!isValid(owner_id)) {
+    return;
+  }
+
+  AnimationClipData clip;
+  if (!resolveDominantBaseClip(clip)) {
+    return;
+  }
+
+  const bool looping =
+      m_animation_player != nullptr && m_animation_player->isLooping();
+  dispatchAnimationMethodKeysCrossed(owner_id, clip, prev_time, new_time,
+                                     looping);
+}
+
+bool AnimationTree::resolveDominantBaseClip(AnimationClipData& out_clip) const {
+  if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
+    return resolveClipForName(m_oneshot_clip_name, out_clip);
+  }
+
+  if (!m_base_blend_space_node.empty()) {
+    const auto space_it = m_blend_spaces.find(m_base_blend_space_node);
+    if (space_it != m_blend_spaces.end() && !space_it->second.empty()) {
+      const float scalar = getBlendSpaceScalar(m_base_blend_space_node);
+      const BlendSpaceNeighbor neighbors =
+          findBlendSpaceNeighbors(space_it->second, scalar);
+      if (neighbors.left != nullptr) {
+        const BlendSpace1DPoint* dominant = neighbors.left;
+        if (neighbors.right != nullptr && neighbors.left != neighbors.right &&
+            neighbors.blend_weight > 0.5f) {
+          dominant = neighbors.right;
+        }
+        return resolveClipForName(dominant->clip_name, out_clip);
+      }
+    }
+  }
+
+  if (!m_sample_clip_name.empty()) {
+    return resolveClipForName(m_sample_clip_name, out_clip);
+  }
+
+  return false;
 }
 
 bool AnimationTree::sampleBlendSpace1DOntoSkeleton(

@@ -58,11 +58,19 @@ struct AnimationTrack {
   eastl::vector<AnimationKeyframe> keys;
 };
 
+/// Timed logical event for method-track dispatch (Phase 5).
+struct AnimationMethodKey {
+  eastl::string name;
+  float time{0.0f};
+  eastl::vector<float> args;
+};
+
 struct AnimationClipData {
   static constexpr int kVersion = 1;
   eastl::string name;
   float duration{0.0f};
   eastl::vector<AnimationTrack> tracks;
+  eastl::vector<AnimationMethodKey> method_keys;
 };
 
 struct AnimationClipAssetDescriptor {
