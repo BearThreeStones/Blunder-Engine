@@ -1928,3 +1928,27 @@ target_precompile_headers(dogwalk_phase4_mini_play_acceptance_test
 add_test(NAME dogwalk_phase4_mini_play_acceptance_test
          COMMAND dogwalk_phase4_mini_play_acceptance_test)
 
+add_executable(skeleton_modifier_timing_test
+    "skeleton_modifier_timing_test.cpp"
+)
+
+target_link_libraries(skeleton_modifier_timing_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(skeleton_modifier_timing_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(skeleton_modifier_timing_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(skeleton_modifier_timing_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME skeleton_modifier_timing_test
+         COMMAND skeleton_modifier_timing_test)
+

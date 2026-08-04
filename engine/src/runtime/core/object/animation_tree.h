@@ -6,6 +6,8 @@
 
 #include "runtime/resource/asset/asset_descriptor.h"
 
+#include "runtime/core/object/skeleton_modifier.h"
+
 namespace Blunder {
 
 class AnimationPlayer;
@@ -33,6 +35,7 @@ class AnimationTree {
   bool hasAnimationPlayer() const { return m_animation_player != nullptr; }
 
   void bindSamplingSkeleton(Skeleton* skeleton);
+  void bindSkeletonModifierChain(SkeletonModifierChainFn fn, void* userdata);
 
   bool isActive() const { return m_active; }
   bool setActive(bool active);
@@ -120,6 +123,8 @@ class AnimationTree {
 
   AnimationPlayer* m_animation_player{nullptr};
   Skeleton* m_sampling_skeleton{nullptr};
+  SkeletonModifierChainFn m_skeleton_modifier_chain_fn{nullptr};
+  void* m_skeleton_modifier_chain_userdata{nullptr};
   bool m_active{false};
   eastl::string m_sample_clip_name;
   float m_sample_time{0.0f};

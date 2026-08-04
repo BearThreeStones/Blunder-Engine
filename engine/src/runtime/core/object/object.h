@@ -10,6 +10,7 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/core/reflection/export_macros.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
@@ -101,6 +102,12 @@ class Object {
   AnimationTree* ensureAnimationTree();
   void clearAnimationTree();
 
+  size_t getSkeletonModifierCount() const { return m_skeleton_modifiers.size(); }
+  SkeletonModifier* getSkeletonModifierAt(size_t index);
+  const SkeletonModifier* getSkeletonModifierAt(size_t index) const;
+  SkeletonModifier* addSkeletonModifier();
+  void applySkeletonModifiers(Skeleton& skeleton);
+
  private:
   friend class ObjectDB;
 
@@ -137,6 +144,7 @@ class Object {
   eastl::unique_ptr<Skeleton> m_skeleton;
   eastl::unique_ptr<AnimationPlayer> m_animation_player;
   eastl::unique_ptr<AnimationTree> m_animation_tree;
+  eastl::vector<eastl::unique_ptr<SkeletonModifier>> m_skeleton_modifiers;
 };
 
 }  // namespace Blunder

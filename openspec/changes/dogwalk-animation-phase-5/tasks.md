@@ -1,6 +1,6 @@
 ## 1. Gate A — SkeletonModifier
 
-- [ ] 1.1 TDD: SkeletonModifier runs after Player/Tree sample and before PoseApplied
+- [x] 1.1 TDD: SkeletonModifier runs after Player/Tree sample and before PoseApplied
 - [ ] 1.2 TDD: ordered modifier chain on same Object
 - [ ] 1.3 TDD: extension point + test double modifier
 - [ ] 1.4 TDD: minimal LookAt/aim sample modifier produces visible post-pose change

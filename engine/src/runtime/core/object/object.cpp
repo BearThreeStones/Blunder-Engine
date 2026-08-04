@@ -7,8 +7,20 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_modifier.h"
 
 namespace Blunder {
+
+namespace {
+
+void object_apply_skeleton_modifiers(Skeleton& skeleton, void* userdata) {
+  if (userdata == nullptr) {
+    return;
+  }
+  static_cast<Object*>(userdata)->applySkeletonModifiers(skeleton);
+}
+
+}  // namespace
 
 void Object::setParent(Object* parent) {
   if (isValid(m_parent_id)) {
@@ -349,13 +361,53 @@ void Object::clearAnimationTree() {
   updateAnimationSamplingBinding();
 }
 
+SkeletonModifier* Object::getSkeletonModifierAt(size_t index) {
+  if (index >= m_skeleton_modifiers.size()) {
+    return nullptr;
+  }
+  return m_skeleton_modifiers[index].get();
+}
+
+const SkeletonModifier* Object::getSkeletonModifierAt(size_t index) const {
+  if (index >= m_skeleton_modifiers.size()) {
+    return nullptr;
+  }
+  return m_skeleton_modifiers[index].get();
+}
+
+SkeletonModifier* Object::addSkeletonModifier() {
+  m_skeleton_modifiers.push_back(eastl::make_unique<SkeletonModifier>());
+  updateAnimationSamplingBinding();
+  return m_skeleton_modifiers.back().get();
+}
+
+void Object::applySkeletonModifiers(Skeleton& skeleton) {
+  for (const eastl::unique_ptr<SkeletonModifier>& modifier : m_skeleton_modifiers) {
+    if (modifier != nullptr) {
+      modifier->apply(skeleton);
+    }
+  }
+}
+
 void Object::updateAnimationSamplingBinding() {
   if (m_animation_player != nullptr) {
     m_animation_player->bindSamplingSkeleton(m_skeleton.get());
+    if (m_skeleton != nullptr) {
+      m_animation_player->bindSkeletonModifierChain(&object_apply_skeleton_modifiers,
+                                                    this);
+    } else {
+      m_animation_player->bindSkeletonModifierChain(nullptr, nullptr);
+    }
   }
   if (m_animation_tree != nullptr) {
     m_animation_tree->bindAnimationPlayer(m_animation_player.get());
     m_animation_tree->bindSamplingSkeleton(m_skeleton.get());
+    if (m_skeleton != nullptr) {
+      m_animation_tree->bindSkeletonModifierChain(&object_apply_skeleton_modifiers,
+                                                  this);
+    } else {
+      m_animation_tree->bindSkeletonModifierChain(nullptr, nullptr);
+    }
     if (m_animation_player != nullptr) {
       m_animation_player->setTreeBlocksSampling(m_animation_tree->isActive());
     }

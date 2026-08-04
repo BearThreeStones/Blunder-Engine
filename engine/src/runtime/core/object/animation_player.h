@@ -6,6 +6,8 @@
 
 #include "runtime/resource/asset/asset_descriptor.h"
 
+#include "runtime/core/object/skeleton_modifier.h"
+
 namespace Blunder {
 
 class AnimationTree;
@@ -88,6 +90,7 @@ class AnimationPlayer {
 
   /// Co-located Skeleton only (set by Object). When bound, play/advance sample poses.
   void bindSamplingSkeleton(Skeleton* skeleton);
+  void bindSkeletonModifierChain(SkeletonModifierChainFn fn, void* userdata);
   void sampleOntoSkeleton(Skeleton& skeleton);
 
   /// Co-located AnimationTree (set by Object / tree bind). Non-owning.
@@ -109,6 +112,7 @@ class AnimationPlayer {
  private:
   void notifyPoseApplied();
   void notifyFinished();
+  void applyModifiersThenNotifyPoseApplied(Skeleton& skeleton);
 
   struct PoseAppliedListener {
     PoseAppliedFn fn{nullptr};
@@ -144,6 +148,8 @@ class AnimationPlayer {
   AnimationClipData m_current_clip;
   bool m_has_current_clip{false};
   Skeleton* m_sampling_skeleton{nullptr};
+  SkeletonModifierChainFn m_skeleton_modifier_chain_fn{nullptr};
+  void* m_skeleton_modifier_chain_userdata{nullptr};
   AnimationTree* m_bound_tree{nullptr};
   float m_position{0.0f};
   float m_clip_length{0.0f};

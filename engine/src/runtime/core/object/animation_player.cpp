@@ -120,6 +120,12 @@ void AnimationPlayer::bindSamplingSkeleton(Skeleton* skeleton) {
   m_sampling_skeleton = skeleton;
 }
 
+void AnimationPlayer::bindSkeletonModifierChain(SkeletonModifierChainFn fn,
+                                                void* userdata) {
+  m_skeleton_modifier_chain_fn = fn;
+  m_skeleton_modifier_chain_userdata = userdata;
+}
+
 void AnimationPlayer::bindAnimationTree(AnimationTree* tree) {
   m_bound_tree = tree;
 }
@@ -181,6 +187,13 @@ void AnimationPlayer::notifyFinished() {
   }
 }
 
+void AnimationPlayer::applyModifiersThenNotifyPoseApplied(Skeleton& skeleton) {
+  if (m_skeleton_modifier_chain_fn != nullptr) {
+    m_skeleton_modifier_chain_fn(skeleton, m_skeleton_modifier_chain_userdata);
+  }
+  notifyPoseApplied();
+}
+
 void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
   if (m_tree_blocks_sampling) {
     return;
@@ -193,17 +206,17 @@ void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
   if (has_slot0 && has_slot1) {
     blendClipsOntoSkeleton(skeleton, clip0, m_slot_positions[0], clip1,
                            m_slot_positions[1], m_blend_weight);
-    notifyPoseApplied();
+    applyModifiersThenNotifyPoseApplied(skeleton);
     return;
   }
   if (has_slot0) {
     sampleClipOntoSkeleton(skeleton, clip0, m_slot_positions[0]);
-    notifyPoseApplied();
+    applyModifiersThenNotifyPoseApplied(skeleton);
     return;
   }
   if (has_slot1) {
     sampleClipOntoSkeleton(skeleton, clip1, m_slot_positions[1]);
-    notifyPoseApplied();
+    applyModifiersThenNotifyPoseApplied(skeleton);
     return;
   }
 
@@ -211,7 +224,7 @@ void AnimationPlayer::sampleOntoSkeleton(Skeleton& skeleton) {
     return;
   }
   sampleClipOntoSkeleton(skeleton, m_current_clip, m_position);
-  notifyPoseApplied();
+  applyModifiersThenNotifyPoseApplied(skeleton);
 }
 
 void AnimationPlayer::sampleBoundSkeleton() {

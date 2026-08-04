@@ -93,6 +93,12 @@ void AnimationTree::bindSamplingSkeleton(Skeleton* skeleton) {
   m_sampling_skeleton = skeleton;
 }
 
+void AnimationTree::bindSkeletonModifierChain(SkeletonModifierChainFn fn,
+                                              void* userdata) {
+  m_skeleton_modifier_chain_fn = fn;
+  m_skeleton_modifier_chain_userdata = userdata;
+}
+
 bool AnimationTree::setActive(bool active) {
   m_active = active;
   syncPlayerSamplingBlock();
@@ -442,6 +448,10 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
 void AnimationTree::sampleBoundSkeleton() {
   if (m_sampling_skeleton != nullptr && m_active) {
     sampleOntoSkeleton(*m_sampling_skeleton);
+    if (m_skeleton_modifier_chain_fn != nullptr) {
+      m_skeleton_modifier_chain_fn(*m_sampling_skeleton,
+                                   m_skeleton_modifier_chain_userdata);
+    }
     syncPlayerPlaybackClock();
     notifyPlayerPoseApplied();
   }
