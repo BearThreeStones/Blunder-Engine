@@ -82,6 +82,7 @@ class AnimationPreviewController final {
   bool setSkeletonLookAtTarget(size_t modifier_index, const Vec3& target);
   bool setSkeletonLookAtBoneName(size_t modifier_index,
                                  const eastl::string& bone_name);
+  bool setSkeletonPaperMouthOpenAmount(size_t modifier_index, float open_amount);
 
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);

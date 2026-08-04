@@ -5,6 +5,7 @@
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
+#include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
@@ -384,6 +385,22 @@ bool AnimationPreviewController::setSkeletonLookAtBoneName(
   }
   auto* look_at = static_cast<SkeletonLookAtModifier*>(modifier);
   look_at->setBoneName(bone_name);
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::setSkeletonPaperMouthOpenAmount(
+    const size_t modifier_index, const float open_amount) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(modifier_index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  auto* paper_mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
+  paper_mouth->setOpenAmount(open_amount);
   resampleBoundSkeleton();
   return true;
 }
