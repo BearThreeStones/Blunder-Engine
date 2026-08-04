@@ -107,6 +107,7 @@ class Object {
   const SkeletonModifier* getSkeletonModifierAt(size_t index) const;
   SkeletonModifier* addSkeletonModifier();
   SkeletonModifier* addSkeletonModifier(eastl::unique_ptr<SkeletonModifier> modifier);
+  bool moveSkeletonModifier(size_t from_index, size_t to_index);
   void applySkeletonModifiers(Skeleton& skeleton);
 
  private:

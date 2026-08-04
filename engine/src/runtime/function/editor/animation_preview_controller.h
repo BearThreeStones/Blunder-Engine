@@ -3,6 +3,7 @@
 #include "EASTL/string.h"
 
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/resource/asset/asset_descriptor.h"
 
 namespace Blunder {
 
@@ -39,7 +40,10 @@ class AnimationPreviewController final {
   bool hasTree() const;
   bool isTreeActive() const;
   float blendSpaceScalar(const eastl::string& node_name) const;
+  bool blendSpace2DParam(const eastl::string& node_name, float& out_x,
+                         float& out_y) const;
   float add2Weight() const;
+  eastl::string assetGuid() const;
 
   void bindObject(Object* object, const eastl::string& default_clip_name = {});
   void bindSelection(SceneInstance* scene, EntityId entity_id);
@@ -61,9 +65,19 @@ class AnimationPreviewController final {
   bool travel(const eastl::string& state_name);
   bool start(const eastl::string& state_name);
   void setBlendSpaceScalar(const eastl::string& node_name, float scalar);
+  void setBlendSpace2DParam(const eastl::string& node_name, float x, float y);
   bool requestOneShot(const eastl::string& clip_name);
   void setAdd2Weight(float weight);
   bool setAdd2ClipName(const eastl::string& name);
+
+  void setAssetGuid(const eastl::string& guid);
+  bool applyTreeTopology(const AnimationTreeTopologyData& topology);
+  void applyTreeOverrides(const AnimationTreeInstanceOverrides& overrides);
+
+  size_t skeletonModifierCount() const;
+  bool setSkeletonModifierEnabled(size_t index, bool enabled);
+  bool isSkeletonModifierEnabled(size_t index) const;
+  bool moveSkeletonModifier(size_t from_index, size_t to_index);
 
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);

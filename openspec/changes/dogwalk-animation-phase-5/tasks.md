@@ -32,10 +32,10 @@
 
 ## 5. Edit Mode preview
 
-- [ ] 5.1 Edit can enable/order modifiers and see post-pose without Behaviour Tick
-- [ ] 5.2 Edit can scrub BlendSpace2D `(x,y)` without Behaviour Tick
-- [ ] 5.3 Edit can bind/edit Tree Asset + overrides and preview without Behaviour Tick
-- [ ] 5.4 Method scrub may show markers/logs; real Behaviour handling remains Play-validated
+- [x] 5.1 Edit can enable/order modifiers and see post-pose without Behaviour Tick
+- [x] 5.2 Edit can scrub BlendSpace2D `(x,y)` without Behaviour Tick
+- [x] 5.3 Edit can bind/edit Tree Asset + overrides and preview without Behaviour Tick
+- [x] 5.4 Method scrub may show markers/logs; real Behaviour handling remains Play-validated
 
 ## 6. C-ABI + Blunder.Api
 

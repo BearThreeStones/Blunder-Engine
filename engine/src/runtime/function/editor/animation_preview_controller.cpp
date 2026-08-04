@@ -4,6 +4,7 @@
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
 namespace Blunder {
@@ -206,9 +207,29 @@ float AnimationPreviewController::blendSpaceScalar(
   return tree != nullptr ? tree->getBlendSpaceScalar(node_name) : 0.0f;
 }
 
+bool AnimationPreviewController::blendSpace2DParam(const eastl::string& node_name,
+                                                   float& out_x,
+                                                   float& out_y) const {
+  const AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    out_x = 0.0f;
+    out_y = 0.0f;
+    return false;
+  }
+  const BlendSpace2DParam param = tree->getBlendSpace2DParam(node_name);
+  out_x = param.x;
+  out_y = param.y;
+  return true;
+}
+
 float AnimationPreviewController::add2Weight() const {
   const AnimationTree* tree = treeFor(m_target_object);
   return tree != nullptr ? tree->getAdd2Weight() : 0.0f;
+}
+
+eastl::string AnimationPreviewController::assetGuid() const {
+  const AnimationTree* tree = treeFor(m_target_object);
+  return tree != nullptr ? tree->getAssetGuid() : eastl::string();
 }
 
 bool AnimationPreviewController::setTreeActive(const bool active) {
@@ -242,6 +263,13 @@ void AnimationPreviewController::setBlendSpaceScalar(
   }
 }
 
+void AnimationPreviewController::setBlendSpace2DParam(
+    const eastl::string& node_name, const float x, const float y) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->setBlendSpace2DParam(node_name, x, y);
+  }
+}
+
 bool AnimationPreviewController::requestOneShot(const eastl::string& clip_name) {
   AnimationTree* tree = treeFor(m_target_object);
   if (tree == nullptr) {
@@ -262,6 +290,69 @@ bool AnimationPreviewController::setAdd2ClipName(const eastl::string& name) {
     return false;
   }
   return tree->setAdd2ClipName(name);
+}
+
+void AnimationPreviewController::setAssetGuid(const eastl::string& guid) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->setAssetGuid(guid);
+  }
+}
+
+bool AnimationPreviewController::applyTreeTopology(
+    const AnimationTreeTopologyData& topology) {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    return false;
+  }
+  return tree->applyTopologyData(topology);
+}
+
+void AnimationPreviewController::applyTreeOverrides(
+    const AnimationTreeInstanceOverrides& overrides) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->applyInstanceOverrides(overrides);
+  }
+}
+
+size_t AnimationPreviewController::skeletonModifierCount() const {
+  return m_target_object != nullptr ? m_target_object->getSkeletonModifierCount()
+                                    : 0;
+}
+
+bool AnimationPreviewController::setSkeletonModifierEnabled(const size_t index,
+                                                            const bool enabled) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier = m_target_object->getSkeletonModifierAt(index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  modifier->setEnabled(enabled);
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::isSkeletonModifierEnabled(
+    const size_t index) const {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  const SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(index);
+  return modifier != nullptr && modifier->isEnabled();
+}
+
+bool AnimationPreviewController::moveSkeletonModifier(const size_t from_index,
+                                                      const size_t to_index) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  if (!m_target_object->moveSkeletonModifier(from_index, to_index)) {
+    return false;
+  }
+  resampleBoundSkeleton();
+  return true;
 }
 
 void AnimationPreviewController::resampleBoundSkeleton() {

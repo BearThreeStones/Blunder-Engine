@@ -2,8 +2,11 @@
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/editor/animation_preview_controller.h"
+
+#include "EASTL/unique_ptr.h"
 
 #include <cmath>
 #include <cstdio>
@@ -447,6 +450,193 @@ void test_edit_tree_scrub_requires_no_graph_editor_or_behaviour_tick() {
   LifecycleDispatch::clear();
 }
 
+void test_edit_modifier_enable_order_without_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  Skeleton* skeleton = nullptr;
+  Object* object = makeTreePreviewObject(&skeleton);
+  expect_true("object", object != nullptr);
+
+  auto first = eastl::make_unique<SkeletonModifier>();
+  first->setApplyFn(
+      [](Skeleton& skel, void*) {
+        BoneTransform pose = skel.getBonePoseLocal(0);
+        pose.translation.x += 1.0f;
+        skel.setBonePoseLocal(0, pose);
+      },
+      nullptr);
+  object->addSkeletonModifier(eastl::move(first));
+
+  auto second = eastl::make_unique<SkeletonModifier>();
+  second->setApplyFn(
+      [](Skeleton& skel, void*) {
+        BoneTransform pose = skel.getBonePoseLocal(0);
+        pose.translation.x += 10.0f;
+        skel.setBonePoseLocal(0, pose);
+      },
+      nullptr);
+  object->addSkeletonModifier(eastl::move(second));
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "idle");
+  expect_true("travel", controller.travel("Locomotion"));
+  expect_true("activate", controller.setTreeActive(true));
+  controller.setBlendSpaceScalar("Locomotion", 0.0f);
+
+  expect_true("two modifiers", controller.skeletonModifierCount() == 2);
+  const float with_both = skeleton->getBonePoseLocal(0).translation.x;
+  expect_true("order +1 then +10", float_near(with_both, 15.0f));
+  if (!float_near(with_both, 15.0f)) {
+    std::fprintf(stderr, "  got with_both=%f\n", with_both);
+  }
+
+  expect_true("disable second",
+              controller.setSkeletonModifierEnabled(1, false));
+  const float with_first = skeleton->getBonePoseLocal(0).translation.x;
+  expect_true("only first applies", float_near(with_first, 5.0f));
+  if (!float_near(with_first, 5.0f)) {
+    std::fprintf(stderr, "  got with_first=%f\n", with_first);
+  }
+
+  expect_true("re-enable second",
+              controller.setSkeletonModifierEnabled(1, true));
+  expect_true("move second before first",
+              controller.moveSkeletonModifier(1, 0));
+  const float reordered = skeleton->getBonePoseLocal(0).translation.x;
+  expect_true("order +10 then +1", float_near(reordered, 15.0f));
+  if (!float_near(reordered, 15.0f)) {
+    std::fprintf(stderr, "  got reordered=%f\n", reordered);
+  }
+  expect_true("no behaviour tick", g_tick_calls == 0);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_edit_blend_space2d_scrub_without_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  Skeleton* skeleton = nullptr;
+  Object* object = makeTreePreviewObject(&skeleton);
+  AnimationTree* tree = object->getAnimationTree();
+  tree->clearAuthoredTopology();
+  tree->addBlendSpace2DPoint("Locomotion2D", "idle", 0.0f, 0.0f);
+  tree->addBlendSpace2DPoint("Locomotion2D", "walk", 1.0f, 0.0f);
+  // Need a third point for triangle — reuse walk at different y via another clip.
+  // walk is enough with 2-point line blend for scrub API.
+  tree->setBaseBlendSpace2DNode("Locomotion2D");
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "idle");
+  expect_true("activate", controller.setTreeActive(true));
+  controller.setBlendSpace2DParam("Locomotion2D", 0.5f, 0.0f);
+
+  float x = 0.0f;
+  float y = 0.0f;
+  expect_true("read param", controller.blendSpace2DParam("Locomotion2D", x, y));
+  expect_true("param x", float_near(x, 0.5f));
+  expect_true("param y", float_near(y, 0.0f));
+  expect_true("2d midpoint pose",
+              float_near(skeleton->getBonePoseLocal(0).translation.x, 2.0f));
+  expect_true("no behaviour tick", g_tick_calls == 0);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_edit_tree_asset_and_overrides_without_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  Skeleton* skeleton = nullptr;
+  Object* object = makeTreePreviewObject(&skeleton);
+
+  AnimationTreeTopologyData topology;
+  topology.base_blend_space_node = "Locomotion";
+  AnimationTreeTopologyData::BlendSpace1DDef space;
+  space.node_name = "Locomotion";
+  space.scalar = 0.0f;
+  space.points.push_back({"idle", 0.0f});
+  space.points.push_back({"walk", 1.0f});
+  topology.blend_spaces_1d.push_back(eastl::move(space));
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "idle");
+  controller.setAssetGuid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+  expect_true("apply topology", controller.applyTreeTopology(topology));
+  expect_true("guid",
+              controller.assetGuid() == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+  AnimationTreeInstanceOverrides overrides;
+  overrides.blend_space_scalars.push_back({"Locomotion", 1.0f});
+  overrides.has_active = true;
+  overrides.active = true;
+  controller.applyTreeOverrides(overrides);
+
+  expect_true("override walk pose",
+              float_near(skeleton->getBonePoseLocal(0).translation.x, 0.0f));
+  expect_true("no behaviour tick", g_tick_calls == 0);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_edit_method_scrub_markers_without_behaviour_handling() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  Skeleton* skeleton = nullptr;
+  Object* object = makeTreePreviewObject(&skeleton);
+  AnimationPlayer* player = object->getAnimationPlayer();
+
+  AnimationClipData clip;
+  clip.duration = 1.0f;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+  AnimationMethodKey key;
+  key.name = "FootStep";
+  key.time = 0.25f;
+  clip.method_keys.push_back(key);
+  player->injectClipData(kIdleGuid, clip);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "idle");
+  controller.setTreeActive(true);
+  controller.setBlendSpaceScalar("Locomotion", 0.0f);
+  controller.play();
+  controller.tick(0.3f);
+
+  // Method keys remain on clip for Edit markers/logs; Behaviour handling is Play-only.
+  AnimationClipData loaded;
+  expect_true("resolve clip", player->resolveClipForName("idle", loaded));
+  expect_true("method marker present",
+              loaded.method_keys.size() == 1 &&
+                  loaded.method_keys[0].name == "FootStep");
+  expect_true("scrub without behaviour handling", g_tick_calls == 0);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
 }  // namespace
 
 int main() {
@@ -456,6 +646,10 @@ int main() {
   test_tree_activate_and_scrub_without_behaviour_lifecycle();
   test_tree_oneshot_and_add2_scrub_without_behaviour_tick();
   test_edit_tree_scrub_requires_no_graph_editor_or_behaviour_tick();
+  test_edit_modifier_enable_order_without_behaviour_tick();
+  test_edit_blend_space2d_scrub_without_behaviour_tick();
+  test_edit_tree_asset_and_overrides_without_behaviour_tick();
+  test_edit_method_scrub_markers_without_behaviour_handling();
   test_time_scale_scrub_affects_tick();
   test_blend_weight_scrub_updates_player();
   test_play_uses_fade_duration();

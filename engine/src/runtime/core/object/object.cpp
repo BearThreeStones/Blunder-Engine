@@ -389,6 +389,21 @@ SkeletonModifier* Object::addSkeletonModifier(
   return m_skeleton_modifiers.back().get();
 }
 
+bool Object::moveSkeletonModifier(size_t from_index, size_t to_index) {
+  const size_t count = m_skeleton_modifiers.size();
+  if (from_index >= count || to_index >= count || from_index == to_index) {
+    return false;
+  }
+  eastl::unique_ptr<SkeletonModifier> moving =
+      eastl::move(m_skeleton_modifiers[from_index]);
+  m_skeleton_modifiers.erase(m_skeleton_modifiers.begin() +
+                             static_cast<ptrdiff_t>(from_index));
+  m_skeleton_modifiers.insert(
+      m_skeleton_modifiers.begin() + static_cast<ptrdiff_t>(to_index),
+      eastl::move(moving));
+  return true;
+}
+
 void Object::applySkeletonModifiers(Skeleton& skeleton) {
   for (const eastl::unique_ptr<SkeletonModifier>& modifier : m_skeleton_modifiers) {
     if (modifier != nullptr) {
