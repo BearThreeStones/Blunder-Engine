@@ -8,7 +8,7 @@
 
 - [x] 2.1 TDD: PaperMouth applies jaw pose from `openAmount`
 - [x] 2.2 TDD: configurable jaw bone name
-- [ ] 2.3 TDD: optional attach-driven mode fills `openAmount` when enabled; default off
+- [x] 2.3 TDD: optional attach-driven mode fills `openAmount` when enabled; default off
 - [ ] 2.4 TDD: Edit scrub `openAmount` without Behaviour Tick
 
 ## 3. SkeletonAttachModifier

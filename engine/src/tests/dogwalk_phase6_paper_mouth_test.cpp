@@ -162,11 +162,99 @@ void test_paper_mouth_configurable_bone_name() {
   ClassDB::shutdown();
 }
 
+/// Task 2.3: optional attach-driven mode fills openAmount when enabled; default off.
+void test_paper_mouth_attach_driven_open_amount() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+
+  ObjectDB::clear();
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object created", object != nullptr);
+  if (object == nullptr) {
+    ClassDB::shutdown();
+    return;
+  }
+
+  Skeleton* skeleton = object->ensureSkeleton();
+  const int head = skeleton->addBone("Head", -1);
+  const int jaw = skeleton->addBone("Jaw", head);
+  skeleton->setBoneRestLocal(static_cast<size_t>(jaw),
+                             BoneTransform{Vec3(0.0f, 0.0f, 0.2f),
+                                           glm::identity<Quat>(), Vec3(1.0f)});
+  skeleton->resetPoseToRest();
+
+  SkeletonPaperMouthModifier* paper_mouth = object->addSkeletonPaperMouthModifier();
+  expect_true("paper mouth created", paper_mouth != nullptr);
+  if (paper_mouth == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  Variant attach_driven;
+  expect_true("attach_driven get via ClassDB",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "attach_driven",
+                                   attach_driven));
+  expect_true("default attach_driven off", !attach_driven.asBool());
+
+  expect_true("open_amount explicit via ClassDB",
+              ClassDB::setProperty(paper_mouth, "PaperMouth", "open_amount",
+                                   Variant(0.25f)));
+
+  paper_mouth->setAttachOccupancy(0.75f);
+  Variant open_amount;
+  expect_true("open_amount get after occupancy while off",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "open_amount",
+                                   open_amount));
+  expect_true("open_amount unchanged when attach_driven off",
+              float_near(open_amount.asFloat(), 0.25f));
+
+  expect_true("attach_driven enabled via ClassDB",
+              ClassDB::setProperty(paper_mouth, "PaperMouth", "attach_driven",
+                                   Variant(true)));
+  expect_true("enabling attach_driven syncs occupancy to open_amount",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "open_amount",
+                                   open_amount));
+  expect_true("open_amount synced from stored occupancy",
+              float_near(open_amount.asFloat(), 0.75f));
+
+  paper_mouth->setAttachOccupancy(0.8f);
+  expect_true("open_amount get after occupancy while on",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "open_amount",
+                                   open_amount));
+  expect_true("open_amount filled from occupancy when attach_driven on",
+              float_near(open_amount.asFloat(), 0.8f));
+
+  skeleton->resetPoseToRest();
+  paper_mouth->apply(*skeleton);
+  const Quat jaw_rotation_occupancy =
+      skeleton->getBonePoseLocal(static_cast<size_t>(jaw)).rotation;
+  expect_true("jaw rotates when attach_driven fills open_amount",
+              std::fabs(glm::dot(jaw_rotation_occupancy, glm::identity<Quat>())) <
+                  0.999f);
+
+  expect_true("attach_driven disabled via ClassDB",
+              ClassDB::setProperty(paper_mouth, "PaperMouth", "attach_driven",
+                                   Variant(false)));
+  paper_mouth->setAttachOccupancy(0.1f);
+  expect_true("open_amount get after occupancy while off again",
+              ClassDB::getProperty(paper_mouth, "PaperMouth", "open_amount",
+                                   open_amount));
+  expect_true("open_amount unchanged when attach_driven off again",
+              float_near(open_amount.asFloat(), 0.8f));
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
 }  // namespace
 
 int main() {
   test_paper_mouth_open_amount_changes_jaw_pose();
   test_paper_mouth_configurable_bone_name();
+  test_paper_mouth_attach_driven_open_amount();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

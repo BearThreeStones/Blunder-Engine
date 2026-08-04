@@ -11,6 +11,20 @@ const float kMaxJawOpenRadians = 0.785398163f;  // 45 degrees
 
 }  // namespace
 
+void SkeletonPaperMouthModifier::setAttachDriven(bool driven) {
+  m_attach_driven = driven;
+  if (m_attach_driven) {
+    m_open_amount = m_attach_occupancy;
+  }
+}
+
+void SkeletonPaperMouthModifier::setAttachOccupancy(float occupancy) {
+  m_attach_occupancy = occupancy;
+  if (m_attach_driven) {
+    m_open_amount = occupancy;
+  }
+}
+
 void SkeletonPaperMouthModifier::apply(Skeleton& skeleton) {
   if (!isEnabled()) {
     return;

@@ -25,6 +25,16 @@ void set_paper_mouth_bone_name(void* instance, const Variant& value) {
       value.asString());
 }
 
+Variant get_paper_mouth_attach_driven(const void* instance) {
+  return Variant(
+      static_cast<const SkeletonPaperMouthModifier*>(instance)->isAttachDriven());
+}
+
+void set_paper_mouth_attach_driven(void* instance, const Variant& value) {
+  static_cast<SkeletonPaperMouthModifier*>(instance)->setAttachDriven(
+      value.asBool());
+}
+
 }  // namespace
 
 void register_skeleton_paper_mouth_modifier_reflection() {
@@ -35,6 +45,9 @@ void register_skeleton_paper_mouth_modifier_reflection() {
   ClassDB::addProperty(
       "PaperMouth", PropertyInfo{"bone_name", VariantType::String},
       set_paper_mouth_bone_name, get_paper_mouth_bone_name);
+  ClassDB::addProperty(
+      "PaperMouth", PropertyInfo{"attach_driven", VariantType::Bool},
+      set_paper_mouth_attach_driven, get_paper_mouth_attach_driven);
 }
 
 }  // namespace Blunder

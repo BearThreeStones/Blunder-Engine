@@ -16,11 +16,19 @@ class SkeletonPaperMouthModifier : public SkeletonModifier {
   void setBoneName(const eastl::string& name) { m_bone_name = name; }
   const eastl::string& getBoneName() const { return m_bone_name; }
 
+  void setAttachDriven(bool driven);
+  bool isAttachDriven() const { return m_attach_driven; }
+
+  void setAttachOccupancy(float occupancy);
+  float getAttachOccupancy() const { return m_attach_occupancy; }
+
   void apply(Skeleton& skeleton) override;
 
  private:
   eastl::string m_bone_name{"Jaw"};
   float m_open_amount{0.0f};
+  bool m_attach_driven{false};
+  float m_attach_occupancy{0.0f};
 };
 
 }  // namespace Blunder
