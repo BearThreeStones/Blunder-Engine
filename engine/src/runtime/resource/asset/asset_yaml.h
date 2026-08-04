@@ -29,6 +29,17 @@ class AssetYaml final {
   static eastl::string serializeAnimationClipData(
       const AnimationClipData& data);
 
+  static bool parseAnimationTreeAssetDescriptor(
+      const eastl::string& yaml_text,
+      AnimationTreeAssetDescriptor& out_descriptor);
+  static eastl::string serializeAnimationTreeAssetDescriptor(
+      const AnimationTreeAssetDescriptor& descriptor);
+
+  static bool parseAnimationTreeTopologyData(
+      const eastl::string& yaml_text, AnimationTreeTopologyData& out_data);
+  static eastl::string serializeAnimationTreeTopologyData(
+      const AnimationTreeTopologyData& data);
+
   /// Reads the `source` field from a mesh or texture YAML descriptor.
   static bool parseSourceField(const eastl::string& yaml_text,
                                eastl::string& out_source);

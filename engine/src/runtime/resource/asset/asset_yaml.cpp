@@ -576,4 +576,237 @@ eastl::string AssetYaml::serializeAnimationClipData(
   return eastl::string(emitter.c_str());
 }
 
+bool AssetYaml::parseAnimationTreeAssetDescriptor(
+    const eastl::string& yaml_text,
+    AnimationTreeAssetDescriptor& out_descriptor) {
+  try {
+    const YAML::Node root = loadRoot(yaml_text);
+    if (!root || !root.IsMap()) {
+      return false;
+    }
+    const YAML::Node type_node = root["type"];
+    if (!type_node || type_node.as<std::string>() != "AnimationTree") {
+      return false;
+    }
+    if (!readStringField(root, "guid", out_descriptor.guid)) {
+      return false;
+    }
+    if (!readStringField(root, "source", out_descriptor.source)) {
+      return false;
+    }
+    readOptionalStringField(root, "archived_source",
+                            out_descriptor.archived_source);
+    return true;
+  } catch (const YAML::Exception& exception) {
+    LOG_WARN("[AssetYaml] parseAnimationTreeAssetDescriptor failed: {}",
+             exception.what());
+    return false;
+  }
+}
+
+eastl::string AssetYaml::serializeAnimationTreeAssetDescriptor(
+    const AnimationTreeAssetDescriptor& descriptor) {
+  YAML::Emitter emitter;
+  emitter << YAML::BeginMap;
+  emitter << YAML::Key << "type" << YAML::Value << "AnimationTree";
+  emitter << YAML::Key << "guid" << YAML::Value << descriptor.guid.c_str();
+  emitter << YAML::Key << "source" << YAML::Value << descriptor.source.c_str();
+  if (!descriptor.archived_source.empty()) {
+    emitter << YAML::Key << "archived_source" << YAML::Value
+            << descriptor.archived_source.c_str();
+  }
+  emitter << YAML::EndMap;
+  return eastl::string(emitter.c_str());
+}
+
+bool AssetYaml::parseAnimationTreeTopologyData(
+    const eastl::string& yaml_text, AnimationTreeTopologyData& out_data) {
+  try {
+    const YAML::Node root = loadRoot(yaml_text);
+    if (!root || !root.IsMap()) {
+      return false;
+    }
+    const YAML::Node version_node = root["version"];
+    if (!version_node || !version_node.IsScalar() ||
+        version_node.as<int>() != AnimationTreeTopologyData::kVersion) {
+      return false;
+    }
+
+    out_data = AnimationTreeTopologyData{};
+    readOptionalStringField(root, "base_blend_space_node",
+                            out_data.base_blend_space_node);
+    readOptionalStringField(root, "base_blend_space_2d_node",
+                            out_data.base_blend_space_2d_node);
+    readOptionalStringField(root, "add2_clip", out_data.add2_clip);
+    readOptionalStringField(root, "oneshot_clip", out_data.oneshot_clip);
+
+    const YAML::Node spaces1d = root["blend_spaces_1d"];
+    if (spaces1d && spaces1d.IsSequence()) {
+      for (const auto& space_node : spaces1d) {
+        if (!space_node || !space_node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::BlendSpace1DDef space;
+        if (!readStringField(space_node, "node_name", space.node_name)) {
+          return false;
+        }
+        readFloatField(space_node, "scalar", 0.0f, space.scalar);
+        const YAML::Node points = space_node["points"];
+        if (points && points.IsSequence()) {
+          for (const auto& point_node : points) {
+            AnimationTreeTopologyData::BlendSpace1DPointDef point;
+            if (!readStringField(point_node, "clip_name", point.clip_name)) {
+              return false;
+            }
+            readFloatField(point_node, "scalar", 0.0f, point.scalar);
+            space.points.push_back(eastl::move(point));
+          }
+        }
+        out_data.blend_spaces_1d.push_back(eastl::move(space));
+      }
+    }
+
+    const YAML::Node spaces2d = root["blend_spaces_2d"];
+    if (spaces2d && spaces2d.IsSequence()) {
+      for (const auto& space_node : spaces2d) {
+        if (!space_node || !space_node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::BlendSpace2DDef space;
+        if (!readStringField(space_node, "node_name", space.node_name)) {
+          return false;
+        }
+        readFloatField(space_node, "x", 0.0f, space.x);
+        readFloatField(space_node, "y", 0.0f, space.y);
+        const YAML::Node points = space_node["points"];
+        if (points && points.IsSequence()) {
+          for (const auto& point_node : points) {
+            AnimationTreeTopologyData::BlendSpace2DPointDef point;
+            if (!readStringField(point_node, "clip_name", point.clip_name)) {
+              return false;
+            }
+            readFloatField(point_node, "x", 0.0f, point.x);
+            readFloatField(point_node, "y", 0.0f, point.y);
+            space.points.push_back(eastl::move(point));
+          }
+        }
+        out_data.blend_spaces_2d.push_back(eastl::move(space));
+      }
+    }
+
+    const YAML::Node states = root["states"];
+    if (states && states.IsSequence()) {
+      for (const auto& state_node : states) {
+        if (!state_node || !state_node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::StateDef state;
+        if (!readStringField(state_node, "name", state.name)) {
+          return false;
+        }
+        readOptionalStringField(state_node, "kind", state.kind);
+        if (state.kind.empty()) {
+          state.kind = "clip";
+        }
+        readOptionalStringField(state_node, "clip_name", state.clip_name);
+        readOptionalStringField(state_node, "blend_space_node",
+                                state.blend_space_node);
+        out_data.states.push_back(eastl::move(state));
+      }
+    }
+
+    return true;
+  } catch (const YAML::Exception& exception) {
+    LOG_WARN("[AssetYaml] parseAnimationTreeTopologyData failed: {}",
+             exception.what());
+    return false;
+  }
+}
+
+eastl::string AssetYaml::serializeAnimationTreeTopologyData(
+    const AnimationTreeTopologyData& data) {
+  YAML::Emitter emitter;
+  emitter << YAML::BeginMap;
+  emitter << YAML::Key << "version" << YAML::Value
+          << AnimationTreeTopologyData::kVersion;
+  if (!data.base_blend_space_node.empty()) {
+    emitter << YAML::Key << "base_blend_space_node" << YAML::Value
+            << data.base_blend_space_node.c_str();
+  }
+  if (!data.base_blend_space_2d_node.empty()) {
+    emitter << YAML::Key << "base_blend_space_2d_node" << YAML::Value
+            << data.base_blend_space_2d_node.c_str();
+  }
+  if (!data.add2_clip.empty()) {
+    emitter << YAML::Key << "add2_clip" << YAML::Value << data.add2_clip.c_str();
+  }
+  if (!data.oneshot_clip.empty()) {
+    emitter << YAML::Key << "oneshot_clip" << YAML::Value
+            << data.oneshot_clip.c_str();
+  }
+
+  emitter << YAML::Key << "blend_spaces_1d" << YAML::Value << YAML::BeginSeq;
+  for (const AnimationTreeTopologyData::BlendSpace1DDef& space :
+       data.blend_spaces_1d) {
+    emitter << YAML::BeginMap;
+    emitter << YAML::Key << "node_name" << YAML::Value
+            << space.node_name.c_str();
+    emitter << YAML::Key << "scalar" << YAML::Value << space.scalar;
+    emitter << YAML::Key << "points" << YAML::Value << YAML::BeginSeq;
+    for (const AnimationTreeTopologyData::BlendSpace1DPointDef& point :
+         space.points) {
+      emitter << YAML::BeginMap;
+      emitter << YAML::Key << "clip_name" << YAML::Value
+              << point.clip_name.c_str();
+      emitter << YAML::Key << "scalar" << YAML::Value << point.scalar;
+      emitter << YAML::EndMap;
+    }
+    emitter << YAML::EndSeq;
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndSeq;
+
+  emitter << YAML::Key << "blend_spaces_2d" << YAML::Value << YAML::BeginSeq;
+  for (const AnimationTreeTopologyData::BlendSpace2DDef& space :
+       data.blend_spaces_2d) {
+    emitter << YAML::BeginMap;
+    emitter << YAML::Key << "node_name" << YAML::Value
+            << space.node_name.c_str();
+    emitter << YAML::Key << "x" << YAML::Value << space.x;
+    emitter << YAML::Key << "y" << YAML::Value << space.y;
+    emitter << YAML::Key << "points" << YAML::Value << YAML::BeginSeq;
+    for (const AnimationTreeTopologyData::BlendSpace2DPointDef& point :
+         space.points) {
+      emitter << YAML::BeginMap;
+      emitter << YAML::Key << "clip_name" << YAML::Value
+              << point.clip_name.c_str();
+      emitter << YAML::Key << "x" << YAML::Value << point.x;
+      emitter << YAML::Key << "y" << YAML::Value << point.y;
+      emitter << YAML::EndMap;
+    }
+    emitter << YAML::EndSeq;
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndSeq;
+
+  emitter << YAML::Key << "states" << YAML::Value << YAML::BeginSeq;
+  for (const AnimationTreeTopologyData::StateDef& state : data.states) {
+    emitter << YAML::BeginMap;
+    emitter << YAML::Key << "name" << YAML::Value << state.name.c_str();
+    emitter << YAML::Key << "kind" << YAML::Value << state.kind.c_str();
+    if (!state.clip_name.empty()) {
+      emitter << YAML::Key << "clip_name" << YAML::Value
+              << state.clip_name.c_str();
+    }
+    if (!state.blend_space_node.empty()) {
+      emitter << YAML::Key << "blend_space_node" << YAML::Value
+              << state.blend_space_node.c_str();
+    }
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndSeq;
+  emitter << YAML::EndMap;
+  return eastl::string(emitter.c_str());
+}
+
 }  // namespace Blunder

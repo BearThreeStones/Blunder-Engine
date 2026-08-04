@@ -74,6 +74,6 @@ Phase 4 locked lean AnimationTree ([ADR 0025](../../../docs/adr/0025-animation-t
 
 - Exact SkeletonModifier registration / C# subclass bridge (apply-time)
 - Method event C-ABI / MessageId shape (apply-time)
-- Instance-override allowlist fields (apply-time)
+- Instance-override allowlist (locked apply-time): `blendSpaceScalars`, `blendSpace2DParams`, `add2Weight`, `currentState`, `active`. Topology (points/states/base/Add2 clip/OneShot slot) lives on Asset or full embed.
 - Import source for method tracks from glTF extras / companion (apply-time)
 - Edit UI chrome for Asset picker vs inline Inspector (Done does not require polish alone)

@@ -6,6 +6,7 @@
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
+#include "runtime/core/object/animation_tree_asset.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -25,6 +26,7 @@ Mat4 composeTrs(const Vec3& position, const Quat& rotation, const Vec3& scale) {
 
 bool entityHasAnimationTreeTopology(const SceneEntityDefinition& definition) {
   return definition.has_animation_tree ||
+         !definition.animation_tree_asset_guid.empty() ||
          !definition.animation_tree_blend_spaces.empty() ||
          !definition.animation_tree_states.empty() ||
          !definition.animation_tree_current_state.empty() ||
@@ -37,6 +39,29 @@ bool entityHasAnimationTreeTopology(const SceneEntityDefinition& definition) {
 
 void applyAnimationTreeTopology(AnimationTree& tree,
                                 const SceneEntityDefinition& definition) {
+  if (!definition.animation_tree_asset_guid.empty()) {
+    tree.setAssetGuid(definition.animation_tree_asset_guid);
+    // Asset body is applied by the host/resolver; scene stores allowlisted
+    // overrides only (scalars / Add2 weight / travel / active).
+    AnimationTreeInstanceOverrides overrides;
+    for (const SceneEntityDefinition::AnimationTreeBlendSpaceDef& space :
+         definition.animation_tree_blend_spaces) {
+      overrides.blend_space_scalars.push_back(
+          {space.node_name, space.scalar});
+    }
+    if (definition.animation_tree_add2_weight != 0.0f) {
+      overrides.has_add2_weight = true;
+      overrides.add2_weight = definition.animation_tree_add2_weight;
+    }
+    overrides.current_state = definition.animation_tree_current_state;
+    if (definition.animation_tree_active) {
+      overrides.has_active = true;
+      overrides.active = true;
+    }
+    applyAnimationTreeInstanceOverrides(tree, overrides);
+    return;
+  }
+
   for (const SceneEntityDefinition::AnimationTreeBlendSpaceDef& space :
        definition.animation_tree_blend_spaces) {
     for (const SceneEntityDefinition::AnimationTreeBlendSpacePointDef& point :
@@ -49,6 +74,8 @@ void applyAnimationTreeTopology(AnimationTree& tree,
        definition.animation_tree_states) {
     if (state.kind == "blendSpace1D") {
       tree.setStateBlendSpace(state.name, state.blend_space_node);
+    } else if (state.kind == "blendSpace2D") {
+      tree.setStateBlendSpace2D(state.name, state.blend_space_node);
     } else {
       tree.setStateClip(state.name, state.clip_name);
     }
@@ -74,6 +101,7 @@ void applyAnimationTreeTopology(AnimationTree& tree,
 void captureAnimationTreeTopology(const AnimationTree& tree,
                                   SceneEntityDefinition& definition) {
   definition.has_animation_tree = true;
+  definition.animation_tree_asset_guid = tree.getAssetGuid();
   definition.animation_tree_active = tree.isActive();
   definition.animation_tree_current_state = tree.getCurrentStateName();
   definition.animation_tree_base_blend_space_node =
@@ -82,6 +110,26 @@ void captureAnimationTreeTopology(const AnimationTree& tree,
   definition.animation_tree_add2_weight = tree.getAdd2Weight();
   definition.animation_tree_oneshot_clip = tree.getOneShotSlotClip();
 
+  // When referencing an Asset, persist allowlisted overrides only.
+  if (!definition.animation_tree_asset_guid.empty()) {
+    struct OverrideExportContext {
+      SceneEntityDefinition* definition;
+    };
+    OverrideExportContext ctx{&definition};
+    tree.visitBlendSpaces(
+        [](const eastl::string& node_name,
+           const eastl::vector<BlendSpace1DPoint>& /*points*/, float scalar,
+           void* userdata) {
+          auto* export_ctx = static_cast<OverrideExportContext*>(userdata);
+          SceneEntityDefinition::AnimationTreeBlendSpaceDef space;
+          space.node_name = node_name;
+          space.scalar = scalar;
+          export_ctx->definition->animation_tree_blend_spaces.push_back(
+              eastl::move(space));
+        },
+        &ctx);
+    return;
+  }
   struct BlendExportContext {
     SceneEntityDefinition* definition;
   };

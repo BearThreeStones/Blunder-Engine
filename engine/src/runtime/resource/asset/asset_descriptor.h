@@ -79,4 +79,72 @@ struct AnimationClipAssetDescriptor {
   eastl::string archived_source;
 };
 
+/// Reusable AnimationTree topology body (Intermediate / Asset).
+struct AnimationTreeTopologyData {
+  static constexpr int kVersion = 1;
+
+  struct BlendSpace1DPointDef {
+    eastl::string clip_name;
+    float scalar{0.0f};
+  };
+  struct BlendSpace1DDef {
+    eastl::string node_name;
+    float scalar{0.0f};
+    eastl::vector<BlendSpace1DPointDef> points;
+  };
+  struct BlendSpace2DPointDef {
+    eastl::string clip_name;
+    float x{0.0f};
+    float y{0.0f};
+  };
+  struct BlendSpace2DDef {
+    eastl::string node_name;
+    float x{0.0f};
+    float y{0.0f};
+    eastl::vector<BlendSpace2DPointDef> points;
+  };
+  struct StateDef {
+    eastl::string name;
+    /// "clip" | "blendSpace1D" | "blendSpace2D"
+    eastl::string kind{"clip"};
+    eastl::string clip_name;
+    eastl::string blend_space_node;
+  };
+
+  eastl::string base_blend_space_node;
+  eastl::string base_blend_space_2d_node;
+  eastl::string add2_clip;
+  eastl::string oneshot_clip;
+  eastl::vector<BlendSpace1DDef> blend_spaces_1d;
+  eastl::vector<BlendSpace2DDef> blend_spaces_2d;
+  eastl::vector<StateDef> states;
+};
+
+struct AnimationTreeAssetDescriptor {
+  eastl::string guid;
+  eastl::string source;
+  eastl::string archived_source;
+};
+
+/// Small scene-instance allowlist over Asset base (Phase 5 D).
+struct AnimationTreeInstanceOverrides {
+  struct ScalarOverride {
+    eastl::string node_name;
+    float value{0.0f};
+  };
+  struct Param2DOverride {
+    eastl::string node_name;
+    float x{0.0f};
+    float y{0.0f};
+  };
+
+  bool has_active{false};
+  bool active{false};
+  bool has_add2_weight{false};
+  float add2_weight{0.0f};
+  eastl::string current_state;
+  eastl::vector<ScalarOverride> blend_space_scalars;
+  eastl::vector<Param2DOverride> blend_space_2d_params;
+};
+
 }  // namespace Blunder

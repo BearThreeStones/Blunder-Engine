@@ -73,6 +73,8 @@ struct SceneEntityDefinition final {
   };
   /// Scene-embedded AnimationTree topology (no standalone Tree Asset).
   bool has_animation_tree{false};
+  /// Optional AnimationTree Asset GUID; when set, Asset is topology base.
+  eastl::string animation_tree_asset_guid;
   bool animation_tree_active{false};
   eastl::string animation_tree_current_state;
   eastl::string animation_tree_base_blend_space_node;

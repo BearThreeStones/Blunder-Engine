@@ -23,12 +23,12 @@
 
 ## 4. Gate D — AnimationTree Asset
 
-- [ ] 4.1 TDD: AnimationTree Asset GUID body round-trip (topology)
-- [ ] 4.2 TDD: AnimationTree references Asset; runtime uses Asset as base
-- [ ] 4.3 TDD: small scene instance overrides apply on top of Asset (allowlist)
-- [ ] 4.4 TDD: no Asset reference → Phase 4 embedded topology still works
-- [ ] 4.5 Inspector authorship for Asset topology (no visual canvas required for Done)
-- [ ] 4.6 Confirm visual canvas is not required for Phase 5 D Done
+- [x] 4.1 TDD: AnimationTree Asset GUID body round-trip (topology)
+- [x] 4.2 TDD: AnimationTree references Asset; runtime uses Asset as base
+- [x] 4.3 TDD: small scene instance overrides apply on top of Asset (allowlist)
+- [x] 4.4 TDD: no Asset reference → Phase 4 embedded topology still works
+- [x] 4.5 Inspector authorship for Asset topology (no visual canvas required for Done)
+- [x] 4.6 Confirm visual canvas is not required for Phase 5 D Done
 
 ## 5. Edit Mode preview
 

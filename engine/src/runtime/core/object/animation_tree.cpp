@@ -673,6 +673,17 @@ void AnimationTree::visitBlendSpaces(BlendSpaceVisitor visitor,
   }
 }
 
+void AnimationTree::visitBlendSpaces2D(BlendSpace2DVisitor visitor,
+                                       void* userdata) const {
+  if (visitor == nullptr) {
+    return;
+  }
+  for (const auto& entry : m_blend_spaces_2d) {
+    const BlendSpace2DParam param = getBlendSpace2DParam(entry.first);
+    visitor(entry.first, entry.second, param.x, param.y, userdata);
+  }
+}
+
 void AnimationTree::visitStates(StateVisitor visitor, void* userdata) const {
   if (visitor == nullptr) {
     return;
@@ -681,6 +692,180 @@ void AnimationTree::visitStates(StateVisitor visitor, void* userdata) const {
     const AnimationStateDefinition& state = entry.second;
     visitor(entry.first, state.kind, state.clip_name, state.blend_space_node,
             userdata);
+  }
+}
+
+void AnimationTree::clearAuthoredTopology() {
+  m_blend_spaces.clear();
+  m_blend_space_scalars.clear();
+  m_blend_spaces_2d.clear();
+  m_blend_space_2d_params.clear();
+  m_base_blend_space_node.clear();
+  m_base_blend_space_2d_node.clear();
+  m_states.clear();
+  m_current_state_name.clear();
+  m_sample_clip_name.clear();
+  m_add2_clip_name.clear();
+  m_add2_weight = 0.0f;
+  m_add2_time = 0.0f;
+  m_oneshot_slot_clip.clear();
+  m_oneshot_active = false;
+  m_oneshot_clip_name.clear();
+  m_oneshot_time = 0.0f;
+}
+
+bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology) {
+  clearAuthoredTopology();
+
+  for (const AnimationTreeTopologyData::BlendSpace1DDef& space :
+       topology.blend_spaces_1d) {
+    for (const AnimationTreeTopologyData::BlendSpace1DPointDef& point :
+         space.points) {
+      if (!addBlendSpacePoint(space.node_name, point.clip_name, point.scalar)) {
+        return false;
+      }
+    }
+    setBlendSpaceScalar(space.node_name, space.scalar);
+  }
+
+  for (const AnimationTreeTopologyData::BlendSpace2DDef& space :
+       topology.blend_spaces_2d) {
+    for (const AnimationTreeTopologyData::BlendSpace2DPointDef& point :
+         space.points) {
+      if (!addBlendSpace2DPoint(space.node_name, point.clip_name, point.x,
+                                point.y)) {
+        return false;
+      }
+    }
+    setBlendSpace2DParam(space.node_name, space.x, space.y);
+  }
+
+  for (const AnimationTreeTopologyData::StateDef& state : topology.states) {
+    if (state.kind == "blendSpace1D") {
+      if (!setStateBlendSpace(state.name, state.blend_space_node)) {
+        return false;
+      }
+    } else if (state.kind == "blendSpace2D") {
+      if (!setStateBlendSpace2D(state.name, state.blend_space_node)) {
+        return false;
+      }
+    } else {
+      if (!setStateClip(state.name, state.clip_name)) {
+        return false;
+      }
+    }
+  }
+
+  if (!topology.base_blend_space_2d_node.empty()) {
+    if (!setBaseBlendSpace2DNode(topology.base_blend_space_2d_node)) {
+      return false;
+    }
+  } else if (!topology.base_blend_space_node.empty()) {
+    if (!setBaseBlendSpaceNode(topology.base_blend_space_node)) {
+      return false;
+    }
+  }
+
+  if (!topology.add2_clip.empty()) {
+    if (!setAdd2ClipName(topology.add2_clip)) {
+      return false;
+    }
+  }
+  if (!topology.oneshot_clip.empty()) {
+    if (!setOneShotSlotClip(topology.oneshot_clip)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void AnimationTree::exportTopologyData(
+    AnimationTreeTopologyData& out_topology) const {
+  out_topology = AnimationTreeTopologyData{};
+  out_topology.base_blend_space_node = m_base_blend_space_node;
+  out_topology.base_blend_space_2d_node = m_base_blend_space_2d_node;
+  out_topology.add2_clip = m_add2_clip_name;
+  out_topology.oneshot_clip = m_oneshot_slot_clip;
+
+  visitBlendSpaces(
+      [](const eastl::string& node_name,
+         const eastl::vector<BlendSpace1DPoint>& points, float scalar,
+         void* userdata) {
+        auto* out = static_cast<AnimationTreeTopologyData*>(userdata);
+        AnimationTreeTopologyData::BlendSpace1DDef space;
+        space.node_name = node_name;
+        space.scalar = scalar;
+        for (const BlendSpace1DPoint& point : points) {
+          AnimationTreeTopologyData::BlendSpace1DPointDef point_def;
+          point_def.clip_name = point.clip_name;
+          point_def.scalar = point.scalar;
+          space.points.push_back(eastl::move(point_def));
+        }
+        out->blend_spaces_1d.push_back(eastl::move(space));
+      },
+      &out_topology);
+
+  visitBlendSpaces2D(
+      [](const eastl::string& node_name,
+         const eastl::vector<BlendSpace2DPoint>& points, float x, float y,
+         void* userdata) {
+        auto* out = static_cast<AnimationTreeTopologyData*>(userdata);
+        AnimationTreeTopologyData::BlendSpace2DDef space;
+        space.node_name = node_name;
+        space.x = x;
+        space.y = y;
+        for (const BlendSpace2DPoint& point : points) {
+          AnimationTreeTopologyData::BlendSpace2DPointDef point_def;
+          point_def.clip_name = point.clip_name;
+          point_def.x = point.x;
+          point_def.y = point.y;
+          space.points.push_back(eastl::move(point_def));
+        }
+        out->blend_spaces_2d.push_back(eastl::move(space));
+      },
+      &out_topology);
+
+  visitStates(
+      [](const eastl::string& state_name, AnimationStatePlaybackKind kind,
+         const eastl::string& clip_name, const eastl::string& blend_space_node,
+         void* userdata) {
+        auto* out = static_cast<AnimationTreeTopologyData*>(userdata);
+        AnimationTreeTopologyData::StateDef state;
+        state.name = state_name;
+        if (kind == AnimationStatePlaybackKind::BlendSpace1D) {
+          state.kind = "blendSpace1D";
+          state.blend_space_node = blend_space_node;
+        } else if (kind == AnimationStatePlaybackKind::BlendSpace2D) {
+          state.kind = "blendSpace2D";
+          state.blend_space_node = blend_space_node;
+        } else {
+          state.kind = "clip";
+          state.clip_name = clip_name;
+        }
+        out->states.push_back(eastl::move(state));
+      },
+      &out_topology);
+}
+
+void AnimationTree::applyInstanceOverrides(
+    const AnimationTreeInstanceOverrides& overrides) {
+  for (const AnimationTreeInstanceOverrides::ScalarOverride& entry :
+       overrides.blend_space_scalars) {
+    setBlendSpaceScalar(entry.node_name, entry.value);
+  }
+  for (const AnimationTreeInstanceOverrides::Param2DOverride& entry :
+       overrides.blend_space_2d_params) {
+    setBlendSpace2DParam(entry.node_name, entry.x, entry.y);
+  }
+  if (overrides.has_add2_weight) {
+    setAdd2Weight(overrides.add2_weight);
+  }
+  if (!overrides.current_state.empty()) {
+    travel(overrides.current_state);
+  }
+  if (overrides.has_active) {
+    setActive(overrides.active);
   }
 }
 
