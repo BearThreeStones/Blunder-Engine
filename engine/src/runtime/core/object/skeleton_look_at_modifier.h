@@ -7,7 +7,7 @@
 
 namespace Blunder {
 
-/// Minimal LookAt/aim sample modifier (Phase 5 Gate A).
+/// Configurable LookAt/aim SkeletonModifier product (Phase 6).
 class SkeletonLookAtModifier : public SkeletonModifier {
  public:
   void setBoneName(const eastl::string& name) { m_bone_name = name; }

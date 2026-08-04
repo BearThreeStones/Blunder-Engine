@@ -17,6 +17,8 @@
 
 namespace Blunder {
 
+class SkeletonLookAtModifier;
+
 BLUNDER_CLASS()
 class Object {
  public:
@@ -107,6 +109,7 @@ class Object {
   const SkeletonModifier* getSkeletonModifierAt(size_t index) const;
   SkeletonModifier* addSkeletonModifier();
   SkeletonModifier* addSkeletonModifier(eastl::unique_ptr<SkeletonModifier> modifier);
+  SkeletonLookAtModifier* addSkeletonLookAtModifier();
   bool moveSkeletonModifier(size_t from_index, size_t to_index);
   void applySkeletonModifiers(Skeleton& skeleton);
 

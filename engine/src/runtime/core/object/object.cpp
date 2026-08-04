@@ -7,6 +7,7 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 
 namespace Blunder {
@@ -387,6 +388,11 @@ SkeletonModifier* Object::addSkeletonModifier(
   m_skeleton_modifiers.push_back(eastl::move(modifier));
   updateAnimationSamplingBinding();
   return m_skeleton_modifiers.back().get();
+}
+
+SkeletonLookAtModifier* Object::addSkeletonLookAtModifier() {
+  return static_cast<SkeletonLookAtModifier*>(
+      addSkeletonModifier(eastl::make_unique<SkeletonLookAtModifier>()));
 }
 
 bool Object::moveSkeletonModifier(size_t from_index, size_t to_index) {
