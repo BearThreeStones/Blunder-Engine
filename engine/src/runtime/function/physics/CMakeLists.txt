@@ -1,4 +1,5 @@
 # Physics kernel v0 — isolated World, bodies, colliders. Links blunder_fixed_math only.
+# Golden suite cross-platform gate (tasks 4.10): Win MSVC x64 reference dump compared on Linux Clang/GCC x64.
 add_library(blunder_physics STATIC
     physics_collision.cpp
     physics_world.cpp

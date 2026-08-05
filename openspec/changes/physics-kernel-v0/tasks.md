@@ -27,16 +27,16 @@
 
 ## 4. Golden suite harness
 
-- [ ] 4.1 Headless golden test executable/target (no editor/Play)
-- [ ] 4.2 Scenario 1: free fall under gravity
-- [ ] 4.3 Scenario 2: Dynamic rests on Static
-- [ ] 4.4 Scenario 3: stack ≥3 boxes
-- [ ] 4.5 Scenario 4: sphere–box and capsule–box resting
-- [ ] 4.6 Scenario 5: frictional incline
-- [ ] 4.7 Scenario 6: Kinematic platform lifts/pushes Dynamic box
-- [ ] 4.8 Scenario 7: impact energy bound (restitution 0)
-- [ ] 4.9 Scenario 8: sleep then wake on hit
-- [ ] 4.10 Cross-platform gate: same goldens bit-identical on Win MSVC x64 and Linux Clang/GCC x64 (CI or documented dual run)
+- [x] 4.1 Headless golden test executable/target (no editor/Play)
+- [x] 4.2 Scenario 1: free fall under gravity
+- [x] 4.3 Scenario 2: Dynamic rests on Static
+- [x] 4.4 Scenario 3: stack ≥3 boxes
+- [x] 4.5 Scenario 4: sphere–box and capsule–box resting
+- [x] 4.6 Scenario 5: frictional incline
+- [x] 4.7 Scenario 6: Kinematic platform lifts/pushes Dynamic box
+- [x] 4.8 Scenario 7: impact energy bound (restitution 0)
+- [x] 4.9 Scenario 8: sleep then wake on hit
+- [x] 4.10 Cross-platform gate: same goldens bit-identical on Win MSVC x64 and Linux Clang/GCC x64 (CI or documented dual run)
 
 ## 5. Docs / closeout
 
