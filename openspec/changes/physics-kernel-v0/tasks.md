@@ -9,12 +9,12 @@
 
 ## 2. Physics World skeleton
 
-- [ ] 2.1 Add physics library/target + Physics World create/destroy
-- [ ] 2.2 RigidBody create/destroy; pose, velocity, mass; motion types Dynamic/Static/Kinematic
-- [ ] 2.3 Collider attach (box, sphere, capsule) + per-collider material (friction, restitution default 0)
-- [ ] 2.4 `world.step(dt)` with default `dt = 1/60`; gravity default `(0,0,-9.81)` overrideable
-- [ ] 2.5 Force/impulse application API sufficient for goldens (at least clear forces + gravity integration for Dynamic)
-- [ ] 2.6 Kinematic target pose → Δpose velocity path wired into step (even before full contact)
+- [x] 2.1 Add physics library/target + Physics World create/destroy
+- [x] 2.2 RigidBody create/destroy; pose, velocity, mass; motion types Dynamic/Static/Kinematic
+- [x] 2.3 Collider attach (box, sphere, capsule) + per-collider material (friction, restitution default 0)
+- [x] 2.4 `world.step(dt)` with default `dt = 1/60`; gravity default `(0,0,-9.81)` overrideable
+- [x] 2.5 Force/impulse application API sufficient for goldens (at least clear forces + gravity integration for Dynamic)
+- [x] 2.6 Kinematic target pose → Δpose velocity path wired into step (even before full contact)
 
 ## 3. Collision and solve
 

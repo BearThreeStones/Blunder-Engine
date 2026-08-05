@@ -1944,3 +1944,18 @@ endif()
 add_test(NAME fixed_math_test
          COMMAND fixed_math_test)
 
+add_executable(physics_world_test
+    "physics_world_test.cpp"
+)
+
+target_link_libraries(physics_world_test
+    PRIVATE blunder_physics
+)
+
+if(MSVC)
+    target_compile_options(physics_world_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME physics_world_test
+         COMMAND physics_world_test)
+

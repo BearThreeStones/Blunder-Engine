@@ -1,6 +1,7 @@
 # engine/src/runtime/CMakeLists.txt
 
 add_subdirectory(core/math/fixed)
+add_subdirectory(function/physics)
 
 add_library(engine_runtime STATIC
     engine.cpp
