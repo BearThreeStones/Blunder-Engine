@@ -40,6 +40,42 @@
 
 ## 5. Docs / closeout
 
-- [ ] 5.1 Confirm CONTEXT Physics + ADR 0027 match implementation names
-- [ ] 5.2 Note follow-on: Physics scene bridge (not in this change)
-- [ ] 5.3 Manual/CI checklist: how to run Fixed unit tests + golden suite on Win and Linux
+- [x] 5.1 Confirm CONTEXT Physics + ADR 0027 match implementation names
+- [x] 5.2 Note follow-on: Physics scene bridge (not in this change)
+- [x] 5.3 Manual/CI checklist: how to run Fixed unit tests + golden suite on Win and Linux
+
+### Implementation names (5.1)
+
+| Domain (CONTEXT / ADR) | Code / CMake |
+|------------------------|--------------|
+| Physics fixed scalar (Q32.32) | `Blunder::Fixed`, `FixedVec3`, `FixedQuat` |
+| Physics World | `Blunder::PhysicsWorld` (`engine/src/runtime/function/physics/`) |
+| Fixed math library | `blunder_fixed_math` (`engine/src/runtime/core/math/fixed/`) |
+| Physics kernel library | `blunder_physics` |
+| Physics golden suite | `physics_golden_suite` |
+
+CONTEXT Physics section and [ADR 0027](../../../docs/adr/0027-physics-kernel-fixedpoint-lockstep.md) use domain terms; no vocabulary drift — no CONTEXT edit required.
+
+### Follow-on (5.2)
+
+**Physics scene bridge** (post–v0, not in this change): project `PhysicsWorld` body poses into `SceneInstance` / future ECS Transform so simulation is visible in the host. See CONTEXT — Physics scene bridge. Do not bundle into kernel v0 closure.
+
+### CI / manual run (5.3)
+
+**Windows (MSVC x64 Debug)**
+
+```powershell
+cmake --build build/vs2026-debug --config Debug --target fixed_math_test physics_golden_suite
+ctest --test-dir build/vs2026-debug/engine/src/tests -C Debug -R "fixed_math|physics" --output-on-failure
+```
+
+**Linux (Clang or GCC x64)**
+
+```bash
+cmake --build build/linux-debug --target fixed_math_test physics_golden_suite
+ctest --test-dir build/linux-debug/engine/src/tests -R "fixed_math|physics" --output-on-failure
+./build/linux-debug/engine/src/tests/physics_golden_suite \
+  --compare engine/src/tests/fixtures/physics_golden/win-msvc-x64.dump
+```
+
+Cross-platform bit-identical gate: `physics_golden_suite_cross_platform` CTest (runs `--compare` when reference dump exists). Reference: `engine/src/tests/fixtures/physics_golden/win-msvc-x64.dump`.
