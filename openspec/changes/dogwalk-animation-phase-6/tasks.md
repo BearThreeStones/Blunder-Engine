@@ -34,7 +34,7 @@
 
 ## 6. Content gates
 
-- [ ] 6.1 Engineering harness: PaperMouth + Attach + LookAt product
+- [x] 6.1 Engineering harness: PaperMouth + Attach + LookAt product
 - [ ] 6.2 Lean Play/Edit: visible mouth open, child follow, aim change
 - [ ] 6.3 Keep Phase 1–5 content Done gates tracked separately if still open
 
