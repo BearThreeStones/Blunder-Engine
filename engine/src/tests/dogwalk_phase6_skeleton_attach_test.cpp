@@ -224,11 +224,181 @@ void test_attach_modifier_after_sample() {
   ClassDB::shutdown();
 }
 
+/// Task 3.2: invalid child ObjectId skips transform write without crash.
+void test_invalid_child_id_skips_transform_write() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+
+  ObjectDB::clear();
+  const ObjectId host_id = ObjectDB::create();
+  const ObjectId child_id = ObjectDB::create();
+  Object* host = ObjectDB::get(host_id);
+  Object* child = ObjectDB::get(child_id);
+  expect_true("host created", host != nullptr);
+  expect_true("child created", child != nullptr);
+  if (host == nullptr || child == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  child->setParent(host);
+  child->setPosition(Vec3(1.0f, 2.0f, 3.0f));
+  child->setRotation(glm::angleAxis(0.5f, Vec3(0.0f, 1.0f, 0.0f)));
+  child->setScale(Vec3(2.0f, 2.0f, 2.0f));
+  const Vec3 position_before = child->getPosition();
+  const Quat rotation_before = child->getRotation();
+  const Vec3 scale_before = child->getScale();
+
+  Skeleton* skeleton = host->ensureSkeleton();
+  const int hand = skeleton->addBone("Hand", -1);
+  skeleton->setBoneRestLocal(static_cast<size_t>(hand),
+                             BoneTransform{Vec3(0.2f, 0.5f, 1.0f),
+                                           glm::identity<Quat>(),
+                                           Vec3(1.0f, 1.0f, 1.0f)});
+  skeleton->resetPoseToRest();
+
+  SkeletonAttachModifier* attach = host->addSkeletonAttachModifier();
+  expect_true("attach modifier created", attach != nullptr);
+  if (attach == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  attach->setBoneName("Hand");
+  attach->setChildObjectId(k_invalid_object_id);
+
+  attach->apply(*skeleton);
+  expect_true("invalid child reports skip status",
+              attach->getLastApplyStatus() ==
+                  SkeletonAttachApplyStatus::SkippedInvalidChild);
+  expect_true("child position unchanged",
+              vec3_near(child->getPosition(), position_before));
+  expect_true("child rotation unchanged",
+              quat_near(child->getRotation(), rotation_before));
+  expect_true("child scale unchanged",
+              vec3_near(child->getScale(), scale_before));
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
+/// Task 3.2: destroyed child ObjectId skips transform write without crash.
+void test_destroyed_child_skips_transform_write() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+
+  ObjectDB::clear();
+  const ObjectId host_id = ObjectDB::create();
+  const ObjectId child_id = ObjectDB::create();
+  Object* host = ObjectDB::get(host_id);
+  Object* child = ObjectDB::get(child_id);
+  expect_true("host created", host != nullptr);
+  expect_true("child created", child != nullptr);
+  if (host == nullptr || child == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  child->setParent(host);
+  child->setPosition(Vec3(1.0f, 2.0f, 3.0f));
+  child->setRotation(glm::angleAxis(0.5f, Vec3(0.0f, 1.0f, 0.0f)));
+  child->setScale(Vec3(2.0f, 2.0f, 2.0f));
+
+  Skeleton* skeleton = host->ensureSkeleton();
+  const int hand = skeleton->addBone("Hand", -1);
+  skeleton->resetPoseToRest();
+
+  SkeletonAttachModifier* attach = host->addSkeletonAttachModifier();
+  expect_true("attach modifier created", attach != nullptr);
+  if (attach == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  attach->setBoneName("Hand");
+  attach->setChildObjectId(child_id);
+  ObjectDB::destroy(child_id);
+
+  attach->apply(*skeleton);
+  expect_true("destroyed child reports skip status",
+              attach->getLastApplyStatus() ==
+                  SkeletonAttachApplyStatus::SkippedChildNotFound);
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
+/// Task 3.2: invalid bone name skips transform write without crash.
+void test_invalid_bone_name_skips_transform_write() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+
+  ObjectDB::clear();
+  const ObjectId host_id = ObjectDB::create();
+  const ObjectId child_id = ObjectDB::create();
+  Object* host = ObjectDB::get(host_id);
+  Object* child = ObjectDB::get(child_id);
+  expect_true("host created", host != nullptr);
+  expect_true("child created", child != nullptr);
+  if (host == nullptr || child == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  child->setParent(host);
+  child->setPosition(Vec3(1.0f, 2.0f, 3.0f));
+  child->setRotation(glm::angleAxis(0.5f, Vec3(0.0f, 1.0f, 0.0f)));
+  child->setScale(Vec3(2.0f, 2.0f, 2.0f));
+  const Vec3 position_before = child->getPosition();
+  const Quat rotation_before = child->getRotation();
+  const Vec3 scale_before = child->getScale();
+
+  Skeleton* skeleton = host->ensureSkeleton();
+  skeleton->addBone("Hand", -1);
+  skeleton->resetPoseToRest();
+
+  SkeletonAttachModifier* attach = host->addSkeletonAttachModifier();
+  expect_true("attach modifier created", attach != nullptr);
+  if (attach == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  attach->setBoneName("MissingBone");
+  attach->setChildObjectId(child_id);
+
+  attach->apply(*skeleton);
+  expect_true("invalid bone reports skip status",
+              attach->getLastApplyStatus() ==
+                  SkeletonAttachApplyStatus::SkippedInvalidBone);
+  expect_true("child position unchanged",
+              vec3_near(child->getPosition(), position_before));
+  expect_true("child rotation unchanged",
+              quat_near(child->getRotation(), rotation_before));
+  expect_true("child scale unchanged",
+              vec3_near(child->getScale(), scale_before));
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
 }  // namespace
 
 int main() {
   test_attach_modifier_copies_bone_world_to_child_transform();
   test_attach_modifier_after_sample();
+  test_invalid_child_id_skips_transform_write();
+  test_destroyed_child_skips_transform_write();
+  test_invalid_bone_name_skips_transform_write();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

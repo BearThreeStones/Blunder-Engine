@@ -37,16 +37,19 @@ void SkeletonAttachModifier::apply(Skeleton& skeleton) {
     return;
   }
   if (!isValid(m_child_object_id)) {
+    m_last_apply_status = SkeletonAttachApplyStatus::SkippedInvalidChild;
     return;
   }
 
   const int bone_index = skeleton.findBoneIndex(m_bone_name);
   if (bone_index < 0) {
+    m_last_apply_status = SkeletonAttachApplyStatus::SkippedInvalidBone;
     return;
   }
 
   Object* child = ObjectDB::get(m_child_object_id);
   if (child == nullptr) {
+    m_last_apply_status = SkeletonAttachApplyStatus::SkippedChildNotFound;
     return;
   }
 
@@ -60,6 +63,7 @@ void SkeletonAttachModifier::apply(Skeleton& skeleton) {
   child->setPosition(position);
   child->setRotation(rotation);
   child->setScale(scale);
+  m_last_apply_status = SkeletonAttachApplyStatus::Applied;
 }
 
 }  // namespace Blunder

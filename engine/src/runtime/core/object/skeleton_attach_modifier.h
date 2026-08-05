@@ -8,6 +8,13 @@
 
 namespace Blunder {
 
+enum class SkeletonAttachApplyStatus {
+  Applied,
+  SkippedInvalidChild,
+  SkippedChildNotFound,
+  SkippedInvalidBone,
+};
+
 /// Host bone → child Object Transform SkeletonModifier product (Phase 6).
 class SkeletonAttachModifier : public SkeletonModifier {
  public:
@@ -17,11 +24,17 @@ class SkeletonAttachModifier : public SkeletonModifier {
   void setChildObjectId(ObjectId child_id) { m_child_object_id = child_id; }
   ObjectId getChildObjectId() const { return m_child_object_id; }
 
+  SkeletonAttachApplyStatus getLastApplyStatus() const {
+    return m_last_apply_status;
+  }
+
   void apply(Skeleton& skeleton) override;
 
  private:
   eastl::string m_bone_name{"Hand"};
   ObjectId m_child_object_id{k_invalid_object_id};
+  SkeletonAttachApplyStatus m_last_apply_status{
+      SkeletonAttachApplyStatus::SkippedInvalidChild};
 };
 
 }  // namespace Blunder
