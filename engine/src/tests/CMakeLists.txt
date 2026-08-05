@@ -1937,10 +1937,6 @@ target_link_libraries(fixed_math_test
     PRIVATE blunder_fixed_math
 )
 
-target_include_directories(fixed_math_test
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
-)
-
 if(MSVC)
     target_compile_options(fixed_math_test PRIVATE /Zc:preprocessor)
 endif()

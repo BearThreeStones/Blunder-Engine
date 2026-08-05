@@ -1,4 +1,4 @@
-#include "runtime/core/math/fixed/fixed.h"
+#include "core/math/fixed/fixed.h"
 
 #include <cassert>
 #include <cstdint>
@@ -40,6 +40,48 @@ void scalar_divide_one_by_two_has_expected_raw() {
   assert(half.raw() == (1LL << (Fixed::kFracBits - 1)));
 }
 
+void scalar_multiply_negative_three_times_four_equals_negative_twelve() {
+  const Fixed a = -Fixed::from_int(3);
+  const Fixed b = Fixed::from_int(4);
+  const Fixed c = a * b;
+  assert(c.raw() == (-12LL << Fixed::kFracBits));
+}
+
+void scalar_multiply_three_times_negative_four_equals_negative_twelve() {
+  const Fixed a = Fixed::from_int(3);
+  const Fixed b = -Fixed::from_int(4);
+  const Fixed c = a * b;
+  assert(c.raw() == (-12LL << Fixed::kFracBits));
+}
+
+void scalar_multiply_negative_three_times_negative_four_equals_twelve() {
+  const Fixed a = -Fixed::from_int(3);
+  const Fixed b = -Fixed::from_int(4);
+  const Fixed c = a * b;
+  assert(c.raw() == (12LL << Fixed::kFracBits));
+}
+
+void scalar_divide_negative_twelve_by_four_equals_negative_three() {
+  const Fixed a = -Fixed::from_int(12);
+  const Fixed b = Fixed::from_int(4);
+  const Fixed c = a / b;
+  assert(c.raw() == (-3LL << Fixed::kFracBits));
+}
+
+void scalar_divide_twelve_by_negative_four_equals_negative_three() {
+  const Fixed a = Fixed::from_int(12);
+  const Fixed b = -Fixed::from_int(4);
+  const Fixed c = a / b;
+  assert(c.raw() == (-3LL << Fixed::kFracBits));
+}
+
+void scalar_divide_negative_twelve_by_negative_four_equals_three() {
+  const Fixed a = -Fixed::from_int(12);
+  const Fixed b = -Fixed::from_int(4);
+  const Fixed c = a / b;
+  assert(c.raw() == (3LL << Fixed::kFracBits));
+}
+
 void sqrt_four_has_bit_pattern_of_two() {
   const Fixed two = sqrt(Fixed::from_int(4));
   assert(two.raw() == (2LL << Fixed::kFracBits));
@@ -74,6 +116,12 @@ int main() {
   scalar_multiply_three_times_four_equals_twelve();
   scalar_divide_twelve_by_four_equals_three();
   scalar_divide_one_by_two_has_expected_raw();
+  scalar_multiply_negative_three_times_four_equals_negative_twelve();
+  scalar_multiply_three_times_negative_four_equals_negative_twelve();
+  scalar_multiply_negative_three_times_negative_four_equals_twelve();
+  scalar_divide_negative_twelve_by_four_equals_negative_three();
+  scalar_divide_twelve_by_negative_four_equals_negative_three();
+  scalar_divide_negative_twelve_by_negative_four_equals_three();
   sqrt_four_has_bit_pattern_of_two();
   inv_sqrt_four_has_bit_pattern_of_half();
   vec3_normalize_unit_x();
