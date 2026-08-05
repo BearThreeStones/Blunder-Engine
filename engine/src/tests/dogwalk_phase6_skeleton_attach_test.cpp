@@ -41,6 +41,14 @@ bool quat_near(const Blunder::Quat& a, const Blunder::Quat& b,
   return dot > 1.0f - eps || dot < -1.0f + eps;
 }
 
+bool bone_transform_near(const Blunder::BoneTransform& a,
+                         const Blunder::BoneTransform& b,
+                         float eps = 1e-4f) {
+  return vec3_near(a.translation, b.translation, eps) &&
+         quat_near(a.rotation, b.rotation, eps) &&
+         vec3_near(a.scale, b.scale, eps);
+}
+
 void decompose_bone_matrix(const Blunder::Mat4& matrix, Blunder::Vec3& position,
                            Blunder::Quat& rotation, Blunder::Vec3& scale) {
   position = Blunder::Vec3(matrix[3]);
@@ -526,6 +534,91 @@ void test_edit_scrub_attach_without_behaviour_tick() {
   LifecycleDispatch::clear();
 }
 
+void test_attach_does_not_drive_remote_skeleton() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+
+  ObjectDB::clear();
+  const ObjectId host_id = ObjectDB::create();
+  const ObjectId child_id = ObjectDB::create();
+  Object* host = ObjectDB::get(host_id);
+  Object* child = ObjectDB::get(child_id);
+  expect_true("host created", host != nullptr);
+  expect_true("child created", child != nullptr);
+  if (host == nullptr || child == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  child->setParent(host);
+
+  Skeleton* host_skeleton = host->ensureSkeleton();
+  const int hand = host_skeleton->addBone("Hand", -1);
+  host_skeleton->setBoneRestLocal(
+      static_cast<size_t>(hand),
+      BoneTransform{Vec3(0.2f, 0.5f, 1.0f),
+                    glm::angleAxis(0.3f, Vec3(0.0f, 1.0f, 0.0f)),
+                    Vec3(1.0f, 1.0f, 1.0f)});
+  host_skeleton->resetPoseToRest();
+
+  Skeleton* child_skeleton = child->ensureSkeleton();
+  const int prop_bone = child_skeleton->addBone("PropBone", -1);
+  const BoneTransform child_bone_pose{
+      Vec3(0.4f, -0.1f, 0.8f),
+      glm::angleAxis(0.9f, Vec3(1.0f, 0.0f, 0.0f)), Vec3(1.5f, 0.75f, 2.0f)};
+  child_skeleton->setBoneRestLocal(static_cast<size_t>(prop_bone),
+                                   child_bone_pose);
+  child_skeleton->setBonePoseLocal(static_cast<size_t>(prop_bone),
+                                   child_bone_pose);
+  const BoneTransform child_bone_pose_before =
+      child_skeleton->getBonePoseLocal(static_cast<size_t>(prop_bone));
+
+  SkeletonAttachModifier* attach = host->addSkeletonAttachModifier();
+  expect_true("attach modifier created", attach != nullptr);
+  if (attach == nullptr) {
+    ObjectDB::clear();
+    ClassDB::shutdown();
+    return;
+  }
+
+  attach->setBoneName("Hand");
+  attach->setChildObjectId(child_id);
+
+  const Vec3 child_position_before = child->getPosition();
+  attach->apply(*host_skeleton);
+  expect_true("attach applied",
+              attach->getLastApplyStatus() ==
+                  SkeletonAttachApplyStatus::Applied);
+  expect_true("child Object Transform updated",
+              !vec3_near(child->getPosition(), child_position_before));
+  expect_true("child transform matches host bone world",
+              object_transform_matches_bone(*child, *host_skeleton,
+                                            static_cast<size_t>(hand)));
+  expect_true("child Skeleton bone pose unchanged",
+              bone_transform_near(
+                  child_skeleton->getBonePoseLocal(static_cast<size_t>(prop_bone)),
+                  child_bone_pose_before));
+
+  BoneTransform host_pose =
+      host_skeleton->getBonePoseLocal(static_cast<size_t>(hand));
+  host_pose.translation = Vec3(0.9f, -0.3f, 0.2f);
+  host_pose.rotation = glm::angleAxis(1.4f, Vec3(0.0f, 0.0f, 1.0f));
+  host_skeleton->setBonePoseLocal(static_cast<size_t>(hand), host_pose);
+  attach->apply(*host_skeleton);
+  expect_true("child follows updated host bone",
+              object_transform_matches_bone(*child, *host_skeleton,
+                                            static_cast<size_t>(hand)));
+  expect_true("child Skeleton bone pose still unchanged after host pose update",
+              bone_transform_near(
+                  child_skeleton->getBonePoseLocal(static_cast<size_t>(prop_bone)),
+                  child_bone_pose_before));
+
+  ObjectDB::clear();
+  ClassDB::shutdown();
+}
+
 }  // namespace
 
 int main() {
@@ -534,6 +627,7 @@ int main() {
   test_invalid_child_id_skips_transform_write();
   test_destroyed_child_skips_transform_write();
   test_invalid_bone_name_skips_transform_write();
+  test_attach_does_not_drive_remote_skeleton();
   test_edit_scrub_attach_without_behaviour_tick();
 
   if (g_failures != 0) {
