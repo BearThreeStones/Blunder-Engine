@@ -3483,6 +3483,17 @@ void SlintSystem::applyInspectorBehaviourPropertyCommit(BehaviourId behaviour_id
   }
 }
 
+void notifyAnimationPreviewAfterSkeletonModifierEdit(RenderSystem* render_system) {
+  if (AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      preview != nullptr && preview->hasTarget()) {
+    preview->resampleBoundSkeleton();
+  }
+  if (render_system != nullptr) {
+    render_system->requestViewportRedraw();
+  }
+}
+
 void SlintSystem::applyInspectorAddSkeletonModifier(const eastl::string& type_name) {
   if (type_name.empty()) {
     return;
@@ -3516,6 +3527,7 @@ void SlintSystem::applyInspectorAddSkeletonModifier(const eastl::string& type_na
         scene, entity_id, type_name, index_at_add, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorAddSkeletonModifier] {}", e.what());
   } catch (...) {
@@ -3555,6 +3567,7 @@ void SlintSystem::applyInspectorRemoveSkeletonModifier(size_t modifier_index) {
         scene, entity_id, modifier_index, snapshot, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorRemoveSkeletonModifier] {}", e.what());
   } catch (...) {
@@ -3591,6 +3604,7 @@ void SlintSystem::applyInspectorReorderSkeletonModifiers(size_t from_index,
         scene, entity_id, from_index, to_index, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorReorderSkeletonModifiers] {}", e.what());
   } catch (...) {
@@ -3634,6 +3648,7 @@ void SlintSystem::applyInspectorSkeletonModifierEnabledCommit(size_t modifier_in
         scene, entity_id, modifier_index, before_enabled, enabled,
         currentSelectionSnapshot(), currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorSkeletonModifierEnabledCommit] {}", e.what());
   } catch (...) {
@@ -3709,6 +3724,7 @@ void SlintSystem::applyInspectorSkeletonModifierFieldCommit(size_t modifier_inde
         scene, entity_id, modifier_index, before_def, after_def,
         currentSelectionSnapshot(), currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorSkeletonModifierFieldCommit] {}", e.what());
   } catch (...) {

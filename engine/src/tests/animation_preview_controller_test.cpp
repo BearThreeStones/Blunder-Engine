@@ -2,7 +2,10 @@
 #include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/core/object/skeleton_attach_modifier.h"
+#include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
+#include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 
@@ -637,6 +640,38 @@ void test_edit_method_scrub_markers_without_behaviour_handling() {
   LifecycleDispatch::clear();
 }
 
+void test_skeleton_modifier_setters_reject_wrong_type() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* object = makePreviewObject(nullptr);
+  expect_true("object created", object != nullptr);
+  object->addSkeletonPaperMouthModifier();
+  object->addSkeletonLookAtModifier();
+  object->addSkeletonAttachModifier();
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+
+  expect_true("lookAt target rejects PaperMouth",
+              !controller.setSkeletonLookAtTarget(0, Vec3(1.0f, 2.0f, 3.0f)));
+  expect_true("lookAt bone rejects PaperMouth",
+              !controller.setSkeletonLookAtBoneName(0, "Hips"));
+  expect_true("paper mouth open rejects LookAt",
+              !controller.setSkeletonPaperMouthOpenAmount(1, 0.5f));
+  expect_true("paper mouth bone rejects LookAt",
+              !controller.setSkeletonPaperMouthBoneName(1, "Hips"));
+  expect_true("attach bone rejects LookAt",
+              !controller.setSkeletonAttachBoneName(1, "Hips"));
+  expect_true("attach child rejects PaperMouth",
+              !controller.setSkeletonAttachChildObjectId(0, ObjectId{1}));
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
 }  // namespace
 
 int main() {
@@ -650,6 +685,7 @@ int main() {
   test_edit_blend_space2d_scrub_without_behaviour_tick();
   test_edit_tree_asset_and_overrides_without_behaviour_tick();
   test_edit_method_scrub_markers_without_behaviour_handling();
+  test_skeleton_modifier_setters_reject_wrong_type();
   test_time_scale_scrub_affects_tick();
   test_blend_weight_scrub_updates_player();
   test_play_uses_fade_duration();

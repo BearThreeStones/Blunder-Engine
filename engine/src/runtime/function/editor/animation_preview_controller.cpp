@@ -11,6 +11,8 @@
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
+#include <cstring>
+
 namespace Blunder {
 
 namespace {
@@ -389,7 +391,8 @@ bool AnimationPreviewController::setSkeletonLookAtTarget(
   }
   SkeletonModifier* modifier =
       m_target_object->getSkeletonModifierAt(modifier_index);
-  if (modifier == nullptr) {
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SkeletonLookAtModifier") != 0) {
     return false;
   }
   auto* look_at = static_cast<SkeletonLookAtModifier*>(modifier);
@@ -405,7 +408,8 @@ bool AnimationPreviewController::setSkeletonLookAtBoneName(
   }
   SkeletonModifier* modifier =
       m_target_object->getSkeletonModifierAt(modifier_index);
-  if (modifier == nullptr) {
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SkeletonLookAtModifier") != 0) {
     return false;
   }
   auto* look_at = static_cast<SkeletonLookAtModifier*>(modifier);
@@ -421,7 +425,8 @@ bool AnimationPreviewController::setSkeletonPaperMouthOpenAmount(
   }
   SkeletonModifier* modifier =
       m_target_object->getSkeletonModifierAt(modifier_index);
-  if (modifier == nullptr) {
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "PaperMouth") != 0) {
     return false;
   }
   auto* paper_mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
@@ -437,7 +442,8 @@ bool AnimationPreviewController::setSkeletonPaperMouthBoneName(
   }
   SkeletonModifier* modifier =
       m_target_object->getSkeletonModifierAt(modifier_index);
-  if (modifier == nullptr) {
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "PaperMouth") != 0) {
     return false;
   }
   auto* paper_mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
@@ -453,7 +459,8 @@ bool AnimationPreviewController::setSkeletonAttachBoneName(
   }
   SkeletonModifier* modifier =
       m_target_object->getSkeletonModifierAt(modifier_index);
-  if (modifier == nullptr) {
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SkeletonAttachModifier") != 0) {
     return false;
   }
   auto* attach = static_cast<SkeletonAttachModifier*>(modifier);
@@ -469,7 +476,8 @@ bool AnimationPreviewController::setSkeletonAttachChildObjectId(
   }
   SkeletonModifier* modifier =
       m_target_object->getSkeletonModifierAt(modifier_index);
-  if (modifier == nullptr) {
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SkeletonAttachModifier") != 0) {
     return false;
   }
   auto* attach = static_cast<SkeletonAttachModifier*>(modifier);

@@ -1,39 +1,42 @@
-# Final Review Fix Report
+# Phase 6 Final Fix Report
 
-## 2026-07-31 — Companion persistence and batch ambiguity
+## Fix 1: Slint Inspector skeleton modifier edits trigger preview resample
 
-### Fixes
+**Problem:** Inspector add/remove/reorder/enable/field commits mutated modifiers and pushed undo commands but did not refresh the animation preview skeleton or viewport.
 
-- Companion `.gltf` persistence now parses buffer and image URIs with cgltf,
-  copies non-data relative resources beside the persisted glTF while preserving
-  URI-relative paths, rejects escaping/absolute references, and rolls copied
-  sidecars back if persistence fails.
-- Near-disk companion discovery is gated to a batch containing exactly one mesh
-  input and exactly one glTF candidate. Multi-host selection keeps ambiguous
-  companions orphaned instead of rediscovering and attaching them to every host.
+**Change:** Added `notifyAnimationPreviewAfterSkeletonModifierEdit()` in `slint_system.cpp` calling `AnimationPreviewController::resampleBoundSkeleton()` when a preview target is bound, then `RenderSystem::requestViewportRedraw()`. Wired into all five handlers after successful mutation + undo push:
 
-### TDD evidence
+- `applyInspectorAddSkeletonModifier`
+- `applyInspectorRemoveSkeletonModifier`
+- `applyInspectorReorderSkeletonModifiers`
+- `applyInspectorSkeletonModifierEnabledCommit`
+- `applyInspectorSkeletonModifierFieldCommit`
 
-- RED: built `asset_import_test`, then ran
-  `.\build\vs2026-debug\engine\src\tests\Debug\asset_import_test.exe`.
-  Exit code 1 with 7 expected failures:
-  - external-buffer companion clip was not extracted;
-  - `LOOP-idle.bin` was not persisted;
-  - multi-host orphan was attached to both hosts and produced clip descriptors.
-- GREEN: rebuilt and reran the same executable after the implementation.
-  Exit code 0 with `asset_import_test: all passed`.
+Made `AnimationPreviewController::resampleBoundSkeleton()` public so Slint can invoke the same sampling path used by preview scrub APIs.
 
-### Regression coverage
+## Fix 2: AnimationPreviewController type-unsafe casts
 
-- `importExternalBufferCompanionPersistsSidecarAndExtractsClip`
-  uses a real external `LOOP-idle.bin`, verifies it is copied under
-  `Resources/Models/Chocomel/companions/`, and proves extraction succeeds from
-  the persisted companion.
-- `multiHostBatchDoesNotRediscoverOrphanCompanions` verifies a two-host batch
-  imports only the hosts and creates no orphan-derived animation descriptor.
+**Problem:** LookAt / PaperMouth / Attach setters used `static_cast` without verifying modifier type.
 
-### Final verification
+**Change:** Before each cast, check `modifier->getTypeName()` matches the expected ClassDB name (`SkeletonLookAtModifier`, `PaperMouth`, `SkeletonAttachModifier`); return `false` on mismatch (mirrors C-ABI guards in `engine_c_abi.cpp`).
 
-- Build: `cmake --build build/vs2026-debug --config Debug --target asset_import_test -- /m:1 /p:CL_MPCount=1`
-  completed successfully.
-- Test: `asset_import_test.exe` exited 0 with `asset_import_test: all passed`.
+**Test:** Added `test_skeleton_modifier_setters_reject_wrong_type` in `animation_preview_controller_test.cpp`.
+
+## Tests
+
+```text
+cmake --build build/vs2026-debug --config Debug --target inspector_skeleton_modifier_commands_test -- /m:1 /p:CL_MPCount=1
+cmake --build build/vs2026-debug --config Debug --target animation_preview_controller_test -- /m:1 /p:CL_MPCount=1
+cmake --build build/vs2026-debug --config Debug --target dogwalk_phase6_lean_play_acceptance_test -- /m:1 /p:CL_MPCount=1
+
+build/vs2026-debug/engine/src/tests/Debug/inspector_skeleton_modifier_commands_test.exe
+# inspector_skeleton_modifier_commands_test: all passed
+
+build/vs2026-debug/engine/src/tests/Debug/animation_preview_controller_test.exe
+# animation_preview_controller_test: all passed
+
+build/vs2026-debug/engine/src/tests/Debug/dogwalk_phase6_lean_play_acceptance_test.exe
+# dogwalk_phase6_lean_play_acceptance_test: all passed
+```
+
+All three targets built and exited 0.

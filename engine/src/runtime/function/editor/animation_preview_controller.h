@@ -96,9 +96,9 @@ class AnimationPreviewController final {
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);
 
- private:
   void resampleBoundSkeleton();
 
+ private:
   Object* m_target_object{nullptr};
   eastl::string m_default_clip_name;
   float m_fade_seconds{0.0f};
