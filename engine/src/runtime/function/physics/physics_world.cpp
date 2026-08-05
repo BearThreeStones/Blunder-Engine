@@ -53,8 +53,8 @@ struct ContactConstraint {
 };
 
 constexpr int kSolverIterations = 10;
-constexpr uint32_t kSleepFrames = 30;
-constexpr int kSleepVelocityThresholdRaw = Fixed::kOne / 8;  // 0.125 m/s
+constexpr uint32_t kSleepFrames = 20;
+constexpr int kSleepVelocityThresholdRaw = Fixed::kOne / 5;  // 0.2 m/s
 
 RigidBodyState* findBody(std::vector<RigidBodyState>& bodies, RigidBodyHandle handle) {
   if (!handle.isValid() || handle.index >= bodies.size()) {
@@ -231,14 +231,41 @@ void carryDynamicsOnKinematic(std::vector<RigidBodyState>& bodies,
   }
 }
 
+bool shouldWakeDynamicFromContact(const RigidBodyState& self, const RigidBodyState& other,
+                                  const ContactConstraint& contact) {
+  if (self.motion_type != MotionType::Dynamic) {
+    return false;
+  }
+  if (other.motion_type == MotionType::Static || other.motion_type == MotionType::Kinematic) {
+    return false;
+  }
+
+  const FixedVec3 relative_velocity = other.linear_velocity - self.linear_velocity;
+  const Fixed normal_velocity = dot(relative_velocity, contact.normal);
+  const Fixed wake_threshold = Fixed::from_raw(kSleepVelocityThresholdRaw);
+  if (normal_velocity.raw() < -wake_threshold.raw()) {
+    return true;
+  }
+
+  if (self.is_sleeping) {
+    const Fixed other_speed_sq = dot(other.linear_velocity, other.linear_velocity);
+    if (other_speed_sq.raw() > wake_threshold.raw() * wake_threshold.raw()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void wakeContactParticipants(std::vector<RigidBodyState>& bodies,
                              const std::vector<ContactConstraint>& contacts) {
   for (const ContactConstraint& contact : contacts) {
-    if (bodies[contact.body_a].motion_type == MotionType::Dynamic) {
-      wakeBody(bodies[contact.body_a]);
+    RigidBodyState& body_a = bodies[contact.body_a];
+    RigidBodyState& body_b = bodies[contact.body_b];
+    if (shouldWakeDynamicFromContact(body_a, body_b, contact)) {
+      wakeBody(body_a);
     }
-    if (bodies[contact.body_b].motion_type == MotionType::Dynamic) {
-      wakeBody(bodies[contact.body_b]);
+    if (shouldWakeDynamicFromContact(body_b, body_a, contact)) {
+      wakeBody(body_b);
     }
   }
 }
@@ -591,7 +618,7 @@ void PhysicsWorld::step(Fixed dt) {
       total_force = total_force + m_impl->gravity * body.mass;
     }
 
-    const Fixed inv_mass = Fixed::from_int(1) / body.mass;
+    const Fixed inv_mass = body.mass.raw() != 0 ? Fixed::from_int(1) / body.mass : Fixed::zero();
     const FixedVec3 acceleration = total_force * inv_mass;
     body.linear_velocity = body.linear_velocity + acceleration * dt;
 

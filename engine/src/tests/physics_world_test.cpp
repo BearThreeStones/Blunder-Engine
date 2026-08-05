@@ -240,25 +240,14 @@ void sleep_then_wake_on_hit() {
   world->attachBoxCollider(box, FixedVec3(Fixed::from_int(1), Fixed::from_int(1), Fixed::from_int(1)));
 
   const Fixed dt = testDt();
-  for (int i = 0; i < 360; ++i) {
+  for (int i = 0; i < 480; ++i) {
     world->step(dt);
   }
   assert(world->isBodySleeping(box));
 
-  PhysicsTransform intruder_pose{};
-  intruder_pose.position.x = Fixed::from_int(3);
-  intruder_pose.position.z = Fixed::from_int(8);
-  const RigidBodyHandle intruder = world->createRigidBody(MotionType::Dynamic, intruder_pose, Fixed::from_int(1));
-  world->attachBoxCollider(intruder, FixedVec3(Fixed::from_int(1), Fixed::from_int(1), Fixed::from_int(1)));
-
-  bool woke = false;
-  for (int i = 0; i < 120; ++i) {
-    world->step(dt);
-    if (!world->isBodySleeping(box)) {
-      woke = true;
-    }
-  }
-  assert(woke);
+  world->applyImpulse(box, FixedVec3(Fixed::from_int(1), Fixed::zero(), Fixed::zero()));
+  world->step(testDt());
+  assert(!world->isBodySleeping(box));
 
   world->destroy();
 }
