@@ -28,6 +28,8 @@ class SkeletonAttachModifier : public SkeletonModifier {
     return m_last_apply_status;
   }
 
+  const char* getTypeName() const override { return "SkeletonAttachModifier"; }
+
   void apply(Skeleton& skeleton) override;
 
  private:

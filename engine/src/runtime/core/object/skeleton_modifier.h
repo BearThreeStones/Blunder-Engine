@@ -17,6 +17,9 @@ class SkeletonModifier {
 
   void setApplyFn(SkeletonModifierApplyFn fn, void* userdata);
 
+  /// ClassDB name of the concrete product; drives scene serialization.
+  virtual const char* getTypeName() const { return "SkeletonModifier"; }
+
   /// Extension point: subclasses override; default delegates to setApplyFn.
   virtual void apply(Skeleton& skeleton);
 

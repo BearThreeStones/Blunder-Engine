@@ -73,6 +73,6 @@ Phase 5 locked the SkeletonModifier **chain**, a LookAt **sample**, method track
 
 ## Open Questions
 
-- Exact Attach child identity (ObjectId vs scene path) at serialize time — lock at apply
+- ~~Exact Attach child identity (ObjectId vs scene path) at serialize time~~ — **locked (task 4.1)**: scene entity name (`childEntity`), resolved back to an ObjectId on instantiate; ObjectId is a session handle and cannot survive a save
 - LookAt limit/weight field set — lock at apply (minimum: bone + target)
 - Whether attach-driven PaperMouth is default-off — recommend default-off

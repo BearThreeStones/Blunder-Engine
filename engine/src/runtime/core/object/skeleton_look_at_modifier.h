@@ -16,6 +16,8 @@ class SkeletonLookAtModifier : public SkeletonModifier {
   void setTarget(const Vec3& target) { m_target = target; }
   const Vec3& getTarget() const { return m_target; }
 
+  const char* getTypeName() const override { return "SkeletonLookAtModifier"; }
+
   void apply(Skeleton& skeleton) override;
 
  private:

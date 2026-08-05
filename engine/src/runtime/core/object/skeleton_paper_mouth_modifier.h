@@ -22,6 +22,8 @@ class SkeletonPaperMouthModifier : public SkeletonModifier {
   void setAttachOccupancy(float occupancy);
   float getAttachOccupancy() const { return m_attach_occupancy; }
 
+  const char* getTypeName() const override { return "PaperMouth"; }
+
   void apply(Skeleton& skeleton) override;
 
  private:

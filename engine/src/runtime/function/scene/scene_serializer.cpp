@@ -722,6 +722,102 @@ bool parseBehavioursArray(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseSkeletonModifierObject(const char* object_start,
+                                 const char* object_end,
+                                 SceneSkeletonModifierDef& out_modifier) {
+  eastl::string type;
+  if (!parseStringField(object_start, object_end, "\"type\"", type)) {
+    return false;
+  }
+  out_modifier.type = eastl::move(type);
+
+  bool enabled = true;
+  if (parseBoolField(object_start, object_end, "\"enabled\"", enabled)) {
+    out_modifier.enabled = enabled;
+  }
+
+  eastl::string bone_name;
+  if (parseStringField(object_start, object_end, "\"boneName\"", bone_name)) {
+    out_modifier.bone_name = eastl::move(bone_name);
+  }
+
+  float open_amount = 0.0f;
+  if (parseFloatField(object_start, object_end, "\"openAmount\"", open_amount)) {
+    out_modifier.open_amount = open_amount;
+  }
+
+  bool attach_driven = false;
+  if (parseBoolField(object_start, object_end, "\"attachDriven\"",
+                     attach_driven)) {
+    out_modifier.attach_driven = attach_driven;
+  }
+
+  Vec3 target(0.0f);
+  if (parseVec3Field(object_start, object_end, "\"target\"", target,
+                     out_modifier.target)) {
+    out_modifier.target = target;
+  }
+
+  eastl::string child_entity_name;
+  if (parseStringField(object_start, object_end, "\"childEntity\"",
+                       child_entity_name)) {
+    out_modifier.child_entity_name = eastl::move(child_entity_name);
+  }
+  return true;
+}
+
+bool parseSkeletonModifiersArray(
+    const char* object_start, const char* object_end,
+    eastl::vector<SceneSkeletonModifierDef>& out_modifiers) {
+  out_modifiers.clear();
+  const char* array_end = nullptr;
+  const char* array_content = findArrayAfterKeyBounded(
+      object_start, object_end, "\"skeletonModifiers\"", &array_end);
+  if (array_content == nullptr) {
+    return true;
+  }
+
+  const char* p = array_content;
+  while (p < array_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= array_end - 1 || *p == ']') {
+      break;
+    }
+    if (*p != '{') {
+      ++p;
+      continue;
+    }
+
+    const char* modifier_start = p;
+    int depth = 0;
+    do {
+      if (*p == '{') {
+        ++depth;
+      } else if (*p == '}') {
+        --depth;
+      }
+      ++p;
+    } while (p < array_end && depth > 0);
+
+    if (depth != 0) {
+      return false;
+    }
+
+    SceneSkeletonModifierDef modifier;
+    if (!parseSkeletonModifierObject(modifier_start, p, modifier)) {
+      LOG_WARN("[SceneSerializer] skipped malformed skeletonModifier object");
+    } else {
+      out_modifiers.push_back(eastl::move(modifier));
+    }
+
+    p = skipWhitespace(p);
+    if (p < array_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
 bool parseCameraObject(const char* object_start, const char* object_end,
                        CameraComponent& out_camera) {
   parseFloatField(object_start, object_end, "\"verticalFovDegrees\"",
@@ -821,6 +917,11 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   rebuildAnimationClipGuidsFromPlayerMap(out_entity);
 
   if (!parseBehavioursArray(object_start, object_end, out_entity.behaviours)) {
+    return false;
+  }
+
+  if (!parseSkeletonModifiersArray(object_start, object_end,
+                                   out_entity.skeleton_modifiers)) {
     return false;
   }
 
@@ -1036,6 +1137,56 @@ void appendBehaviourJson(eastl::string& out, const SceneBehaviourDeclaration& be
   }
 
   out.append(is_last ? "\n        }\n" : "\n        },\n");
+}
+
+void appendSkeletonModifierJson(eastl::string& out,
+                                const SceneSkeletonModifierDef& modifier,
+                                bool is_last) {
+  char buffer[128];
+  out.append("        {\n");
+  out.append("          \"type\": ");
+  appendJsonString(out, modifier.type);
+
+  if (!modifier.enabled) {
+    out.append(",\n          \"enabled\": false");
+  }
+
+  if (!modifier.bone_name.empty()) {
+    out.append(",\n          \"boneName\": ");
+    appendJsonString(out, modifier.bone_name);
+  }
+
+  if (modifier.type == "PaperMouth") {
+    std::snprintf(buffer, sizeof(buffer), ",\n          \"openAmount\": %.6g",
+                  static_cast<double>(modifier.open_amount));
+    out.append(buffer);
+    if (modifier.attach_driven) {
+      out.append(",\n          \"attachDriven\": true");
+    }
+  } else if (modifier.type == "SkeletonLookAtModifier") {
+    out.append(",\n          \"target\": ");
+    appendFloat3(out, modifier.target);
+  } else if (modifier.type == "SkeletonAttachModifier") {
+    if (!modifier.child_entity_name.empty()) {
+      out.append(",\n          \"childEntity\": ");
+      appendJsonString(out, modifier.child_entity_name);
+    }
+  }
+
+  out.append(is_last ? "\n        }\n" : "\n        },\n");
+}
+
+void appendSkeletonModifiersJson(eastl::string& out,
+                                 const SceneEntityDefinition& entity) {
+  if (entity.skeleton_modifiers.empty()) {
+    return;
+  }
+  out.append(",\n      \"skeletonModifiers\": [\n");
+  for (size_t i = 0; i < entity.skeleton_modifiers.size(); ++i) {
+    appendSkeletonModifierJson(out, entity.skeleton_modifiers[i],
+                               i + 1 == entity.skeleton_modifiers.size());
+  }
+  out.append("      ]");
 }
 
 void appendAnimationPlayerJson(eastl::string& out,
@@ -1647,6 +1798,8 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
     }
     out.append("      ]");
   }
+
+  appendSkeletonModifiersJson(out, entity);
 
   if (entity.has_camera) {
     appendCameraJson(out, entity.camera);

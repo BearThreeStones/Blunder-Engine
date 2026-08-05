@@ -23,6 +23,25 @@ struct SceneBehaviourDeclaration final {
   eastl::vector<SceneBehaviourProperty> properties;
 };
 
+/// Ordered SkeletonModifier declaration persisted on a scene entity (Phase 6).
+/// Product parameters are a flat union: only the fields the `type` uses are
+/// written. Attach names its child by entity name because ObjectId is a
+/// per-session handle that cannot survive a save.
+struct SceneSkeletonModifierDef final {
+  /// ClassDB name: `"PaperMouth"`, `"SkeletonAttachModifier"`,
+  /// `"SkeletonLookAtModifier"`, or `"SkeletonModifier"` for a bare chain slot.
+  eastl::string type;
+  bool enabled{true};
+  eastl::string bone_name;
+  /// PaperMouth.
+  float open_amount{0.0f};
+  bool attach_driven{false};
+  /// SkeletonLookAtModifier.
+  Vec3 target{0.0f, 0.0f, 1.0f};
+  /// SkeletonAttachModifier child, by scene entity name.
+  eastl::string child_entity_name;
+};
+
 /// Static entity definition deserialized from a Scene asset.
 struct SceneEntityDefinition final {
   eastl::string name;
@@ -86,6 +105,8 @@ struct SceneEntityDefinition final {
   eastl::vector<AnimationTreeStateDef> animation_tree_states;
   /// Ordered Behaviour list; empty when the JSON key is absent (legacy).
   eastl::vector<SceneBehaviourDeclaration> behaviours;
+  /// Ordered SkeletonModifier chain; empty when the JSON key is absent.
+  eastl::vector<SceneSkeletonModifierDef> skeleton_modifiers;
   bool has_camera{false};
   CameraComponent camera{};
 };
