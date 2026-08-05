@@ -16,14 +16,16 @@
 - [x] 3.1 TDD: host bone world transform copies to child Object Transform after sample
 - [x] 3.2 TDD: invalid child/bone fails safely
 - [x] 3.3 Confirm Attach does not drive a remote Skeleton
-- [x] 3.4 TDD: Edit preview shows child follow without Behaviour Tick
+- [ ] 3.4 TDD: Edit preview shows child follow without Behaviour Tick
 
 ## 4. Authorship / persistence
 
 - [x] 4.1 TDD: scene round-trip for PaperMouth, Attach, LookAt (type, order, key params)
 - [x] 4.2 Inspector: add/remove/reorder/enable + edit key params for the three types
-- [ ] 4.3 Confirm no visual Tree canvas required for Phase 6 Done
-- [ ] 4.4 Confirm generic C# SkeletonModifier subclass hot-bridge is not Phase 6 Done
+- [x] 4.3 Confirm no visual Tree canvas required for Phase 6 Done
+- [x] 4.4 Confirm generic C# SkeletonModifier subclass hot-bridge is not Phase 6 Done
+
+**Phase 6 OUT scope (4.3–4.4):** Visual AnimationTree canvas and generic C# SkeletonModifier subclass hot-bridge are explicitly non-goals for Phase 6 Done (see `design.md` Non-Goals, `proposal.md` Out of scope, ADR 0027, `OUT-confirmations.md`). Inspector + scene serialize for the three ClassDB product types is sufficient; no canvas or C# bridge implementation in this phase.
 
 ## 5. C-ABI + Blunder.Api
 
