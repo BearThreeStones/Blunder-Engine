@@ -42,5 +42,5 @@
 
 ## 7. Docs / closeout
 
-- [ ] 7.1 Confirm CONTEXT + ADR 0027 match apply (prefer no churn)
-- [ ] 7.2 Manual checklist: Edit scrub three modifiers; lean Play; earlier gates tracked
+- [x] 7.1 Confirm CONTEXT + ADR 0027 match apply (prefer no churn)
+- [x] 7.2 Manual checklist: Edit scrub three modifiers; lean Play; earlier gates tracked
