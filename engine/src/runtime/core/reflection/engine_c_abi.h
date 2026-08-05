@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 9
+#define BLUNDER_ENGINE_C_ABI_VERSION 10
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -176,6 +176,31 @@ BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_move(BlunderObjectId id,
                                                         int from_index,
                                                         int to_index);
 
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_paper_mouth_open_amount(
+    BlunderObjectId id, int index, float open_amount);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_paper_mouth_open_amount(
+    BlunderObjectId id, int index, float* out_open_amount);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_paper_mouth_bone_name(
+    BlunderObjectId id, int index, const char* bone_name);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_paper_mouth_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_attach_bone_name(
+    BlunderObjectId id, int index, const char* bone_name);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_attach_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_attach_child_object_id(
+    BlunderObjectId id, int index, BlunderObjectId child_object_id);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_attach_child_object_id(
+    BlunderObjectId id, int index, BlunderObjectId* out_child_object_id);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_look_at_target(
+    BlunderObjectId id, int index, float x, float y, float z);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_look_at_target(
+    BlunderObjectId id, int index, float* out_x, float* out_y, float* out_z);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_look_at_bone_name(
+    BlunderObjectId id, int index, const char* bone_name);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_look_at_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+
 /// Method-track query surface (Edit markers / tooling). Product dispatch uses Message.
 BLUNDER_ENGINE_C_API int blunder_animation_player_get_method_key_count(
     BlunderObjectId id, const char* clip_name, int* out_count);
@@ -307,6 +332,38 @@ typedef struct BlunderNativeAbi {
                                        int* out_enabled);
   int (*skeleton_modifier_move)(BlunderObjectId id, int from_index,
                                 int to_index);
+  int (*skeleton_modifier_set_paper_mouth_open_amount)(BlunderObjectId id,
+                                                       int index,
+                                                       float open_amount);
+  int (*skeleton_modifier_get_paper_mouth_open_amount)(BlunderObjectId id,
+                                                       int index,
+                                                       float* out_open_amount);
+  int (*skeleton_modifier_set_paper_mouth_bone_name)(BlunderObjectId id,
+                                                     int index,
+                                                     const char* bone_name);
+  int (*skeleton_modifier_get_paper_mouth_bone_name)(BlunderObjectId id,
+                                                     int index,
+                                                     char* out_bone_name,
+                                                     int name_capacity);
+  int (*skeleton_modifier_set_attach_bone_name)(BlunderObjectId id, int index,
+                                                const char* bone_name);
+  int (*skeleton_modifier_get_attach_bone_name)(BlunderObjectId id, int index,
+                                                char* out_bone_name,
+                                                int name_capacity);
+  int (*skeleton_modifier_set_attach_child_object_id)(
+      BlunderObjectId id, int index, BlunderObjectId child_object_id);
+  int (*skeleton_modifier_get_attach_child_object_id)(
+      BlunderObjectId id, int index, BlunderObjectId* out_child_object_id);
+  int (*skeleton_modifier_set_look_at_target)(BlunderObjectId id, int index,
+                                            float x, float y, float z);
+  int (*skeleton_modifier_get_look_at_target)(BlunderObjectId id, int index,
+                                              float* out_x, float* out_y,
+                                              float* out_z);
+  int (*skeleton_modifier_set_look_at_bone_name)(BlunderObjectId id, int index,
+                                                 const char* bone_name);
+  int (*skeleton_modifier_get_look_at_bone_name)(BlunderObjectId id, int index,
+                                                 char* out_bone_name,
+                                                 int name_capacity);
   int (*animation_player_get_method_key_count)(BlunderObjectId id,
                                                const char* clip_name,
                                                int* out_count);

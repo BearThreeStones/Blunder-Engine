@@ -29,7 +29,7 @@
 
 ## 5. C-ABI + Blunder.Api
 
-- [ ] 5.1 Lean C-ABI for `openAmount`, Attach child/bone, LookAt target/bone; bump ABI; NativeAbi table
+- [x] 5.1 Lean C-ABI for `openAmount`, Attach child/bone, LookAt target/bone; bump ABI; NativeAbi table
 - [ ] 5.2 Blunder.Api façades + completeness tests for lean drives only
 
 ## 6. Content gates

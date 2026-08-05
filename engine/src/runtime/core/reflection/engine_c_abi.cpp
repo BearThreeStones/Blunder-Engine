@@ -8,7 +8,10 @@
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/object_id.h"
+#include "runtime/core/object/skeleton_attach_modifier.h"
+#include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
+#include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/reflection/message_dispatch.h"
@@ -807,6 +810,225 @@ int blunder_skeleton_modifier_move(BlunderObjectId id, int from_index,
              : BLUNDER_ENGINE_ERROR;
 }
 
+namespace {
+
+SkeletonModifier* skeletonModifierAt(BlunderObjectId id, int index) {
+  if (index < 0) {
+    return nullptr;
+  }
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return nullptr;
+  }
+  return object->getSkeletonModifierAt(static_cast<size_t>(index));
+}
+
+SkeletonPaperMouthModifier* paperMouthModifierAt(BlunderObjectId id,
+                                                 int index) {
+  SkeletonModifier* modifier = skeletonModifierAt(id, index);
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "PaperMouth") != 0) {
+    return nullptr;
+  }
+  return static_cast<SkeletonPaperMouthModifier*>(modifier);
+}
+
+SkeletonAttachModifier* attachModifierAt(BlunderObjectId id, int index) {
+  SkeletonModifier* modifier = skeletonModifierAt(id, index);
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SkeletonAttachModifier") != 0) {
+    return nullptr;
+  }
+  return static_cast<SkeletonAttachModifier*>(modifier);
+}
+
+SkeletonLookAtModifier* lookAtModifierAt(BlunderObjectId id, int index) {
+  SkeletonModifier* modifier = skeletonModifierAt(id, index);
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SkeletonLookAtModifier") != 0) {
+    return nullptr;
+  }
+  return static_cast<SkeletonLookAtModifier*>(modifier);
+}
+
+void copyStringToBuffer(const eastl::string& value, char* out_buffer,
+                        int capacity) {
+  if (out_buffer == nullptr || capacity <= 0) {
+    return;
+  }
+  out_buffer[0] = '\0';
+  if (value.empty()) {
+    return;
+  }
+  const size_t copy_len =
+      static_cast<size_t>(capacity - 1) < value.size()
+          ? static_cast<size_t>(capacity - 1)
+          : value.size();
+  std::memcpy(out_buffer, value.c_str(), copy_len);
+  out_buffer[copy_len] = '\0';
+}
+
+}  // namespace
+
+int blunder_skeleton_modifier_set_paper_mouth_open_amount(
+    BlunderObjectId id, int index, float open_amount) {
+  SkeletonPaperMouthModifier* modifier = paperMouthModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setOpenAmount(open_amount);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_paper_mouth_open_amount(
+    BlunderObjectId id, int index, float* out_open_amount) {
+  if (out_open_amount == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonPaperMouthModifier* modifier = paperMouthModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_open_amount = modifier->getOpenAmount();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_paper_mouth_bone_name(BlunderObjectId id,
+                                                        int index,
+                                                        const char* bone_name) {
+  if (bone_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  SkeletonPaperMouthModifier* modifier = paperMouthModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setBoneName(eastl::string(bone_name));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_paper_mouth_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity) {
+  if (out_bone_name == nullptr || name_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonPaperMouthModifier* modifier = paperMouthModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  copyStringToBuffer(modifier->getBoneName(), out_bone_name, name_capacity);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_attach_bone_name(BlunderObjectId id,
+                                                   int index,
+                                                   const char* bone_name) {
+  if (bone_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  SkeletonAttachModifier* modifier = attachModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setBoneName(eastl::string(bone_name));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_attach_bone_name(BlunderObjectId id,
+                                                   int index,
+                                                   char* out_bone_name,
+                                                   int name_capacity) {
+  if (out_bone_name == nullptr || name_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonAttachModifier* modifier = attachModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  copyStringToBuffer(modifier->getBoneName(), out_bone_name, name_capacity);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_attach_child_object_id(
+    BlunderObjectId id, int index, BlunderObjectId child_object_id) {
+  SkeletonAttachModifier* modifier = attachModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setChildObjectId(static_cast<ObjectId>(child_object_id));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_attach_child_object_id(
+    BlunderObjectId id, int index, BlunderObjectId* out_child_object_id) {
+  if (out_child_object_id == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonAttachModifier* modifier = attachModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_child_object_id =
+      static_cast<BlunderObjectId>(modifier->getChildObjectId());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_look_at_target(BlunderObjectId id, int index,
+                                               float x, float y, float z) {
+  SkeletonLookAtModifier* modifier = lookAtModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setTarget(Vec3(x, y, z));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_look_at_target(BlunderObjectId id, int index,
+                                                 float* out_x, float* out_y,
+                                                 float* out_z) {
+  if (out_x == nullptr || out_y == nullptr || out_z == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonLookAtModifier* modifier = lookAtModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Vec3& target = modifier->getTarget();
+  *out_x = target.x;
+  *out_y = target.y;
+  *out_z = target.z;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_look_at_bone_name(BlunderObjectId id,
+                                                  int index,
+                                                  const char* bone_name) {
+  if (bone_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  SkeletonLookAtModifier* modifier = lookAtModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setBoneName(eastl::string(bone_name));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_look_at_bone_name(BlunderObjectId id,
+                                                    int index,
+                                                    char* out_bone_name,
+                                                    int name_capacity) {
+  if (out_bone_name == nullptr || name_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonLookAtModifier* modifier = lookAtModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  copyStringToBuffer(modifier->getBoneName(), out_bone_name, name_capacity);
+  return BLUNDER_ENGINE_OK;
+}
+
 int blunder_animation_player_get_method_key_count(BlunderObjectId id,
                                                   const char* clip_name,
                                                   int* out_count) {
@@ -1038,6 +1260,30 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->skeleton_modifier_set_enabled = &blunder_skeleton_modifier_set_enabled;
   out->skeleton_modifier_get_enabled = &blunder_skeleton_modifier_get_enabled;
   out->skeleton_modifier_move = &blunder_skeleton_modifier_move;
+  out->skeleton_modifier_set_paper_mouth_open_amount =
+      &blunder_skeleton_modifier_set_paper_mouth_open_amount;
+  out->skeleton_modifier_get_paper_mouth_open_amount =
+      &blunder_skeleton_modifier_get_paper_mouth_open_amount;
+  out->skeleton_modifier_set_paper_mouth_bone_name =
+      &blunder_skeleton_modifier_set_paper_mouth_bone_name;
+  out->skeleton_modifier_get_paper_mouth_bone_name =
+      &blunder_skeleton_modifier_get_paper_mouth_bone_name;
+  out->skeleton_modifier_set_attach_bone_name =
+      &blunder_skeleton_modifier_set_attach_bone_name;
+  out->skeleton_modifier_get_attach_bone_name =
+      &blunder_skeleton_modifier_get_attach_bone_name;
+  out->skeleton_modifier_set_attach_child_object_id =
+      &blunder_skeleton_modifier_set_attach_child_object_id;
+  out->skeleton_modifier_get_attach_child_object_id =
+      &blunder_skeleton_modifier_get_attach_child_object_id;
+  out->skeleton_modifier_set_look_at_target =
+      &blunder_skeleton_modifier_set_look_at_target;
+  out->skeleton_modifier_get_look_at_target =
+      &blunder_skeleton_modifier_get_look_at_target;
+  out->skeleton_modifier_set_look_at_bone_name =
+      &blunder_skeleton_modifier_set_look_at_bone_name;
+  out->skeleton_modifier_get_look_at_bone_name =
+      &blunder_skeleton_modifier_get_look_at_bone_name;
   out->animation_player_get_method_key_count =
       &blunder_animation_player_get_method_key_count;
   out->animation_player_get_method_key =
@@ -1175,6 +1421,30 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_skeleton_modifier_get_enabled");
   BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_move,
                           "blunder_skeleton_modifier_move");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_paper_mouth_open_amount,
+                          "blunder_skeleton_modifier_set_paper_mouth_open_amount");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_paper_mouth_open_amount,
+                          "blunder_skeleton_modifier_get_paper_mouth_open_amount");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_paper_mouth_bone_name,
+                          "blunder_skeleton_modifier_set_paper_mouth_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_paper_mouth_bone_name,
+                          "blunder_skeleton_modifier_get_paper_mouth_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_attach_bone_name,
+                          "blunder_skeleton_modifier_set_attach_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_attach_bone_name,
+                          "blunder_skeleton_modifier_get_attach_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_attach_child_object_id,
+                          "blunder_skeleton_modifier_set_attach_child_object_id");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_attach_child_object_id,
+                          "blunder_skeleton_modifier_get_attach_child_object_id");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_look_at_target,
+                          "blunder_skeleton_modifier_set_look_at_target");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_look_at_target,
+                          "blunder_skeleton_modifier_get_look_at_target");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_look_at_bone_name,
+                          "blunder_skeleton_modifier_set_look_at_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_look_at_bone_name,
+                          "blunder_skeleton_modifier_get_look_at_bone_name");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_get_method_key_count,
                           "blunder_animation_player_get_method_key_count");
   BLUNDER_NATIVE_ABI_LOAD(animation_player_get_method_key,

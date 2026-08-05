@@ -145,6 +145,40 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.skeleton_modifier_get_enabled != nullptr);
   expect_true((std::string(label) + ": skeleton_modifier_move").c_str(),
               abi.skeleton_modifier_move != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_paper_mouth_open_amount")
+                  .c_str(),
+              abi.skeleton_modifier_set_paper_mouth_open_amount != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_paper_mouth_open_amount")
+                  .c_str(),
+              abi.skeleton_modifier_get_paper_mouth_open_amount != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_paper_mouth_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_set_paper_mouth_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_paper_mouth_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_get_paper_mouth_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_attach_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_set_attach_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_attach_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_get_attach_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_attach_child_object_id")
+                  .c_str(),
+              abi.skeleton_modifier_set_attach_child_object_id != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_attach_child_object_id")
+                  .c_str(),
+              abi.skeleton_modifier_get_attach_child_object_id != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_look_at_target").c_str(),
+              abi.skeleton_modifier_set_look_at_target != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_look_at_target").c_str(),
+              abi.skeleton_modifier_get_look_at_target != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_look_at_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_set_look_at_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_look_at_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_get_look_at_bone_name != nullptr);
   expect_true((std::string(label) + ": animation_player_get_method_key_count")
                   .c_str(),
               abi.animation_player_get_method_key_count != nullptr);
@@ -190,7 +224,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 9", BLUNDER_ENGINE_C_ABI_VERSION >= 9);
+  expect_true("abi version >= 10", BLUNDER_ENGINE_C_ABI_VERSION >= 10);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

@@ -337,6 +337,30 @@ add_dependencies(native_abi_test blunder_engine_c)
 add_test(NAME native_abi_test
          COMMAND native_abi_test)
 
+add_executable(skeleton_modifier_product_c_abi_test
+    "skeleton_modifier_product_c_abi_test.cpp"
+)
+
+target_link_libraries(skeleton_modifier_product_c_abi_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(skeleton_modifier_product_c_abi_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(skeleton_modifier_product_c_abi_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(skeleton_modifier_product_c_abi_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME skeleton_modifier_product_c_abi_test
+         COMMAND skeleton_modifier_product_c_abi_test)
+
 add_executable(gameplay_input_test
     "gameplay_input_test.cpp"
     "${CMAKE_SOURCE_DIR}/engine/src/runtime/platform/input/gameplay_input.cpp"

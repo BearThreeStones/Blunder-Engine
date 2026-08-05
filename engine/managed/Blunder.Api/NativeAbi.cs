@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v9 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v10 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -74,6 +74,30 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<ulong, int, int, int> skeleton_modifier_set_enabled;
     public delegate* unmanaged[Cdecl]<ulong, int, int*, int> skeleton_modifier_get_enabled;
     public delegate* unmanaged[Cdecl]<ulong, int, int, int> skeleton_modifier_move;
+    public delegate* unmanaged[Cdecl]<ulong, int, float, int>
+        skeleton_modifier_set_paper_mouth_open_amount;
+    public delegate* unmanaged[Cdecl]<ulong, int, float*, int>
+        skeleton_modifier_get_paper_mouth_open_amount;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int>
+        skeleton_modifier_set_paper_mouth_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int>
+        skeleton_modifier_get_paper_mouth_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int>
+        skeleton_modifier_set_attach_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int>
+        skeleton_modifier_get_attach_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, ulong, int>
+        skeleton_modifier_set_attach_child_object_id;
+    public delegate* unmanaged[Cdecl]<ulong, int, ulong*, int>
+        skeleton_modifier_get_attach_child_object_id;
+    public delegate* unmanaged[Cdecl]<ulong, int, float, float, float, int>
+        skeleton_modifier_set_look_at_target;
+    public delegate* unmanaged[Cdecl]<ulong, int, float*, float*, float*, int>
+        skeleton_modifier_get_look_at_target;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int>
+        skeleton_modifier_set_look_at_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int>
+        skeleton_modifier_get_look_at_bone_name;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int*, int>
         animation_player_get_method_key_count;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int, byte*, int, float*, int>

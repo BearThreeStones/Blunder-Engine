@@ -94,6 +94,18 @@ internal static unsafe class Native
         abi.skeleton_modifier_set_enabled != null &&
         abi.skeleton_modifier_get_enabled != null &&
         abi.skeleton_modifier_move != null &&
+        abi.skeleton_modifier_set_paper_mouth_open_amount != null &&
+        abi.skeleton_modifier_get_paper_mouth_open_amount != null &&
+        abi.skeleton_modifier_set_paper_mouth_bone_name != null &&
+        abi.skeleton_modifier_get_paper_mouth_bone_name != null &&
+        abi.skeleton_modifier_set_attach_bone_name != null &&
+        abi.skeleton_modifier_get_attach_bone_name != null &&
+        abi.skeleton_modifier_set_attach_child_object_id != null &&
+        abi.skeleton_modifier_get_attach_child_object_id != null &&
+        abi.skeleton_modifier_set_look_at_target != null &&
+        abi.skeleton_modifier_get_look_at_target != null &&
+        abi.skeleton_modifier_set_look_at_bone_name != null &&
+        abi.skeleton_modifier_get_look_at_bone_name != null &&
         abi.animation_player_get_method_key_count != null &&
         abi.animation_player_get_method_key != null &&
         abi.sync_group_create != null &&
@@ -643,6 +655,175 @@ internal static unsafe class Native
     {
         EnsureRegistered();
         return s_abi.skeleton_modifier_move(id, fromIndex, toIndex);
+    }
+
+    public static int blunder_skeleton_modifier_set_paper_mouth_open_amount(
+        ulong id, int index, float openAmount)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_paper_mouth_open_amount(id, index, openAmount);
+    }
+
+    public static int blunder_skeleton_modifier_get_paper_mouth_open_amount(
+        ulong id, int index, out float openAmount)
+    {
+        EnsureRegistered();
+        openAmount = 0;
+        float value = 0;
+        int rc = s_abi.skeleton_modifier_get_paper_mouth_open_amount(id, index, &value);
+        openAmount = value;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_paper_mouth_bone_name(
+        ulong id, int index, string boneName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(boneName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.skeleton_modifier_set_paper_mouth_bone_name(id, index, namePtr);
+        }
+    }
+
+    public static int blunder_skeleton_modifier_get_paper_mouth_bone_name(
+        ulong id, int index, out string boneName)
+    {
+        EnsureRegistered();
+        boneName = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.skeleton_modifier_get_paper_mouth_bone_name(
+                id, index, namePtr, capacity);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                boneName = Encoding.UTF8.GetString(buffer, 0, len);
+            }
+
+            return rc;
+        }
+    }
+
+    public static int blunder_skeleton_modifier_set_attach_bone_name(
+        ulong id, int index, string boneName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(boneName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.skeleton_modifier_set_attach_bone_name(id, index, namePtr);
+        }
+    }
+
+    public static int blunder_skeleton_modifier_get_attach_bone_name(
+        ulong id, int index, out string boneName)
+    {
+        EnsureRegistered();
+        boneName = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.skeleton_modifier_get_attach_bone_name(id, index, namePtr, capacity);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                boneName = Encoding.UTF8.GetString(buffer, 0, len);
+            }
+
+            return rc;
+        }
+    }
+
+    public static int blunder_skeleton_modifier_set_attach_child_object_id(
+        ulong id, int index, ulong childObjectId)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_attach_child_object_id(id, index, childObjectId);
+    }
+
+    public static int blunder_skeleton_modifier_get_attach_child_object_id(
+        ulong id, int index, out ulong childObjectId)
+    {
+        EnsureRegistered();
+        childObjectId = 0;
+        ulong value = 0;
+        int rc = s_abi.skeleton_modifier_get_attach_child_object_id(id, index, &value);
+        childObjectId = value;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_look_at_target(
+        ulong id, int index, float x, float y, float z)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_look_at_target(id, index, x, y, z);
+    }
+
+    public static int blunder_skeleton_modifier_get_look_at_target(
+        ulong id, int index, out float x, out float y, out float z)
+    {
+        EnsureRegistered();
+        x = 0;
+        y = 0;
+        z = 0;
+        float ox = 0;
+        float oy = 0;
+        float oz = 0;
+        int rc = s_abi.skeleton_modifier_get_look_at_target(id, index, &ox, &oy, &oz);
+        x = ox;
+        y = oy;
+        z = oz;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_look_at_bone_name(
+        ulong id, int index, string boneName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(boneName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.skeleton_modifier_set_look_at_bone_name(id, index, namePtr);
+        }
+    }
+
+    public static int blunder_skeleton_modifier_get_look_at_bone_name(
+        ulong id, int index, out string boneName)
+    {
+        EnsureRegistered();
+        boneName = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.skeleton_modifier_get_look_at_bone_name(id, index, namePtr, capacity);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                boneName = Encoding.UTF8.GetString(buffer, 0, len);
+            }
+
+            return rc;
+        }
     }
 
     public static int blunder_animation_player_get_method_key_count(

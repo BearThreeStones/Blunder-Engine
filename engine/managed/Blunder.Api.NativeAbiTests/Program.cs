@@ -46,11 +46,20 @@ static unsafe class Program
     static string s_lastFireSameNameClip = "";
     static float s_lastFireSameNameSeek = -1f;
 
+    static float s_paperMouthOpenAmount;
+    static string s_paperMouthBoneName = "Jaw";
+    static string s_attachBoneName = "Hand";
+    static ulong s_attachChildObjectId;
+    static string s_lookAtBoneName = "Head";
+    static float s_lookAtTargetX;
+    static float s_lookAtTargetY;
+    static float s_lookAtTargetZ = 1.0f;
+
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 67 * sizeof(nint),
-            "BlunderNativeAbi layout size is 67 pointers");
+            sizeof(BlunderNativeAbi) == 79 * sizeof(nint),
+            "BlunderNativeAbi layout size is 79 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -128,6 +137,24 @@ static unsafe class Program
         abi.skeleton_modifier_set_enabled = &StubSkeletonModifierSetEnabled;
         abi.skeleton_modifier_get_enabled = &StubSkeletonModifierGetEnabled;
         abi.skeleton_modifier_move = &StubSkeletonModifierMove;
+        abi.skeleton_modifier_set_paper_mouth_open_amount =
+            &StubSkeletonModifierSetPaperMouthOpenAmount;
+        abi.skeleton_modifier_get_paper_mouth_open_amount =
+            &StubSkeletonModifierGetPaperMouthOpenAmount;
+        abi.skeleton_modifier_set_paper_mouth_bone_name =
+            &StubSkeletonModifierSetPaperMouthBoneName;
+        abi.skeleton_modifier_get_paper_mouth_bone_name =
+            &StubSkeletonModifierGetPaperMouthBoneName;
+        abi.skeleton_modifier_set_attach_bone_name = &StubSkeletonModifierSetAttachBoneName;
+        abi.skeleton_modifier_get_attach_bone_name = &StubSkeletonModifierGetAttachBoneName;
+        abi.skeleton_modifier_set_attach_child_object_id =
+            &StubSkeletonModifierSetAttachChildObjectId;
+        abi.skeleton_modifier_get_attach_child_object_id =
+            &StubSkeletonModifierGetAttachChildObjectId;
+        abi.skeleton_modifier_set_look_at_target = &StubSkeletonModifierSetLookAtTarget;
+        abi.skeleton_modifier_get_look_at_target = &StubSkeletonModifierGetLookAtTarget;
+        abi.skeleton_modifier_set_look_at_bone_name = &StubSkeletonModifierSetLookAtBoneName;
+        abi.skeleton_modifier_get_look_at_bone_name = &StubSkeletonModifierGetLookAtBoneName;
         abi.animation_player_get_method_key_count = &StubAnimationGetMethodKeyCount;
         abi.animation_player_get_method_key = &StubAnimationGetMethodKey;
         abi.sync_group_create = &StubSyncGroupCreate;
@@ -309,6 +336,30 @@ static unsafe class Program
         Expect(handle.MoveSkeletonModifier(0, 1), "MoveSkeletonModifier");
         Expect(handle.IsSkeletonModifierEnabled(0) == false, "Move preserves enabled flags");
         Expect(handle.IsSkeletonModifierEnabled(1), "Move swaps enabled flags");
+
+        s_paperMouthOpenAmount = 0.0f;
+        Expect(
+            Native.blunder_skeleton_modifier_set_paper_mouth_open_amount(7, 0, 0.8f) ==
+            Native.Ok,
+            "Native set paper mouth open amount after register");
+        Expect(
+            Native.blunder_skeleton_modifier_get_paper_mouth_open_amount(
+                7, 0, out float openAmount) == Native.Ok &&
+            Math.Abs(openAmount - 0.8f) < 0.0001f,
+            "Native get paper mouth open amount after register");
+        Expect(
+            Native.blunder_skeleton_modifier_set_attach_child_object_id(7, 1, 42UL) ==
+            Native.Ok,
+            "Native set attach child object id after register");
+        Expect(
+            Native.blunder_skeleton_modifier_get_attach_child_object_id(
+                7, 1, out ulong childId) == Native.Ok &&
+            childId == 42UL,
+            "Native get attach child object id after register");
+        Expect(
+            Native.blunder_skeleton_modifier_set_look_at_target(7, 2, 1.0f, 2.0f, 3.0f) ==
+            Native.Ok,
+            "Native set look at target after register");
 
         Expect(
             Native.blunder_animation_tree_set_active(7, 0) == Native.Ok,
@@ -934,6 +985,162 @@ static unsafe class Program
 
         (s_modifierEnabled[fromIndex], s_modifierEnabled[toIndex]) =
             (s_modifierEnabled[toIndex], s_modifierEnabled[fromIndex]);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetPaperMouthOpenAmount(ulong id, int index, float openAmount)
+    {
+        if (id == 0 || index != 0)
+        {
+            return Native.Error;
+        }
+
+        s_paperMouthOpenAmount = openAmount;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetPaperMouthOpenAmount(
+        ulong id, int index, float* outOpenAmount)
+    {
+        if (id == 0 || index != 0 || outOpenAmount == null)
+        {
+            return Native.Error;
+        }
+
+        *outOpenAmount = s_paperMouthOpenAmount;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetPaperMouthBoneName(ulong id, int index, byte* boneName)
+    {
+        if (id == 0 || index != 0 || boneName == null)
+        {
+            return Native.Error;
+        }
+
+        s_paperMouthBoneName = Utf8ToString(boneName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetPaperMouthBoneName(
+        ulong id, int index, byte* outBoneName, int nameCapacity)
+    {
+        if (id == 0 || index != 0 || outBoneName == null || nameCapacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_paperMouthBoneName, outBoneName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetAttachBoneName(ulong id, int index, byte* boneName)
+    {
+        if (id == 0 || index != 1 || boneName == null)
+        {
+            return Native.Error;
+        }
+
+        s_attachBoneName = Utf8ToString(boneName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetAttachBoneName(
+        ulong id, int index, byte* outBoneName, int nameCapacity)
+    {
+        if (id == 0 || index != 1 || outBoneName == null || nameCapacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_attachBoneName, outBoneName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetAttachChildObjectId(
+        ulong id, int index, ulong childObjectId)
+    {
+        if (id == 0 || index != 1)
+        {
+            return Native.Error;
+        }
+
+        s_attachChildObjectId = childObjectId;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetAttachChildObjectId(
+        ulong id, int index, ulong* outChildObjectId)
+    {
+        if (id == 0 || index != 1 || outChildObjectId == null)
+        {
+            return Native.Error;
+        }
+
+        *outChildObjectId = s_attachChildObjectId;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetLookAtTarget(
+        ulong id, int index, float x, float y, float z)
+    {
+        if (id == 0 || index != 2)
+        {
+            return Native.Error;
+        }
+
+        s_lookAtTargetX = x;
+        s_lookAtTargetY = y;
+        s_lookAtTargetZ = z;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetLookAtTarget(
+        ulong id, int index, float* outX, float* outY, float* outZ)
+    {
+        if (id == 0 || index != 2 || outX == null || outY == null || outZ == null)
+        {
+            return Native.Error;
+        }
+
+        *outX = s_lookAtTargetX;
+        *outY = s_lookAtTargetY;
+        *outZ = s_lookAtTargetZ;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetLookAtBoneName(ulong id, int index, byte* boneName)
+    {
+        if (id == 0 || index != 2 || boneName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lookAtBoneName = Utf8ToString(boneName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetLookAtBoneName(
+        ulong id, int index, byte* outBoneName, int nameCapacity)
+    {
+        if (id == 0 || index != 2 || outBoneName == null || nameCapacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_lookAtBoneName, outBoneName, nameCapacity);
         return Native.Ok;
     }
 
