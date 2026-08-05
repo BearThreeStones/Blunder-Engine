@@ -2216,6 +2216,30 @@ target_precompile_headers(dogwalk_phase6_engineering_gates_test
 add_test(NAME dogwalk_phase6_engineering_gates_test
          COMMAND dogwalk_phase6_engineering_gates_test)
 
+add_executable(dogwalk_phase6_lean_play_acceptance_test
+    "dogwalk_phase6_lean_play_acceptance_test.cpp"
+)
+
+target_link_libraries(dogwalk_phase6_lean_play_acceptance_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_phase6_lean_play_acceptance_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_phase6_lean_play_acceptance_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_phase6_lean_play_acceptance_test
+  REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_phase6_lean_play_acceptance_test
+         COMMAND dogwalk_phase6_lean_play_acceptance_test)
+
 add_executable(inspector_skeleton_modifier_commands_test
     "inspector_skeleton_modifier_commands_test.cpp"
 )

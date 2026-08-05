@@ -35,7 +35,7 @@
 ## 6. Content gates
 
 - [x] 6.1 Engineering harness: PaperMouth + Attach + LookAt product
-- [ ] 6.2 Lean Play/Edit: visible mouth open, child follow, aim change
+- [x] 6.2 Lean Play/Edit: visible mouth open, child follow, aim change
 - [ ] 6.3 Keep Phase 1–5 content Done gates tracked separately if still open
 
   Phase 5 lean Play / Phase 4 Chocomel-subset / earlier bars remain open if unfinished — not cancelled by Phase 6.
