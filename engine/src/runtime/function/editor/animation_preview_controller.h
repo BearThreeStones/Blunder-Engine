@@ -3,6 +3,7 @@
 #include "EASTL/string.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/object_id.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/resource/asset/asset_descriptor.h"
 
@@ -83,6 +84,10 @@ class AnimationPreviewController final {
   bool setSkeletonLookAtBoneName(size_t modifier_index,
                                  const eastl::string& bone_name);
   bool setSkeletonPaperMouthOpenAmount(size_t modifier_index, float open_amount);
+  bool setSkeletonAttachBoneName(size_t modifier_index,
+                                 const eastl::string& bone_name);
+  bool setSkeletonAttachChildObjectId(size_t modifier_index,
+                                      ObjectId child_object_id);
 
   /// Advance preview playback via tickObjectAnimationPreviewFrame when playing.
   void tick(float delta_time);

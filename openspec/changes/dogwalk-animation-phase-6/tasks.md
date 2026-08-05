@@ -15,8 +15,8 @@
 
 - [x] 3.1 TDD: host bone world transform copies to child Object Transform after sample
 - [x] 3.2 TDD: invalid child/bone fails safely
-- [x] 3.3 Confirm Attach does not drive a remote Skeleton
-- [ ] 3.4 TDD: Edit preview shows child follow without Behaviour Tick
+- [ ] 3.3 Confirm Attach does not drive a remote Skeleton
+- [x] 3.4 TDD: Edit preview shows child follow without Behaviour Tick
 
 ## 4. Authorship / persistence
 

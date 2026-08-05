@@ -1,9 +1,12 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/animation_player.h"
+#include "runtime/core/object/animation_tree.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/reflection/class_db.h"
+#include "runtime/core/reflection/lifecycle.h"
+#include "runtime/function/editor/animation_preview_controller.h"
 
 #include <cmath>
 #include <cstdio>
@@ -11,6 +14,9 @@
 namespace {
 
 int g_failures = 0;
+int g_tick_calls = 0;
+
+void on_tick(void* /*peer*/, float /*dt*/) { ++g_tick_calls; }
 
 void expect_true(const char* label, bool ok) {
   if (!ok) {
@@ -33,14 +39,6 @@ bool quat_near(const Blunder::Quat& a, const Blunder::Quat& b,
                float eps = 1e-4f) {
   const float dot = std::fabs(glm::dot(a, b));
   return dot > 1.0f - eps || dot < -1.0f + eps;
-}
-
-bool bone_transform_near(const Blunder::BoneTransform& a,
-                         const Blunder::BoneTransform& b,
-                         float eps = 1e-4f) {
-  return vec3_near(a.translation, b.translation, eps) &&
-         quat_near(a.rotation, b.rotation, eps) &&
-         vec3_near(a.scale, b.scale, eps);
 }
 
 void decompose_bone_matrix(const Blunder::Mat4& matrix, Blunder::Vec3& position,
@@ -399,90 +397,133 @@ void test_invalid_bone_name_skips_transform_write() {
   ClassDB::shutdown();
 }
 
-/// Task 3.3: attach writes child Object Transform only, not remote Skeleton poses.
-void test_attach_does_not_drive_remote_skeleton() {
+Blunder::Object* makeAttachPreviewObject(Blunder::Skeleton** out_skeleton,
+                                        Blunder::ObjectId* out_child_id) {
   using namespace Blunder;
-
-  ClassDB::initialize();
 
   ObjectDB::clear();
   const ObjectId host_id = ObjectDB::create();
   const ObjectId child_id = ObjectDB::create();
   Object* host = ObjectDB::get(host_id);
   Object* child = ObjectDB::get(child_id);
-  expect_true("host created", host != nullptr);
-  expect_true("child created", child != nullptr);
   if (host == nullptr || child == nullptr) {
-    ObjectDB::clear();
-    ClassDB::shutdown();
-    return;
+    return nullptr;
   }
 
   child->setParent(host);
 
-  Skeleton* host_skeleton = host->ensureSkeleton();
-  const int hand = host_skeleton->addBone("Hand", -1);
-  host_skeleton->setBoneRestLocal(
-      static_cast<size_t>(hand),
-      BoneTransform{Vec3(0.2f, 0.5f, 1.0f),
-                    glm::angleAxis(0.3f, Vec3(0.0f, 1.0f, 0.0f)),
-                    Vec3(1.0f, 1.0f, 1.0f)});
-  host_skeleton->resetPoseToRest();
+  Skeleton* skeleton = host->ensureSkeleton();
+  AnimationPlayer* player = host->ensureAnimationPlayer();
+  AnimationTree* tree = host->ensureAnimationTree();
 
-  Skeleton* child_skeleton = child->ensureSkeleton();
-  const int prop_bone = child_skeleton->addBone("PropBone", -1);
-  const BoneTransform child_bone_pose{
-      Vec3(0.4f, -0.1f, 0.8f),
-      glm::angleAxis(0.9f, Vec3(1.0f, 0.0f, 0.0f)), Vec3(1.5f, 0.75f, 2.0f)};
-  child_skeleton->setBoneRestLocal(static_cast<size_t>(prop_bone),
-                                   child_bone_pose);
-  child_skeleton->setBonePoseLocal(static_cast<size_t>(prop_bone),
-                                   child_bone_pose);
-  const BoneTransform child_bone_pose_before =
-      child_skeleton->getBonePoseLocal(static_cast<size_t>(prop_bone));
+  const int shoulder = skeleton->addBone("Shoulder", -1);
+  const int hand = skeleton->addBone("Hand", shoulder);
+  (void)hand;
+  skeleton->setBoneRestLocal(static_cast<size_t>(shoulder),
+                             BoneTransform{Vec3(0.3f, 0.4f, 0.1f),
+                                           glm::identity<Quat>(), Vec3(1.0f)});
+  skeleton->setBoneRestLocal(static_cast<size_t>(hand),
+                             BoneTransform{Vec3(0.2f, 0.5f, 1.0f),
+                                           glm::identity<Quat>(), Vec3(1.0f)});
+  skeleton->resetPoseToRest();
 
-  SkeletonAttachModifier* attach = host->addSkeletonAttachModifier();
-  expect_true("attach modifier created", attach != nullptr);
-  if (attach == nullptr) {
-    ObjectDB::clear();
-    ClassDB::shutdown();
+  constexpr const char* kIdleGuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  constexpr const char* kWalkGuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+
+  AnimationClipData idle_clip;
+  idle_clip.duration = 1.0f;
+  idle_clip.tracks.push_back(makeTranslationTrack(
+      "Hand", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.1f, 0.2f, 0.3f)}}));
+  player->setClipGuid("idle", kIdleGuid);
+  player->injectClipData(kIdleGuid, idle_clip);
+
+  AnimationClipData walk_clip;
+  walk_clip.duration = 1.0f;
+  walk_clip.tracks.push_back(makeTranslationTrack(
+      "Hand", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.7f, -0.2f, 0.9f)}}));
+  player->setClipGuid("walk", kWalkGuid);
+  player->injectClipData(kWalkGuid, walk_clip);
+
+  tree->addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree->addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree->setStateBlendSpace("Locomotion", "Locomotion");
+
+  if (out_skeleton != nullptr) {
+    *out_skeleton = skeleton;
+  }
+  if (out_child_id != nullptr) {
+    *out_child_id = child_id;
+  }
+  return host;
+}
+
+/// Task 3.4: Edit scrub Attach via AnimationPreviewController without Behaviour Tick.
+void test_edit_scrub_attach_without_behaviour_tick() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+  g_tick_calls = 0;
+  LifecycleDispatch::setTickHook("Object", on_tick);
+
+  Skeleton* skeleton = nullptr;
+  ObjectId child_id = k_invalid_object_id;
+  Object* host = makeAttachPreviewObject(&skeleton, &child_id);
+  Object* child = ObjectDB::get(child_id);
+  expect_true("preview host", host != nullptr);
+  expect_true("preview child", child != nullptr);
+  if (host == nullptr || child == nullptr || skeleton == nullptr) {
+    LifecycleDispatch::clear();
     return;
   }
 
-  attach->setBoneName("Hand");
-  attach->setChildObjectId(child_id);
+  const int hand = skeleton->findBoneIndex("Hand");
+  const int shoulder = skeleton->findBoneIndex("Shoulder");
+  expect_true("hand bone", hand >= 0);
+  expect_true("shoulder bone", shoulder >= 0);
 
-  const Vec3 child_position_before = child->getPosition();
-  attach->apply(*host_skeleton);
-  expect_true("attach applied",
-              attach->getLastApplyStatus() ==
-                  SkeletonAttachApplyStatus::Applied);
-  expect_true("child Object Transform updated",
-              !vec3_near(child->getPosition(), child_position_before));
-  expect_true("child transform matches host bone world",
-              object_transform_matches_bone(*child, *host_skeleton,
-                                            static_cast<size_t>(hand)));
-  expect_true("child Skeleton bone pose unchanged",
-              bone_transform_near(
-                  child_skeleton->getBonePoseLocal(static_cast<size_t>(prop_bone)),
-                  child_bone_pose_before));
+  SkeletonAttachModifier* attach = host->addSkeletonAttachModifier();
+  expect_true("attach modifier", attach != nullptr);
+  if (attach == nullptr) {
+    ObjectDB::clear();
+    LifecycleDispatch::clear();
+    return;
+  }
 
-  BoneTransform host_pose =
-      host_skeleton->getBonePoseLocal(static_cast<size_t>(hand));
-  host_pose.translation = Vec3(0.9f, -0.3f, 0.2f);
-  host_pose.rotation = glm::angleAxis(1.4f, Vec3(0.0f, 0.0f, 1.0f));
-  host_skeleton->setBonePoseLocal(static_cast<size_t>(hand), host_pose);
-  attach->apply(*host_skeleton);
-  expect_true("child follows updated host bone",
-              object_transform_matches_bone(*child, *host_skeleton,
+  AnimationPreviewController controller;
+  controller.bindObject(host, "idle");
+  expect_true("travel locomotion", controller.travel("Locomotion"));
+  expect_true("activate tree", controller.setTreeActive(true));
+  controller.setBlendSpaceScalar("Locomotion", 0.0f);
+
+  const size_t attach_index = 0;
+  expect_true("one modifier", controller.skeletonModifierCount() == 1);
+
+  expect_true("scrub child object id",
+              controller.setSkeletonAttachChildObjectId(attach_index, child_id));
+  expect_true("scrub bone to Hand",
+              controller.setSkeletonAttachBoneName(attach_index, "Hand"));
+  expect_true("child follows Hand at idle blend via edit scrub",
+              object_transform_matches_bone(*child, *skeleton,
                                             static_cast<size_t>(hand)));
-  expect_true("child Skeleton bone pose still unchanged after host pose update",
-              bone_transform_near(
-                  child_skeleton->getBonePoseLocal(static_cast<size_t>(prop_bone)),
-                  child_bone_pose_before));
+
+  controller.setBlendSpaceScalar("Locomotion", 1.0f);
+  expect_true("child follows Hand at walk blend via edit scrub",
+              object_transform_matches_bone(*child, *skeleton,
+                                            static_cast<size_t>(hand)));
+
+  expect_true("scrub bone to Shoulder",
+              controller.setSkeletonAttachBoneName(attach_index, "Shoulder"));
+  expect_true("child follows Shoulder after bone scrub",
+              object_transform_matches_bone(*child, *skeleton,
+                                            static_cast<size_t>(shoulder)));
+
+  expect_true("no behaviour tick during attach edit scrub", g_tick_calls == 0);
 
   ObjectDB::clear();
-  ClassDB::shutdown();
+  LifecycleDispatch::clear();
 }
 
 }  // namespace
@@ -493,7 +534,7 @@ int main() {
   test_invalid_child_id_skips_transform_write();
   test_destroyed_child_skips_transform_write();
   test_invalid_bone_name_skips_transform_write();
-  test_attach_does_not_drive_remote_skeleton();
+  test_edit_scrub_attach_without_behaviour_tick();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

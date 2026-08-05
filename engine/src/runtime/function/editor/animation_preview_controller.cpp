@@ -6,6 +6,7 @@
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
@@ -401,6 +402,38 @@ bool AnimationPreviewController::setSkeletonPaperMouthOpenAmount(
   }
   auto* paper_mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
   paper_mouth->setOpenAmount(open_amount);
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::setSkeletonAttachBoneName(
+    const size_t modifier_index, const eastl::string& bone_name) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(modifier_index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  auto* attach = static_cast<SkeletonAttachModifier*>(modifier);
+  attach->setBoneName(bone_name);
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::setSkeletonAttachChildObjectId(
+    const size_t modifier_index, const ObjectId child_object_id) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(modifier_index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  auto* attach = static_cast<SkeletonAttachModifier*>(modifier);
+  attach->setChildObjectId(child_object_id);
   resampleBoundSkeleton();
   return true;
 }
