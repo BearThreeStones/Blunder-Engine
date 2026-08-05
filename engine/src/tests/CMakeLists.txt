@@ -1928,3 +1928,23 @@ target_precompile_headers(dogwalk_phase4_mini_play_acceptance_test
 add_test(NAME dogwalk_phase4_mini_play_acceptance_test
          COMMAND dogwalk_phase4_mini_play_acceptance_test)
 
+# Physics kernel: Q32.32 fixed math (no glm/libm). Linux Clang x64 is the v0 bit-identical peer.
+add_executable(fixed_math_test
+    "fixed_math_test.cpp"
+)
+
+target_link_libraries(fixed_math_test
+    PRIVATE blunder_fixed_math
+)
+
+target_include_directories(fixed_math_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(fixed_math_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME fixed_math_test
+         COMMAND fixed_math_test)
+
