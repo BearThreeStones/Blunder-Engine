@@ -198,6 +198,7 @@ static unsafe class Program
 
         RunAnimationPlayerSmokeTests();
         RunAnimationTreeSmokeTests();
+        RunSkeletonModifierProductFacadeSmokeTests();
         RunSyncGroupAndCineSmokeTests();
         RunSyncFireOneShotSmokeTests();
 
@@ -368,6 +369,57 @@ static unsafe class Program
             Native.blunder_animation_tree_get_active(7, out int active) == Native.Ok &&
             active == 0,
             "Native animation_tree_get_active after register");
+    }
+
+    static void RunSkeletonModifierProductFacadeSmokeTests()
+    {
+        s_paperMouthOpenAmount = 0.0f;
+        s_paperMouthBoneName = "Jaw";
+        s_attachBoneName = "Hand";
+        s_attachChildObjectId = 0;
+        s_lookAtBoneName = "Head";
+        s_lookAtTargetX = 0.0f;
+        s_lookAtTargetY = 0.0f;
+        s_lookAtTargetZ = 1.0f;
+
+        ObjectHandle host = ObjectHandle.GetOrCreate(7);
+        ObjectHandle child = ObjectHandle.GetOrCreate(42);
+
+        PaperMouth paperMouth = host.PaperMouthAt(0);
+        Expect(paperMouth.Index == 0, "PaperMouth.Index");
+        paperMouth.OpenAmount = 0.8f;
+        Expect(
+            Math.Abs(s_paperMouthOpenAmount - 0.8f) < 0.0001f,
+            "PaperMouth.OpenAmount set forwarded");
+        Expect(
+            Math.Abs(paperMouth.OpenAmount - 0.8f) < 0.0001f,
+            "PaperMouth.OpenAmount get forwarded");
+        paperMouth.BoneName = "LowerJaw";
+        Expect(s_paperMouthBoneName == "LowerJaw", "PaperMouth.BoneName set forwarded");
+        Expect(paperMouth.BoneName == "LowerJaw", "PaperMouth.BoneName get forwarded");
+
+        SkeletonAttachModifier attach = host.AttachAt(1);
+        Expect(attach.Index == 1, "SkeletonAttachModifier.Index");
+        attach.BoneName = "PropSocket";
+        Expect(s_attachBoneName == "PropSocket", "SkeletonAttachModifier.BoneName set forwarded");
+        Expect(attach.BoneName == "PropSocket", "SkeletonAttachModifier.BoneName get forwarded");
+        attach.Child = child;
+        Expect(s_attachChildObjectId == 42UL, "SkeletonAttachModifier.Child set forwarded");
+        Expect(attach.Child != null && attach.Child.Id == 42UL,
+            "SkeletonAttachModifier.Child get forwarded");
+
+        LookAt lookAt = host.LookAtAt(2);
+        Expect(lookAt.Index == 2, "LookAt.Index");
+        lookAt.Target = new Vec3(1.0f, 2.0f, 3.0f);
+        Expect(
+            Math.Abs(s_lookAtTargetX - 1.0f) < 0.0001f &&
+            Math.Abs(s_lookAtTargetY - 2.0f) < 0.0001f &&
+            Math.Abs(s_lookAtTargetZ - 3.0f) < 0.0001f,
+            "LookAt.Target set forwarded");
+        Expect(lookAt.Target == new Vec3(1.0f, 2.0f, 3.0f), "LookAt.Target get forwarded");
+        lookAt.BoneName = "Neck";
+        Expect(s_lookAtBoneName == "Neck", "LookAt.BoneName set forwarded");
+        Expect(lookAt.BoneName == "Neck", "LookAt.BoneName get forwarded");
     }
 
     static void RunSyncFireOneShotSmokeTests()

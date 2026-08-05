@@ -195,4 +195,13 @@ public sealed class ObjectHandle
 
     public bool MoveSkeletonModifier(int fromIndex, int toIndex) =>
         Native.blunder_skeleton_modifier_move(Id, fromIndex, toIndex) == Native.Ok;
+
+    /// <summary>Lean PaperMouth drive façade at <paramref name="index"/>.</summary>
+    public PaperMouth PaperMouthAt(int index) => new(this, index);
+
+    /// <summary>Lean SkeletonAttachModifier drive façade at <paramref name="index"/>.</summary>
+    public SkeletonAttachModifier AttachAt(int index) => new(this, index);
+
+    /// <summary>Lean LookAt drive façade at <paramref name="index"/>.</summary>
+    public LookAt LookAtAt(int index) => new(this, index);
 }
