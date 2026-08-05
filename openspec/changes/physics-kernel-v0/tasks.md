@@ -18,12 +18,12 @@
 
 ## 3. Collision and solve
 
-- [ ] 3.1 Deterministic broadphase (stable pair order) for World bodies
-- [ ] 3.2 Convex narrowphase (GJK/EPA or equivalent) for box/sphere/capsule pairs; module unit tests
-- [ ] 3.3 Contact constraint solve (iterative) for resting contact; restitution 0 path
-- [ ] 3.4 Friction sufficient for incline golden
-- [ ] 3.5 Integrate contacts with Dynamic/Static/Kinematic (M1 push)
-- [ ] 3.6 Per-body sleep + wake on hit/force
+- [x] 3.1 Deterministic broadphase (stable pair order) for World bodies
+- [x] 3.2 Convex narrowphase (GJK/EPA or equivalent) for box/sphere/capsule pairs; module unit tests
+- [x] 3.3 Contact constraint solve (iterative) for resting contact; restitution 0 path
+- [x] 3.4 Friction sufficient for incline golden
+- [x] 3.5 Integrate contacts with Dynamic/Static/Kinematic (M1 push)
+- [x] 3.6 Per-body sleep + wake on hit/force
 
 ## 4. Golden suite harness
 

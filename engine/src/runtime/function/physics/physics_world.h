@@ -40,6 +40,7 @@ class PhysicsWorld final {
   [[nodiscard]] PhysicsMaterial getColliderMaterial(ColliderHandle collider) const;
   [[nodiscard]] ColliderShape getColliderShape(ColliderHandle collider) const;
   [[nodiscard]] bool isColliderValid(ColliderHandle collider) const;
+  [[nodiscard]] bool isBodySleeping(RigidBodyHandle body) const;
 
  private:
   PhysicsWorld() = default;

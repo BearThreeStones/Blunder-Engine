@@ -1,5 +1,6 @@
 # Physics kernel v0 — isolated World, bodies, colliders. Links blunder_fixed_math only.
 add_library(blunder_physics STATIC
+    physics_collision.cpp
     physics_world.cpp
 )
 
