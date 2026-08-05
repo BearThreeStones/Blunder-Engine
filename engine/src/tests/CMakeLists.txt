@@ -2168,6 +2168,31 @@ target_precompile_headers(dogwalk_phase6_modifier_serialize_test
 add_test(NAME dogwalk_phase6_modifier_serialize_test
          COMMAND dogwalk_phase6_modifier_serialize_test)
 
+add_executable(inspector_skeleton_modifier_commands_test
+    "inspector_skeleton_modifier_commands_test.cpp"
+)
+
+target_link_libraries(inspector_skeleton_modifier_commands_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(inspector_skeleton_modifier_commands_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(inspector_skeleton_modifier_commands_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(inspector_skeleton_modifier_commands_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME inspector_skeleton_modifier_commands_test
+         COMMAND inspector_skeleton_modifier_commands_test)
+
 add_executable(animation_method_track_gate_a_test
     "animation_method_track_gate_a_test.cpp"
 )

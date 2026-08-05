@@ -115,6 +115,9 @@ class Object {
   SkeletonPaperMouthModifier* addSkeletonPaperMouthModifier();
   SkeletonAttachModifier* addSkeletonAttachModifier();
   bool moveSkeletonModifier(size_t from_index, size_t to_index);
+  bool removeSkeletonModifierAt(size_t index);
+  bool insertSkeletonModifierAt(size_t index,
+                                eastl::unique_ptr<SkeletonModifier> modifier);
   void applySkeletonModifiers(Skeleton& skeleton);
 
  private:

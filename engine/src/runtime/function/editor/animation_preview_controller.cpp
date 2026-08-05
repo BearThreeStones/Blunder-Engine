@@ -5,9 +5,10 @@
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
-#include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
+#include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
 namespace Blunder {
@@ -322,6 +323,29 @@ size_t AnimationPreviewController::skeletonModifierCount() const {
                                     : 0;
 }
 
+bool AnimationPreviewController::addSkeletonModifier(
+    const eastl::string& type_name) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  if (addSkeletonModifierByType(m_target_object, type_name) == nullptr) {
+    return false;
+  }
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::removeSkeletonModifier(const size_t index) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  if (!m_target_object->removeSkeletonModifierAt(index)) {
+    return false;
+  }
+  resampleBoundSkeleton();
+  return true;
+}
+
 bool AnimationPreviewController::setSkeletonModifierEnabled(const size_t index,
                                                             const bool enabled) {
   if (m_target_object == nullptr) {
@@ -402,6 +426,22 @@ bool AnimationPreviewController::setSkeletonPaperMouthOpenAmount(
   }
   auto* paper_mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
   paper_mouth->setOpenAmount(open_amount);
+  resampleBoundSkeleton();
+  return true;
+}
+
+bool AnimationPreviewController::setSkeletonPaperMouthBoneName(
+    const size_t modifier_index, const eastl::string& bone_name) {
+  if (m_target_object == nullptr) {
+    return false;
+  }
+  SkeletonModifier* modifier =
+      m_target_object->getSkeletonModifierAt(modifier_index);
+  if (modifier == nullptr) {
+    return false;
+  }
+  auto* paper_mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
+  paper_mouth->setBoneName(bone_name);
   resampleBoundSkeleton();
   return true;
 }

@@ -409,16 +409,51 @@ SkeletonAttachModifier* Object::addSkeletonAttachModifier() {
 
 bool Object::moveSkeletonModifier(size_t from_index, size_t to_index) {
   const size_t count = m_skeleton_modifiers.size();
-  if (from_index >= count || to_index >= count || from_index == to_index) {
+  if (count == 0 || from_index >= count) {
     return false;
+  }
+  if (to_index > count) {
+    to_index = count;
+  }
+  if (from_index == to_index) {
+    return true;
   }
   eastl::unique_ptr<SkeletonModifier> moving =
       eastl::move(m_skeleton_modifiers[from_index]);
   m_skeleton_modifiers.erase(m_skeleton_modifiers.begin() +
                              static_cast<ptrdiff_t>(from_index));
+  if (from_index < to_index) {
+    --to_index;
+  }
+  if (to_index > m_skeleton_modifiers.size()) {
+    to_index = m_skeleton_modifiers.size();
+  }
   m_skeleton_modifiers.insert(
       m_skeleton_modifiers.begin() + static_cast<ptrdiff_t>(to_index),
       eastl::move(moving));
+  updateAnimationSamplingBinding();
+  return true;
+}
+
+bool Object::removeSkeletonModifierAt(const size_t index) {
+  if (index >= m_skeleton_modifiers.size()) {
+    return false;
+  }
+  m_skeleton_modifiers.erase(m_skeleton_modifiers.begin() +
+                             static_cast<ptrdiff_t>(index));
+  updateAnimationSamplingBinding();
+  return true;
+}
+
+bool Object::insertSkeletonModifierAt(
+    const size_t index, eastl::unique_ptr<SkeletonModifier> modifier) {
+  if (modifier == nullptr || index > m_skeleton_modifiers.size()) {
+    return false;
+  }
+  m_skeleton_modifiers.insert(
+      m_skeleton_modifiers.begin() + static_cast<ptrdiff_t>(index),
+      eastl::move(modifier));
+  updateAnimationSamplingBinding();
   return true;
 }
 

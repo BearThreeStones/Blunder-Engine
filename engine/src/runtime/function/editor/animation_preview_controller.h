@@ -77,6 +77,8 @@ class AnimationPreviewController final {
   void applyTreeOverrides(const AnimationTreeInstanceOverrides& overrides);
 
   size_t skeletonModifierCount() const;
+  bool addSkeletonModifier(const eastl::string& type_name);
+  bool removeSkeletonModifier(size_t index);
   bool setSkeletonModifierEnabled(size_t index, bool enabled);
   bool isSkeletonModifierEnabled(size_t index) const;
   bool moveSkeletonModifier(size_t from_index, size_t to_index);
@@ -84,6 +86,8 @@ class AnimationPreviewController final {
   bool setSkeletonLookAtBoneName(size_t modifier_index,
                                  const eastl::string& bone_name);
   bool setSkeletonPaperMouthOpenAmount(size_t modifier_index, float open_amount);
+  bool setSkeletonPaperMouthBoneName(size_t modifier_index,
+                                     const eastl::string& bone_name);
   bool setSkeletonAttachBoneName(size_t modifier_index,
                                  const eastl::string& bone_name);
   bool setSkeletonAttachChildObjectId(size_t modifier_index,

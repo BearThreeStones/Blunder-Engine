@@ -3,6 +3,7 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/object.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
+#include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -316,6 +317,134 @@ class SetBehaviourPropertyCommand final : public IEditorCommand {
   }
 };
 
+class AddSkeletonModifierCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  eastl::string type_name;
+  size_t index_at_add{static_cast<size_t>(-1)};
+
+  void redo() override {
+    Object* object = scene->ensureBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    if (index_at_add != static_cast<size_t>(-1) &&
+        index_at_add < object->getSkeletonModifierCount()) {
+      const SkeletonModifier* existing = object->getSkeletonModifierAt(index_at_add);
+      if (existing != nullptr && eastl::string(existing->getTypeName()) == type_name) {
+        return;
+      }
+    }
+    if (addSkeletonModifierByType(object, type_name) == nullptr) {
+      return;
+    }
+    index_at_add = object->getSkeletonModifierCount() - 1;
+  }
+
+  void undo() override {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object != nullptr && index_at_add != static_cast<size_t>(-1)) {
+      object->removeSkeletonModifierAt(index_at_add);
+    }
+  }
+};
+
+class RemoveSkeletonModifierCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  size_t index_at_remove{0};
+  SceneSkeletonModifierDef snapshot;
+
+  void undo() override {
+    Object* object = scene->ensureBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    restoreSkeletonModifierAt(scene, object, index_at_remove, snapshot);
+  }
+
+  void redo() override {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object != nullptr) {
+      object->removeSkeletonModifierAt(index_at_remove);
+    }
+  }
+};
+
+class ReorderSkeletonModifiersCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  size_t from_index{0};
+  size_t to_index{0};
+
+  void undo() override {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    const size_t current_index =
+        from_index < to_index ? to_index - 1 : to_index;
+    object->moveSkeletonModifier(current_index, from_index);
+  }
+
+  void redo() override {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object != nullptr) {
+      object->moveSkeletonModifier(from_index, to_index);
+    }
+  }
+};
+
+class SetSkeletonModifierEnabledCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  size_t modifier_index{0};
+  bool before_enabled{true};
+  bool after_enabled{true};
+
+  void undo() override { apply(before_enabled); }
+
+  void redo() override { apply(after_enabled); }
+
+ private:
+  void apply(bool enabled) {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    SkeletonModifier* modifier = object->getSkeletonModifierAt(modifier_index);
+    if (modifier != nullptr) {
+      modifier->setEnabled(enabled);
+    }
+  }
+};
+
+class SetSkeletonModifierDefCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  size_t modifier_index{0};
+  SceneSkeletonModifierDef before_def;
+  SceneSkeletonModifierDef after_def;
+
+  void undo() override { apply(before_def); }
+
+  void redo() override { apply(after_def); }
+
+ private:
+  void apply(const SceneSkeletonModifierDef& def) {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    applySkeletonModifierFieldsOnObject(scene, object, modifier_index, def);
+  }
+};
+
 }  // namespace
 
 eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
@@ -468,6 +597,78 @@ eastl::unique_ptr<IEditorCommand> makeSetBehaviourPropertyCommand(
   command->key = key;
   command->before_value = eastl::move(before_value);
   command->after_value = eastl::move(after_value);
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeAddSkeletonModifierCommand(
+    SceneInstance* scene, EntityId entity_id, const eastl::string& type_name,
+    size_t index_at_add, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<AddSkeletonModifierCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->type_name = type_name;
+  command->index_at_add = index_at_add;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeRemoveSkeletonModifierCommand(
+    SceneInstance* scene, EntityId entity_id, size_t index_at_remove,
+    SceneSkeletonModifierDef snapshot, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<RemoveSkeletonModifierCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->index_at_remove = index_at_remove;
+  command->snapshot = eastl::move(snapshot);
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeReorderSkeletonModifiersCommand(
+    SceneInstance* scene, EntityId entity_id, size_t from_index,
+    size_t to_index, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<ReorderSkeletonModifiersCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->from_index = from_index;
+  command->to_index = to_index;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierEnabledCommand(
+    SceneInstance* scene, EntityId entity_id, size_t modifier_index,
+    bool before_enabled, bool after_enabled,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetSkeletonModifierEnabledCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->modifier_index = modifier_index;
+  command->before_enabled = before_enabled;
+  command->after_enabled = after_enabled;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierDefCommand(
+    SceneInstance* scene, EntityId entity_id, size_t modifier_index,
+    SceneSkeletonModifierDef before_def, SceneSkeletonModifierDef after_def,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetSkeletonModifierDefCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->modifier_index = modifier_index;
+  command->before_def = eastl::move(before_def);
+  command->after_def = eastl::move(after_def);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   return command;

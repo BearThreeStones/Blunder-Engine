@@ -72,4 +72,29 @@ eastl::unique_ptr<IEditorCommand> makeSetBehaviourPropertyCommand(
     const eastl::string& key, Variant before_value, Variant after_value,
     SelectionSnapshot selection_before, SelectionSnapshot selection_after);
 
+eastl::unique_ptr<IEditorCommand> makeAddSkeletonModifierCommand(
+    SceneInstance* scene, EntityId entity_id, const eastl::string& type_name,
+    size_t index_at_add, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeRemoveSkeletonModifierCommand(
+    SceneInstance* scene, EntityId entity_id, size_t index_at_remove,
+    SceneSkeletonModifierDef snapshot, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeReorderSkeletonModifiersCommand(
+    SceneInstance* scene, EntityId entity_id, size_t from_index,
+    size_t to_index, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierEnabledCommand(
+    SceneInstance* scene, EntityId entity_id, size_t modifier_index,
+    bool before_enabled, bool after_enabled,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierDefCommand(
+    SceneInstance* scene, EntityId entity_id, size_t modifier_index,
+    SceneSkeletonModifierDef before_def, SceneSkeletonModifierDef after_def,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
 }  // namespace Blunder

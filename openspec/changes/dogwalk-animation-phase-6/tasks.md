@@ -16,12 +16,12 @@
 - [x] 3.1 TDD: host bone world transform copies to child Object Transform after sample
 - [x] 3.2 TDD: invalid child/bone fails safely
 - [x] 3.3 Confirm Attach does not drive a remote Skeleton
-- [x] 3.4 TDD: Edit preview shows child follow without Behaviour Tick
+- [ ] 3.4 TDD: Edit preview shows child follow without Behaviour Tick
 
 ## 4. Authorship / persistence
 
 - [x] 4.1 TDD: scene round-trip for PaperMouth, Attach, LookAt (type, order, key params)
-- [ ] 4.2 Inspector: add/remove/reorder/enable + edit key params for the three types
+- [x] 4.2 Inspector: add/remove/reorder/enable + edit key params for the three types
 - [ ] 4.3 Confirm no visual Tree canvas required for Phase 6 Done
 - [ ] 4.4 Confirm generic C# SkeletonModifier subclass hot-bridge is not Phase 6 Done
 
