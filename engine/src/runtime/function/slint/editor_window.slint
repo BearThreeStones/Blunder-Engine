@@ -9,7 +9,7 @@ import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
 import { AnimationPreviewToolbar } from "animation_preview_toolbar.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
-import { InspectorPanel, BehaviourRow, AnimationClipRow } from "inspector_panel.slint";
+import { InspectorPanel, BehaviourRow, SkeletonModifierRow, AnimationClipRow } from "inspector_panel.slint";
 import { FloatingPanelWindow } from "floating_panel_window.slint";
 export { FloatingPanelWindow }
 import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, DockHostGuidesLayer, DockAutoHideDropPreviewLayer, DockAutoHideTabsLayer, DockAutoHideOverlaysLayer, DockFloatingDragPreviewLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockHostGuide, DockPreview, DockAutoHideDropPreview, DockDragPreview, DockFloating, DockAutoHideTab, DockAutoHideOverlay } from "docking_panel.slint";
@@ -133,6 +133,10 @@ export component MainEditorWindow inherits Window {
     in property <[string]> inspector-behaviour-type-choices: [];
     in-out property <bool> inspector-behaviours-expanded: true;
 
+    in property <[SkeletonModifierRow]> inspector-skeleton-modifiers: [];
+    in property <[string]> inspector-skeleton-modifier-type-choices: [];
+    in-out property <bool> inspector-skeleton-modifiers-expanded: true;
+
     in property <bool> inspector-has-camera: false;
     in-out property <float> inspector-camera-fov: 45.0;
     in-out property <float> inspector-camera-near: 0.1;
@@ -166,6 +170,11 @@ export component MainEditorWindow inherits Window {
     callback inspector-remove-behaviour(int);
     callback inspector-reorder-behaviour(int, int);
     callback inspector-commit-behaviour-prop(int, string, string, float, bool);
+    callback inspector-add-skeleton-modifier(string);
+    callback inspector-remove-skeleton-modifier(int);
+    callback inspector-reorder-skeleton-modifier(int, int);
+    callback inspector-set-skeleton-modifier-enabled(int, bool);
+    callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool);
     callback inspector-camera-edited();
     callback inspector-add-camera();
     callback inspector-commit-animation-clip(int, string, string);
@@ -609,6 +618,18 @@ export component MainEditorWindow inherits Window {
                         commit-behaviour-prop(id, key, text, number, flag) => {
                             root.inspector-commit-behaviour-prop(id, key, text, number, flag);
                         }
+                        skeleton-modifiers: root.inspector-skeleton-modifiers;
+                        skeleton-modifier-type-choices: root.inspector-skeleton-modifier-type-choices;
+                        skeleton-modifiers-expanded <=> root.inspector-skeleton-modifiers-expanded;
+                        add-skeleton-modifier(type) => { root.inspector-add-skeleton-modifier(type); }
+                        remove-skeleton-modifier(index) => { root.inspector-remove-skeleton-modifier(index); }
+                        reorder-skeleton-modifier(from, to) => { root.inspector-reorder-skeleton-modifier(from, to); }
+                        set-skeleton-modifier-enabled(index, enabled) => {
+                            root.inspector-set-skeleton-modifier-enabled(index, enabled);
+                        }
+                        commit-skeleton-modifier-field(index, key, text, number, flag) => {
+                            root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag);
+                        }
                         has-camera: root.inspector-has-camera;
                         camera-fov <=> root.inspector-camera-fov;
                         camera-near <=> root.inspector-camera-near;
@@ -904,6 +925,18 @@ export component MainEditorWindow inherits Window {
                         reorder-behaviour(from, to) => { root.inspector-reorder-behaviour(from, to); }
                         commit-behaviour-prop(id, key, text, number, flag) => {
                             root.inspector-commit-behaviour-prop(id, key, text, number, flag);
+                        }
+                        skeleton-modifiers: root.inspector-skeleton-modifiers;
+                        skeleton-modifier-type-choices: root.inspector-skeleton-modifier-type-choices;
+                        skeleton-modifiers-expanded <=> root.inspector-skeleton-modifiers-expanded;
+                        add-skeleton-modifier(type) => { root.inspector-add-skeleton-modifier(type); }
+                        remove-skeleton-modifier(index) => { root.inspector-remove-skeleton-modifier(index); }
+                        reorder-skeleton-modifier(from, to) => { root.inspector-reorder-skeleton-modifier(from, to); }
+                        set-skeleton-modifier-enabled(index, enabled) => {
+                            root.inspector-set-skeleton-modifier-enabled(index, enabled);
+                        }
+                        commit-skeleton-modifier-field(index, key, text, number, flag) => {
+                            root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag);
                         }
                         has-camera: root.inspector-has-camera;
                         camera-fov <=> root.inspector-camera-fov;

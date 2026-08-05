@@ -243,6 +243,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void pushInspectorMeshPreviewToSlint();
   void clearInspectorMeshPreviewImage();
   void syncInspectorBehavioursFromSelection();
+  void syncInspectorSkeletonModifiersFromSelection();
   void syncContentBrowser() override;
   void applyInspectorTransform() override;
   void applyAnimationPreviewParams() override;
@@ -261,6 +262,14 @@ class SlintSystem final : public IEditorUiPresentation {
                                              const eastl::string& kind,
                                              const eastl::string& text_value,
                                              float number_value, bool bool_value);
+  void applyInspectorAddSkeletonModifier(const eastl::string& type_name);
+  void applyInspectorRemoveSkeletonModifier(size_t modifier_index);
+  void applyInspectorReorderSkeletonModifiers(size_t from_index, size_t to_index);
+  void applyInspectorSkeletonModifierEnabledCommit(size_t modifier_index, bool enabled);
+  void applyInspectorSkeletonModifierFieldCommit(size_t modifier_index,
+                                                 const eastl::string& key,
+                                                 const eastl::string& text_value,
+                                                 float number_value, bool bool_value);
   void refreshEditorScenePanels() override;
   void syncTransformToolbarFromEngine();
   void syncCameraPreviewFromEngine();

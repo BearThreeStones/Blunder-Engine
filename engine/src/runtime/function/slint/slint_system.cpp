@@ -45,6 +45,7 @@
 #include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/inspector_behaviour_ops.h"
+#include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/editor/inspector_asset_ops.h"
 #include "runtime/function/editor/inspector_mesh_preview.h"
@@ -1077,6 +1078,26 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
                                                 eastl::string(key.data()),
                                                 eastl::string{}, eastl::string(text.data()),
                                                 number, flag);
+        });
+    component->on_inspector_add_skeleton_modifier([this](const slint::SharedString& type) {
+      applyInspectorAddSkeletonModifier(eastl::string(type.data()));
+    });
+    component->on_inspector_remove_skeleton_modifier([this](int modifier_index) {
+      applyInspectorRemoveSkeletonModifier(static_cast<size_t>(modifier_index));
+    });
+    component->on_inspector_reorder_skeleton_modifier([this](int from_index, int to_index) {
+      applyInspectorReorderSkeletonModifiers(static_cast<size_t>(from_index),
+                                             static_cast<size_t>(to_index));
+    });
+    component->on_inspector_set_skeleton_modifier_enabled([this](int modifier_index, bool enabled) {
+      applyInspectorSkeletonModifierEnabledCommit(static_cast<size_t>(modifier_index), enabled);
+    });
+    component->on_inspector_commit_skeleton_modifier_field(
+        [this](int modifier_index, const slint::SharedString& key,
+               const slint::SharedString& text, float number, bool flag) {
+          applyInspectorSkeletonModifierFieldCommit(static_cast<size_t>(modifier_index),
+                                                  eastl::string(key.data()),
+                                                  eastl::string(text.data()), number, flag);
         });
     component->on_inspector_camera_edited([this]() { applyInspectorCamera(); });
     component->on_inspector_add_camera([this]() { applyInspectorAddCamera(); });
@@ -2192,6 +2213,31 @@ std::shared_ptr<slint::VectorModel<slint::SharedString>> makeBehaviourTypeChoice
   return model;
 }
 
+std::shared_ptr<slint::VectorModel<SkeletonModifierRow>> makeSkeletonModifierRowModel(
+    const eastl::vector<InspectorSkeletonModifierRowData>& rows) {
+  auto model = std::make_shared<slint::VectorModel<SkeletonModifierRow>>();
+  for (const InspectorSkeletonModifierRowData& row : rows) {
+    SkeletonModifierRow slint_row{};
+    slint_row.modifier_index = static_cast<int>(row.index);
+    slint_row.type_name = slint::SharedString(row.type_name.c_str());
+    slint_row.enabled = row.enabled;
+    slint_row.bone_name = slint::SharedString(row.bone_name.c_str());
+    slint_row.open_amount = row.open_amount;
+    slint_row.attach_driven = row.attach_driven;
+    slint_row.target_x = row.target.x;
+    slint_row.target_y = row.target.y;
+    slint_row.target_z = row.target.z;
+    slint_row.child_entity_name = slint::SharedString(row.child_entity_name.c_str());
+    model->push_back(slint_row);
+  }
+  return model;
+}
+
+std::shared_ptr<slint::VectorModel<slint::SharedString>> makeSkeletonModifierTypeChoiceModel(
+    const eastl::vector<eastl::string>& choices) {
+  return makeBehaviourTypeChoiceModel(choices);
+}
+
 std::shared_ptr<slint::VectorModel<AnimationClipRow>> makeAnimationClipRowModel(
     const eastl::vector<InspectorAnimationClipRowData>& rows) {
   auto model = std::make_shared<slint::VectorModel<AnimationClipRow>>();
@@ -2254,6 +2300,27 @@ void copyBehaviourRowsToSnapshot(const slint::Model<BehaviourRow>& rows,
         copy.props.push_back(eastl::move(prop_copy));
       }
     }
+    out_rows.push_back(eastl::move(copy));
+  }
+}
+
+void copySkeletonModifierRowsToSnapshot(
+    const slint::Model<SkeletonModifierRow>& rows,
+    eastl::vector<NativeFloatSkeletonModifierRow>& out_rows) {
+  out_rows.clear();
+  for (std::size_t i = 0; i < rows.row_count(); ++i) {
+    const SkeletonModifierRow row = rows.row_data(i).value();
+    NativeFloatSkeletonModifierRow copy{};
+    copy.modifier_index = row.modifier_index;
+    copy.type_name = row.type_name.data();
+    copy.enabled = row.enabled;
+    copy.bone_name = row.bone_name.data();
+    copy.open_amount = row.open_amount;
+    copy.attach_driven = row.attach_driven;
+    copy.target_x = row.target_x;
+    copy.target_y = row.target_y;
+    copy.target_z = row.target_z;
+    copy.child_entity_name = row.child_entity_name.data();
     out_rows.push_back(eastl::move(copy));
   }
 }
@@ -2408,6 +2475,7 @@ void SlintSystem::syncInspectorFromSelection() {
         selection->clearDirty();
       }
       syncInspectorBehavioursFromSelection();
+      syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       return;
@@ -2423,6 +2491,7 @@ void SlintSystem::syncInspectorFromSelection() {
       m_applying_inspector_sync = false;
       selection->clearDirty();
       syncInspectorBehavioursFromSelection();
+      syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       return;
@@ -2554,6 +2623,7 @@ void SlintSystem::syncInspectorFromSelection() {
     selection->clearDirty();
     m_applying_inspector_sync = false;
     syncInspectorBehavioursFromSelection();
+    syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorAnimationPlayerFromSelection();
   } catch (const std::exception& e) {
@@ -2866,6 +2936,45 @@ void SlintSystem::syncInspectorBehavioursFromSelection() {
     LOG_ERROR("[SlintSystem::syncInspectorBehavioursFromSelection] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::syncInspectorBehavioursFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorSkeletonModifiersFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    eastl::vector<eastl::string> type_choices;
+    buildSkeletonModifierTypeChoices(type_choices);
+
+    eastl::vector<InspectorSkeletonModifierRowData> rows;
+    if (selection != nullptr && scene != nullptr && selection->hasSelection()) {
+      const eastl::vector<EntityId> ids = selection->getSelectedIds();
+      if (ids.size() == 1) {
+        Object* object = scene->findBoundObject(ids[0]);
+        buildInspectorSkeletonModifierRows(object, scene, rows);
+      }
+    }
+
+    ui->set_inspector_skeleton_modifiers(makeSkeletonModifierRowModel(rows));
+    ui->set_inspector_skeleton_modifier_type_choices(
+        makeSkeletonModifierTypeChoiceModel(type_choices));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorSkeletonModifiersFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorSkeletonModifiersFromSelection] unknown exception");
   }
 }
 
@@ -3371,6 +3480,239 @@ void SlintSystem::applyInspectorBehaviourPropertyCommit(BehaviourId behaviour_id
     LOG_ERROR("[SlintSystem::applyInspectorBehaviourPropertyCommit] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::applyInspectorBehaviourPropertyCommit] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorAddSkeletonModifier(const eastl::string& type_name) {
+  if (type_name.empty()) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->ensureBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    object->ensureSkeleton();
+    const size_t index_at_add = object->getSkeletonModifierCount();
+    if (addSkeletonModifierByType(object, type_name) == nullptr) {
+      return;
+    }
+    pushDocumentCommand(makeAddSkeletonModifierCommand(
+        scene, entity_id, type_name, index_at_add, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorSkeletonModifiersFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddSkeletonModifier] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddSkeletonModifier] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorRemoveSkeletonModifier(size_t modifier_index) {
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr || modifier_index >= object->getSkeletonModifierCount()) {
+      return;
+    }
+    SceneSkeletonModifierDef snapshot;
+    if (!captureSkeletonModifierDef(*scene, *object, modifier_index, snapshot)) {
+      return;
+    }
+    if (!object->removeSkeletonModifierAt(modifier_index)) {
+      return;
+    }
+    pushDocumentCommand(makeRemoveSkeletonModifierCommand(
+        scene, entity_id, modifier_index, snapshot, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorSkeletonModifiersFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveSkeletonModifier] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveSkeletonModifier] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorReorderSkeletonModifiers(size_t from_index,
+                                                         size_t to_index) {
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr) {
+      return;
+    }
+    if (!object->moveSkeletonModifier(from_index, to_index)) {
+      return;
+    }
+    pushDocumentCommand(makeReorderSkeletonModifiersCommand(
+        scene, entity_id, from_index, to_index, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorSkeletonModifiersFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorReorderSkeletonModifiers] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorReorderSkeletonModifiers] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorSkeletonModifierEnabledCommit(size_t modifier_index,
+                                                              bool enabled) {
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr || modifier_index >= object->getSkeletonModifierCount()) {
+      return;
+    }
+    SkeletonModifier* modifier = object->getSkeletonModifierAt(modifier_index);
+    if (modifier == nullptr) {
+      return;
+    }
+    const bool before_enabled = modifier->isEnabled();
+    if (before_enabled == enabled) {
+      syncInspectorSkeletonModifiersFromSelection();
+      return;
+    }
+    modifier->setEnabled(enabled);
+    pushDocumentCommand(makeSetSkeletonModifierEnabledCommand(
+        scene, entity_id, modifier_index, before_enabled, enabled,
+        currentSelectionSnapshot(), currentSelectionSnapshot()));
+    syncInspectorSkeletonModifiersFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorSkeletonModifierEnabledCommit] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorSkeletonModifierEnabledCommit] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorSkeletonModifierFieldCommit(size_t modifier_index,
+                                                              const eastl::string& key,
+                                                              const eastl::string& text_value,
+                                                              float number_value,
+                                                              bool bool_value) {
+  if (key.empty()) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    Object* object = scene->findBoundObject(entity_id);
+    if (object == nullptr || modifier_index >= object->getSkeletonModifierCount()) {
+      return;
+    }
+    SceneSkeletonModifierDef before_def;
+    if (!captureSkeletonModifierDef(*scene, *object, modifier_index, before_def)) {
+      return;
+    }
+    SceneSkeletonModifierDef after_def = before_def;
+    if (key == "bone_name") {
+      after_def.bone_name = text_value;
+    } else if (key == "open_amount") {
+      after_def.open_amount = number_value;
+    } else if (key == "attach_driven") {
+      after_def.attach_driven = bool_value;
+    } else if (key == "child_entity_name") {
+      after_def.child_entity_name = text_value;
+    } else if (key == "target_x") {
+      after_def.target.x = number_value;
+    } else if (key == "target_y") {
+      after_def.target.y = number_value;
+    } else if (key == "target_z") {
+      after_def.target.z = number_value;
+    } else {
+      return;
+    }
+
+    applySkeletonModifierFieldsOnObject(scene, object, modifier_index, after_def);
+
+    const auto defs_equal = [](const SceneSkeletonModifierDef& a,
+                               const SceneSkeletonModifierDef& b) {
+      return a.type == b.type && a.enabled == b.enabled && a.bone_name == b.bone_name &&
+             a.open_amount == b.open_amount && a.attach_driven == b.attach_driven &&
+             a.target == b.target && a.child_entity_name == b.child_entity_name;
+    };
+    if (defs_equal(before_def, after_def)) {
+      syncInspectorSkeletonModifiersFromSelection();
+      return;
+    }
+
+    pushDocumentCommand(makeSetSkeletonModifierDefCommand(
+        scene, entity_id, modifier_index, before_def, after_def,
+        currentSelectionSnapshot(), currentSelectionSnapshot()));
+    syncInspectorSkeletonModifiersFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorSkeletonModifierFieldCommit] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorSkeletonModifierFieldCommit] unknown exception");
   }
 }
 
@@ -5353,6 +5695,19 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
           }
         }
         snapshot.inspector_behaviours_expanded = main.get_inspector_behaviours_expanded();
+        if (const auto skeleton_rows = main.get_inspector_skeleton_modifiers()) {
+          copySkeletonModifierRowsToSnapshot(*skeleton_rows,
+                                             snapshot.inspector_skeleton_modifiers);
+        }
+        if (const auto skeleton_choices = main.get_inspector_skeleton_modifier_type_choices()) {
+          snapshot.inspector_skeleton_modifier_type_choices.clear();
+          for (std::size_t ci = 0; ci < skeleton_choices->row_count(); ++ci) {
+            snapshot.inspector_skeleton_modifier_type_choices.push_back(
+                skeleton_choices->row_data(ci).value().data());
+          }
+        }
+        snapshot.inspector_skeleton_modifiers_expanded =
+            main.get_inspector_skeleton_modifiers_expanded();
         snapshot.inspector_has_camera = main.get_inspector_has_camera();
         snapshot.inspector_camera_fov = main.get_inspector_camera_fov();
         snapshot.inspector_camera_near = main.get_inspector_camera_near();
@@ -5642,6 +5997,26 @@ void SlintSystem::wireNativeFloatingCallbacks() {
         applyInspectorBehaviourPropertyCommit(static_cast<BehaviourId>(behaviour_id),
                                              eastl::string(key.data()), eastl::string{},
                                              eastl::string(text.data()), number, flag);
+      };
+  callbacks.on_inspector_add_skeleton_modifier = [this](const slint::SharedString& type) {
+    applyInspectorAddSkeletonModifier(eastl::string(type.data()));
+  };
+  callbacks.on_inspector_remove_skeleton_modifier = [this](int modifier_index) {
+    applyInspectorRemoveSkeletonModifier(static_cast<size_t>(modifier_index));
+  };
+  callbacks.on_inspector_reorder_skeleton_modifier = [this](int from_index, int to_index) {
+    applyInspectorReorderSkeletonModifiers(static_cast<size_t>(from_index),
+                                           static_cast<size_t>(to_index));
+  };
+  callbacks.on_inspector_set_skeleton_modifier_enabled = [this](int modifier_index, bool enabled) {
+    applyInspectorSkeletonModifierEnabledCommit(static_cast<size_t>(modifier_index), enabled);
+  };
+  callbacks.on_inspector_commit_skeleton_modifier_field =
+      [this](int modifier_index, const slint::SharedString& key,
+             const slint::SharedString& text, float number, bool flag) {
+        applyInspectorSkeletonModifierFieldCommit(static_cast<size_t>(modifier_index),
+                                                eastl::string(key.data()),
+                                                eastl::string(text.data()), number, flag);
       };
   callbacks.on_inspector_camera_edited = [this]() { applyInspectorCamera(); };
   callbacks.on_inspector_add_camera = [this]() { applyInspectorAddCamera(); };

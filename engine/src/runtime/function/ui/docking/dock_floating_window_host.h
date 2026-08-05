@@ -72,6 +72,19 @@ struct NativeFloatAnimationClipRow {
   eastl::string clip_guid;
 };
 
+struct NativeFloatSkeletonModifierRow {
+  int modifier_index{0};
+  eastl::string type_name;
+  bool enabled{true};
+  eastl::string bone_name;
+  float open_amount{0.0f};
+  bool attach_driven{false};
+  float target_x{0.0f};
+  float target_y{0.0f};
+  float target_z{1.0f};
+  eastl::string child_entity_name;
+};
+
 struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
@@ -108,6 +121,9 @@ struct NativeFloatPanelSnapshot {
   eastl::vector<NativeFloatBehaviourRow> inspector_behaviours;
   eastl::vector<eastl::string> inspector_behaviour_type_choices;
   bool inspector_behaviours_expanded{true};
+  eastl::vector<NativeFloatSkeletonModifierRow> inspector_skeleton_modifiers;
+  eastl::vector<eastl::string> inspector_skeleton_modifier_type_choices;
+  bool inspector_skeleton_modifiers_expanded{true};
   bool inspector_has_camera{false};
   float inspector_camera_fov{45.0f};
   float inspector_camera_near{0.1f};
@@ -187,6 +203,12 @@ class DockFloatingWindowHost final {
     std::function<void(int, int)> on_inspector_reorder_behaviour;
     std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
         on_inspector_commit_behaviour_prop;
+    std::function<void(const slint::SharedString&)> on_inspector_add_skeleton_modifier;
+    std::function<void(int)> on_inspector_remove_skeleton_modifier;
+    std::function<void(int, int)> on_inspector_reorder_skeleton_modifier;
+    std::function<void(int, bool)> on_inspector_set_skeleton_modifier_enabled;
+    std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
+        on_inspector_commit_skeleton_modifier_field;
     std::function<void()> on_inspector_camera_edited;
     std::function<void()> on_inspector_add_camera;
     std::function<void(int, const slint::SharedString&, const slint::SharedString&)>

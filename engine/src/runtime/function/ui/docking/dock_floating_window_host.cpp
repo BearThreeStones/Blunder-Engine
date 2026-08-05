@@ -236,6 +236,32 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         ui.set_inspector_behaviour_type_choices(choices_model);
         ui.set_inspector_behaviours_expanded(snapshot.inspector_behaviours_expanded);
       }
+      {
+        auto skeleton_model = std::make_shared<slint::VectorModel<SkeletonModifierRow>>();
+        for (const NativeFloatSkeletonModifierRow& row : snapshot.inspector_skeleton_modifiers) {
+          SkeletonModifierRow slint_row{};
+          slint_row.modifier_index = row.modifier_index;
+          slint_row.type_name = toSharedString(row.type_name);
+          slint_row.enabled = row.enabled;
+          slint_row.bone_name = toSharedString(row.bone_name);
+          slint_row.open_amount = row.open_amount;
+          slint_row.attach_driven = row.attach_driven;
+          slint_row.target_x = row.target_x;
+          slint_row.target_y = row.target_y;
+          slint_row.target_z = row.target_z;
+          slint_row.child_entity_name = toSharedString(row.child_entity_name);
+          skeleton_model->push_back(slint_row);
+        }
+        ui.set_inspector_skeleton_modifiers(skeleton_model);
+        auto skeleton_choices_model =
+            std::make_shared<slint::VectorModel<slint::SharedString>>();
+        for (const eastl::string& choice : snapshot.inspector_skeleton_modifier_type_choices) {
+          skeleton_choices_model->push_back(toSharedString(choice));
+        }
+        ui.set_inspector_skeleton_modifier_type_choices(skeleton_choices_model);
+        ui.set_inspector_skeleton_modifiers_expanded(
+            snapshot.inspector_skeleton_modifiers_expanded);
+      }
       ui.set_inspector_has_camera(snapshot.inspector_has_camera);
       ui.set_inspector_camera_fov(snapshot.inspector_camera_fov);
       ui.set_inspector_camera_near(snapshot.inspector_camera_near);
@@ -523,6 +549,34 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
           if (m_callbacks.on_inspector_commit_behaviour_prop) {
             m_callbacks.on_inspector_commit_behaviour_prop(behaviour_id, key, text,
                                                              number, flag);
+          }
+        });
+    component->on_inspector_add_skeleton_modifier([this](const slint::SharedString& type) {
+      if (m_callbacks.on_inspector_add_skeleton_modifier) {
+        m_callbacks.on_inspector_add_skeleton_modifier(type);
+      }
+    });
+    component->on_inspector_remove_skeleton_modifier([this](int modifier_index) {
+      if (m_callbacks.on_inspector_remove_skeleton_modifier) {
+        m_callbacks.on_inspector_remove_skeleton_modifier(modifier_index);
+      }
+    });
+    component->on_inspector_reorder_skeleton_modifier([this](int from_index, int to_index) {
+      if (m_callbacks.on_inspector_reorder_skeleton_modifier) {
+        m_callbacks.on_inspector_reorder_skeleton_modifier(from_index, to_index);
+      }
+    });
+    component->on_inspector_set_skeleton_modifier_enabled([this](int modifier_index, bool enabled) {
+      if (m_callbacks.on_inspector_set_skeleton_modifier_enabled) {
+        m_callbacks.on_inspector_set_skeleton_modifier_enabled(modifier_index, enabled);
+      }
+    });
+    component->on_inspector_commit_skeleton_modifier_field(
+        [this](int modifier_index, const slint::SharedString& key,
+               const slint::SharedString& text, float number, bool flag) {
+          if (m_callbacks.on_inspector_commit_skeleton_modifier_field) {
+            m_callbacks.on_inspector_commit_skeleton_modifier_field(
+                modifier_index, key, text, number, flag);
           }
         });
     component->on_inspector_camera_edited([this]() {

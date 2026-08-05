@@ -23,6 +23,19 @@ export struct BehaviourRow {
     props: [BehaviourPropRow],
 }
 
+export struct SkeletonModifierRow {
+    modifier-index: int,
+    type-name: string,
+    enabled: bool,
+    bone-name: string,
+    open-amount: float,
+    attach-driven: bool,
+    target-x: float,
+    target-y: float,
+    target-z: float,
+    child-entity-name: string,
+}
+
 export struct AnimationClipRow {
     entry-index: int,
     clip-name: string,
@@ -149,6 +162,15 @@ export component InspectorPanel inherits Rectangle {
     callback remove-behaviour(int);
     callback reorder-behaviour(int, int);
     callback commit-behaviour-prop(int, string, string, float, bool);
+
+    in property <[SkeletonModifierRow]> skeleton-modifiers: [];
+    in property <[string]> skeleton-modifier-type-choices: [];
+    in-out property <bool> skeleton-modifiers-expanded: true;
+    callback add-skeleton-modifier(string);
+    callback remove-skeleton-modifier(int);
+    callback reorder-skeleton-modifier(int, int);
+    callback set-skeleton-modifier-enabled(int, bool);
+    callback commit-skeleton-modifier-field(int, string, string, float, bool);
 
     in property <bool> has-camera: false;
     in-out property <float> camera-fov: 45.0;
@@ -915,6 +937,374 @@ export component InspectorPanel inherits Rectangle {
                                                     clicked => {
                                                         root.add-behaviour(choice);
                                                         add-behaviour-popup.close();
+                                                    }
+                                                    Text {
+                                                        x: 8px;
+                                                        width: parent.width - 16px;
+                                                        height: parent.height;
+                                                        vertical-alignment: center;
+                                                        text: choice;
+                                                        color: #d0d0d0;
+                                                        font-size: 11px;
+                                                        overflow: elide;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                // --- Skeleton Modifiers header ---
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.skeleton-modifiers-expanded = !root.skeleton-modifiers-expanded; }
+                    HorizontalBox {
+                        spacing: 6px;
+                        if root.skeleton-modifiers-expanded: EditorIconTreeArrowDown {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        if !root.skeleton-modifiers-expanded: EditorIconTreeArrowRight {
+                            icon-size: 12px;
+                            icon-color: #f0f0f0;
+                        }
+                        Text {
+                            text: "Skeleton Modifiers";
+                            color: #f0f0f0;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.skeleton-modifiers-expanded: VerticalBox {
+                    spacing: 6px;
+
+                    if !root.has-selection: Text {
+                        text: "Select an entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+
+                    for modifier[i] in root.skeleton-modifiers: Rectangle {
+                        background: #262626;
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: #3a3a3a;
+
+                        VerticalBox {
+                            width: 100%;
+                            padding: 6px;
+                            spacing: 4px;
+
+                            HorizontalBox {
+                                spacing: 4px;
+                                Text {
+                                    text: modifier.type-name;
+                                    color: #d8d8d8;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                if i > 0: skel-up-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.reorder-skeleton-modifier(i, i - 1); }
+                                    Rectangle {
+                                        width: 22px;
+                                        height: 22px;
+                                        background: skel-up-touch.has-hover ? #3a3a3a : #2a2a2a;
+                                        border-radius: 3px;
+                                        Text {
+                                            text: "▲";
+                                            color: #c0c0c0;
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                                if i < root.skeleton-modifiers.length - 1: skel-down-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.reorder-skeleton-modifier(i, i + 1); }
+                                    Rectangle {
+                                        width: 22px;
+                                        height: 22px;
+                                        background: skel-down-touch.has-hover ? #3a3a3a : #2a2a2a;
+                                        border-radius: 3px;
+                                        Text {
+                                            text: "▼";
+                                            color: #c0c0c0;
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                                skel-remove-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.remove-skeleton-modifier(modifier.modifier-index); }
+                                    Rectangle {
+                                        width: 22px;
+                                        height: 22px;
+                                        background: skel-remove-touch.has-hover ? #5a2a2a : #3a2a2a;
+                                        border-radius: 3px;
+                                        Text {
+                                            text: "×";
+                                            color: #ffaaaa;
+                                            font-size: 14px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+
+                            CheckBox {
+                                text: "Enabled";
+                                checked: modifier.enabled;
+                                toggled => {
+                                    root.set-skeleton-modifier-enabled(
+                                        modifier.modifier-index, self.checked);
+                                }
+                            }
+
+                            HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: "Bone";
+                                    color: #a8a8a8;
+                                    font-size: 11px;
+                                    width: 96px;
+                                    vertical-alignment: center;
+                                }
+                                bone-input := LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: modifier.bone-name;
+                                    accepted => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "bone_name", self.text, 0.0, false);
+                                    }
+                                    changed has-focus => {
+                                        if (!self.has-focus) {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "bone_name", self.text, 0.0, false);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if modifier.type-name == "PaperMouth": VerticalBox {
+                                spacing: 4px;
+                                HorizontalBox {
+                                    spacing: 6px;
+                                    Text {
+                                        text: "Open Amount";
+                                        color: #a8a8a8;
+                                        font-size: 11px;
+                                        width: 96px;
+                                        vertical-alignment: center;
+                                    }
+                                    open-input := LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: "" + modifier.open-amount;
+                                        accepted => {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "open_amount", self.text,
+                                                self.text.to-float(), false);
+                                        }
+                                        changed has-focus => {
+                                            if (!self.has-focus) {
+                                                root.commit-skeleton-modifier-field(
+                                                    modifier.modifier-index, "open_amount", self.text,
+                                                    self.text.to-float(), false);
+                                            }
+                                        }
+                                    }
+                                }
+                                CheckBox {
+                                    text: "Attach Driven";
+                                    checked: modifier.attach-driven;
+                                    toggled => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "attach_driven", "", 0.0, self.checked);
+                                    }
+                                }
+                            }
+
+                            if modifier.type-name == "SkeletonAttachModifier": HorizontalBox {
+                                spacing: 6px;
+                                Text {
+                                    text: "Child Entity";
+                                    color: #a8a8a8;
+                                    font-size: 11px;
+                                    width: 96px;
+                                    vertical-alignment: center;
+                                }
+                                child-input := LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: modifier.child-entity-name;
+                                    accepted => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "child_entity_name", self.text, 0.0, false);
+                                    }
+                                    changed has-focus => {
+                                        if (!self.has-focus) {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "child_entity_name", self.text, 0.0, false);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if modifier.type-name == "SkeletonLookAtModifier": VerticalBox {
+                                spacing: 4px;
+                                HorizontalBox {
+                                    spacing: 6px;
+                                    Text {
+                                        text: "Target X";
+                                        color: #a8a8a8;
+                                        font-size: 11px;
+                                        width: 96px;
+                                        vertical-alignment: center;
+                                    }
+                                    target-x-input := LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: "" + modifier.target-x;
+                                        accepted => {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "target_x", self.text,
+                                                self.text.to-float(), false);
+                                        }
+                                        changed has-focus => {
+                                            if (!self.has-focus) {
+                                                root.commit-skeleton-modifier-field(
+                                                    modifier.modifier-index, "target_x", self.text,
+                                                    self.text.to-float(), false);
+                                            }
+                                        }
+                                    }
+                                }
+                                HorizontalBox {
+                                    spacing: 6px;
+                                    Text {
+                                        text: "Target Y";
+                                        color: #a8a8a8;
+                                        font-size: 11px;
+                                        width: 96px;
+                                        vertical-alignment: center;
+                                    }
+                                    target-y-input := LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: "" + modifier.target-y;
+                                        accepted => {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "target_y", self.text,
+                                                self.text.to-float(), false);
+                                        }
+                                        changed has-focus => {
+                                            if (!self.has-focus) {
+                                                root.commit-skeleton-modifier-field(
+                                                    modifier.modifier-index, "target_y", self.text,
+                                                    self.text.to-float(), false);
+                                            }
+                                        }
+                                    }
+                                }
+                                HorizontalBox {
+                                    spacing: 6px;
+                                    Text {
+                                        text: "Target Z";
+                                        color: #a8a8a8;
+                                        font-size: 11px;
+                                        width: 96px;
+                                        vertical-alignment: center;
+                                    }
+                                    target-z-input := LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: "" + modifier.target-z;
+                                        accepted => {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "target_z", self.text,
+                                                self.text.to-float(), false);
+                                        }
+                                        changed has-focus => {
+                                            if (!self.has-focus) {
+                                                root.commit-skeleton-modifier-field(
+                                                    modifier.modifier-index, "target_z", self.text,
+                                                    self.text.to-float(), false);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        Rectangle {
+                            background: #2a2a2a;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: #4a4a4a;
+                            height: 24px;
+                            horizontal-stretch: 1;
+
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                width: 100%;
+                                height: 100%;
+                                clicked => {
+                                    if root.skeleton-modifier-type-choices.length > 0 {
+                                        add-skeleton-modifier-popup.show();
+                                    }
+                                }
+
+                                Text {
+                                    text: root.skeleton-modifier-type-choices.length > 0
+                                        ? "Add Skeleton Modifier…"
+                                        : "Add Skeleton Modifier";
+                                    color: root.skeleton-modifier-type-choices.length > 0 ? #bde7ff : #808080;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            add-skeleton-modifier-popup := PopupWindow {
+                                x: 0;
+                                y: parent.height + 2px;
+                                width: parent.width;
+                                close-policy: close-on-click-outside;
+
+                                Rectangle {
+                                    background: #252525;
+                                    border-color: #444444;
+                                    border-width: 1px;
+                                    border-radius: 3px;
+                                    max-height: 200px;
+
+                                    Flickable {
+                                        viewport-height: 200px;
+                                        VerticalLayout {
+                                            padding: 2px;
+                                            spacing: 0px;
+                                            for choice in root.skeleton-modifier-type-choices: Rectangle {
+                                                height: 22px;
+                                                background: skel-choice-touch.has-hover ? #3a3a3a : transparent;
+                                                border-radius: 2px;
+                                                skel-choice-touch := TouchArea {
+                                                    mouse-cursor: pointer;
+                                                    clicked => {
+                                                        root.add-skeleton-modifier(choice);
+                                                        add-skeleton-modifier-popup.close();
                                                     }
                                                     Text {
                                                         x: 8px;
