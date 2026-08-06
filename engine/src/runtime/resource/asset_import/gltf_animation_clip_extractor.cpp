@@ -377,6 +377,7 @@ ImportResult registerSingleAnimationClip(
     ContentBrowserSystem* content_browser, const eastl::string& mesh_stem,
     const eastl::string& clip_stem, const AnimationClipData& clip_data,
     const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
+    const eastl::string& assets_folder_virtual,
     const ExistingAnimationClipBinding* existing_binding = nullptr) {
   ImportResult result{};
   if (file_system == nullptr || asset_registry == nullptr ||
@@ -417,10 +418,17 @@ ImportResult registerSingleAnimationClip(
     return result;
   }
 
-  constexpr const char* kAssetsAnimationsFolder = "assets/Animations";
+  eastl::string folder = assets_folder_virtual.empty() ? eastl::string("assets/Animations")
+                                                       : assets_folder_virtual;
+  while (!folder.empty() && (folder.back() == '/' || folder.back() == '\\')) {
+    folder.pop_back();
+  }
+  if (folder.empty()) {
+    folder = "assets/Animations";
+  }
+
   const eastl::string descriptor_name =
-      make_unique_descriptor_name(kAssetsAnimationsFolder, clip_stem,
-                                  ".animation.yaml");
+      make_unique_descriptor_name(folder, clip_stem, ".animation.yaml");
   if (descriptor_name.empty()) {
     LOG_WARN("[AssetImport] descriptor already exists for clip {}",
              clip_stem.c_str());
@@ -433,7 +441,7 @@ ImportResult registerSingleAnimationClip(
   normalizeVirtualPathSlashes(descriptor.source);
 
   const eastl::string descriptor_virtual =
-      joinVirtualPath(kAssetsAnimationsFolder, descriptor_name);
+      joinVirtualPath(folder, descriptor_name);
   eastl::string relative = descriptor_virtual;
   relative.erase(0, 7);
   const fs::path descriptor_absolute =
@@ -485,7 +493,8 @@ eastl::vector<ImportResult> processAnimationClipsFromGltf(
     const fs::path& gltf_absolute, const eastl::string& mesh_stem,
     const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
     const ExistingAnimationClipMap* existing_clips,
-    const eastl::string& preferred_clip_stem) {
+    const eastl::string& preferred_clip_stem,
+    const eastl::string& assets_folder_virtual) {
   eastl::vector<ImportResult> results;
   if (file_system == nullptr || asset_registry == nullptr ||
       !make_unique_descriptor_name) {
@@ -537,7 +546,8 @@ eastl::vector<ImportResult> processAnimationClipsFromGltf(
 
     ImportResult imported = registerSingleAnimationClip(
         file_system, asset_registry, content_browser, mesh_stem, clip_stem,
-        clip_data, make_unique_descriptor_name, existing_binding);
+        clip_data, make_unique_descriptor_name, assets_folder_virtual,
+        existing_binding);
     if (imported.success) {
       results.push_back(imported);
     }
@@ -658,10 +668,12 @@ eastl::vector<ImportResult> extractAndRegisterAnimationClipsFromGltf(
     ContentBrowserSystem* content_browser,
     const fs::path& gltf_absolute, const eastl::string& mesh_stem,
     const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
-    const eastl::string& preferred_clip_stem) {
+    const eastl::string& preferred_clip_stem,
+    const eastl::string& assets_folder_virtual) {
   return processAnimationClipsFromGltf(
       file_system, asset_registry, content_browser, gltf_absolute, mesh_stem,
-      make_unique_descriptor_name, nullptr, preferred_clip_stem);
+      make_unique_descriptor_name, nullptr, preferred_clip_stem,
+      assets_folder_virtual);
 }
 
 eastl::vector<ImportResult> refreshAnimationClipsFromGltf(
@@ -670,10 +682,12 @@ eastl::vector<ImportResult> refreshAnimationClipsFromGltf(
     const fs::path& gltf_absolute, const eastl::string& mesh_stem,
     const ExistingAnimationClipMap& existing_clips,
     const MakeUniqueDescriptorNameFn& make_unique_descriptor_name,
-    const eastl::string& preferred_clip_stem) {
+    const eastl::string& preferred_clip_stem,
+    const eastl::string& assets_folder_virtual) {
   return processAnimationClipsFromGltf(
       file_system, asset_registry, content_browser, gltf_absolute, mesh_stem,
-      make_unique_descriptor_name, &existing_clips, preferred_clip_stem);
+      make_unique_descriptor_name, &existing_clips, preferred_clip_stem,
+      assets_folder_virtual);
 }
 
 }  // namespace Blunder

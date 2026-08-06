@@ -43,6 +43,7 @@ struct NativeFloatBrowserGridRow {
   eastl::string name;
   slint::Image thumb;
   bool is_dir{false};
+  bool selected{false};
 };
 
 struct NativeFloatBrowserPathSegment {
@@ -217,6 +218,8 @@ class DockFloatingWindowHost final {
     std::function<void(const slint::SharedString&)> on_browser_folder_toggle;
     std::function<void()> on_browser_refresh_requested;
     std::function<void()> on_browser_import_requested;
+    std::function<void()> on_browser_delete_requested;
+    std::function<void(const slint::SharedString&, bool, bool)> on_browser_grid_select;
     std::function<void(const slint::SharedString&, float, float)> on_browser_item_press;
     std::function<void(const slint::SharedString&, float, float)> on_browser_item_move;
     std::function<void(const slint::SharedString&, float, float)> on_browser_item_release;

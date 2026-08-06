@@ -21,6 +21,7 @@ export struct BrowserGridRow {
     name: string,
     thumb: image,
     is-dir: bool,
+    selected: bool,
 }
 
 export struct BrowserPathSegment {
@@ -39,6 +40,7 @@ export component ContentBrowser {
     in property <bool> viewport-drop-active: false;
     in property <string> status-text: "0 items";
     in property <string> selected-folder-path: "";
+    in-out property <string> selected-grid-path: "";
 
     // --- Local UI state ---
     in-out property <length> thumb-size: 80px;
@@ -50,6 +52,9 @@ export component ContentBrowser {
     callback folder-toggle(string);
     callback refresh-requested();
     callback import-requested();
+    callback delete-requested();
+    /// Grid click selection: ctrl = toggle, shift = range from anchor.
+    callback grid-select(string, bool, bool);
     callback item-press(string, float, float);
     callback item-move(string, float, float);
     callback item-release(string, float, float);
@@ -191,6 +196,35 @@ export component ContentBrowser {
                                 if (event.button == PointerEventButton.left
                                     && event.kind == PointerEventKind.down) {
                                     root.import-requested();
+                                }
+                            }
+                        }
+                    }
+
+                    // Delete selected Asset
+                    delete-btn := Rectangle {
+                        width: 68px;
+                        height: 24px;
+                        background: delete-touch.has-hover ? #553333 : #353535;
+                        border-radius: 3px;
+                        border-color: #4a4a4a;
+                        border-width: 1px;
+                        opacity: root.selected-grid-path == "" ? 0.45 : 1.0;
+
+                        Text {
+                            text: "Delete";
+                            color: #d0d0d0;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        delete-touch := TouchArea {
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down
+                                    && root.selected-grid-path != "") {
+                                    root.delete-requested();
                                 }
                             }
                         }
@@ -409,7 +443,9 @@ export component ContentBrowser {
                             height: root.thumb-size + 24px;
                             border-radius: 4px;
                             background:
-                                tile.path == root.drag-source-path
+                                tile.selected || tile.path == root.selected-grid-path
+                                    ? #3a4a5a
+                                : tile.path == root.drag-source-path
                                     ? #3a3a5a
                                 : grid-tile-touch.has-hover
                                     ? #404040
@@ -470,6 +506,10 @@ export component ContentBrowser {
                                 pointer-event(event) => {
                                     if (event.button == PointerEventButton.left
                                         && event.kind == PointerEventKind.down) {
+                                        root.grid-select(
+                                            tile.path,
+                                            event.modifiers.control,
+                                            event.modifiers.shift);
                                         root.item-press(tile.path,
                                             self.mouse-x / 1px, self.mouse-y / 1px);
                                     }

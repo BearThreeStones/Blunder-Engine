@@ -116,6 +116,7 @@ export component FilesystemHistoryHost {
     in property <bool> viewport-drop-active: false;
     in property <string> status-text: "0 items";
     in property <string> selected-folder-path: "";
+    in-out property <string> selected-grid-path: "";
     in-out property <length> thumb-size: 80px;
     in-out property <length> tree-pane-width: 200px;
     in property <bool> layout-drag-active: false;
@@ -129,6 +130,8 @@ export component FilesystemHistoryHost {
     callback folder-toggle(string);
     callback refresh-requested();
     callback import-requested();
+    callback delete-requested();
+    callback grid-select(string, bool, bool);
     callback item-press(string, float, float);
     callback item-move(string, float, float);
     callback item-release(string, float, float);
@@ -234,12 +237,15 @@ export component FilesystemHistoryHost {
                 viewport-drop-active: root.viewport-drop-active;
                 status-text: root.status-text;
                 selected-folder-path: root.selected-folder-path;
+                selected-grid-path <=> root.selected-grid-path;
                 tree-pane-width <=> root.tree-pane-width;
                 thumb-size <=> root.thumb-size;
                 folder-selected(path) => { root.folder-selected(path); }
                 folder-toggle(path) => { root.folder-toggle(path); }
                 refresh-requested => { root.refresh-requested(); }
                 import-requested => { root.import-requested(); }
+                delete-requested => { root.delete-requested(); }
+                grid-select(path, ctrl, shift) => { root.grid-select(path, ctrl, shift); }
                 item-press(path, x, y) => { root.item-press(path, x, y); }
                 item-move(path, x, y) => { root.item-move(path, x, y); }
                 item-release(path, x, y) => { root.item-release(path, x, y); }

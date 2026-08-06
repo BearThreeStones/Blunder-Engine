@@ -1143,6 +1143,11 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_browser_refresh_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); }));
     component->on_browser_import_requested([this]() { queueOpenImportFileDialog(); });
+    component->on_browser_delete_requested([this]() { deleteSelectedBrowserAssets(); });
+    component->on_browser_grid_select(
+        [this](const slint::SharedString& path, bool ctrl, bool shift) {
+          applyBrowserGridSelection(eastl::string(path.data()), ctrl, shift);
+        });
     component->on_import_mesh_confirmed([this]() { completePendingMeshImport(); });
     component->on_import_mesh_cancelled([this]() {
       m_pending_mesh_import_paths.clear();
@@ -1170,6 +1175,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_browser_folder_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
           m_tree_folder_handled_by_slint = true;
+          clearBrowserGridSelection();
           host.enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
                                        eastl::string(path.data())));
         }));
@@ -4001,13 +4007,178 @@ void SlintSystem::queueFileDialogImports(
 void SlintSystem::finalizeAssetImport(
     const eastl::vector<ImportResult>& results) {
   if (results.empty()) {
+    LOG_WARN("[SlintSystem] Import finished with 0 asset descriptors "
+             "(nothing registered — check Import Mesh animations checkbox / logs)");
     return;
   }
+
+  for (const ImportResult& result : results) {
+    if (!result.success || result.descriptor_virtual_path.empty()) {
+      continue;
+    }
+    LOG_INFO("[SlintSystem] imported asset: {}",
+             result.descriptor_virtual_path.c_str());
+  }
+
   if (const auto services = lockServices(); services && services->asset_compiler) {
     services->asset_compiler->cookIfStale();
   }
   syncContentBrowser();
-  LOG_INFO("[SlintSystem] imported {} asset descriptor(s)", results.size());
+  LOG_INFO("[SlintSystem] imported {} asset descriptor(s) into the selected folder",
+           results.size());
+}
+
+void SlintSystem::clearBrowserGridSelection() {
+  m_browser_selected_grid_paths.clear();
+  m_browser_selection_anchor_path.clear();
+  if (m_window_component) {
+    m_window_component->operator->()->set_browser_selected_grid_path(
+        slint::SharedString());
+  }
+}
+
+bool SlintSystem::isBrowserGridPathSelected(const eastl::string& path) const {
+  for (const eastl::string& selected : m_browser_selected_grid_paths) {
+    if (selected == path) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void SlintSystem::applyBrowserGridSelection(const eastl::string& path, bool ctrl,
+                                            bool shift) {
+  if (path.empty()) {
+    return;
+  }
+
+  if (shift && !m_browser_selection_anchor_path.empty()) {
+    const auto services = lockServices();
+    if (services && services->content_browser) {
+      const eastl::vector<ContentBrowserGridItem>& items =
+          services->content_browser->gridItems();
+      int anchor_index = -1;
+      int click_index = -1;
+      for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+        if (items[static_cast<size_t>(i)].virtual_path ==
+            m_browser_selection_anchor_path) {
+          anchor_index = i;
+        }
+        if (items[static_cast<size_t>(i)].virtual_path == path) {
+          click_index = i;
+        }
+      }
+      if (anchor_index >= 0 && click_index >= 0) {
+        const int begin = anchor_index < click_index ? anchor_index : click_index;
+        const int end = anchor_index < click_index ? click_index : anchor_index;
+        if (!ctrl) {
+          m_browser_selected_grid_paths.clear();
+        }
+        for (int i = begin; i <= end; ++i) {
+          const eastl::string& candidate =
+              items[static_cast<size_t>(i)].virtual_path;
+          if (!isBrowserGridPathSelected(candidate)) {
+            m_browser_selected_grid_paths.push_back(candidate);
+          }
+        }
+      } else {
+        m_browser_selected_grid_paths.clear();
+        m_browser_selected_grid_paths.push_back(path);
+        m_browser_selection_anchor_path = path;
+      }
+    } else {
+      m_browser_selected_grid_paths.clear();
+      m_browser_selected_grid_paths.push_back(path);
+      m_browser_selection_anchor_path = path;
+    }
+  } else if (ctrl) {
+    if (isBrowserGridPathSelected(path)) {
+      eastl::vector<eastl::string> remaining;
+      remaining.reserve(m_browser_selected_grid_paths.size());
+      for (const eastl::string& selected : m_browser_selected_grid_paths) {
+        if (selected != path) {
+          remaining.push_back(selected);
+        }
+      }
+      m_browser_selected_grid_paths = eastl::move(remaining);
+    } else {
+      m_browser_selected_grid_paths.push_back(path);
+    }
+    m_browser_selection_anchor_path = path;
+  } else {
+    m_browser_selected_grid_paths.clear();
+    m_browser_selected_grid_paths.push_back(path);
+    m_browser_selection_anchor_path = path;
+  }
+
+  eastl::string primary;
+  if (isBrowserGridPathSelected(path)) {
+    primary = path;
+  } else if (!m_browser_selected_grid_paths.empty()) {
+    primary = m_browser_selected_grid_paths.back();
+  }
+  if (m_window_component) {
+    m_window_component->operator->()->set_browser_selected_grid_path(
+        slint::SharedString(primary.c_str()));
+  }
+  syncContentBrowser();
+}
+
+void SlintSystem::deleteSelectedBrowserAssets() {
+  if (m_browser_selected_grid_paths.empty()) {
+    LOG_WARN("[ContentBrowser] Delete ignored: no asset selected");
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->asset_import) {
+    LOG_WARN("[ContentBrowser] Delete ignored: AssetImportService unavailable");
+    return;
+  }
+
+  const eastl::vector<eastl::string> to_delete = m_browser_selected_grid_paths;
+  LOG_INFO("[ContentBrowser] Delete requested for {} item(s)",
+           static_cast<unsigned>(to_delete.size()));
+
+  uint32_t deleted = 0;
+  uint32_t failed = 0;
+  uint32_t skipped_folders = 0;
+  for (const eastl::string& path_str : to_delete) {
+    if (path_str.empty()) {
+      continue;
+    }
+    if (!path_str.empty() && path_str.back() == '/') {
+      ++skipped_folders;
+      LOG_INFO("[ContentBrowser] Delete skipped folder {}", path_str.c_str());
+      continue;
+    }
+    if (services->content_browser) {
+      if (const ContentEntry* entry =
+              services->content_browser->findEntry(path_str);
+          entry != nullptr && entry->is_directory) {
+        ++skipped_folders;
+        LOG_INFO("[ContentBrowser] Delete skipped folder {}", path_str.c_str());
+        continue;
+      }
+    }
+
+    eastl::string error;
+    if (!services->asset_import->deleteAsset(path_str, &error)) {
+      ++failed;
+      LOG_WARN("[ContentBrowser] Delete failed: {} ({})", error.c_str(),
+               path_str.c_str());
+      continue;
+    }
+    ++deleted;
+    LOG_INFO("[ContentBrowser] Deleted {}", path_str.c_str());
+  }
+
+  clearBrowserGridSelection();
+  syncContentBrowser();
+  LOG_INFO(
+      "[ContentBrowser] Delete finished: deleted={}, failed={}, "
+      "skipped_folders={}",
+      deleted, failed, skipped_folders);
 }
 
 void SlintSystem::showImportMeshDialogForPendingPaths() {
@@ -4263,6 +4434,7 @@ void SlintSystem::syncContentBrowser() {
       slint_row.name = slint::SharedString(item.display_name.c_str());
       slint_row.thumb = loadThumbnailImage(item.thumbnail_cache_path);
       slint_row.is_dir = item.is_directory;
+      slint_row.selected = isBrowserGridPathSelected(item.virtual_path);
       grid_model->push_back(slint_row);
     }
     m_window_component->operator->()->set_browser_grid_rows(grid_model);
@@ -5796,6 +5968,7 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.name = row.name.data();
             copy.thumb = row.thumb;
             copy.is_dir = row.is_dir;
+            copy.selected = row.selected;
             snapshot.browser_grid_rows.push_back(eastl::move(copy));
           }
         }
@@ -6045,6 +6218,7 @@ void SlintSystem::wireNativeFloatingCallbacks() {
   callbacks.on_browser_folder_selected = UiCallbackBinder::bind(
       m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
         m_tree_folder_handled_by_slint = true;
+        clearBrowserGridSelection();
         host.enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
                                      eastl::string(path.data())));
       });
@@ -6057,6 +6231,11 @@ void SlintSystem::wireNativeFloatingCallbacks() {
   callbacks.on_browser_refresh_requested = UiCallbackBinder::bind(
       m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); });
   callbacks.on_browser_import_requested = [this]() { queueOpenImportFileDialog(); };
+  callbacks.on_browser_delete_requested = [this]() { deleteSelectedBrowserAssets(); };
+  callbacks.on_browser_grid_select =
+      [this](const slint::SharedString& path, bool ctrl, bool shift) {
+        applyBrowserGridSelection(eastl::string(path.data()), ctrl, shift);
+      };
   callbacks.on_browser_item_press = [this](const slint::SharedString& path, float x, float y) {
     const auto services = lockServices();
     if (!services || !services->content_browser) {

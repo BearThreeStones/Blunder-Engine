@@ -72,6 +72,7 @@ export component MainEditorWindow inherits Window {
     in property <bool> browser-viewport-drop-active: false;
     in property <string> browser-status-text: "0 items";
     in property <string> browser-selected-folder-path: "";
+    in-out property <string> browser-selected-grid-path: "";
 
     in-out property <length> browser-origin-x: 0px;
     in-out property <length> browser-origin-y: 0px;
@@ -91,6 +92,8 @@ export component MainEditorWindow inherits Window {
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
     callback browser-import-requested();
+    callback browser-delete-requested();
+    callback browser-grid-select(string, bool, bool);
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
     callback browser-item-release(string, float, float);
@@ -518,6 +521,7 @@ export component MainEditorWindow inherits Window {
                         viewport-drop-active: root.browser-viewport-drop-active;
                         status-text: root.browser-status-text;
                         selected-folder-path: root.browser-selected-folder-path;
+                        selected-grid-path <=> root.browser-selected-grid-path;
                         tree-origin-y <=> root.browser-tree-origin-y;
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
@@ -530,6 +534,8 @@ export component MainEditorWindow inherits Window {
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
                         import-requested => { root.browser-import-requested(); }
+                        delete-requested => { root.browser-delete-requested(); }
+                        grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                         item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                         item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                         item-release(path, x, y) => { root.browser-item-release(path, x, y); }
@@ -826,6 +832,7 @@ export component MainEditorWindow inherits Window {
                         viewport-drop-active: root.browser-viewport-drop-active;
                         status-text: root.browser-status-text;
                         selected-folder-path: root.browser-selected-folder-path;
+                        selected-grid-path <=> root.browser-selected-grid-path;
                         tree-origin-y <=> root.browser-tree-origin-y;
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
@@ -838,6 +845,8 @@ export component MainEditorWindow inherits Window {
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
                         import-requested => { root.browser-import-requested(); }
+                        delete-requested => { root.browser-delete-requested(); }
+                        grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                         item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                         item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                         item-release(path, x, y) => { root.browser-item-release(path, x, y); }
@@ -967,7 +976,7 @@ export component MainEditorWindow inherits Window {
                 Text {
                     x: 10px;
                     vertical-alignment: center;
-                    text: "Hierarchy — Content Browser — Inspector";
+                    text: "Hierarchy ? Content Browser ? Inspector";
                     color: #808080;
                     font-size: 12px;
                 }
