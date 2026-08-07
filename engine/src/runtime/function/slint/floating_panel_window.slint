@@ -12,6 +12,7 @@ export component FloatingPanelWindow inherits Window {
 
     in property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
     in property <int> hierarchy-selected-entity-id: 0;
+    in property <string> hierarchy-scene-display-name: "(No Scene)";
 
     in property <bool> inspector-has-selection: false;
     in property <string> inspector-entity-name: "";
@@ -202,6 +203,7 @@ export component FloatingPanelWindow inherits Window {
                 height: 100%;
                 tree-rows: root.hierarchy-tree-rows;
                 selected-entity-id: root.hierarchy-selected-entity-id;
+                scene-display-name: root.hierarchy-scene-display-name;
                 entity-selected(id) => { root.hierarchy-entity-selected(id); }
                 entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
             }

@@ -24,6 +24,7 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/core/object/object_db.h"
@@ -44,6 +45,7 @@
 #endif
 
 #include <cstdlib>
+#include <string>
 
 namespace Blunder {
 bool g_is_editor_mode{false};
@@ -484,8 +486,22 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 #endif
 
   if (!defer_heavy) {
-    g_runtime_global_context.m_window_system->setTitle(
-        std::string("Blunder - " + std::to_string(getFPS()) + " FPS").c_str());
+    eastl::string title = "Blunder";
+    if (g_runtime_global_context.m_editor_scene_edit) {
+      const eastl::string& scene_path =
+          g_runtime_global_context.m_editor_scene_edit->activeScenePath();
+      if (!scene_path.empty()) {
+        title += " - ";
+        title += sceneShortNameFromVirtualPath(scene_path);
+        if (g_runtime_global_context.m_editor_scene_edit->isDirty()) {
+          title.push_back('*');
+        }
+      }
+    }
+    title += " - ";
+    title += std::to_string(getFPS()).c_str();
+    title += " FPS";
+    g_runtime_global_context.m_window_system->setTitle(title.c_str());
   }
 
   // Smoke / automated exit: BLUNDER_PLAYER_MAX_FRAMES=N leaves after N frames

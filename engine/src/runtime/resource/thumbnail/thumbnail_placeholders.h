@@ -10,6 +10,7 @@ enum class ThumbnailPlaceholderKind : uint8_t {
   Folder = 0,
   Mesh,
   File,
+  Scene,
 };
 
 /// Fills `out_rgba` with `width * height * 4` RGBA8 pixels (procedural icon).

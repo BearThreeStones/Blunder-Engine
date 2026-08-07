@@ -811,19 +811,19 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
               fs::exists(project / "Assets" / "Meshes" /
                          "LOOP-walk_1.animation.yaml"));
   const fs::path idle_intermediate =
-      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      project / "Resources" / "Animations" / "LOOP-idle" /
       "LOOP-idle.gltf";
   const fs::path walk_intermediate =
-      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      project / "Resources" / "Animations" / "LOOP-walk" /
       "LOOP-walk.gltf";
   expect_true("companion-aware mesh returns persisted Intermediate paths",
               !enabled_results.empty() &&
                   pathSetsEqual(enabled_results[0].companion_animation_paths,
                                 {idle_intermediate, walk_intermediate}));
-  expect_true("idle companion copied under host Resources Intermediate",
+  expect_true("idle companion copied under Animations Intermediate",
               fs::exists(idle_intermediate) &&
                   readTextFile(idle_intermediate) == kCompanionLoopGltf);
-  expect_true("walk companion copied under host Resources Intermediate",
+  expect_true("walk companion copied under Animations Intermediate",
               fs::exists(walk_intermediate) &&
                   readTextFile(walk_intermediate) == kCompanionAnimOnlyGltf);
 
@@ -835,18 +835,14 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
   MeshAssetDescriptor mesh_descriptor{};
   expect_true("companion-aware mesh descriptor parses",
               AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
-  expect_true("mesh descriptor records both companion Intermediates",
-              mesh_descriptor.companion_animation_sources.size() == 2);
+  expect_true("mesh descriptor has no companion packaging list",
+              mesh_descriptor.companion_animation_sources.empty());
   expect_true(
-      "mesh descriptor records idle companion path",
-      mesh_descriptor.companion_animation_sources.size() == 2 &&
-          mesh_descriptor.companion_animation_sources[0] ==
-              "resources/Models/Chocomel/companions/LOOP-idle.gltf");
+      "mesh descriptor packaging list stays empty after idle import",
+      mesh_descriptor.companion_animation_sources.empty());
   expect_true(
-      "mesh descriptor records walk companion path",
-      mesh_descriptor.companion_animation_sources.size() == 2 &&
-          mesh_descriptor.companion_animation_sources[1] ==
-              "resources/Models/Chocomel/companions/LOOP-walk.gltf");
+      "mesh descriptor packaging list stays empty after walk import",
+      mesh_descriptor.companion_animation_sources.empty());
   expect_true("companion-only glTFs are not Mesh descriptors",
               !fs::exists(project / "Assets" / "Meshes" /
                           "LOOP-idle.mesh.yaml") &&
@@ -968,7 +964,7 @@ void importExternalBufferCompanionPersistsSidecarAndExtractsClip() {
       import_service.importExternalFiles(paths, "assets/Meshes", settings);
 
   const fs::path persisted_buffer =
-      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      project / "Resources" / "Animations" / "LOOP-idle" /
       "LOOP-idle.bin";
   expect_true("external-buffer companion imports mesh plus clip",
               results.size() == 2);
@@ -1119,17 +1115,19 @@ void importRealDogWalkChocomelSources() {
       "real Chocomel walk clip descriptor parses",
       "real Chocomel walk clip is registered by GUID");
 
-  const fs::path batch_companions =
-      batch_project / "Resources" / "Models" / "Chocomel" / "companions";
-  expect_true("real Chocomel batch persists idle glTF and bin",
-              fs::exists(batch_companions / idle.filename()) &&
-                  fs::exists(batch_companions / idle_bin.filename()) &&
-                  fs::file_size(batch_companions / idle_bin.filename()) ==
+  const fs::path idle_anim_dir =
+      batch_project / "Resources" / "Animations" / idle.stem().generic_string();
+  const fs::path walk_anim_dir =
+      batch_project / "Resources" / "Animations" / walk.stem().generic_string();
+  expect_true("real Chocomel batch persists idle glTF and bin under Animations",
+              fs::exists(idle_anim_dir / idle.filename()) &&
+                  fs::exists(idle_anim_dir / idle_bin.filename()) &&
+                  fs::file_size(idle_anim_dir / idle_bin.filename()) ==
                       fs::file_size(idle_bin));
-  expect_true("real Chocomel batch persists walk glTF and bin",
-              fs::exists(batch_companions / walk.filename()) &&
-                  fs::exists(batch_companions / walk_bin.filename()) &&
-                  fs::file_size(batch_companions / walk_bin.filename()) ==
+  expect_true("real Chocomel batch persists walk glTF and bin under Animations",
+              fs::exists(walk_anim_dir / walk.filename()) &&
+                  fs::exists(walk_anim_dir / walk_bin.filename()) &&
+                  fs::file_size(walk_anim_dir / walk_bin.filename()) ==
                       fs::file_size(walk_bin));
 
   eastl::string batch_mesh_yaml;
@@ -1142,8 +1140,8 @@ void importRealDogWalkChocomelSources() {
   expect_true("real Chocomel batch Mesh descriptor parses",
               AssetYaml::parseMeshDescriptor(batch_mesh_yaml,
                                              batch_mesh_descriptor));
-  expect_true("real Chocomel batch records both companion sources",
-              batch_mesh_descriptor.companion_animation_sources.size() == 2);
+  expect_true("real Chocomel batch writes no companion packaging list",
+              batch_mesh_descriptor.companion_animation_sources.empty());
 
   // B: importing only the disconnected host must not discover world animations.
   const fs::path disconnected_project = makeTempProject();
@@ -1255,9 +1253,8 @@ void importRealDogWalkChocomelSources() {
   expect_true("real co-located Chocomel Mesh descriptor parses",
               AssetYaml::parseMeshDescriptor(co_located_mesh_yaml,
                                              co_located_mesh_descriptor));
-  expect_true("real co-located Chocomel descriptor records two companions",
-              co_located_mesh_descriptor.companion_animation_sources.size() ==
-                  2);
+  expect_true("real co-located Chocomel descriptor has no packaging list",
+              co_located_mesh_descriptor.companion_animation_sources.empty());
 
   co_located_import_service.shutdown();
   co_located_registry.shutdown();
@@ -1399,6 +1396,15 @@ void standaloneCompanionOnlyImportRegistersClips() {
                           "LOOP-chocomel-idle.mesh.yaml") &&
                   !fs::exists(project / "Assets" / "Meshes" /
                               "LOOP-chocomel-walk.mesh.yaml"));
+  expect_true("standalone idle Intermediate under Animations",
+              fs::exists(project / "Resources" / "Animations" /
+                         "LOOP-chocomel-idle" / "LOOP-chocomel-idle.gltf"));
+  expect_true("standalone walk Intermediate under Animations",
+              fs::exists(project / "Resources" / "Animations" /
+                         "LOOP-chocomel-walk" / "LOOP-chocomel-walk.gltf"));
+  expect_true("standalone does not use _standalone_companions folder",
+              !fs::exists(project / "Resources" / "Models" /
+                          "_standalone_companions"));
 
   MeshImportSettings disabled{};
   disabled.animations = false;
@@ -1657,6 +1663,54 @@ void deleteAssetDetachesAnimationPlayerClipThenDeletes() {
   fs::remove_all(external);
 }
 
+void deleteAssetRemovesSceneWithoutDependents() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  Scene scene;
+  scene.setName("Temp");
+  const eastl::string scene_guid = registry.allocateGuid();
+  scene.setGuid(scene_guid);
+  eastl::string scene_json;
+  expect_true("delete-scene serialize",
+              SceneSerializer::serialize(scene, scene_json, &registry));
+  const fs::path scene_absolute =
+      project / "Assets" / "Scenes" / "temp_delete.scene.asset";
+  fs::create_directories(scene_absolute.parent_path());
+  writeTextFile(scene_absolute, scene_json.c_str());
+  registry.registerAsset(scene_guid, "assets/Scenes/temp_delete.scene.asset");
+
+  eastl::string error;
+  expect_true("deleteAsset removes scene",
+              import_service.deleteAsset("assets/Scenes/temp_delete.scene.asset",
+                                         &error));
+  expect_true("delete-scene clears error", error.empty());
+  expect_true("scene file removed", !fs::exists(scene_absolute));
+  expect_true("scene GUID unregistered",
+              registry.resolveGuid(scene_guid).empty());
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void deleteAssetDetachesSceneDependentsThenDeletes() {
   using namespace Blunder;
   ensureLogger();
@@ -1821,10 +1875,10 @@ void singleMeshImportDiscoversNearDiskCompanions() {
                          "LOOP-walk.animation.yaml"));
 
   const fs::path idle_intermediate =
-      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      project / "Resources" / "Animations" / "LOOP-idle" /
       "LOOP-idle.gltf";
   const fs::path walk_intermediate =
-      project / "Resources" / "Models" / "Chocomel" / "companions" /
+      project / "Resources" / "Animations" / "LOOP-walk" /
       "LOOP-walk.gltf";
   expect_true("single-mesh near-disk persists companion Intermediates",
               !enabled_results.empty() &&
@@ -1848,8 +1902,8 @@ void singleMeshImportDiscoversNearDiskCompanions() {
   MeshAssetDescriptor mesh_descriptor{};
   expect_true("single-mesh near-disk mesh descriptor parses",
               AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
-  expect_true("single-mesh near-disk records both companion sources",
-              mesh_descriptor.companion_animation_sources.size() == 2);
+  expect_true("single-mesh near-disk writes no companion packaging list",
+              mesh_descriptor.companion_animation_sources.empty());
 
   const fs::path disabled_project = makeTempProject();
   FileSystem disabled_file_system;
@@ -3584,8 +3638,8 @@ void reimportCompanionClipPreservesGuidAndRefreshesYaml() {
   MeshAssetDescriptor mesh_descriptor{};
   expect_true("companion reimport fixture: parse mesh descriptor",
               AssetYaml::parseMeshDescriptor(mesh_yaml, mesh_descriptor));
-  expect_true("companion reimport fixture: stored companion source",
-              mesh_descriptor.companion_animation_sources.size() == 1);
+  expect_true("companion reimport fixture: no Mesh packaging list",
+              mesh_descriptor.companion_animation_sources.empty());
 
   eastl::string clip_desc_rel = companion_clip.descriptor_virtual_path;
   if (startsWith(clip_desc_rel, "assets/")) {
@@ -3610,34 +3664,28 @@ void reimportCompanionClipPreservesGuidAndRefreshesYaml() {
       file_system.resolveResource(fs::path(clip_source_rel.c_str()));
   writeTextFile(clip_intermediate_absolute, "STALE_COMPANION_CLIP_MARKER");
 
-  // Reimport must be independent of the original external selection.
+  // ADR 0028: Mesh Reimport must not refresh companion Clip YAML.
   fs::remove_all(external_root);
-  expect_true("companion clip reimport request succeeds",
+  expect_true("mesh reimport request succeeds",
               import_service.requestReimport(mesh_guid));
-  expect_true("companion clip reimport preserves GUID mapping",
+  expect_true("mesh reimport leaves companion clip GUID mapped",
               registry.resolveGuid(companion_clip.guid) ==
                   companion_clip.descriptor_virtual_path);
+  expect_true("mesh reimport does not refresh companion clip YAML",
+              readTextFile(clip_intermediate_absolute) ==
+                  "STALE_COMPANION_CLIP_MARKER");
 
-  eastl::string descriptor_yaml_after;
-  expect_true("companion clip reimport: descriptor remains readable",
-              file_system.readText(clip_descriptor_absolute,
-                                   descriptor_yaml_after));
-  AnimationClipAssetDescriptor descriptor_after{};
-  expect_true("companion clip reimport: descriptor remains parseable",
-              AssetYaml::parseAnimationClipDescriptor(descriptor_yaml_after,
-                                                      descriptor_after));
-  expect_true("companion clip reimport: descriptor GUID unchanged",
-              descriptor_after.guid == companion_clip.guid);
-
+  expect_true("clip reimport request succeeds",
+              import_service.requestReimport(companion_clip.guid));
   const std::string clip_yaml_after =
       readTextFile(clip_intermediate_absolute);
-  expect_true("companion clip reimport refreshes stale YAML",
+  expect_true("clip reimport refreshes stale YAML from Animations glTF",
               clip_yaml_after != "STALE_COMPANION_CLIP_MARKER");
   AnimationClipData clip_data_after{};
-  expect_true("companion clip reimport writes valid clip YAML",
+  expect_true("clip reimport writes valid clip YAML",
               AssetYaml::parseAnimationClipData(
                   eastl::string(clip_yaml_after.c_str()), clip_data_after));
-  expect_true("companion clip reimport keeps companion stem identity",
+  expect_true("clip reimport keeps companion stem identity",
               clip_data_after.name == "LOOP-idle");
 
   import_service.shutdown();
@@ -3959,6 +4007,7 @@ int main() {
   deleteAssetRemovesMeshWithoutDependents();
   deleteAssetRemovesAnimationClipWithoutDependents();
   deleteAssetDetachesAnimationPlayerClipThenDeletes();
+  deleteAssetRemovesSceneWithoutDependents();
   deleteAssetDetachesSceneDependentsThenDeletes();
   singleMeshImportDiscoversNearDiskCompanions();
   meshExtensionRoutingTables();

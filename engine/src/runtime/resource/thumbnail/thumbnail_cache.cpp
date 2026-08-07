@@ -9,6 +9,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/content/content_entry.h"
+#include "runtime/resource/thumbnail/scene_thumbnail_fingerprint.h"
 
 namespace Blunder {
 
@@ -43,30 +44,53 @@ uint64_t parseMetaSourceMtime(const eastl::string& meta_text) {
   return std::strtoull(colon + 1, nullptr, 10);
 }
 
+uint64_t hashFingerprint(const eastl::string& fingerprint) {
+  uint64_t hash = 14695981039346656037ull;
+  for (size_t i = 0; i < fingerprint.size(); ++i) {
+    hash ^= static_cast<uint8_t>(fingerprint[i]);
+    hash *= 1099511628211ull;
+  }
+  return hash;
+}
+
+bool endsWithLiteral(const eastl::string& value, const char* suffix) {
+  const size_t suffix_len = std::strlen(suffix);
+  return value.size() >= suffix_len &&
+         value.compare(value.size() - suffix_len, suffix_len, suffix) == 0;
+}
+
 }  // namespace
 
 void ThumbnailCache::bind(FileSystem* file_system) {
   m_file_system = file_system;
 }
 
+void ThumbnailCache::setAssetRegistry(AssetRegistry* asset_registry) {
+  m_asset_registry = asset_registry;
+}
+
 eastl::string ThumbnailCache::cacheRoot() const {
-  ASSERT(m_file_system);
+  if (m_file_system == nullptr) {
+    return {};
+  }
   return eastl::string(
-      m_file_system->resolve(k_cache_subdir).generic_string().c_str());
+      (m_file_system->getProjectRoot() / k_cache_subdir).generic_string().c_str());
 }
 
 eastl::string ThumbnailCache::sanitizeVirtualPath(
     const eastl::string& virtual_path) const {
-  eastl::string sanitized;
-  sanitized.reserve(virtual_path.size());
-  for (char c : virtual_path) {
-    if (c == '/' || c == '\\' || c == ':') {
-      sanitized.push_back('_');
+  eastl::string out;
+  out.reserve(virtual_path.size());
+  for (size_t i = 0; i < virtual_path.size(); ++i) {
+    const char c = virtual_path[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+      out.push_back(c);
     } else {
-      sanitized.push_back(c);
+      out.push_back('_');
     }
   }
-  return sanitized;
+  return out;
 }
 
 ThumbnailCachePaths ThumbnailCache::pathsForEntry(
@@ -77,6 +101,25 @@ ThumbnailCachePaths ThumbnailCache::pathsForEntry(
                 static_cast<unsigned long long>(entry.modified_time));
 
   eastl::string stem = sanitizeVirtualPath(entry.virtual_path);
+  const bool mesh_like =
+      endsWithLiteral(entry.virtual_path, ".mesh.yaml") ||
+      endsWithLiteral(entry.virtual_path, ".gltf") ||
+      endsWithLiteral(entry.virtual_path, ".glb") ||
+      endsWithLiteral(entry.virtual_path, ".mesh.asset");
+  if (mesh_like) {
+    stem.append("_mpv5");
+  }
+  if (endsWithLiteral(entry.virtual_path, ".scene.asset") &&
+      m_file_system != nullptr) {
+    stem.append("_scv1_");
+    const eastl::string fingerprint = computeSceneThumbnailFingerprint(
+        *m_file_system, m_asset_registry, entry.virtual_path,
+        entry.modified_time);
+    char fp_hex[32];
+    std::snprintf(fp_hex, sizeof(fp_hex), "%llx",
+                  static_cast<unsigned long long>(hashFingerprint(fingerprint)));
+    stem.append(fp_hex);
+  }
   stem.append(suffix);
 
   const eastl::string root = cacheRoot();
@@ -144,10 +187,10 @@ bool ThumbnailCache::writePng(const ThumbnailCachePaths& paths, uint32_t width,
     return false;
   }
 
-  char meta[128];
+  char meta[192];
   std::snprintf(meta, sizeof(meta),
                 "{\n  \"source_mtime\": %llu,\n  \"width\": %u,\n  "
-                "\"height\": %u\n}\n",
+                "\"height\": %u,\n  \"generator\": \"thumbnail-cache\"\n}\n",
                 static_cast<unsigned long long>(source_mtime),
                 static_cast<unsigned>(width), static_cast<unsigned>(height));
 

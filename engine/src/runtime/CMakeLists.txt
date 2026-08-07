@@ -21,6 +21,8 @@ add_library(engine_runtime STATIC
     "function/ui/ui_callback_binder.h"
     "function/ui/ui_host.cpp"
     "function/ui/ui_host.h"
+    "function/ui/active_scene_display.cpp"
+    "function/ui/active_scene_display.h"
     "function/ui/view_models/editor_panels_view_model.cpp"
     "function/ui/view_models/editor_panels_view_model.h"
     "function/ui/viewport/viewport_cpu_frame.h"
@@ -203,6 +205,8 @@ add_library(engine_runtime STATIC
     "resource/thumbnail/thumbnail_types.h"
     "resource/thumbnail/thumbnail_cache.h"
     "resource/thumbnail/thumbnail_cache.cpp"
+    "resource/thumbnail/scene_thumbnail_fingerprint.h"
+    "resource/thumbnail/scene_thumbnail_fingerprint.cpp"
     "resource/thumbnail/thumbnail_resize.h"
     "resource/thumbnail/thumbnail_resize.cpp"
     "resource/thumbnail/thumbnail_placeholders.h"
@@ -329,7 +333,7 @@ if(MSVC)
     target_compile_options(engine_runtime PRIVATE /Zc:preprocessor)
 endif()
 
-# Cap cl.exe /MP workers (VS generator ignores /MPn — see cmake/compiler.cmake).
+# Cap cl.exe /MP workers (VS generator ignores /MPn �?see cmake/compiler.cmake).
 blunder_msvc_limit_cl_mp(engine_runtime)
 
 target_link_libraries(engine_runtime
@@ -360,7 +364,7 @@ endif()
 
 # Debug-only: silent Editor Session root when no --project-root (ADR 0010).
 # PUBLIC so engine_editor main.cpp sees the define (PRIVATE would not propagate).
-# Product content lives under Projects dir — not the engine checkout (CONTEXT).
+# Product content lives under Projects dir �?not the engine checkout (CONTEXT).
 # Release omits this define so packaged builds require --project-root / Project Manager.
 if(NOT DEFINED BLUNDER_DEFAULT_PROJECT_ROOT OR BLUNDER_DEFAULT_PROJECT_ROOT STREQUAL "")
     set(BLUNDER_DEFAULT_PROJECT_ROOT "E:/Blunder Projects/Test")
@@ -401,7 +405,7 @@ endif()
 
 # SHARED C-ABI DLL for Approach A / single-image hosts (LoadLibrary +
 # blunder_native_abi_fill_from_module). In-process CoreCLR uses registered
-# BlunderNativeAbi pointers (fill_from_process / blunder_engine_c_static) —
+# BlunderNativeAbi pointers (fill_from_process / blunder_engine_c_static) �?
 # do not also LoadLibrary SHARED for Object traffic beside the static image.
 add_library(blunder_engine_c SHARED
     "core/reflection/engine_c_abi.cpp"
@@ -588,7 +592,7 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# Blunder.ScriptsCatalog — post-build Behaviour type metadata scanner.
+# Blunder.ScriptsCatalog �?post-build Behaviour type metadata scanner.
 # Stages beside bin/<Config>/ for ScriptsBuilder invocation.
 # ---------------------------------------------------------------------------
 set(BLUNDER_SCRIPTS_CATALOG_CSPROJ

@@ -1,0 +1,9 @@
+# AnimationClip independent of Mesh (Import & graph)
+
+**AnimationClip** is a first-class Asset with no product dependency on a **Mesh** Asset: no Mesh→Clip edge in the Asset Dependency Graph, no cascade delete from Mesh, no required Intermediate under `Models/{mesh}/companions/`. Companion (animation-only) glTFs Import as independent Clip Assets whose descriptors own `source`; Intermediate bodies live under `Resources/Animations/<stem>/`. Content Browser / Resources folders are organization only. Multi-select or near-disk discovery may still Import several files in one gesture and may warn on skeleton bone mismatch against a skinned host in the same batch, but must not persist Mesh↔Clip packaging links (`companion_animation_sources` is removed). Mesh Reimport and Clip Reimport each refresh only that Asset. One-shot migration moves legacy `companions/` and `_standalone_companions/` layouts into `Resources/Animations/<stem>/`. Aligns with Unreal-style Anim↔Skeleton independence (Blunder does not require a separate Skeleton Asset in this ADR). Supersedes the Mesh-centric packaging rules in [ADR 0021](0021-companion-animation-gltf-import.md).
+
+**Status:** accepted (docs first; Import/Reimport code follows)
+
+**Considered options:** Keep `Models/{host}/companions/` + `companion_animation_sources` as durable role-pack links (rejected — teaches Clip-as-Mesh-child). Mesh→Clip dependency-graph edges or cascade delete (rejected — contradicts Clip independence). Auto-fill AnimationPlayer maps at Import (rejected — scene assembly, not packaging).
+
+**See also:** [CONTEXT.md — AnimationClip / Companion Animation glTF / Import](../../CONTEXT.md), [ADR 0021](0021-companion-animation-gltf-import.md) (superseded packaging), [ADR 0019](0019-gltf-intermediate.md), OpenSpec `standalone-animation-import` / companion Import changes (implementation TBD).

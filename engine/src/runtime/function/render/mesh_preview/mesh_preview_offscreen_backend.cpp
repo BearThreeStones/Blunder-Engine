@@ -81,8 +81,8 @@ void appendForwardDraw(const MeshPreviewSubmeshDraw& submesh_draw, GpuMesh* gpu_
   draw.vertex_buffer = gpu_mesh->getVertexBuffer();
   draw.index_buffer = gpu_mesh->getIndexBuffer();
   draw.index_count = gpu_mesh->getIndexCount();
-  draw.model = glm::mat4(1.0f);
-  draw.normal_matrix = glm::mat4(1.0f);
+  draw.model = submesh_draw.model;
+  draw.normal_matrix = glm::transpose(glm::inverse(submesh_draw.model));
   draw.material = material;
   draw.base_color_texture = base_color_texture;
   draw.metallic_roughness_texture = metallic_roughness_texture;
@@ -526,6 +526,138 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
 
   const VkDeviceSize byte_count =
       static_cast<VkDeviceSize>(request.width) * request.height * 4u;
+  vmaInvalidateAllocation(allocator->getAllocator(),
+                          m_readback_staging->getAllocation(), 0, byte_count);
+  void* mapped = nullptr;
+  if (vmaMapMemory(allocator->getAllocator(),
+                   m_readback_staging->getAllocation(),
+                   &mapped) != VK_SUCCESS ||
+      mapped == nullptr) {
+    return false;
+  }
+
+  out_rgba.resize(static_cast<size_t>(byte_count));
+  std::memcpy(out_rgba.data(), mapped, static_cast<size_t>(byte_count));
+  vmaUnmapMemory(allocator->getAllocator(),
+                 m_readback_staging->getAllocation());
+  return true;
+}
+
+bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
+    const eastl::vector<MeshPreviewSubmeshDraw>& draws,
+    const MeshPreviewCameraFrame& framing,
+    const MeshPreviewStudioLights& lights, uint32_t width, uint32_t height,
+    eastl::vector<uint8_t>& out_rgba) {
+  out_rgba.clear();
+  m_last_submitted_draw_count = 0;
+  if (!framing.ok || draws.empty() || !ensureResources(width, height) ||
+      m_forward_path == nullptr) {
+    return false;
+  }
+
+  auto* backend =
+      static_cast<vulkan_backend::VulkanRenderBackend*>(m_render_backend);
+  VulkanContext* context = backend->nativeVulkanContext();
+  VulkanAllocator* allocator = backend->nativeAllocator();
+  if (context == nullptr || allocator == nullptr) {
+    return false;
+  }
+
+  VulkanTexture* fallback_texture = getFallbackTexture();
+  eastl::vector<ForwardOpaqueDraw> opaque_draws;
+  eastl::vector<ForwardOpaqueDraw> transparent_draws;
+  opaque_draws.reserve(draws.size());
+  transparent_draws.reserve(draws.size());
+
+  uint32_t slot_index = 0;
+  for (const MeshPreviewSubmeshDraw& submesh_draw : draws) {
+    if (!submesh_draw.mesh) {
+      continue;
+    }
+    eastl::string cache_key = submesh_draw.mesh->getVirtualPath();
+    if (cache_key.empty()) {
+      char suffix[32];
+      std::snprintf(suffix, sizeof(suffix), "scene_thumb/anonymous#%u",
+                    slot_index);
+      cache_key = suffix;
+    }
+    GpuMesh* gpu_mesh = getOrUploadGpuMesh(*submesh_draw.mesh, cache_key);
+    if (gpu_mesh == nullptr) {
+      ++slot_index;
+      continue;
+    }
+    VulkanTexture* base_color_texture = fallback_texture;
+    VulkanTexture* metallic_roughness_texture = fallback_texture;
+    VulkanTexture* normal_texture = fallback_texture;
+    VulkanTexture* occlusion_texture = fallback_texture;
+    if (submesh_draw.material) {
+      const MaterialAsset& material = *submesh_draw.material;
+      if (VulkanTexture* uploaded = ensureTextureUploaded(
+              material.getBaseColorTextureAsset().get())) {
+        base_color_texture = uploaded;
+      }
+      if (VulkanTexture* uploaded = ensureTextureUploaded(
+              material.getMetallicRoughnessTextureAsset().get())) {
+        metallic_roughness_texture = uploaded;
+      }
+      if (VulkanTexture* uploaded =
+              ensureTextureUploaded(material.getNormalTextureAsset().get())) {
+        normal_texture = uploaded;
+      }
+      if (VulkanTexture* uploaded =
+              ensureTextureUploaded(material.getOcclusionTextureAsset().get())) {
+        occlusion_texture = uploaded;
+      }
+    }
+    appendForwardDraw(submesh_draw, gpu_mesh, base_color_texture,
+                      metallic_roughness_texture, normal_texture,
+                      occlusion_texture, slot_index, opaque_draws,
+                      transparent_draws);
+    ++slot_index;
+  }
+
+  if (opaque_draws.empty() && transparent_draws.empty()) {
+    return false;
+  }
+
+  m_last_submitted_draw_count =
+      static_cast<uint32_t>(opaque_draws.size() + transparent_draws.size());
+
+  const ForwardFrameState frame_state =
+      buildMeshPreviewForwardFrameState(framing, lights, width, height);
+
+  VkCommandBuffer command_buffer = context->beginImmediateCommands();
+  m_forward_path->renderFrameTo(
+      m_offscreen.get(), command_buffer, frame_state, opaque_draws.data(),
+      static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
+      static_cast<uint32_t>(transparent_draws.size()), 0u, false);
+
+  vulkan_backend::VulkanCommandList command_list;
+  command_list.bind(context, command_buffer);
+  m_offscreen->transitionToCopySource(command_list);
+
+  auto* vk_target = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
+      m_offscreen.get());
+  OffscreenRenderTarget* native_target = vk_target->nativeTarget();
+  if (native_target == nullptr) {
+    context->endImmediateCommands(command_buffer);
+    return false;
+  }
+
+  VkBufferImageCopy copy_region{};
+  copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  copy_region.imageSubresource.mipLevel = 0;
+  copy_region.imageSubresource.baseArrayLayer = 0;
+  copy_region.imageSubresource.layerCount = 1;
+  copy_region.imageExtent = {width, height, 1};
+  vkCmdCopyImageToBuffer(command_buffer, native_target->getImage(),
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         m_readback_staging->getBuffer(), 1, &copy_region);
+  m_offscreen->transitionToShaderRead(command_list);
+  context->endImmediateCommands(command_buffer);
+
+  const VkDeviceSize byte_count =
+      static_cast<VkDeviceSize>(width) * height * 4u;
   vmaInvalidateAllocation(allocator->getAllocator(),
                           m_readback_staging->getAllocation(), 0, byte_count);
   void* mapped = nullptr;

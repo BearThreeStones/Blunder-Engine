@@ -16,7 +16,8 @@ import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, 
 
 export component MainEditorWindow inherits Window {
     // Logical size comes only from C++ dispatch_resize_event (see SlintWindowAdapter).
-    title: "Blunder Editor";
+    in-out property <string> window-title: "Blunder Editor";
+    title: root.window-title;
     background: #181818;
 
     in property <image> viewport-image;
@@ -53,6 +54,7 @@ export component MainEditorWindow inherits Window {
 
     in-out property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
     in property <int> hierarchy-selected-entity-id: 0;
+    in-out property <string> hierarchy-scene-display-name: "(No Scene)";
 
     in-out property <length> hierarchy-origin-x: 0px;
     in-out property <length> hierarchy-origin-y: 0px;
@@ -503,6 +505,7 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
+                        scene-display-name: root.hierarchy-scene-display-name;
                         tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
@@ -814,6 +817,7 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
+                        scene-display-name: root.hierarchy-scene-display-name;
                         tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }

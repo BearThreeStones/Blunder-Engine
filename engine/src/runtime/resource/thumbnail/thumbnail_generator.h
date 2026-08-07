@@ -14,12 +14,14 @@ namespace Blunder {
 class AssetManager;
 class FileSystem;
 class MeshPreviewRenderService;
+class SceneThumbnailRenderService;
 struct ContentEntry;
 
 struct ThumbnailGeneratorInit {
   FileSystem* file_system{nullptr};
   AssetManager* asset_manager{nullptr};
   MeshPreviewRenderService* mesh_preview_service{nullptr};
+  SceneThumbnailRenderService* scene_thumbnail_service{nullptr};
   uint32_t thumbnail_size{128};
 };
 
@@ -31,6 +33,7 @@ class ThumbnailGenerator final {
   void shutdown();
 
   void setMeshPreviewService(MeshPreviewRenderService* service);
+  void setSceneThumbnailService(SceneThumbnailRenderService* service);
 
   ThumbnailResult ensureThumbnail(const ContentEntry& entry);
   void ensureThumbnails(const ContentEntry* entries, uint32_t entry_count);
@@ -54,6 +57,8 @@ class ThumbnailGenerator final {
                             eastl::vector<uint8_t>& out_rgba);
   bool generateMeshThumbnail(const eastl::string& virtual_path,
                              eastl::vector<uint8_t>& out_rgba);
+  bool generateSceneThumbnail(const eastl::string& virtual_path,
+                              eastl::vector<uint8_t>& out_rgba);
   bool generateImageThumbnail(const eastl::string& virtual_path,
                               eastl::vector<uint8_t>& out_rgba);
   bool generatePlaceholder(ThumbnailPlaceholderKind kind,
@@ -68,6 +73,7 @@ class ThumbnailGenerator final {
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};
   MeshPreviewRenderService* m_mesh_preview_service{nullptr};
+  SceneThumbnailRenderService* m_scene_thumbnail_service{nullptr};
   ThumbnailCache m_cache;
   ThumbnailGenerationQueue m_queue;
   uint32_t m_thumbnail_size{128};

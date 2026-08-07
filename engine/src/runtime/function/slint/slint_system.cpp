@@ -41,6 +41,7 @@
 #include "runtime/function/editor/inspector_transform_ops.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/editor/document_history_helpers.h"
 #include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -1194,7 +1195,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
           services->content_browser->dragController().beginPress(
               eastl::string(path.data()), x, y);
           m_drop_highlight_path.clear();
-          syncContentBrowser();
+          m_viewport_drop_active = false;
+          // Do not rebuild the grid here — replacing the model mid-press clears
+          // thumbnails and can drop the TouchArea before item-release fires.
+          if (m_window_component) {
+            auto& ui = *m_window_component->operator->();
+            ui.set_browser_drop_highlight_path(slint::SharedString());
+            ui.set_browser_viewport_drop_active(false);
+          }
         });
     component->on_browser_item_move(
         [this](const slint::SharedString& path, float x, float y) {
@@ -1226,7 +1234,13 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
           drag.reset();
           m_drop_highlight_path.clear();
           m_viewport_drop_active = false;
-          syncContentBrowser();
+          if (m_window_component) {
+            auto& ui = *m_window_component->operator->();
+            ui.set_browser_drag_active(false);
+            ui.set_browser_drag_source_path(slint::SharedString());
+            ui.set_browser_drop_highlight_path(slint::SharedString());
+            ui.set_browser_viewport_drop_active(false);
+          }
 
           const eastl::string path_str(path.data());
 
@@ -1241,11 +1255,12 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
             return;
           }
 
-          constexpr const char* k_scene_suffix = ".scene.asset";
-          const size_t suffix_len = 14u;
-          if (path_str.size() >= suffix_len &&
-              path_str.compare(path_str.size() - suffix_len, suffix_len,
-                               k_scene_suffix) == 0) {
+          // ".scene.asset" is 12 chars — a wrong length silently disables open.
+          constexpr const char k_scene_suffix[] = ".scene.asset";
+          constexpr size_t k_scene_suffix_len = sizeof(k_scene_suffix) - 1u;
+          if (path_str.size() >= k_scene_suffix_len &&
+              path_str.compare(path_str.size() - k_scene_suffix_len,
+                               k_scene_suffix_len, k_scene_suffix) == 0) {
             if (const auto host = m_ui_host.lock()) {
               host->enqueue(
                   UiEvent::withPath(UiEventKind::openSceneAsset, path_str));
@@ -2070,8 +2085,11 @@ slint::Image loadThumbnailImage(const eastl::string& cache_path) {
     return slint::Image();
   }
   try {
+    // Slint file loader expects a native absolute path (spaces OK).
+    const std::filesystem::path native(cache_path.c_str());
+    const std::string native_str = native.lexically_normal().string();
     return slint::Image::load_from_path(
-        slint::SharedString(cache_path.c_str()));
+        slint::SharedString(native_str.c_str()));
   } catch (...) {
     return slint::Image();
   }
@@ -2373,6 +2391,40 @@ void SlintSystem::syncHierarchy() {
     LOG_ERROR("[SlintSystem::syncHierarchy] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::syncHierarchy] unknown exception");
+  }
+  syncActiveSceneIndicator();
+}
+
+void SlintSystem::syncActiveSceneIndicator() {
+  if (!m_window_component) {
+    return;
+  }
+  const auto services = lockServices();
+  eastl::string path;
+  bool dirty = false;
+  if (services && services->editor_scene_edit) {
+    path = services->editor_scene_edit->activeScenePath();
+    dirty = services->editor_scene_edit->isDirty();
+  }
+  if (m_scene_indicator_initialized && path == m_synced_scene_path &&
+      dirty == m_synced_scene_dirty) {
+    return;
+  }
+  m_scene_indicator_initialized = true;
+  m_synced_scene_path = path;
+  m_synced_scene_dirty = dirty;
+
+  const eastl::string title = formatEditorWindowTitle(path, dirty);
+  const eastl::string label = formatHierarchySceneLabel(path, dirty);
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_window_title(slint::SharedString(title.c_str()));
+    ui->set_hierarchy_scene_display_name(slint::SharedString(label.c_str()));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncActiveSceneIndicator] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncActiveSceneIndicator] unknown exception");
   }
 }
 
@@ -3749,6 +3801,7 @@ void SlintSystem::refreshEditorScenePanels() {
   syncInspectorFromSelection();
   syncTransformToolbarFromEngine();
   syncCameraPreviewFromEngine();
+  syncActiveSceneIndicator();
 }
 
 void SlintSystem::syncCameraPreviewFromSlint() {
@@ -4121,7 +4174,38 @@ void SlintSystem::applyBrowserGridSelection(const eastl::string& path, bool ctrl
     m_window_component->operator->()->set_browser_selected_grid_path(
         slint::SharedString(primary.c_str()));
   }
-  syncContentBrowser();
+  refreshBrowserGridSelectionVisuals();
+}
+
+void SlintSystem::refreshBrowserGridSelectionVisuals() {
+  if (!m_window_component) {
+    return;
+  }
+  const auto existing =
+      m_window_component->operator->()->get_browser_grid_rows();
+  auto grid_model =
+      std::dynamic_pointer_cast<slint::VectorModel<BrowserGridRow>>(existing);
+  if (!grid_model) {
+    // Fallback only when the model type is unexpected — keep thumbs intact
+    // when possible by avoiding a full rebuild on the common path.
+    return;
+  }
+
+  const int row_count = grid_model->row_count();
+  for (int i = 0; i < row_count; ++i) {
+    const std::optional<BrowserGridRow> current = grid_model->row_data(i);
+    if (!current.has_value()) {
+      continue;
+    }
+    BrowserGridRow row = *current;
+    const bool selected =
+        isBrowserGridPathSelected(eastl::string(row.path.data()));
+    if (row.selected == selected) {
+      continue;
+    }
+    row.selected = selected;
+    grid_model->set_row_data(i, row);
+  }
 }
 
 void SlintSystem::deleteSelectedBrowserAssets() {
@@ -5839,6 +5923,8 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
           }
         }
         snapshot.hierarchy_selected_entity_id = main.get_hierarchy_selected_entity_id();
+        snapshot.hierarchy_scene_display_name =
+            main.get_hierarchy_scene_display_name().data();
         break;
       }
       case DockPanelKind::inspector:
@@ -6243,7 +6329,12 @@ void SlintSystem::wireNativeFloatingCallbacks() {
     }
     services->content_browser->dragController().beginPress(eastl::string(path.data()), x, y);
     m_drop_highlight_path.clear();
-    syncContentBrowser();
+    m_viewport_drop_active = false;
+    if (m_window_component) {
+      auto& ui = *m_window_component->operator->();
+      ui.set_browser_drop_highlight_path(slint::SharedString());
+      ui.set_browser_viewport_drop_active(false);
+    }
   };
   callbacks.on_browser_item_move = [this](const slint::SharedString& path, float x, float y) {
     (void)path;

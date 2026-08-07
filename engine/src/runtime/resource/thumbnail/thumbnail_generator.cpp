@@ -4,6 +4,8 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
+#include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset/material_asset.h"
@@ -23,8 +25,12 @@ void ThumbnailGenerator::initialize(const ThumbnailGeneratorInit& init) {
   m_file_system = init.file_system;
   m_asset_manager = init.asset_manager;
   m_mesh_preview_service = init.mesh_preview_service;
+  m_scene_thumbnail_service = init.scene_thumbnail_service;
   m_thumbnail_size = init.thumbnail_size > 0 ? init.thumbnail_size : 128;
   m_cache.bind(m_file_system);
+  if (g_runtime_global_context.m_asset_registry) {
+    m_cache.setAssetRegistry(g_runtime_global_context.m_asset_registry.get());
+  }
   m_queue.bind(this);
   m_is_initialized = true;
 }
@@ -34,13 +40,20 @@ void ThumbnailGenerator::shutdown() {
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_mesh_preview_service = nullptr;
+  m_scene_thumbnail_service = nullptr;
   m_queue.clear();
+  m_cache.setAssetRegistry(nullptr);
   m_cache.bind(nullptr);
 }
 
 void ThumbnailGenerator::setMeshPreviewService(
     MeshPreviewRenderService* service) {
   m_mesh_preview_service = service;
+}
+
+void ThumbnailGenerator::setSceneThumbnailService(
+    SceneThumbnailRenderService* service) {
+  m_scene_thumbnail_service = service;
 }
 
 bool ThumbnailGenerator::endsWithSuffix(const eastl::string& value,
@@ -117,6 +130,23 @@ bool ThumbnailGenerator::generateMeshThumbnail(const eastl::string& virtual_path
   return generatePlaceholder(ThumbnailPlaceholderKind::Mesh, out_rgba);
 }
 
+bool ThumbnailGenerator::generateSceneThumbnail(
+    const eastl::string& virtual_path, eastl::vector<uint8_t>& out_rgba) {
+  if (m_scene_thumbnail_service != nullptr) {
+    SceneThumbnailRenderRequest request{};
+    request.scene_virtual_path = virtual_path;
+    request.width = m_thumbnail_size;
+    request.height = m_thumbnail_size;
+    const SceneThumbnailRenderResult preview =
+        m_scene_thumbnail_service->renderSceneAsset(request);
+    if (preview.ok && !preview.rgba.empty()) {
+      out_rgba = eastl::move(preview.rgba);
+      return true;
+    }
+  }
+  return generatePlaceholder(ThumbnailPlaceholderKind::Scene, out_rgba);
+}
+
 bool ThumbnailGenerator::resolveDescriptorSource(
     const eastl::string& descriptor_virtual_path,
     eastl::string& out_source_path) const {
@@ -143,6 +173,9 @@ bool ThumbnailGenerator::generateRgbaForEntry(const ContentEntry& entry,
   const eastl::string ext = extensionLower(entry.virtual_path);
   if (endsWithSuffix(entry.virtual_path, ".mesh.yaml")) {
     return generateMeshThumbnail(entry.virtual_path, out_rgba);
+  }
+  if (endsWithSuffix(entry.virtual_path, ".scene.asset")) {
+    return generateSceneThumbnail(entry.virtual_path, out_rgba);
   }
   if (endsWithSuffix(entry.virtual_path, ".texture.yaml")) {
     eastl::string source_path;

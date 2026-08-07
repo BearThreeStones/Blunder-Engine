@@ -133,6 +133,44 @@ void drawFileIcon(eastl::vector<uint8_t>& rgba, uint32_t width, uint32_t height)
   }
 }
 
+void drawSceneIcon(eastl::vector<uint8_t>& rgba, uint32_t width,
+                   uint32_t height) {
+  fillSolid(rgba, width, height, 32, 36, 48);
+  // Landscape band
+  for (uint32_t y = height * 5 / 8; y < height * 7 / 8; ++y) {
+    for (uint32_t x = width / 8; x < width * 7 / 8; ++x) {
+      setPixel(rgba, width, x, y, 55, 90, 70, 255);
+    }
+  }
+  // Sun disk
+  const int cx = static_cast<int>(width * 3 / 4);
+  const int cy = static_cast<int>(height * 5 / 16);
+  const int rad = static_cast<int>(width / 10);
+  for (int y = cy - rad; y <= cy + rad; ++y) {
+    for (int x = cx - rad; x <= cx + rad; ++x) {
+      if (x < 0 || y < 0 || x >= static_cast<int>(width) ||
+          y >= static_cast<int>(height)) {
+        continue;
+      }
+      const int dx = x - cx;
+      const int dy = y - cy;
+      if (dx * dx + dy * dy <= rad * rad) {
+        setPixel(rgba, width, static_cast<uint32_t>(x), static_cast<uint32_t>(y),
+                 220, 180, 70, 255);
+      }
+    }
+  }
+  // Frame border (suggests a view through a camera)
+  for (uint32_t x = width / 10; x < width * 9 / 10; ++x) {
+    setPixel(rgba, width, x, height / 10, 140, 160, 200, 255);
+    setPixel(rgba, width, x, height * 9 / 10 - 1, 140, 160, 200, 255);
+  }
+  for (uint32_t y = height / 10; y < height * 9 / 10; ++y) {
+    setPixel(rgba, width, width / 10, y, 140, 160, 200, 255);
+    setPixel(rgba, width, width * 9 / 10 - 1, y, 140, 160, 200, 255);
+  }
+}
+
 }  // namespace
 
 void fillThumbnailPlaceholder(ThumbnailPlaceholderKind kind, uint32_t width,
@@ -143,6 +181,9 @@ void fillThumbnailPlaceholder(ThumbnailPlaceholderKind kind, uint32_t width,
       break;
     case ThumbnailPlaceholderKind::Mesh:
       drawMeshIcon(out_rgba, width, height);
+      break;
+    case ThumbnailPlaceholderKind::Scene:
+      drawSceneIcon(out_rgba, width, height);
       break;
     case ThumbnailPlaceholderKind::File:
     default:

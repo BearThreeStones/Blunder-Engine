@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/mat4x4.hpp>
+
 #include "EASTL/shared_ptr.h"
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
@@ -10,10 +12,12 @@ class AssetManager;
 class MaterialAsset;
 class MeshAsset;
 
-/// One drawable primitive for Mesh Preview (submesh + material).
+/// One drawable primitive for Mesh Preview (submesh + material + node Xform).
 struct MeshPreviewSubmeshDraw {
   eastl::shared_ptr<MeshAsset> mesh;
   eastl::shared_ptr<MaterialAsset> material;
+  /// glTF node / entity world matrix (identity when unavailable).
+  glm::mat4 model{1.0f};
 };
 
 /// Collect all glTF primitives for a Mesh descriptor or glTF path. Cooked Final

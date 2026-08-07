@@ -90,6 +90,7 @@ struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
   int hierarchy_selected_entity_id{0};
+  eastl::string hierarchy_scene_display_name;
   bool inspector_has_selection{false};
   eastl::string inspector_entity_name;
   float inspector_pos_x{0.0f};

@@ -1,29 +1,14 @@
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 
+#include <cstring>
+
 #include <cgltf.h>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_manager/asset_manager_gltf.h"
 
 namespace Blunder {
-
-namespace {
-
-const cgltf_skin* findSkinForMeshIndex(const cgltf_data& data, size_t mesh_index) {
-  if (mesh_index >= static_cast<size_t>(data.meshes_count)) {
-    return nullptr;
-  }
-  const cgltf_mesh& target_mesh = data.meshes[mesh_index];
-  for (cgltf_size node_index = 0; node_index < data.nodes_count; ++node_index) {
-    const cgltf_node& node = data.nodes[node_index];
-    if (node.mesh == &target_mesh && node.skin != nullptr) {
-      return node.skin;
-    }
-  }
-  return nullptr;
-}
-
-}  // namespace
 
 eastl::vector<MeshPreviewSubmeshDraw> collectMeshPreviewSubmeshes(
     AssetManager& asset_manager, const eastl::string& mesh_virtual_path) {
@@ -38,14 +23,8 @@ eastl::vector<MeshPreviewSubmeshDraw> collectMeshPreviewSubmeshes(
     return draws;
   }
 
-  if (loaded->isFromCookedFinal()) {
-    MeshPreviewSubmeshDraw draw{};
-    draw.mesh = loaded;
-    draw.material = loaded->getMaterialAsset();
-    draws.push_back(eastl::move(draw));
-    return draws;
-  }
-
+  // Expand Intermediate glTF node×primitives. Cooked Final alone is often a
+  // single-primitive fallback and previously ignored node transforms.
   eastl::string gltf_source;
   if (!asset_manager.resolveGltfSourcePath(mesh_virtual_path, gltf_source)) {
     gltf_source = mesh_virtual_path;
@@ -62,22 +41,37 @@ eastl::vector<MeshPreviewSubmeshDraw> collectMeshPreviewSubmeshes(
   }
 
   cgltf_data* data = document.data;
-  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count; ++mesh_index) {
+  for (cgltf_size node_index = 0; node_index < data->nodes_count; ++node_index) {
+    const cgltf_node& node = data->nodes[node_index];
+    if (node.mesh == nullptr) {
+      continue;
+    }
+
+    const size_t mesh_index =
+        static_cast<size_t>(node.mesh - data->meshes);
+    if (mesh_index >= static_cast<size_t>(data->meshes_count)) {
+      continue;
+    }
+
+    cgltf_float world[16];
+    cgltf_node_transform_world(&node, world);
+    const glm::mat4 model = glm::make_mat4(world);
+
     const cgltf_mesh& mesh = data->meshes[mesh_index];
-    const cgltf_skin* skin = findSkinForMeshIndex(*data, static_cast<size_t>(mesh_index));
+    const cgltf_skin* skin = node.skin;
     for (cgltf_size primitive_index = 0;
          primitive_index < mesh.primitives_count; ++primitive_index) {
       const eastl::shared_ptr<MeshAsset> primitive_mesh =
           asset_manager.loadMeshPrimitive(
-              data, static_cast<size_t>(mesh_index),
-              static_cast<size_t>(primitive_index), document.absolute,
-              document.canonical_key, skin);
+              data, mesh_index, static_cast<size_t>(primitive_index),
+              document.absolute, document.canonical_key, skin);
       if (!primitive_mesh) {
         continue;
       }
       MeshPreviewSubmeshDraw draw{};
       draw.mesh = primitive_mesh;
       draw.material = primitive_mesh->getMaterialAsset();
+      draw.model = model;
       draws.push_back(eastl::move(draw));
     }
   }

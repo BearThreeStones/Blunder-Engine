@@ -174,6 +174,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       }
       ui.set_hierarchy_tree_rows(rows);
       ui.set_hierarchy_selected_entity_id(snapshot.hierarchy_selected_entity_id);
+      ui.set_hierarchy_scene_display_name(
+          toSharedString(snapshot.hierarchy_scene_display_name));
       break;
     }
     case DockPanelKind::inspector:

@@ -7,6 +7,7 @@
 namespace Blunder {
 
 class FileSystem;
+class AssetRegistry;
 struct ContentEntry;
 
 struct ThumbnailCachePaths {
@@ -18,6 +19,7 @@ struct ThumbnailCachePaths {
 class ThumbnailCache final {
  public:
   void bind(FileSystem* file_system);
+  void setAssetRegistry(AssetRegistry* asset_registry);
 
   eastl::string cacheRoot() const;
   ThumbnailCachePaths pathsForEntry(const ContentEntry& entry) const;
@@ -32,6 +34,7 @@ class ThumbnailCache final {
   eastl::string sanitizeVirtualPath(const eastl::string& virtual_path) const;
 
   FileSystem* m_file_system{nullptr};
+  AssetRegistry* m_asset_registry{nullptr};
 };
 
 }  // namespace Blunder

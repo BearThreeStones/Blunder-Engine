@@ -235,6 +235,7 @@ class SlintSystem final : public IEditorUiPresentation {
   BlinnPhongEditorSettings pullPreviewSettingsFromSlint() const override;
   void pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) override;
   void syncHierarchy() override;
+  void syncActiveSceneIndicator();
   void syncInspectorFromSelection() override;
   void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) override;
   void clearAssetInspectorSelection() override;
@@ -515,6 +516,9 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_pending_file_dialog_is_import{false};
   eastl::vector<eastl::string> m_browser_selected_grid_paths;
   eastl::string m_browser_selection_anchor_path;
+  bool m_scene_indicator_initialized{false};
+  eastl::string m_synced_scene_path;
+  bool m_synced_scene_dirty{false};
   Uint32 m_open_import_dialog_event{0};
   bool m_tree_folder_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};

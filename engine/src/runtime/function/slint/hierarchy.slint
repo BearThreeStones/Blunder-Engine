@@ -1,6 +1,7 @@
 import {
     EditorIconTreeArrowRight,
     EditorIconTreeArrowDown,
+    EditorIconScene,
 } from "editor_icons.slint";
 
 export struct HierarchyTreeRow {
@@ -25,6 +26,7 @@ export component HierarchyPanel {
 
     in property <int> selected-entity-id: 0;
     in property <bool> show-title: false;
+    in property <string> scene-display-name: "(No Scene)";
 
     callback entity-selected(int);
 
@@ -75,6 +77,33 @@ export component HierarchyPanel {
             }
 
             if root.show-title: Rectangle { background: #2a2a2a; height: 1px; }
+
+            scene-header := Rectangle {
+                horizontal-stretch: 1;
+                height: 22px;
+                background: transparent;
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    padding-left: 2px;
+                    height: 22px;
+
+                    EditorIconScene {
+                        icon-size: 14px;
+                        icon-color: #e0e0e0;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    Text {
+                        text: root.scene-display-name;
+                        color: #d8d8d8;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                }
+            }
 
             tree-panel := Rectangle {
 
