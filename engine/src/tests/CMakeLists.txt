@@ -2334,3 +2334,80 @@ target_precompile_headers(method_track_gltf_import_test
 add_test(NAME method_track_gltf_import_test
          COMMAND method_track_gltf_import_test)
 
+
+# Physics kernel: Q32.32 fixed math (no glm/libm). Linux Clang x64 is the v0 bit-identical peer.
+add_executable(fixed_math_test
+    "fixed_math_test.cpp"
+)
+
+target_link_libraries(fixed_math_test
+    PRIVATE blunder_fixed_math
+)
+
+if(MSVC)
+    target_compile_options(fixed_math_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME fixed_math_test
+         COMMAND fixed_math_test)
+
+add_executable(physics_world_test
+    "physics_world_test.cpp"
+)
+
+target_link_libraries(physics_world_test
+    PRIVATE blunder_physics
+)
+
+if(MSVC)
+    target_compile_options(physics_world_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME physics_world_test
+         COMMAND physics_world_test)
+
+add_executable(physics_collision_test
+    "physics_collision_test.cpp"
+)
+
+target_link_libraries(physics_collision_test
+    PRIVATE blunder_physics
+)
+
+if(MSVC)
+    target_compile_options(physics_collision_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME physics_collision_test
+         COMMAND physics_collision_test)
+
+# Physics kernel v0 golden suite 鈥?headless Done gate for all 8 required scenarios.
+# Cross-platform bit-identical peer: Linux Clang or GCC x64 must match Win MSVC x64 dumps.
+set(PHYSICS_GOLDEN_FIXTURE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/physics_golden")
+set(PHYSICS_GOLDEN_REFERENCE_DUMP "${PHYSICS_GOLDEN_FIXTURE_DIR}/win-msvc-x64.dump")
+
+add_executable(physics_golden_suite
+    "physics_golden_suite.cpp"
+    "physics_golden_dump.cpp"
+)
+
+target_link_libraries(physics_golden_suite
+    PRIVATE blunder_physics
+)
+
+target_include_directories(physics_golden_suite
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+if(MSVC)
+    target_compile_options(physics_golden_suite PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME physics_golden_suite
+         COMMAND physics_golden_suite)
+
+if(EXISTS "${PHYSICS_GOLDEN_REFERENCE_DUMP}")
+    add_test(NAME physics_golden_suite_cross_platform
+             COMMAND physics_golden_suite --compare "${PHYSICS_GOLDEN_REFERENCE_DUMP}")
+endif()
+

@@ -126,6 +126,68 @@ _Avoid_: Boxing every script call into Variant, exposing C++ member pointers to 
 A small engine dynamic value used for editor-facing property get/set, serialization glue, and other type-erased tooling paths — not the primary script call ABI.
 _Avoid_: Using Variant as the only interop calling convention, conflating with `std::variant` / EASTL variant
 
+### Physics
+
+**Physics Kernel**:
+The engine-owned rigid-body simulation core (integration, contact generation, stacking, sleep). Authored and stepped in native code; verified by the Physics golden suite and module unit tests. Built for **lockstep-grade determinism** (cross-platform bit/checksum identity as a product contract). Distinct from later gameplay-facing character / controller APIs and from C# Message as a physics deliverable. Decision record: [ADR 0028](docs/adr/0028-physics-kernel-fixedpoint-lockstep.md).
+_Avoid_: CharacterController as the kernel, shipping game Messages or Behaviour APIs as the first physics milestone, treating editor eyeballing as the sole correctness gate, adopting a third-party solver as the long-term source of truth for Blunder physics, treating same-machine-only repeatability as enough for networked physics
+
+**Physics Kernel v0**:
+The first closed Physics Kernel slice: 3D rigid bodies (Dynamic / Static / Kinematic), gravity/forces, convex colliders (box / sphere / capsule), per-Collider materials (friction + restitution 0 default), resting contact and stacking, per-body sleep. Explicitly out of v0: CCD, joints/constraints beyond contact, island sleep, triangle meshes / heightfields, soft bodies, cloth, vehicles, 2D, character-controller APIs, and SceneInstance/ECS/Object bridges.
+_Avoid_: Bundling CCD/joints/meshes/character/island-sleep/scene-bridge into the first kernel closed loop, declaring v0 done on visual sandbox alone
+
+**Physics World**:
+The authoritative native container for Physics Kernel state (bodies, colliders, velocities, contacts). The golden suite drives and asserts against this World directly. Projection into `SceneInstance` / a future ECS World / Object APIs is a later bridge milestone — not part of Kernel v0 closure.
+_Avoid_: Making SceneInstance Entity TRS or Object nodes the v0 source of truth for body state, requiring ECS World migration before the first golden suite can run, Godot-style scene-tree nodes as the kernel authority
+
+**Physics step**:
+One fixed-timestep advance of a Physics World (`dt = 1/60` by default). The golden suite calls `step` a fixed number of times; variable frame-rate accumulators belong to a later host/bridge, not Kernel v0.
+_Avoid_: Variable `delta_time` as the v0 integration input, unbounded substeps that chase frame time inside the World, baking editor/player frame pacing into the kernel API
+
+**Physics units**:
+Physics World quantities use SI: metres, seconds, kilograms. Default gravity is `(0, 0, -9.81)` in Z-up world space; a World may override gravity. Matches engine right-handed Z-up space. Stored and stepped as **Physics fixed scalar** (Q32.32), not float.
+_Avoid_: Centimetres as the default length unit, unspecified units with ad-hoc golden tolerances, Y-up gravity inside the Physics World, float storage as the kernel source of truth under lockstep
+
+**RigidBody**:
+A Physics World body with pose, velocity, mass properties, and a motion type. Owns zero or more Colliders. Not an Object, not a SceneInstance Entity, and not a gameplay CharacterController.
+_Avoid_: Equating RigidBody with a scene node or Object, one-shape-only forever as the data model, treating Behaviour as the body authority
+
+**Collider**:
+A collision shape (v0: box / sphere / capsule) attached to a RigidBody, with material parameters used in contact. Multiple Colliders may attach to one RigidBody.
+_Avoid_: Collider as a standalone simulated body, requiring a scene-tree CollisionShape node as kernel authority
+
+**Physics material**:
+Per-Collider contact parameters for Kernel v0: friction (at least one usable μ model) and restitution. Contact between two Colliders combines materials with a simple rule (exact combine function is an implementation detail). Defaults favor stacking: moderate friction, restitution 0. Bouncy defaults and bounce goldens are out of v0 closure.
+_Avoid_: World-only global friction as the only model, frictionless v0 that fakes stacking via position correction alone, default restitution > 0 as the v0 stacking path
+
+**Body motion type**:
+How a RigidBody participates in the simulation: **Dynamic** (forces/impulses, integrated), **Static** (immovable, infinite mass), **Kinematic** (external `target_pose`; each Physics step derives linear/angular velocity from the pose delta, uses that velocity in contact so moving Kinematics can push Dynamics, then ends the step at `target_pose`). All three are in Kernel v0; a moving-platform-pushes-box case belongs in the Physics golden suite.
+_Avoid_: Fake Static via huge-mass Dynamics, teleport-only Kinematic with zero velocity as the v0 product rule, velocity-only Kinematic that cannot accept a target pose, shipping a Kinematic type without a push golden, conflating Kinematic with CharacterController API
+
+**Body sleep**:
+A Dynamic RigidBody may enter sleep when linear and angular speed stay below thresholds for N consecutive Physics steps; contacts or applied forces wake it. Static and Kinematic bodies do not sleep. Kernel v0 uses per-body sleep (S1); island-wide sleep/wake is a follow-on kernel milestone, not required to close v0.
+_Avoid_: No-sleep v0 that only hopes velocities stay small, timer-forced freeze as sleep, requiring island sleep before v0 golden closure
+
+**Physics determinism (v0)**:
+Kernel v0 is **lockstep-grade deterministic**: same World inputs and same Physics step sequence produce bit-identical simulation state across the supported platform/compiler matrix. Stepping is single-threaded with a frozen, order-stable contact/solve pipeline. Multithreading is allowed later only if it preserves that contract. The simulation scalar is **Q32.32 fixed-point** (`int64` integer/fractional split), not IEEE float, on the physics hot path — transcendental/sqrt helpers used by physics are engine-owned fixed-point routines (no platform `libm` on that path). **v0 Done requires the Physics golden suite to pass with bit-identical World state on Windows MSVC x64 and Linux Clang or GCC x64 (P1).**
+_Avoid_: Treating same-build flaky-tolerant floats as the product bar, multithreaded v0 that relaxes order for speed, deferring cross-platform determinism until after netcode lands, declaring lockstep physics ready on float or single-platform-only goldens, Q22.10 as the primary physics scalar, mixing unchecked float into Kernel step
+
+**Physics fixed scalar**:
+The Physics Kernel's numeric type: binary fixed-point **Q32.32** stored in a signed 64-bit integer (32 integer bits, 32 fractional bits). World quantities remain SI conceptually (metres, seconds, kilograms) but are represented and computed in this scalar. Golden assertions compare in the fixed domain (or values derived from it without nondeterministic float).
+_Avoid_: Float as the kernel scalar under a lockstep contract, per-module ad-hoc Q formats without a single physics scalar, lookup-table math that must be regenerated on every format tweak as the primary approach
+
+**Fixed math library**:
+An engine-owned Q32.32 math module (scalars, vectors, quaternions, and the transcendentals/sqrt physics needs) used by the Physics Kernel. Independent of float `glm` / platform `libm` on the simulation path. Kernel v0 consumes it for physics only (**Scope1**); the module is packaged for later lockstep gameplay reuse (**Scope2** reserve). Scene bridge converts fixed poses to float for `SceneInstance` / rendering.
+_Avoid_: Physics-private one-off fixed helpers that cannot be reused by future lockstep gameplay, float glm as a dependency of the simulation math path, converting to float mid-step for "just this solve"
+
+**Physics scene bridge**:
+The first post–Kernel-v0 milestone: project Physics World body poses into `SceneInstance` and/or a future ECS Transform path so simulation is visible/usable in the engine host. Still not CharacterController or full gameplay physics API. Follows v0 golden closure; precedes treating multithreading / CCD / joints / meshes as the next top priority by default.
+_Avoid_: Bundling the bridge into Kernel v0 closure, equating the bridge with Character API, requiring multithreaded solve before any scene projection
+
+**Physics golden suite**:
+A fixed set of scenarios with numeric assertions that gate Physics Kernel changes. Primary acceptance for the kernel; module unit tests cover isolated algorithms (e.g. GJK, contact solve step). Optional early calibration against another engine is allowed; that engine is not the lasting truth source. **Kernel v0 required scenarios:** (1) free fall under gravity; (2) Dynamic resting on Static; (3) stack of ≥3 boxes; (4) sphere–box and capsule–box resting contacts; (5) frictional incline; (6) Kinematic platform lifts/pushes a Dynamic box; (7) impact against Static with bounded kinetic energy at restitution 0; (8) sleeping Dynamic wakes on hit. Bounce, joints, CCD, triangle meshes, and compound-shape stress are out of the v0 required set.
+_Avoid_: Editor visual inspection as the only gate, locking correctness forever to Jolt/Bullet/PhysX reference dumps, declaring v0 closed without the eight required scenarios
+
 ### Project management
 
 **Project**:
