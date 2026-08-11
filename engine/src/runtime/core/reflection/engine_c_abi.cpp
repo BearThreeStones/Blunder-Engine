@@ -753,6 +753,60 @@ int blunder_animation_tree_get_asset_guid(BlunderObjectId id, char* out_guid,
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_animation_tree_set_tree_param_bool(BlunderObjectId id,
+                                               const char* name, int value) {
+  if (name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  tree->setTreeParamBool(eastl::string(name), value != 0);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_get_tree_param_bool(BlunderObjectId id,
+                                               const char* name,
+                                               int* out_value) {
+  if (name == nullptr || out_value == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_value = tree->getTreeParamBool(eastl::string(name)) ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_set_tree_param_float(BlunderObjectId id,
+                                                const char* name, float value) {
+  if (name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  tree->setTreeParamFloat(eastl::string(name), value);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_animation_tree_get_tree_param_float(BlunderObjectId id,
+                                                const char* name,
+                                                float* out_value) {
+  if (name == nullptr || out_value == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_value = tree->getTreeParamFloat(eastl::string(name));
+  return BLUNDER_ENGINE_OK;
+}
+
 int blunder_skeleton_modifier_count(BlunderObjectId id, int* out_count) {
   if (out_count == nullptr) {
     return BLUNDER_ENGINE_ERROR;
@@ -1256,6 +1310,14 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
       &blunder_animation_tree_get_blend_space_2d_param;
   out->animation_tree_set_asset_guid = &blunder_animation_tree_set_asset_guid;
   out->animation_tree_get_asset_guid = &blunder_animation_tree_get_asset_guid;
+  out->animation_tree_set_tree_param_bool =
+      &blunder_animation_tree_set_tree_param_bool;
+  out->animation_tree_get_tree_param_bool =
+      &blunder_animation_tree_get_tree_param_bool;
+  out->animation_tree_set_tree_param_float =
+      &blunder_animation_tree_set_tree_param_float;
+  out->animation_tree_get_tree_param_float =
+      &blunder_animation_tree_get_tree_param_float;
   out->skeleton_modifier_count = &blunder_skeleton_modifier_count;
   out->skeleton_modifier_set_enabled = &blunder_skeleton_modifier_set_enabled;
   out->skeleton_modifier_get_enabled = &blunder_skeleton_modifier_get_enabled;
@@ -1413,6 +1475,14 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_animation_tree_set_asset_guid");
   BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_asset_guid,
                           "blunder_animation_tree_get_asset_guid");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_tree_param_bool,
+                          "blunder_animation_tree_set_tree_param_bool");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_tree_param_bool,
+                          "blunder_animation_tree_get_tree_param_bool");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_set_tree_param_float,
+                          "blunder_animation_tree_set_tree_param_float");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_get_tree_param_float,
+                          "blunder_animation_tree_get_tree_param_float");
   BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_count,
                           "blunder_skeleton_modifier_count");
   BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_enabled,

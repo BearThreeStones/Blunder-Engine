@@ -133,6 +133,10 @@ static unsafe class Program
         abi.animation_tree_get_blend_space_2d_param = &StubAnimationTreeGetBlendSpace2DParam;
         abi.animation_tree_set_asset_guid = &StubAnimationTreeSetAssetGuid;
         abi.animation_tree_get_asset_guid = &StubAnimationTreeGetAssetGuid;
+        abi.animation_tree_set_tree_param_bool = &StubAnimationTreeSetTreeParamBool;
+        abi.animation_tree_get_tree_param_bool = &StubAnimationTreeGetTreeParamBool;
+        abi.animation_tree_set_tree_param_float = &StubAnimationTreeSetTreeParamFloat;
+        abi.animation_tree_get_tree_param_float = &StubAnimationTreeGetTreeParamFloat;
         abi.skeleton_modifier_count = &StubSkeletonModifierCount;
         abi.skeleton_modifier_set_enabled = &StubSkeletonModifierSetEnabled;
         abi.skeleton_modifier_get_enabled = &StubSkeletonModifierGetEnabled;
@@ -985,6 +989,54 @@ static unsafe class Program
         }
 
         WriteUtf8(s_treeAssetGuid, outGuid, capacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetTreeParamBool(ulong id, byte* name, int value)
+    {
+        if (id == 0 || name == null)
+        {
+            return Native.Error;
+        }
+
+        _ = value;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetTreeParamBool(ulong id, byte* name, int* outValue)
+    {
+        if (id == 0 || name == null || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = 0;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeSetTreeParamFloat(ulong id, byte* name, float value)
+    {
+        if (id == 0 || name == null)
+        {
+            return Native.Error;
+        }
+
+        _ = value;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreeGetTreeParamFloat(ulong id, byte* name, float* outValue)
+    {
+        if (id == 0 || name == null || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = 0f;
         return Native.Ok;
     }
 

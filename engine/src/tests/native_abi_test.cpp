@@ -137,6 +137,14 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.animation_tree_set_asset_guid != nullptr);
   expect_true((std::string(label) + ": animation_tree_get_asset_guid").c_str(),
               abi.animation_tree_get_asset_guid != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_tree_param_bool").c_str(),
+              abi.animation_tree_set_tree_param_bool != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_tree_param_bool").c_str(),
+              abi.animation_tree_get_tree_param_bool != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_tree_param_float").c_str(),
+              abi.animation_tree_set_tree_param_float != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_tree_param_float").c_str(),
+              abi.animation_tree_get_tree_param_float != nullptr);
   expect_true((std::string(label) + ": skeleton_modifier_count").c_str(),
               abi.skeleton_modifier_count != nullptr);
   expect_true((std::string(label) + ": skeleton_modifier_set_enabled").c_str(),

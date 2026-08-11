@@ -70,6 +70,14 @@ public unsafe struct BlunderNativeAbi
         animation_tree_get_blend_space_2d_param;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_set_asset_guid;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int, int> animation_tree_get_asset_guid;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, int>
+        animation_tree_set_tree_param_bool;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int*, int>
+        animation_tree_get_tree_param_bool;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float, int>
+        animation_tree_set_tree_param_float;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, float*, int>
+        animation_tree_get_tree_param_float;
     public delegate* unmanaged[Cdecl]<ulong, int*, int> skeleton_modifier_count;
     public delegate* unmanaged[Cdecl]<ulong, int, int, int> skeleton_modifier_set_enabled;
     public delegate* unmanaged[Cdecl]<ulong, int, int*, int> skeleton_modifier_get_enabled;

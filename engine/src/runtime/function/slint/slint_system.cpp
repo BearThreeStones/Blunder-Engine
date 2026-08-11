@@ -37,6 +37,7 @@
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
+#include "runtime/function/editor/animation_tree_canvas_document.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/inspector_transform_ops.h"
 #include "runtime/function/editor/viewport_pick_system.h"
@@ -888,6 +889,33 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::animPreviewEndCine));
         }));
+    component->on_anim_tree_canvas_close_requested([this]() {
+      AnimationTreeCanvasSession::instance().close();
+      syncAnimationTreeCanvas();
+    });
+    component->on_anim_tree_canvas_save_requested([this]() {
+      FileSystem* file_system = g_runtime_global_context.m_file_system.get();
+      if (file_system == nullptr) {
+        return;
+      }
+      AnimationTreeCanvasDocument& doc =
+          AnimationTreeCanvasSession::instance().document();
+      if (doc.isOpen() && doc.save(*file_system)) {
+        LOG_INFO("[AnimationTreeCanvas] saved {}", doc.topologyPath().c_str());
+      }
+      syncAnimationTreeCanvas();
+    });
+    component->on_anim_tree_canvas_open_from_selection_requested(
+        UiCallbackBinder::bind(m_ui_host, [](UiHost& host) {
+          AnimationPreviewController* preview =
+              g_runtime_global_context.m_animation_preview.get();
+          if (preview == nullptr || preview->assetGuid().empty()) {
+            return;
+          }
+          host.enqueue(UiEvent::withPath(
+              UiEventKind::openAnimationTreeCanvasFromGuid,
+              preview->assetGuid()));
+        }));
     component->on_play_dirty_save_and_play(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playDirtySaveAndPlay));
@@ -1243,6 +1271,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
             if (const auto host = m_ui_host.lock()) {
               host->enqueue(
                   UiEvent::withPath(UiEventKind::openSceneAsset, path_str));
+            }
+            return;
+          }
+
+          if (isAnimationTreeAssetDescriptorPath(path_str)) {
+            if (const auto host = m_ui_host.lock()) {
+              host->enqueue(UiEvent::withPath(
+                  UiEventKind::openAnimationTreeAsset, path_str));
             }
             return;
           }
@@ -3743,6 +3779,86 @@ void SlintSystem::refreshEditorScenePanels() {
   syncInspectorFromSelection();
   syncTransformToolbarFromEngine();
   syncCameraPreviewFromEngine();
+  syncAnimationTreeCanvas();
+}
+
+void SlintSystem::syncAnimationTreeCanvas() {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    const AnimationTreeCanvasDocument& doc =
+        AnimationTreeCanvasSession::instance().document();
+    ui->set_anim_tree_canvas_open(doc.isOpen());
+    ui->set_anim_tree_canvas_dirty(doc.isDirty());
+    ui->set_anim_tree_canvas_guid(
+        slint::SharedString(doc.isOpen() ? doc.assetGuid().c_str() : ""));
+
+    auto nodes = std::make_shared<slint::VectorModel<AnimationTreeCanvasNodeRow>>();
+    auto edges = std::make_shared<slint::VectorModel<AnimationTreeCanvasEdgeRow>>();
+    if (doc.isOpen()) {
+      const AnimationTreeTopologyData& topology = doc.topology();
+      auto push_node = [&](const eastl::string& id, const char* kind) {
+        AnimationTreeCanvasNodeRow row{};
+        row.node_id = slint::SharedString(id.c_str());
+        row.kind = slint::SharedString(kind);
+        row.x = 0.0f;
+        row.y = 0.0f;
+        for (const auto& layout : topology.canvas_layout) {
+          if (layout.node_id == id) {
+            row.x = layout.x;
+            row.y = layout.y;
+            break;
+          }
+        }
+        nodes->push_back(row);
+      };
+      for (const auto& space : topology.blend_spaces_1d) {
+        push_node(space.node_name, "BlendSpace1D");
+      }
+      for (const auto& space : topology.blend_spaces_2d) {
+        push_node(space.node_name, "BlendSpace2D");
+      }
+      for (const auto& state : topology.states) {
+        push_node(state.name, "StateMachine");
+      }
+      if (!topology.oneshot_clip.empty()) {
+        push_node("OneShot", "OneShot");
+      }
+      if (!topology.add2_clip.empty()) {
+        push_node("Add2", "Add2");
+      }
+      for (const auto& edge : topology.transitions) {
+        AnimationTreeCanvasEdgeRow row{};
+        eastl::string label = edge.from_state;
+        label += " -> ";
+        label += edge.to_state;
+        label += " [";
+        label += edge.param_name;
+        label += "] p";
+        char priority_buf[32];
+        std::snprintf(priority_buf, sizeof(priority_buf), "%d", edge.priority);
+        label += priority_buf;
+        row.label = slint::SharedString(label.c_str());
+        edges->push_back(row);
+      }
+    }
+    ui->set_anim_tree_canvas_nodes(nodes);
+    ui->set_anim_tree_canvas_edges(edges);
+
+    bool open_enabled = false;
+    if (AnimationPreviewController* preview =
+            g_runtime_global_context.m_animation_preview.get()) {
+      open_enabled = !preview->assetGuid().empty();
+    }
+    ui->set_anim_tree_canvas_open_enabled(open_enabled);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncAnimationTreeCanvas] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncAnimationTreeCanvas] unknown exception");
+  }
 }
 
 void SlintSystem::syncCameraPreviewFromSlint() {

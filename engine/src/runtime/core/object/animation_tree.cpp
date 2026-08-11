@@ -631,6 +631,195 @@ bool AnimationTree::start(const eastl::string& state_name) {
   return true;
 }
 
+void AnimationTree::setTreeParamBool(const eastl::string& name, bool value) {
+  if (name.empty()) {
+    return;
+  }
+  TreeParam& param = m_tree_params[name];
+  param.kind = TreeParam::Kind::Bool;
+  param.bool_value = value;
+}
+
+bool AnimationTree::getTreeParamBool(const eastl::string& name) const {
+  const auto it = m_tree_params.find(name);
+  if (it == m_tree_params.end() || it->second.kind != TreeParam::Kind::Bool) {
+    return false;
+  }
+  return it->second.bool_value;
+}
+
+void AnimationTree::setTreeParamFloat(const eastl::string& name, float value) {
+  if (name.empty()) {
+    return;
+  }
+  TreeParam& param = m_tree_params[name];
+  param.kind = TreeParam::Kind::Float;
+  param.float_value = value;
+}
+
+float AnimationTree::getTreeParamFloat(const eastl::string& name) const {
+  const auto it = m_tree_params.find(name);
+  if (it == m_tree_params.end() || it->second.kind != TreeParam::Kind::Float) {
+    return 0.0f;
+  }
+  return it->second.float_value;
+}
+
+bool AnimationTree::addTransition(const StateMachineTransition& transition) {
+  if (transition.from_state.empty() || transition.to_state.empty() ||
+      transition.param_name.empty()) {
+    return false;
+  }
+  if (m_states.find(transition.from_state) == m_states.end() ||
+      m_states.find(transition.to_state) == m_states.end()) {
+    return false;
+  }
+  m_transitions.push_back(transition);
+  return true;
+}
+
+void AnimationTree::clearTransitions() { m_transitions.clear(); }
+
+void AnimationTree::visitTransitions(TransitionVisitor visitor,
+                                     void* userdata) const {
+  if (visitor == nullptr) {
+    return;
+  }
+  for (const StateMachineTransition& edge : m_transitions) {
+    visitor(edge, userdata);
+  }
+}
+
+void AnimationTree::setCanvasNodePosition(const eastl::string& node_id, float x,
+                                          float y) {
+  if (node_id.empty()) {
+    return;
+  }
+  m_canvas_layout[node_id] = BlendSpace2DParam{x, y};
+}
+
+bool AnimationTree::getCanvasNodePosition(const eastl::string& node_id,
+                                          float& out_x, float& out_y) const {
+  const auto it = m_canvas_layout.find(node_id);
+  if (it == m_canvas_layout.end()) {
+    return false;
+  }
+  out_x = it->second.x;
+  out_y = it->second.y;
+  return true;
+}
+
+void AnimationTree::visitCanvasLayout(CanvasLayoutVisitor visitor,
+                                      void* userdata) const {
+  if (visitor == nullptr) {
+    return;
+  }
+  for (const auto& entry : m_canvas_layout) {
+    visitor(entry.first, entry.second.x, entry.second.y, userdata);
+  }
+}
+
+bool AnimationTree::resolveConditionBool(const StateMachineTransition& edge,
+                                         bool& out_value) const {
+  if (edge.source != TransitionConditionSource::TreeParam) {
+    return false;
+  }
+  const auto it = m_tree_params.find(edge.param_name);
+  if (it == m_tree_params.end() || it->second.kind != TreeParam::Kind::Bool) {
+    out_value = false;
+    return true;
+  }
+  out_value = it->second.bool_value;
+  return true;
+}
+
+bool AnimationTree::resolveConditionFloat(const StateMachineTransition& edge,
+                                          float& out_value) const {
+  switch (edge.source) {
+    case TransitionConditionSource::TreeParam: {
+      const auto it = m_tree_params.find(edge.param_name);
+      if (it == m_tree_params.end() ||
+          it->second.kind != TreeParam::Kind::Float) {
+        out_value = 0.0f;
+        return true;
+      }
+      out_value = it->second.float_value;
+      return true;
+    }
+    case TransitionConditionSource::BlendSpace1DScalar:
+      out_value = getBlendSpaceScalar(edge.param_name);
+      return true;
+    case TransitionConditionSource::BlendSpace2DX:
+      out_value = getBlendSpace2DParam(edge.param_name).x;
+      return true;
+    case TransitionConditionSource::BlendSpace2DY:
+      out_value = getBlendSpace2DParam(edge.param_name).y;
+      return true;
+    case TransitionConditionSource::Add2Weight:
+      out_value = m_add2_weight;
+      return true;
+  }
+  return false;
+}
+
+bool AnimationTree::evaluateTransitionCondition(
+    const StateMachineTransition& edge) const {
+  if (edge.is_bool_predicate) {
+    bool value = false;
+    if (!resolveConditionBool(edge, value)) {
+      return false;
+    }
+    return value == edge.bool_operand;
+  }
+
+  float value = 0.0f;
+  if (!resolveConditionFloat(edge, value)) {
+    return false;
+  }
+  switch (edge.op) {
+    case TransitionCompareOp::Eq:
+      return value == edge.float_operand;
+    case TransitionCompareOp::Ne:
+      return value != edge.float_operand;
+    case TransitionCompareOp::Lt:
+      return value < edge.float_operand;
+    case TransitionCompareOp::Le:
+      return value <= edge.float_operand;
+    case TransitionCompareOp::Gt:
+      return value > edge.float_operand;
+    case TransitionCompareOp::Ge:
+      return value >= edge.float_operand;
+  }
+  return false;
+}
+
+void AnimationTree::evaluateTransitions() {
+  if (!m_active || m_current_state_name.empty() || m_transitions.empty()) {
+    return;
+  }
+
+  const StateMachineTransition* best = nullptr;
+  size_t best_index = 0;
+  for (size_t i = 0; i < m_transitions.size(); ++i) {
+    const StateMachineTransition& edge = m_transitions[i];
+    if (edge.from_state != m_current_state_name) {
+      continue;
+    }
+    if (!evaluateTransitionCondition(edge)) {
+      continue;
+    }
+    if (best == nullptr || edge.priority > best->priority ||
+        (edge.priority == best->priority && i < best_index)) {
+      best = &edge;
+      best_index = i;
+    }
+  }
+
+  if (best != nullptr) {
+    travel(best->to_state);
+  }
+}
+
 bool AnimationTree::requestOneShot(const eastl::string& clip_name) {
   if (clip_name.empty()) {
     return false;
@@ -704,6 +893,9 @@ void AnimationTree::clearAuthoredTopology() {
   m_base_blend_space_2d_node.clear();
   m_states.clear();
   m_current_state_name.clear();
+  m_tree_params.clear();
+  m_transitions.clear();
+  m_canvas_layout.clear();
   m_sample_clip_name.clear();
   m_add2_clip_name.clear();
   m_add2_weight = 0.0f;
@@ -777,6 +969,59 @@ bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology)
     }
   }
 
+  for (const AnimationTreeTopologyData::TreeParamDef& param :
+       topology.tree_params) {
+    if (param.kind == "bool") {
+      setTreeParamBool(param.name, param.bool_default);
+    } else {
+      setTreeParamFloat(param.name, param.float_default);
+    }
+  }
+
+  for (const AnimationTreeTopologyData::TransitionDef& def :
+       topology.transitions) {
+    StateMachineTransition edge;
+    edge.from_state = def.from_state;
+    edge.to_state = def.to_state;
+    edge.param_name = def.param_name;
+    edge.is_bool_predicate = def.is_bool_predicate;
+    edge.float_operand = def.float_operand;
+    edge.bool_operand = def.bool_operand;
+    edge.priority = def.priority;
+    if (def.source == "blendSpace1DScalar") {
+      edge.source = TransitionConditionSource::BlendSpace1DScalar;
+    } else if (def.source == "blendSpace2DX") {
+      edge.source = TransitionConditionSource::BlendSpace2DX;
+    } else if (def.source == "blendSpace2DY") {
+      edge.source = TransitionConditionSource::BlendSpace2DY;
+    } else if (def.source == "add2Weight") {
+      edge.source = TransitionConditionSource::Add2Weight;
+    } else {
+      edge.source = TransitionConditionSource::TreeParam;
+    }
+    if (def.op == "ne") {
+      edge.op = TransitionCompareOp::Ne;
+    } else if (def.op == "lt") {
+      edge.op = TransitionCompareOp::Lt;
+    } else if (def.op == "le") {
+      edge.op = TransitionCompareOp::Le;
+    } else if (def.op == "gt") {
+      edge.op = TransitionCompareOp::Gt;
+    } else if (def.op == "ge") {
+      edge.op = TransitionCompareOp::Ge;
+    } else {
+      edge.op = TransitionCompareOp::Eq;
+    }
+    if (!addTransition(edge)) {
+      return false;
+    }
+  }
+
+  for (const AnimationTreeTopologyData::CanvasLayoutNodeDef& node :
+       topology.canvas_layout) {
+    setCanvasNodePosition(node.node_id, node.x, node.y);
+  }
+
   return true;
 }
 
@@ -846,6 +1091,84 @@ void AnimationTree::exportTopologyData(
         out->states.push_back(eastl::move(state));
       },
       &out_topology);
+
+  for (const auto& entry : m_tree_params) {
+    AnimationTreeTopologyData::TreeParamDef param;
+    param.name = entry.first;
+    if (entry.second.kind == TreeParam::Kind::Bool) {
+      param.kind = "bool";
+      param.bool_default = entry.second.bool_value;
+    } else {
+      param.kind = "float";
+      param.float_default = entry.second.float_value;
+    }
+    out_topology.tree_params.push_back(eastl::move(param));
+  }
+
+  visitTransitions(
+      [](const StateMachineTransition& edge, void* userdata) {
+        auto* out = static_cast<AnimationTreeTopologyData*>(userdata);
+        AnimationTreeTopologyData::TransitionDef def;
+        def.from_state = edge.from_state;
+        def.to_state = edge.to_state;
+        def.param_name = edge.param_name;
+        def.is_bool_predicate = edge.is_bool_predicate;
+        def.float_operand = edge.float_operand;
+        def.bool_operand = edge.bool_operand;
+        def.priority = edge.priority;
+        switch (edge.source) {
+          case TransitionConditionSource::BlendSpace1DScalar:
+            def.source = "blendSpace1DScalar";
+            break;
+          case TransitionConditionSource::BlendSpace2DX:
+            def.source = "blendSpace2DX";
+            break;
+          case TransitionConditionSource::BlendSpace2DY:
+            def.source = "blendSpace2DY";
+            break;
+          case TransitionConditionSource::Add2Weight:
+            def.source = "add2Weight";
+            break;
+          case TransitionConditionSource::TreeParam:
+          default:
+            def.source = "treeParam";
+            break;
+        }
+        switch (edge.op) {
+          case TransitionCompareOp::Ne:
+            def.op = "ne";
+            break;
+          case TransitionCompareOp::Lt:
+            def.op = "lt";
+            break;
+          case TransitionCompareOp::Le:
+            def.op = "le";
+            break;
+          case TransitionCompareOp::Gt:
+            def.op = "gt";
+            break;
+          case TransitionCompareOp::Ge:
+            def.op = "ge";
+            break;
+          case TransitionCompareOp::Eq:
+          default:
+            def.op = "eq";
+            break;
+        }
+        out->transitions.push_back(eastl::move(def));
+      },
+      &out_topology);
+
+  visitCanvasLayout(
+      [](const eastl::string& node_id, float x, float y, void* userdata) {
+        auto* out = static_cast<AnimationTreeTopologyData*>(userdata);
+        AnimationTreeTopologyData::CanvasLayoutNodeDef node;
+        node.node_id = node_id;
+        node.x = x;
+        node.y = y;
+        out->canvas_layout.push_back(eastl::move(node));
+      },
+      &out_topology);
 }
 
 void AnimationTree::applyInstanceOverrides(
@@ -872,6 +1195,10 @@ void AnimationTree::applyInstanceOverrides(
 void AnimationTree::advance(float delta_seconds) {
   if (delta_seconds <= 0.0f) {
     return;
+  }
+
+  if (m_active) {
+    evaluateTransitions();
   }
 
   float time_scale = 1.0f;

@@ -1579,6 +1579,55 @@ target_precompile_headers(animation_tree_test
 add_test(NAME animation_tree_test
          COMMAND animation_tree_test)
 
+add_executable(animation_tree_phase7_test
+    "animation_tree_phase7_test.cpp"
+)
+
+target_link_libraries(animation_tree_phase7_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_tree_phase7_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(animation_tree_phase7_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(animation_tree_phase7_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME animation_tree_phase7_test
+         COMMAND animation_tree_phase7_test)
+
+add_executable(animation_tree_canvas_document_test
+    "animation_tree_canvas_document_test.cpp"
+)
+
+target_link_libraries(animation_tree_canvas_document_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_tree_canvas_document_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(animation_tree_canvas_document_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(animation_tree_canvas_document_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME animation_tree_canvas_document_test
+         COMMAND animation_tree_canvas_document_test)
+
+
 add_executable(animation_blend_space_2d_test
     "animation_blend_space_2d_test.cpp"
 )
@@ -2047,6 +2096,54 @@ target_precompile_headers(dogwalk_phase5_lean_play_acceptance_test
 
 add_test(NAME dogwalk_phase5_lean_play_acceptance_test
          COMMAND dogwalk_phase5_lean_play_acceptance_test)
+
+add_executable(dogwalk_phase7_engineering_gates_test
+    "dogwalk_phase7_engineering_gates_test.cpp"
+)
+
+target_link_libraries(dogwalk_phase7_engineering_gates_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_phase7_engineering_gates_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_phase7_engineering_gates_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_phase7_engineering_gates_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_phase7_engineering_gates_test
+         COMMAND dogwalk_phase7_engineering_gates_test)
+
+add_executable(dogwalk_phase7_lean_play_acceptance_test
+    "dogwalk_phase7_lean_play_acceptance_test.cpp"
+)
+
+target_link_libraries(dogwalk_phase7_lean_play_acceptance_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(dogwalk_phase7_lean_play_acceptance_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(dogwalk_phase7_lean_play_acceptance_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dogwalk_phase7_lean_play_acceptance_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME dogwalk_phase7_lean_play_acceptance_test
+         COMMAND dogwalk_phase7_lean_play_acceptance_test)
 
 add_executable(skeleton_modifier_timing_test
     "skeleton_modifier_timing_test.cpp"

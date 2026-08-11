@@ -1,7 +1,7 @@
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for an Object's co-located AnimationTree (C-ABI v9).
+/// Managed façade for an Object's co-located AnimationTree (C-ABI v10).
 /// </summary>
 public sealed class AnimationTree
 {
@@ -75,6 +75,34 @@ public sealed class AnimationTree
 
     public bool RequestOneShot(string clipName) =>
         Native.blunder_animation_tree_request_one_shot(_owner.Id, clipName) == Native.Ok;
+
+    public void SetTreeParamBool(string name, bool value) =>
+        Native.blunder_animation_tree_set_tree_param_bool(_owner.Id, name, value ? 1 : 0);
+
+    public bool GetTreeParamBool(string name)
+    {
+        if (Native.blunder_animation_tree_get_tree_param_bool(
+                _owner.Id, name, out int value) != Native.Ok)
+        {
+            return false;
+        }
+
+        return value != 0;
+    }
+
+    public void SetTreeParamFloat(string name, float value) =>
+        Native.blunder_animation_tree_set_tree_param_float(_owner.Id, name, value);
+
+    public float GetTreeParamFloat(string name)
+    {
+        if (Native.blunder_animation_tree_get_tree_param_float(
+                _owner.Id, name, out float value) != Native.Ok)
+        {
+            return 0f;
+        }
+
+        return value;
+    }
 
     public float Add2Weight
     {

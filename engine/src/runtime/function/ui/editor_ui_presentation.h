@@ -24,6 +24,7 @@ class IEditorUiPresentation {
   virtual void applyAnimationPreviewParams() = 0;
   virtual void fireAnimationSyncPreview() = 0;
   virtual void refreshEditorScenePanels() = 0;
+  virtual void syncAnimationTreeCanvas() = 0;
 
   virtual void setBlinnPhongMaterialSource(const MaterialAsset* material) = 0;
   virtual void syncBlinnPhongFromMaterialSource() = 0;

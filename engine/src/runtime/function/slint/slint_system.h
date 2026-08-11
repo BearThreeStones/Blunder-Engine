@@ -271,6 +271,7 @@ class SlintSystem final : public IEditorUiPresentation {
                                                  const eastl::string& text_value,
                                                  float number_value, bool bool_value);
   void refreshEditorScenePanels() override;
+  void syncAnimationTreeCanvas() override;
   void syncTransformToolbarFromEngine();
   void syncCameraPreviewFromEngine();
   void syncCameraPreviewFromSlint();

@@ -165,6 +165,14 @@ BLUNDER_ENGINE_C_API int blunder_animation_tree_set_asset_guid(
     BlunderObjectId id, const char* guid);
 BLUNDER_ENGINE_C_API int blunder_animation_tree_get_asset_guid(
     BlunderObjectId id, char* out_guid, int guid_capacity);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_tree_param_bool(
+    BlunderObjectId id, const char* name, int value);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_tree_param_bool(
+    BlunderObjectId id, const char* name, int* out_value);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_set_tree_param_float(
+    BlunderObjectId id, const char* name, float value);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_get_tree_param_float(
+    BlunderObjectId id, const char* name, float* out_value);
 
 BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_count(BlunderObjectId id,
                                                          int* out_count);
@@ -325,6 +333,15 @@ typedef struct BlunderNativeAbi {
   int (*animation_tree_set_asset_guid)(BlunderObjectId id, const char* guid);
   int (*animation_tree_get_asset_guid)(BlunderObjectId id, char* out_guid,
                                        int guid_capacity);
+  int (*animation_tree_set_tree_param_bool)(BlunderObjectId id, const char* name,
+                                            int value);
+  int (*animation_tree_get_tree_param_bool)(BlunderObjectId id, const char* name,
+                                            int* out_value);
+  int (*animation_tree_set_tree_param_float)(BlunderObjectId id,
+                                             const char* name, float value);
+  int (*animation_tree_get_tree_param_float)(BlunderObjectId id,
+                                             const char* name,
+                                             float* out_value);
   int (*skeleton_modifier_count)(BlunderObjectId id, int* out_count);
   int (*skeleton_modifier_set_enabled)(BlunderObjectId id, int index,
                                        int enabled);

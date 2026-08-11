@@ -1,0 +1,113 @@
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+
+export struct AnimationTreeCanvasNodeRow {
+    node-id: string,
+    kind: string,
+    x: float,
+    y: float,
+}
+
+export struct AnimationTreeCanvasEdgeRow {
+    label: string,
+}
+
+/// Lean Phase 7 Canvas: topology authorship surface (no bound live preview).
+export component AnimationTreeCanvasPanel inherits Rectangle {
+    in property <bool> canvas-open: false;
+    in property <string> asset-guid: "";
+    in property <bool> dirty: false;
+    in property <[AnimationTreeCanvasNodeRow]> nodes: [];
+    in property <[AnimationTreeCanvasEdgeRow]> edges: [];
+
+    callback close-requested();
+    callback save-requested();
+    callback open-from-selection-requested();
+
+    visible: root.canvas-open;
+    background: #1e1e1ef2;
+    border-width: 1px;
+    border-color: #3a3a3a;
+    border-radius: 4px;
+    clip: true;
+
+    VerticalBox {
+        padding: 8px;
+        spacing: 6px;
+
+        HorizontalBox {
+            spacing: 8px;
+            Text {
+                text: "AnimationTree Canvas";
+                color: #f0f0f0;
+                font-size: 13px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.dirty ? "(dirty)" : "";
+                color: #e0a060;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; background: transparent; }
+            Button {
+                text: "Save";
+                enabled: root.dirty;
+                clicked => { root.save-requested(); }
+            }
+            Button {
+                text: "Close";
+                clicked => { root.close-requested(); }
+            }
+        }
+
+        Text {
+            text: root.asset-guid != "" ? root.asset-guid : "(no Asset)";
+            color: #a8a8a8;
+            font-size: 11px;
+            overflow: elide;
+        }
+
+        Text {
+            text: "Nodes (topology-only — no live preview)";
+            color: #c8c8c8;
+            font-size: 11px;
+        }
+
+        VerticalBox {
+            spacing: 2px;
+            for row[index] in root.nodes: HorizontalBox {
+                spacing: 8px;
+                Text {
+                    text: row.kind;
+                    color: #8ab4f8;
+                    font-size: 11px;
+                    width: 100px;
+                }
+                Text {
+                    text: row.node-id;
+                    color: #e0e0e0;
+                    font-size: 11px;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        Text {
+            text: "Transitions";
+            color: #c8c8c8;
+            font-size: 11px;
+        }
+
+        VerticalBox {
+            spacing: 2px;
+            for edge[index] in root.edges: Text {
+                text: edge.label;
+                color: #d8d8d8;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+    }
+}
