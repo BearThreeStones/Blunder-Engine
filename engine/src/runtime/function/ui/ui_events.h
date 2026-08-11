@@ -41,6 +41,8 @@ enum class UiEventKind : uint8_t {
   playDirtySaveAndPlay,
   playDirtyPlayLastSaved,
   playDirtyCancel,
+  detectionReimportAll,
+  detectionReimportDismiss,
   animPreviewPlay,
   animPreviewPause,
   animPreviewStop,

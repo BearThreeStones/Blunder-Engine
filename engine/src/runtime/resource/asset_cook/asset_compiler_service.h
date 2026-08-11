@@ -39,6 +39,9 @@ class AssetCompilerService final {
   /// Rebuild the held Asset Dependency Graph from the registry + on-disk docs.
   void rebuildDependencyGraph();
 
+  /// Direct dependents of `guid` from the held graph (call rebuildDependencyGraph first).
+  eastl::vector<eastl::string> dependentsOf(const eastl::string& guid) const;
+
   /// How many times rebuildDependencyGraph() has succeeded since initialize.
   uint32_t dependencyGraphRebuildCount() const {
     return m_dependency_graph_rebuild_count;

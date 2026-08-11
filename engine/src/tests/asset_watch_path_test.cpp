@@ -3,6 +3,7 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/asset_watch_path.h"
+#include "runtime/project/editor_detection_settings.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_dependency/asset_dependency_graph.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
@@ -775,6 +776,159 @@ void reimportBatchRebuildsGraphOnce() {
   fs::remove_all(project);
 }
 
+
+void intermediateSourcePathMapsGuidForDetection() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "55555555-5555-4555-8555-555555555555";
+  const char* kClipGuid = "66666666-6666-4666-8666-666666666666";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "solo.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/solo/solo.gltf\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+  writeTextFile(project / "Assets" / "Animations" / "LOOP-idle.animation.yaml",
+                std::string("type: AnimationClip\n") + "guid: " + kClipGuid +
+                    "\n"
+                    "source: resources/Animations/LOOP-idle/LOOP-idle.gltf\n");
+  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.gltf", "gltf");
+  writeTextFile(project / "Resources" / "Animations" / "LOOP-idle" /
+                    "LOOP-idle.gltf",
+                "gltf");
+  writeBinaryFile(project / "Resources" / "Animations" / "LOOP-idle" /
+                      "LOOP-idle.bin",
+                  "BIN", 3);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  const fs::path resources = file_system.getResourcesRoot();
+
+  const eastl::vector<eastl::string> mesh_guids = guidsForDetectionWatchedPath(
+      AssetWatchPathClass::IntermediateResource,
+      resources / "Models" / "solo" / "solo.gltf", resources, registry,
+      file_system);
+  expect_true("intermediate mesh glTF maps mesh guid",
+              containsGuid(mesh_guids, kMeshGuid));
+
+  const eastl::vector<eastl::string> clip_guids = guidsForDetectionWatchedPath(
+      AssetWatchPathClass::IntermediateResource,
+      resources / "Animations" / "LOOP-idle" / "LOOP-idle.gltf", resources,
+      registry, file_system);
+  expect_true("intermediate clip glTF maps clip guid",
+              containsGuid(clip_guids, kClipGuid));
+
+  const eastl::vector<eastl::string> bin_guids = guidsForDetectionWatchedPath(
+      AssetWatchPathClass::IntermediateResource,
+      resources / "Animations" / "LOOP-idle" / "LOOP-idle.bin", resources,
+      registry, file_system);
+  expect_true("sidecar bin maps same clip guid",
+              containsGuid(bin_guids, kClipGuid));
+
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void detectionActionPreferencePersistsPromptAndAuto() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path store =
+      fs::temp_directory_path() /
+      ("blunder_detection_settings_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())) +
+       ".yaml");
+  EditorDetectionSettings::setStorePathForTest(
+      eastl::string(store.generic_string().c_str()));
+
+  expect_true("default Detection Action is Prompt",
+              EditorDetectionSettings::load() == DetectionAction::Prompt);
+  EditorDetectionSettings::save(DetectionAction::Auto);
+  expect_true("saved Auto Detection Action loads",
+              EditorDetectionSettings::load() == DetectionAction::Auto);
+  EditorDetectionSettings::save(DetectionAction::Prompt);
+  expect_true("saved Prompt Detection Action loads",
+              EditorDetectionSettings::load() == DetectionAction::Prompt);
+
+  EditorDetectionSettings::setStorePathForTest({});
+  fs::remove(store);
+  g_runtime_global_context.m_logger_system.reset();
+}
+
+void detectionPromptCoalescesGuidsWithoutSilentReimport() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const char* kMeshGuid = "77777777-7777-4777-8777-777777777777";
+  const char* kClipGuid = "88888888-8888-4888-8888-888888888888";
+
+  const fs::path project = makeTempProject();
+  writeTextFile(project / "Assets" / "Meshes" / "solo.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/solo/solo.gltf\n" +
+                    "archived_source: resources/Source/Models/solo.fbx\n" +
+                    "import:\n"
+                    "  materials: true\n"
+                    "  animations: true\n"
+                    "  scale: 1\n");
+  writeTextFile(project / "Assets" / "Animations" / "idle.animation.yaml",
+                std::string("type: AnimationClip\n") + "guid: " + kClipGuid +
+                    "\n"
+                    "source: resources/Animations/idle/idle.gltf\n");
+  writeTextFile(project / "Resources" / "Models" / "solo" / "solo.gltf", "gltf");
+  writeTextFile(project / "Resources" / "Source" / "Models" / "solo.fbx", "fbx");
+  writeTextFile(project / "Resources" / "Animations" / "idle" / "idle.gltf",
+                "gltf");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+  registry.rebuildFromScan();
+
+  const fs::path resources = file_system.getResourcesRoot();
+  eastl::vector<eastl::string> guids;
+  for (const eastl::string& g : guidsForDetectionWatchedPath(
+           AssetWatchPathClass::SourceArchive,
+           resources / "Source" / "Models" / "solo.fbx", resources, registry,
+           file_system)) {
+    guids.push_back(g);
+  }
+  for (const eastl::string& g : guidsForDetectionWatchedPath(
+           AssetWatchPathClass::IntermediateResource,
+           resources / "Animations" / "idle" / "idle.gltf", resources, registry,
+           file_system)) {
+    guids.push_back(g);
+  }
+  expect_true("coalesce set includes mesh", containsGuid(guids, kMeshGuid));
+  expect_true("coalesce set includes clip", containsGuid(guids, kClipGuid));
+  expect_true("default Detection Action remains Prompt",
+              EditorDetectionSettings::defaultAction() ==
+                  DetectionAction::Prompt);
+
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -788,6 +942,9 @@ int main() {
   descriptorChangeInvalidatesFinal();
   sourceChangeTriggersReimportInvalidatesFinal();
   reimportBatchRebuildsGraphOnce();
+  intermediateSourcePathMapsGuidForDetection();
+  detectionActionPreferencePersistsPromptAndAuto();
+  detectionPromptCoalescesGuidsWithoutSilentReimport();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

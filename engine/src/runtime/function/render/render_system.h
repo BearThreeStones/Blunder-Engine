@@ -125,6 +125,9 @@ class RenderSystem final {
                                         const uint32_t* indices,
                                         size_t index_count);
 
+  /// Drop all uploaded GPU meshes (Editor Asset Hot Reload after Mesh Reimport).
+  void invalidateAllGpuMeshes() { clearGpuMeshes(); }
+
   bool addOpaqueMeshDraw(
       GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
       VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,

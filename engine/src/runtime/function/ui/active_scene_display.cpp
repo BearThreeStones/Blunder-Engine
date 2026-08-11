@@ -1,0 +1,53 @@
+#include "runtime/function/ui/active_scene_display.h"
+
+namespace Blunder {
+namespace {
+
+constexpr char k_scene_suffix[] = ".scene.asset";
+constexpr size_t k_scene_suffix_len = sizeof(k_scene_suffix) - 1u;
+
+}  // namespace
+
+eastl::string sceneShortNameFromVirtualPath(const eastl::string& virtual_path) {
+  if (virtual_path.empty()) {
+    return {};
+  }
+  const size_t slash = virtual_path.find_last_of('/');
+  eastl::string file =
+      slash == eastl::string::npos
+          ? virtual_path
+          : virtual_path.substr(slash + 1, virtual_path.size() - (slash + 1));
+  if (file.size() >= k_scene_suffix_len &&
+      file.compare(file.size() - k_scene_suffix_len, k_scene_suffix_len,
+                   k_scene_suffix) == 0) {
+    return file.substr(0, file.size() - k_scene_suffix_len);
+  }
+  return file;
+}
+
+eastl::string formatHierarchySceneLabel(const eastl::string& virtual_path,
+                                        bool dirty) {
+  if (virtual_path.empty()) {
+    return eastl::string("(No Scene)");
+  }
+  eastl::string label = sceneShortNameFromVirtualPath(virtual_path);
+  if (dirty) {
+    label.push_back('*');
+  }
+  return label;
+}
+
+eastl::string formatEditorWindowTitle(const eastl::string& virtual_path,
+                                      bool dirty) {
+  if (virtual_path.empty()) {
+    return eastl::string("Blunder Editor");
+  }
+  eastl::string title("Blunder Editor - ");
+  title += sceneShortNameFromVirtualPath(virtual_path);
+  if (dirty) {
+    title.push_back('*');
+  }
+  return title;
+}
+
+}  // namespace Blunder

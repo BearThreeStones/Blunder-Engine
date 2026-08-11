@@ -116,6 +116,14 @@ void AssetCompilerService::rebuildDependencyGraph() {
   ++m_dependency_graph_rebuild_count;
 }
 
+eastl::vector<eastl::string> AssetCompilerService::dependentsOf(
+    const eastl::string& guid) const {
+  if (!m_is_initialized || guid.empty()) {
+    return {};
+  }
+  return m_dependency_graph.dependentsOf(guid);
+}
+
 AssetCompilerStats AssetCompilerService::cookAll(bool force) {
   AssetCompilerStats stats{};
   if (!m_is_initialized) {

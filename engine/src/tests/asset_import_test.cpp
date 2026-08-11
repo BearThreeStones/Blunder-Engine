@@ -1,5 +1,7 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene.h"
+#include "runtime/function/scene/scene_serializer.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset/mesh_asset.h"
@@ -800,13 +802,13 @@ void importExternalFilesPairsCompanionsIntoMeshImport() {
               !enabled_results.empty() &&
                   enabled_results[0].animation_clips.size() == 3);
   expect_true("single-animation companion prefers file stem",
-              fs::exists(project / "Assets" / "Animations" /
+              fs::exists(project / "Assets" / "Meshes" /
                          "LOOP-idle.animation.yaml"));
   expect_true("multi-animation companion uses file stem",
-              fs::exists(project / "Assets" / "Animations" /
+              fs::exists(project / "Assets" / "Meshes" /
                          "LOOP-walk.animation.yaml"));
   expect_true("multi-animation companion disambiguates with suffix",
-              fs::exists(project / "Assets" / "Animations" /
+              fs::exists(project / "Assets" / "Meshes" /
                          "LOOP-walk_1.animation.yaml"));
   const fs::path idle_intermediate =
       project / "Resources" / "Models" / "Chocomel" / "companions" /
@@ -1313,17 +1315,31 @@ void multiHostBatchDoesNotRediscoverOrphanCompanions() {
   const eastl::vector<ImportResult> results =
       import_service.importExternalFiles(paths, "assets/Meshes", settings);
 
-  expect_true("multi-host batch imports only the two hosts",
-              results.size() == 2);
-  expect_true("multi-host batch leaves orphan companion unattached",
-              results.size() == 2 &&
-                  results[0].companion_animation_paths.empty() &&
-                  results[1].companion_animation_paths.empty() &&
-                  results[0].animation_clips.empty() &&
-                  results[1].animation_clips.empty());
-  expect_true("multi-host batch creates no orphan-derived clip descriptor",
-              !fs::exists(project / "Assets" / "Animations" /
-                          "LOOP-idle.animation.yaml"));
+  size_t host_count = 0;
+  size_t orphan_clip_count = 0;
+  for (const ImportResult& result : results) {
+    if (result.success &&
+        result.descriptor_virtual_path.find(".mesh.yaml") !=
+            eastl::string::npos) {
+      ++host_count;
+      expect_true("multi-host batch leaves orphan companion unattached",
+                  result.companion_animation_paths.empty() &&
+                      result.animation_clips.empty());
+    } else if (result.success &&
+               result.descriptor_virtual_path.find(".animation.yaml") !=
+                   eastl::string::npos) {
+      ++orphan_clip_count;
+    }
+  }
+  expect_true("multi-host batch imports exactly two Mesh hosts",
+              host_count == 2);
+  expect_true("multi-host orphan companion Imports as standalone clip",
+              orphan_clip_count == 1 &&
+                  fs::exists(project / "Assets" / "Meshes" /
+                             "LOOP-idle.animation.yaml"));
+  expect_true("orphan companion does not invent a Mesh descriptor",
+              !fs::exists(project / "Assets" / "Meshes" /
+                          "LOOP-idle.mesh.yaml"));
 
   import_service.shutdown();
   registry.shutdown();
@@ -1331,6 +1347,449 @@ void multiHostBatchDoesNotRediscoverOrphanCompanions() {
   g_runtime_global_context.m_logger_system.reset();
   fs::remove_all(project);
   fs::remove_all(external_root);
+}
+
+void standaloneCompanionOnlyImportRegistersClips() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external_root =
+      fs::temp_directory_path() /
+      ("blunder_standalone_companion_import_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path idle = external_root / "LOOP-chocomel-idle.gltf";
+  const fs::path walk = external_root / "LOOP-chocomel-walk.gltf";
+  writeTextFile(idle, kCompanionLoopGltf);
+  writeTextFile(walk, kCompanionAnimOnlyGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const eastl::vector<eastl::string> paths = {
+      eastl::string(idle.generic_string().c_str()),
+      eastl::string(walk.generic_string().c_str())};
+  const eastl::vector<ImportResult> results =
+      import_service.importExternalFiles(paths, "assets/Meshes", settings);
+
+  expect_true("standalone companions return successful clip results",
+              results.size() >= 2);
+  expect_true("standalone idle clip descriptor exists in selected folder",
+              fs::exists(project / "Assets" / "Meshes" /
+                         "LOOP-chocomel-idle.animation.yaml"));
+  expect_true("standalone walk clip descriptor exists in selected folder",
+              fs::exists(project / "Assets" / "Meshes" /
+                         "LOOP-chocomel-walk.animation.yaml"));
+  expect_true("standalone companions create no Mesh descriptors",
+              !fs::exists(project / "Assets" / "Meshes" /
+                          "LOOP-chocomel-idle.mesh.yaml") &&
+                  !fs::exists(project / "Assets" / "Meshes" /
+                              "LOOP-chocomel-walk.mesh.yaml"));
+
+  MeshImportSettings disabled{};
+  disabled.animations = false;
+  const fs::path disabled_project = makeTempProject();
+  FileSystem disabled_fs;
+  FileSystemInitInfo disabled_fs_init{};
+  disabled_fs_init.project_root = disabled_project;
+  disabled_fs.initialize(disabled_fs_init);
+  AssetRegistry disabled_registry;
+  disabled_registry.initialize(&disabled_fs);
+  AssetImportService disabled_import;
+  AssetImportServiceInit disabled_init{};
+  disabled_init.file_system = &disabled_fs;
+  disabled_init.asset_registry = &disabled_registry;
+  disabled_import.initialize(disabled_init);
+  const eastl::vector<ImportResult> disabled_results =
+      disabled_import.importExternalFiles(paths, "assets/Meshes", disabled);
+  expect_true("animations=false skips orphan companion clips",
+              disabled_results.empty() &&
+                  !fs::exists(disabled_project / "Assets" / "Meshes" /
+                              "LOOP-chocomel-idle.animation.yaml"));
+
+  disabled_import.shutdown();
+  disabled_registry.shutdown();
+  disabled_fs.shutdown();
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(disabled_project);
+  fs::remove_all(project);
+  fs::remove_all(external_root);
+}
+
+void deleteAssetRemovesMeshWithoutDependents() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_delete_asset_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path host = external / "Solo.gltf";
+  writeSkinnedMeshHostGltfFixture(host);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, nullptr, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = false;
+  const eastl::vector<ImportResult> imported = import_service.importExternalFiles(
+      {eastl::string(host.generic_string().c_str())}, "assets/Meshes", settings);
+  expect_true("delete test imported mesh",
+              !imported.empty() && imported[0].success);
+  const eastl::string descriptor = imported[0].descriptor_virtual_path;
+  const eastl::string guid = imported[0].guid;
+  expect_true("delete test mesh descriptor on disk",
+              fs::exists(project / "Assets" / "Meshes" / "Solo.mesh.yaml"));
+
+  eastl::string error;
+  expect_true("deleteAsset succeeds without dependents",
+              import_service.deleteAsset(descriptor, &error));
+  expect_true("deleteAsset clears error on success", error.empty());
+  expect_true("descriptor file removed",
+              !fs::exists(project / "Assets" / "Meshes" / "Solo.mesh.yaml"));
+  expect_true("GUID unregistered", registry.resolveGuid(guid).empty());
+  expect_true("Intermediate mesh body removed",
+              !fs::exists(project / "Resources" / "Models" / "Solo" /
+                          "Solo.gltf"));
+
+  import_service.shutdown();
+  compiler.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external);
+}
+
+void deleteAssetRemovesAnimationClipWithoutDependents() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_delete_clip_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path companion = external / "LOOP-delete-me.gltf";
+  writeTextFile(companion, kCompanionLoopGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, nullptr, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const eastl::vector<ImportResult> imported = import_service.importExternalFiles(
+      {eastl::string(companion.generic_string().c_str())}, "assets/Animations",
+      settings);
+  expect_true("delete-clip test imported clip",
+              !imported.empty() && imported[0].success);
+  const eastl::string descriptor = imported[0].descriptor_virtual_path;
+  const eastl::string guid = imported[0].guid;
+  expect_true("delete-clip descriptor ends with .animation.yaml",
+              descriptor.size() >= 15 &&
+                  descriptor.compare(descriptor.size() - 15, 15,
+                                     ".animation.yaml") == 0);
+  expect_true("delete-clip descriptor on disk",
+              fs::exists(project / "Assets" / "Animations" /
+                         "LOOP-delete-me.animation.yaml"));
+
+  eastl::string error;
+  expect_true("deleteAsset removes animation clip",
+              import_service.deleteAsset(descriptor, &error));
+  expect_true("delete-clip clears error", error.empty());
+  expect_true("clip descriptor removed",
+              !fs::exists(project / "Assets" / "Animations" /
+                          "LOOP-delete-me.animation.yaml"));
+  expect_true("clip GUID unregistered", registry.resolveGuid(guid).empty());
+
+  import_service.shutdown();
+  compiler.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external);
+}
+
+void deleteAssetDetachesAnimationPlayerClipThenDeletes() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_delete_player_clip_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path companion = external / "LOOP-player-map.gltf";
+  writeTextFile(companion, kCompanionLoopGltf);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, nullptr, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = true;
+  const eastl::vector<ImportResult> imported = import_service.importExternalFiles(
+      {eastl::string(companion.generic_string().c_str())}, "assets/Animations",
+      settings);
+  expect_true("player-map delete imported clip",
+              !imported.empty() && imported[0].success);
+  const eastl::string clip_descriptor = imported[0].descriptor_virtual_path;
+  const eastl::string clip_guid = imported[0].guid;
+
+  Scene scene;
+  SceneEntityDefinition entity{};
+  entity.name = "Animated";
+  SceneEntityDefinition::AnimationClipBinding binding{};
+  binding.name = "idle";
+  binding.guid = clip_guid;
+  entity.animation_player_clips.push_back(binding);
+  entity.animation_player_slot0 = "idle";
+  scene.getEntities().push_back(entity);
+
+  const eastl::string scene_guid = registry.allocateGuid();
+  scene.setGuid(scene_guid);
+  eastl::string scene_json;
+  expect_true("player-map serialize scene",
+              SceneSerializer::serialize(scene, scene_json, &registry));
+  const fs::path scene_absolute =
+      project / "Assets" / "Scenes" / "uses_clip.scene.asset";
+  fs::create_directories(scene_absolute.parent_path());
+  writeTextFile(scene_absolute, scene_json.c_str());
+  expect_true("player-map write scene", fs::exists(scene_absolute));
+  registry.registerAsset(scene_guid, "assets/Scenes/uses_clip.scene.asset");
+
+  eastl::string error;
+  expect_true("deleteAsset detaches animationPlayer clip then deletes",
+              import_service.deleteAsset(clip_descriptor, &error));
+  expect_true("player-map delete clears error", error.empty());
+  expect_true("clip descriptor removed after player-map detach",
+              !fs::exists(project / "Assets" / "Animations" /
+                          "LOOP-player-map.animation.yaml"));
+
+  eastl::string updated_scene;
+  expect_true("scene still on disk after clip detach",
+              file_system.readText(scene_absolute, updated_scene));
+  Scene reloaded;
+  expect_true("reload scene after clip detach",
+              SceneSerializer::deserialize(updated_scene, reloaded, &registry));
+  expect_true("animationPlayer clip binding removed",
+              !reloaded.getEntities().empty() &&
+                  reloaded.getEntities()[0].animation_player_clips.empty());
+  expect_true("animation_clip_guids cleared after player-map detach",
+              !reloaded.getEntities().empty() &&
+                  reloaded.getEntities()[0].animation_clip_guids.empty());
+  expect_true("slot0 cleared when binding removed",
+              !reloaded.getEntities().empty() &&
+                  reloaded.getEntities()[0].animation_player_slot0.empty());
+
+  import_service.shutdown();
+  compiler.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external);
+}
+
+void deleteAssetRemovesSceneWithoutDependents() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_service.initialize(import_init);
+
+  Scene scene;
+  scene.setName("Temp");
+  const eastl::string scene_guid = registry.allocateGuid();
+  scene.setGuid(scene_guid);
+  eastl::string scene_json;
+  expect_true("delete-scene serialize",
+              SceneSerializer::serialize(scene, scene_json, &registry));
+  const fs::path scene_absolute =
+      project / "Assets" / "Scenes" / "temp_delete.scene.asset";
+  fs::create_directories(scene_absolute.parent_path());
+  writeTextFile(scene_absolute, scene_json.c_str());
+  registry.registerAsset(scene_guid, "assets/Scenes/temp_delete.scene.asset");
+
+  eastl::string error;
+  expect_true("deleteAsset removes scene",
+              import_service.deleteAsset("assets/Scenes/temp_delete.scene.asset",
+                                         &error));
+  expect_true("delete-scene clears error", error.empty());
+  expect_true("scene file removed", !fs::exists(scene_absolute));
+  expect_true("scene GUID unregistered",
+              registry.resolveGuid(scene_guid).empty());
+
+  import_service.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void deleteAssetDetachesSceneDependentsThenDeletes() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const fs::path external =
+      fs::temp_directory_path() /
+      ("blunder_delete_detach_" +
+       std::to_string(static_cast<unsigned long long>(
+           std::chrono::steady_clock::now().time_since_epoch().count())));
+  const fs::path host = external / "DetachHost.gltf";
+  writeSkinnedMeshHostGltfFixture(host);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, nullptr, &registry);
+
+  AssetImportService import_service;
+  AssetImportServiceInit import_init{};
+  import_init.file_system = &file_system;
+  import_init.asset_registry = &registry;
+  import_init.asset_compiler = &compiler;
+  import_service.initialize(import_init);
+
+  MeshImportSettings settings{};
+  settings.animations = false;
+  const eastl::vector<ImportResult> imported = import_service.importExternalFiles(
+      {eastl::string(host.generic_string().c_str())}, "assets/Meshes", settings);
+  expect_true("detach-delete imported mesh",
+              !imported.empty() && imported[0].success);
+  const eastl::string mesh_descriptor = imported[0].descriptor_virtual_path;
+  const eastl::string mesh_guid = imported[0].guid;
+
+  Scene scene;
+  SceneEntityDefinition entity{};
+  entity.name = "Rig";
+  entity.mesh_virtual_path = mesh_guid;
+  scene.getEntities().push_back(entity);
+
+  const eastl::string scene_guid = registry.allocateGuid();
+  scene.setGuid(scene_guid);
+  eastl::string scene_json;
+  expect_true("detach-delete serialize scene",
+              SceneSerializer::serialize(scene, scene_json, &registry));
+  const fs::path scene_absolute =
+      project / "Assets" / "Scenes" / "uses_mesh.scene.asset";
+  fs::create_directories(scene_absolute.parent_path());
+  writeTextFile(scene_absolute, scene_json.c_str());
+  expect_true("detach-delete write scene", fs::exists(scene_absolute));
+  registry.registerAsset(scene_guid, "assets/Scenes/uses_mesh.scene.asset");
+
+  eastl::string error;
+  expect_true("deleteAsset detaches scene then deletes mesh",
+              import_service.deleteAsset(mesh_descriptor, &error));
+  expect_true("detach-delete clears error", error.empty());
+  expect_true("mesh descriptor removed after detach",
+              !fs::exists(project / "Assets" / "Meshes" /
+                          "DetachHost.mesh.yaml"));
+  expect_true("mesh GUID unregistered after detach",
+              registry.resolveGuid(mesh_guid).empty());
+
+  eastl::string updated_scene;
+  expect_true("scene still on disk after detach",
+              file_system.readText(scene_absolute, updated_scene));
+  Scene reloaded;
+  expect_true("reload scene after detach",
+              SceneSerializer::deserialize(updated_scene, reloaded, &registry));
+  expect_true("scene entity mesh ref cleared",
+              !reloaded.getEntities().empty() &&
+                  reloaded.getEntities()[0].mesh_virtual_path.empty());
+
+  import_service.shutdown();
+  compiler.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+  fs::remove_all(external);
 }
 
 // Task 2.4 (ADR 0021): single-mesh Import discovers near-disk companions,
@@ -1403,10 +1862,10 @@ void singleMeshImportDiscoversNearDiskCompanions() {
               !enabled_results.empty() &&
                   enabled_results[0].animation_clips.size() == 3);
   expect_true("single-mesh near-disk registers idle clip by stem",
-              fs::exists(project / "Assets" / "Animations" /
+              fs::exists(project / "Assets" / "Meshes" /
                          "LOOP-idle.animation.yaml"));
   expect_true("single-mesh near-disk registers walk clip by stem",
-              fs::exists(project / "Assets" / "Animations" /
+              fs::exists(project / "Assets" / "Meshes" /
                          "LOOP-walk.animation.yaml"));
 
   const fs::path idle_intermediate =
@@ -1574,8 +2033,8 @@ void importGltfWithTwoAnimationsRegistersMeshAndClips() {
   bool saw_walk = false;
   for (const ImportResult& clip : result.animation_clips) {
     expect_true("clip import succeeds", clip.success);
-    expect_true("clip descriptor under assets/Animations",
-                startsWith(clip.descriptor_virtual_path, "assets/Animations/"));
+    expect_true("clip descriptor under selected folder",
+                startsWith(clip.descriptor_virtual_path, "assets/Meshes/"));
     expect_true("clip descriptor ends with .animation.yaml",
                 clip.descriptor_virtual_path.find(".animation.yaml") !=
                     eastl::string::npos);
@@ -3544,6 +4003,12 @@ int main() {
   importExternalBufferCompanionPersistsSidecarAndExtractsClip();
   importRealDogWalkChocomelSources();
   multiHostBatchDoesNotRediscoverOrphanCompanions();
+  standaloneCompanionOnlyImportRegistersClips();
+  deleteAssetRemovesMeshWithoutDependents();
+  deleteAssetRemovesAnimationClipWithoutDependents();
+  deleteAssetDetachesAnimationPlayerClipThenDeletes();
+  deleteAssetRemovesSceneWithoutDependents();
+  deleteAssetDetachesSceneDependentsThenDeletes();
   singleMeshImportDiscoversNearDiskCompanions();
   meshExtensionRoutingTables();
   importColladaMeshRejected();

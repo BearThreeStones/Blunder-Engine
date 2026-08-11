@@ -902,6 +902,31 @@ target_precompile_headers(thumbnail_generator_test
 add_test(NAME thumbnail_generator_test
          COMMAND thumbnail_generator_test)
 
+add_executable(scene_thumbnail_fingerprint_test
+    "scene_thumbnail_fingerprint_test.cpp"
+)
+
+target_link_libraries(scene_thumbnail_fingerprint_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_thumbnail_fingerprint_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(scene_thumbnail_fingerprint_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_thumbnail_fingerprint_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_thumbnail_fingerprint_test
+         COMMAND scene_thumbnail_fingerprint_test)
+
+
 add_executable(thumbnail_generation_queue_test
     "thumbnail_generation_queue_test.cpp"
 )

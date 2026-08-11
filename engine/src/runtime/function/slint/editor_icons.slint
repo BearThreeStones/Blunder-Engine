@@ -103,6 +103,23 @@ export component EditorIconInstance inherits Rectangle {
     }
 }
 
+export component EditorIconScene inherits Rectangle {
+    in property <color> icon-color: #e0e0e0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/PackedScene.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
 export component EditorIconUnlinked inherits Rectangle {
     in property <color> icon-color: #808080;
     in property <length> icon-size: 14px;

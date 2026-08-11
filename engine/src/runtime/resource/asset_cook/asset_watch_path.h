@@ -45,6 +45,27 @@ eastl::vector<eastl::string> guidsForArchivedSourcePath(
     const AssetRegistry& registry,
     FileSystem& file_system);
 
+/// Map Intermediate (or sidecar) path to GUID(s) whose descriptor `source`
+/// points at the exchange body (ADR 0029 Detection).
+eastl::vector<eastl::string> guidsForIntermediateSourcePath(
+    const std::filesystem::path& absolute_file_path,
+    const std::filesystem::path& resources_root,
+    const AssetRegistry& registry, FileSystem& file_system);
+
+/// Expand a watched Resources path to exchange body path(s) for Detection
+/// attribution (gltf/glb as-is; sibling .bin → stem.gltf/.glb; images in a
+/// folder attribute nearby glTF/GLB files).
+eastl::vector<std::filesystem::path> resolveDetectionExchangePaths(
+    const std::filesystem::path& absolute_file_path);
+
+/// Unified Detection attribution for SourceArchive or IntermediateResource
+/// (including sidecars). AssetsTree / Ignored return empty.
+eastl::vector<eastl::string> guidsForDetectionWatchedPath(
+    AssetWatchPathClass path_class,
+    const std::filesystem::path& absolute_file_path,
+    const std::filesystem::path& resources_root,
+    const AssetRegistry& registry, FileSystem& file_system);
+
 /// Normalize a virtual or relative path for equality (lowercase, `/`, no `./`).
 eastl::string normalizeWatchVirtualPath(const eastl::string& path);
 

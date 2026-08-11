@@ -1,6 +1,7 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 
 #include "runtime/resource/asset_import/companion_animation_gltf.h"
+#include "runtime/resource/asset_import/editor_mesh_hot_reload.h"
 #include "runtime/resource/asset_import/gltf_animation_clip_extractor.h"
 
 #include <algorithm>
@@ -14,6 +15,10 @@
 #include <cgltf.h>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/scene/scene.h"
+#include "runtime/function/scene/scene_serializer.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
@@ -484,6 +489,140 @@ fs::path resolveDescriptorAbsolute(FileSystem* file_system,
   return file_system->resolveAsset(fs::path(relative.c_str()));
 }
 
+bool endsWithSuffix(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  return value.compare(value.size() - suffix_length, suffix_length, suffix) == 0;
+}
+
+/// Clear mesh / animation-clip GUID refs from Scene Asset dependents so Delete
+/// can proceed. Non-scene dependents are reported and refuse the operation.
+bool detachGuidFromSceneDependents(
+    FileSystem* file_system, AssetRegistry* asset_registry,
+    const eastl::string& guid,
+    const eastl::vector<eastl::string>& dependent_guids,
+    eastl::string* out_error) {
+  if (file_system == nullptr || asset_registry == nullptr || guid.empty()) {
+    if (out_error != nullptr) {
+      *out_error = "detach failed: missing services";
+    }
+    return false;
+  }
+
+  eastl::vector<eastl::string> non_scene_dependents;
+  eastl::vector<eastl::string> scene_dependents;
+  for (const eastl::string& dependent_guid : dependent_guids) {
+    const eastl::string path = asset_registry->resolveGuid(dependent_guid);
+    if (path.empty()) {
+      non_scene_dependents.push_back(dependent_guid);
+      continue;
+    }
+    if (endsWithSuffix(path, ".scene.asset")) {
+      scene_dependents.push_back(dependent_guid);
+    } else {
+      non_scene_dependents.push_back(path);
+    }
+  }
+
+  if (!non_scene_dependents.empty()) {
+    eastl::string message =
+        "asset has non-scene dependents; detach references first:";
+    for (const eastl::string& path : non_scene_dependents) {
+      message.append(" ");
+      message.append(path);
+    }
+    if (out_error != nullptr) {
+      *out_error = message;
+    }
+    return false;
+  }
+
+  for (const eastl::string& scene_guid : scene_dependents) {
+    const eastl::string scene_virtual = asset_registry->resolveGuid(scene_guid);
+    const fs::path scene_absolute =
+        resolveDescriptorAbsolute(file_system, scene_virtual);
+    eastl::string json_text;
+    if (!file_system->readText(scene_absolute, json_text)) {
+      if (out_error != nullptr) {
+        *out_error = "failed to read dependent scene for detach";
+      }
+      return false;
+    }
+
+    Scene scene;
+    if (!SceneSerializer::deserialize(json_text, scene, asset_registry)) {
+      if (out_error != nullptr) {
+        *out_error = "failed to parse dependent scene for detach";
+      }
+      return false;
+    }
+
+    bool mutated = false;
+    for (SceneEntityDefinition& entity : scene.getEntities()) {
+      if (entity.mesh_virtual_path == guid) {
+        entity.mesh_virtual_path.clear();
+        mutated = true;
+      }
+
+      // animation_clip_guids is derived from animation_player_clips on
+      // deserialize/serialize — clear the player map or the GUID is rewritten.
+      eastl::vector<SceneEntityDefinition::AnimationClipBinding> remaining_bindings;
+      remaining_bindings.reserve(entity.animation_player_clips.size());
+      for (const SceneEntityDefinition::AnimationClipBinding& binding :
+           entity.animation_player_clips) {
+        if (binding.guid == guid) {
+          if (entity.animation_player_slot0 == binding.name) {
+            entity.animation_player_slot0.clear();
+          }
+          if (entity.animation_player_slot1 == binding.name) {
+            entity.animation_player_slot1.clear();
+          }
+          mutated = true;
+          continue;
+        }
+        remaining_bindings.push_back(binding);
+      }
+      if (remaining_bindings.size() != entity.animation_player_clips.size()) {
+        entity.animation_player_clips = eastl::move(remaining_bindings);
+      }
+
+      eastl::vector<eastl::string> remaining_clips;
+      remaining_clips.reserve(entity.animation_clip_guids.size());
+      for (const eastl::string& clip_guid : entity.animation_clip_guids) {
+        if (clip_guid == guid) {
+          mutated = true;
+          continue;
+        }
+        remaining_clips.push_back(clip_guid);
+      }
+      if (remaining_clips.size() != entity.animation_clip_guids.size()) {
+        entity.animation_clip_guids = eastl::move(remaining_clips);
+      }
+    }
+
+    if (!mutated) {
+      continue;
+    }
+
+    eastl::string out_json;
+    if (!SceneSerializer::serialize(scene, out_json, asset_registry) ||
+        !file_system->writeText(scene_absolute, out_json)) {
+      if (out_error != nullptr) {
+        *out_error = "failed to write detached scene";
+      }
+      return false;
+    }
+    LOG_WARN(
+        "[AssetImport] detached deleted asset {} from scene {} (reload scene "
+        "if open)",
+        guid.c_str(), scene_virtual.c_str());
+  }
+
+  return true;
+}
+
 /// When archived_source is Source Export whitelist, overwrite Intermediate via
 /// Assimp. GUID / descriptor paths are left unchanged. Returns false only on
 /// hard failure of an attempted Source Export re-run.
@@ -902,7 +1041,7 @@ ImportResult AssetImportService::importMeshIntermediate(
         };
     result.animation_clips = extractAndRegisterAnimationClipsFromGltf(
         m_file_system, m_asset_registry, m_content_browser, gltf_absolute, stem,
-        make_name);
+        make_name, {}, assets_folder);
     for (const fs::path& companion_absolute :
          companion_resource_absolute_paths) {
       warnOnCompanionAnimationBoneMismatches(gltf_absolute,
@@ -912,7 +1051,8 @@ ImportResult AssetImportService::importMeshIntermediate(
       eastl::vector<ImportResult> companion_clips =
           extractAndRegisterAnimationClipsFromGltf(
               m_file_system, m_asset_registry, m_content_browser,
-              companion_absolute, stem, make_name, companion_stem);
+              companion_absolute, stem, make_name, companion_stem,
+              assets_folder);
       result.animation_clips.insert(result.animation_clips.end(),
                                     companion_clips.begin(),
                                     companion_clips.end());
@@ -991,7 +1131,7 @@ ImportResult AssetImportService::importMeshSourceExport(
         };
     result.animation_clips = extractAndRegisterAnimationClipsFromGltf(
         m_file_system, m_asset_registry, m_content_browser, gltf_absolute, stem,
-        make_name);
+        make_name, {}, assets_folder);
   }
 
   LOG_INFO(
@@ -1099,13 +1239,6 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
   const bool allow_near_disk_discovery =
       pending_meshes.size() == 1 && gltf_batch_paths.size() == 1;
 
-  if (mesh_settings.animations) {
-    for (const fs::path& orphan_path : pairing.orphan_companion_paths) {
-      LOG_WARN("[AssetImport] orphan Companion Animation glTF skipped: {}",
-               orphan_path.generic_string());
-    }
-  }
-
   std::vector<fs::path> companion_paths_to_skip =
       pairing.orphan_companion_paths;
   for (const CompanionGltfBatchHostPairing& host_pairing :
@@ -1170,6 +1303,73 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
     }
   }
 
+  const MakeUniqueDescriptorNameFn make_unique_clip_name =
+      [this](const eastl::string& folder, const eastl::string& name_stem,
+             const char* suffix) {
+        return makeUniqueDescriptorName(folder, name_stem, suffix);
+      };
+
+  const eastl::string clip_assets_folder =
+      resolveAssetsFolder(assets_folder_virtual);
+
+  if (mesh_settings.animations) {
+    for (const fs::path& orphan_path : pairing.orphan_companion_paths) {
+      const eastl::string companion_stem(
+          orphan_path.stem().generic_string().c_str());
+      const eastl::string resource_virtual = registerIntermediateBody(
+          m_file_system, orphan_path, "Models/_standalone_companions");
+      fs::path extract_gltf = orphan_path;
+      if (!resource_virtual.empty()) {
+        const fs::path resource_absolute =
+            resolveResourcesVirtualPath(m_file_system, resource_virtual);
+        std::vector<fs::path> sidecar_copies;
+        if (!copyGltfExternalResources(m_file_system, orphan_path,
+                                       resource_absolute, sidecar_copies)) {
+          LOG_WARN(
+              "[AssetImport] standalone companion sidecars failed for {}; "
+              "extracting from source path",
+              orphan_path.generic_string());
+        } else {
+          extract_gltf = resource_absolute;
+        }
+      } else {
+        LOG_WARN(
+            "[AssetImport] standalone companion Intermediate copy failed for "
+            "{}; extracting from source path",
+            orphan_path.generic_string());
+      }
+
+      eastl::vector<ImportResult> orphan_clips =
+          extractAndRegisterAnimationClipsFromGltf(
+              m_file_system, m_asset_registry, m_content_browser, extract_gltf,
+              companion_stem, make_unique_clip_name, companion_stem,
+              clip_assets_folder);
+      if (orphan_clips.empty()) {
+        LOG_WARN(
+            "[AssetImport] standalone Companion Animation glTF produced no "
+            "clips: {}",
+            orphan_path.generic_string());
+      } else {
+        LOG_INFO(
+            "[AssetImport] standalone Companion Animation glTF {} -> {} clip(s)",
+            orphan_path.generic_string(),
+            static_cast<unsigned>(orphan_clips.size()));
+      }
+      for (const ImportResult& clip : orphan_clips) {
+        if (clip.success) {
+          results.push_back(clip);
+        }
+      }
+    }
+  } else {
+    for (const fs::path& orphan_path : pairing.orphan_companion_paths) {
+      LOG_WARN(
+          "[AssetImport] orphan Companion Animation glTF skipped "
+          "(animations disabled): {}",
+          orphan_path.generic_string());
+    }
+  }
+
   if (!results.empty() && m_content_browser) {
     m_content_browser->refresh();
   }
@@ -1190,6 +1390,191 @@ bool AssetImportService::requestReimport(const eastl::string& guid) {
   eastl::vector<eastl::string> guids;
   guids.push_back(guid);
   return requestReimports(guids);
+}
+
+bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_path,
+                                     eastl::string* out_error) {
+  const auto fail = [&](const char* message) {
+    if (out_error != nullptr) {
+      *out_error = message;
+    }
+    LOG_WARN("[AssetImport] deleteAsset failed: {} ({})", message,
+             descriptor_virtual_path.c_str());
+    return false;
+  };
+
+  if (!m_is_initialized || descriptor_virtual_path.empty()) {
+    return fail("not initialized or empty path");
+  }
+
+  eastl::string normalized = descriptor_virtual_path;
+  if (normalized.compare(0, 7, "assets/") != 0 &&
+      normalized.compare(0, 7, "Assets/") != 0) {
+    // Accept paths already under assets/
+  }
+  // Normalize to lowercase assets/ prefix for registry lookups.
+  if (normalized.size() >= 7) {
+    eastl::string lower_prefix = normalized.substr(0, 7);
+    for (char& c : lower_prefix) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (lower_prefix == "assets/") {
+      normalized = "assets/" + normalized.substr(7);
+    }
+  }
+
+  const bool is_mesh = endsWithSuffix(normalized, ".mesh.yaml");
+  const bool is_texture = endsWithSuffix(normalized, ".texture.yaml");
+  const bool is_clip = endsWithSuffix(normalized, ".animation.yaml");
+  const bool is_scene = endsWithSuffix(normalized, ".scene.asset");
+  if (!is_mesh && !is_texture && !is_clip && !is_scene) {
+    return fail("unsupported descriptor type (folder or unknown)");
+  }
+
+  if (is_scene && g_runtime_global_context.m_editor_scene_edit &&
+      g_runtime_global_context.m_editor_scene_edit->activeScenePath() ==
+          normalized) {
+    return fail("cannot delete the active scene");
+  }
+
+  const eastl::string guid = m_asset_registry->findGuidForPath(normalized);
+  if (guid.empty()) {
+    return fail("GUID not registered for descriptor");
+  }
+
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+    const eastl::vector<eastl::string> dependents =
+        m_asset_compiler->dependentsOf(guid);
+    if (!dependents.empty()) {
+      if (is_scene) {
+        eastl::string message = "scene still has dependents:";
+        for (const eastl::string& dependent_guid : dependents) {
+          const eastl::string path =
+              m_asset_registry->resolveGuid(dependent_guid);
+          message.append(" ");
+          message.append(path.empty() ? dependent_guid : path);
+        }
+        return fail(message.c_str());
+      }
+      eastl::string detach_error;
+      if (!detachGuidFromSceneDependents(m_file_system, m_asset_registry, guid,
+                                         dependents, &detach_error)) {
+        return fail(detach_error.c_str());
+      }
+      m_asset_compiler->rebuildDependencyGraph();
+      const eastl::vector<eastl::string> remaining =
+          m_asset_compiler->dependentsOf(guid);
+      if (!remaining.empty()) {
+        eastl::string message = "asset still has dependents after scene detach:";
+        for (const eastl::string& dependent_guid : remaining) {
+          const eastl::string path =
+              m_asset_registry->resolveGuid(dependent_guid);
+          message.append(" ");
+          message.append(path.empty() ? dependent_guid : path);
+        }
+        return fail(message.c_str());
+      }
+    }
+  }
+
+  eastl::string relative = normalized;
+  if (relative.compare(0, 7, "assets/") == 0) {
+    relative.erase(0, 7);
+  }
+  const fs::path descriptor_absolute =
+      m_file_system->resolveAsset(fs::path(relative.c_str()));
+
+  eastl::vector<eastl::string> intermediate_virtuals;
+  if (is_scene) {
+    // Scene documents are JSON assets with no Intermediate source body.
+  } else {
+    eastl::string yaml_text;
+    if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
+      return fail("descriptor unreadable");
+    }
+
+    if (is_mesh) {
+      MeshAssetDescriptor descriptor{};
+      if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+        return fail("mesh descriptor parse failed");
+      }
+      if (!descriptor.source.empty()) {
+        intermediate_virtuals.push_back(descriptor.source);
+      }
+      for (const eastl::string& companion :
+           descriptor.companion_animation_sources) {
+        if (!companion.empty()) {
+          intermediate_virtuals.push_back(companion);
+        }
+      }
+    } else if (is_texture) {
+      TextureAssetDescriptor descriptor{};
+      if (!AssetYaml::parseTextureDescriptor(yaml_text, descriptor)) {
+        return fail("texture descriptor parse failed");
+      }
+      if (!descriptor.source.empty()) {
+        intermediate_virtuals.push_back(descriptor.source);
+      }
+    } else {
+      AnimationClipAssetDescriptor descriptor{};
+      if (!AssetYaml::parseAnimationClipDescriptor(yaml_text, descriptor)) {
+        return fail("animation clip descriptor parse failed");
+      }
+      if (!descriptor.source.empty()) {
+        intermediate_virtuals.push_back(descriptor.source);
+      }
+    }
+  }
+
+  for (const eastl::string& intermediate_virtual : intermediate_virtuals) {
+    if (intermediate_virtual.compare(0, 10, "resources/") != 0) {
+      continue;
+    }
+    const fs::path intermediate_absolute =
+        resolveResourcesVirtualPath(m_file_system, intermediate_virtual);
+    std::error_code ec;
+    if (fs::is_regular_file(intermediate_absolute, ec)) {
+      // Best-effort: also remove glTF external sidecars beside the body.
+      std::vector<fs::path> sidecars;
+      if (isMeshIntermediateExtension(extensionLower(intermediate_absolute))) {
+        collectExternalGltfResourcePaths(intermediate_absolute, sidecars);
+        for (const fs::path& relative_sidecar : sidecars) {
+          const fs::path sidecar_absolute =
+              intermediate_absolute.parent_path() / relative_sidecar;
+          fs::remove(sidecar_absolute, ec);
+        }
+      }
+      fs::remove(intermediate_absolute, ec);
+    }
+  }
+
+  {
+    std::error_code ec;
+    if (!fs::remove(descriptor_absolute, ec) || ec) {
+      return fail("failed to delete descriptor file");
+    }
+  }
+
+  if (!m_asset_registry->unregisterGuid(guid)) {
+    return fail("unregisterGuid failed after descriptor delete");
+  }
+
+  if (m_asset_compiler && (is_mesh || is_texture)) {
+    m_asset_compiler->markFinalStale(guid);
+    m_asset_compiler->rebuildDependencyGraph();
+  }
+
+  if (m_content_browser) {
+    m_content_browser->refresh();
+  }
+
+  LOG_INFO("[AssetImport] deleted Asset {} ({})", normalized.c_str(),
+           guid.c_str());
+  if (out_error != nullptr) {
+    out_error->clear();
+  }
+  return true;
 }
 
 bool AssetImportService::requestReimports(
@@ -1260,6 +1645,7 @@ bool AssetImportService::requestReimports(
     if (m_asset_compiler) {
       m_asset_compiler->invalidateAssetAndDependents(guid);
     }
+    editorMeshHotReloadAfterReimport(guid, descriptor_virtual);
     any_ok = true;
   }
   return any_ok;

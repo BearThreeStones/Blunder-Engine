@@ -3,6 +3,7 @@ import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_brow
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { PlayDirtySceneDialog } from "play_dirty_scene_dialog.slint";
+import { DetectionReimportDialog } from "detection_reimport_dialog.slint";
 import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
@@ -17,7 +18,8 @@ import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, 
 
 export component MainEditorWindow inherits Window {
     // Logical size comes only from C++ dispatch_resize_event (see SlintWindowAdapter).
-    title: "Blunder Editor";
+    in-out property <string> window-title: "Blunder Editor";
+    title: root.window-title;
     background: #181818;
 
     in property <image> viewport-image;
@@ -54,6 +56,7 @@ export component MainEditorWindow inherits Window {
 
     in-out property <[HierarchyTreeRow]> hierarchy-tree-rows: [];
     in property <int> hierarchy-selected-entity-id: 0;
+    in-out property <string> hierarchy-scene-display-name: "(No Scene)";
 
     in-out property <length> hierarchy-origin-x: 0px;
     in-out property <length> hierarchy-origin-y: 0px;
@@ -73,6 +76,7 @@ export component MainEditorWindow inherits Window {
     in property <bool> browser-viewport-drop-active: false;
     in property <string> browser-status-text: "0 items";
     in property <string> browser-selected-folder-path: "";
+    in-out property <string> browser-selected-grid-path: "";
 
     in-out property <length> browser-origin-x: 0px;
     in-out property <length> browser-origin-y: 0px;
@@ -92,6 +96,8 @@ export component MainEditorWindow inherits Window {
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
     callback browser-import-requested();
+    callback browser-delete-requested();
+    callback browser-grid-select(string, bool, bool);
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
     callback browser-item-release(string, float, float);
@@ -227,9 +233,13 @@ export component MainEditorWindow inherits Window {
     in property <bool> anim-tree-canvas-open-enabled: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
+    in-out property <bool> detection-reimport-dialog-visible: false;
+    in-out property <int> detection-reimport-asset-count: 1;
     callback play-dirty-save-and-play();
     callback play-dirty-play-last-saved();
     callback play-dirty-cancelled();
+    callback detection-reimport-all();
+    callback detection-reimport-dismissed();
 
     in-out property <bool> viewport-is-perspective: true;
     in property <bool> viewport-image-ready: false;
@@ -528,6 +538,7 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
+                        scene-display-name: root.hierarchy-scene-display-name;
                         tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
@@ -546,6 +557,7 @@ export component MainEditorWindow inherits Window {
                         viewport-drop-active: root.browser-viewport-drop-active;
                         status-text: root.browser-status-text;
                         selected-folder-path: root.browser-selected-folder-path;
+                        selected-grid-path <=> root.browser-selected-grid-path;
                         tree-origin-y <=> root.browser-tree-origin-y;
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
@@ -558,6 +570,8 @@ export component MainEditorWindow inherits Window {
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
                         import-requested => { root.browser-import-requested(); }
+                        delete-requested => { root.browser-delete-requested(); }
+                        grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                         item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                         item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                         item-release(path, x, y) => { root.browser-item-release(path, x, y); }
@@ -840,6 +854,7 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         tree-rows <=> root.hierarchy-tree-rows;
                         selected-entity-id: root.hierarchy-selected-entity-id;
+                        scene-display-name: root.hierarchy-scene-display-name;
                         tree-origin-y <=> root.hierarchy-tree-origin-y;
                         entity-selected(id) => { root.hierarchy-entity-selected(id); }
                         entity-toggle(id) => { root.hierarchy-entity-toggle(id); }
@@ -858,6 +873,7 @@ export component MainEditorWindow inherits Window {
                         viewport-drop-active: root.browser-viewport-drop-active;
                         status-text: root.browser-status-text;
                         selected-folder-path: root.browser-selected-folder-path;
+                        selected-grid-path <=> root.browser-selected-grid-path;
                         tree-origin-y <=> root.browser-tree-origin-y;
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
@@ -870,6 +886,8 @@ export component MainEditorWindow inherits Window {
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
                         import-requested => { root.browser-import-requested(); }
+                        delete-requested => { root.browser-delete-requested(); }
+                        grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                         item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                         item-move(path, x, y) => { root.browser-item-move(path, x, y); }
                         item-release(path, x, y) => { root.browser-item-release(path, x, y); }
@@ -1003,7 +1021,7 @@ export component MainEditorWindow inherits Window {
                 Text {
                     x: 10px;
                     vertical-alignment: center;
-                    text: "Hierarchy — Content Browser — Inspector";
+                    text: "Hierarchy ? Content Browser ? Inspector";
                     color: #808080;
                     font-size: 12px;
                 }
@@ -1013,7 +1031,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.detection-reimport-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -1044,6 +1062,16 @@ export component MainEditorWindow inherits Window {
             save-and-play => { root.play-dirty-save-and-play(); }
             play-last-saved => { root.play-dirty-play-last-saved(); }
             cancelled => { root.play-dirty-cancelled(); }
+        }
+
+        detection_reimport_dialog := DetectionReimportDialog {
+            z: 3120;
+            width: parent.width;
+            height: parent.height;
+            show-dialog: root.detection-reimport-dialog-visible;
+            asset-count: root.detection-reimport-asset-count;
+            reimport-all => { root.detection-reimport-all(); }
+            dismissed => { root.detection-reimport-dismissed(); }
         }
 
         PiercingMenu {

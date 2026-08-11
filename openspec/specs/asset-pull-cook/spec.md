@@ -37,22 +37,26 @@ The system SHALL maintain a minimal Asset Dependency Graph with edges: Scene Ass
 - **THEN** the dependency graph contains a Scene→Mesh edge used for invalidation
 
 ### Requirement: Asset Watch invalidation
-The editor SHALL watch the Assets root and Intermediate data under the Resources root (excluding the Source root for Intermediate invalidation). Changes SHALL invalidate Finals for affected Assets and dependents via the dependency graph.
+The editor SHALL watch the Assets root and Resources root (Source archive and Intermediate bodies). Descriptor and other Assets-tree changes SHALL invalidate Finals for affected Assets and dependents via the dependency graph. Intermediate body changes that map to Assets SHALL be handled primarily by Detection Action → Reimport (see Detection Action specs); if Reimport does not run (Prompt dismissed or attribution miss), the editor SHALL still invalidate Finals for mapped Assets when a watched Intermediate or descriptor change is observed.
 
 #### Scenario: Descriptor change invalidates Final
 - **WHEN** a mesh or texture Asset Descriptor file changes on disk
 - **THEN** that Asset’s Final is marked stale
 
-#### Scenario: Intermediate Resources change invalidates Final
-- **WHEN** an Intermediate COLLADA (`.dae`) or image referenced by an Asset changes on disk
-- **THEN** that Asset’s Final is marked stale
+#### Scenario: Intermediate change without Reimport still invalidates
+- **WHEN** an Intermediate body mapped to an Asset changes and Detection Prompt is dismissed
+- **THEN** that Asset’s Final is marked stale even though Reimport did not run
 
 ### Requirement: Source change triggers Reimport
-Changes under the Source root for an archived Source file SHALL trigger automatic Reimport for Assets that archive that Source (debounced).
+Changes under the Source root for an archived Source file SHALL enter Detection Action for Assets that archive that Source (debounced, including sidecar attribution rules where applicable). Reimport SHALL run only when Detection Action is Auto or the user confirms Prompt — not as an unconditional silent auto-Reimport.
 
-#### Scenario: Archived FBX change reimports
-- **WHEN** an archived Source FBX watched under the Source root changes
-- **THEN** Reimport runs for the owning Asset, refreshing Intermediate and invalidating Finals
+#### Scenario: Archived Source change with Auto Detection
+- **WHEN** Detection Action is Auto and an archived Source file watched under the Source root changes
+- **THEN** Reimport runs for the owning Asset GUID(s), refreshing Intermediate and invalidating Finals
+
+#### Scenario: Archived Source change with Prompt Detection
+- **WHEN** Detection Action is Prompt and an archived Source file changes
+- **THEN** the editor prompts before Reimport and does not silently Reimport without confirmation
 
 ### Requirement: Intermediate Upgrade from legacy glTF
 When a mesh Asset’s Intermediate `source` still points at glTF or GLB after the COLLADA Intermediate switch, the system SHALL perform a GUID-preserving Intermediate Upgrade on project open or registry scan: convert to `.dae`, rewrite descriptor `source`, archive the former glTF/GLB under the Source root when not already archived, and mark Finals stale. If conversion fails, the system SHALL leave the descriptor and glTF/GLB `source` unchanged, SHALL NOT point `source` at a partial `.dae`, and SHALL allow Fast Path/Cook to keep using that glTF/GLB until a later successful upgrade or Reimport.

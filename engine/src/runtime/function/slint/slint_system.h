@@ -235,6 +235,7 @@ class SlintSystem final : public IEditorUiPresentation {
   BlinnPhongEditorSettings pullPreviewSettingsFromSlint() const override;
   void pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& settings) override;
   void syncHierarchy() override;
+  void syncActiveSceneIndicator();
   void syncInspectorFromSelection() override;
   void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) override;
   void clearAssetInspectorSelection() override;
@@ -281,6 +282,9 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void showPlayDirtySceneDialog() override;
   void hidePlayDirtySceneDialog() override;
+
+  void showDetectionReimportDialog(int asset_count) override;
+  void hideDetectionReimportDialog() override;
 
   BrowserLogicalRect getBrowserLogicalRect() const;
   BrowserLogicalRect getHierarchyLogicalRect() const;
@@ -463,6 +467,13 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Schedules SDL_ShowOpenFileDialog on the main thread (outside Slint dispatch).
   void queueOpenImportFileDialog();
   void finalizeAssetImport(const eastl::vector<ImportResult>& results);
+  void applyBrowserGridSelection(const eastl::string& path, bool ctrl,
+                                 bool shift);
+  void clearBrowserGridSelection();
+  bool isBrowserGridPathSelected(const eastl::string& path) const;
+  /// Updates only `BrowserGridRow.selected` flags — avoids rebuilding thumbs.
+  void refreshBrowserGridSelectionVisuals();
+  void deleteSelectedBrowserAssets();
   void onPiercingMenuEntitySelected(EntityId entity_id);
   /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
   /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
@@ -507,6 +518,11 @@ class SlintSystem final : public IEditorUiPresentation {
   eastl::vector<eastl::string> m_pending_mesh_import_paths;
   eastl::vector<eastl::string> m_pending_file_dialog_paths;
   bool m_pending_file_dialog_is_import{false};
+  eastl::vector<eastl::string> m_browser_selected_grid_paths;
+  eastl::string m_browser_selection_anchor_path;
+  bool m_scene_indicator_initialized{false};
+  eastl::string m_synced_scene_path;
+  bool m_synced_scene_dirty{false};
   Uint32 m_open_import_dialog_event{0};
   bool m_tree_folder_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};

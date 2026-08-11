@@ -78,6 +78,14 @@ class AssetImportService final {
   /// each GUID. Prefer this over N× requestReimport for watch debounce flush.
   bool requestReimports(const eastl::vector<eastl::string>& guids);
 
+  /// Delete a registered Asset by descriptor virtual path (e.g. assets/Meshes/X.mesh.yaml).
+  /// Refuses when the dependency graph reports dependents. On success: removes
+  /// Intermediate `source` (and Mesh companion Intermediate bodies), descriptor,
+  /// unregisters GUID, marks Finals stale, refreshes Content Browser.
+  /// `out_error` receives a short reason when returning false.
+  bool deleteAsset(const eastl::string& descriptor_virtual_path,
+                   eastl::string* out_error = nullptr);
+
   /// Lazy Intermediate migration (project open / registry scan): for each mesh
   /// Asset whose Intermediate `source` is still `.dae`, migrate GUID-preserving
   /// to sibling glTF/GLB (Assimp convert) or Reimport from `archived_source`

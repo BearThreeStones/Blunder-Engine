@@ -162,6 +162,8 @@ set(RENDER_SOURCES
     "function/render/mesh_preview/mesh_preview_offscreen_backend.cpp"
     "function/render/mesh_preview/mesh_preview_render.h"
     "function/render/mesh_preview/mesh_preview_render.cpp"
+    "function/render/scene_thumbnail/scene_thumbnail_render.h"
+    "function/render/scene_thumbnail/scene_thumbnail_render.cpp"
 )
 
 if(WIN32)

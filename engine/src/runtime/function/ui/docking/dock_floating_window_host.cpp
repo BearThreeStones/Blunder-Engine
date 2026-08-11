@@ -174,6 +174,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       }
       ui.set_hierarchy_tree_rows(rows);
       ui.set_hierarchy_selected_entity_id(snapshot.hierarchy_selected_entity_id);
+      ui.set_hierarchy_scene_display_name(
+          toSharedString(snapshot.hierarchy_scene_display_name));
       break;
     }
     case DockPanelKind::inspector:
@@ -333,6 +335,7 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.name = toSharedString(row.name);
         slint_row.thumb = row.thumb;
         slint_row.is_dir = row.is_dir;
+        slint_row.selected = row.selected;
         grid_model->push_back(slint_row);
       }
       ui.set_browser_grid_rows(grid_model);
@@ -617,6 +620,17 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_browser_import_requested();
       }
     });
+    component->on_browser_delete_requested([this]() {
+      if (m_callbacks.on_browser_delete_requested) {
+        m_callbacks.on_browser_delete_requested();
+      }
+    });
+    component->on_browser_grid_select(
+        [this](const slint::SharedString& path, bool ctrl, bool shift) {
+          if (m_callbacks.on_browser_grid_select) {
+            m_callbacks.on_browser_grid_select(path, ctrl, shift);
+          }
+        });
     component->on_browser_item_press(
         [this](const slint::SharedString& path, float x, float y) {
           if (m_callbacks.on_browser_item_press) {

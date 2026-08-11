@@ -34,6 +34,7 @@
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
+#include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -83,7 +84,7 @@ std::filesystem::path findProjectGameAssembly(
 
 void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
   // Product Play runs DotNetHost in engine_player (force_start). Edit Mode does
-  // not auto-start a host for authorship â€” BLUNDER_DOTNET_SCRIPTS=1 is debug /
+  // not auto-start a host for authorship â€?BLUNDER_DOTNET_SCRIPTS=1 is debug /
   // Approach A / editor_dotnet_host_test opt-in only (see docs/agents/testing.md).
   // Avoid setting that env while using editor Play (would start a second host).
   if (!force_start && !envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
@@ -163,6 +164,13 @@ void wireMeshPreviewThumbnails(RuntimeGlobalContext& ctx) {
   ctx.m_mesh_preview_service->initialize(preview_init);
   ctx.m_thumbnail_generator->setMeshPreviewService(
       ctx.m_mesh_preview_service.get());
+
+  ctx.m_scene_thumbnail_service = eastl::make_unique<SceneThumbnailRenderService>();
+  ctx.m_scene_thumbnail_service->initialize(ctx.m_asset_manager.get(),
+                                            ctx.m_file_system.get(),
+                                            ctx.m_mesh_preview_backend.get());
+  ctx.m_thumbnail_generator->setSceneThumbnailService(
+      ctx.m_scene_thumbnail_service.get());
 }
 
 }  // namespace
@@ -209,7 +217,7 @@ void RuntimeGlobalContext::startSystems(
   m_asset_compiler = eastl::make_shared<AssetCompilerService>();
   m_asset_compiler->initialize(m_file_system.get(), m_asset_manager.get(),
                                  m_asset_registry.get());
-  // Wire Pull Fast Path â†’ cookAsset before warm-up so load-time cook requests
+  // Wire Pull Fast Path â†?cookAsset before warm-up so load-time cook requests
   // work once systems start serving descriptors.
   m_asset_manager->setAssetCompiler(m_asset_compiler);
   m_asset_compiler->cookIfStale();
@@ -325,7 +333,7 @@ void RuntimeGlobalContext::startSystems(
   if (player_host) {
     // Player: window + engine loop without editor Slint shell / dock.
     LOG_INFO(
-        "[RuntimeGlobalContext] Player host mode â€” skipping Slint editor "
+        "[RuntimeGlobalContext] Player host mode â€?skipping Slint editor "
         "shell");
     m_render_system->initializeBackend(render_init_info);
     m_render_system->initialize(render_init_info);
@@ -445,9 +453,15 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   if (m_thumbnail_generator) {
+    m_thumbnail_generator->setSceneThumbnailService(nullptr);
     m_thumbnail_generator->setMeshPreviewService(nullptr);
     m_thumbnail_generator->shutdown();
     m_thumbnail_generator.reset();
+  }
+
+  if (m_scene_thumbnail_service) {
+    m_scene_thumbnail_service->shutdown();
+    m_scene_thumbnail_service.reset();
   }
 
   if (m_mesh_preview_service) {

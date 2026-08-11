@@ -34,13 +34,39 @@ When Import input is FBX, OBJ, glTF, or GLB (v1 Assimp whitelist), Import SHALL 
 - **THEN** automatic Source Export does not silently succeed as a cooked Asset path (clear reject with no Asset / Intermediate / Source dual-write)
 
 ### Requirement: Reimport
-Reimport SHALL refresh an existing Asset: if an archived Source path exists, re-run Source Export over Intermediate (producing COLLADA); otherwise re-apply import settings against existing Intermediate; then invalidate Finals and dependents. Reimport SHALL preserve the Asset GUID.
+Reimport SHALL refresh an existing Asset: if an archived Source path exists, re-run Source Export into Intermediate as defined by current Intermediate rules; otherwise refresh from the Asset’s Intermediate `source` (Intermediate-direct), including AnimationClip Reimport from the Clip descriptor `source`; then invalidate Finals and dependents. Reimport SHALL preserve the Asset GUID. Reimport SHALL remain invocable manually and MAY be invoked by Asset Watch through Detection Action. Mesh Reimport SHALL NOT refresh AnimationClip Assets via companion packaging metadata.
 
 #### Scenario: Reimport preserves GUID
 - **WHEN** Reimport runs for an Asset
 - **THEN** the Asset GUID is unchanged and dependents still resolve
 
 #### Scenario: Reimport from archived Source
-- **WHEN** Reimport runs for an Asset with an archived Source FBX, OBJ, glTF, or GLB
-- **THEN** Intermediate COLLADA is regenerated from that Source and Finals are marked stale
+- **WHEN** Reimport runs for an Asset with an archived Source path
+- **THEN** Intermediate is regenerated from that Source and Finals are marked stale
+
+#### Scenario: Intermediate-direct Reimport
+- **WHEN** Reimport runs for an Asset whose descriptor has Intermediate `source` and no usable archived Source refresh path
+- **THEN** Intermediate-derived data for that Asset is refreshed from `source` and the GUID is unchanged
+
+#### Scenario: Detection may invoke Reimport
+- **WHEN** Detection Action confirms or auto-runs for attributed GUIDs
+- **THEN** Reimport runs for those GUIDs through the same Reimport entry points as manual Reimport
+
+### Requirement: Companion Import does not package under Mesh
+When Import Animations is enabled and Companion Animation glTFs are Imported (multi-select, near-disk, or companion-only), Import SHALL register AnimationClip Assets whose Intermediate layout follows `Resources/Animations/<stem>/` and SHALL NOT require `companion_animation_sources` on any Mesh descriptor produced or updated in that Import.
+
+#### Scenario: Host plus companions without Mesh packaging field
+- **WHEN** Import receives one skinned mesh host and accepted companions with animations enabled
+- **THEN** AnimationClip Assets are registered and the Mesh descriptor does not gain a durable `companion_animation_sources` packaging list
+
+#### Scenario: Companion-only still independent
+- **WHEN** Import receives only companion-accepted glTFs with animations enabled
+- **THEN** AnimationClip Assets are registered under the selected Assets folder naming rules and no Mesh host is invented
+
+### Requirement: Mesh Reimport is not Clip Reimport
+Reimport for a Mesh Asset SHALL NOT use companion packaging metadata to refresh AnimationClip Assets. AnimationClip Reimport SHALL use the Clip descriptor’s own `source`.
+
+#### Scenario: Mesh Reimport leaves clip GUIDs untouched
+- **WHEN** Mesh Reimport completes for a skinned Mesh
+- **THEN** existing AnimationClip Asset GUIDs and bodies are not required to change as a side effect of that Mesh Reimport
 
