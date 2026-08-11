@@ -126,6 +126,68 @@ _Avoid_: Boxing every script call into Variant, exposing C++ member pointers to 
 A small engine dynamic value used for editor-facing property get/set, serialization glue, and other type-erased tooling paths — not the primary script call ABI.
 _Avoid_: Using Variant as the only interop calling convention, conflating with `std::variant` / EASTL variant
 
+### Physics
+
+**Physics Kernel**:
+The engine-owned rigid-body simulation core (integration, contact generation, stacking, sleep). Authored and stepped in native code; verified by the Physics golden suite and module unit tests. Built for **lockstep-grade determinism** (cross-platform bit/checksum identity as a product contract). Distinct from later gameplay-facing character / controller APIs and from C# Message as a physics deliverable. Decision record: [ADR 0028](docs/adr/0028-physics-kernel-fixedpoint-lockstep.md).
+_Avoid_: CharacterController as the kernel, shipping game Messages or Behaviour APIs as the first physics milestone, treating editor eyeballing as the sole correctness gate, adopting a third-party solver as the long-term source of truth for Blunder physics, treating same-machine-only repeatability as enough for networked physics
+
+**Physics Kernel v0**:
+The first closed Physics Kernel slice: 3D rigid bodies (Dynamic / Static / Kinematic), gravity/forces, convex colliders (box / sphere / capsule), per-Collider materials (friction + restitution 0 default), resting contact and stacking, per-body sleep. Explicitly out of v0: CCD, joints/constraints beyond contact, island sleep, triangle meshes / heightfields, soft bodies, cloth, vehicles, 2D, character-controller APIs, and SceneInstance/ECS/Object bridges.
+_Avoid_: Bundling CCD/joints/meshes/character/island-sleep/scene-bridge into the first kernel closed loop, declaring v0 done on visual sandbox alone
+
+**Physics World**:
+The authoritative native container for Physics Kernel state (bodies, colliders, velocities, contacts). The golden suite drives and asserts against this World directly. Projection into `SceneInstance` / a future ECS World / Object APIs is a later bridge milestone — not part of Kernel v0 closure.
+_Avoid_: Making SceneInstance Entity TRS or Object nodes the v0 source of truth for body state, requiring ECS World migration before the first golden suite can run, Godot-style scene-tree nodes as the kernel authority
+
+**Physics step**:
+One fixed-timestep advance of a Physics World (`dt = 1/60` by default). The golden suite calls `step` a fixed number of times; variable frame-rate accumulators belong to a later host/bridge, not Kernel v0.
+_Avoid_: Variable `delta_time` as the v0 integration input, unbounded substeps that chase frame time inside the World, baking editor/player frame pacing into the kernel API
+
+**Physics units**:
+Physics World quantities use SI: metres, seconds, kilograms. Default gravity is `(0, 0, -9.81)` in Z-up world space; a World may override gravity. Matches engine right-handed Z-up space. Stored and stepped as **Physics fixed scalar** (Q32.32), not float.
+_Avoid_: Centimetres as the default length unit, unspecified units with ad-hoc golden tolerances, Y-up gravity inside the Physics World, float storage as the kernel source of truth under lockstep
+
+**RigidBody**:
+A Physics World body with pose, velocity, mass properties, and a motion type. Owns zero or more Colliders. Not an Object, not a SceneInstance Entity, and not a gameplay CharacterController.
+_Avoid_: Equating RigidBody with a scene node or Object, one-shape-only forever as the data model, treating Behaviour as the body authority
+
+**Collider**:
+A collision shape (v0: box / sphere / capsule) attached to a RigidBody, with material parameters used in contact. Multiple Colliders may attach to one RigidBody.
+_Avoid_: Collider as a standalone simulated body, requiring a scene-tree CollisionShape node as kernel authority
+
+**Physics material**:
+Per-Collider contact parameters for Kernel v0: friction (at least one usable μ model) and restitution. Contact between two Colliders combines materials with a simple rule (exact combine function is an implementation detail). Defaults favor stacking: moderate friction, restitution 0. Bouncy defaults and bounce goldens are out of v0 closure.
+_Avoid_: World-only global friction as the only model, frictionless v0 that fakes stacking via position correction alone, default restitution > 0 as the v0 stacking path
+
+**Body motion type**:
+How a RigidBody participates in the simulation: **Dynamic** (forces/impulses, integrated), **Static** (immovable, infinite mass), **Kinematic** (external `target_pose`; each Physics step derives linear/angular velocity from the pose delta, uses that velocity in contact so moving Kinematics can push Dynamics, then ends the step at `target_pose`). All three are in Kernel v0; a moving-platform-pushes-box case belongs in the Physics golden suite.
+_Avoid_: Fake Static via huge-mass Dynamics, teleport-only Kinematic with zero velocity as the v0 product rule, velocity-only Kinematic that cannot accept a target pose, shipping a Kinematic type without a push golden, conflating Kinematic with CharacterController API
+
+**Body sleep**:
+A Dynamic RigidBody may enter sleep when linear and angular speed stay below thresholds for N consecutive Physics steps; contacts or applied forces wake it. Static and Kinematic bodies do not sleep. Kernel v0 uses per-body sleep (S1); island-wide sleep/wake is a follow-on kernel milestone, not required to close v0.
+_Avoid_: No-sleep v0 that only hopes velocities stay small, timer-forced freeze as sleep, requiring island sleep before v0 golden closure
+
+**Physics determinism (v0)**:
+Kernel v0 is **lockstep-grade deterministic**: same World inputs and same Physics step sequence produce bit-identical simulation state across the supported platform/compiler matrix. Stepping is single-threaded with a frozen, order-stable contact/solve pipeline. Multithreading is allowed later only if it preserves that contract. The simulation scalar is **Q32.32 fixed-point** (`int64` integer/fractional split), not IEEE float, on the physics hot path — transcendental/sqrt helpers used by physics are engine-owned fixed-point routines (no platform `libm` on that path). **v0 Done requires the Physics golden suite to pass with bit-identical World state on Windows MSVC x64 and Linux Clang or GCC x64 (P1).**
+_Avoid_: Treating same-build flaky-tolerant floats as the product bar, multithreaded v0 that relaxes order for speed, deferring cross-platform determinism until after netcode lands, declaring lockstep physics ready on float or single-platform-only goldens, Q22.10 as the primary physics scalar, mixing unchecked float into Kernel step
+
+**Physics fixed scalar**:
+The Physics Kernel's numeric type: binary fixed-point **Q32.32** stored in a signed 64-bit integer (32 integer bits, 32 fractional bits). World quantities remain SI conceptually (metres, seconds, kilograms) but are represented and computed in this scalar. Golden assertions compare in the fixed domain (or values derived from it without nondeterministic float).
+_Avoid_: Float as the kernel scalar under a lockstep contract, per-module ad-hoc Q formats without a single physics scalar, lookup-table math that must be regenerated on every format tweak as the primary approach
+
+**Fixed math library**:
+An engine-owned Q32.32 math module (scalars, vectors, quaternions, and the transcendentals/sqrt physics needs) used by the Physics Kernel. Independent of float `glm` / platform `libm` on the simulation path. Kernel v0 consumes it for physics only (**Scope1**); the module is packaged for later lockstep gameplay reuse (**Scope2** reserve). Scene bridge converts fixed poses to float for `SceneInstance` / rendering.
+_Avoid_: Physics-private one-off fixed helpers that cannot be reused by future lockstep gameplay, float glm as a dependency of the simulation math path, converting to float mid-step for "just this solve"
+
+**Physics scene bridge**:
+The first post–Kernel-v0 milestone: project Physics World body poses into `SceneInstance` and/or a future ECS Transform path so simulation is visible/usable in the engine host. Still not CharacterController or full gameplay physics API. Follows v0 golden closure; precedes treating multithreading / CCD / joints / meshes as the next top priority by default.
+_Avoid_: Bundling the bridge into Kernel v0 closure, equating the bridge with Character API, requiring multithreaded solve before any scene projection
+
+**Physics golden suite**:
+A fixed set of scenarios with numeric assertions that gate Physics Kernel changes. Primary acceptance for the kernel; module unit tests cover isolated algorithms (e.g. GJK, contact solve step). Optional early calibration against another engine is allowed; that engine is not the lasting truth source. **Kernel v0 required scenarios:** (1) free fall under gravity; (2) Dynamic resting on Static; (3) stack of ≥3 boxes; (4) sphere–box and capsule–box resting contacts; (5) frictional incline; (6) Kinematic platform lifts/pushes a Dynamic box; (7) impact against Static with bounded kinetic energy at restitution 0; (8) sleeping Dynamic wakes on hit. Bounce, joints, CCD, triangle meshes, and compound-shape stress are out of the v0 required set.
+_Avoid_: Editor visual inspection as the only gate, locking correctness forever to Jolt/Bullet/PhysX reference dumps, declaring v0 closed without the eight required scenarios
+
 ### Project management
 
 **Project**:
@@ -702,7 +764,28 @@ _Avoid_: Calling Phase 2 dual-track blend Add2, requiring N independent additive
 The milestone after Phase 3 that adds **AnimationTree** with a lean locomotion graph: **BlendSpace1D**, **StateMachine** (with **OneShot**), and **Add2** — sample order **base then additive (bind/rest)**; scripts use the **narrow named API** (per-node BlendSpace scalars); **topology is scene-embedded** (no required visual graph editor / Tree Asset). Animation step under an active tree uses the **base dominant clip** clock (PoseApplied retained; Add2 is not the step source). Active tree advance uses AnimationPlayer **TimeScale** globally. **Edit Mode** may activate the tree and scrub named drives (BlendSpace scalars, Travel/Start, OneShot, Add2 weights, TimeScale) without DotNetHost / Behaviour Tick; Stepped feel remains Play-validated. **Done criteria:** engineering gate (travel, BlendSpace1D, OneShot including Sync Fire→active tree, Add2 overlay, exclusive sampling, PoseApplied/dominant clock, TimeScale, Edit scrub) **plus** Chocomel (or agreed subset) Play acceptance — perceptible speed-like BlendSpace motion, **visible additive turn** (exact Godot turn clip names not required), OneShot return-to-base, stepped facing still on the base dominant clock. Still without requiring BlendSpace2D, procedural bone modifiers, method/audio tracks, Cubic/Bezier, cross-Object Skeleton drive, AnimationLibrary, or a full cutscene director. When Tree is active it exclusively samples the Skeleton; inactive falls back to AnimationPlayer; Sync Fire on active-tree members uses **OneShot**. Phase 1–3 foundations remain available; engine work **may proceed in parallel** with unfinished Phase 1–3 content gates (those Done criteria are not cancelled). Decision record: [ADR 0025](docs/adr/0025-animation-tree-phase-4.md).
 _Avoid_: Shipping full Godot AnimationTree parity as Phase 4, treating Phase 4 as BlendSpace2D/Pinda-complete, folding procedural SkeletonModifier or method/audio tracks into Phase 4 by default, silently dropping Phase 1–3 Chocomel/SYNC content gates when starting Phase 4, growing Phase 1–3 Play APIs into the graph host instead of AnimationTree, dual-writing Skeleton from active Tree and Player two-slot, requiring Fire→travel as the only Sync path into a tree, arbitrary-deep graph nesting as Phase 4 Done, parameter-path strings as the Phase 4 primary drive API, requiring a visual AnimationTree editor or standalone Tree Asset as Phase 4 Done, dropping PoseApplied or Stepped sync while AnimationTree is active, requiring per-node TimeScale as Phase 4 Done, Play-only AnimationTree with no Edit scrub path, requiring Edit Mode Behaviour Tick to drive the tree, declaring Phase 4 done on engineering gate alone without Chocomel-subset Play feel, requiring byte-identical Godot turn clip naming for Add2 acceptance
 
+**DogWalk animation Phase 5**:
+The milestone after Phase 4 that adds three capability buckets under **one** milestone with **three independent engineering gates** (all required for Phase 5 Done): **(A)** **SkeletonModifier** chain (post–mixer / post–AnimationTree, before PoseApplied) + **method tracks** (YAML; key-crossing dispatch on dominant-clip clock) — includes extension point, test double, and one minimal LookAt/aim sample; **(C)** **BlendSpace2D** (triangulation + barycentric); **(D)** **AnimationTree Asset** (GUID) + Inspector authorship as D-core (visual canvas optional, not blocking); Asset base + small scene overrides when referenced. Suggested implement order A → C → D. **Done criteria:** all three engineering gates **plus** lean Play bars per gate (A: visible post-pose modifier effect + observable method dispatch; C: perceptible 2D blend — Pinda subset or test field OK, full Pinda not required; D: Asset reference + Inspector edit + instance override without Behaviour Tick). **Edit Mode** may preview SkeletonModifier enable/order + post-pose result, BlendSpace2D (x,y) scrub, and Tree Asset / reference / overrides without DotNetHost / Behaviour Tick; Stepped feel and real method Behaviour handling remain Play-validated. Still without requiring **audio tracks**, Cubic/Bezier, cross-Object Skeleton drive, AnimationLibrary, full cutscene director, or visual canvas as Done. Phase 1–4 foundations remain; open earlier content Done gates are not cancelled. Decision record: [ADR 0026](docs/adr/0026-animation-phase-5.md).
+_Avoid_: Treating Phase 5 as full Godot AnimationTree parity, requiring Cutscene Director, silently dropping Phase 1–4 content gates when starting Phase 5, folding audio tracks into Phase 5 by default before they are locked, a single blocking Done bar that withholds A/C until the editor ships, splitting into separate Phase 5a/5b/5c milestones as the default plan, requiring a visual AnimationTree canvas as Phase 5 D Done, PoseApplied-only C# bone hacks as the supported procedural product path, baking procedural overrides only inside AnimationTree nodes, engine PtrCall of arbitrary named methods as the method-track product path, script-only PlaybackPosition scanning as the supported method-track path, full in-scene graph duplication as the primary Asset reuse path, declaring Phase 5 done on engineering gates alone without the lean per-gate Play bars, requiring full Pinda/leash/paper-mouth content parity as the only C/A Play bar, Play-only A/C with no Edit scrub path, requiring Edit Behaviour Tick to receive method tracks
+
+**SkeletonModifier**:
+An engine-owned ClassDB post-pose step (Phase 5) that runs **after** AnimationPlayer / AnimationTree sampling and **before** PoseApplied, mutating the Skeleton (look-at, attach, paper-mouth style offsets). Multiple modifiers on an Object form an ordered chain. Distinct from Add2 (clip additive in the tree) and from gameplay Behaviours that run in Tick before sampling. Decision record: [ADR 0026](docs/adr/0026-animation-phase-5.md).
+_Avoid_: Equating SkeletonModifier with Add2, requiring AnimationTree to host all procedural overrides, reading final pose inside Behaviour Tick as the supported procedural path
+
+**Method track**:
+A non-TRS channel on an **AnimationClip** (Phase 5) storing timed logical events (name + optional args) in Intermediate YAML. During playback the engine dispatches on **key-crossing** using the same **base dominant-clip clock** as Animation step (OneShot clock while OneShot is active). Delivery targets co-located Behaviours (and MAY use Message); the engine does not PtrCall arbitrary C# methods by string as the product path. Distinct from audio tracks (out of Phase 5 by default).
+_Avoid_: Script-only PlaybackPosition table scans as the supported path, engine-direct PtrCall of named methods as the product path, requiring audio tracks alongside method tracks in Phase 5, blending multiple clip method streams into one clock
+
+**BlendSpace2D**:
+A Phase 5 **AnimationTree** node that blends among authored clip points on a **2D** parameter plane (DogWalk/Pinda: e.g. speed × fatigue). Runtime finds a triangle and blends up to three neighboring clips with **barycentric** weights using local TRS lerp / rotation slerp — not additive, not axis-aligned grid-only. Scripts set the 2D parameter by **node logical name** (e.g. `SetBlendSpace2D(node, x, y)`).
+_Avoid_: Equating BlendSpace1D with BlendSpace2D, requiring BlendSpace2D for Chocomel Phase 4 Done, using Add2 as the 2D speed/fatigue mechanism, requiring a regular grid as the only authorship layout, nearest-three distance weights without triangulation as the Phase 5 product path
+
+**AnimationTree Asset**:
+A first-class Asset (Phase 5 D-core) whose body holds reusable AnimationTree topology (states, BlendSpace1D/2D points, OneShot/Add2 slots, etc.). An Object's AnimationTree MAY reference it by GUID. **Runtime topology:** Asset is the base when referenced; the scene MAY store the reference plus a **small instance-override** set (exact fields at apply-time) — not a full duplicate graph as the product path. With **no** Asset reference, Phase 4 **scene-embedded** topology remains valid. Authored primarily via Inspector — not a required visual node canvas for Phase 5 Done.
+_Avoid_: AnimationLibrary as the tree container, requiring a visual graph editor to create a Tree Asset, path-only tree identity without GUID, ignoring embedded topology when no Asset is set, treating full in-scene graph copy as the primary reuse path when an Asset reference exists
+
 **Skinning path (Phase 1)**:
+
 How bind pose + weights turn Skeleton pose into deformed vertices. **Fast Path** (Intermediate) uses **CPU skinning**; **Final** (Cooked) uses **GPU skinning**. Editor after Cook and Player share the Final/GPU path; uncooked preview stays CPU.
 _Avoid_: Editor-always-CPU as the product rule, requiring GPU skin before first Intermediate preview, maintaining a third unrelated skinning backend
 

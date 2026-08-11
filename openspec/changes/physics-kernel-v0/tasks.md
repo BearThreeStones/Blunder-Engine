@@ -40,7 +40,7 @@
 
 ## 5. Docs / closeout
 
-- [x] 5.1 Confirm CONTEXT Physics + ADR 0027 match implementation names
+- [x] 5.1 Confirm CONTEXT Physics + ADR 0028 match implementation names
 - [x] 5.2 Note follow-on: Physics scene bridge (not in this change)
 - [x] 5.3 Manual/CI checklist: how to run Fixed unit tests + golden suite on Win and Linux
 
@@ -54,7 +54,7 @@
 | Physics kernel library | `blunder_physics` |
 | Physics golden suite | `physics_golden_suite` |
 
-CONTEXT Physics section and [ADR 0027](../../../docs/adr/0027-physics-kernel-fixedpoint-lockstep.md) use domain terms; no vocabulary drift — no CONTEXT edit required.
+CONTEXT Physics section and [ADR 0028](../../../docs/adr/0028-physics-kernel-fixedpoint-lockstep.md) use domain terms; no vocabulary drift — no CONTEXT edit required.
 
 ### Follow-on (5.2)
 
