@@ -1171,6 +1171,23 @@ void AssetManager::clearCache() {
   m_scene_cache.clear();
 }
 
+void AssetManager::invalidateMeshCache(const eastl::string& virtual_path_or_key) {
+  if (!m_is_initialized || virtual_path_or_key.empty()) {
+    return;
+  }
+  const eastl::string key = canonicalKey(virtual_path_or_key);
+  auto it = m_mesh_cache.find(key);
+  if (it != m_mesh_cache.end()) {
+    m_mesh_cache.erase(it);
+  }
+  if (key != virtual_path_or_key) {
+    auto raw = m_mesh_cache.find(virtual_path_or_key);
+    if (raw != m_mesh_cache.end()) {
+      m_mesh_cache.erase(raw);
+    }
+  }
+}
+
 eastl::string AssetManager::canonicalKey(const eastl::string& virtual_path) const {
   const std::filesystem::path normalized =
       std::filesystem::path(virtual_path.c_str()).lexically_normal();

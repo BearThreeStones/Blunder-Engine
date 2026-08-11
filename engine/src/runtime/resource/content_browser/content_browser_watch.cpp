@@ -49,11 +49,17 @@ void ContentBrowserWatch::setReimportTarget(AssetImportService* asset_import) {
   m_asset_import = asset_import;
 }
 
+void ContentBrowserWatch::setDetectionAction(DetectionAction action) {
+  m_detection_action = action;
+}
+
 void ContentBrowserWatch::start() {
 #if defined(BLUNDER_HAS_EFSW)
   if (!m_file_system || m_started.exchange(true)) {
     return;
   }
+
+  m_detection_action = EditorDetectionSettings::load();
 
   const std::string assets_path = m_file_system->getAssetRoot().generic_string();
   const std::string resources_path =
@@ -72,8 +78,8 @@ void ContentBrowserWatch::start() {
     LOG_WARN("[ContentBrowserWatch] failed to watch Resources: {}",
              resources_path.c_str());
   } else {
-    LOG_INFO("[ContentBrowserWatch] watching Resources (Intermediate invalidate "
-             "+ Source auto-Reimport): {}",
+    LOG_INFO("[ContentBrowserWatch] watching Resources (Detection Action={}): {}",
+             m_detection_action == DetectionAction::Auto ? "Auto" : "Prompt",
              resources_path.c_str());
   }
 
@@ -102,11 +108,12 @@ void ContentBrowserWatch::stop() {
   {
     std::lock_guard<std::mutex> lock(m_pending_mutex);
     m_pending_invalidate_paths.clear();
-    m_pending_reimport_paths.clear();
+    m_pending_detection_paths.clear();
+    m_pending_prompt_guids.clear();
   }
   m_dirty.store(false);
   m_invalidate_dirty.store(false);
-  m_reimport_dirty.store(false);
+  m_detection_dirty.store(false);
 }
 
 void ContentBrowserWatch::suppressNotificationsFor(
@@ -205,14 +212,14 @@ bool ContentBrowserWatch::consumeInvalidateRequest() {
   return !guids.empty();
 }
 
-bool ContentBrowserWatch::consumeReimportRequest() {
-  if (!m_reimport_dirty.load()) {
+bool ContentBrowserWatch::consumeDetectionRequest() {
+  if (!m_detection_dirty.load()) {
     return false;
   }
-  if (!m_asset_import || !m_file_system) {
-    m_reimport_dirty.store(false);
+  if (!m_asset_import || !m_file_system || !m_asset_registry) {
+    m_detection_dirty.store(false);
     std::lock_guard<std::mutex> lock(m_pending_mutex);
-    m_pending_reimport_paths.clear();
+    m_pending_detection_paths.clear();
     return false;
   }
 
@@ -222,7 +229,7 @@ bool ContentBrowserWatch::consumeReimportRequest() {
     if (now < m_suppress_until) {
       return false;
     }
-    if (now - m_last_reimport_event_time < k_debounce_delay) {
+    if (now - m_last_detection_event_time < k_debounce_delay) {
       return false;
     }
   }
@@ -230,12 +237,14 @@ bool ContentBrowserWatch::consumeReimportRequest() {
   std::vector<std::string> pending;
   {
     std::lock_guard<std::mutex> lock(m_pending_mutex);
-    pending.swap(m_pending_reimport_paths);
-    m_reimport_dirty.store(false);
+    pending.swap(m_pending_detection_paths);
+    m_detection_dirty.store(false);
   }
   if (pending.empty()) {
     return false;
   }
+
+  const auto& resources_root = m_file_system->getResourcesRoot();
 
   eastl::vector<eastl::string> guids;
   auto pushUnique = [&guids](const eastl::string& guid) {
@@ -251,18 +260,77 @@ bool ContentBrowserWatch::consumeReimportRequest() {
   };
 
   for (const std::string& path : pending) {
-    const eastl::vector<eastl::string> mapped =
-        m_asset_import->findGuidsByArchivedSource(path);
+    const AssetWatchPathClass kind = classifyAssetWatchPath(
+        path, m_file_system->getAssetRoot(), resources_root);
+    const eastl::vector<eastl::string> mapped = guidsForDetectionWatchedPath(
+        kind, path, resources_root, *m_asset_registry, *m_file_system);
     for (const eastl::string& guid : mapped) {
       pushUnique(guid);
     }
   }
 
-  bool any = false;
-  if (!guids.empty()) {
-    any = m_asset_import->requestReimports(guids);
+  if (guids.empty()) {
+    return false;
   }
-  return any;
+
+  // Prompt and Auto both mark Finals stale up front so Dismiss stays safe.
+  if (m_asset_compiler) {
+    m_asset_compiler->rebuildDependencyGraph();
+    for (const eastl::string& guid : guids) {
+      m_asset_compiler->invalidateAssetAndDependents(guid);
+    }
+  }
+
+  if (m_detection_action == DetectionAction::Auto) {
+    return m_asset_import->requestReimports(guids);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(m_pending_mutex);
+    for (const eastl::string& guid : guids) {
+      bool exists = false;
+      for (const eastl::string& existing : m_pending_prompt_guids) {
+        if (existing == guid) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
+        m_pending_prompt_guids.push_back(guid);
+      }
+    }
+  }
+  LOG_INFO("[ContentBrowserWatch] Detection Prompt pending for {} Asset(s)",
+           static_cast<unsigned>(guids.size()));
+  return false;
+}
+
+bool ContentBrowserWatch::hasPendingDetectionPrompt() const {
+  std::lock_guard<std::mutex> lock(m_pending_mutex);
+  return !m_pending_prompt_guids.empty();
+}
+
+eastl::vector<eastl::string> ContentBrowserWatch::pendingDetectionGuids()
+    const {
+  std::lock_guard<std::mutex> lock(m_pending_mutex);
+  return m_pending_prompt_guids;
+}
+
+bool ContentBrowserWatch::confirmPendingDetectionReimport() {
+  eastl::vector<eastl::string> guids;
+  {
+    std::lock_guard<std::mutex> lock(m_pending_mutex);
+    guids.swap(m_pending_prompt_guids);
+  }
+  if (guids.empty() || !m_asset_import) {
+    return false;
+  }
+  return m_asset_import->requestReimports(guids);
+}
+
+void ContentBrowserWatch::dismissPendingDetectionPrompt() {
+  std::lock_guard<std::mutex> lock(m_pending_mutex);
+  m_pending_prompt_guids.clear();
 }
 
 #if defined(BLUNDER_HAS_EFSW)
@@ -314,7 +382,7 @@ void ContentBrowserWatch::queueInvalidatePath(const std::string& absolute_path) 
   m_invalidate_dirty.store(true);
 }
 
-void ContentBrowserWatch::queueReimportPath(const std::string& absolute_path) {
+void ContentBrowserWatch::queueDetectionPath(const std::string& absolute_path) {
   if (absolute_path.empty()) {
     return;
   }
@@ -324,13 +392,13 @@ void ContentBrowserWatch::queueReimportPath(const std::string& absolute_path) {
     if (now < m_suppress_until) {
       return;
     }
-    m_last_reimport_event_time = now;
+    m_last_detection_event_time = now;
   }
   {
     std::lock_guard<std::mutex> lock(m_pending_mutex);
-    m_pending_reimport_paths.push_back(absolute_path);
+    m_pending_detection_paths.push_back(absolute_path);
   }
-  m_reimport_dirty.store(true);
+  m_detection_dirty.store(true);
 }
 
 void ContentBrowserWatch::handleFileAction(efsw::WatchID watch_id,
@@ -362,14 +430,17 @@ void ContentBrowserWatch::handleFileAction(efsw::WatchID watch_id,
       break;
     case AssetWatchPathClass::IntermediateResource:
       queueInvalidatePath(absolute);
+      queueDetectionPath(absolute);
       if (!old_filename.empty()) {
-        queueInvalidatePath(joinDirFile(dir, old_filename));
+        const std::string old_absolute = joinDirFile(dir, old_filename);
+        queueInvalidatePath(old_absolute);
+        queueDetectionPath(old_absolute);
       }
       break;
     case AssetWatchPathClass::SourceArchive:
-      queueReimportPath(absolute);
+      queueDetectionPath(absolute);
       if (!old_filename.empty()) {
-        queueReimportPath(joinDirFile(dir, old_filename));
+        queueDetectionPath(joinDirFile(dir, old_filename));
       }
       break;
     case AssetWatchPathClass::Ignored:

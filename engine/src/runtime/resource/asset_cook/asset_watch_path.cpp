@@ -329,4 +329,232 @@ eastl::vector<eastl::string> guidsForArchivedSourcePath(
   return result;
 }
 
+eastl::vector<fs::path> resolveDetectionExchangePaths(
+    const fs::path& absolute_file_path) {
+  eastl::vector<fs::path> result;
+  std::error_code ec;
+  if (absolute_file_path.empty() || !fs::exists(absolute_file_path, ec)) {
+    // Still attribute by path even if briefly missing mid-write.
+  }
+
+  const eastl::string ext = [&]() {
+    eastl::string value(absolute_file_path.extension().generic_string().c_str());
+    for (char& c : value) {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return value;
+  }();
+
+  auto pushUniquePath = [&result](const fs::path& path) {
+    if (path.empty()) {
+      return;
+    }
+    for (const fs::path& existing : result) {
+      if (normalizeAbsolute(existing) == normalizeAbsolute(path)) {
+        return;
+      }
+    }
+    result.push_back(path);
+  };
+
+  if (ext == ".gltf" || ext == ".glb") {
+    pushUniquePath(absolute_file_path);
+    return result;
+  }
+
+  const fs::path parent = absolute_file_path.parent_path();
+  const eastl::string stem(
+      absolute_file_path.stem().generic_string().c_str());
+
+  if (ext == ".bin") {
+    pushUniquePath(parent / (stem + ".gltf").c_str());
+    pushUniquePath(parent / (stem + ".glb").c_str());
+    return result;
+  }
+
+  if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" ||
+      ext == ".tga") {
+    // Attribute all exchange glTF/GLB in the same directory (and textures/).
+    fs::path search_dir = parent;
+    const eastl::string parent_name(
+        parent.filename().generic_string().c_str());
+    if (parent_name == "textures" || parent_name == "Textures") {
+      search_dir = parent.parent_path();
+    }
+    std::error_code dir_ec;
+    if (fs::is_directory(search_dir, dir_ec)) {
+      for (const fs::directory_entry& entry :
+           fs::directory_iterator(search_dir, dir_ec)) {
+        if (!entry.is_regular_file(dir_ec)) {
+          continue;
+        }
+        eastl::string child_ext(
+            entry.path().extension().generic_string().c_str());
+        for (char& c : child_ext) {
+          c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (child_ext == ".gltf" || child_ext == ".glb") {
+          pushUniquePath(entry.path());
+        }
+      }
+    }
+    return result;
+  }
+
+  // Other Intermediate bodies (e.g. .anim.yaml): treat as the exchange path.
+  pushUniquePath(absolute_file_path);
+  return result;
+}
+
+eastl::vector<eastl::string> guidsForIntermediateSourcePath(
+    const fs::path& absolute_file_path, const fs::path& resources_root,
+    const AssetRegistry& registry, FileSystem& file_system) {
+  eastl::vector<eastl::string> result;
+
+  const eastl::vector<fs::path> exchange_paths =
+      resolveDetectionExchangePaths(absolute_file_path);
+  if (exchange_paths.empty()) {
+    return result;
+  }
+
+  eastl::vector<eastl::string> candidates;
+  for (const fs::path& exchange : exchange_paths) {
+    const eastl::string under_resources =
+        virtualPathUnderRoot(exchange, resources_root, "resources");
+    if (under_resources.empty()) {
+      continue;
+    }
+    candidates.push_back(under_resources);
+    if (under_resources.size() > 10 &&
+        under_resources.compare(0, 10, "resources/") == 0) {
+      candidates.push_back(eastl::string(under_resources.c_str() + 10));
+    }
+  }
+  if (candidates.empty()) {
+    return result;
+  }
+
+  auto pushUnique = [&result](const eastl::string& guid) {
+    if (guid.empty()) {
+      return;
+    }
+    for (const eastl::string& existing : result) {
+      if (existing == guid) {
+        return;
+      }
+    }
+    result.push_back(guid);
+  };
+
+  auto matchesSource = [&candidates](const eastl::string& source) {
+    if (source.empty()) {
+      return false;
+    }
+    const eastl::string normalized = normalizeWatchVirtualPath(source);
+    for (const eastl::string& candidate : candidates) {
+      if (normalized == normalizeWatchVirtualPath(candidate)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const eastl::vector<eastl::pair<eastl::string, eastl::string>> entries =
+      registry.registeredEntries();
+  for (const auto& entry : entries) {
+    const eastl::string& guid = entry.first;
+    const eastl::string& virtual_path = entry.second;
+
+    eastl::string relative = virtual_path;
+    if (relative.compare(0, 7, "assets/") == 0) {
+      relative.erase(0, 7);
+    }
+    const fs::path absolute =
+        file_system.resolveAsset(fs::path(relative.c_str()));
+    eastl::string yaml_text;
+    if (!file_system.readText(absolute, yaml_text)) {
+      continue;
+    }
+
+    if (virtual_path.size() >= 10 &&
+        virtual_path.compare(virtual_path.size() - 10, 10, ".mesh.yaml") == 0) {
+      MeshAssetDescriptor desc;
+      if (AssetYaml::parseMeshDescriptor(yaml_text, desc) &&
+          matchesSource(desc.source)) {
+        pushUnique(guid);
+      }
+      continue;
+    }
+    if (virtual_path.size() >= 13 &&
+        virtual_path.compare(virtual_path.size() - 13, 13, ".texture.yaml") ==
+            0) {
+      TextureAssetDescriptor desc;
+      if (AssetYaml::parseTextureDescriptor(yaml_text, desc) &&
+          matchesSource(desc.source)) {
+        pushUnique(guid);
+      }
+      continue;
+    }
+    if (virtual_path.size() >= 15 &&
+        virtual_path.compare(virtual_path.size() - 15, 15, ".animation.yaml") ==
+            0) {
+      AnimationClipAssetDescriptor desc;
+      if (AssetYaml::parseAnimationClipDescriptor(yaml_text, desc) &&
+          matchesSource(desc.source)) {
+        pushUnique(guid);
+      }
+    }
+  }
+
+  return result;
+}
+
+eastl::vector<eastl::string> guidsForDetectionWatchedPath(
+    AssetWatchPathClass path_class, const fs::path& absolute_file_path,
+    const fs::path& resources_root, const AssetRegistry& registry,
+    FileSystem& file_system) {
+  if (path_class == AssetWatchPathClass::SourceArchive) {
+    // Sidecars under Source/ still expand to exchange/archive files.
+    eastl::vector<eastl::string> result;
+    auto pushUnique = [&result](const eastl::string& guid) {
+      if (guid.empty()) {
+        return;
+      }
+      for (const eastl::string& existing : result) {
+        if (existing == guid) {
+          return;
+        }
+      }
+      result.push_back(guid);
+    };
+    const eastl::vector<fs::path> exchange_paths =
+        resolveDetectionExchangePaths(absolute_file_path);
+    if (exchange_paths.empty()) {
+      return guidsForArchivedSourcePath(absolute_file_path, resources_root,
+                                        registry, file_system);
+    }
+    for (const fs::path& exchange : exchange_paths) {
+      const eastl::vector<eastl::string> mapped = guidsForArchivedSourcePath(
+          exchange, resources_root, registry, file_system);
+      for (const eastl::string& guid : mapped) {
+        pushUnique(guid);
+      }
+    }
+    // Also try the raw path (archived non-gltf sources).
+    const eastl::vector<eastl::string> direct = guidsForArchivedSourcePath(
+        absolute_file_path, resources_root, registry, file_system);
+    for (const eastl::string& guid : direct) {
+      pushUnique(guid);
+    }
+    return result;
+  }
+
+  if (path_class == AssetWatchPathClass::IntermediateResource) {
+    return guidsForIntermediateSourcePath(absolute_file_path, resources_root,
+                                          registry, file_system);
+  }
+
+  return {};
+}
+
 }  // namespace Blunder

@@ -149,6 +149,10 @@ class AssetManager final {
   /// until their owners release them.
   void clearCache();
 
+  /// Drop Mesh cache entries for a virtual path / GUID key so the next load
+  /// rebuilds from Intermediate/Final (Editor Asset Hot Reload seam).
+  void invalidateMeshCache(const eastl::string& virtual_path_or_key);
+
  private:
   template <typename T>
   using Cache = eastl::unordered_map<eastl::string, eastl::weak_ptr<T>>;

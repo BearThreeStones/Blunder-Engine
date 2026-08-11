@@ -901,6 +901,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playDirtyCancel));
         }));
+    component->on_detection_reimport_all(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::detectionReimportAll));
+        }));
+    component->on_detection_reimport_dismissed(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::detectionReimportDismiss));
+        }));
 
     component->on_viewport_projection_toggled([this]() {
       // Slint TouchArea callback intentionally ignored.
@@ -4287,6 +4295,22 @@ void SlintSystem::hidePlayDirtySceneDialog() {
     return;
   }
   m_window_component->operator->()->set_play_dirty_dialog_visible(false);
+}
+
+void SlintSystem::showDetectionReimportDialog(int asset_count) {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_detection_reimport_asset_count(
+      asset_count > 0 ? asset_count : 1);
+  m_window_component->operator->()->set_detection_reimport_dialog_visible(true);
+}
+
+void SlintSystem::hideDetectionReimportDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_detection_reimport_dialog_visible(false);
 }
 
 void SlintSystem::showPiercingMenu(const eastl::vector<PiercingMenuItem>& items,

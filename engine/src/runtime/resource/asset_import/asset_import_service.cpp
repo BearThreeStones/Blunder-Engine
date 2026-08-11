@@ -1,6 +1,7 @@
 #include "runtime/resource/asset_import/asset_import_service.h"
 
 #include "runtime/resource/asset_import/companion_animation_gltf.h"
+#include "runtime/resource/asset_import/editor_mesh_hot_reload.h"
 #include "runtime/resource/asset_import/gltf_animation_clip_extractor.h"
 
 #include <algorithm>
@@ -257,7 +258,7 @@ eastl::string registerIntermediateBody(FileSystem* file_system,
 }
 
 bool registerCompanionAnimationIntermediates(
-    FileSystem* file_system, const eastl::string& /*host_resource_virtual*/,
+    FileSystem* file_system, const eastl::string& host_resource_virtual,
     const std::vector<fs::path>& companion_inputs,
     eastl::vector<eastl::string>& out_virtual_paths,
     std::vector<fs::path>& out_absolute_paths) {
@@ -266,9 +267,16 @@ bool registerCompanionAnimationIntermediates(
   if (companion_inputs.empty()) {
     return true;
   }
+  if (host_resource_virtual.compare(0, 10, "resources/") != 0) {
+    return false;
+  }
 
-  // ADR 0028: companion exchange bodies live under Resources/Animations/<stem>/
-  // (organization only — not Models/{host}/companions/).
+  // Convention: companions live beside the host body under
+  // resources/<host-parent>/companions/<companion-file>. The explicit
+  // descriptor list remains authoritative for Reimport.
+  const fs::path host_relative(host_resource_virtual.substr(10).c_str());
+  const fs::path companions_relative =
+      host_relative.parent_path() / "companions";
   std::vector<fs::path> copied_paths;
   const auto fail = [&]() {
     for (const fs::path& copied : copied_paths) {
@@ -281,30 +289,54 @@ bool registerCompanionAnimationIntermediates(
   };
 
   for (const fs::path& input : companion_inputs) {
-    const eastl::string resource_virtual =
-        registerIntermediateBody(file_system, input, "Animations");
-    if (resource_virtual.empty()) {
+    const fs::path original_name = input.filename();
+    if (original_name.empty()) {
       return fail();
     }
-    eastl::string relative = resource_virtual;
-    if (relative.compare(0, 10, "resources/") == 0) {
-      relative.erase(0, 10);
+
+    fs::path destination_relative = companions_relative / original_name;
+    fs::path destination_absolute =
+        file_system->resolveResource(destination_relative);
+    if (file_system->exists(destination_absolute) &&
+        !pathsReferToSameFile(input, destination_absolute)) {
+      bool found_unique = false;
+      for (uint32_t index = 1; index < 10000; ++index) {
+        const fs::path candidate_name =
+            original_name.stem().generic_string() + "_" +
+            std::to_string(index) + original_name.extension().generic_string();
+        destination_relative = companions_relative / candidate_name;
+        destination_absolute =
+            file_system->resolveResource(destination_relative);
+        if (!file_system->exists(destination_absolute)) {
+          found_unique = true;
+          break;
+        }
+      }
+      if (!found_unique) {
+        return fail();
+      }
     }
-    const fs::path destination_absolute =
-        file_system->resolveResource(fs::path(relative.c_str()));
+
     if (!pathsReferToSameFile(input, destination_absolute)) {
+      if (!file_system->copyFile(input, destination_absolute, false)) {
+        return fail();
+      }
       copied_paths.push_back(destination_absolute);
     }
     if (!copyGltfExternalResources(file_system, input, destination_absolute,
                                    copied_paths)) {
       return fail();
     }
-    out_virtual_paths.push_back(resource_virtual);
+
+    eastl::string virtual_path("resources/");
+    virtual_path.append(destination_relative.generic_string().c_str());
+    out_virtual_paths.push_back(virtual_path);
     out_absolute_paths.push_back(destination_absolute);
   }
   return true;
 }
 
+/// Copy Source Asset under Resources/Source/{subdir}/{stem}/filename.
 eastl::string archiveSourceAsset(FileSystem* file_system,
                                  const fs::path& input_absolute,
                                  const char* resources_subdir) {
@@ -704,12 +736,27 @@ void refreshMeshAnimationClipsFromIntermediate(
   const fs::path gltf_absolute =
       resolveResourcesVirtualPath(file_system, mesh.source);
 
-  // ADR 0028: Mesh Reimport refreshes embedded clips only — companion Clips
-  // Reimport from their own descriptor source / Animations/<stem>/ glTF.
   refreshAnimationClipsFromGltf(file_system, asset_registry, content_browser,
                                 gltf_absolute, mesh_stem, existing_clips,
                                 make_unique_descriptor_name);
-  (void)mesh.companion_animation_sources;
+
+  for (const eastl::string& companion_source :
+       mesh.companion_animation_sources) {
+    const eastl::string companion_stem =
+        stemFromVirtualPath(companion_source);
+    if (companion_source.empty() || companion_stem.empty()) {
+      continue;
+    }
+
+    const fs::path companion_absolute =
+        resolveResourcesVirtualPath(file_system, companion_source);
+    warnOnCompanionAnimationBoneMismatches(gltf_absolute,
+                                           companion_absolute);
+    refreshAnimationClipsFromGltf(
+        file_system, asset_registry, content_browser, companion_absolute,
+        mesh_stem, existing_clips, make_unique_descriptor_name,
+        companion_stem);
+  }
 }
 
 bool endsWithIgnoreCase(const eastl::string& value, const char* suffix) {
@@ -960,6 +1007,8 @@ ImportResult AssetImportService::importMeshIntermediate(
   descriptor.guid = m_asset_registry->allocateGuid();
   // Descriptor field `source` = Intermediate path (glossary), not Source Asset.
   descriptor.source = resource_virtual_path;
+  descriptor.companion_animation_sources =
+      companion_resource_virtual_paths;
   descriptor.import = settings;
 
   const eastl::string descriptor_virtual =
@@ -1002,7 +1051,7 @@ ImportResult AssetImportService::importMeshIntermediate(
       eastl::vector<ImportResult> companion_clips =
           extractAndRegisterAnimationClipsFromGltf(
               m_file_system, m_asset_registry, m_content_browser,
-              companion_absolute, companion_stem, make_name, companion_stem,
+              companion_absolute, stem, make_name, companion_stem,
               assets_folder);
       result.animation_clips.insert(result.animation_clips.end(),
                                     companion_clips.begin(),
@@ -1268,7 +1317,7 @@ eastl::vector<ImportResult> AssetImportService::importExternalFiles(
       const eastl::string companion_stem(
           orphan_path.stem().generic_string().c_str());
       const eastl::string resource_virtual = registerIntermediateBody(
-          m_file_system, orphan_path, "Animations");
+          m_file_system, orphan_path, "Models/_standalone_companions");
       fs::path extract_gltf = orphan_path;
       if (!resource_virtual.empty()) {
         const fs::path resource_absolute =
@@ -1453,8 +1502,12 @@ bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_pat
       if (!descriptor.source.empty()) {
         intermediate_virtuals.push_back(descriptor.source);
       }
-      // ADR 0028: companion Intermediate belongs to Clip Assets — do not
-      // cascade-delete via Mesh packaging lists.
+      for (const eastl::string& companion :
+           descriptor.companion_animation_sources) {
+        if (!companion.empty()) {
+          intermediate_virtuals.push_back(companion);
+        }
+      }
     } else if (is_texture) {
       TextureAssetDescriptor descriptor{};
       if (!AssetYaml::parseTextureDescriptor(yaml_text, descriptor)) {
@@ -1524,59 +1577,6 @@ bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_pat
   return true;
 }
 
-
-bool refreshAnimationClipFromSiblingGltf(
-    FileSystem* file_system, AssetRegistry* asset_registry,
-    ContentBrowserSystem* content_browser,
-    const eastl::string& descriptor_virtual, const eastl::string& yaml_text,
-    const MakeUniqueDescriptorNameFn& make_unique_descriptor_name) {
-  AnimationClipAssetDescriptor clip{};
-  if (!AssetYaml::parseAnimationClipDescriptor(yaml_text, clip) ||
-      clip.source.empty()) {
-    return false;
-  }
-
-  const eastl::string stem = stemFromVirtualPath(clip.source);
-  if (stem.empty()) {
-    return false;
-  }
-
-  const fs::path source_absolute =
-      resolveResourcesVirtualPath(file_system, clip.source);
-  const fs::path folder = source_absolute.parent_path();
-  if (!file_system->isDirectory(folder)) {
-    return false;
-  }
-
-  fs::path exchange_gltf;
-  std::error_code ec;
-  for (const auto& entry : fs::directory_iterator(folder, ec)) {
-    if (ec || !entry.is_regular_file()) {
-      continue;
-    }
-    const eastl::string ext = extensionLower(entry.path());
-    if (ext == ".gltf" || ext == ".glb") {
-      exchange_gltf = entry.path();
-      break;
-    }
-  }
-  if (exchange_gltf.empty() || !file_system->exists(exchange_gltf)) {
-    LOG_WARN(
-        "[AssetImport] Clip Reimport: no sibling glTF beside {} (invalidate "
-        "only)",
-        clip.source.c_str());
-    return true;
-  }
-
-  const ExistingAnimationClipMap existing =
-      collectExistingAnimationClipsForMesh(file_system, asset_registry, stem);
-  refreshAnimationClipsFromGltf(file_system, asset_registry, content_browser,
-                                exchange_gltf, stem, existing,
-                                make_unique_descriptor_name, stem);
-  (void)descriptor_virtual;
-  return true;
-}
-
 bool AssetImportService::requestReimports(
     const eastl::vector<eastl::string>& guids) {
   if (!m_is_initialized || guids.empty()) {
@@ -1627,26 +1627,16 @@ bool AssetImportService::requestReimports(
           "guid={} (GUID preserved; still invalidating Finals)",
           guid.c_str());
     } else {
-      const MakeUniqueDescriptorNameFn make_name =
-          [this](const eastl::string& folder, const eastl::string& name_stem,
-                 const char* suffix) {
-            return makeUniqueDescriptorName(folder, name_stem, suffix);
-          };
       MeshAssetDescriptor mesh_descriptor{};
       if (AssetYaml::parseMeshDescriptor(yaml_text, mesh_descriptor)) {
+        const MakeUniqueDescriptorNameFn make_name =
+            [this](const eastl::string& folder, const eastl::string& name_stem,
+                   const char* suffix) {
+              return makeUniqueDescriptorName(folder, name_stem, suffix);
+            };
         refreshMeshAnimationClipsFromIntermediate(
             m_file_system, m_asset_registry, m_content_browser,
             descriptor_virtual, mesh_descriptor, make_name);
-      } else if (descriptor_virtual.size() >= 15 &&
-                 descriptor_virtual.compare(descriptor_virtual.size() - 15, 15,
-                                            ".animation.yaml") == 0) {
-        if (!refreshAnimationClipFromSiblingGltf(
-                m_file_system, m_asset_registry, m_content_browser,
-                descriptor_virtual, yaml_text, make_name)) {
-          LOG_WARN(
-              "[AssetImport] requestReimport: clip refresh failed for {}",
-              descriptor_virtual.c_str());
-        }
       }
     }
 
@@ -1655,6 +1645,7 @@ bool AssetImportService::requestReimports(
     if (m_asset_compiler) {
       m_asset_compiler->invalidateAssetAndDependents(guid);
     }
+    editorMeshHotReloadAfterReimport(guid, descriptor_virtual);
     any_ok = true;
   }
   return any_ok;

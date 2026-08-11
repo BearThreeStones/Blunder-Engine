@@ -3,6 +3,7 @@ import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_brow
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { PlayDirtySceneDialog } from "play_dirty_scene_dialog.slint";
+import { DetectionReimportDialog } from "detection_reimport_dialog.slint";
 import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
@@ -221,9 +222,13 @@ export component MainEditorWindow inherits Window {
     in property <bool> anim-preview-end-cine-enabled: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
+    in-out property <bool> detection-reimport-dialog-visible: false;
+    in-out property <int> detection-reimport-asset-count: 1;
     callback play-dirty-save-and-play();
     callback play-dirty-play-last-saved();
     callback play-dirty-cancelled();
+    callback detection-reimport-all();
+    callback detection-reimport-dismissed();
 
     in-out property <bool> viewport-is-perspective: true;
     in property <bool> viewport-image-ready: false;
@@ -990,7 +995,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.detection-reimport-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -1021,6 +1026,16 @@ export component MainEditorWindow inherits Window {
             save-and-play => { root.play-dirty-save-and-play(); }
             play-last-saved => { root.play-dirty-play-last-saved(); }
             cancelled => { root.play-dirty-cancelled(); }
+        }
+
+        detection_reimport_dialog := DetectionReimportDialog {
+            z: 3120;
+            width: parent.width;
+            height: parent.height;
+            show-dialog: root.detection-reimport-dialog-visible;
+            asset-count: root.detection-reimport-asset-count;
+            reimport-all => { root.detection-reimport-all(); }
+            dismissed => { root.detection-reimport-dismissed(); }
         }
 
         PiercingMenu {

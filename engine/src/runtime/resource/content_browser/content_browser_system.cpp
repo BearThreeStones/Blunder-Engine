@@ -5,6 +5,7 @@
 #include <filesystem>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/project/editor_detection_settings.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content/content_index.h"
 #include "runtime/resource/thumbnail/thumbnail_generation_queue.h"
@@ -276,9 +277,35 @@ void ContentBrowserSystem::setReimportTarget(AssetImportService* asset_import) {
   m_file_watch.setReimportTarget(asset_import);
 }
 
+void ContentBrowserSystem::setDetectionAction(DetectionAction action) {
+  m_file_watch.setDetectionAction(action);
+  EditorDetectionSettings::save(action);
+}
+
+DetectionAction ContentBrowserSystem::detectionAction() const {
+  return m_file_watch.detectionAction();
+}
+
+bool ContentBrowserSystem::hasPendingDetectionPrompt() const {
+  return m_file_watch.hasPendingDetectionPrompt();
+}
+
+eastl::vector<eastl::string> ContentBrowserSystem::pendingDetectionGuids()
+    const {
+  return m_file_watch.pendingDetectionGuids();
+}
+
+bool ContentBrowserSystem::confirmPendingDetectionReimport() {
+  return m_file_watch.confirmPendingDetectionReimport();
+}
+
+void ContentBrowserSystem::dismissPendingDetectionPrompt() {
+  m_file_watch.dismissPendingDetectionPrompt();
+}
+
 bool ContentBrowserSystem::tickFileWatch() {
   m_file_watch.consumeInvalidateRequest();
-  m_file_watch.consumeReimportRequest();
+  m_file_watch.consumeDetectionRequest();
   return m_file_watch.consumeRefreshRequest();
 }
 

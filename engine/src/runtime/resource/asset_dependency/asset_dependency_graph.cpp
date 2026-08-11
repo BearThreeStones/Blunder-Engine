@@ -90,6 +90,12 @@ void AssetDependencyGraph::rebuildFromProject(FileSystem& file_system,
               addDependent(clip_guid, guid);
             }
           }
+          for (const SceneEntityDefinition::AnimationClipBinding& binding :
+               entity.animation_player_clips) {
+            if (isValidGuidFormat(binding.guid)) {
+              addDependent(binding.guid, guid);
+            }
+          }
         }
       }
       m_leaves[guid] = leaves;

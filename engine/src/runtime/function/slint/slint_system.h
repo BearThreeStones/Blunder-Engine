@@ -282,6 +282,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void showPlayDirtySceneDialog() override;
   void hidePlayDirtySceneDialog() override;
 
+  void showDetectionReimportDialog(int asset_count) override;
+  void hideDetectionReimportDialog() override;
+
   BrowserLogicalRect getBrowserLogicalRect() const;
   BrowserLogicalRect getHierarchyLogicalRect() const;
   bool isContentBrowserDragActive() const;

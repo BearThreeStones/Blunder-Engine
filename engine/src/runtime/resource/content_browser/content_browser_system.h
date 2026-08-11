@@ -7,6 +7,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/project/editor_detection_settings.h"
 #include "runtime/resource/content/content_entry.h"
 #include "runtime/resource/content_browser/content_browser_drag.h"
 #include "runtime/resource/content_browser/content_browser_types.h"
@@ -38,10 +39,19 @@ class ContentBrowserSystem final {
   void startFileWatch();
   void stopFileWatch();
 
-  /// Wire AssetImportService for SourceArchive auto-Reimport (task 4.4).
+  /// Wire AssetImportService for Detection Action Reimport (ADR 0029).
   void setReimportTarget(AssetImportService* asset_import);
 
-  /// Debounced refresh / Intermediate invalidation / Source Reimport;
+  void setDetectionAction(DetectionAction action);
+  DetectionAction detectionAction() const;
+
+  /// Prompt-mode Detection: coalesced GUID set awaiting Reimport All / Dismiss.
+  bool hasPendingDetectionPrompt() const;
+  eastl::vector<eastl::string> pendingDetectionGuids() const;
+  bool confirmPendingDetectionReimport();
+  void dismissPendingDetectionPrompt();
+
+  /// Debounced refresh / Intermediate invalidation / Detection;
   /// call once per frame on the main thread.
   bool tickFileWatch();
 

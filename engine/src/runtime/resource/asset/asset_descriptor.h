@@ -81,7 +81,7 @@ struct AnimationClipAssetDescriptor {
 
 /// Reusable AnimationTree topology body (Intermediate / Asset).
 struct AnimationTreeTopologyData {
-  static constexpr int kVersion = 1;
+  static constexpr int kVersion = 2;
 
   struct BlendSpace1DPointDef {
     eastl::string clip_name;
@@ -110,6 +110,31 @@ struct AnimationTreeTopologyData {
     eastl::string clip_name;
     eastl::string blend_space_node;
   };
+  struct TreeParamDef {
+    eastl::string name;
+    /// "bool" | "float"
+    eastl::string kind{"float"};
+    bool bool_default{false};
+    float float_default{0.0f};
+  };
+  struct TransitionDef {
+    eastl::string from_state;
+    eastl::string to_state;
+    /// "treeParam" | "blendSpace1DScalar" | "blendSpace2DX" | "blendSpace2DY" | "add2Weight"
+    eastl::string source{"treeParam"};
+    eastl::string param_name;
+    bool is_bool_predicate{false};
+    /// "eq" | "ne" | "lt" | "le" | "gt" | "ge"
+    eastl::string op{"eq"};
+    float float_operand{0.0f};
+    bool bool_operand{true};
+    int priority{0};
+  };
+  struct CanvasLayoutNodeDef {
+    eastl::string node_id;
+    float x{0.0f};
+    float y{0.0f};
+  };
 
   eastl::string base_blend_space_node;
   eastl::string base_blend_space_2d_node;
@@ -118,6 +143,9 @@ struct AnimationTreeTopologyData {
   eastl::vector<BlendSpace1DDef> blend_spaces_1d;
   eastl::vector<BlendSpace2DDef> blend_spaces_2d;
   eastl::vector<StateDef> states;
+  eastl::vector<TreeParamDef> tree_params;
+  eastl::vector<TransitionDef> transitions;
+  eastl::vector<CanvasLayoutNodeDef> canvas_layout;
 };
 
 struct AnimationTreeAssetDescriptor {

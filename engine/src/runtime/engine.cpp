@@ -391,6 +391,14 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
         slint_system->syncContentBrowser();
       }
     }
+    if (g_runtime_global_context.m_content_browser && slint_system &&
+        g_runtime_global_context.m_content_browser
+            ->hasPendingDetectionPrompt()) {
+      const int count = static_cast<int>(
+          g_runtime_global_context.m_content_browser->pendingDetectionGuids()
+              .size());
+      slint_system->showDetectionReimportDialog(count);
+    }
 
     if (g_runtime_global_context.m_content_browser &&
         g_runtime_global_context.m_content_browser->tickThumbnailQueue()) {

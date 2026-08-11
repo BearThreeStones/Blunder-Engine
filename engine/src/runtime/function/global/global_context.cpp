@@ -84,7 +84,7 @@ std::filesystem::path findProjectGameAssembly(
 
 void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
   // Product Play runs DotNetHost in engine_player (force_start). Edit Mode does
-  // not auto-start a host for authorship â€” BLUNDER_DOTNET_SCRIPTS=1 is debug /
+  // not auto-start a host for authorship â€?BLUNDER_DOTNET_SCRIPTS=1 is debug /
   // Approach A / editor_dotnet_host_test opt-in only (see docs/agents/testing.md).
   // Avoid setting that env while using editor Play (would start a second host).
   if (!force_start && !envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
@@ -217,7 +217,7 @@ void RuntimeGlobalContext::startSystems(
   m_asset_compiler = eastl::make_shared<AssetCompilerService>();
   m_asset_compiler->initialize(m_file_system.get(), m_asset_manager.get(),
                                  m_asset_registry.get());
-  // Wire Pull Fast Path â†’ cookAsset before warm-up so load-time cook requests
+  // Wire Pull Fast Path â†?cookAsset before warm-up so load-time cook requests
   // work once systems start serving descriptors.
   m_asset_manager->setAssetCompiler(m_asset_compiler);
   m_asset_compiler->cookIfStale();
@@ -333,7 +333,7 @@ void RuntimeGlobalContext::startSystems(
   if (player_host) {
     // Player: window + engine loop without editor Slint shell / dock.
     LOG_INFO(
-        "[RuntimeGlobalContext] Player host mode â€” skipping Slint editor "
+        "[RuntimeGlobalContext] Player host mode â€?skipping Slint editor "
         "shell");
     m_render_system->initializeBackend(render_init_info);
     m_render_system->initialize(render_init_info);

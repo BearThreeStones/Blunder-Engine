@@ -310,6 +310,26 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       break;
     }
+    case UiEventKind::detectionReimportAll: {
+      if (m_presentation) {
+        m_presentation->hideDetectionReimportDialog();
+      }
+      if (g_runtime_global_context.m_content_browser) {
+        (void)g_runtime_global_context.m_content_browser
+            ->confirmPendingDetectionReimport();
+      }
+      break;
+    }
+    case UiEventKind::detectionReimportDismiss: {
+      if (m_presentation) {
+        m_presentation->hideDetectionReimportDialog();
+      }
+      if (g_runtime_global_context.m_content_browser) {
+        g_runtime_global_context.m_content_browser
+            ->dismissPendingDetectionPrompt();
+      }
+      break;
+    }
     case UiEventKind::playPause: {
       PlaySessionController* session =
           g_runtime_global_context.m_play_session.get();
