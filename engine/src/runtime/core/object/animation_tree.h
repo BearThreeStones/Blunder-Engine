@@ -41,6 +41,37 @@ struct AnimationStateDefinition {
   eastl::string blend_space_node;
 };
 
+enum class TransitionConditionSource {
+  TreeParam,
+  BlendSpace1DScalar,
+  BlendSpace2DX,
+  BlendSpace2DY,
+  Add2Weight,
+};
+
+enum class TransitionCompareOp {
+  Eq,
+  Ne,
+  Lt,
+  Le,
+  Gt,
+  Ge,
+};
+
+/// Authored StateMachine edge (Phase 7). Bool predicates use truth check /
+/// bool_operand; float predicates use op + float_operand.
+struct StateMachineTransition {
+  eastl::string from_state;
+  eastl::string to_state;
+  TransitionConditionSource source{TransitionConditionSource::TreeParam};
+  eastl::string param_name;
+  bool is_bool_predicate{false};
+  TransitionCompareOp op{TransitionCompareOp::Eq};
+  float float_operand{0.0f};
+  bool bool_operand{true};
+  int priority{0};
+};
+
 class AnimationTree {
  public:
   void bindAnimationPlayer(AnimationPlayer* player);
@@ -105,6 +136,25 @@ class AnimationTree {
     return m_current_state_name;
   }
 
+  /// Independent tree parameters (Phase 7) for transition conditions.
+  void setTreeParamBool(const eastl::string& name, bool value);
+  bool getTreeParamBool(const eastl::string& name) const;
+  void setTreeParamFloat(const eastl::string& name, float value);
+  float getTreeParamFloat(const eastl::string& name) const;
+
+  bool addTransition(const StateMachineTransition& transition);
+  void clearTransitions();
+  using TransitionVisitor = void (*)(const StateMachineTransition& transition,
+                                     void* userdata);
+  void visitTransitions(TransitionVisitor visitor, void* userdata) const;
+
+  void setCanvasNodePosition(const eastl::string& node_id, float x, float y);
+  bool getCanvasNodePosition(const eastl::string& node_id, float& out_x,
+                             float& out_y) const;
+  using CanvasLayoutVisitor = void (*)(const eastl::string& node_id, float x,
+                                       float y, void* userdata);
+  void visitCanvasLayout(CanvasLayoutVisitor visitor, void* userdata) const;
+
   /// OneShot: insert a clip over the base graph, then return when finished.
   bool requestOneShot(const eastl::string& clip_name);
   bool isOneShotActive() const { return m_oneshot_active; }
@@ -162,6 +212,12 @@ class AnimationTree {
   void resetMethodDispatchClock(float clock = 0.0f);
   void sampleBaseOntoSkeleton(Skeleton& skeleton);
   bool applyStatePlayback(const AnimationStateDefinition& state);
+  void evaluateTransitions();
+  bool evaluateTransitionCondition(const StateMachineTransition& edge) const;
+  bool resolveConditionFloat(const StateMachineTransition& edge,
+                             float& out_value) const;
+  bool resolveConditionBool(const StateMachineTransition& edge,
+                            bool& out_value) const;
   bool sampleBlendSpace1DOntoSkeleton(Skeleton& skeleton,
                                     const eastl::string& node_name,
                                     float scalar);
@@ -191,6 +247,14 @@ class AnimationTree {
   eastl::string m_base_blend_space_2d_node;
   eastl::hash_map<eastl::string, AnimationStateDefinition> m_states;
   eastl::string m_current_state_name;
+  struct TreeParam {
+    enum class Kind { Bool, Float } kind{Kind::Float};
+    bool bool_value{false};
+    float float_value{0.0f};
+  };
+  eastl::hash_map<eastl::string, TreeParam> m_tree_params;
+  eastl::vector<StateMachineTransition> m_transitions;
+  eastl::hash_map<eastl::string, BlendSpace2DParam> m_canvas_layout;
   bool m_oneshot_active{false};
   eastl::string m_oneshot_clip_name;
   float m_oneshot_time{0.0f};

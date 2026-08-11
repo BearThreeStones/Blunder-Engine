@@ -627,8 +627,11 @@ bool AssetYaml::parseAnimationTreeTopologyData(
       return false;
     }
     const YAML::Node version_node = root["version"];
-    if (!version_node || !version_node.IsScalar() ||
-        version_node.as<int>() != AnimationTreeTopologyData::kVersion) {
+    if (!version_node || !version_node.IsScalar()) {
+      return false;
+    }
+    const int version = version_node.as<int>();
+    if (version != 1 && version != AnimationTreeTopologyData::kVersion) {
       return false;
     }
 
@@ -712,6 +715,81 @@ bool AssetYaml::parseAnimationTreeTopologyData(
         readOptionalStringField(state_node, "blend_space_node",
                                 state.blend_space_node);
         out_data.states.push_back(eastl::move(state));
+      }
+    }
+
+    const YAML::Node tree_params = root["tree_params"];
+    if (tree_params && tree_params.IsSequence()) {
+      for (const auto& param_node : tree_params) {
+        if (!param_node || !param_node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::TreeParamDef param;
+        if (!readStringField(param_node, "name", param.name)) {
+          return false;
+        }
+        readOptionalStringField(param_node, "kind", param.kind);
+        if (param.kind.empty()) {
+          param.kind = "float";
+        }
+        bool bool_default = false;
+        if (param_node["bool_default"] && param_node["bool_default"].IsScalar()) {
+          bool_default = param_node["bool_default"].as<bool>();
+        }
+        param.bool_default = bool_default;
+        readFloatField(param_node, "float_default", 0.0f, param.float_default);
+        out_data.tree_params.push_back(eastl::move(param));
+      }
+    }
+
+    const YAML::Node transitions = root["transitions"];
+    if (transitions && transitions.IsSequence()) {
+      for (const auto& edge_node : transitions) {
+        if (!edge_node || !edge_node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::TransitionDef edge;
+        if (!readStringField(edge_node, "from_state", edge.from_state) ||
+            !readStringField(edge_node, "to_state", edge.to_state) ||
+            !readStringField(edge_node, "param_name", edge.param_name)) {
+          return false;
+        }
+        readOptionalStringField(edge_node, "source", edge.source);
+        if (edge.source.empty()) {
+          edge.source = "treeParam";
+        }
+        readOptionalStringField(edge_node, "op", edge.op);
+        if (edge.op.empty()) {
+          edge.op = "eq";
+        }
+        if (edge_node["is_bool_predicate"] &&
+            edge_node["is_bool_predicate"].IsScalar()) {
+          edge.is_bool_predicate = edge_node["is_bool_predicate"].as<bool>();
+        }
+        if (edge_node["bool_operand"] && edge_node["bool_operand"].IsScalar()) {
+          edge.bool_operand = edge_node["bool_operand"].as<bool>();
+        }
+        readFloatField(edge_node, "float_operand", 0.0f, edge.float_operand);
+        if (edge_node["priority"] && edge_node["priority"].IsScalar()) {
+          edge.priority = edge_node["priority"].as<int>();
+        }
+        out_data.transitions.push_back(eastl::move(edge));
+      }
+    }
+
+    const YAML::Node layout = root["canvas_layout"];
+    if (layout && layout.IsSequence()) {
+      for (const auto& node : layout) {
+        if (!node || !node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::CanvasLayoutNodeDef item;
+        if (!readStringField(node, "node_id", item.node_id)) {
+          return false;
+        }
+        readFloatField(node, "x", 0.0f, item.x);
+        readFloatField(node, "y", 0.0f, item.y);
+        out_data.canvas_layout.push_back(eastl::move(item));
       }
     }
 
@@ -805,6 +883,55 @@ eastl::string AssetYaml::serializeAnimationTreeTopologyData(
     emitter << YAML::EndMap;
   }
   emitter << YAML::EndSeq;
+
+  emitter << YAML::Key << "tree_params" << YAML::Value << YAML::BeginSeq;
+  for (const AnimationTreeTopologyData::TreeParamDef& param : data.tree_params) {
+    emitter << YAML::BeginMap;
+    emitter << YAML::Key << "name" << YAML::Value << param.name.c_str();
+    emitter << YAML::Key << "kind" << YAML::Value << param.kind.c_str();
+    if (param.kind == "bool") {
+      emitter << YAML::Key << "bool_default" << YAML::Value
+              << param.bool_default;
+    } else {
+      emitter << YAML::Key << "float_default" << YAML::Value
+              << param.float_default;
+    }
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndSeq;
+
+  emitter << YAML::Key << "transitions" << YAML::Value << YAML::BeginSeq;
+  for (const AnimationTreeTopologyData::TransitionDef& edge :
+       data.transitions) {
+    emitter << YAML::BeginMap;
+    emitter << YAML::Key << "from_state" << YAML::Value
+            << edge.from_state.c_str();
+    emitter << YAML::Key << "to_state" << YAML::Value << edge.to_state.c_str();
+    emitter << YAML::Key << "source" << YAML::Value << edge.source.c_str();
+    emitter << YAML::Key << "param_name" << YAML::Value
+            << edge.param_name.c_str();
+    emitter << YAML::Key << "is_bool_predicate" << YAML::Value
+            << edge.is_bool_predicate;
+    emitter << YAML::Key << "op" << YAML::Value << edge.op.c_str();
+    emitter << YAML::Key << "float_operand" << YAML::Value
+            << edge.float_operand;
+    emitter << YAML::Key << "bool_operand" << YAML::Value << edge.bool_operand;
+    emitter << YAML::Key << "priority" << YAML::Value << edge.priority;
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndSeq;
+
+  emitter << YAML::Key << "canvas_layout" << YAML::Value << YAML::BeginSeq;
+  for (const AnimationTreeTopologyData::CanvasLayoutNodeDef& node :
+       data.canvas_layout) {
+    emitter << YAML::BeginMap;
+    emitter << YAML::Key << "node_id" << YAML::Value << node.node_id.c_str();
+    emitter << YAML::Key << "x" << YAML::Value << node.x;
+    emitter << YAML::Key << "y" << YAML::Value << node.y;
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndSeq;
+
   emitter << YAML::EndMap;
   return eastl::string(emitter.c_str());
 }
