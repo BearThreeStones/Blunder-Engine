@@ -137,6 +137,14 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.animation_tree_set_asset_guid != nullptr);
   expect_true((std::string(label) + ": animation_tree_get_asset_guid").c_str(),
               abi.animation_tree_get_asset_guid != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_tree_param_bool").c_str(),
+              abi.animation_tree_set_tree_param_bool != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_tree_param_bool").c_str(),
+              abi.animation_tree_get_tree_param_bool != nullptr);
+  expect_true((std::string(label) + ": animation_tree_set_tree_param_float").c_str(),
+              abi.animation_tree_set_tree_param_float != nullptr);
+  expect_true((std::string(label) + ": animation_tree_get_tree_param_float").c_str(),
+              abi.animation_tree_get_tree_param_float != nullptr);
   expect_true((std::string(label) + ": skeleton_modifier_count").c_str(),
               abi.skeleton_modifier_count != nullptr);
   expect_true((std::string(label) + ": skeleton_modifier_set_enabled").c_str(),
@@ -190,7 +198,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 9", BLUNDER_ENGINE_C_ABI_VERSION >= 9);
+  expect_true("abi version >= 10", BLUNDER_ENGINE_C_ABI_VERSION >= 10);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

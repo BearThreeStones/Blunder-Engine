@@ -255,6 +255,8 @@ add_library(engine_runtime STATIC
     "function/editor/animation_preview_controller.h"
     "function/editor/animation_preview_controller.cpp"
     "function/editor/animation_preview_controller_selection.cpp"
+    "function/editor/animation_tree_canvas_document.h"
+    "function/editor/animation_tree_canvas_document.cpp"
     "function/editor/animation_sync_cine_preview_controller.h"
     "function/editor/animation_sync_cine_preview_controller.cpp"
     "function/editor/document_history_helpers.h"
@@ -285,6 +287,7 @@ slint_target_sources(engine_runtime
     "function/slint/editor_window.slint"
     "function/slint/transform_toolbar.slint"
     "function/slint/animation_preview_toolbar.slint"
+    "function/slint/animation_tree_canvas_panel.slint"
     "function/slint/camera_preview_panel.slint"
 )
 

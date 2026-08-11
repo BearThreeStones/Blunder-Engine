@@ -10,6 +10,7 @@ import { TransformToolbar } from "transform_toolbar.slint";
 import { AnimationPreviewToolbar } from "animation_preview_toolbar.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
 import { InspectorPanel, BehaviourRow, AnimationClipRow } from "inspector_panel.slint";
+import { AnimationTreeCanvasPanel, AnimationTreeCanvasNodeRow, AnimationTreeCanvasEdgeRow } from "animation_tree_canvas_panel.slint";
 import { FloatingPanelWindow } from "floating_panel_window.slint";
 export { FloatingPanelWindow }
 import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, DockHostGuidesLayer, DockAutoHideDropPreviewLayer, DockAutoHideTabsLayer, DockAutoHideOverlaysLayer, DockFloatingDragPreviewLayer, DockTile, DockTab, DockSplitterHandle, DockGuide, DockHostGuide, DockPreview, DockAutoHideDropPreview, DockDragPreview, DockFloating, DockAutoHideTab, DockAutoHideOverlay } from "docking_panel.slint";
@@ -205,6 +206,16 @@ export component MainEditorWindow inherits Window {
     in property <bool> anim-preview-sync-fire-enabled: false;
     in property <bool> anim-preview-enter-cine-enabled: false;
     in property <bool> anim-preview-end-cine-enabled: false;
+
+    in property <bool> anim-tree-canvas-open: false;
+    in property <string> anim-tree-canvas-guid: "";
+    in property <bool> anim-tree-canvas-dirty: false;
+    in property <[AnimationTreeCanvasNodeRow]> anim-tree-canvas-nodes: [];
+    in property <[AnimationTreeCanvasEdgeRow]> anim-tree-canvas-edges: [];
+    callback anim-tree-canvas-close-requested();
+    callback anim-tree-canvas-save-requested();
+    callback anim-tree-canvas-open-from-selection-requested();
+    in property <bool> anim-tree-canvas-open-enabled: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
     callback play-dirty-save-and-play();
@@ -467,6 +478,23 @@ export component MainEditorWindow inherits Window {
                             preview-end-cine-requested => { root.anim-preview-end-cine-requested(); }
                         }
 
+                        AnimationTreeCanvasPanel {
+                            x: 8px;
+                            y: 120px;
+                            width: 360px;
+                            height: 320px;
+                            canvas-open: root.anim-tree-canvas-open;
+                            asset-guid: root.anim-tree-canvas-guid;
+                            dirty: root.anim-tree-canvas-dirty;
+                            nodes: root.anim-tree-canvas-nodes;
+                            edges: root.anim-tree-canvas-edges;
+                            close-requested => { root.anim-tree-canvas-close-requested(); }
+                            save-requested => { root.anim-tree-canvas-save-requested(); }
+                            open-from-selection-requested => {
+                                root.anim-tree-canvas-open-from-selection-requested();
+                            }
+                        }
+
                         CameraPreviewPanel {
                             host-width: parent.width;
                             host-height: parent.height;
@@ -622,6 +650,10 @@ export component MainEditorWindow inherits Window {
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
                         commit-animation-clip(index, name, guid) => {
                             root.inspector-commit-animation-clip(index, name, guid);
+                        }
+                        anim-tree-canvas-open-enabled: root.anim-tree-canvas-open-enabled;
+                        open-anim-tree-canvas-requested => {
+                            root.anim-tree-canvas-open-from-selection-requested();
                         }
                         sync-requested => { root.sync-shading-from-asset(); }
                         reset-requested => { root.reset-shading-defaults(); }
@@ -918,6 +950,10 @@ export component MainEditorWindow inherits Window {
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
                         commit-animation-clip(index, name, guid) => {
                             root.inspector-commit-animation-clip(index, name, guid);
+                        }
+                        anim-tree-canvas-open-enabled: root.anim-tree-canvas-open-enabled;
+                        open-anim-tree-canvas-requested => {
+                            root.anim-tree-canvas-open-from-selection-requested();
                         }
                         sync-requested => { root.sync-shading-from-asset(); }
                         reset-requested => { root.reset-shading-defaults(); }

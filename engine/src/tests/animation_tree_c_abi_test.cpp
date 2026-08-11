@@ -81,7 +81,7 @@ int main() {
   ClassDB::initialize();
   animationSyncGroupService().clearAll();
 
-  expect_true("abi version is 9", blunder_engine_abi_version() == 9);
+  expect_true("abi version is 10", blunder_engine_abi_version() == 10);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);
@@ -142,6 +142,24 @@ int main() {
                   id, "Locomotion2D", &blend_x, &blend_y) == BLUNDER_ENGINE_OK);
   expect_true("blend 2d x", float_near(blend_x, 0.25f));
   expect_true("blend 2d y", float_near(blend_y, 0.75f));
+
+  expect_true("set tree param bool",
+              blunder_animation_tree_set_tree_param_bool(id, "want_walk", 1) ==
+                  BLUNDER_ENGINE_OK);
+  int want_walk = 0;
+  expect_true("get tree param bool",
+              blunder_animation_tree_get_tree_param_bool(id, "want_walk",
+                                                         &want_walk) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("want_walk true", want_walk == 1);
+  expect_true("set tree param float",
+              blunder_animation_tree_set_tree_param_float(id, "speed", 0.8f) ==
+                  BLUNDER_ENGINE_OK);
+  float speed = 0.0f;
+  expect_true("get tree param float",
+              blunder_animation_tree_get_tree_param_float(id, "speed", &speed) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("speed value", float_near(speed, 0.8f));
 
   expect_true("set asset guid",
               blunder_animation_tree_set_asset_guid(

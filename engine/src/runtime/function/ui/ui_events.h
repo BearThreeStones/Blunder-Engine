@@ -27,6 +27,8 @@ enum class UiEventKind : uint8_t {
   browserPathSegmentClicked,
   browserMeshAssetSelected,
   openSceneAsset,
+  openAnimationTreeAsset,
+  openAnimationTreeCanvasFromGuid,
   openDirtySaveAndOpen,
   openDirtyDiscardAndOpen,
   openDirtyCancel,

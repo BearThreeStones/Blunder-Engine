@@ -164,6 +164,9 @@ export component InspectorPanel inherits Rectangle {
     in-out property <bool> animation-player-expanded: true;
     callback commit-animation-clip(int, string, string);
 
+    in property <bool> anim-tree-canvas-open-enabled: false;
+    callback open-anim-tree-canvas-requested();
+
     background: #2d2d2d;
     border-color: #2a2a2a;
     border-width: 1px;
@@ -1177,6 +1180,20 @@ export component InspectorPanel inherits Rectangle {
                             }
                         }
                     }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                Text { text: "AnimationTree Canvas"; color: #f0f0f0; font-size: 13px; }
+                Button {
+                    text: "Open Canvas";
+                    enabled: root.anim-tree-canvas-open-enabled;
+                    clicked => { root.open-anim-tree-canvas-requested(); }
+                }
+                if !root.anim-tree-canvas-open-enabled: Text {
+                    text: "Select Object with AnimationTree Asset GUID";
+                    color: #808080;
+                    font-size: 11px;
                 }
 
                 Rectangle { background: #2a2a2a; height: 1px; }

@@ -90,6 +90,10 @@ internal static unsafe class Native
         abi.animation_tree_get_blend_space_2d_param != null &&
         abi.animation_tree_set_asset_guid != null &&
         abi.animation_tree_get_asset_guid != null &&
+        abi.animation_tree_set_tree_param_bool != null &&
+        abi.animation_tree_get_tree_param_bool != null &&
+        abi.animation_tree_set_tree_param_float != null &&
+        abi.animation_tree_get_tree_param_float != null &&
         abi.skeleton_modifier_count != null &&
         abi.skeleton_modifier_set_enabled != null &&
         abi.skeleton_modifier_get_enabled != null &&
@@ -609,6 +613,58 @@ internal static unsafe class Native
                 guid = Encoding.UTF8.GetString(buffer, 0, len);
             }
 
+            return rc;
+        }
+    }
+
+    public static int blunder_animation_tree_set_tree_param_bool(
+        ulong id, string name, int value)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_set_tree_param_bool(id, namePtr, value);
+        }
+    }
+
+    public static int blunder_animation_tree_get_tree_param_bool(
+        ulong id, string name, out int value)
+    {
+        EnsureRegistered();
+        value = 0;
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            int outValue = 0;
+            int rc = s_abi.animation_tree_get_tree_param_bool(id, namePtr, &outValue);
+            value = outValue;
+            return rc;
+        }
+    }
+
+    public static int blunder_animation_tree_set_tree_param_float(
+        ulong id, string name, float value)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_set_tree_param_float(id, namePtr, value);
+        }
+    }
+
+    public static int blunder_animation_tree_get_tree_param_float(
+        ulong id, string name, out float value)
+    {
+        EnsureRegistered();
+        value = 0;
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            float outValue = 0;
+            int rc = s_abi.animation_tree_get_tree_param_float(id, namePtr, &outValue);
+            value = outValue;
             return rc;
         }
     }

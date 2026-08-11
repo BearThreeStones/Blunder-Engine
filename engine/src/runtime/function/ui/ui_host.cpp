@@ -6,6 +6,7 @@
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
+#include "runtime/function/editor/animation_tree_canvas_document.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
@@ -23,6 +24,7 @@
 #include "runtime/function/script/scripts_builder.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 #include <filesystem>
 #include <string>
@@ -466,6 +468,55 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         }
       }
       break;
+    case UiEventKind::openAnimationTreeAsset: {
+      FileSystem* file_system = g_runtime_global_context.m_file_system.get();
+      if (file_system != nullptr && !event.path.empty()) {
+        if (AnimationTreeCanvasSession::instance().openDescriptor(*file_system,
+                                                                 event.path)) {
+          LOG_INFO("[AnimationTreeCanvas] opened Asset {} ({})",
+                   AnimationTreeCanvasSession::instance()
+                       .document()
+                       .assetGuid()
+                       .c_str(),
+                   event.path.c_str());
+          if (m_presentation) {
+            m_presentation->syncAnimationTreeCanvas();
+          }
+        } else {
+          LOG_WARN("[AnimationTreeCanvas] failed to open {}", event.path.c_str());
+        }
+      }
+      break;
+    }
+    case UiEventKind::openAnimationTreeCanvasFromGuid: {
+      FileSystem* file_system = g_runtime_global_context.m_file_system.get();
+      AssetManager* asset_manager =
+          g_runtime_global_context.m_asset_manager.get();
+      AssetRegistry* asset_registry =
+          g_runtime_global_context.m_asset_registry.get();
+      if (file_system != nullptr && asset_manager != nullptr &&
+          asset_registry != nullptr && !event.path.empty()) {
+        const eastl::string descriptor_path =
+            asset_manager->resolveGuidPath(event.path, *asset_registry);
+        if (descriptor_path.empty()) {
+          LOG_WARN("[AnimationTreeCanvas] no descriptor for GUID {}",
+                   event.path.c_str());
+          break;
+        }
+        if (AnimationTreeCanvasSession::instance().openGuid(
+                *file_system, event.path, descriptor_path)) {
+          LOG_INFO("[AnimationTreeCanvas] opened from Object GUID {}",
+                   event.path.c_str());
+          if (m_presentation) {
+            m_presentation->syncAnimationTreeCanvas();
+          }
+        } else {
+          LOG_WARN("[AnimationTreeCanvas] openGuid failed for {}",
+                   event.path.c_str());
+        }
+      }
+      break;
+    }
     case UiEventKind::syncShadingFromAsset:
       syncBlinnPhongFromMaterialSource();
       break;
