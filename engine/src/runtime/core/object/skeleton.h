@@ -37,6 +37,16 @@ class Skeleton {
 
   void resetPoseToRest();
 
+  /// Animation Pipeline buffers (Global Pose + Matrix Palette). Invalidated when
+  /// Local Pose or inverse bind changes; filled by `rebuildPoseBuffers`.
+  bool hasValidPoseBuffers() const { return m_pose_buffers_valid; }
+  void invalidatePoseBuffers();
+  void rebuildPoseBuffers();
+
+  /// Per-bone skinning matrix (Global Pose × inverse bind). Identity if missing.
+  Mat4 getBoneSkinMatrix(size_t index) const;
+  const eastl::vector<Mat4>& getMatrixPalette() const { return m_matrix_palette; }
+
  private:
   struct Bone {
     eastl::string name;
@@ -50,6 +60,9 @@ class Skeleton {
   static Mat4 boneTransformToMatrix(const BoneTransform& transform);
 
   eastl::vector<Bone> m_bones;
+  eastl::vector<Mat4> m_global_pose_cache;
+  eastl::vector<Mat4> m_matrix_palette;
+  bool m_pose_buffers_valid{false};
 };
 
 }  // namespace Blunder

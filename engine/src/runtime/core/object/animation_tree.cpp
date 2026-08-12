@@ -6,6 +6,7 @@
 #include <cstddef>
 
 #include "runtime/core/object/animation_method_dispatch.h"
+#include "runtime/core/object/animation_pipeline.h"
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_sampler.h"
 #include "runtime/core/object/skeleton.h"
@@ -1489,10 +1490,8 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
 void AnimationTree::sampleBoundSkeleton() {
   if (m_sampling_skeleton != nullptr && m_active) {
     sampleOntoSkeleton(*m_sampling_skeleton);
-    if (m_skeleton_modifier_chain_fn != nullptr) {
-      m_skeleton_modifier_chain_fn(*m_sampling_skeleton,
-                                   m_skeleton_modifier_chain_userdata);
-    }
+    animationPipelineFinalize(*m_sampling_skeleton, m_skeleton_modifier_chain_fn,
+                              m_skeleton_modifier_chain_userdata);
     syncPlayerPlaybackClock();
     notifyPlayerPoseApplied();
   }

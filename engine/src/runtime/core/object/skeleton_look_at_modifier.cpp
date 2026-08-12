@@ -1,5 +1,6 @@
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "runtime/core/object/skeleton.h"
@@ -40,23 +41,27 @@ void SkeletonLookAtModifier::apply(Skeleton& skeleton) {
 
   const size_t idx = static_cast<size_t>(bone_index);
   const Mat4 global_mtx = skeleton.getBoneGlobalPoseMatrix(idx);
-  const Vec3 bone_world_pos(global_mtx[3]);
+  const Vec3 bone_model_pos(global_mtx[3]);
 
-  Vec3 to_target = m_target - bone_world_pos;
+  // Product target is world space → model space via inverse host world.
+  const Mat4 host_inv = glm::inverse(m_host_world);
+  const Vec3 target_model = Vec3(host_inv * Vec4(m_target, 1.0f));
+
+  Vec3 to_target = target_model - bone_model_pos;
   if (glm::dot(to_target, to_target) < 1e-8f) {
     return;
   }
   to_target = glm::normalize(to_target);
 
-  Quat parent_world_rot = glm::identity<Quat>();
+  Quat parent_model_rot = glm::identity<Quat>();
   const int parent_index = skeleton.getParentIndex(idx);
   if (parent_index >= 0) {
     const Mat4 parent_global =
         skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(parent_index));
-    parent_world_rot = glm::quat_cast(parent_global);
+    parent_model_rot = glm::quat_cast(parent_global);
   }
 
-  const Vec3 desired_local_dir = glm::inverse(parent_world_rot) * to_target;
+  const Vec3 desired_local_dir = glm::inverse(parent_model_rot) * to_target;
   const Vec3 rest_forward = Vec3(0.0f, 1.0f, 0.0f);
   const Quat aim_delta = quatFromTo(rest_forward, desired_local_dir);
 

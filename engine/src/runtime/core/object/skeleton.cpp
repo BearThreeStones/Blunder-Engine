@@ -11,6 +11,7 @@ int Skeleton::addBone(eastl::string name, int parent_index) {
   bone.parent_index = parent_index;
   bone.pose_local = bone.rest_local;
   m_bones.push_back(eastl::move(bone));
+  invalidatePoseBuffers();
   return static_cast<int>(m_bones.size()) - 1;
 }
 
@@ -57,6 +58,7 @@ void Skeleton::setBonePoseLocal(size_t index, const BoneTransform& transform) {
     return;
   }
   m_bones[index].pose_local = transform;
+  invalidatePoseBuffers();
 }
 
 BoneTransform Skeleton::getBonePoseLocal(size_t index) const {
@@ -71,6 +73,7 @@ void Skeleton::setBoneInverseBind(size_t index, const Mat4& matrix) {
     return;
   }
   m_bones[index].inverse_bind = matrix;
+  invalidatePoseBuffers();
 }
 
 Mat4 Skeleton::getBoneInverseBind(size_t index) const {
@@ -85,6 +88,12 @@ Mat4 Skeleton::getBoneGlobalRestMatrix(size_t index) const {
 }
 
 Mat4 Skeleton::getBoneGlobalPoseMatrix(size_t index) const {
+  if (index >= m_bones.size()) {
+    return Mat4(1.0f);
+  }
+  if (m_pose_buffers_valid && index < m_global_pose_cache.size()) {
+    return m_global_pose_cache[index];
+  }
   return computeGlobalMatrix(index, true);
 }
 
@@ -92,6 +101,39 @@ void Skeleton::resetPoseToRest() {
   for (Bone& bone : m_bones) {
     bone.pose_local = bone.rest_local;
   }
+  invalidatePoseBuffers();
+}
+
+void Skeleton::invalidatePoseBuffers() {
+  m_pose_buffers_valid = false;
+}
+
+void Skeleton::rebuildPoseBuffers() {
+  const size_t count = m_bones.size();
+  m_global_pose_cache.resize(count);
+  m_matrix_palette.resize(count);
+  for (size_t i = 0; i < count; ++i) {
+    const Bone& bone = m_bones[i];
+    const Mat4 local = boneTransformToMatrix(bone.pose_local);
+    if (bone.parent_index >= 0) {
+      m_global_pose_cache[i] =
+          m_global_pose_cache[static_cast<size_t>(bone.parent_index)] * local;
+    } else {
+      m_global_pose_cache[i] = local;
+    }
+    m_matrix_palette[i] = m_global_pose_cache[i] * bone.inverse_bind;
+  }
+  m_pose_buffers_valid = true;
+}
+
+Mat4 Skeleton::getBoneSkinMatrix(size_t index) const {
+  if (!m_pose_buffers_valid || index >= m_matrix_palette.size()) {
+    if (index >= m_bones.size()) {
+      return Mat4(1.0f);
+    }
+    return computeGlobalMatrix(index, true) * m_bones[index].inverse_bind;
+  }
+  return m_matrix_palette[index];
 }
 
 Mat4 Skeleton::boneTransformToMatrix(const BoneTransform& transform) {

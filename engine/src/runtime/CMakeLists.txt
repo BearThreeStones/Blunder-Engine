@@ -113,6 +113,8 @@ add_library(engine_runtime STATIC
     "core/object/object.cpp"
     "core/object/skeleton.h"
     "core/object/skeleton.cpp"
+    "core/object/animation_pipeline.h"
+    "core/object/animation_pipeline.cpp"
     "core/object/skeleton_modifier.h"
     "core/object/skeleton_modifier.cpp"
     "core/object/skeleton_modifier_test_double.h"

@@ -8,6 +8,7 @@
 namespace Blunder {
 
 /// Configurable LookAt/aim SkeletonModifier product (Phase 6).
+/// Product `target` is world space; apply converts via host world matrix.
 class SkeletonLookAtModifier : public SkeletonModifier {
  public:
   void setBoneName(const eastl::string& name) { m_bone_name = name; }
@@ -16,6 +17,10 @@ class SkeletonLookAtModifier : public SkeletonModifier {
   void setTarget(const Vec3& target) { m_target = target; }
   const Vec3& getTarget() const { return m_target; }
 
+  /// Host Object world matrix used to convert world target → model space.
+  void setHostWorldMatrix(const Mat4& matrix) { m_host_world = matrix; }
+  const Mat4& getHostWorldMatrix() const { return m_host_world; }
+
   const char* getTypeName() const override { return "SkeletonLookAtModifier"; }
 
   void apply(Skeleton& skeleton) override;
@@ -23,6 +28,7 @@ class SkeletonLookAtModifier : public SkeletonModifier {
  private:
   eastl::string m_bone_name{"Head"};
   Vec3 m_target{0.0f, 0.0f, 1.0f};
+  Mat4 m_host_world{1.0f};
 };
 
 }  // namespace Blunder

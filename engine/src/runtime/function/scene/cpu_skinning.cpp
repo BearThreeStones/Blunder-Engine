@@ -19,6 +19,7 @@ void applyCpuSkinning(const Skeleton& skeleton, const MeshSkinData& skin_data,
   }
 
   eastl::vector<Mat4> joint_matrices(skin_data.joint_to_bone.size(), Mat4(1.0f));
+  const bool use_pipeline_palette = skeleton.hasValidPoseBuffers();
   for (size_t joint_index = 0; joint_index < skin_data.joint_to_bone.size();
        ++joint_index) {
     const int bone_index = skin_data.joint_to_bone[joint_index];
@@ -26,9 +27,14 @@ void applyCpuSkinning(const Skeleton& skeleton, const MeshSkinData& skin_data,
         bone_index >= static_cast<int>(skeleton.getBoneCount())) {
       continue;
     }
-    joint_matrices[joint_index] =
-        skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(bone_index)) *
-        skeleton.getBoneInverseBind(static_cast<size_t>(bone_index));
+    if (use_pipeline_palette) {
+      joint_matrices[joint_index] =
+          skeleton.getBoneSkinMatrix(static_cast<size_t>(bone_index));
+    } else {
+      joint_matrices[joint_index] =
+          skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(bone_index)) *
+          skeleton.getBoneInverseBind(static_cast<size_t>(bone_index));
+    }
   }
 
   out_vertices.resize(vertex_count);

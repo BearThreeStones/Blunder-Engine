@@ -11,15 +11,22 @@ void buildGpuBonePalette(const Skeleton& skeleton, const MeshSkinData& skin_data
 
   const size_t joint_count = skin_data.joint_to_bone.size();
   out_joint_matrices.resize(joint_count, Mat4(1.0f));
+  const bool use_pipeline_palette = skeleton.hasValidPoseBuffers();
   for (size_t joint_index = 0; joint_index < joint_count; ++joint_index) {
     const int bone_index = skin_data.joint_to_bone[joint_index];
     if (bone_index < 0 ||
         bone_index >= static_cast<int>(skeleton.getBoneCount())) {
       continue;
     }
-    out_joint_matrices[joint_index] =
-        skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(bone_index)) *
-        skeleton.getBoneInverseBind(static_cast<size_t>(bone_index));
+    if (use_pipeline_palette) {
+      out_joint_matrices[joint_index] =
+          skeleton.getBoneSkinMatrix(static_cast<size_t>(bone_index));
+    } else {
+      // Rest / thumb path without Pipeline evaluate.
+      out_joint_matrices[joint_index] =
+          skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(bone_index)) *
+          skeleton.getBoneInverseBind(static_cast<size_t>(bone_index));
+    }
   }
 }
 

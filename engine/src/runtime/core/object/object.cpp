@@ -1,6 +1,7 @@
 #include "runtime/core/object/object.h"
 
 #include <cstddef>
+#include <cstring>
 
 #include "runtime/core/object/entity_store.h"
 #include "runtime/core/object/object_db.h"
@@ -458,11 +459,40 @@ bool Object::insertSkeletonModifierAt(
 }
 
 void Object::applySkeletonModifiers(Skeleton& skeleton) {
+  const Mat4 host_world = computeWorldMatrix();
   for (const eastl::unique_ptr<SkeletonModifier>& modifier : m_skeleton_modifiers) {
-    if (modifier != nullptr) {
-      modifier->apply(skeleton);
+    if (modifier == nullptr) {
+      continue;
     }
+    if (std::strcmp(modifier->getTypeName(), "SkeletonLookAtModifier") == 0) {
+      static_cast<SkeletonLookAtModifier*>(modifier.get())
+          ->setHostWorldMatrix(host_world);
+    }
+    modifier->apply(skeleton);
   }
+}
+
+Mat4 Object::computeWorldMatrix() const {
+  const Mat4 translation = glm::translate(Mat4(1.0f), getPosition());
+  const Mat4 rotation = glm::mat4_cast(getRotation());
+  const Mat4 scale = glm::scale(Mat4(1.0f), getScale());
+  Mat4 local = translation * rotation * scale;
+
+  ObjectId parent_id = m_parent_id;
+  while (isValid(parent_id)) {
+    const Object* parent = ObjectDB::get(parent_id);
+    if (parent == nullptr) {
+      break;
+    }
+    const Mat4 parent_translation =
+        glm::translate(Mat4(1.0f), parent->getPosition());
+    const Mat4 parent_rotation = glm::mat4_cast(parent->getRotation());
+    const Mat4 parent_scale = glm::scale(Mat4(1.0f), parent->getScale());
+    const Mat4 parent_local = parent_translation * parent_rotation * parent_scale;
+    local = parent_local * local;
+    parent_id = parent->getParentId();
+  }
+  return local;
 }
 
 void Object::updateAnimationSamplingBinding() {

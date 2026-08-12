@@ -120,6 +120,9 @@ class Object {
                                 eastl::unique_ptr<SkeletonModifier> modifier);
   void applySkeletonModifiers(Skeleton& skeleton);
 
+  /// Local TRS (and parent chain) as a model→world matrix for modifiers.
+  Mat4 computeWorldMatrix() const;
+
  private:
   friend class ObjectDB;
 

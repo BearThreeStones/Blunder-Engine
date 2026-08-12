@@ -1,6 +1,7 @@
 #include "runtime/core/object/animation_player.h"
 
 #include "runtime/core/object/animation_method_dispatch.h"
+#include "runtime/core/object/animation_pipeline.h"
 #include "runtime/core/object/animation_sampler.h"
 #include "runtime/core/object/skeleton.h"
 
@@ -221,9 +222,8 @@ void AnimationPlayer::notifyFinished() {
 }
 
 void AnimationPlayer::applyModifiersThenNotifyPoseApplied(Skeleton& skeleton) {
-  if (m_skeleton_modifier_chain_fn != nullptr) {
-    m_skeleton_modifier_chain_fn(skeleton, m_skeleton_modifier_chain_userdata);
-  }
+  animationPipelineFinalize(skeleton, m_skeleton_modifier_chain_fn,
+                            m_skeleton_modifier_chain_userdata);
   notifyPoseApplied();
 }
 
