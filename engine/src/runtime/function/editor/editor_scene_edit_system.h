@@ -8,12 +8,18 @@ namespace Blunder {
 
 class AssetManager;
 class FileSystem;
+class Scene;
 class SceneInstance;
 class SceneSystem;
 
 struct SpawnAssetResult {
   bool success{false};
   EntityId spawned_entity{k_invalid_entity_id};
+};
+
+struct SceneAssetOpResult {
+  bool success{false};
+  eastl::string path;
 };
 
 /// Tracks editable scene path, dirty state, and save to .scene.asset.
@@ -29,8 +35,19 @@ class EditorSceneEditSystem final {
   void markDirty() { m_dirty = true; }
   void clearDirty() { m_dirty = false; }
 
-  /// Merges childScenes from the loaded SceneAsset when available.
+  /// Writes the active SceneInstance to the active Scene Asset path.
   bool saveActiveScene();
+
+  /// Writes the live document to a new unique Scene Asset path, switches the
+  /// active path to it, and keeps Document History (Save As).
+  SceneAssetOpResult saveActiveSceneAs();
+
+  /// Creates a starter Scene Asset (default Main Camera) under folder and
+  /// returns its virtual path. Caller opens it (with dirty prompt if needed).
+  SceneAssetOpResult createNewSceneAsset(const eastl::string& folder_virtual_path);
+
+  /// Copies an on-disk Scene Asset to a unique sibling path with a new GUID.
+  SceneAssetOpResult duplicateSceneAsset(const eastl::string& source_virtual_path);
 
   /// Loads a scene asset, sets it active, and resets editor selection.
   bool openScene(const eastl::string& virtual_path);
@@ -45,6 +62,9 @@ class EditorSceneEditSystem final {
  private:
   SpawnAssetResult spawnMeshAsset(const eastl::string& asset_virtual_path,
                                   float window_x, float window_y);
+
+  bool writeSceneDocument(const eastl::string& virtual_path, const Scene& scene);
+  SceneAssetOpResult exportLiveSceneToNewPath(const eastl::string& virtual_path);
 
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};

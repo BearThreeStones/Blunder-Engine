@@ -9,7 +9,8 @@ class AssetRegistry;
 class FileSystem;
 
 /// Collect direct Mesh Asset References (GUID or legacy path) from a scene file
-/// and recursive childScenes. Does not expand texture/material deps.
+/// Collects direct Mesh Asset References on a single Scene Asset (legacy
+/// nested childScenes are ignored). Does not expand texture/material deps.
 eastl::vector<eastl::string> collectSceneDirectMeshReferences(
     FileSystem& file_system, AssetRegistry* asset_registry,
     const eastl::string& scene_virtual_path);

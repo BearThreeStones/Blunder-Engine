@@ -21,6 +21,7 @@ export struct BrowserGridRow {
     name: string,
     thumb: image,
     is-dir: bool,
+    is-scene: bool,
     selected: bool,
 }
 
@@ -46,13 +47,23 @@ export component ContentBrowser {
     in-out property <length> thumb-size: 80px;
     in-out property <length> tree-pane-width: 200px;
     in property <bool> layout-drag-active: false;
+    property <bool> context-menu-visible: false;
+    property <length> context-menu-x: 0px;
+    property <length> context-menu-y: 0px;
+    property <string> context-menu-path: "";
+    property <bool> context-menu-is-scene: false;
+    property <bool> context-menu-is-empty: false;
+    property <bool> context-menu-can-delete: false;
 
     // --- Callbacks ---
     callback folder-selected(string);
     callback folder-toggle(string);
     callback refresh-requested();
     callback import-requested();
+    callback new-scene-requested();
     callback delete-requested();
+    callback duplicate-scene-requested(string);
+    callback open-scene-requested(string);
     /// Grid click selection: ctrl = toggle, shift = range from anchor.
     callback grid-select(string, bool, bool);
     callback item-press(string, float, float);
@@ -196,6 +207,33 @@ export component ContentBrowser {
                                 if (event.button == PointerEventButton.left
                                     && event.kind == PointerEventKind.down) {
                                     root.import-requested();
+                                }
+                            }
+                        }
+                    }
+
+                    // New Scene Asset
+                    new-scene-btn := Rectangle {
+                        width: 88px;
+                        height: 24px;
+                        background: new-scene-touch.has-hover ? #444444 : #353535;
+                        border-radius: 3px;
+                        border-color: #4a4a4a;
+                        border-width: 1px;
+
+                        Text {
+                            text: "+ New Scene";
+                            color: #d0d0d0;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        new-scene-touch := TouchArea {
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.new-scene-requested();
                                 }
                             }
                         }
@@ -408,6 +446,23 @@ export component ContentBrowser {
                     background: #2a2a2a;
                     clip: true;
 
+                    grid-empty-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        pointer-event(event) => {
+                            if (event.button == PointerEventButton.right
+                                && event.kind == PointerEventKind.down) {
+                                root.context-menu-visible = true;
+                                root.context-menu-x = self.absolute-position.x + self.mouse-x;
+                                root.context-menu-y = self.absolute-position.y + self.mouse-y;
+                                root.context-menu-path = "";
+                                root.context-menu-is-scene = false;
+                                root.context-menu-is-empty = true;
+                                root.context-menu-can-delete = false;
+                            }
+                        }
+                    }
+
                     // Drag status overlay
                     if root.drag-active: Rectangle {
                         z: 10;
@@ -518,6 +573,17 @@ export component ContentBrowser {
                                         root.item-release(tile.path,
                                             self.mouse-x / 1px, self.mouse-y / 1px);
                                     }
+                                    if (event.button == PointerEventButton.right
+                                        && event.kind == PointerEventKind.down) {
+                                        root.grid-select(tile.path, false, false);
+                                        root.context-menu-visible = true;
+                                        root.context-menu-x = self.absolute-position.x + self.mouse-x;
+                                        root.context-menu-y = self.absolute-position.y + self.mouse-y;
+                                        root.context-menu-path = tile.path;
+                                        root.context-menu-is-empty = tile.is-dir;
+                                        root.context-menu-is-scene = tile.is-scene;
+                                        root.context-menu-can-delete = !tile.is-dir;
+                                    }
                                 }
                             }
                         }
@@ -573,6 +639,120 @@ export component ContentBrowser {
                         value: root.thumb-size / 1px;
                         changed => {
                             root.thumb-size = self.value * 1px;
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.context-menu-visible: context-dismiss := TouchArea {
+            z: 100;
+            width: 100%;
+            height: 100%;
+            clicked => { root.context-menu-visible = false; }
+        }
+
+        if root.context-menu-visible: context-panel := Rectangle {
+            z: 101;
+            x: root.context-menu-x - browser-root.absolute-position.x;
+            y: root.context-menu-y - browser-root.absolute-position.y;
+            width: 160px;
+            height: root.context-menu-is-empty ? 30px
+                : (root.context-menu-is-scene ? 86px
+                    : (root.context-menu-can-delete ? 30px : 30px));
+            background: #252525;
+            border-color: #444444;
+            border-width: 1px;
+            border-radius: 4px;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 0px;
+
+                if root.context-menu-is-empty: Rectangle {
+                    height: 26px;
+                    background: new-row.has-hover ? #3a3a3a : transparent;
+                    border-radius: 2px;
+                    new-row := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.context-menu-visible = false;
+                            root.new-scene-requested();
+                        }
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: "New Scene";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                if root.context-menu-is-scene: Rectangle {
+                    height: 26px;
+                    background: open-row.has-hover ? #3a3a3a : transparent;
+                    border-radius: 2px;
+                    open-row := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.context-menu-visible = false;
+                            root.open-scene-requested(root.context-menu-path);
+                        }
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: "Open";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                if root.context-menu-is-scene: Rectangle {
+                    height: 26px;
+                    background: dup-row.has-hover ? #3a3a3a : transparent;
+                    border-radius: 2px;
+                    dup-row := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.context-menu-visible = false;
+                            root.duplicate-scene-requested(root.context-menu-path);
+                        }
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: "Duplicate";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                if root.context-menu-can-delete: Rectangle {
+                    height: 26px;
+                    background: del-row.has-hover ? #3a3a3a : transparent;
+                    border-radius: 2px;
+                    del-row := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.context-menu-visible = false;
+                            root.delete-requested();
+                        }
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: "Delete";
+                            color: #e8e8e8;
+                            font-size: 12px;
                         }
                     }
                 }

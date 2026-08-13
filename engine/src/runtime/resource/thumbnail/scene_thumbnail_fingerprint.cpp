@@ -58,49 +58,29 @@ uint64_t meshRefMtime(FileSystem& file_system, AssetRegistry* asset_registry,
   return fileMtimeOrZero(file_system, absolute);
 }
 
-void collectRecursive(FileSystem& file_system, AssetRegistry* asset_registry,
-                      const eastl::string& scene_virtual_path,
-                      eastl::vector<eastl::string>& out_refs,
-                      eastl::vector<eastl::string>& visited) {
-  for (const eastl::string& seen : visited) {
-    if (seen == scene_virtual_path) {
-      return;
-    }
-  }
-  visited.push_back(scene_virtual_path);
-
-  eastl::string json_text;
-  if (!readSceneAssetText(file_system, scene_virtual_path, json_text)) {
-    return;
-  }
-
-  Scene scene;
-  if (!SceneSerializer::deserialize(json_text, scene, asset_registry)) {
-    return;
-  }
-
-  for (const SceneEntityDefinition& entity : scene.getEntities()) {
-    if (!entity.mesh_virtual_path.empty()) {
-      out_refs.push_back(entity.mesh_virtual_path);
-    }
-  }
-  for (const SceneChildReference& child : scene.getChildScenes()) {
-    if (!child.scene_virtual_path.empty()) {
-      collectRecursive(file_system, asset_registry, child.scene_virtual_path,
-                       out_refs, visited);
-    }
-  }
-}
-
 }  // namespace
 
 eastl::vector<eastl::string> collectSceneDirectMeshReferences(
     FileSystem& file_system, AssetRegistry* asset_registry,
     const eastl::string& scene_virtual_path) {
   eastl::vector<eastl::string> refs;
-  eastl::vector<eastl::string> visited;
-  collectRecursive(file_system, asset_registry, scene_virtual_path, refs,
-                   visited);
+
+  eastl::string json_text;
+  if (!readSceneAssetText(file_system, scene_virtual_path, json_text)) {
+    return refs;
+  }
+
+  Scene scene;
+  if (!SceneSerializer::deserialize(json_text, scene, asset_registry)) {
+    return refs;
+  }
+
+  for (const SceneEntityDefinition& entity : scene.getEntities()) {
+    if (!entity.mesh_virtual_path.empty()) {
+      refs.push_back(entity.mesh_virtual_path);
+    }
+  }
+
   std::sort(refs.begin(), refs.end());
   refs.erase(std::unique(refs.begin(), refs.end()), refs.end());
   return refs;

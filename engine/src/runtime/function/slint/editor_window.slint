@@ -3,6 +3,7 @@ import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_brow
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { ImportMeshDialog } from "import_mesh_dialog.slint";
 import { PlayDirtySceneDialog } from "play_dirty_scene_dialog.slint";
+import { OpenDirtySceneDialog } from "open_dirty_scene_dialog.slint";
 import { DetectionReimportDialog } from "detection_reimport_dialog.slint";
 import { PiercingMenu, PiercingMenuRow } from "piercing_menu.slint";
 import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
@@ -96,7 +97,10 @@ export component MainEditorWindow inherits Window {
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
     callback browser-import-requested();
+    callback browser-new-scene-requested();
     callback browser-delete-requested();
+    callback browser-duplicate-scene-requested(string);
+    callback browser-open-scene-requested(string);
     callback browser-grid-select(string, bool, bool);
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
@@ -186,6 +190,7 @@ export component MainEditorWindow inherits Window {
     callback inspector-add-camera();
     callback inspector-commit-animation-clip(int, string, string);
     callback save-scene-requested();
+    callback save-scene-as-requested();
     callback edit-undo-requested();
     callback edit-redo-requested();
     in property <bool> edit-can-undo: false;
@@ -233,11 +238,15 @@ export component MainEditorWindow inherits Window {
     in property <bool> anim-tree-canvas-open-enabled: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
+    in-out property <bool> open-dirty-dialog-visible: false;
     in-out property <bool> detection-reimport-dialog-visible: false;
     in-out property <int> detection-reimport-asset-count: 1;
     callback play-dirty-save-and-play();
     callback play-dirty-play-last-saved();
     callback play-dirty-cancelled();
+    callback open-dirty-save-and-open();
+    callback open-dirty-discard-and-open();
+    callback open-dirty-cancelled();
     callback detection-reimport-all();
     callback detection-reimport-dismissed();
 
@@ -381,6 +390,10 @@ export component MainEditorWindow inherits Window {
                     Button {
                         text: "Save";
                         clicked => { root.save-scene-requested(); }
+                    }
+                    Button {
+                        text: "Save As…";
+                        clicked => { root.save-scene-as-requested(); }
                     }
                     Button {
                         text: "Undo";
@@ -570,7 +583,10 @@ export component MainEditorWindow inherits Window {
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
                         import-requested => { root.browser-import-requested(); }
+                        new-scene-requested => { root.browser-new-scene-requested(); }
                         delete-requested => { root.browser-delete-requested(); }
+                        duplicate-scene-requested(path) => { root.browser-duplicate-scene-requested(path); }
+                        open-scene-requested(path) => { root.browser-open-scene-requested(path); }
                         grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                         item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                         item-move(path, x, y) => { root.browser-item-move(path, x, y); }
@@ -886,7 +902,10 @@ export component MainEditorWindow inherits Window {
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
                         import-requested => { root.browser-import-requested(); }
+                        new-scene-requested => { root.browser-new-scene-requested(); }
                         delete-requested => { root.browser-delete-requested(); }
+                        duplicate-scene-requested(path) => { root.browser-duplicate-scene-requested(path); }
+                        open-scene-requested(path) => { root.browser-open-scene-requested(path); }
                         grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                         item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                         item-move(path, x, y) => { root.browser-item-move(path, x, y); }
@@ -1031,7 +1050,7 @@ export component MainEditorWindow inherits Window {
         ViewportProjectionToggle {
             z: 2000;
             layout-drag-active: root.docking-drag-active;
-            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.detection-reimport-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
+            dialog-active: root.import-mesh-dialog-visible || root.play-dirty-dialog-visible || root.open-dirty-dialog-visible || root.detection-reimport-dialog-visible || root.piercing-menu-visible || root.view-menu-visible;
             viewport-origin-x: root.viewport-origin-x;
             viewport-origin-y: root.viewport-origin-y;
             viewport-width: root.viewport-width;
@@ -1062,6 +1081,16 @@ export component MainEditorWindow inherits Window {
             save-and-play => { root.play-dirty-save-and-play(); }
             play-last-saved => { root.play-dirty-play-last-saved(); }
             cancelled => { root.play-dirty-cancelled(); }
+        }
+
+        open_dirty_scene_dialog := OpenDirtySceneDialog {
+            z: 3110;
+            width: parent.width;
+            height: parent.height;
+            show-dialog: root.open-dirty-dialog-visible;
+            save-and-open => { root.open-dirty-save-and-open(); }
+            discard-and-open => { root.open-dirty-discard-and-open(); }
+            cancelled => { root.open-dirty-cancelled(); }
         }
 
         detection_reimport_dialog := DetectionReimportDialog {

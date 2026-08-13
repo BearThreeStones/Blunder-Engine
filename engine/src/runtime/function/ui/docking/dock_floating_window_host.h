@@ -43,6 +43,7 @@ struct NativeFloatBrowserGridRow {
   eastl::string name;
   slint::Image thumb;
   bool is_dir{false};
+  bool is_scene{false};
   bool selected{false};
 };
 

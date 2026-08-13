@@ -47,9 +47,8 @@ void attachMeshesAndCameras(AssetManager* asset_manager, SceneInstance& instance
   }
 }
 
-eastl::shared_ptr<SceneInstance> instantiateTree(
+eastl::shared_ptr<SceneInstance> instantiateScene(
     AssetManager* asset_manager, const eastl::string& virtual_path,
-    SceneInstance* parent, const SceneChildReference* child_ref,
     eastl::vector<eastl::shared_ptr<SceneInstance>>& keep_alive) {
   const eastl::shared_ptr<SceneAsset> scene_asset =
       asset_manager->loadScene(virtual_path);
@@ -62,21 +61,7 @@ eastl::shared_ptr<SceneInstance> instantiateTree(
   instance->instantiate(scene_asset->getScene());
   attachMeshesAndCameras(asset_manager, *instance, scene_asset->getScene());
 
-  if (child_ref != nullptr) {
-    instance->setRootTransform(child_ref->position, child_ref->rotation,
-                               child_ref->scale);
-  }
-  if (parent != nullptr) {
-    instance->setParent(parent);
-  }
-
   keep_alive.push_back(instance);
-
-  for (const SceneChildReference& child :
-       scene_asset->getScene().getChildScenes()) {
-    (void)instantiateTree(asset_manager, child.scene_virtual_path,
-                          instance.get(), &child, keep_alive);
-  }
   return instance;
 }
 
@@ -173,8 +158,8 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
   }
 
   eastl::vector<eastl::shared_ptr<SceneInstance>> keep_alive;
-  const eastl::shared_ptr<SceneInstance> root = instantiateTree(
-      m_asset_manager, request.scene_virtual_path, nullptr, nullptr, keep_alive);
+  const eastl::shared_ptr<SceneInstance> root = instantiateScene(
+      m_asset_manager, request.scene_virtual_path, keep_alive);
   if (!root) {
     result.error = "Failed to load scene asset";
     return result;

@@ -111,16 +111,7 @@ struct SceneEntityDefinition final {
   CameraComponent camera{};
 };
 
-/// Reference to a nested child scene (loaded explicitly by SceneSystem).
-struct SceneChildReference final {
-  eastl::string scene_virtual_path;
-  eastl::string instance_name;
-  Vec3 position{0.0f};
-  Quat rotation{glm::identity<Quat>()};
-  Vec3 scale{1.0f, 1.0f, 1.0f};
-};
-
-/// Static scene data: entity templates and child scene references.
+/// Static scene data: entity templates (flat Scene Asset — no nested scenes).
 class Scene final {
  public:
   Scene() = default;
@@ -129,11 +120,6 @@ class Scene final {
     return m_entities;
   }
   eastl::vector<SceneEntityDefinition>& getEntities() { return m_entities; }
-
-  const eastl::vector<SceneChildReference>& getChildScenes() const {
-    return m_child_scenes;
-  }
-  eastl::vector<SceneChildReference>& getChildScenes() { return m_child_scenes; }
 
   const eastl::string& getName() const { return m_name; }
   void setName(eastl::string name) { m_name = eastl::move(name); }
@@ -146,7 +132,6 @@ class Scene final {
   eastl::string m_name;
   eastl::string m_guid;
   eastl::vector<SceneEntityDefinition> m_entities;
-  eastl::vector<SceneChildReference> m_child_scenes;
 };
 
 }  // namespace Blunder

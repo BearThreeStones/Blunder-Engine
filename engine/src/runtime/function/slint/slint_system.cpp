@@ -840,6 +840,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
     component->on_save_scene_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::saveScene)); }));
+    component->on_save_scene_as_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::saveSceneAs));
+        }));
 
     component->on_edit_undo_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::undo)); }));
@@ -928,6 +932,18 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_play_dirty_cancelled(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::playDirtyCancel));
+        }));
+    component->on_open_dirty_save_and_open(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::openDirtySaveAndOpen));
+        }));
+    component->on_open_dirty_discard_and_open(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::openDirtyDiscardAndOpen));
+        }));
+    component->on_open_dirty_cancelled(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::openDirtyCancel));
         }));
     component->on_detection_reimport_all(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
@@ -1180,7 +1196,21 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_browser_refresh_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); }));
     component->on_browser_import_requested([this]() { queueOpenImportFileDialog(); });
+    component->on_browser_new_scene_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host) {
+          host.enqueue(UiEvent::simple(UiEventKind::newSceneAsset));
+        }));
     component->on_browser_delete_requested([this]() { deleteSelectedBrowserAssets(); });
+    component->on_browser_duplicate_scene_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+          host.enqueue(UiEvent::withPath(UiEventKind::duplicateSceneAsset,
+                                         eastl::string(path.data())));
+        }));
+    component->on_browser_open_scene_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+          host.enqueue(UiEvent::withPath(UiEventKind::openSceneAsset,
+                                         eastl::string(path.data())));
+        }));
     component->on_browser_grid_select(
         [this](const slint::SharedString& path, bool ctrl, bool shift) {
           applyBrowserGridSelection(eastl::string(path.data()), ctrl, shift);
@@ -4413,6 +4443,38 @@ void SlintSystem::hidePlayDirtySceneDialog() {
   m_window_component->operator->()->set_play_dirty_dialog_visible(false);
 }
 
+void SlintSystem::showOpenDirtySceneDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_open_dirty_dialog_visible(true);
+}
+
+void SlintSystem::hideOpenDirtySceneDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_open_dirty_dialog_visible(false);
+}
+
+void SlintSystem::selectBrowserGridPath(const eastl::string& virtual_path) {
+  if (!m_window_component || virtual_path.empty()) {
+    return;
+  }
+  m_browser_selected_grid_paths.clear();
+  m_browser_selected_grid_paths.push_back(virtual_path);
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_window_component->operator->()->set_browser_selected_grid_path(
+        slint::SharedString(virtual_path.c_str()));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::selectBrowserGridPath] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::selectBrowserGridPath] unknown exception");
+  }
+  syncContentBrowser();
+}
+
 void SlintSystem::showDetectionReimportDialog(int asset_count) {
   if (!m_window_component) {
     return;
@@ -4658,6 +4720,11 @@ void SlintSystem::syncContentBrowser() {
       slint_row.name = slint::SharedString(item.display_name.c_str());
       slint_row.thumb = loadThumbnailImage(item.thumbnail_cache_path);
       slint_row.is_dir = item.is_directory;
+      slint_row.is_scene = !item.is_directory &&
+                           item.virtual_path.size() >= 12 &&
+                           item.virtual_path.compare(
+                               item.virtual_path.size() - 12, 12,
+                               ".scene.asset") == 0;
       slint_row.selected = isBrowserGridPathSelected(item.virtual_path);
       grid_model->push_back(slint_row);
     }
@@ -6194,6 +6261,7 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.name = row.name.data();
             copy.thumb = row.thumb;
             copy.is_dir = row.is_dir;
+            copy.is_scene = row.is_scene;
             copy.selected = row.selected;
             snapshot.browser_grid_rows.push_back(eastl::move(copy));
           }

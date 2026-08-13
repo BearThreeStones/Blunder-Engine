@@ -165,10 +165,10 @@ int main() {
   const eastl::string root_vp = "assets/Scenes/root.scene.asset";
   const eastl::vector<eastl::string> refs =
       collectSceneDirectMeshReferences(file_system, nullptr, root_vp);
-  expect_true("collects two mesh refs", refs.size() == 2);
-  if (refs.size() >= 2) {
+  expect_true("collects only root mesh refs (legacy childScenes ignored)",
+              refs.size() == 1);
+  if (refs.size() >= 1) {
     expect_eq_string("sorted ref 0", refs[0], "assets/Meshes/a.mesh.yaml");
-    expect_eq_string("sorted ref 1", refs[1], "assets/Meshes/b.mesh.yaml");
   }
 
   const uint64_t scene_mtime = mtimeOf(root_scene);
@@ -185,7 +185,13 @@ int main() {
   touchFile(mesh_b);
   const eastl::string fp_child_mesh =
       computeSceneThumbnailFingerprint(file_system, nullptr, root_vp, scene_mtime);
-  expect_ne_string("child mesh mtime changes fingerprint", fp1, fp_child_mesh);
+  expect_eq_string("legacy child mesh mtime does not change fingerprint", fp1,
+                   fp_child_mesh);
+
+  touchFile(mesh_a);
+  const eastl::string fp_root_mesh =
+      computeSceneThumbnailFingerprint(file_system, nullptr, root_vp, scene_mtime);
+  expect_ne_string("root mesh mtime changes fingerprint", fp1, fp_root_mesh);
 
   std::error_code cleanup_ec;
   fs::remove_all(project, cleanup_ec);

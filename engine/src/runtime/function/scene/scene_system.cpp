@@ -84,8 +84,7 @@ void SceneSystem::shutdown() {
 
 eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
     const eastl::shared_ptr<SceneAsset>& scene_asset,
-    const eastl::string& virtual_path, SceneInstance* parent_instance,
-    const SceneChildReference* child_reference) {
+    const eastl::string& virtual_path) {
   if (!scene_asset) {
     return nullptr;
   }
@@ -99,35 +98,8 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
                          &scene_asset->getScene());
   }
 
-  if (child_reference != nullptr) {
-    instance->setRootTransform(child_reference->position, child_reference->rotation,
-                             child_reference->scale);
-  }
-
-  if (parent_instance != nullptr) {
-    instance->setParent(parent_instance);
-    LOG_INFO("[SceneSystem] child scene '{}' parent -> '{}'",
-             virtual_path.c_str(), parent_instance->getSourcePath().c_str());
-  }
-
   attachSceneEntityMeshes(*instance, scene_asset->getScene());
   attachSceneEntityCameras(*instance, scene_asset->getScene());
-
-  for (const SceneChildReference& child : scene_asset->getScene().getChildScenes()) {
-    const eastl::shared_ptr<SceneAsset> child_asset =
-        m_asset_manager->loadScene(child.scene_virtual_path);
-    if (!child_asset) {
-      LOG_ERROR("[SceneSystem] failed to load child scene '{}' for parent '{}'",
-                child.scene_virtual_path.c_str(), virtual_path.c_str());
-      continue;
-    }
-
-    const eastl::shared_ptr<SceneInstance> child_instance = instantiateScene(
-        child_asset, child.scene_virtual_path, instance.get(), &child);
-    if (child_instance) {
-      m_loaded_instances.push_back(child_instance);
-    }
-  }
 
   return instance;
 }
@@ -237,15 +209,14 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadScene(
   }
 
   const eastl::shared_ptr<SceneInstance> root_instance =
-      instantiateScene(scene_asset, virtual_path, nullptr, nullptr);
+      instantiateScene(scene_asset, virtual_path);
   if (!root_instance) {
     return nullptr;
   }
 
   m_loaded_instances.push_back(root_instance);
-  LOG_INFO("[SceneSystem] loaded scene '{}' (entities={}, child_refs={})",
-           virtual_path.c_str(), root_instance->getEntityCount(),
-           scene_asset->getScene().getChildScenes().size());
+  LOG_INFO("[SceneSystem] loaded scene '{}' (entities={})",
+           virtual_path.c_str(), root_instance->getEntityCount());
 
   return root_instance;
 }
@@ -281,20 +252,9 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadGltfScene(
   return instance;
 }
 
-void SceneSystem::unloadSceneInstanceRecursive(SceneInstance* instance) {
-  if (instance == nullptr) {
+void SceneSystem::unloadSceneInstance(SceneInstance* instance) {
+  if (!m_is_initialized || instance == nullptr) {
     return;
-  }
-
-  eastl::vector<SceneInstance*> children;
-  children.reserve(m_loaded_instances.size());
-  for (const eastl::shared_ptr<SceneInstance>& candidate : m_loaded_instances) {
-    if (candidate && candidate->getParent() == instance) {
-      children.push_back(candidate.get());
-    }
-  }
-  for (SceneInstance* child : children) {
-    unloadSceneInstanceRecursive(child);
   }
 
   if (m_active_instance == instance) {
@@ -303,18 +263,13 @@ void SceneSystem::unloadSceneInstanceRecursive(SceneInstance* instance) {
 
   for (auto it = m_loaded_instances.begin(); it != m_loaded_instances.end();) {
     if (it->get() == instance) {
-      LOG_INFO("[SceneSystem] unloaded scene '{}'", instance->getSourcePath().c_str());
+      LOG_INFO("[SceneSystem] unloaded scene '{}'",
+               instance->getSourcePath().c_str());
       it = m_loaded_instances.erase(it);
       break;
     }
+    ++it;
   }
-}
-
-void SceneSystem::unloadSceneInstance(SceneInstance* instance) {
-  if (!m_is_initialized || instance == nullptr) {
-    return;
-  }
-  unloadSceneInstanceRecursive(instance);
 }
 
 void SceneSystem::setActiveInstance(SceneInstance* instance) {

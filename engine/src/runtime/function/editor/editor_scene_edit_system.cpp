@@ -208,7 +208,6 @@ bool EditorSceneEditSystem::saveActiveScene() {
     const eastl::shared_ptr<SceneAsset> asset =
         m_asset_manager->loadScene(m_active_scene_virtual_path);
     if (asset) {
-      scene.getChildScenes() = asset->getScene().getChildScenes();
       if (scene.getGuid().empty()) {
         scene.setGuid(asset->getScene().getGuid());
       }
@@ -369,6 +368,244 @@ bool EditorSceneEditSystem::softDeleteSelection() {
   }
 
   return true;
+}
+
+namespace {
+
+eastl::string normalizeFolderVirtualPath(eastl::string folder) {
+  if (folder.empty()) {
+    return "assets";
+  }
+  while (!folder.empty() && folder.back() == '/') {
+    folder.pop_back();
+  }
+  if (folder.compare(0, 7, "assets/") != 0 && folder != "assets") {
+    if (folder.compare(0, 6, "assets") == 0) {
+      return folder;
+    }
+    return eastl::string("assets/") + folder;
+  }
+  return folder;
+}
+
+eastl::string makeUniqueSceneVirtualPath(FileSystem* file_system,
+                                         const eastl::string& folder_virtual,
+                                         const eastl::string& stem_base) {
+  const eastl::string folder = normalizeFolderVirtualPath(folder_virtual);
+  for (uint32_t index = 0; index < 10000; ++index) {
+    eastl::string stem = stem_base;
+    if (index > 0) {
+      char buf[32];
+      std::snprintf(buf, sizeof(buf), "_%u", index);
+      stem.append(buf);
+    }
+    eastl::string virtual_path = folder;
+    virtual_path.append("/");
+    virtual_path.append(stem);
+    virtual_path.append(".scene.asset");
+    const std::filesystem::path absolute =
+        resolveSceneAssetAbsolute(file_system, virtual_path);
+    if (absolute.empty() || !file_system->exists(absolute)) {
+      return virtual_path;
+    }
+  }
+  return {};
+}
+
+eastl::string folderOfVirtualPath(const eastl::string& virtual_path) {
+  const size_t slash = virtual_path.find_last_of('/');
+  if (slash == eastl::string::npos) {
+    return "assets";
+  }
+  return virtual_path.substr(0, slash);
+}
+
+}  // namespace
+
+bool EditorSceneEditSystem::writeSceneDocument(const eastl::string& virtual_path,
+                                               const Scene& scene) {
+  if (!m_file_system || virtual_path.empty()) {
+    return false;
+  }
+
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  eastl::string json_text;
+  if (!SceneSerializer::serialize(scene, json_text, registry)) {
+    LOG_ERROR("[EditorSceneEdit] serialize failed for {}", virtual_path.c_str());
+    return false;
+  }
+
+  const std::filesystem::path absolute =
+      resolveSceneAssetAbsolute(m_file_system, virtual_path);
+  if (absolute.empty()) {
+    return false;
+  }
+  m_file_system->ensureParentDirectory(absolute);
+  if (!m_file_system->writeText(absolute, json_text)) {
+    LOG_ERROR("[EditorSceneEdit] write failed: {}",
+              absolute.generic_string().c_str());
+    return false;
+  }
+
+  if (registry != nullptr) {
+    (void)registry->ensureSceneAssetRegistered(virtual_path);
+  }
+  if (m_asset_manager) {
+    m_asset_manager->invalidateSceneCache(virtual_path);
+  }
+  return true;
+}
+
+SceneAssetOpResult EditorSceneEditSystem::createNewSceneAsset(
+    const eastl::string& folder_virtual_path) {
+  SceneAssetOpResult result{};
+  if (!m_file_system) {
+    return result;
+  }
+
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry == nullptr) {
+    LOG_ERROR("[EditorSceneEdit] createNewSceneAsset: no AssetRegistry");
+    return result;
+  }
+
+  const eastl::string virtual_path =
+      makeUniqueSceneVirtualPath(m_file_system, folder_virtual_path, "NewScene");
+  if (virtual_path.empty()) {
+    LOG_ERROR("[EditorSceneEdit] createNewSceneAsset: could not allocate path");
+    return result;
+  }
+
+  Scene scene;
+  scene.setGuid(registry->allocateGuid());
+  scene.setName(entityStemFromAssetPath(virtual_path));
+
+  SceneEntityDefinition camera_entity{};
+  camera_entity.name = "Main Camera";
+  camera_entity.position = Vec3(0.0f, -8.0f, 2.0f);
+  camera_entity.has_camera = true;
+  camera_entity.camera.is_main = true;
+  scene.getEntities().push_back(eastl::move(camera_entity));
+
+  if (!writeSceneDocument(virtual_path, scene)) {
+    return result;
+  }
+
+  result.success = true;
+  result.path = virtual_path;
+  LOG_INFO("[EditorSceneEdit] created new scene '{}'", virtual_path.c_str());
+  return result;
+}
+
+SceneAssetOpResult EditorSceneEditSystem::duplicateSceneAsset(
+    const eastl::string& source_virtual_path) {
+  SceneAssetOpResult result{};
+  if (!m_file_system || !endsWithSuffix(source_virtual_path, ".scene.asset")) {
+    return result;
+  }
+
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry == nullptr) {
+    return result;
+  }
+
+  const std::filesystem::path source_absolute =
+      resolveSceneAssetAbsolute(m_file_system, source_virtual_path);
+  eastl::string json_text;
+  if (source_absolute.empty() ||
+      !m_file_system->readText(source_absolute, json_text)) {
+    LOG_ERROR("[EditorSceneEdit] duplicate: cannot read {}",
+              source_virtual_path.c_str());
+    return result;
+  }
+
+  Scene scene;
+  if (!SceneSerializer::deserialize(json_text, scene, registry)) {
+    LOG_ERROR("[EditorSceneEdit] duplicate: deserialize failed for {}",
+              source_virtual_path.c_str());
+    return result;
+  }
+
+  const eastl::string stem =
+      entityStemFromAssetPath(source_virtual_path) + "_Copy";
+  const eastl::string virtual_path = makeUniqueSceneVirtualPath(
+      m_file_system, folderOfVirtualPath(source_virtual_path), stem);
+  if (virtual_path.empty()) {
+    return result;
+  }
+
+  scene.setGuid(registry->allocateGuid());
+  scene.setName(entityStemFromAssetPath(virtual_path));
+  if (!writeSceneDocument(virtual_path, scene)) {
+    return result;
+  }
+
+  result.success = true;
+  result.path = virtual_path;
+  LOG_INFO("[EditorSceneEdit] duplicated '{}' -> '{}'",
+           source_virtual_path.c_str(), virtual_path.c_str());
+  return result;
+}
+
+SceneAssetOpResult EditorSceneEditSystem::exportLiveSceneToNewPath(
+    const eastl::string& virtual_path) {
+  SceneAssetOpResult result{};
+  if (!m_file_system || !m_scene_system || virtual_path.empty()) {
+    return result;
+  }
+
+  SceneInstance* instance = m_scene_system->getActiveInstance();
+  if (instance == nullptr) {
+    LOG_ERROR("[EditorSceneEdit] Save As failed: no active scene instance");
+    return result;
+  }
+
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry == nullptr) {
+    return result;
+  }
+
+  Scene scene;
+  if (!instance->exportToScene(scene)) {
+    LOG_ERROR("[EditorSceneEdit] Save As exportToScene failed");
+    return result;
+  }
+
+  scene.setGuid(registry->allocateGuid());
+  scene.setName(entityStemFromAssetPath(virtual_path));
+  if (!writeSceneDocument(virtual_path, scene)) {
+    return result;
+  }
+
+  instance->setSourcePath(virtual_path);
+  m_active_scene_virtual_path = virtual_path;
+  m_dirty = false;
+  if (g_runtime_global_context.m_document_history) {
+    g_runtime_global_context.m_document_history->markSaveBaseline();
+  }
+
+  result.success = true;
+  result.path = virtual_path;
+  LOG_INFO("[EditorSceneEdit] Save As -> '{}'", virtual_path.c_str());
+  return result;
+}
+
+SceneAssetOpResult EditorSceneEditSystem::saveActiveSceneAs() {
+  SceneAssetOpResult result{};
+  if (!m_file_system || m_active_scene_virtual_path.empty()) {
+    LOG_ERROR("[EditorSceneEdit] Save As failed: no active scene path");
+    return result;
+  }
+
+  const eastl::string stem =
+      entityStemFromAssetPath(m_active_scene_virtual_path) + "_Copy";
+  const eastl::string virtual_path = makeUniqueSceneVirtualPath(
+      m_file_system, folderOfVirtualPath(m_active_scene_virtual_path),
+      stem.empty() ? eastl::string("NewScene_Copy") : stem);
+  if (virtual_path.empty()) {
+    return result;
+  }
+  return exportLiveSceneToNewPath(virtual_path);
 }
 
 }  // namespace Blunder

@@ -938,26 +938,6 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   return true;
 }
 
-bool parseChildSceneObject(const char* object_start, const char* object_end,
-                           SceneChildReference& out_child) {
-  if (!parseStringField(object_start, object_end, "\"scene\"", out_child.scene_virtual_path)) {
-    return false;
-  }
-
-  eastl::string instance_name;
-  if (parseStringField(object_start, object_end, "\"name\"", instance_name)) {
-    out_child.instance_name = eastl::move(instance_name);
-  } else {
-    out_child.instance_name = out_child.scene_virtual_path;
-  }
-
-  parseVec3Field(object_start, object_end, "\"position\"", out_child.position, Vec3(0.0f));
-  parseVec3Field(object_start, object_end, "\"scale\"", out_child.scale,
-                 Vec3(1.0f, 1.0f, 1.0f));
-  parseRotation(object_start, object_end, out_child.rotation);
-  return true;
-}
-
 bool parseObjectArray(const char* json_text, const char* array_key,
                       bool (*parse_object)(const char*, const char*, void*),
                       void* context_push) {
@@ -1025,19 +1005,15 @@ bool parseEntityCallback(const char* object_start, const char* object_end, void*
   return true;
 }
 
-struct ChildParseContext {
-  Scene* scene;
-};
-
-bool parseChildCallback(const char* object_start, const char* object_end, void* ctx) {
-  auto* context = static_cast<ChildParseContext*>(ctx);
-  SceneChildReference child;
-  if (!parseChildSceneObject(object_start, object_end, child)) {
-    LOG_WARN("[SceneSerializer] skipped malformed childScenes object");
-    return true;
+bool legacyChildScenesArrayNonEmpty(const char* json_text) {
+  const char* array_end = nullptr;
+  const char* array_content =
+      findArrayAfterKey(json_text, "\"childScenes\"", &array_end);
+  if (array_content == nullptr) {
+    return false;
   }
-  context->scene->getChildScenes().push_back(eastl::move(child));
-  return true;
+  const char* p = skipWhitespace(array_content);
+  return p < array_end && *p != ']';
 }
 
 void appendFloat3(eastl::string& out, const Vec3& v) {
@@ -1808,28 +1784,11 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
   out.append(is_last ? "\n    }\n" : "\n    },\n");
 }
 
-void appendChildSceneJson(eastl::string& out, const SceneChildReference& child,
-                          bool is_last) {
-  out.append("    {\n");
-  out.append("      \"scene\": \"");
-  out.append(child.scene_virtual_path);
-  out.append("\",\n      \"name\": \"");
-  out.append(child.instance_name);
-  out.append("\",\n      \"position\": ");
-  appendFloat3(out, child.position);
-  out.append(",\n      \"rotation\": ");
-  appendFloat3(out, rotationToEulerDegreesImpl(child.rotation));
-  out.append(",\n      \"rotationMode\": \"euler_degrees\",\n      \"scale\": ");
-  appendFloat3(out, child.scale);
-  out.append(is_last ? "\n    }\n" : "\n    },\n");
-}
-
 }  // namespace
 
 bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_scene,
                                   const AssetRegistry* registry) {
   out_scene.getEntities().clear();
-  out_scene.getChildScenes().clear();
   out_scene.setGuid(eastl::string());
 
   if (json_text.empty()) {
@@ -1851,11 +1810,10 @@ bool SceneSerializer::deserialize(const eastl::string& json_text, Scene& out_sce
     return false;
   }
 
-  ChildParseContext child_ctx{&out_scene};
-  if (!parseObjectArray(json_text.c_str(), "\"childScenes\"", parseChildCallback,
-                        &child_ctx)) {
-    LOG_ERROR("[SceneSerializer] failed parsing childScenes array");
-    return false;
+  if (legacyChildScenesArrayNonEmpty(json_text.c_str())) {
+    LOG_WARN(
+        "[SceneSerializer] ignoring legacy childScenes (removed; see ADR 0030); "
+        "field will be dropped on next Save");
   }
 
   migrateLegacyMeshReferences(out_scene, registry);
@@ -1887,15 +1845,6 @@ bool SceneSerializer::serialize(const Scene& scene, eastl::string& out_json,
     out_json.append(",\n  \"entities\": [\n");
     for (size_t i = 0; i < entities.size(); ++i) {
       appendEntityJson(out_json, entities[i], i + 1 == entities.size(), registry);
-    }
-    out_json.append("  ]");
-  }
-
-  const eastl::vector<SceneChildReference>& children = scene.getChildScenes();
-  if (!children.empty()) {
-    out_json.append(",\n  \"childScenes\": [\n");
-    for (size_t i = 0; i < children.size(); ++i) {
-      appendChildSceneJson(out_json, children[i], i + 1 == children.size());
     }
     out_json.append("  ]");
   }

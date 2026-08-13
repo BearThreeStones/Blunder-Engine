@@ -96,6 +96,29 @@ void UiHost::setPresentation(IEditorUiPresentation* presentation) {
   m_presentation = presentation;
 }
 
+void UiHost::openSceneAssetPath(const UiContext::LockedServices& services,
+                                const eastl::string& path) {
+  if (!services.editor_scene_edit || path.empty()) {
+    return;
+  }
+  if (services.editor_scene_edit->isDirty()) {
+    setPendingOpenScenePath(path);
+    if (m_presentation) {
+      m_presentation->showOpenDirtySceneDialog();
+    }
+    return;
+  }
+  if (services.editor_scene_edit->openScene(path)) {
+    if (services.render_system && services.scene) {
+      syncSceneToRender(services.render_system.get(),
+                        services.scene->getActiveInstance());
+    }
+    if (m_presentation) {
+      m_presentation->refreshEditorScenePanels();
+    }
+  }
+}
+
 void UiHost::shutdown() {
   m_event_queue.clear();
   m_context.beginShutdown();
@@ -202,6 +225,61 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         services.editor_scene_edit->saveActiveScene();
       }
       break;
+    case UiEventKind::saveSceneAs:
+      if (services.editor_scene_edit) {
+        const SceneAssetOpResult saved =
+            services.editor_scene_edit->saveActiveSceneAs();
+        if (saved.success) {
+          if (services.content_browser) {
+            services.content_browser->refresh();
+            m_panels.markDirty(EditorPanelDirty::content_browser);
+          }
+          if (m_presentation) {
+            m_presentation->refreshEditorScenePanels();
+          }
+        }
+      }
+      break;
+    case UiEventKind::newSceneAsset: {
+      if (!services.editor_scene_edit || !services.content_browser) {
+        break;
+      }
+      eastl::string folder = event.path;
+      if (folder.empty()) {
+        folder = services.content_browser->selectedFolder();
+      }
+      const SceneAssetOpResult created =
+          services.editor_scene_edit->createNewSceneAsset(folder);
+      if (!created.success) {
+        break;
+      }
+      services.content_browser->refresh();
+      m_panels.markDirty(EditorPanelDirty::content_browser);
+      if (m_presentation) {
+        m_presentation->syncContentBrowser();
+      }
+      openSceneAssetPath(services, created.path);
+      break;
+    }
+    case UiEventKind::duplicateSceneAsset: {
+      if (!services.editor_scene_edit || event.path.empty()) {
+        break;
+      }
+      const SceneAssetOpResult duplicated =
+          services.editor_scene_edit->duplicateSceneAsset(event.path);
+      if (!duplicated.success) {
+        break;
+      }
+      if (services.content_browser) {
+        services.content_browser->refresh();
+        m_panels.markDirty(EditorPanelDirty::content_browser);
+      }
+      if (m_presentation) {
+        m_presentation->syncContentBrowser();
+        m_presentation->selectBrowserGridPath(duplicated.path);
+      }
+      break;
+    }
     case UiEventKind::undo:
     case UiEventKind::redo: {
       DocumentHistory* history = g_runtime_global_context.m_document_history.get();
@@ -476,17 +554,57 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       m_panels.markDirty(EditorPanelDirty::inspector);
       break;
     case UiEventKind::openSceneAsset:
-      if (services.editor_scene_edit && !event.path.empty()) {
-        if (services.editor_scene_edit->openScene(event.path)) {
-          if (services.render_system && services.scene) {
-            syncSceneToRender(services.render_system.get(),
-                              services.scene->getActiveInstance());
-          }
-          if (m_presentation) {
-            m_presentation->refreshEditorScenePanels();
-          }
+      openSceneAssetPath(services, event.path);
+      break;
+    case UiEventKind::openDirtySaveAndOpen: {
+      if (m_presentation) {
+        m_presentation->hideOpenDirtySceneDialog();
+      }
+      const eastl::string path = pendingOpenScenePath();
+      clearPendingOpenScenePath();
+      if (!services.editor_scene_edit || path.empty()) {
+        break;
+      }
+      if (!services.editor_scene_edit->saveActiveScene()) {
+        break;
+      }
+      if (services.editor_scene_edit->openScene(path)) {
+        if (services.render_system && services.scene) {
+          syncSceneToRender(services.render_system.get(),
+                            services.scene->getActiveInstance());
+        }
+        if (m_presentation) {
+          m_presentation->refreshEditorScenePanels();
         }
       }
+      break;
+    }
+    case UiEventKind::openDirtyDiscardAndOpen: {
+      if (m_presentation) {
+        m_presentation->hideOpenDirtySceneDialog();
+      }
+      const eastl::string path = pendingOpenScenePath();
+      clearPendingOpenScenePath();
+      if (!services.editor_scene_edit || path.empty()) {
+        break;
+      }
+      services.editor_scene_edit->clearDirty();
+      if (services.editor_scene_edit->openScene(path)) {
+        if (services.render_system && services.scene) {
+          syncSceneToRender(services.render_system.get(),
+                            services.scene->getActiveInstance());
+        }
+        if (m_presentation) {
+          m_presentation->refreshEditorScenePanels();
+        }
+      }
+      break;
+    }
+    case UiEventKind::openDirtyCancel:
+      if (m_presentation) {
+        m_presentation->hideOpenDirtySceneDialog();
+      }
+      clearPendingOpenScenePath();
       break;
     case UiEventKind::openAnimationTreeAsset: {
       FileSystem* file_system = g_runtime_global_context.m_file_system.get();

@@ -1,0 +1,3 @@
+# Remove Child Scene composition
+
+Scene Assets are a single flat entity document. Nested composition via `childScenes` / `SceneChildReference` (recursive load, Save merge, Thumbnail/fingerprint recursion) is removed in an independent change before New Scene Asset / Duplicate / Save As. Scene Thumbnail remains, but renders one Scene Asset only. Legacy files that still contain `childScenes` load by ignoring that field with a warning; the next Save omits it (no hard fail on open). Rejected for this cut: keeping latent childScenes in the file format, shallow-or-deep copy rules for nested scenes, failing open on legacy childScenes, and treating mesh/entity parenting as Child Scene. If nesting returns, it should be an explicit prefab/instance model—not revived childScenes.

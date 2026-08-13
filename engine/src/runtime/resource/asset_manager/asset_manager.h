@@ -152,6 +152,7 @@ class AssetManager final {
   /// Drop Mesh cache entries for a virtual path / GUID key so the next load
   /// rebuilds from Intermediate/Final (Editor Asset Hot Reload seam).
   void invalidateMeshCache(const eastl::string& virtual_path_or_key);
+  void invalidateSceneCache(const eastl::string& virtual_path_or_key);
 
  private:
   template <typename T>

@@ -130,7 +130,10 @@ export component FilesystemHistoryHost {
     callback folder-toggle(string);
     callback refresh-requested();
     callback import-requested();
+    callback new-scene-requested();
     callback delete-requested();
+    callback duplicate-scene-requested(string);
+    callback open-scene-requested(string);
     callback grid-select(string, bool, bool);
     callback item-press(string, float, float);
     callback item-move(string, float, float);
@@ -244,7 +247,10 @@ export component FilesystemHistoryHost {
                 folder-toggle(path) => { root.folder-toggle(path); }
                 refresh-requested => { root.refresh-requested(); }
                 import-requested => { root.import-requested(); }
+                new-scene-requested => { root.new-scene-requested(); }
                 delete-requested => { root.delete-requested(); }
+                duplicate-scene-requested(path) => { root.duplicate-scene-requested(path); }
+                open-scene-requested(path) => { root.open-scene-requested(path); }
                 grid-select(path, ctrl, shift) => { root.grid-select(path, ctrl, shift); }
                 item-press(path, x, y) => { root.item-press(path, x, y); }
                 item-move(path, x, y) => { root.item-move(path, x, y); }

@@ -135,7 +135,10 @@ export component FloatingPanelWindow inherits Window {
     callback browser-folder-toggle(string);
     callback browser-refresh-requested();
     callback browser-import-requested();
+    callback browser-new-scene-requested();
     callback browser-delete-requested();
+    callback browser-duplicate-scene-requested(string);
+    callback browser-open-scene-requested(string);
     callback browser-grid-select(string, bool, bool);
     callback browser-item-press(string, float, float);
     callback browser-item-move(string, float, float);
@@ -330,7 +333,10 @@ export component FloatingPanelWindow inherits Window {
                 folder-toggle(path) => { root.browser-folder-toggle(path); }
                 refresh-requested => { root.browser-refresh-requested(); }
                 import-requested => { root.browser-import-requested(); }
+                new-scene-requested => { root.browser-new-scene-requested(); }
                 delete-requested => { root.browser-delete-requested(); }
+                duplicate-scene-requested(path) => { root.browser-duplicate-scene-requested(path); }
+                open-scene-requested(path) => { root.browser-open-scene-requested(path); }
                 grid-select(path, ctrl, shift) => { root.browser-grid-select(path, ctrl, shift); }
                 item-press(path, x, y) => { root.browser-item-press(path, x, y); }
                 item-move(path, x, y) => { root.browser-item-move(path, x, y); }

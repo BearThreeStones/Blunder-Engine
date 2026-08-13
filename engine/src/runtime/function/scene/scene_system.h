@@ -43,10 +43,7 @@ class SceneSystem final {
  private:
   eastl::shared_ptr<SceneInstance> instantiateScene(
       const eastl::shared_ptr<SceneAsset>& scene_asset,
-      const eastl::string& virtual_path, SceneInstance* parent_instance,
-      const SceneChildReference* child_reference);
-
-  void unloadSceneInstanceRecursive(SceneInstance* instance);
+      const eastl::string& virtual_path);
 
   void attachSceneEntityMeshes(SceneInstance& instance, const Scene& scene);
   void attachSceneEntityCameras(SceneInstance& instance, const Scene& scene);

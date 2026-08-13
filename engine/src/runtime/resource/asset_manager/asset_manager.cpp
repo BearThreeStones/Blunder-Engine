@@ -693,9 +693,9 @@ eastl::shared_ptr<SceneAsset> AssetManager::loadScene(
   auto asset = eastl::make_shared<SceneAsset>(eastl::move(meta), eastl::move(scene));
   m_scene_cache[key] = asset;
 
-  LOG_INFO("[AssetManager] loaded Scene {} (resolved: {}, entities={}, childScenes={})",
-           key.c_str(), absolute.generic_string(), asset->getScene().getEntities().size(),
-           asset->getScene().getChildScenes().size());
+  LOG_INFO("[AssetManager] loaded Scene {} (resolved: {}, entities={})",
+           key.c_str(), absolute.generic_string(),
+           asset->getScene().getEntities().size());
   return asset;
 }
 
@@ -1184,6 +1184,23 @@ void AssetManager::invalidateMeshCache(const eastl::string& virtual_path_or_key)
     auto raw = m_mesh_cache.find(virtual_path_or_key);
     if (raw != m_mesh_cache.end()) {
       m_mesh_cache.erase(raw);
+    }
+  }
+}
+
+void AssetManager::invalidateSceneCache(const eastl::string& virtual_path_or_key) {
+  if (!m_is_initialized || virtual_path_or_key.empty()) {
+    return;
+  }
+  const eastl::string key = canonicalKey(virtual_path_or_key);
+  auto it = m_scene_cache.find(key);
+  if (it != m_scene_cache.end()) {
+    m_scene_cache.erase(it);
+  }
+  if (key != virtual_path_or_key) {
+    auto raw = m_scene_cache.find(virtual_path_or_key);
+    if (raw != m_scene_cache.end()) {
+      m_scene_cache.erase(raw);
     }
   }
 }

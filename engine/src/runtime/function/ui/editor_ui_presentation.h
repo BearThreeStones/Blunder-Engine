@@ -36,6 +36,10 @@ class IEditorUiPresentation {
   virtual void showPlayDirtySceneDialog() = 0;
   virtual void hidePlayDirtySceneDialog() = 0;
 
+  virtual void showOpenDirtySceneDialog() = 0;
+  virtual void hideOpenDirtySceneDialog() = 0;
+  virtual void selectBrowserGridPath(const eastl::string& virtual_path) = 0;
+
   virtual void showDetectionReimportDialog(int asset_count) = 0;
   virtual void hideDetectionReimportDialog() = 0;
 };

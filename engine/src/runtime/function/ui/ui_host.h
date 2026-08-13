@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "EASTL/shared_ptr.h"
+#include "EASTL/string.h"
 
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/ui/editor_preview_settings.h"
@@ -48,8 +49,18 @@ class UiHost final : public eastl::enable_shared_from_this<UiHost> {
 
   EditorPanelsViewModel& panels() { return m_panels; }
 
+  void setPendingOpenScenePath(eastl::string path) {
+    m_pending_open_scene_path = eastl::move(path);
+  }
+  const eastl::string& pendingOpenScenePath() const {
+    return m_pending_open_scene_path;
+  }
+  void clearPendingOpenScenePath() { m_pending_open_scene_path.clear(); }
+
  private:
   void dispatch(const UiEvent& event, const UiContext::LockedServices& services);
+  void openSceneAssetPath(const UiContext::LockedServices& services,
+                          const eastl::string& path);
 
   UiContext m_context;
   UiEventQueue m_event_queue;
@@ -57,6 +68,7 @@ class UiHost final : public eastl::enable_shared_from_this<UiHost> {
   EditorPanelsViewModel m_panels;
   IEditorUiPresentation* m_presentation{nullptr};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
+  eastl::string m_pending_open_scene_path;
 };
 
 }  // namespace Blunder

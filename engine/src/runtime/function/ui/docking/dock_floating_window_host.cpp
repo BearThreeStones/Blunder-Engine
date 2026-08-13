@@ -335,6 +335,7 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.name = toSharedString(row.name);
         slint_row.thumb = row.thumb;
         slint_row.is_dir = row.is_dir;
+        slint_row.is_scene = row.is_scene;
         slint_row.selected = row.selected;
         grid_model->push_back(slint_row);
       }

@@ -282,6 +282,9 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void showPlayDirtySceneDialog() override;
   void hidePlayDirtySceneDialog() override;
+  void showOpenDirtySceneDialog() override;
+  void hideOpenDirtySceneDialog() override;
+  void selectBrowserGridPath(const eastl::string& virtual_path) override;
 
   void showDetectionReimportDialog(int asset_count) override;
   void hideDetectionReimportDialog() override;
