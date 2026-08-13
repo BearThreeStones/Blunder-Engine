@@ -375,19 +375,25 @@ if(TARGET efsw)
     target_link_libraries(engine_runtime PRIVATE efsw)
 endif()
 
-# Debug-only: silent Editor Session root when no --project-root (ADR 0010).
+# Local checkout: compile in Editor Session root when no --project-root so VS F5
+# works for Debug and Release. Packaged builds pass -DBLUNDER_PACKAGED_BUILD=ON
+# (ADR 0010: no silent compile-time root in shipping binaries).
 # PUBLIC so engine_editor main.cpp sees the define (PRIVATE would not propagate).
-# Product content lives under Projects dir �?not the engine checkout (CONTEXT).
-# Release omits this define so packaged builds require --project-root / Project Manager.
+option(BLUNDER_PACKAGED_BUILD
+    "Omit compile-time BLUNDER_PROJECT_ROOT (packaged editor)" OFF)
 if(NOT DEFINED BLUNDER_DEFAULT_PROJECT_ROOT OR BLUNDER_DEFAULT_PROJECT_ROOT STREQUAL "")
     set(BLUNDER_DEFAULT_PROJECT_ROOT "E:/Blunder Projects/Test")
 endif()
-target_compile_definitions(engine_runtime
-    PUBLIC
-        $<$<CONFIG:Debug>:BLUNDER_PROJECT_ROOT="${BLUNDER_DEFAULT_PROJECT_ROOT}">
-)
-message(STATUS
-    "[Blunder] Debug BLUNDER_PROJECT_ROOT=${BLUNDER_DEFAULT_PROJECT_ROOT}")
+if(NOT BLUNDER_PACKAGED_BUILD AND NOT BLUNDER_DEFAULT_PROJECT_ROOT STREQUAL "")
+    target_compile_definitions(engine_runtime
+        PUBLIC
+            BLUNDER_PROJECT_ROOT="${BLUNDER_DEFAULT_PROJECT_ROOT}"
+    )
+    message(STATUS
+        "[Blunder] BLUNDER_PROJECT_ROOT=${BLUNDER_DEFAULT_PROJECT_ROOT}")
+else()
+    message(STATUS "[Blunder] BLUNDER_PROJECT_ROOT omitted (packaged / empty)")
+endif()
 
 if(BLUNDER_RENDER_BACKEND STREQUAL "d3d12")
     target_compile_definitions(engine_runtime PRIVATE BLUNDER_RENDER_BACKEND_D3D12=1)

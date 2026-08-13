@@ -14,9 +14,16 @@ option(BLUNDER_EDITOR_PROFILE_EXE "Link editor to engine_editor_profile.exe in p
 
 # Ship beside project_manager in bin/<Config>/ (ADR 0009 Open via relaunch).
 # Working directory stays the engine checkout so Slang can find engine/shaders/
-# via cwd walk; Debug project root comes from BLUNDER_PROJECT_ROOT (Test Project).
+# via cwd walk. Local checkout compiles in BLUNDER_PROJECT_ROOT; VS F5 also
+# passes --project-root for the Test Project. Packaged builds omit the define.
+if(NOT DEFINED BLUNDER_DEFAULT_PROJECT_ROOT OR BLUNDER_DEFAULT_PROJECT_ROOT STREQUAL "")
+    set(BLUNDER_DEFAULT_PROJECT_ROOT "E:/Blunder Projects/Test")
+endif()
+file(TO_CMAKE_PATH "${BLUNDER_DEFAULT_PROJECT_ROOT}" _blunder_editor_debug_root)
 set_target_properties(engine_editor PROPERTIES
+    WIN32_EXECUTABLE TRUE
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    VS_DEBUGGER_COMMAND_ARGUMENTS "--project-root \"${_blunder_editor_debug_root}\""
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/bin/RelWithDebInfo"

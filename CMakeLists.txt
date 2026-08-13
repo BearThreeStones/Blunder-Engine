@@ -77,3 +77,6 @@ include(cmake/slang.cmake)
 
 # ---------- 子模块 ----------
 add_subdirectory(engine)
+
+# F5 in the generated sln/slnx should start the editor, not a 3rdparty console tool.
+set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT engine_editor)
