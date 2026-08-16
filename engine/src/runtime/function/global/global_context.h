@@ -33,6 +33,7 @@ class HierarchySystem;
 class EditorSceneEditSystem;
 class DocumentHistory;
 class ViewportPickSystem;
+class PlacementPreviewController;
 // class ConfigManager;
 // class WorldManager;
 class RenderSystem;
@@ -82,6 +83,7 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<EditorSelectionSystem> m_editor_selection;
   eastl::shared_ptr<HierarchySystem> m_hierarchy;
   eastl::shared_ptr<EditorSceneEditSystem> m_editor_scene_edit;
+  eastl::unique_ptr<PlacementPreviewController> m_placement_preview;
   eastl::shared_ptr<DocumentHistory> m_document_history;
   eastl::shared_ptr<ViewportPickSystem> m_viewport_pick;
   // eastl::shared_ptr<ConfigManager> m_config_manager;

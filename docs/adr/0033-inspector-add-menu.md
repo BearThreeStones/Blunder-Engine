@@ -1,0 +1,3 @@
+# Inspector Add… is an authorship picker, not Add Component
+
+Inspector assembly uses one **Add…** menu (Unity-like gesture) while the runtime stays dual-track: ECS Components (e.g. Camera), ClassDB members on the Object (Skeleton, AnimationPlayer, AnimationTree, SkeletonModifier), and Behaviours. Add… is not a ClassDB type and not Unity Add Component — listing an item does not make it an ECS Component. Rejected: renaming the picker Add Component (collides with glossary Component), Godot Add Node (implies a child in the Scene Tree), and keeping parallel Add Camera / Add Behaviour / Add Skeleton Modifier buttons as the product path.

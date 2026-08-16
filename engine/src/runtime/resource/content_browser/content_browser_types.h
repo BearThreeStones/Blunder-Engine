@@ -9,6 +9,22 @@
 
 namespace Blunder {
 
+enum class BrowserEntryKind : int32_t {
+  folder = 0,
+  mesh = 1,
+  scene = 2,
+  texture = 3,
+  animation_clip = 4,
+  file = 5,
+};
+
+enum class BrowserGridSortColumn : int32_t {
+  name = 0,
+  type = 1,
+  size = 2,
+  date = 3,
+};
+
 struct ContentBrowserTreeRow {
   eastl::string virtual_path;
   eastl::string display_name;
@@ -24,6 +40,12 @@ struct ContentBrowserGridItem {
   eastl::string thumbnail_cache_path;
   ThumbnailStatus thumbnail_status{ThumbnailStatus::None};
   bool is_directory{false};
+  BrowserEntryKind type_kind{BrowserEntryKind::file};
+  eastl::string type_label;
+  eastl::string size_text;
+  eastl::string date_text;
+  uint64_t size_bytes{0};
+  uint64_t modified_time{0};
 };
 
 struct ContentBrowserPathSegment {

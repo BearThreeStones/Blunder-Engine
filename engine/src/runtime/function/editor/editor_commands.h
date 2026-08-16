@@ -9,12 +9,14 @@
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/reflection/variant.h"
 #include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
 
 namespace Blunder {
 
+class AssetManager;
 class SceneInstance;
 
 eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
@@ -95,6 +97,16 @@ eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierEnabledCommand(
 eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierDefCommand(
     SceneInstance* scene, EntityId entity_id, size_t modifier_index,
     SceneSkeletonModifierDef before_def, SceneSkeletonModifierDef after_def,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeAddUniqueAttachmentCommand(
+    SceneInstance* scene, AssetManager* asset_manager, EntityId entity_id,
+    InspectorUniqueKind kind, InspectorUniqueAddResult created,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeRemoveUniqueAttachmentCommand(
+    SceneInstance* scene, AssetManager* asset_manager, EntityId entity_id,
+    InspectorUniqueKind kind, InspectorUniqueRemoveSnapshot snapshot,
     SelectionSnapshot selection_before, SelectionSnapshot selection_after);
 
 }  // namespace Blunder

@@ -118,6 +118,9 @@ export component FilesystemHistoryHost {
     in property <string> selected-folder-path: "";
     in-out property <string> selected-grid-path: "";
     in-out property <length> thumb-size: 80px;
+    in-out property <bool> details-view: false;
+    in property <int> sort-column: 0;
+    in property <bool> sort-ascending: true;
     in-out property <length> tree-pane-width: 200px;
     in property <bool> layout-drag-active: false;
 
@@ -141,6 +144,7 @@ export component FilesystemHistoryHost {
     callback layout-drag-active-changed(bool);
     callback search-changed(string);
     callback path-segment-clicked(string);
+    callback sort-clicked(int);
     callback history-filter-changed();
     callback history-entry-clicked(int);
 
@@ -243,6 +247,9 @@ export component FilesystemHistoryHost {
                 selected-grid-path <=> root.selected-grid-path;
                 tree-pane-width <=> root.tree-pane-width;
                 thumb-size <=> root.thumb-size;
+                details-view <=> root.details-view;
+                sort-column: root.sort-column;
+                sort-ascending: root.sort-ascending;
                 folder-selected(path) => { root.folder-selected(path); }
                 folder-toggle(path) => { root.folder-toggle(path); }
                 refresh-requested => { root.refresh-requested(); }
@@ -260,6 +267,7 @@ export component FilesystemHistoryHost {
                 }
                 search-changed(text) => { root.search-changed(text); }
                 path-segment-clicked(path) => { root.path-segment-clicked(path); }
+                sort-clicked(column) => { root.sort-clicked(column); }
             }
 
             HistoryPanel {

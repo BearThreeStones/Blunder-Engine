@@ -39,6 +39,7 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/placement_preview_controller.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/editor/document_history.h"
@@ -84,7 +85,7 @@ std::filesystem::path findProjectGameAssembly(
 
 void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
   // Product Play runs DotNetHost in engine_player (force_start). Edit Mode does
-  // not auto-start a host for authorship â€?BLUNDER_DOTNET_SCRIPTS=1 is debug /
+  // not auto-start a host for authorship ï¿½?BLUNDER_DOTNET_SCRIPTS=1 is debug /
   // Approach A / editor_dotnet_host_test opt-in only (see docs/agents/testing.md).
   // Avoid setting that env while using editor Play (would start a second host).
   if (!force_start && !envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
@@ -217,7 +218,7 @@ void RuntimeGlobalContext::startSystems(
   m_asset_compiler = eastl::make_shared<AssetCompilerService>();
   m_asset_compiler->initialize(m_file_system.get(), m_asset_manager.get(),
                                  m_asset_registry.get());
-  // Wire Pull Fast Path â†?cookAsset before warm-up so load-time cook requests
+  // Wire Pull Fast Path ï¿½?cookAsset before warm-up so load-time cook requests
   // work once systems start serving descriptors.
   m_asset_manager->setAssetCompiler(m_asset_compiler);
   m_asset_compiler->cookIfStale();
@@ -333,7 +334,7 @@ void RuntimeGlobalContext::startSystems(
   if (player_host) {
     // Player: window + engine loop without editor Slint shell / dock.
     LOG_INFO(
-        "[RuntimeGlobalContext] Player host mode â€?skipping Slint editor "
+        "[RuntimeGlobalContext] Player host mode ï¿½?skipping Slint editor "
         "shell");
     m_render_system->initializeBackend(render_init_info);
     m_render_system->initialize(render_init_info);
@@ -393,6 +394,7 @@ void RuntimeGlobalContext::startSystems(
     m_animation_preview = eastl::make_unique<AnimationPreviewController>();
     m_animation_sync_cine_preview =
         eastl::make_unique<AnimationSyncCinePreviewController>();
+    m_placement_preview = eastl::make_unique<PlacementPreviewController>();
   }
 
   m_input_system = eastl::make_shared<InputSystem>();
@@ -416,6 +418,7 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
   m_animation_preview.reset();
   m_animation_sync_cine_preview.reset();
+  m_placement_preview.reset();
 
   // Tear down CoreCLR before other systems that scripts may have touched.
   if (m_dotnet_host) {

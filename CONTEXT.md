@@ -98,6 +98,38 @@ _Avoid_: Treating the Godot DogWalk tree as the Blunder Project; shipping Chocom
 Follow-on to the .NET host MVP (requires single-ObjectDB / NativeAbi from `unify-script-objectdb`): persist and restore an Object's ordered Behaviour list on scene entities (`behaviours`: BehaviourId, type, optional bool/number/string property bag). Load binds Objects and restores slots offline (null peers); mount AttachBehaviour when DotNetHost is running; export writes type + id from bound Objects. Inspector authoring of that declaration list is a separate follow-on (**Inspector Behaviour UX**, ADR 0016), not part of this serialization slice itself.
 _Avoid_: Treating serialization as part of host MVP, requiring hot reload before Behaviours can round-trip; treating serialization deliverable as including full Inspector Behaviour UX
 
+**Add…**:
+The Inspector picker that lists authorable attachments for the current selection — ECS Components, ClassDB members on the Object, and Behaviours. It is an editor authorship gesture, not a ClassDB type, not an ECS Component, and not Unity Add Component. First slice: Unique attachments (Camera, Skeleton, AnimationPlayer, AnimationTree); Behaviour types from the Behaviour type catalog; SkeletonModifier types. Mesh stays Content Browser spawn. First slice requires exactly one selected entity. The popup is a grouped flat list (Unique attachments, Behaviours, Skeleton Modifiers) with no search; an empty Behaviour catalog still shows that group with the build-Scripts hint.
+_Avoid_: Add Component, Add Node, treating the menu itself as a runtime type; keeping parallel Add Camera / Add Behaviour / Add Skeleton Modifier buttons as the product path; multi-select Add… as the first slice; nested submenus or type-ahead search as first-slice scope
+
+**Unique attachment**:
+An Add… item that may exist at most once on the selected Object or entity: Camera, Skeleton, AnimationPlayer, AnimationTree. When already present, the row stays visible and disabled.
+_Avoid_: Hiding unique items from Add…; treating Behaviours or SkeletonModifiers as unique; allowing a second Camera / Player / Tree / Skeleton on the same selection
+
+**Add… host cascade**:
+Add… creates missing co-located animation hosts on the same Object: AnimationTree implies AnimationPlayer implies Skeleton. Adding Skeleton does not create Player or Tree. Import still does not fill the AnimationPlayer clip map. A newly added AnimationTree is empty and inactive, with no AnimationTree Asset GUID required.
+_Avoid_: Cross-Object cascade from Add…; auto-filling clips when adding Player; creating Player because the author only added Skeleton; requiring a Tree Asset to Add… AnimationTree; activating a new Tree so it blocks Player sampling by default
+
+**Add clip**:
+Inspector control on the AnimationPlayer section that appends one empty name→GUID row to the player's clip map. Not an Add… item. Content Browser drop onto that row is later, not the first slice.
+_Avoid_: Listing clips in Add…; requiring a drag-from-browser to create the first row; Import auto-fill as the only way to create a row
+
+**Remove attachment**:
+Inspector removal of an authored attachment. Unique attachments have a section Remove; Behaviours, SkeletonModifiers, and clip rows keep per-row Remove. Removing Tree or Player does not cascade to Skeleton. Remove Skeleton is disabled while Player, Tree, or any SkeletonModifier remains.
+_Avoid_: Reverse cascade that deletes Player/Tree/Modifiers because Skeleton was removed; Unique attachments removable only via scene JSON; clip rows that can be added but not deleted
+
+**Add… Object materialization**:
+Add… creates a bound Object for ClassDB-hosted attachments (Skeleton, AnimationPlayer, AnimationTree, Behaviour, SkeletonModifier) when the selected entity has none. Camera does not create an Object.
+_Avoid_: Creating an Object because Camera was added; requiring a pre-existing Object before Add…; using Add… to force 1:1 Object↔Entity
+
+**Skeleton hydration**:
+Filling a Skeleton's rest/bind from the selected entity's skinned mesh Intermediate glTF onto the same Object when Add… creates that Skeleton. A static mesh or failed read still yields an empty Skeleton (warn, do not fail the Add). Add… does not expand a glTF child hierarchy.
+_Avoid_: A separate Skeleton Asset as a prerequisite for Add…; empty-only Skeleton as the skinned Add Player path; using Add Skeleton to spawn importUnderEntity children
+
+**Add… command**:
+One Editor Command per Add… click, Remove attachment, Add clip, or clip-row Remove, on Document History. Host cascade and Skeleton hydration belong to that same Command, not separate undo steps.
+_Avoid_: Silent non-undoable Add…; one undo step per cascaded host; stuffing Add… into Global History
+
 **Inspector Behaviour UX**:
 Edit Mode authoring of an entity's Behaviour list and property bag in the Inspector. The authoritative Edit Mode surface is the scene **Behaviour declaration** (ordered type + BehaviourId + bag), not a live Script Peer. Mounting peers remains a Play/Player (or env-gated debug host) step, not a prerequisite for Inspector edits. Available types for Add come from a **Behaviour type catalog** produced by scanning the Project Scripts assembly after `dotnet build` (metadata only; no DotNetHost required). The first UX slice edits only **bool / number / string** public instance fields or properties — the same narrow bag already persisted and applied on mount. Add, Remove, reorder (drag), and property commits (Enter / focus loss) are Document History Commands addressed by `EntityId`, same interaction-boundary sealing as Transform. A declaration whose type is missing from the catalog stays in the list as a visible missing/broken entry (remove allowed; not auto-deleted).
 _Avoid_: Requiring editor DotNetHost for normal Behaviour authoring; treating live peers as the Edit Mode source of truth; conflating Add/Remove Behaviour UI with AttachBehaviour mount; hand-typed CLR names as the primary Add path; starting CoreCLR solely to populate the Add list; shipping Vec3/enum/nested/asset-reference Behaviour editors in the first Inspector Behaviour UX slice; silent non-undoable Behaviour edits in that slice; silently dropping missing-type declarations; blocking Save/Play solely because a Behaviour type is missing from the catalog; treating list order as non-authoritative relative to Ready/Tick order
@@ -415,8 +447,12 @@ The shared authorship render path that draws a **Mesh Asset** (Final preferred w
 _Avoid_: Using a material base-color texture alone as the Mesh thumbnail; sharing the Camera Preview or main viewport render target for Mesh Asset frames; requiring Cook before any 3D Mesh thumbnail; embedding AnimationPlayer playback into thumbnail generation as the first slice
 
 **Content Browser Thumbnail**:
-The cached still image shown for a Content Browser grid entry. For Mesh Assets the product image is a **Mesh Preview Render** frame written into the project thumbnail cache; for **Scene Assets** it is a **Scene Thumbnail Render** frame; Texture Assets keep image thumbnails; remaining types use placeholders (including a Scene placeholder when scene still generation fails).
-_Avoid_: Treating Mesh thumbnails as texture atlases by default; synchronous GPU generation that blocks the whole Browser refresh as the product path (generation is asynchronous with visible-item priority); using a live dirty editor SceneInstance as the Scene thumbnail source; requiring nested Child Scene content inside Scene thumbs
+The cached still image shown for a Content Browser entry in an icon **Browser View Layout**. For Mesh Assets the product image is a **Mesh Preview Render** frame written into the project thumbnail cache; for **Scene Assets** it is a **Scene Thumbnail Render** frame; Texture Assets keep image thumbnails; remaining types use placeholders (including a Scene placeholder when scene still generation fails). Not the leading graphic in Details.
+_Avoid_: Treating Mesh thumbnails as texture atlases by default; synchronous GPU generation that blocks the whole Browser refresh as the product path (generation is asynchronous with visible-item priority); using a live dirty editor SceneInstance as the Scene thumbnail source; requiring nested Child Scene content inside Scene thumbs; using a Thumbnail as the Details row icon
+
+**Browser View Layout**:
+The session-wide presentation of Content Browser entries for the current folder. Icon layouts (Extra large, Large, Medium, Small) show **Content Browser Thumbnails** at a matching size; **Details** is a columnar table (Name, Type, Size of the Assets-root file, Date modified). The Details Name column uses a type-keyed **Editor Icon** (Folder, Mesh, Scene, Texture, AnimationClip, File), not a Thumbnail. Details column headers sort that column (second click reverses); every sort keeps folders before files. The status-bar slider and the View Layout menu write the same state: slider at minimum is Details; dragging right re-enters Small icons. Not persisted and not remembered per folder.
+_Avoid_: Independent slider vs menu modes; Explorer List, Tiles, or Content in this slice; Unity namelist as Details; Explorer Content two-line rows as Details; per-folder remembered views; editor-preference persistence in this slice; a single generic file glyph for every non-folder Details row; mixing folders and files in one Date/Size/Type ordering
 
 **Scene Thumbnail Render**:
 The authorship-only still path that, for an on-disk **Scene Asset**, temporarily instantiates that scene, resolves a camera with the Play rule (Main Camera, else first stable Camera), draws one frame at square aspect into a **dedicated** offscreen target (not the main viewport, not **Camera Preview**, not **Mesh Preview Render**), and CPU-readback writes the **Content Browser Thumbnail** cache. No Editor Overlays. Skinned content stays bind/rest pose (no AnimationPlayer sampling in this slice). Prefer scene lights when present; otherwise fall back to fixed studio lighting. Cache invalidation uses the scene file mtime plus a fingerprint of direct Mesh Asset References on that scene. On failure (no camera, render error, etc.) show a Scene placeholder. Does not recurse nested scenes — **Child Scene** composition is out of product.
@@ -424,7 +460,23 @@ _Avoid_: Borrowing the Camera Preview or main viewport RT for Browser scene thum
 
 **Mesh Preview**:
 An authorship-only interactive view of a **Mesh Asset** embedded in the Inspector when that Asset is selected in the Content Browser (**Asset Inspector** mode): orbit, zoom, and reset to default framing. Orbit orientation is session-ephemeral (not persisted). It consumes **Mesh Preview Render** and never appears in the Player.
-_Avoid_: Floating Camera Preview panel for Mesh Assets; requiring a scene Entity selection to preview a Mesh Asset; persisting orbit angles as Asset or scene data in the first slice; middle-mouse pan as a first-slice requirement
+_Avoid_: Floating Camera Preview panel for Mesh Assets; requiring a scene Entity selection to preview a Mesh Asset; persisting orbit angles as Asset or scene data in the first slice; middle-mouse pan as a first-slice requirement; using **Placement Preview** as the Inspector Mesh view
+
+**Ground placement**:
+The spawn pose of a Mesh Asset in the editor viewport: the Editor Camera ray through the pointer intersects the world Z=0 ground plane. A miss uses the world origin. Shared by drop-to-spawn and **Placement Preview**.
+_Avoid_: Surface snapping, view-plane billboard placement, dropping at the camera position
+
+**Placement Preview**:
+A transient, non-document visualization of a Mesh Asset at **Ground placement** in the editor viewport while dragging that Asset from the Content Browser. Visible only while the pointer is over the editor viewport and the drag source is a Mesh Asset. Hidden over the Content Browser (including folder reparent) and for non-mesh drag sources. Shading matches the spawned MeshRenderer: opaque, Mesh Asset materials, scene lighting — not Mesh Preview studio lighting. It is not a scene Entity, not Mesh Preview, and not an Editor Overlay tool. Drop still seals one Spawn Entity Command.
+_Avoid_: Mesh Preview, Drag ghost, Camera Preview, spawning a live Entity during drag, listing the preview in the Outliner, showing the preview while the pointer is still over the Browser, ghost/wireframe as the product look, studio-lit Mesh Preview Render frames as the viewport follow-mesh
+
+**Content Browser drag**:
+A pointer-driven drag of a Content Browser entry. Drop on the editor viewport may spawn a Mesh Asset or open a Scene Asset; drop on a Browser folder reparents the entry. Escape aborts the drag with no spawn, no scene open, and no reparent. Distinct from OS file drop onto the Browser and from docking drag. This slice does not spawn or open from an OS drop onto the viewport.
+_Avoid_: Slint DragArea as the product mechanism, treating OS import drop as this drag, docking panel drag, requiring mouse release on a random panel to stop a drag, OS file drop onto the viewport as a spawn path
+
+**Content Browser drag cursor**:
+During Content Browser drag, the system cursor is one of three states: pointer when the pointer is over the editor viewport and the source is a Mesh Asset or a Scene Asset (place or open); move when over a Browser folder (reparent); not-allowed otherwise.
+_Avoid_: A single cursor for the whole drag, a custom copy/plus glyph as the v1 product cursor, leaving the default arrow during drag, showing not-allowed over the viewport for a Scene Asset that will open on drop
 
 **Asset Inspector**:
 Inspector presentation when the selection is a Content Browser **Asset** rather than a scene Entity. The first slice covers Mesh Assets: **Mesh Preview** plus read-only identity (display name, GUID, type, Intermediate `source` path). It is not the Import-settings editor and not a dependency-graph browser.

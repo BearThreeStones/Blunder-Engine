@@ -136,3 +136,88 @@ export component EditorIconUnlinked inherits Rectangle {
         image-fit: contain;
     }
 }
+
+export component EditorIconMesh inherits Rectangle {
+    in property <color> icon-color: #d0d0d0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Mesh.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconTexture inherits Rectangle {
+    in property <color> icon-color: #d0d0d0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Texture2D.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconAnimation inherits Rectangle {
+    in property <color> icon-color: #d0d0d0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Animation.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconFile inherits Rectangle {
+    in property <color> icon-color: #d0d0d0;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/File.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconViewLayout inherits Rectangle {
+    in property <color> icon-color: #606060;
+    in property <length> icon-size: 12px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/FileList.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}

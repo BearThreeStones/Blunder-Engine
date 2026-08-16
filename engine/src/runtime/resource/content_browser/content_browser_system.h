@@ -80,6 +80,10 @@ class ContentBrowserSystem final {
   void setSearchFilter(const eastl::string& filter);
   const eastl::string& searchFilter() const { return m_search_filter; }
 
+  void setGridSort(BrowserGridSortColumn column);
+  BrowserGridSortColumn gridSortColumn() const { return m_grid_sort_column; }
+  bool gridSortAscending() const { return m_grid_sort_ascending; }
+
   eastl::string statusText() const;
 
   void toggleFolderExpanded(const eastl::string& virtual_path);
@@ -135,6 +139,8 @@ class ContentBrowserSystem final {
   eastl::vector<ContentBrowserGridItem> m_grid_items;
   eastl::vector<ContentBrowserPathSegment> m_path_segments;
   eastl::string m_search_filter;
+  BrowserGridSortColumn m_grid_sort_column{BrowserGridSortColumn::name};
+  bool m_grid_sort_ascending{true};
   ContentBrowserDragController m_drag;
   ContentBrowserWatch m_file_watch;
   bool m_is_initialized{false};

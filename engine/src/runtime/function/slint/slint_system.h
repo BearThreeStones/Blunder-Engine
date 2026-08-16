@@ -251,9 +251,13 @@ class SlintSystem final : public IEditorUiPresentation {
   void fireAnimationSyncPreview() override;
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
   void applyInspectorCamera();
-  void applyInspectorAddCamera();
+  void applyInspectorAddUniqueAttachment(const eastl::string& kind_name);
+  void applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name);
+  void applyInspectorAddClipRow();
+  void applyInspectorRemoveClipRow(int entry_index);
   void syncInspectorCameraFromSelection();
   void syncInspectorAnimationPlayerFromSelection();
+  void syncInspectorUniqueAttachmentsFromSelection();
   void applyInspectorAnimationClipCommit(int entry_index, const eastl::string& clip_name,
                                          const eastl::string& clip_guid);
   void applyInspectorRemoveBehaviour(BehaviourId behaviour_id);
@@ -472,6 +476,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void finalizeAssetImport(const eastl::vector<ImportResult>& results);
   void applyBrowserGridSelection(const eastl::string& path, bool ctrl,
                                  bool shift);
+  void applyBrowserGridSort(int column);
   void clearBrowserGridSelection();
   bool isBrowserGridPathSelected(const eastl::string& path) const;
   /// Updates only `BrowserGridRow.selected` flags — avoids rebuilding thumbs.
@@ -486,6 +491,11 @@ class SlintSystem final : public IEditorUiPresentation {
   void processCoalescedSdlMouseMotion();
   void finishContentBrowserDrag(float logical_x, float logical_y);
   void finishContentBrowserDragAtCursor();
+  void updateContentBrowserDragSession(float logical_x, float logical_y);
+  void updateContentBrowserDragSessionAtCursor();
+  void cancelContentBrowserDrag();
+  void applyContentBrowserDragCursor(int kind);
+  void clearContentBrowserDragCursor();
   bool isPointerOverViewport(float logical_x, float logical_y) const;
 
   bool probeProjectionButtonAtLogical(float logical_x, float logical_y) const;
@@ -516,6 +526,8 @@ class SlintSystem final : public IEditorUiPresentation {
   DockRect m_docking_viewport_local_rect{};
   eastl::string m_drop_highlight_path;
   bool m_viewport_drop_active{false};
+  bool m_browser_drag_cursor_active{false};
+  int m_browser_drag_cursor_kind{-1};
   eastl::vector<eastl::string> m_pending_os_drop_files;
   bool m_os_drop_targets_browser{false};
   eastl::vector<eastl::string> m_pending_mesh_import_paths;

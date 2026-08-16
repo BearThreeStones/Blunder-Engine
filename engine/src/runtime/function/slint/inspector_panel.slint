@@ -179,7 +179,17 @@ export component InspectorPanel inherits Rectangle {
     in-out property <bool> camera-is-main: false;
     in-out property <bool> camera-expanded: true;
     callback camera-edited();
-    callback add-camera();
+
+    in property <bool> add-menu-enabled: false;
+    in property <bool> has-skeleton: false;
+    in property <bool> has-animation-tree: false;
+    in property <bool> remove-skeleton-enabled: true;
+    in-out property <bool> skeleton-expanded: true;
+    in-out property <bool> animation-tree-expanded: true;
+    callback add-unique-attachment(string);
+    callback remove-unique-attachment(string);
+    callback add-clip();
+    callback remove-clip(int);
 
     in property <bool> has-animation-player: false;
     in property <[AnimationClipRow]> animation-clips: [];
@@ -202,7 +212,7 @@ export component InspectorPanel inherits Rectangle {
             vertical-stretch: 1;
             interactive: !root.layout-drag-active;
             viewport-width: parent.width - 20px;
-            viewport-height: 2600px;
+            viewport-height: 2900px;
 
             VerticalBox {
                 width: parent.width;
@@ -703,6 +713,224 @@ export component InspectorPanel inherits Rectangle {
 
                 Rectangle { background: #2a2a2a; height: 1px; }
 
+                Rectangle {
+                    background: #2a2a2a;
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: #4a4a4a;
+                    height: 24px;
+
+                    TouchArea {
+                        mouse-cursor: root.add-menu-enabled ? pointer : default;
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            if root.add-menu-enabled {
+                                add-menu-popup.show();
+                            }
+                        }
+                        Text {
+                            text: "Add…";
+                            color: root.add-menu-enabled ? #bde7ff : #808080;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    add-menu-popup := PopupWindow {
+                        x: 0;
+                        y: parent.height + 2px;
+                        width: parent.width;
+                        close-policy: close-on-click-outside;
+
+                        Rectangle {
+                            background: #252525;
+                            border-color: #444444;
+                            border-width: 1px;
+                            border-radius: 3px;
+                            max-height: 280px;
+
+                            Flickable {
+                                viewport-height: 280px;
+                                VerticalLayout {
+                                    padding: 4px;
+                                    spacing: 0px;
+
+                                    Text {
+                                        text: "Unique attachments";
+                                        color: #808080;
+                                        font-size: 10px;
+                                        height: 18px;
+                                        vertical-alignment: center;
+                                    }
+                                    unique-camera-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-camera-touch.has-hover && !root.has-camera ? #3a3a3a : transparent;
+                                        border-radius: 2px;
+                                        unique-camera-touch := TouchArea {
+                                            mouse-cursor: root.has-camera ? default : pointer;
+                                            clicked => {
+                                                if !root.has-camera {
+                                                    root.add-unique-attachment("Camera");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                            Text {
+                                                x: 8px;
+                                                width: parent.width - 16px;
+                                                height: parent.height;
+                                                vertical-alignment: center;
+                                                text: "Camera";
+                                                color: root.has-camera ? #808080 : #d0d0d0;
+                                                font-size: 11px;
+                                            }
+                                        }
+                                    }
+                                    unique-skeleton-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-skeleton-touch.has-hover && !root.has-skeleton ? #3a3a3a : transparent;
+                                        border-radius: 2px;
+                                        unique-skeleton-touch := TouchArea {
+                                            mouse-cursor: root.has-skeleton ? default : pointer;
+                                            clicked => {
+                                                if !root.has-skeleton {
+                                                    root.add-unique-attachment("Skeleton");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                            Text {
+                                                x: 8px;
+                                                width: parent.width - 16px;
+                                                height: parent.height;
+                                                vertical-alignment: center;
+                                                text: "Skeleton";
+                                                color: root.has-skeleton ? #808080 : #d0d0d0;
+                                                font-size: 11px;
+                                            }
+                                        }
+                                    }
+                                    unique-player-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-player-touch.has-hover && !root.has-animation-player ? #3a3a3a : transparent;
+                                        border-radius: 2px;
+                                        unique-player-touch := TouchArea {
+                                            mouse-cursor: root.has-animation-player ? default : pointer;
+                                            clicked => {
+                                                if !root.has-animation-player {
+                                                    root.add-unique-attachment("AnimationPlayer");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                            Text {
+                                                x: 8px;
+                                                width: parent.width - 16px;
+                                                height: parent.height;
+                                                vertical-alignment: center;
+                                                text: "AnimationPlayer";
+                                                color: root.has-animation-player ? #808080 : #d0d0d0;
+                                                font-size: 11px;
+                                            }
+                                        }
+                                    }
+                                    unique-tree-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-tree-touch.has-hover && !root.has-animation-tree ? #3a3a3a : transparent;
+                                        border-radius: 2px;
+                                        unique-tree-touch := TouchArea {
+                                            mouse-cursor: root.has-animation-tree ? default : pointer;
+                                            clicked => {
+                                                if !root.has-animation-tree {
+                                                    root.add-unique-attachment("AnimationTree");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                            Text {
+                                                x: 8px;
+                                                width: parent.width - 16px;
+                                                height: parent.height;
+                                                vertical-alignment: center;
+                                                text: "AnimationTree";
+                                                color: root.has-animation-tree ? #808080 : #d0d0d0;
+                                                font-size: 11px;
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "Behaviours";
+                                        color: #808080;
+                                        font-size: 10px;
+                                        height: 18px;
+                                        vertical-alignment: center;
+                                    }
+                                    if root.behaviour-type-choices.length == 0: Text {
+                                        text: "build Scripts first";
+                                        color: #808080;
+                                        font-size: 11px;
+                                        height: 22px;
+                                        vertical-alignment: center;
+                                    }
+                                    for choice in root.behaviour-type-choices: Rectangle {
+                                        height: 22px;
+                                        background: behaviour-choice-touch.has-hover ? #3a3a3a : transparent;
+                                        border-radius: 2px;
+                                        behaviour-choice-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                root.add-behaviour(choice);
+                                                add-menu-popup.close();
+                                            }
+                                            Text {
+                                                x: 8px;
+                                                width: parent.width - 16px;
+                                                height: parent.height;
+                                                vertical-alignment: center;
+                                                text: choice;
+                                                color: #d0d0d0;
+                                                font-size: 11px;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "Skeleton Modifiers";
+                                        color: #808080;
+                                        font-size: 10px;
+                                        height: 18px;
+                                        vertical-alignment: center;
+                                    }
+                                    for choice in root.skeleton-modifier-type-choices: Rectangle {
+                                        height: 22px;
+                                        background: modifier-choice-touch.has-hover ? #3a3a3a : transparent;
+                                        border-radius: 2px;
+                                        modifier-choice-touch := TouchArea {
+                                            mouse-cursor: pointer;
+                                            clicked => {
+                                                root.add-skeleton-modifier(choice);
+                                                add-menu-popup.close();
+                                            }
+                                            Text {
+                                                x: 8px;
+                                                width: parent.width - 16px;
+                                                height: parent.height;
+                                                vertical-alignment: center;
+                                                text: choice;
+                                                color: #d0d0d0;
+                                                font-size: 11px;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { background: #2a2a2a; height: 1px; }
+
                 // --- Behaviours header ---
                 TouchArea {
                     mouse-cursor: pointer;
@@ -879,84 +1107,6 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
                         }
-                        }
-                    }
-
-                    HorizontalBox {
-                        spacing: 6px;
-                        Rectangle {
-                            background: #2a2a2a;
-                            border-radius: 3px;
-                            border-width: 1px;
-                            border-color: #4a4a4a;
-                            height: 24px;
-                            horizontal-stretch: 1;
-
-                            TouchArea {
-                                mouse-cursor: pointer;
-                                width: 100%;
-                                height: 100%;
-                                clicked => {
-                                    if root.behaviour-type-choices.length > 0 {
-                                        add-behaviour-popup.show();
-                                    }
-                                }
-
-                                Text {
-                                    text: root.behaviour-type-choices.length > 0
-                                        ? "Add Behaviour…"
-                                        : "Add Behaviour (build Scripts first)";
-                                    color: root.behaviour-type-choices.length > 0 ? #bde7ff : #808080;
-                                    font-size: 11px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            add-behaviour-popup := PopupWindow {
-                                x: 0;
-                                y: parent.height + 2px;
-                                width: parent.width;
-                                close-policy: close-on-click-outside;
-
-                                Rectangle {
-                                    background: #252525;
-                                    border-color: #444444;
-                                    border-width: 1px;
-                                    border-radius: 3px;
-                                    max-height: 200px;
-
-                                    Flickable {
-                                        viewport-height: 200px;
-                                        VerticalLayout {
-                                            padding: 2px;
-                                            spacing: 0px;
-                                            for choice in root.behaviour-type-choices: Rectangle {
-                                                height: 22px;
-                                                background: choice-touch.has-hover ? #3a3a3a : transparent;
-                                                border-radius: 2px;
-                                                choice-touch := TouchArea {
-                                                    mouse-cursor: pointer;
-                                                    clicked => {
-                                                        root.add-behaviour(choice);
-                                                        add-behaviour-popup.close();
-                                                    }
-                                                    Text {
-                                                        x: 8px;
-                                                        width: parent.width - 16px;
-                                                        height: parent.height;
-                                                        vertical-alignment: center;
-                                                        text: choice;
-                                                        color: #d0d0d0;
-                                                        font-size: 11px;
-                                                        overflow: elide;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }
@@ -1249,107 +1399,51 @@ export component InspectorPanel inherits Rectangle {
                             }
                         }
                     }
-
-                    HorizontalBox {
-                        spacing: 6px;
-                        Rectangle {
-                            background: #2a2a2a;
-                            border-radius: 3px;
-                            border-width: 1px;
-                            border-color: #4a4a4a;
-                            height: 24px;
-                            horizontal-stretch: 1;
-
-                            TouchArea {
-                                mouse-cursor: pointer;
-                                width: 100%;
-                                height: 100%;
-                                clicked => {
-                                    if root.skeleton-modifier-type-choices.length > 0 {
-                                        add-skeleton-modifier-popup.show();
-                                    }
-                                }
-
-                                Text {
-                                    text: root.skeleton-modifier-type-choices.length > 0
-                                        ? "Add Skeleton Modifier…"
-                                        : "Add Skeleton Modifier";
-                                    color: root.skeleton-modifier-type-choices.length > 0 ? #bde7ff : #808080;
-                                    font-size: 11px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            add-skeleton-modifier-popup := PopupWindow {
-                                x: 0;
-                                y: parent.height + 2px;
-                                width: parent.width;
-                                close-policy: close-on-click-outside;
-
-                                Rectangle {
-                                    background: #252525;
-                                    border-color: #444444;
-                                    border-width: 1px;
-                                    border-radius: 3px;
-                                    max-height: 200px;
-
-                                    Flickable {
-                                        viewport-height: 200px;
-                                        VerticalLayout {
-                                            padding: 2px;
-                                            spacing: 0px;
-                                            for choice in root.skeleton-modifier-type-choices: Rectangle {
-                                                height: 22px;
-                                                background: skel-choice-touch.has-hover ? #3a3a3a : transparent;
-                                                border-radius: 2px;
-                                                skel-choice-touch := TouchArea {
-                                                    mouse-cursor: pointer;
-                                                    clicked => {
-                                                        root.add-skeleton-modifier(choice);
-                                                        add-skeleton-modifier-popup.close();
-                                                    }
-                                                    Text {
-                                                        x: 8px;
-                                                        width: parent.width - 16px;
-                                                        height: parent.height;
-                                                        vertical-alignment: center;
-                                                        text: choice;
-                                                        color: #d0d0d0;
-                                                        font-size: 11px;
-                                                        overflow: elide;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
 
                 Rectangle { background: #2a2a2a; height: 1px; }
 
                 // --- Camera header ---
-                TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.camera-expanded = !root.camera-expanded; }
-                    HorizontalBox {
-                        spacing: 6px;
-                        if root.camera-expanded: EditorIconTreeArrowDown {
-                            icon-size: 12px;
-                            icon-color: #f0f0f0;
+                HorizontalBox {
+                    spacing: 6px;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        horizontal-stretch: 1;
+                        clicked => { root.camera-expanded = !root.camera-expanded; }
+                        HorizontalBox {
+                            spacing: 6px;
+                            if root.camera-expanded: EditorIconTreeArrowDown {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            if !root.camera-expanded: EditorIconTreeArrowRight {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            Text {
+                                text: "Camera";
+                                color: #f0f0f0;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
                         }
-                        if !root.camera-expanded: EditorIconTreeArrowRight {
-                            icon-size: 12px;
-                            icon-color: #f0f0f0;
-                        }
-                        Text {
-                            text: "Camera";
-                            color: #f0f0f0;
-                            font-size: 13px;
-                            vertical-alignment: center;
+                    }
+                    if root.has-camera: camera-remove-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.remove-unique-attachment("Camera"); }
+                        Rectangle {
+                            width: 52px;
+                            height: 20px;
+                            background: camera-remove-touch.has-hover ? #5a2a2a : #3a2a2a;
+                            border-radius: 3px;
+                            Text {
+                                text: "Remove";
+                                color: #ffb0b0;
+                                font-size: 10px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }
@@ -1450,20 +1544,54 @@ export component InspectorPanel inherits Rectangle {
                             }
                         }
                     }
+                }
 
-                    if root.has-selection && !root.multi-edit-visible && !root.has-camera: TouchArea {
+                Rectangle { background: #2a2a2a; height: 1px; }
+
+                // --- Skeleton header ---
+                HorizontalBox {
+                    spacing: 6px;
+                    TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { root.add-camera(); }
-                        Rectangle {
-                            background: #2a2a2a;
-                            border-radius: 3px;
-                            border-width: 1px;
-                            border-color: #4a4a4a;
-                            height: 24px;
+                        horizontal-stretch: 1;
+                        clicked => { root.skeleton-expanded = !root.skeleton-expanded; }
+                        HorizontalBox {
+                            spacing: 6px;
+                            if root.skeleton-expanded: EditorIconTreeArrowDown {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            if !root.skeleton-expanded: EditorIconTreeArrowRight {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
                             Text {
-                                text: "Add Camera";
-                                color: #bde7ff;
-                                font-size: 11px;
+                                text: "Skeleton";
+                                color: #f0f0f0;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                    if root.has-skeleton: skeleton-remove-touch := TouchArea {
+                        mouse-cursor: root.remove-skeleton-enabled ? pointer : default;
+                        clicked => {
+                            if root.remove-skeleton-enabled {
+                                root.remove-unique-attachment("Skeleton");
+                            }
+                        }
+                        Rectangle {
+                            width: 52px;
+                            height: 20px;
+                            background: root.remove-skeleton-enabled
+                                ? (skeleton-remove-touch.has-hover ? #5a2a2a : #3a2a2a)
+                                : #2a2a2a;
+                            border-radius: 3px;
+                            Text {
+                                text: "Remove";
+                                color: root.remove-skeleton-enabled ? #ffb0b0 : #808080;
+                                font-size: 10px;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
                             }
@@ -1471,27 +1599,68 @@ export component InspectorPanel inherits Rectangle {
                     }
                 }
 
+                if root.skeleton-expanded: VerticalBox {
+                    spacing: 6px;
+                    if !root.has-selection || root.multi-edit-visible: Text {
+                        text: root.has-selection ? "Select one entity" : "Select an entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+                    if root.has-selection && !root.multi-edit-visible && !root.has-skeleton: Text {
+                        text: "No Skeleton on entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+                    if root.has-selection && !root.multi-edit-visible && root.has-skeleton: Text {
+                        text: "Rest/bind on this Object";
+                        color: #a8a8a8;
+                        font-size: 11px;
+                    }
+                }
+
                 Rectangle { background: #2a2a2a; height: 1px; }
 
                 // --- Animation Player header ---
-                TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.animation-player-expanded = !root.animation-player-expanded; }
-                    HorizontalBox {
-                        spacing: 6px;
-                        if root.animation-player-expanded: EditorIconTreeArrowDown {
-                            icon-size: 12px;
-                            icon-color: #f0f0f0;
+                HorizontalBox {
+                    spacing: 6px;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        horizontal-stretch: 1;
+                        clicked => { root.animation-player-expanded = !root.animation-player-expanded; }
+                        HorizontalBox {
+                            spacing: 6px;
+                            if root.animation-player-expanded: EditorIconTreeArrowDown {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            if !root.animation-player-expanded: EditorIconTreeArrowRight {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            Text {
+                                text: "Animation Player";
+                                color: #f0f0f0;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
                         }
-                        if !root.animation-player-expanded: EditorIconTreeArrowRight {
-                            icon-size: 12px;
-                            icon-color: #f0f0f0;
-                        }
-                        Text {
-                            text: "Animation Player";
-                            color: #f0f0f0;
-                            font-size: 13px;
-                            vertical-alignment: center;
+                    }
+                    if root.has-animation-player: player-remove-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.remove-unique-attachment("AnimationPlayer"); }
+                        Rectangle {
+                            width: 52px;
+                            height: 20px;
+                            background: player-remove-touch.has-hover ? #5a2a2a : #3a2a2a;
+                            border-radius: 3px;
+                            Text {
+                                text: "Remove";
+                                color: #ffb0b0;
+                                font-size: 10px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }
@@ -1563,10 +1732,46 @@ export component InspectorPanel inherits Rectangle {
                                         }
                                     }
                                 }
+                                clip-remove-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.remove-clip(clip.entry-index); }
+                                    Rectangle {
+                                        width: 52px;
+                                        height: 20px;
+                                        background: clip-remove-touch.has-hover ? #5a2a2a : #3a2a2a;
+                                        border-radius: 3px;
+                                        Text {
+                                            text: "Remove";
+                                            color: #ffb0b0;
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
                             }
                             if i + 1 < root.animation-clips.length: Rectangle {
                                 background: #333333;
                                 height: 1px;
+                            }
+                        }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.add-clip(); }
+                            Rectangle {
+                                background: #2a2a2a;
+                                border-radius: 3px;
+                                border-width: 1px;
+                                border-color: #4a4a4a;
+                                height: 24px;
+                                Text {
+                                    text: "Add clip";
+                                    color: #bde7ff;
+                                    font-size: 11px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
                     }
@@ -1574,16 +1779,66 @@ export component InspectorPanel inherits Rectangle {
 
                 Rectangle { background: #2a2a2a; height: 1px; }
 
-                Text { text: "AnimationTree Canvas"; color: #f0f0f0; font-size: 13px; }
-                Button {
-                    text: "Open Canvas";
-                    enabled: root.anim-tree-canvas-open-enabled;
-                    clicked => { root.open-anim-tree-canvas-requested(); }
+                HorizontalBox {
+                    spacing: 6px;
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        horizontal-stretch: 1;
+                        clicked => { root.animation-tree-expanded = !root.animation-tree-expanded; }
+                        HorizontalBox {
+                            spacing: 6px;
+                            if root.animation-tree-expanded: EditorIconTreeArrowDown {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            if !root.animation-tree-expanded: EditorIconTreeArrowRight {
+                                icon-size: 12px;
+                                icon-color: #f0f0f0;
+                            }
+                            Text {
+                                text: "AnimationTree";
+                                color: #f0f0f0;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                    if root.has-animation-tree: tree-remove-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.remove-unique-attachment("AnimationTree"); }
+                        Rectangle {
+                            width: 52px;
+                            height: 20px;
+                            background: tree-remove-touch.has-hover ? #5a2a2a : #3a2a2a;
+                            border-radius: 3px;
+                            Text {
+                                text: "Remove";
+                                color: #ffb0b0;
+                                font-size: 10px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
                 }
-                if !root.anim-tree-canvas-open-enabled: Text {
-                    text: "Select Object with AnimationTree Asset GUID";
-                    color: #808080;
-                    font-size: 11px;
+                if root.animation-tree-expanded: VerticalBox {
+                    spacing: 6px;
+                    if !root.has-animation-tree: Text {
+                        text: "No AnimationTree on entity";
+                        color: #808080;
+                        font-size: 11px;
+                    }
+                    Button {
+                        text: "Open Canvas";
+                        enabled: root.anim-tree-canvas-open-enabled;
+                        clicked => { root.open-anim-tree-canvas-requested(); }
+                    }
+                    if !root.anim-tree-canvas-open-enabled: Text {
+                        text: "Select Object with AnimationTree Asset GUID";
+                        color: #808080;
+                        font-size: 11px;
+                    }
                 }
 
                 Rectangle { background: #2a2a2a; height: 1px; }

@@ -5,6 +5,12 @@ import {
     EditorIconFolder,
     EditorIconTreeArrowRight,
     EditorIconTreeArrowDown,
+    EditorIconScene,
+    EditorIconMesh,
+    EditorIconTexture,
+    EditorIconAnimation,
+    EditorIconFile,
+    EditorIconViewLayout,
 } from "editor_icons.slint";
 
 export struct BrowserTreeRow {
@@ -23,6 +29,10 @@ export struct BrowserGridRow {
     is-dir: bool,
     is-scene: bool,
     selected: bool,
+    type-kind: int,
+    type-label: string,
+    size-text: string,
+    date-text: string,
 }
 
 export struct BrowserPathSegment {
@@ -42,9 +52,12 @@ export component ContentBrowser {
     in property <string> status-text: "0 items";
     in property <string> selected-folder-path: "";
     in-out property <string> selected-grid-path: "";
+    in property <int> sort-column: 0;
+    in property <bool> sort-ascending: true;
 
     // --- Local UI state ---
     in-out property <length> thumb-size: 80px;
+    in-out property <bool> details-view: false;
     in-out property <length> tree-pane-width: 200px;
     in property <bool> layout-drag-active: false;
     property <bool> context-menu-visible: false;
@@ -54,6 +67,7 @@ export component ContentBrowser {
     property <bool> context-menu-is-scene: false;
     property <bool> context-menu-is-empty: false;
     property <bool> context-menu-can-delete: false;
+    property <bool> view-menu-visible: false;
 
     // --- Callbacks ---
     callback folder-selected(string);
@@ -72,6 +86,7 @@ export component ContentBrowser {
     callback layout-drag-active-changed(bool);
     callback search-changed(string);
     callback path-segment-clicked(string);
+    callback sort-clicked(int);
 
     // --- Geometry output for C++ hit-testing ---
     out property <length> browser-origin-x: browser-root.absolute-position.x;
@@ -92,9 +107,22 @@ export component ContentBrowser {
 
     // --- Grid layout calculations ---
     property <length> cell-gap: 8px;
+    property <length> details-row-h: 22px;
+    property <length> details-type-w: 90px;
+    property <length> details-size-w: 72px;
+    property <length> details-date-w: 118px;
     property <length> cell-total-w: root.thumb-size + root.cell-gap;
-    property <length> cell-total-h: root.thumb-size + 28px + root.cell-gap;
-    property <int> grid-cols: Math.max(1, Math.floor(grid-area.width / Math.max(1px, root.cell-total-w)));
+    property <length> cell-total-h: root.details-view ? root.details-row-h : (root.thumb-size + 28px + root.cell-gap);
+    property <int> grid-cols: root.details-view ? 1 : Math.max(1, Math.floor(grid-area.width / Math.max(1px, root.cell-total-w)));
+    property <int> icon-px: (root.thumb-size / 1px);
+    property <int> dist-48: Math.abs(root.icon-px - 48);
+    property <int> dist-80: Math.abs(root.icon-px - 80);
+    property <int> dist-104: Math.abs(root.icon-px - 104);
+    property <int> dist-128: Math.abs(root.icon-px - 128);
+    property <int> nearest-icon-dist: Math.min(Math.min(root.dist-48, root.dist-80), Math.min(root.dist-104, root.dist-128));
+    property <int> nearest-icon-px: root.dist-128 == root.nearest-icon-dist ? 128
+        : (root.dist-104 == root.nearest-icon-dist ? 104
+            : (root.dist-80 == root.nearest-icon-dist ? 80 : 48));
 
     browser-root := Rectangle {
         width: 100%;
@@ -446,143 +474,290 @@ export component ContentBrowser {
                     background: #2a2a2a;
                     clip: true;
 
-                    grid-empty-touch := TouchArea {
+                    VerticalLayout {
+                        spacing: 0px;
                         width: 100%;
                         height: 100%;
-                        pointer-event(event) => {
-                            if (event.button == PointerEventButton.right
-                                && event.kind == PointerEventKind.down) {
-                                root.context-menu-visible = true;
-                                root.context-menu-x = self.absolute-position.x + self.mouse-x;
-                                root.context-menu-y = self.absolute-position.y + self.mouse-y;
-                                root.context-menu-path = "";
-                                root.context-menu-is-scene = false;
-                                root.context-menu-is-empty = true;
-                                root.context-menu-can-delete = false;
-                            }
-                        }
-                    }
 
-                    // Drag status overlay
-                    if root.drag-active: Rectangle {
-                        z: 10;
-                        height: 26px;
-                        background: #1a3a5acc;
+                        if root.details-view: Rectangle {
+                            height: root.details-row-h;
+                            background: #303030;
 
-                        Text {
-                            text: root.viewport-drop-active
-                                ? "Release over viewport to place"
-                                : "Dragging: " + root.drag-source-path;
-                            color: #80c0ff;
-                            font-size: 10px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
+                            HorizontalLayout {
+                                padding-left: 6px;
+                                padding-right: 6px;
+                                spacing: 6px;
 
-                    grid-flickable := Flickable {
-                        width: parent.width;
-                        height: parent.height;
-                        interactive: !root.layout-drag-active;
-                        viewport-width: parent.width;
-                        viewport-height: Math.max(parent.height,
-                            Math.ceil(root.grid-rows.length / Math.max(1, root.grid-cols))
-                            * root.cell-total-h + 8px);
-
-                        for tile[index] in root.grid-rows: Rectangle {
-                            x: Math.mod(index, Math.max(1, root.grid-cols))
-                               * root.cell-total-w + 4px;
-                            y: Math.floor(index / Math.max(1, root.grid-cols))
-                               * root.cell-total-h + 4px;
-                            width: root.thumb-size;
-                            height: root.thumb-size + 24px;
-                            border-radius: 4px;
-                            background:
-                                tile.selected || tile.path == root.selected-grid-path
-                                    ? #3a4a5a
-                                : tile.path == root.drag-source-path
-                                    ? #3a3a5a
-                                : grid-tile-touch.has-hover
-                                    ? #404040
-                                : #333333;
-
-                            VerticalLayout {
-                                spacing: 2px;
-                                padding: 3px;
-
-                                // Thumbnail area
                                 Rectangle {
+                                    width: 16px;
+                                }
+                                details-name-hdr := TouchArea {
                                     horizontal-stretch: 1;
-                                    vertical-stretch: 1;
-                                    background: tile.is-dir ? #00000000 : #1a1a1a;
-                                    border-radius: 3px;
-
-                                    if tile.is-dir: EditorIconFolder {
-                                        icon-size: root.thumb-size * 0.4;
-                                        icon-color: #d0d0d0;
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-
-                                    if !tile.is-dir: Image {
-                                        width: parent.width;
-                                        height: parent.height;
-                                        source: tile.thumb;
-                                        image-fit: contain;
+                                    clicked => { root.sort-clicked(0); }
+                                    Text {
+                                        text: root.sort-column == 0
+                                            ? (root.sort-ascending ? "Name ▲" : "Name ▼")
+                                            : "Name";
+                                        color: #a0a0a0;
+                                        font-size: 10px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
                                     }
                                 }
-
-                                // File name
-                                Text {
-                                    text: tile.name;
-                                    color: #c8c8c8;
-                                    font-size: 10px;
-                                    horizontal-alignment: center;
-                                    overflow: elide;
-                                    height: 16px;
+                                details-type-hdr := TouchArea {
+                                    width: root.details-type-w;
+                                    clicked => { root.sort-clicked(1); }
+                                    Text {
+                                        text: root.sort-column == 1
+                                            ? (root.sort-ascending ? "Type ▲" : "Type ▼")
+                                            : "Type";
+                                        color: #a0a0a0;
+                                        font-size: 10px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                details-size-hdr := TouchArea {
+                                    width: root.details-size-w;
+                                    clicked => { root.sort-clicked(2); }
+                                    Text {
+                                        text: root.sort-column == 2
+                                            ? (root.sort-ascending ? "Size ▲" : "Size ▼")
+                                            : "Size";
+                                        color: #a0a0a0;
+                                        font-size: 10px;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: right;
+                                    }
+                                }
+                                details-date-hdr := TouchArea {
+                                    width: root.details-date-w;
+                                    clicked => { root.sort-clicked(3); }
+                                    Text {
+                                        text: root.sort-column == 3
+                                            ? (root.sort-ascending ? "Date modified ▲" : "Date modified ▼")
+                                            : "Date modified";
+                                        color: #a0a0a0;
+                                        font-size: 10px;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: right;
+                                    }
                                 }
                             }
+                        }
 
-                            grid-tile-touch := TouchArea {
-                                x: 0px;
-                                y: 0px;
-                                width: parent.width;
-                                height: parent.height;
-                                moved => {
-                                    root.item-move(tile.path,
-                                        self.mouse-x / 1px, self.mouse-y / 1px);
-                                }
-                                // Prefer clicked for discrete open/navigate; pointer
-                                // up alone was unreliable when TouchArea had zero size.
-                                clicked => {
-                                    root.item-release(tile.path,
-                                        self.mouse-x / 1px, self.mouse-y / 1px);
-                                }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            clip: true;
+
+                            grid-empty-touch := TouchArea {
+                                width: 100%;
+                                height: 100%;
                                 pointer-event(event) => {
-                                    if (event.button == PointerEventButton.left
-                                        && event.kind == PointerEventKind.down) {
-                                        root.grid-select(
-                                            tile.path,
-                                            event.modifiers.control,
-                                            event.modifiers.shift);
-                                        root.item-press(tile.path,
-                                            self.mouse-x / 1px, self.mouse-y / 1px);
-                                    }
-                                    if (event.button == PointerEventButton.left
-                                        && event.kind == PointerEventKind.up) {
-                                        root.item-release(tile.path,
-                                            self.mouse-x / 1px, self.mouse-y / 1px);
-                                    }
                                     if (event.button == PointerEventButton.right
                                         && event.kind == PointerEventKind.down) {
-                                        root.grid-select(tile.path, false, false);
                                         root.context-menu-visible = true;
                                         root.context-menu-x = self.absolute-position.x + self.mouse-x;
                                         root.context-menu-y = self.absolute-position.y + self.mouse-y;
-                                        root.context-menu-path = tile.path;
-                                        root.context-menu-is-empty = tile.is-dir;
-                                        root.context-menu-is-scene = tile.is-scene;
-                                        root.context-menu-can-delete = !tile.is-dir;
+                                        root.context-menu-path = "";
+                                        root.context-menu-is-scene = false;
+                                        root.context-menu-is-empty = true;
+                                        root.context-menu-can-delete = false;
+                                    }
+                                }
+                            }
+
+                            if root.drag-active: Rectangle {
+                                z: 10;
+                                height: 26px;
+                                background: #1a3a5acc;
+
+                                Text {
+                                    text: root.viewport-drop-active
+                                        ? "Release over viewport to place"
+                                        : "Dragging: " + root.drag-source-path;
+                                    color: #80c0ff;
+                                    font-size: 10px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            grid-flickable := Flickable {
+                                width: parent.width;
+                                height: parent.height;
+                                interactive: !root.layout-drag-active;
+                                viewport-width: parent.width;
+                                viewport-height: Math.max(parent.height,
+                                    Math.ceil(root.grid-rows.length / Math.max(1, root.grid-cols))
+                                    * root.cell-total-h + 8px);
+
+                                for tile[index] in root.grid-rows: Rectangle {
+                                    x: root.details-view ? 0px
+                                        : (Math.mod(index, Math.max(1, root.grid-cols))
+                                           * root.cell-total-w + 4px);
+                                    y: root.details-view
+                                        ? Math.floor(index / Math.max(1, root.grid-cols))
+                                           * root.cell-total-h
+                                        : (Math.floor(index / Math.max(1, root.grid-cols))
+                                           * root.cell-total-h + 4px);
+                                    width: root.details-view ? parent.width : root.thumb-size;
+                                    height: root.details-view ? root.details-row-h
+                                        : (root.thumb-size + 24px);
+                                    border-radius: root.details-view ? 0px : 4px;
+                                    background:
+                                        tile.selected || tile.path == root.selected-grid-path
+                                            ? #3a4a5a
+                                        : tile.path == root.drag-source-path
+                                            ? #3a3a5a
+                                        : grid-tile-touch.has-hover
+                                            ? #404040
+                                        : (root.details-view ? #00000000 : #333333);
+
+                                    if !root.details-view: VerticalLayout {
+                                        spacing: 2px;
+                                        padding: 3px;
+
+                                        Rectangle {
+                                            horizontal-stretch: 1;
+                                            vertical-stretch: 1;
+                                            background: tile.is-dir ? #00000000 : #1a1a1a;
+                                            border-radius: 3px;
+
+                                            if tile.is-dir: EditorIconFolder {
+                                                icon-size: root.thumb-size * 0.4;
+                                                icon-color: #d0d0d0;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+
+                                            if !tile.is-dir: Image {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                source: tile.thumb;
+                                                image-fit: contain;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: tile.name;
+                                            color: #c8c8c8;
+                                            font-size: 10px;
+                                            horizontal-alignment: center;
+                                            overflow: elide;
+                                            height: 16px;
+                                        }
+                                    }
+
+                                    if root.details-view: HorizontalLayout {
+                                        padding-left: 6px;
+                                        padding-right: 6px;
+                                        spacing: 6px;
+
+                                        VerticalLayout {
+                                            width: 16px;
+                                            alignment: center;
+                                            if tile.type-kind == 0: EditorIconFolder {
+                                                icon-size: 16px;
+                                                icon-color: #d0d0d0;
+                                            }
+                                            if tile.type-kind == 1: EditorIconMesh {
+                                                icon-size: 16px;
+                                                icon-color: #d0d0d0;
+                                            }
+                                            if tile.type-kind == 2: EditorIconScene {
+                                                icon-size: 16px;
+                                                icon-color: #d0d0d0;
+                                            }
+                                            if tile.type-kind == 3: EditorIconTexture {
+                                                icon-size: 16px;
+                                                icon-color: #d0d0d0;
+                                            }
+                                            if tile.type-kind == 4: EditorIconAnimation {
+                                                icon-size: 16px;
+                                                icon-color: #d0d0d0;
+                                            }
+                                            if tile.type-kind == 5: EditorIconFile {
+                                                icon-size: 16px;
+                                                icon-color: #d0d0d0;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: tile.name;
+                                            color: #d8d8d8;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            overflow: elide;
+                                            horizontal-stretch: 1;
+                                        }
+                                        Text {
+                                            text: tile.type-label;
+                                            color: #909090;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            width: root.details-type-w;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: tile.size-text;
+                                            color: #909090;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            horizontal-alignment: right;
+                                            width: root.details-size-w;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: tile.date-text;
+                                            color: #909090;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                            horizontal-alignment: right;
+                                            width: root.details-date-w;
+                                            overflow: elide;
+                                        }
+                                    }
+
+                                    grid-tile-touch := TouchArea {
+                                        x: 0px;
+                                        y: 0px;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        moved => {
+                                            root.item-move(tile.path,
+                                                self.mouse-x / 1px, self.mouse-y / 1px);
+                                        }
+                                        clicked => {
+                                            root.item-release(tile.path,
+                                                self.mouse-x / 1px, self.mouse-y / 1px);
+                                        }
+                                        pointer-event(event) => {
+                                            if (event.button == PointerEventButton.left
+                                                && event.kind == PointerEventKind.down) {
+                                                root.grid-select(
+                                                    tile.path,
+                                                    event.modifiers.control,
+                                                    event.modifiers.shift);
+                                                root.item-press(tile.path,
+                                                    self.mouse-x / 1px, self.mouse-y / 1px);
+                                            }
+                                            if (event.button == PointerEventButton.left
+                                                && event.kind == PointerEventKind.up) {
+                                                root.item-release(tile.path,
+                                                    self.mouse-x / 1px, self.mouse-y / 1px);
+                                            }
+                                            if (event.button == PointerEventButton.right
+                                                && event.kind == PointerEventKind.down) {
+                                                root.grid-select(tile.path, false, false);
+                                                root.context-menu-visible = true;
+                                                root.context-menu-x = self.absolute-position.x + self.mouse-x;
+                                                root.context-menu-y = self.absolute-position.y + self.mouse-y;
+                                                root.context-menu-path = tile.path;
+                                                root.context-menu-is-empty = tile.is-dir;
+                                                root.context-menu-is-scene = tile.is-scene;
+                                                root.context-menu-can-delete = !tile.is-dir;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -622,34 +797,48 @@ export component ContentBrowser {
                         vertical-alignment: center;
                     }
 
-                    // Thumbnail size slider
-                    VerticalLayout {
-                        width: 16px;
-                        alignment: center;
-                        EditorIconSearch {
-                            icon-size: 10px;
-                            icon-color: #606060;
+                    view-layout-btn := TouchArea {
+                        width: 18px;
+                        height: 18px;
+                        clicked => {
+                            root.view-menu-visible = !root.view-menu-visible;
+                            root.context-menu-visible = false;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            EditorIconViewLayout {
+                                icon-size: 12px;
+                                icon-color: view-layout-btn.has-hover ? #b0b0b0 : #606060;
+                            }
                         }
                     }
 
                     Slider {
                         width: 100px;
-                        minimum: 48;
+                        minimum: 0;
                         maximum: 128;
-                        value: root.thumb-size / 1px;
+                        value: root.details-view ? 0 : (root.thumb-size / 1px);
                         changed => {
-                            root.thumb-size = self.value * 1px;
+                            if (self.value < 48) {
+                                root.details-view = true;
+                            } else {
+                                root.details-view = false;
+                                root.thumb-size = self.value * 1px;
+                            }
                         }
                     }
                 }
             }
         }
 
-        if root.context-menu-visible: context-dismiss := TouchArea {
+        if root.context-menu-visible || root.view-menu-visible: context-dismiss := TouchArea {
             z: 100;
             width: 100%;
             height: 100%;
-            clicked => { root.context-menu-visible = false; }
+            clicked => {
+                root.context-menu-visible = false;
+                root.view-menu-visible = false;
+            }
         }
 
         if root.context-menu-visible: context-panel := Rectangle {
@@ -751,6 +940,123 @@ export component ContentBrowser {
                             height: parent.height;
                             vertical-alignment: center;
                             text: "Delete";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.view-menu-visible: view-menu-panel := Rectangle {
+            z: 101;
+            x: browser-root.width - 198px;
+            y: browser-root.height - 22px - 142px;
+            width: 188px;
+            height: 138px;
+            background: #252525;
+            border-color: #444444;
+            border-width: 1px;
+            border-radius: 4px;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 0px;
+
+                view-xl := TouchArea {
+                    height: 26px;
+                    clicked => {
+                        root.details-view = false;
+                        root.thumb-size = 128px;
+                        root.view-menu-visible = false;
+                    }
+                    Rectangle {
+                        background: view-xl.has-hover ? #3a3a3a : transparent;
+                        border-radius: 2px;
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: (!root.details-view && root.nearest-icon-px == 128 ? "✓  " : "    ") + "Extra Large Icons";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+                view-lg := TouchArea {
+                    height: 26px;
+                    clicked => {
+                        root.details-view = false;
+                        root.thumb-size = 104px;
+                        root.view-menu-visible = false;
+                    }
+                    Rectangle {
+                        background: view-lg.has-hover ? #3a3a3a : transparent;
+                        border-radius: 2px;
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: (!root.details-view && root.nearest-icon-px == 104 ? "✓  " : "    ") + "Large Icons";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+                view-md := TouchArea {
+                    height: 26px;
+                    clicked => {
+                        root.details-view = false;
+                        root.thumb-size = 80px;
+                        root.view-menu-visible = false;
+                    }
+                    Rectangle {
+                        background: view-md.has-hover ? #3a3a3a : transparent;
+                        border-radius: 2px;
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: (!root.details-view && root.nearest-icon-px == 80 ? "✓  " : "    ") + "Medium Icons";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+                view-sm := TouchArea {
+                    height: 26px;
+                    clicked => {
+                        root.details-view = false;
+                        root.thumb-size = 48px;
+                        root.view-menu-visible = false;
+                    }
+                    Rectangle {
+                        background: view-sm.has-hover ? #3a3a3a : transparent;
+                        border-radius: 2px;
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: (!root.details-view && root.nearest-icon-px == 48 ? "✓  " : "    ") + "Small Icons";
+                            color: #e8e8e8;
+                            font-size: 12px;
+                        }
+                    }
+                }
+                view-dt := TouchArea {
+                    height: 26px;
+                    clicked => {
+                        root.details-view = true;
+                        root.view-menu-visible = false;
+                    }
+                    Rectangle {
+                        background: view-dt.has-hover ? #3a3a3a : transparent;
+                        border-radius: 2px;
+                        Text {
+                            x: 8px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            text: (root.details-view ? "✓  " : "    ") + "Details";
                             color: #e8e8e8;
                             font-size: 12px;
                         }

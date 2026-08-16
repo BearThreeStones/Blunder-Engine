@@ -120,6 +120,7 @@ Kernel handoff: Object Behaviour lists and the .NET host MVP are covered by ADR 
 | `editor_history_test` | DocumentHistory stack, dirty baseline, selection restore |
 | `scene_soft_delete_test` | Soft-delete EntityId stability; export omits tombstones |
 | `editor_commands_test` | Transform / spawn / soft-delete command undo/redo |
+| `placement_preview_test` | Ground placement, Content Browser drag cursor, Placement Preview visibility |
 
 ## See also
 

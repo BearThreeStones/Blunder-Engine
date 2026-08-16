@@ -15,6 +15,7 @@
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/scene/scene_serializer.h"
 
+#include <cstddef>
 #include <cstring>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -461,6 +462,13 @@ const CameraComponent* SceneInstance::getCamera(EntityId id) const {
   return &it->second;
 }
 
+void SceneInstance::clearCamera(EntityId id) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_cameras.erase(id);
+}
+
 void SceneInstance::setWorldBounds(const AABB& bounds) {
   m_world_bounds = bounds;
   m_has_world_bounds = true;
@@ -737,6 +745,22 @@ Object* SceneInstance::ensureBoundObject(EntityId entity_id) {
   object->setEntityId(entity_id);
   m_bound_object_ids.push_back(object_id);
   return object;
+}
+
+void SceneInstance::releaseBoundObject(EntityId entity_id) {
+  Object* object = findBoundObject(entity_id);
+  if (object == nullptr) {
+    return;
+  }
+  const ObjectId object_id = object->getId();
+  for (size_t index = 0; index < m_bound_object_ids.size(); ++index) {
+    if (m_bound_object_ids[index] == object_id) {
+      m_bound_object_ids.erase(m_bound_object_ids.begin() +
+                               static_cast<ptrdiff_t>(index));
+      break;
+    }
+  }
+  ObjectDB::destroy(object_id);
 }
 
 Skeleton* SceneInstance::findSkeletonForEntity(EntityId entity_id) const {

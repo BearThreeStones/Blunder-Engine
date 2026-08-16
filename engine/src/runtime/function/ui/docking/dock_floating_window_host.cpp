@@ -284,6 +284,10 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       }
       ui.set_inspector_animation_player_expanded(
           snapshot.inspector_animation_player_expanded);
+      ui.set_inspector_add_menu_enabled(snapshot.inspector_add_menu_enabled);
+      ui.set_inspector_has_skeleton(snapshot.inspector_has_skeleton);
+      ui.set_inspector_has_animation_tree(snapshot.inspector_has_animation_tree);
+      ui.set_inspector_remove_skeleton_enabled(snapshot.inspector_remove_skeleton_enabled);
       ui.set_inspector_asset_mode(snapshot.inspector_asset_mode);
       ui.set_inspector_asset_display_name(
           toSharedString(snapshot.inspector_asset_display_name));
@@ -337,6 +341,10 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.is_dir = row.is_dir;
         slint_row.is_scene = row.is_scene;
         slint_row.selected = row.selected;
+        slint_row.type_kind = row.type_kind;
+        slint_row.type_label = toSharedString(row.type_label);
+        slint_row.size_text = toSharedString(row.size_text);
+        slint_row.date_text = toSharedString(row.date_text);
         grid_model->push_back(slint_row);
       }
       ui.set_browser_grid_rows(grid_model);
@@ -358,6 +366,10 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_browser_status_text(toSharedString(snapshot.browser_status_text));
       ui.set_browser_selected_folder_path(
           toSharedString(snapshot.browser_selected_folder_path));
+      ui.set_browser_thumb_size(snapshot.browser_thumb_size);
+      ui.set_browser_details_view(snapshot.browser_details_view);
+      ui.set_browser_sort_column(snapshot.browser_sort_column);
+      ui.set_browser_sort_ascending(snapshot.browser_sort_ascending);
       break;
     }
     default:
@@ -588,9 +600,24 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_inspector_camera_edited();
       }
     });
-    component->on_inspector_add_camera([this]() {
-      if (m_callbacks.on_inspector_add_camera) {
-        m_callbacks.on_inspector_add_camera();
+    component->on_inspector_add_unique_attachment([this](const slint::SharedString& kind) {
+      if (m_callbacks.on_inspector_add_unique_attachment) {
+        m_callbacks.on_inspector_add_unique_attachment(kind);
+      }
+    });
+    component->on_inspector_remove_unique_attachment([this](const slint::SharedString& kind) {
+      if (m_callbacks.on_inspector_remove_unique_attachment) {
+        m_callbacks.on_inspector_remove_unique_attachment(kind);
+      }
+    });
+    component->on_inspector_add_clip([this]() {
+      if (m_callbacks.on_inspector_add_clip) {
+        m_callbacks.on_inspector_add_clip();
+      }
+    });
+    component->on_inspector_remove_clip([this](int entry_index) {
+      if (m_callbacks.on_inspector_remove_clip) {
+        m_callbacks.on_inspector_remove_clip(entry_index);
       }
     });
     component->on_inspector_commit_animation_clip(
@@ -658,6 +685,11 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
     component->on_browser_path_segment_clicked([this](const slint::SharedString& path) {
       if (m_callbacks.on_browser_path_segment_clicked) {
         m_callbacks.on_browser_path_segment_clicked(path);
+      }
+    });
+    component->on_browser_sort_clicked([this](int column) {
+      if (m_callbacks.on_browser_sort_clicked) {
+        m_callbacks.on_browser_sort_clicked(column);
       }
     });
 

@@ -91,6 +91,7 @@ class SceneInstance final {
 
   void setCamera(EntityId id, CameraComponent camera);
   const CameraComponent* getCamera(EntityId id) const;
+  void clearCamera(EntityId id);
   template <typename Fn>
   void forEachCamera(const Fn& fn) const {
     for (const auto& entry : m_cameras) {
@@ -109,6 +110,7 @@ class SceneInstance final {
 
   Object* findBoundObject(EntityId entity_id) const;
   Object* ensureBoundObject(EntityId entity_id);
+  void releaseBoundObject(EntityId entity_id);
   eastl::string getDefaultAnimationClipName(EntityId entity_id) const;
   /// Walks entity parents for a bound Object with a Skeleton.
   Skeleton* findSkeletonForEntity(EntityId entity_id) const;

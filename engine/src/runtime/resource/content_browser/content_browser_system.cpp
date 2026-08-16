@@ -8,6 +8,7 @@
 #include "runtime/project/editor_detection_settings.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content/content_index.h"
+#include "runtime/resource/content_browser/content_browser_view.h"
 #include "runtime/resource/thumbnail/thumbnail_generation_queue.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/function/global/global_context.h"
@@ -220,6 +221,11 @@ void ContentBrowserSystem::toggleFolderExpanded(
 
 void ContentBrowserSystem::setSearchFilter(const eastl::string& filter) {
   m_search_filter = filter;
+  rebuildGrid();
+}
+
+void ContentBrowserSystem::setGridSort(BrowserGridSortColumn column) {
+  toggleBrowserGridSort(m_grid_sort_column, m_grid_sort_ascending, column);
   rebuildGrid();
 }
 
@@ -465,6 +471,9 @@ void ContentBrowserSystem::rebuildGrid() {
     item.thumbnail_cache_path = entry.thumbnail_cache_path;
     item.thumbnail_status = entry.thumbnail_status;
     item.is_directory = entry.is_directory;
+    item.size_bytes = entry.size_bytes;
+    item.modified_time = entry.modified_time;
+    fillBrowserGridItemMeta(item);
 
     if (entry.is_directory) {
       dir_items.push_back(item);
@@ -473,19 +482,10 @@ void ContentBrowserSystem::rebuildGrid() {
     }
   }
 
-  // Sort: directories first (alphabetical), then files (alphabetical).
-  std::sort(dir_items.begin(), dir_items.end(),
-            [](const ContentBrowserGridItem& a, const ContentBrowserGridItem& b) {
-              return a.display_name < b.display_name;
-            });
-  std::sort(file_items.begin(), file_items.end(),
-            [](const ContentBrowserGridItem& a, const ContentBrowserGridItem& b) {
-              return a.display_name < b.display_name;
-            });
-
   m_grid_items.reserve(dir_items.size() + file_items.size());
   m_grid_items.insert(m_grid_items.end(), dir_items.begin(), dir_items.end());
   m_grid_items.insert(m_grid_items.end(), file_items.begin(), file_items.end());
+  sortBrowserGridItems(m_grid_items, m_grid_sort_column, m_grid_sort_ascending);
   enqueueVisibleGridThumbnails();
 }
 

@@ -12,9 +12,6 @@ namespace Blunder {
 
 void AnimationPlayer::setClipGuid(const eastl::string& name,
                                   const eastl::string& guid) {
-  if (name.empty()) {
-    return;
-  }
   m_name_to_guid[name] = guid;
 }
 
@@ -55,9 +52,7 @@ void AnimationPlayer::setClipBindings(
     const eastl::vector<ClipBinding>& bindings) {
   m_name_to_guid.clear();
   for (const ClipBinding& binding : bindings) {
-    if (!binding.name.empty()) {
-      m_name_to_guid[binding.name] = binding.guid;
-    }
+    m_name_to_guid[binding.name] = binding.guid;
   }
 }
 

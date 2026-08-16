@@ -1,6 +1,7 @@
 #include "runtime/function/scene/scene_render_bridge.h"
 
 #include <cgltf.h>
+#include <filesystem>
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/gpu_mesh.h"
@@ -84,6 +85,32 @@ void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
 }
 
 }  // namespace
+
+void submitStandaloneMeshToRender(RenderSystem* render_system,
+                                  const eastl::shared_ptr<MeshAsset>& mesh,
+                                  const glm::mat4& world_matrix) {
+  if (render_system == nullptr || mesh == nullptr) {
+    return;
+  }
+
+  MeshRendererComponent renderer{};
+  renderer.mesh = mesh;
+  renderer.material = mesh->getMaterialAsset();
+  renderer.world_matrix = world_matrix;
+  if (renderer.material) {
+    renderer.alpha_mode = renderer.material->getAlphaMode();
+    renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
+    renderer.double_sided = renderer.material->isDoubleSided();
+  }
+
+  GpuMesh* gpu_mesh = render_system->getOrUploadGpuMesh(mesh.get());
+  if (gpu_mesh == nullptr) {
+    return;
+  }
+
+  submitMeshDraw(render_system, gpu_mesh, renderer,
+                 render_system->getFallbackTexture(), {});
+}
 
 void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instance) {
   if (render_system == nullptr) {

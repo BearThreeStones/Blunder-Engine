@@ -87,6 +87,9 @@ export component MainEditorWindow inherits Window {
     in-out property <length> browser-tree-panel-height: 0px;
     in-out property <length> browser-tree-panel-width: 150px;
     in-out property <length> browser-thumb-size: 64px;
+    in-out property <bool> browser-details-view: false;
+    in property <int> browser-sort-column: 0;
+    in property <bool> browser-sort-ascending: true;
 
     in-out property <[HistoryRow]> history-rows: [];
     in-out property <bool> history-filter-scene: true;
@@ -107,6 +110,7 @@ export component MainEditorWindow inherits Window {
     callback browser-item-release(string, float, float);
     callback browser-search-changed(string);
     callback browser-path-segment-clicked(string);
+    callback browser-sort-clicked(int);
     callback history-filter-changed();
     callback history-entry-clicked(int);
 
@@ -158,6 +162,10 @@ export component MainEditorWindow inherits Window {
     in property <bool> inspector-has-animation-player: false;
     in property <[AnimationClipRow]> inspector-animation-clips: [];
     in-out property <bool> inspector-animation-player-expanded: true;
+    in property <bool> inspector-add-menu-enabled: false;
+    in property <bool> inspector-has-skeleton: false;
+    in property <bool> inspector-has-animation-tree: false;
+    in property <bool> inspector-remove-skeleton-enabled: true;
 
     in property <bool> inspector-asset-mode: false;
     in property <string> inspector-asset-display-name: "";
@@ -187,7 +195,10 @@ export component MainEditorWindow inherits Window {
     callback inspector-set-skeleton-modifier-enabled(int, bool);
     callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool);
     callback inspector-camera-edited();
-    callback inspector-add-camera();
+    callback inspector-add-unique-attachment(string);
+    callback inspector-remove-unique-attachment(string);
+    callback inspector-add-clip();
+    callback inspector-remove-clip(int);
     callback inspector-commit-animation-clip(int, string, string);
     callback save-scene-requested();
     callback save-scene-as-requested();
@@ -575,6 +586,9 @@ export component MainEditorWindow inherits Window {
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
                         thumb-size <=> root.browser-thumb-size;
+                        details-view <=> root.browser-details-view;
+                        sort-column: root.browser-sort-column;
+                        sort-ascending: root.browser-sort-ascending;
                         history-rows <=> root.history-rows;
                         history-filter-scene <=> root.history-filter-scene;
                         history-filter-global <=> root.history-filter-global;
@@ -593,6 +607,7 @@ export component MainEditorWindow inherits Window {
                         item-release(path, x, y) => { root.browser-item-release(path, x, y); }
                         search-changed(text) => { root.browser-search-changed(text); }
                         path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+                        sort-clicked(column) => { root.browser-sort-clicked(column); }
                         history-filter-changed => { root.history-filter-changed(); }
                         history-entry-clicked(index) => { root.history-entry-clicked(index); }
                     }
@@ -695,10 +710,17 @@ export component MainEditorWindow inherits Window {
                         camera-is-main <=> root.inspector-camera-is-main;
                         camera-expanded <=> root.inspector-camera-expanded;
                         camera-edited => { root.inspector-camera-edited(); }
-                        add-camera => { root.inspector-add-camera(); }
                         has-animation-player: root.inspector-has-animation-player;
                         animation-clips: root.inspector-animation-clips;
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
+                        add-menu-enabled: root.inspector-add-menu-enabled;
+                        has-skeleton: root.inspector-has-skeleton;
+                        has-animation-tree: root.inspector-has-animation-tree;
+                        remove-skeleton-enabled: root.inspector-remove-skeleton-enabled;
+                        add-unique-attachment(kind) => { root.inspector-add-unique-attachment(kind); }
+                        remove-unique-attachment(kind) => { root.inspector-remove-unique-attachment(kind); }
+                        add-clip => { root.inspector-add-clip(); }
+                        remove-clip(index) => { root.inspector-remove-clip(index); }
                         commit-animation-clip(index, name, guid) => {
                             root.inspector-commit-animation-clip(index, name, guid);
                         }
@@ -894,6 +916,9 @@ export component MainEditorWindow inherits Window {
                         tree-panel-height <=> root.browser-tree-panel-height;
                         tree-pane-width <=> root.browser-tree-panel-width;
                         thumb-size <=> root.browser-thumb-size;
+                        details-view <=> root.browser-details-view;
+                        sort-column: root.browser-sort-column;
+                        sort-ascending: root.browser-sort-ascending;
                         history-rows <=> root.history-rows;
                         history-filter-scene <=> root.history-filter-scene;
                         history-filter-global <=> root.history-filter-global;
@@ -912,6 +937,7 @@ export component MainEditorWindow inherits Window {
                         item-release(path, x, y) => { root.browser-item-release(path, x, y); }
                         search-changed(text) => { root.browser-search-changed(text); }
                         path-segment-clicked(path) => { root.browser-path-segment-clicked(path); }
+                        sort-clicked(column) => { root.browser-sort-clicked(column); }
                         history-filter-changed => { root.history-filter-changed(); }
                         history-entry-clicked(index) => { root.history-entry-clicked(index); }
                     }
@@ -1014,10 +1040,17 @@ export component MainEditorWindow inherits Window {
                         camera-is-main <=> root.inspector-camera-is-main;
                         camera-expanded <=> root.inspector-camera-expanded;
                         camera-edited => { root.inspector-camera-edited(); }
-                        add-camera => { root.inspector-add-camera(); }
                         has-animation-player: root.inspector-has-animation-player;
                         animation-clips: root.inspector-animation-clips;
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
+                        add-menu-enabled: root.inspector-add-menu-enabled;
+                        has-skeleton: root.inspector-has-skeleton;
+                        has-animation-tree: root.inspector-has-animation-tree;
+                        remove-skeleton-enabled: root.inspector-remove-skeleton-enabled;
+                        add-unique-attachment(kind) => { root.inspector-add-unique-attachment(kind); }
+                        remove-unique-attachment(kind) => { root.inspector-remove-unique-attachment(kind); }
+                        add-clip => { root.inspector-add-clip(); }
+                        remove-clip(index) => { root.inspector-remove-clip(index); }
                         commit-animation-clip(index, name, guid) => {
                             root.inspector-commit-animation-clip(index, name, guid);
                         }

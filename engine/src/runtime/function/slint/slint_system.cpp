@@ -27,6 +27,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/resource/asset/material_asset.h"
+#include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
@@ -42,13 +43,17 @@
 #include "runtime/function/editor/inspector_transform_ops.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/ground_placement.h"
+#include "runtime/function/editor/placement_preview_controller.h"
+#include "runtime/resource/content_browser/content_browser_drop.h"
 #include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/editor/document_history_helpers.h"
 #include "runtime/function/editor/editor_commands.h"
+#include "runtime/function/editor/inspector_add_ops.h"
+#include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/inspector_behaviour_ops.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
-#include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/editor/inspector_asset_ops.h"
 #include "runtime/function/editor/inspector_mesh_preview.h"
 #include "runtime/core/object/object.h"
@@ -63,6 +68,7 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/slint/window_pointer_map.h"
+#include "runtime/platform/window/window_system.h"
 #include "runtime/function/render/overlay/camera_preview_layout.h"
 #include "runtime/function/render/overlay/navigate_gizmo_layout.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
@@ -1153,7 +1159,17 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
                                                   eastl::string(text.data()), number, flag);
         });
     component->on_inspector_camera_edited([this]() { applyInspectorCamera(); });
-    component->on_inspector_add_camera([this]() { applyInspectorAddCamera(); });
+    component->on_inspector_add_unique_attachment(
+        [this](const slint::SharedString& kind) {
+          applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
+        });
+    component->on_inspector_remove_unique_attachment(
+        [this](const slint::SharedString& kind) {
+          applyInspectorRemoveUniqueAttachment(eastl::string(kind.data()));
+        });
+    component->on_inspector_add_clip([this]() { applyInspectorAddClipRow(); });
+    component->on_inspector_remove_clip(
+        [this](int entry_index) { applyInspectorRemoveClipRow(entry_index); });
     component->on_inspector_commit_animation_clip(
         [this](int entry_index, const slint::SharedString& clip_name,
                const slint::SharedString& clip_guid) {
@@ -1215,6 +1231,9 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         [this](const slint::SharedString& path, bool ctrl, bool shift) {
           applyBrowserGridSelection(eastl::string(path.data()), ctrl, shift);
         });
+    component->on_browser_sort_clicked([this](int column) {
+      applyBrowserGridSort(column);
+    });
     component->on_import_mesh_confirmed([this]() { completePendingMeshImport(); });
     component->on_import_mesh_cancelled([this]() {
       m_pending_mesh_import_paths.clear();
@@ -1278,6 +1297,9 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
             return;
           }
           services->content_browser->dragController().updateMove(x, y);
+          if (services->content_browser->dragController().isDragging()) {
+            updateContentBrowserDragSessionAtCursor();
+          }
         });
     component->on_browser_item_release(
         [this](const slint::SharedString& path, float x, float y) {
@@ -2610,6 +2632,7 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorAnimationPlayerFromSelection();
+      syncInspectorUniqueAttachmentsFromSelection();
       return;
     }
 
@@ -2626,6 +2649,7 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorAnimationPlayerFromSelection();
+      syncInspectorUniqueAttachmentsFromSelection();
       return;
     }
 
@@ -2758,6 +2782,7 @@ void SlintSystem::syncInspectorFromSelection() {
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorAnimationPlayerFromSelection();
+    syncInspectorUniqueAttachmentsFromSelection();
   } catch (const std::exception& e) {
     m_applying_inspector_sync = false;
     LOG_ERROR("[SlintSystem::syncInspectorFromSelection] {}", e.what());
@@ -3112,16 +3137,6 @@ void SlintSystem::syncInspectorSkeletonModifiersFromSelection() {
 
 namespace {
 
-bool sceneHasMainCamera(const SceneInstance& scene) {
-  bool found = false;
-  scene.forEachCamera([&](EntityId, const CameraComponent& camera) {
-    if (camera.is_main) {
-      found = true;
-    }
-  });
-  return found;
-}
-
 void clearOtherMainCameras(SceneInstance& scene, EntityId keep_id) {
   scene.forEachCamera([&](EntityId entity_id, const CameraComponent& camera) {
     if (entity_id == keep_id || !camera.is_main) {
@@ -3235,8 +3250,15 @@ void SlintSystem::applyInspectorCamera() {
   }
 }
 
-void SlintSystem::applyInspectorAddCamera() {
+void notifyAnimationPreviewAfterSkeletonModifierEdit(RenderSystem* render_system);
+
+void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_name) {
   if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  InspectorUniqueKind kind{};
+  if (!parseInspectorUniqueKind(kind_name, kind)) {
     return;
   }
 
@@ -3254,25 +3276,192 @@ void SlintSystem::applyInspectorAddCamera() {
     return;
   }
   const EntityId entity_id = ids[0];
-  if (scene->getCamera(entity_id) != nullptr) {
+  AssetManager* assets = g_runtime_global_context.m_asset_manager.get();
+
+  try {
+    const InspectorUniqueAddResult result =
+        applyInspectorUniqueAdd(assets, *scene, entity_id, kind);
+    if (result.already_present) {
+      return;
+    }
+    const bool created_anything =
+        result.created_object || result.created_skeleton || result.created_player ||
+        result.created_tree || result.created_camera;
+    if (!created_anything) {
+      return;
+    }
+    pushDocumentCommand(makeAddUniqueAttachmentCommand(
+        scene, assets, entity_id, kind, result, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorBehavioursFromSelection();
+    syncInspectorSkeletonModifiersFromSelection();
+    syncInspectorCameraFromSelection();
+    syncInspectorAnimationPlayerFromSelection();
+    syncInspectorUniqueAttachmentsFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddUniqueAttachment] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddUniqueAttachment] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name) {
+  if (!m_window_component || m_applying_inspector_sync) {
     return;
   }
 
+  InspectorUniqueKind kind{};
+  if (!parseInspectorUniqueKind(kind_name, kind)) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  AssetManager* assets = g_runtime_global_context.m_asset_manager.get();
+
   try {
-    CameraComponent camera;
-    camera.is_main = !sceneHasMainCamera(*scene);
-    if (camera.is_main) {
-      clearOtherMainCameras(*scene, entity_id);
+    InspectorUniqueRemoveSnapshot snapshot;
+    if (!applyInspectorUniqueRemove(assets, *scene, entity_id, kind, snapshot)) {
+      return;
     }
-    scene->setCamera(entity_id, camera);
-    if (services->editor_scene_edit) {
-      services->editor_scene_edit->markDirty();
-    }
+    pushDocumentCommand(makeRemoveUniqueAttachmentCommand(
+        scene, assets, entity_id, kind, eastl::move(snapshot),
+        currentSelectionSnapshot(), currentSelectionSnapshot()));
+    syncInspectorBehavioursFromSelection();
+    syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
+    syncInspectorAnimationPlayerFromSelection();
+    syncInspectorUniqueAttachmentsFromSelection();
+    notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
   } catch (const std::exception& e) {
-    LOG_ERROR("[SlintSystem::applyInspectorAddCamera] {}", e.what());
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveUniqueAttachment] {}", e.what());
   } catch (...) {
-    LOG_ERROR("[SlintSystem::applyInspectorAddCamera] unknown exception");
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveUniqueAttachment] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorAddClipRow() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  try {
+    eastl::vector<AnimationPlayer::ClipBinding> before;
+    eastl::vector<AnimationPlayer::ClipBinding> after;
+    if (!applyInspectorAddClip(*scene, entity_id, before, after)) {
+      return;
+    }
+    pushDocumentCommand(makeSetAnimationPlayerClipBindingsCommand(
+        scene, entity_id, before, after, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorAnimationPlayerFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddClipRow] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorAddClipRow] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorRemoveClipRow(int entry_index) {
+  if (!m_window_component || m_applying_inspector_sync || entry_index < 0) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  try {
+    eastl::vector<AnimationPlayer::ClipBinding> before;
+    eastl::vector<AnimationPlayer::ClipBinding> after;
+    if (!applyInspectorRemoveClip(*scene, entity_id, static_cast<size_t>(entry_index),
+                                  before, after)) {
+      return;
+    }
+    pushDocumentCommand(makeSetAnimationPlayerClipBindingsCommand(
+        scene, entity_id, before, after, currentSelectionSnapshot(),
+        currentSelectionSnapshot()));
+    syncInspectorAnimationPlayerFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveClipRow] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorRemoveClipRow] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorUniqueAttachmentsFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    bool add_enabled = false;
+    bool has_skeleton = false;
+    bool has_tree = false;
+    bool remove_skeleton = true;
+    if (selection != nullptr && scene != nullptr && selection->hasSelection()) {
+      const eastl::vector<EntityId> ids = selection->getSelectedIds();
+      if (ids.size() == 1) {
+        add_enabled = true;
+        Object* object = scene->findBoundObject(ids[0]);
+        has_skeleton = object != nullptr && object->hasSkeleton();
+        has_tree = object != nullptr && object->hasAnimationTree();
+        remove_skeleton = !isSkeletonRemoveBlocked(object);
+      }
+    }
+    ui->set_inspector_add_menu_enabled(add_enabled);
+    ui->set_inspector_has_skeleton(has_skeleton);
+    ui->set_inspector_has_animation_tree(has_tree);
+    ui->set_inspector_remove_skeleton_enabled(remove_skeleton);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorUniqueAttachmentsFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorUniqueAttachmentsFromSelection] unknown exception");
   }
 }
 
@@ -3327,8 +3516,7 @@ void SlintSystem::syncInspectorAnimationPlayerFromSelection() {
 void SlintSystem::applyInspectorAnimationClipCommit(int entry_index,
                                                      const eastl::string& clip_name,
                                                      const eastl::string& clip_guid) {
-  if (!m_window_component || m_applying_inspector_sync || entry_index < 0 ||
-      clip_name.empty()) {
+  if (!m_window_component || m_applying_inspector_sync || entry_index < 0) {
     return;
   }
 
@@ -4331,6 +4519,16 @@ void SlintSystem::applyBrowserGridSelection(const eastl::string& path, bool ctrl
   refreshBrowserGridSelectionVisuals();
 }
 
+void SlintSystem::applyBrowserGridSort(int column) {
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
+    return;
+  }
+  services->content_browser->setGridSort(
+      static_cast<BrowserGridSortColumn>(column));
+  syncContentBrowser();
+}
+
 void SlintSystem::refreshBrowserGridSelectionVisuals() {
   if (!m_window_component) {
     return;
@@ -4726,9 +4924,17 @@ void SlintSystem::syncContentBrowser() {
                                item.virtual_path.size() - 12, 12,
                                ".scene.asset") == 0;
       slint_row.selected = isBrowserGridPathSelected(item.virtual_path);
+      slint_row.type_kind = static_cast<int>(item.type_kind);
+      slint_row.type_label = slint::SharedString(item.type_label.c_str());
+      slint_row.size_text = slint::SharedString(item.size_text.c_str());
+      slint_row.date_text = slint::SharedString(item.date_text.c_str());
       grid_model->push_back(slint_row);
     }
     m_window_component->operator->()->set_browser_grid_rows(grid_model);
+    m_window_component->operator->()->set_browser_sort_column(
+        static_cast<int>(browser_system.gridSortColumn()));
+    m_window_component->operator->()->set_browser_sort_ascending(
+        browser_system.gridSortAscending());
 
     // Path segments (breadcrumb).
     auto path_model =
@@ -5146,6 +5352,11 @@ void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
   const eastl::string source = drag.sourcePath();
   drag.endPress();
 
+  if (g_runtime_global_context.m_placement_preview) {
+    g_runtime_global_context.m_placement_preview->clear();
+  }
+  clearContentBrowserDragCursor();
+
   if (!source.empty()) {
     if (isPointerOverViewport(logical_x, logical_y) &&
         services->editor_scene_edit) {
@@ -5166,6 +5377,9 @@ void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
   m_viewport_drop_active = false;
   drag.reset();
   syncContentBrowser();
+  if (services->render_system) {
+    services->render_system->requestViewportRedraw();
+  }
 }
 
 void SlintSystem::finishContentBrowserDragAtCursor() {
@@ -5174,6 +5388,126 @@ void SlintSystem::finishContentBrowserDragAtCursor() {
   const SlintPointerCoords pointer =
       mapWindowPointerToSlint(m_window_system, mouse.x, mouse.y);
   finishContentBrowserDrag(pointer.x, pointer.y);
+}
+
+void SlintSystem::updateContentBrowserDragSessionAtCursor() {
+  const WindowClientMouseState mouse =
+      queryWindowClientMouseState(m_window_system);
+  const SlintPointerCoords pointer =
+      mapWindowPointerToSlint(m_window_system, mouse.x, mouse.y);
+  updateContentBrowserDragSession(pointer.x, pointer.y);
+}
+
+void SlintSystem::applyContentBrowserDragCursor(int kind) {
+  if (m_window_system == nullptr) {
+    return;
+  }
+  if (m_browser_drag_cursor_active && m_browser_drag_cursor_kind == kind) {
+    return;
+  }
+
+  SDL_SystemCursor sdl_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+  switch (static_cast<ContentBrowserDragCursorKind>(kind)) {
+    case ContentBrowserDragCursorKind::pointer:
+      sdl_cursor = SDL_SYSTEM_CURSOR_POINTER;
+      break;
+    case ContentBrowserDragCursorKind::move:
+      sdl_cursor = SDL_SYSTEM_CURSOR_MOVE;
+      break;
+    case ContentBrowserDragCursorKind::not_allowed:
+      sdl_cursor = SDL_SYSTEM_CURSOR_NOT_ALLOWED;
+      break;
+    case ContentBrowserDragCursorKind::default_arrow:
+    default:
+      sdl_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+      break;
+  }
+  m_window_system->setSystemCursor(sdl_cursor);
+  m_browser_drag_cursor_active = true;
+  m_browser_drag_cursor_kind = kind;
+}
+
+void SlintSystem::clearContentBrowserDragCursor() {
+  if (!m_browser_drag_cursor_active) {
+    return;
+  }
+  if (m_window_system != nullptr) {
+    m_window_system->clearSystemCursor();
+  }
+  m_browser_drag_cursor_active = false;
+  m_browser_drag_cursor_kind = -1;
+}
+
+void SlintSystem::updateContentBrowserDragSession(float logical_x,
+                                                  float logical_y) {
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
+    return;
+  }
+
+  ContentBrowserDragController& drag =
+      services->content_browser->dragController();
+  PlacementPreviewController* preview =
+      g_runtime_global_context.m_placement_preview.get();
+
+  if (!drag.isDragging()) {
+    if (preview != nullptr && preview->isVisible()) {
+      preview->clear();
+      if (services->render_system) {
+        services->render_system->requestViewportRedraw();
+      }
+    }
+    clearContentBrowserDragCursor();
+    return;
+  }
+
+  const bool over_viewport = isPointerOverViewport(logical_x, logical_y);
+  const ContentBrowserDropKind kind = classifyContentBrowserDrop(drag.sourcePath());
+  const bool over_folder = !over_viewport && !m_drop_highlight_path.empty();
+
+  if (preview != nullptr) {
+    const bool was_visible = preview->isVisible();
+    preview->setSourcePath(drag.sourcePath());
+    preview->setPointerOverViewport(over_viewport);
+    if (over_viewport && kind == ContentBrowserDropKind::mesh) {
+      preview->setGroundPosition(groundPlacementFromWindow(logical_x, logical_y));
+      if (g_runtime_global_context.m_asset_manager) {
+        preview->ensureLoaded(*g_runtime_global_context.m_asset_manager);
+      }
+    }
+    if (preview->isVisible() || was_visible) {
+      if (services->render_system) {
+        services->render_system->requestViewportRedraw();
+      }
+    }
+  }
+
+  applyContentBrowserDragCursor(static_cast<int>(
+      resolveContentBrowserDragCursor(true, over_viewport, over_folder, kind)));
+}
+
+void SlintSystem::cancelContentBrowserDrag() {
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
+    return;
+  }
+
+  ContentBrowserDragController& drag =
+      services->content_browser->dragController();
+  const bool was_dragging = drag.isDragging();
+  drag.reset();
+  if (g_runtime_global_context.m_placement_preview) {
+    g_runtime_global_context.m_placement_preview->clear();
+  }
+  m_drop_highlight_path.clear();
+  m_viewport_drop_active = false;
+  clearContentBrowserDragCursor();
+  if (was_dragging) {
+    syncContentBrowser();
+    if (services->render_system) {
+      services->render_system->requestViewportRedraw();
+    }
+  }
 }
 
 BrowserLogicalRect SlintSystem::getHierarchyLogicalRect() const {
@@ -5611,6 +5945,7 @@ void SlintSystem::processCoalescedSdlMouseMotion() {
         m_pending_content_browser_sync = true;
       }
     }
+    updateContentBrowserDragSession(logical_pos.x, logical_pos.y);
     return;
   }
 
@@ -6210,6 +6545,11 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         }
         snapshot.inspector_animation_player_expanded =
             main.get_inspector_animation_player_expanded();
+        snapshot.inspector_add_menu_enabled = main.get_inspector_add_menu_enabled();
+        snapshot.inspector_has_skeleton = main.get_inspector_has_skeleton();
+        snapshot.inspector_has_animation_tree = main.get_inspector_has_animation_tree();
+        snapshot.inspector_remove_skeleton_enabled =
+            main.get_inspector_remove_skeleton_enabled();
         snapshot.inspector_asset_mode = main.get_inspector_asset_mode();
         snapshot.inspector_asset_display_name =
             main.get_inspector_asset_display_name().data();
@@ -6263,6 +6603,10 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.is_dir = row.is_dir;
             copy.is_scene = row.is_scene;
             copy.selected = row.selected;
+            copy.type_kind = row.type_kind;
+            copy.type_label = row.type_label.data();
+            copy.size_text = row.size_text.data();
+            copy.date_text = row.date_text.data();
             snapshot.browser_grid_rows.push_back(eastl::move(copy));
           }
         }
@@ -6281,6 +6625,10 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.browser_viewport_drop_active = main.get_browser_viewport_drop_active();
         snapshot.browser_status_text = main.get_browser_status_text().data();
         snapshot.browser_selected_folder_path = main.get_browser_selected_folder_path().data();
+        snapshot.browser_thumb_size = static_cast<float>(main.get_browser_thumb_size());
+        snapshot.browser_details_view = main.get_browser_details_view();
+        snapshot.browser_sort_column = main.get_browser_sort_column();
+        snapshot.browser_sort_ascending = main.get_browser_sort_ascending();
         break;
       }
       default:
@@ -6502,7 +6850,18 @@ void SlintSystem::wireNativeFloatingCallbacks() {
                                                 eastl::string(text.data()), number, flag);
       };
   callbacks.on_inspector_camera_edited = [this]() { applyInspectorCamera(); };
-  callbacks.on_inspector_add_camera = [this]() { applyInspectorAddCamera(); };
+  callbacks.on_inspector_add_unique_attachment =
+      [this](const slint::SharedString& kind) {
+        applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
+      };
+  callbacks.on_inspector_remove_unique_attachment =
+      [this](const slint::SharedString& kind) {
+        applyInspectorRemoveUniqueAttachment(eastl::string(kind.data()));
+      };
+  callbacks.on_inspector_add_clip = [this]() { applyInspectorAddClipRow(); };
+  callbacks.on_inspector_remove_clip = [this](int entry_index) {
+    applyInspectorRemoveClipRow(entry_index);
+  };
   callbacks.on_inspector_commit_animation_clip =
       [this](int entry_index, const slint::SharedString& clip_name,
              const slint::SharedString& clip_guid) {
@@ -6530,6 +6889,9 @@ void SlintSystem::wireNativeFloatingCallbacks() {
       [this](const slint::SharedString& path, bool ctrl, bool shift) {
         applyBrowserGridSelection(eastl::string(path.data()), ctrl, shift);
       };
+  callbacks.on_browser_sort_clicked = [this](int column) {
+    applyBrowserGridSort(column);
+  };
   callbacks.on_browser_item_press = [this](const slint::SharedString& path, float x, float y) {
     const auto services = lockServices();
     if (!services || !services->content_browser) {
@@ -6798,6 +7160,11 @@ bool SlintSystem::processSlintAdapterEvent(SlintWindowAdapter* adapter,
         break;
       case SDL_EVENT_KEY_DOWN:
         if (event.key.windowID == window_id) {
+          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+              isContentBrowserDragActive()) {
+            cancelContentBrowserDrag();
+            break;
+          }
           const slint::SharedString text = mapKeycode(event.key.key);
           if (!text.empty()) {
             window.dispatch_key_press_event(text);
@@ -7317,6 +7684,11 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               m_dock_manager.drag().isActive()) {
             m_dock_manager.cancelDrag();
             m_docking_model_dirty = true;
+            break;
+          }
+          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+              isContentBrowserDragActive()) {
+            cancelContentBrowserDrag();
             break;
           }
           if (!event.key.repeat && event.key.key == SDLK_P) {

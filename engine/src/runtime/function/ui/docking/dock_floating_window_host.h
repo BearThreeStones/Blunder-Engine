@@ -45,6 +45,10 @@ struct NativeFloatBrowserGridRow {
   bool is_dir{false};
   bool is_scene{false};
   bool selected{false};
+  int type_kind{5};
+  eastl::string type_label;
+  eastl::string size_text;
+  eastl::string date_text;
 };
 
 struct NativeFloatBrowserPathSegment {
@@ -136,6 +140,10 @@ struct NativeFloatPanelSnapshot {
   bool inspector_has_animation_player{false};
   eastl::vector<NativeFloatAnimationClipRow> inspector_animation_clips;
   bool inspector_animation_player_expanded{true};
+  bool inspector_add_menu_enabled{false};
+  bool inspector_has_skeleton{false};
+  bool inspector_has_animation_tree{false};
+  bool inspector_remove_skeleton_enabled{true};
   bool inspector_asset_mode{false};
   eastl::string inspector_asset_display_name;
   eastl::string inspector_asset_guid;
@@ -171,6 +179,10 @@ struct NativeFloatPanelSnapshot {
   bool browser_viewport_drop_active{false};
   eastl::string browser_status_text;
   eastl::string browser_selected_folder_path;
+  float browser_thumb_size{64.0f};
+  bool browser_details_view{false};
+  int browser_sort_column{0};
+  bool browser_sort_ascending{true};
 };
 
 class DockFloatingWindowHost final {
@@ -213,7 +225,10 @@ class DockFloatingWindowHost final {
     std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
         on_inspector_commit_skeleton_modifier_field;
     std::function<void()> on_inspector_camera_edited;
-    std::function<void()> on_inspector_add_camera;
+    std::function<void(const slint::SharedString&)> on_inspector_add_unique_attachment;
+    std::function<void(const slint::SharedString&)> on_inspector_remove_unique_attachment;
+    std::function<void()> on_inspector_add_clip;
+    std::function<void(int)> on_inspector_remove_clip;
     std::function<void(int, const slint::SharedString&, const slint::SharedString&)>
         on_inspector_commit_animation_clip;
     std::function<void(const slint::SharedString&)> on_browser_folder_selected;
@@ -227,6 +242,7 @@ class DockFloatingWindowHost final {
     std::function<void(const slint::SharedString&, float, float)> on_browser_item_release;
     std::function<void(const slint::SharedString&)> on_browser_search_changed;
     std::function<void(const slint::SharedString&)> on_browser_path_segment_clicked;
+    std::function<void(int)> on_browser_sort_clicked;
   };
 
   void setCallbacks(Callbacks callbacks) { m_callbacks = eastl::move(callbacks); }

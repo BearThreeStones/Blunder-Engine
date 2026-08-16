@@ -2,6 +2,7 @@
 
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/object.h"
+#include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/scene/camera_component.h"
@@ -445,6 +446,53 @@ class SetSkeletonModifierDefCommand final : public IEditorCommand {
   }
 };
 
+class AddUniqueAttachmentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  AssetManager* asset_manager{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  InspectorUniqueKind kind{InspectorUniqueKind::Camera};
+  InspectorUniqueAddResult created{};
+
+  void undo() override {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    undoInspectorUniqueAdd(*scene, entity_id, created);
+  }
+
+  void redo() override {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    created = applyInspectorUniqueAdd(asset_manager, *scene, entity_id, kind);
+  }
+};
+
+class RemoveUniqueAttachmentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  AssetManager* asset_manager{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  InspectorUniqueKind kind{InspectorUniqueKind::Camera};
+  InspectorUniqueRemoveSnapshot snapshot{};
+
+  void undo() override {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    undoInspectorUniqueRemove(asset_manager, *scene, entity_id, kind, snapshot);
+  }
+
+  void redo() override {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    InspectorUniqueRemoveSnapshot ignored;
+    applyInspectorUniqueRemove(asset_manager, *scene, entity_id, kind, ignored);
+  }
+};
+
 }  // namespace
 
 eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
@@ -669,6 +717,36 @@ eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierDefCommand(
   command->modifier_index = modifier_index;
   command->before_def = eastl::move(before_def);
   command->after_def = eastl::move(after_def);
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeAddUniqueAttachmentCommand(
+    SceneInstance* scene, AssetManager* asset_manager, EntityId entity_id,
+    InspectorUniqueKind kind, InspectorUniqueAddResult created,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<AddUniqueAttachmentCommand>();
+  command->scene = scene;
+  command->asset_manager = asset_manager;
+  command->entity_id = entity_id;
+  command->kind = kind;
+  command->created = created;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeRemoveUniqueAttachmentCommand(
+    SceneInstance* scene, AssetManager* asset_manager, EntityId entity_id,
+    InspectorUniqueKind kind, InspectorUniqueRemoveSnapshot snapshot,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<RemoveUniqueAttachmentCommand>();
+  command->scene = scene;
+  command->asset_manager = asset_manager;
+  command->entity_id = entity_id;
+  command->kind = kind;
+  command->snapshot = eastl::move(snapshot);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   return command;

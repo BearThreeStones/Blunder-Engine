@@ -7,9 +7,8 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/log/log_system.h"
-#include "runtime/core/math/geometry.h"
-#include "runtime/function/render/editor_camera.h"
-#include "runtime/function/render/render_system.h"
+#include "runtime/function/editor/ground_placement.h"
+#include "runtime/resource/content_browser/content_browser_drop.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -86,28 +85,6 @@ eastl::string makeUniqueEntityName(SceneInstance& instance,
     }
   }
   return stem;
-}
-
-Vec3 groundPositionFromWindow(float window_x, float window_y) {
-  RenderSystem* render_system = g_runtime_global_context.m_render_system.get();
-  if (render_system == nullptr) {
-    return Vec3(0.0f);
-  }
-
-  EditorCamera* camera = render_system->getEditorCamera();
-  if (camera == nullptr || !camera->isWindowPositionInViewport(
-                               Vec2(window_x, window_y))) {
-    return Vec3(0.0f);
-  }
-
-  const Ray ray = camera->makeRayFromWindowPosition(Vec2(window_x, window_y));
-  const Plane ground =
-      Plane::fromPointAndNormal(Vec3(0.0f, 0.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f));
-  const std::optional<RayHit> hit = intersect(ray, ground);
-  if (!hit.has_value()) {
-    return Vec3(0.0f);
-  }
-  return hit->point;
 }
 
 }  // namespace
@@ -276,7 +253,7 @@ SpawnAssetResult EditorSceneEditSystem::spawnMeshAsset(
     return result;
   }
 
-  const Vec3 position = groundPositionFromWindow(window_x, window_y);
+  const Vec3 position = groundPlacementFromWindow(window_x, window_y);
   const eastl::string entity_name =
       makeUniqueEntityName(*instance, entityStemFromAssetPath(asset_virtual_path));
   const EntityId entity_id = instance->createEntity(
@@ -321,14 +298,14 @@ SpawnAssetResult EditorSceneEditSystem::spawnAssetAtWindowPosition(
     return result;
   }
 
-  if (endsWithSuffix(asset_virtual_path, ".scene.asset")) {
-    result.success = openScene(asset_virtual_path);
-    return result;
-  }
-
-  if (endsWithSuffix(asset_virtual_path, ".mesh.yaml") ||
-      endsWithSuffix(asset_virtual_path, ".mesh.asset")) {
-    return spawnMeshAsset(asset_virtual_path, window_x, window_y);
+  switch (classifyContentBrowserDrop(asset_virtual_path)) {
+    case ContentBrowserDropKind::scene:
+      result.success = openScene(asset_virtual_path);
+      return result;
+    case ContentBrowserDropKind::mesh:
+      return spawnMeshAsset(asset_virtual_path, window_x, window_y);
+    case ContentBrowserDropKind::other:
+      break;
   }
 
   LOG_WARN("[EditorSceneEdit] spawn unsupported asset type: {}",

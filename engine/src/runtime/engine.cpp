@@ -16,6 +16,7 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/function/editor/placement_preview_controller.h"
 #include "runtime/function/script/dotnet_host.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/platform/window/window_system.h"
@@ -445,10 +446,20 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
           g_runtime_global_context.m_animation_sync_cine_preview) {
         g_runtime_global_context.m_animation_sync_cine_preview->tick(delta_time);
       }
-      if (g_runtime_global_context.m_render_system &&
-          g_runtime_global_context.m_scene_system->getActiveInstance()) {
-        syncSceneToRender(g_runtime_global_context.m_render_system.get(),
-                          g_runtime_global_context.m_scene_system->getActiveInstance());
+      if (g_runtime_global_context.m_render_system) {
+        SceneInstance* instance =
+            g_runtime_global_context.m_scene_system->getActiveInstance();
+        PlacementPreviewController* preview =
+            g_runtime_global_context.m_placement_preview.get();
+        const bool preview_visible = preview != nullptr && preview->isVisible();
+        if (instance != nullptr || preview_visible) {
+          syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                            instance);
+          if (preview_visible) {
+            preview->submitToRender(
+                g_runtime_global_context.m_render_system.get());
+          }
+        }
       }
     }
 

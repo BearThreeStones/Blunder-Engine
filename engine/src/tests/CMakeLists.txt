@@ -54,6 +54,25 @@ endif()
 add_test(NAME outline_aa_test
          COMMAND outline_aa_test)
 
+add_executable(placement_preview_test
+    "placement_preview_test.cpp"
+)
+
+target_link_libraries(placement_preview_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(placement_preview_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(placement_preview_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME placement_preview_test
+         COMMAND placement_preview_test)
+
 add_executable(inspector_transform_ops_test
     "inspector_transform_ops_test.cpp"
 )
@@ -1047,6 +1066,7 @@ add_executable(content_browser_test
 
 target_link_libraries(content_browser_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
@@ -1182,6 +1202,55 @@ target_precompile_headers(inspector_animation_player_clip_map_test
 
 add_test(NAME inspector_animation_player_clip_map_test
          COMMAND inspector_animation_player_clip_map_test)
+
+add_executable(skeleton_hydration_test
+    "skeleton_hydration_test.cpp"
+)
+
+target_link_libraries(skeleton_hydration_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(skeleton_hydration_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(skeleton_hydration_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(skeleton_hydration_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME skeleton_hydration_test
+         COMMAND skeleton_hydration_test)
+
+add_executable(inspector_add_menu_commands_test
+    "inspector_add_menu_commands_test.cpp"
+)
+
+target_link_libraries(inspector_add_menu_commands_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(inspector_add_menu_commands_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(inspector_add_menu_commands_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(inspector_add_menu_commands_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME inspector_add_menu_commands_test
+         COMMAND inspector_add_menu_commands_test)
 
 # Scene instantiate + mountSceneBehaviours with process ObjectDB / ProbeBehaviour.
 add_executable(scene_behaviour_mount_test
