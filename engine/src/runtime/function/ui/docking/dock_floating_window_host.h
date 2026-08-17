@@ -82,6 +82,7 @@ struct NativeFloatSkeletonModifierRow {
   int modifier_index{0};
   eastl::string type_name;
   bool enabled{true};
+  bool missing{false};
   eastl::string bone_name;
   float open_amount{0.0f};
   bool attach_driven{false};

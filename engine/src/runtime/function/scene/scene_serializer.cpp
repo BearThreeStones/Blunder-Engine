@@ -11,6 +11,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/core/object/skeleton_modifier_catalog.h"
 #include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
@@ -148,6 +149,157 @@ bool parseJsonString(const char* quote_start, const char* limit,
     }
     out_value.push_back(c);
     ++p;
+  }
+  return false;
+}
+
+bool skipJsonValueRaw(const char* start, const char* limit, const char** out_end) {
+  const char* p = skipWhitespace(start);
+  if (p >= limit || out_end == nullptr) {
+    return false;
+  }
+  if (*p == '"') {
+    bool escape = false;
+    ++p;
+    while (p < limit) {
+      if (escape) {
+        escape = false;
+        ++p;
+        continue;
+      }
+      if (*p == '\\') {
+        escape = true;
+        ++p;
+        continue;
+      }
+      if (*p == '"') {
+        *out_end = p + 1;
+        return true;
+      }
+      ++p;
+    }
+    return false;
+  }
+  if (*p == '{' || *p == '[') {
+    int brace_depth = 0;
+    int bracket_depth = 0;
+    bool in_string = false;
+    bool escape = false;
+    bool started = false;
+    for (const char* q = p; q < limit; ++q) {
+      const char c = *q;
+      if (in_string) {
+        if (escape) {
+          escape = false;
+          continue;
+        }
+        if (c == '\\') {
+          escape = true;
+          continue;
+        }
+        if (c == '"') {
+          in_string = false;
+        }
+        continue;
+      }
+      if (c == '"') {
+        in_string = true;
+        continue;
+      }
+      if (c == '{') {
+        ++brace_depth;
+        started = true;
+      } else if (c == '}') {
+        --brace_depth;
+      } else if (c == '[') {
+        ++bracket_depth;
+        started = true;
+      } else if (c == ']') {
+        --bracket_depth;
+      }
+      if (started && brace_depth == 0 && bracket_depth == 0) {
+        *out_end = q + 1;
+        return true;
+      }
+    }
+    return false;
+  }
+  if (p + 4 <= limit && std::strncmp(p, "true", 4) == 0) {
+    *out_end = p + 4;
+    return true;
+  }
+  if (p + 5 <= limit && std::strncmp(p, "false", 5) == 0) {
+    *out_end = p + 5;
+    return true;
+  }
+  if (p + 4 <= limit && std::strncmp(p, "null", 4) == 0) {
+    *out_end = p + 4;
+    return true;
+  }
+  if (*p == '-' || std::isdigit(static_cast<unsigned char>(*p))) {
+    const char* q = p;
+    if (*q == '-') {
+      ++q;
+    }
+    const char* num_start = q;
+    while (q < limit &&
+           (std::isdigit(static_cast<unsigned char>(*q)) || *q == '.' ||
+            *q == 'e' || *q == 'E' || *q == '+' || *q == '-')) {
+      ++q;
+    }
+    if (q == num_start) {
+      return false;
+    }
+    *out_end = q;
+    return true;
+  }
+  return false;
+}
+
+bool collectModifierExtraFields(const char* object_start, const char* object_end,
+                                eastl::vector<SkeletonModifierExtraField>& out) {
+  out.clear();
+  const char* p = skipWhitespace(object_start);
+  if (p >= object_end || *p != '{') {
+    return false;
+  }
+  ++p;
+  while (p < object_end) {
+    p = skipWhitespace(p);
+    if (p >= object_end) {
+      return false;
+    }
+    if (*p == '}') {
+      return true;
+    }
+    if (*p != '"') {
+      return false;
+    }
+    eastl::string key;
+    const char* after_key = nullptr;
+    if (!parseJsonString(p, object_end, key, &after_key)) {
+      return false;
+    }
+    p = skipWhitespace(after_key);
+    if (p >= object_end || *p != ':') {
+      return false;
+    }
+    ++p;
+    p = skipWhitespace(p);
+    const char* value_end = nullptr;
+    if (!skipJsonValueRaw(p, object_end, &value_end)) {
+      return false;
+    }
+    if (key != "type") {
+      SkeletonModifierExtraField field;
+      field.key = eastl::move(key);
+      field.json_value.assign(p, static_cast<size_t>(value_end - p));
+      out.push_back(eastl::move(field));
+    }
+    p = skipWhitespace(value_end);
+    if (p < object_end && *p == ',') {
+      ++p;
+    }
   }
   return false;
 }
@@ -763,6 +915,10 @@ bool parseSkeletonModifierObject(const char* object_start,
                        child_entity_name)) {
     out_modifier.child_entity_name = eastl::move(child_entity_name);
   }
+  if (!SkeletonModifierCatalog::hasType(out_modifier.type.c_str())) {
+    collectModifierExtraFields(object_start, object_end,
+                               out_modifier.extra_fields);
+  }
   return true;
 }
 
@@ -1122,6 +1278,17 @@ void appendSkeletonModifierJson(eastl::string& out,
   out.append("        {\n");
   out.append("          \"type\": ");
   appendJsonString(out, modifier.type);
+
+  if (!SkeletonModifierCatalog::hasType(modifier.type.c_str())) {
+    for (const SkeletonModifierExtraField& field : modifier.extra_fields) {
+      out.append(",\n          ");
+      appendJsonString(out, field.key);
+      out.append(": ");
+      out.append(field.json_value);
+    }
+    out.append(is_last ? "\n        }\n" : "\n        },\n");
+    return;
+  }
 
   if (!modifier.enabled) {
     out.append(",\n          \"enabled\": false");

@@ -150,6 +150,31 @@ target_precompile_headers(classdb_test
 add_test(NAME classdb_test
          COMMAND classdb_test)
 
+add_executable(skeleton_modifier_catalog_test
+    "skeleton_modifier_catalog_test.cpp"
+)
+
+target_link_libraries(skeleton_modifier_catalog_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(skeleton_modifier_catalog_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(skeleton_modifier_catalog_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(skeleton_modifier_catalog_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME skeleton_modifier_catalog_test
+         COMMAND skeleton_modifier_catalog_test)
+
 add_executable(variant_test
     "variant_test.cpp"
 )

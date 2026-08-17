@@ -1,3 +1,4 @@
+#include "EASTL/unique_ptr.h"
 #include "runtime/function/scene/scene_instance.h"
 
 #include "runtime/core/base/macro.h"
@@ -10,9 +11,11 @@
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
-#include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/object/missing_skeleton_modifier.h"
+#include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
+#include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/scene/scene_serializer.h"
 
 #include <cstddef>
@@ -191,36 +194,11 @@ void captureAnimationTreeTopology(const AnimationTree& tree,
 /// later pass because the child entity may not exist yet.
 void applySkeletonModifierDefinition(Object& object,
                                      const SceneSkeletonModifierDef& def) {
-  SkeletonModifier* modifier = nullptr;
-  if (def.type == "PaperMouth") {
-    SkeletonPaperMouthModifier* mouth = object.addSkeletonPaperMouthModifier();
-    if (!def.bone_name.empty()) {
-      mouth->setBoneName(def.bone_name);
-    }
-    // Order matters: attach-driven mode overwrites openAmount when enabled.
-    mouth->setAttachDriven(def.attach_driven);
-    mouth->setOpenAmount(def.open_amount);
-    modifier = mouth;
-  } else if (def.type == "SkeletonLookAtModifier") {
-    SkeletonLookAtModifier* look_at = object.addSkeletonLookAtModifier();
-    if (!def.bone_name.empty()) {
-      look_at->setBoneName(def.bone_name);
-    }
-    look_at->setTarget(def.target);
-    modifier = look_at;
-  } else if (def.type == "SkeletonAttachModifier") {
-    SkeletonAttachModifier* attach = object.addSkeletonAttachModifier();
-    if (!def.bone_name.empty()) {
-      attach->setBoneName(def.bone_name);
-    }
-    modifier = attach;
-  } else {
-    modifier = object.addSkeletonModifier();
+  eastl::unique_ptr<SkeletonModifier> created = makeSkeletonModifierFromDef(def);
+  if (created == nullptr) {
+    return;
   }
-
-  if (modifier != nullptr) {
-    modifier->setEnabled(def.enabled);
-  }
+  object.addSkeletonModifier(eastl::move(created));
 }
 
 void captureSkeletonModifiers(const SceneInstance& scene, const Object& object,
@@ -235,6 +213,14 @@ void captureSkeletonModifiers(const SceneInstance& scene, const Object& object,
     SceneSkeletonModifierDef def;
     def.type = modifier->getTypeName();
     def.enabled = modifier->isEnabled();
+
+    if (modifier->isMissing()) {
+      const auto* missing =
+          static_cast<const MissingSkeletonModifier*>(modifier);
+      def.extra_fields = missing->extraFields();
+      definition.skeleton_modifiers.push_back(eastl::move(def));
+      continue;
+    }
 
     if (def.type == "PaperMouth") {
       const auto* mouth =

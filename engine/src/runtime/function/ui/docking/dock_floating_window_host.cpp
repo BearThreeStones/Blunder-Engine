@@ -245,6 +245,7 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
           slint_row.modifier_index = row.modifier_index;
           slint_row.type_name = toSharedString(row.type_name);
           slint_row.enabled = row.enabled;
+          slint_row.missing = row.missing;
           slint_row.bone_name = toSharedString(row.bone_name);
           slint_row.open_amount = row.open_amount;
           slint_row.attach_driven = row.attach_driven;

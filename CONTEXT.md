@@ -4,6 +4,40 @@ Editor and runtime for a Z-up, glTF-aligned 3D engine with Blender-inspired view
 
 ## Language
 
+### Engine composition
+
+**Privileged core**:
+The non-replaceable, non-unloadable substrate of a running engine process: ClassDB, the C-ABI bridge, the RHI (offscreen Vulkan presented through Slint), and Object–Entity binding. Extensions compose beside it; they do not replace it or hot-unload it. Decision record: [ADR 0035](docs/adr/0035-first-party-seams-beside-privileged-core.md).
+_Avoid_: Core (the README conceptual layer: log, events, math, memory, LayerStack), Physics Kernel, Reflection kernel, treating every `RuntimeGlobalContext` field as privileged, Cordis / DeepSeek Harness “no privileged core”, everything-is-plugin including ClassDB or RHI
+
+**First-party composition**:
+Only the engine repository ships code that mounts beside the Privileged core. That code is statically linked into the engine (typically `engine_runtime`). Project Behaviours remain gameplay; they are not engine modules. There is no third-party native plugin ABI and no C# editor-script composition path.
+_Avoid_: Plugin DLL, GDExtension, Unity native plugin, marketplace modules, treating Behaviour as a System, C# editor scripts as the engine composition mechanism, Plugin as the name of a System or Seam registration
+
+**System**:
+A process-lifetime first-party object that owns a capability (for example RenderSystem, AssetImportService, DocumentHistory). Started at process boot according to Host composition; torn down only at process shutdown. Not a Layer, not a Behaviour, and not unloadable mid-session.
+_Avoid_: Plugin, treating Layer as a System, treating Behaviour as a System, mid-session unload of a System, Cordis component
+
+**Host composition**:
+Which Systems start in a given process. Today that is Editor Session versus Player (`EngineHostMode`). Changing composition means starting a new process, not remounting Systems in a live session.
+_Avoid_: Cordis profile / bundle / patch YAML as the first composition format, hot-swapping Host composition inside a live process, treating Play Mode as a Host composition (Play Mode is a session; Player is the host)
+
+**Seam**:
+A declared extension point beside the Privileged core with three roles: a definition (the interface), providers (implementations), and at least one consumer (the System that uses them). One role alone is not a Seam. Adding a first-party capability means designing all three. The first Seam to cut is the **SkeletonModifier type catalog**; Import codec is the second. Editor Command and Add… Unique attachments are not Seams.
+_Avoid_: Ad-hoc switch statements as the lasting extension path, calling a single helper a Seam, treating ClassDB itself as a Seam (ClassDB is Privileged core), treating LayerStack as a Seam, an Editor Command type registry, listing Unique attachments as Seam registrations
+
+**Seam registration**:
+One provider or intercepting listener installed on a Seam, with a disposer that fully reverts that install. Tests and feature flags unregister this way. Unregistering does not tear down the owning System.
+_Avoid_: Unloading a System to remove one importer, reversible teardown of the Privileged core, using Plugin or Cordis effect as the product term
+
+**Context System**:
+A System looked up from the process-wide runtime context (`RuntimeGlobalContext`). It hosts the Privileged core, or every shipped Host composition starts it (Editor Session and Player). AssetCompiler is a Context System because both hosts cook-if-stale. Torn down only at process shutdown.
+_Avoid_: Putting Editor-only authorship Systems here as the lasting path, treating every current GlobalContext field as a Context System, moving AssetCompiler to the registry while Player still cooks at boot
+
+**Registered System**:
+A System that at least one shipped Host composition omits. Editor-only authorship belongs here — Content Browser, Selection, Hierarchy, Scene Edit, Document History, Viewport Pick, Placement Preview, Animation Preview, Play Session, thumbnail/preview render services, Asset Import, UiHost, Slint, viewport sink/bridge. Player must not create them. Mounted at process boot via a registry; callers tolerate absence. Still process-lifetime — not a Plugin and not a Seam registration.
+_Avoid_: Plugin, unloading a Registered System while the process runs, conflating Registered System with Seam registration, creating Content Browser or Import inside the Player, Cordis ctx keys for the Privileged core
+
 ### Reflection & scripting
 
 **Gameplay scripting language**:
@@ -567,8 +601,8 @@ While a Play session is running, the author may keep editing the Project in the 
 _Avoid_: Freezing the editor for the whole Play session as the v1 rule; implying unsaved editor edits stream into the running Player
 
 **Editor Command**:
-A single reversible unit on Editor History (Document or Global). It exposes undo and redo. Continuous interactions (e.g. a Translate Modal Session) become one Command at confirm — not one Command per pointer move.
-_Avoid_: Per-frame history entries, full-scene snapshot as the default history unit
+A single reversible unit on Editor History (Document or Global). It exposes undo and redo. Continuous interactions (e.g. a Translate Modal Session) become one Command at confirm — not one Command per pointer move. New Commands are new types pushed onto History — not a Seam type catalog.
+_Avoid_: Per-frame history entries, full-scene snapshot as the default history unit, an Editor Command type registry / palette as the first composition Seam
 
 **Document History**:
 The scene-scoped Editor History for one open editable document — for v1, the active scene (`activeScenePath` / active `SceneInstance`). Opening another scene replaces or clears that history. It is not Global History and does not hold editor-preference commands.
@@ -855,6 +889,14 @@ _Avoid_: Treating Phase 7 as full Godot AnimationTree parity, silently closing P
 **LookAt** (SkeletonModifier):
 A SkeletonModifier that aims a named bone toward a target point. Reads Global Pose (model space), writes Local Pose, thus requiring stage 5 before Matrix Palette. **Target** is specified in **world space** at the product surface; apply converts into Skeleton/model space using the host Object Transform before aiming. Configurable product as of Phase 6.
 _Avoid_: Treating LookAt target as model-space by default without conversion, baking Object TRS into Pipeline Global Pose so LookAt can skip conversion, equating LookAt with Add2 or Behaviour Tick bone hacks
+
+**SkeletonModifier type catalog**:
+The first Seam: construct a SkeletonModifier from a ClassDB type name. A factory table beside ClassDB — not a second property database. Each Seam registration is a factory plus Add… visibility (`show_in_add_menu`). ClassDB keeps properties, methods, and Inspector fields; the catalog does not store field schemas. Scene deserialize (Editor and Player) and the Add… Skeleton Modifiers group consume it. Product types remain Exported ClassDB classes; test doubles may register a factory without an Inspector export and with Add… hidden. Keys must match ClassDB class names when the class exists. Decision record: [ADR 0035](docs/adr/0035-first-party-seams-beside-privileged-core.md).
+_Avoid_: A second property/reflection database, listing Behaviours or Unique attachments here, an Editor-only catalog that Player deserialize cannot see, growing ClassDB instantiate/enumerate as this Seam, putting Inspector schemas or per-type serialize hooks in the catalog, treating the Animation Pipeline `apply` chain as this Seam, moving Registered Systems or Host composition in the same slice as this Seam
+
+**Missing SkeletonModifier**:
+A chain slot whose type name is not in the SkeletonModifier type catalog. It keeps the authored type string and an opaque bag of unknown fields that Save writes back unchanged. It does not apply, shows as broken in Inspector, and may be removed. It does not block Save or Play. Not an Add… item, not a product ClassDB type, and not a second property schema.
+_Avoid_: Coercing unknown types to base SkeletonModifier (today's `else` drops the name), dropping the slot, failing scene load, listing missing types in Add…, rewriting unknown fields into ClassDB properties, dropping leftover keys on Save
 
 **SkeletonModifier**:
 An engine-owned ClassDB post-pose step (Phase 5+) that runs as Animation Pipeline **stage 4** — after Local Pose blend (Player or Tree blend specification) and **before** PoseApplied — mutating the Skeleton or writing related transforms. Multiple modifiers on an Object form an ordered chain. **Semantics:** a modifier may read Global Pose and/or write Local Pose (or non-skeleton outputs such as a child Object Transform). Writes to Local Pose invalidate Global Pose and require pipeline **stage 5** (global recompute) before Matrix Palette and pose consumers. **Near-term implementation:** after the chain completes, always run stage 5 (conservative); per-modifier skip optimization may follow without changing the semantic model. Phase 5 shipped the chain, extension point, test double, and a LookAt sample. Phase 6 product types include PaperMouth, SkeletonAttachModifier, and configurable LookAt. Distinct from Add2 (clip additive in the tree) and from gameplay Behaviours that run in Tick before sampling. Decision records: [ADR 0026](docs/adr/0026-animation-phase-5.md), [ADR 0027](docs/adr/0027-animation-phase-6.md).

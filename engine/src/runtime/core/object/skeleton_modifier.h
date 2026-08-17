@@ -20,6 +20,9 @@ class SkeletonModifier {
   /// ClassDB name of the concrete product; drives scene serialization.
   virtual const char* getTypeName() const { return "SkeletonModifier"; }
 
+  /// True when the authored type is absent from the SkeletonModifier type catalog.
+  virtual bool isMissing() const { return false; }
+
   /// Extension point: subclasses override; default delegates to setApplyFn.
   virtual void apply(Skeleton& skeleton);
 

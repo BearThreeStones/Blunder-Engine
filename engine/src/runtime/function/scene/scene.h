@@ -6,6 +6,7 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/reflection/variant.h"
+#include "runtime/core/object/skeleton_modifier_extra_field.h"
 #include "runtime/function/scene/camera_component.h"
 
 namespace Blunder {
@@ -40,6 +41,8 @@ struct SceneSkeletonModifierDef final {
   Vec3 target{0.0f, 0.0f, 1.0f};
   /// SkeletonAttachModifier child, by scene entity name.
   eastl::string child_entity_name;
+  /// Leftover JSON properties when `type` is not in the catalog.
+  eastl::vector<SkeletonModifierExtraField> extra_fields;
 };
 
 /// Static entity definition deserialized from a Scene asset.

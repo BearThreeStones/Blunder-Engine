@@ -27,6 +27,7 @@ export struct SkeletonModifierRow {
     modifier-index: int,
     type-name: string,
     enabled: bool,
+    missing: bool,
     bone-name: string,
     open-amount: float,
     attach-driven: bool,
@@ -1149,7 +1150,7 @@ export component InspectorPanel inherits Rectangle {
                         background: #262626;
                         border-radius: 4px;
                         border-width: 1px;
-                        border-color: #3a3a3a;
+                        border-color: modifier.missing ? #6a3a3a : #3a3a3a;
 
                         VerticalBox {
                             width: 100%;
@@ -1159,8 +1160,8 @@ export component InspectorPanel inherits Rectangle {
                             HorizontalBox {
                                 spacing: 4px;
                                 Text {
-                                    text: modifier.type-name;
-                                    color: #d8d8d8;
+                                    text: modifier.type-name + (modifier.missing ? " (missing)" : "");
+                                    color: modifier.missing ? #ff9a9a : #d8d8d8;
                                     font-size: 12px;
                                     vertical-alignment: center;
                                     horizontal-stretch: 1;
@@ -1219,7 +1220,13 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
 
-                            CheckBox {
+                            if modifier.missing: Text {
+                                text: "Type not in catalog — remove or keep for Save";
+                                color: #a07070;
+                                font-size: 10px;
+                            }
+
+                            if !modifier.missing: CheckBox {
                                 text: "Enabled";
                                 checked: modifier.enabled;
                                 toggled => {
@@ -1228,7 +1235,7 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
 
-                            HorizontalBox {
+                            if !modifier.missing: HorizontalBox {
                                 spacing: 6px;
                                 Text {
                                     text: "Bone";
@@ -1253,7 +1260,7 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
 
-                            if modifier.type-name == "PaperMouth": VerticalBox {
+                            if !modifier.missing && modifier.type-name == "PaperMouth": VerticalBox {
                                 spacing: 4px;
                                 HorizontalBox {
                                     spacing: 6px;
@@ -1291,7 +1298,7 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
 
-                            if modifier.type-name == "SkeletonAttachModifier": HorizontalBox {
+                            if !modifier.missing && modifier.type-name == "SkeletonAttachModifier": HorizontalBox {
                                 spacing: 6px;
                                 Text {
                                     text: "Child Entity";
@@ -1316,7 +1323,7 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
 
-                            if modifier.type-name == "SkeletonLookAtModifier": VerticalBox {
+                            if !modifier.missing && modifier.type-name == "SkeletonLookAtModifier": VerticalBox {
                                 spacing: 4px;
                                 HorizontalBox {
                                     spacing: 6px;

@@ -4,6 +4,7 @@
 #include "EASTL/unordered_map.h"
 #include "EASTL/vector.h"
 
+#include "runtime/core/object/skeleton_modifier_catalog.h"
 #include "runtime/core/reflection/generated/register_generated.h"
 
 namespace Blunder {
@@ -22,7 +23,10 @@ eastl::unordered_map<eastl::string, ClassEntry>& classes() {
 
 }  // namespace
 
-void ClassDB::clear() { classes().clear(); }
+void ClassDB::clear() {
+  classes().clear();
+  SkeletonModifierCatalog::clear();
+}
 
 void ClassDB::registerClass(const char* name, const char* parent_name) {
   if (name == nullptr || name[0] == '\0') {
@@ -143,6 +147,7 @@ void ClassDB::initialize() {
   register_skeleton_look_at_modifier_reflection();
   register_skeleton_paper_mouth_modifier_reflection();
   register_skeleton_attach_modifier_reflection();
+  SkeletonModifierCatalog::registerBuiltins();
 }
 
 void ClassDB::shutdown() { clear(); }

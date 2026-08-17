@@ -5,11 +5,13 @@
 #include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/missing_skeleton_modifier.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
+#include "runtime/core/object/skeleton_modifier_catalog.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -20,6 +22,7 @@ struct InspectorSkeletonModifierRowData final {
   size_t index{0};
   eastl::string type_name;
   bool enabled{true};
+  bool missing{false};
   eastl::string bone_name;
   float open_amount{0.0f};
   bool attach_driven{false};
@@ -32,56 +35,51 @@ inline SkeletonModifier* addSkeletonModifierByType(Object* object,
   if (object == nullptr) {
     return nullptr;
   }
-  if (type == "PaperMouth") {
-    return object->addSkeletonPaperMouthModifier();
+  eastl::unique_ptr<SkeletonModifier> created =
+      SkeletonModifierCatalog::construct(type.c_str());
+  if (created == nullptr) {
+    return nullptr;
   }
-  if (type == "SkeletonAttachModifier") {
-    return object->addSkeletonAttachModifier();
-  }
-  if (type == "SkeletonLookAtModifier") {
-    return object->addSkeletonLookAtModifier();
-  }
-  if (type == "SkeletonModifier") {
-    return object->addSkeletonModifier();
-  }
-  return nullptr;
+  return object->addSkeletonModifier(eastl::move(created));
 }
 
-inline eastl::unique_ptr<SkeletonModifier> makeSkeletonModifierFromDef(
-    const SceneSkeletonModifierDef& def) {
-  if (def.type == "PaperMouth") {
-    auto mouth = eastl::make_unique<SkeletonPaperMouthModifier>();
+inline void applyProductModifierFields(SkeletonModifier& modifier,
+                                       const SceneSkeletonModifierDef& def) {
+  const eastl::string type = modifier.getTypeName();
+  if (type == "PaperMouth") {
+    auto* mouth = static_cast<SkeletonPaperMouthModifier*>(&modifier);
     if (!def.bone_name.empty()) {
       mouth->setBoneName(def.bone_name);
     }
     mouth->setAttachDriven(def.attach_driven);
     mouth->setOpenAmount(def.open_amount);
-    mouth->setEnabled(def.enabled);
-    return mouth;
-  }
-  if (def.type == "SkeletonLookAtModifier") {
-    auto look_at = eastl::make_unique<SkeletonLookAtModifier>();
+  } else if (type == "SkeletonLookAtModifier") {
+    auto* look_at = static_cast<SkeletonLookAtModifier*>(&modifier);
     if (!def.bone_name.empty()) {
       look_at->setBoneName(def.bone_name);
     }
     look_at->setTarget(def.target);
-    look_at->setEnabled(def.enabled);
-    return look_at;
-  }
-  if (def.type == "SkeletonAttachModifier") {
-    auto attach = eastl::make_unique<SkeletonAttachModifier>();
+  } else if (type == "SkeletonAttachModifier") {
+    auto* attach = static_cast<SkeletonAttachModifier*>(&modifier);
     if (!def.bone_name.empty()) {
       attach->setBoneName(def.bone_name);
     }
-    attach->setEnabled(def.enabled);
-    return attach;
   }
-  if (def.type == "SkeletonModifier") {
-    auto slot = eastl::make_unique<SkeletonModifier>();
-    slot->setEnabled(def.enabled);
-    return slot;
+}
+
+inline eastl::unique_ptr<SkeletonModifier> makeSkeletonModifierFromDef(
+    const SceneSkeletonModifierDef& def) {
+  eastl::unique_ptr<SkeletonModifier> modifier =
+      SkeletonModifierCatalog::construct(def.type.c_str());
+  if (modifier == nullptr) {
+    auto missing = eastl::make_unique<MissingSkeletonModifier>(def.type);
+    missing->setEnabled(def.enabled);
+    missing->setExtraFields(def.extra_fields);
+    return missing;
   }
-  return nullptr;
+  modifier->setEnabled(def.enabled);
+  applyProductModifierFields(*modifier, def);
+  return modifier;
 }
 
 inline void wireAttachChildFromScene(SceneInstance* scene, Object* host,
@@ -117,6 +115,11 @@ inline bool captureSkeletonModifierDef(const SceneInstance& scene,
   out_def.type = modifier->getTypeName();
   out_def.enabled = modifier->isEnabled();
 
+  if (modifier->isMissing()) {
+    const auto* missing = static_cast<const MissingSkeletonModifier*>(modifier);
+    out_def.extra_fields = missing->extraFields();
+    return true;
+  }
   if (out_def.type == "PaperMouth") {
     const auto* mouth = static_cast<const SkeletonPaperMouthModifier*>(modifier);
     out_def.bone_name = mouth->getBoneName();
@@ -151,6 +154,9 @@ inline void applySkeletonModifierFieldsOnObject(SceneInstance* scene, Object* ob
     return;
   }
   modifier->setEnabled(def.enabled);
+  if (modifier->isMissing()) {
+    return;
+  }
   if (def.type == "PaperMouth") {
     auto* mouth = static_cast<SkeletonPaperMouthModifier*>(modifier);
     if (!def.bone_name.empty()) {
@@ -238,6 +244,8 @@ inline void buildInspectorSkeletonModifierRows(
     row.index = i;
     row.type_name = def.type;
     row.enabled = def.enabled;
+    row.missing = object->getSkeletonModifierAt(i) != nullptr &&
+                  object->getSkeletonModifierAt(i)->isMissing();
     row.bone_name = def.bone_name;
     row.open_amount = def.open_amount;
     row.attach_driven = def.attach_driven;
@@ -248,10 +256,7 @@ inline void buildInspectorSkeletonModifierRows(
 }
 
 inline void buildSkeletonModifierTypeChoices(eastl::vector<eastl::string>& out) {
-  out.clear();
-  out.push_back("PaperMouth");
-  out.push_back("SkeletonAttachModifier");
-  out.push_back("SkeletonLookAtModifier");
+  SkeletonModifierCatalog::listAddMenuTypes(out);
 }
 
 }  // namespace Blunder

@@ -2341,6 +2341,7 @@ std::shared_ptr<slint::VectorModel<SkeletonModifierRow>> makeSkeletonModifierRow
     slint_row.modifier_index = static_cast<int>(row.index);
     slint_row.type_name = slint::SharedString(row.type_name.c_str());
     slint_row.enabled = row.enabled;
+    slint_row.missing = row.missing;
     slint_row.bone_name = slint::SharedString(row.bone_name.c_str());
     slint_row.open_amount = row.open_amount;
     slint_row.attach_driven = row.attach_driven;
@@ -2434,6 +2435,7 @@ void copySkeletonModifierRowsToSnapshot(
     copy.modifier_index = row.modifier_index;
     copy.type_name = row.type_name.data();
     copy.enabled = row.enabled;
+    copy.missing = row.missing;
     copy.bone_name = row.bone_name.data();
     copy.open_amount = row.open_amount;
     copy.attach_driven = row.attach_driven;
@@ -4002,6 +4004,10 @@ void SlintSystem::applyInspectorSkeletonModifierFieldCommit(size_t modifier_inde
   try {
     Object* object = scene->findBoundObject(entity_id);
     if (object == nullptr || modifier_index >= object->getSkeletonModifierCount()) {
+      return;
+    }
+    SkeletonModifier* live = object->getSkeletonModifierAt(modifier_index);
+    if (live != nullptr && live->isMissing()) {
       return;
     }
     SceneSkeletonModifierDef before_def;

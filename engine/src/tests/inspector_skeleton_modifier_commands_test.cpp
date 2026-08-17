@@ -6,6 +6,7 @@
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/document_history.h"
@@ -388,6 +389,8 @@ void test_inspector_edits_export_to_scene() {
 }
 
 int main() {
+  Blunder::ClassDB::initialize();
+
   test_add_skeleton_modifier_command_round_trip();
   test_remove_skeleton_modifier_command_round_trip();
   test_reorder_skeleton_modifiers_command_round_trip();
@@ -396,6 +399,8 @@ int main() {
   test_inspector_edits_paper_mouth_preview_after_sample();
   test_inspector_edits_look_at_and_attach_params();
   test_inspector_edits_export_to_scene();
+
+  Blunder::ClassDB::shutdown();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {
