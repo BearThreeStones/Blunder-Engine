@@ -29,4 +29,4 @@
 ## 5. Verify
 
 - [x] 5.1 Build `engine_editor` Debug
-- [ ] 5.2 Manual: slider min ↔ Details; menu presets 48/80/104/128; sort headers folders-first; drag/open/delete from Details; thumbnails still in icon layouts
+- [x] 5.2 Manual: slider min ↔ Details; menu presets 48/80/104/128; sort headers folders-first; drag/open/delete from Details; thumbnails still in icon layouts
