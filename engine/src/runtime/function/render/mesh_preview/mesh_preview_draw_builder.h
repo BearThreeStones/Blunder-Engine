@@ -16,7 +16,7 @@ class MeshAsset;
 struct MeshPreviewSubmeshDraw {
   eastl::shared_ptr<MeshAsset> mesh;
   eastl::shared_ptr<MaterialAsset> material;
-  /// glTF node / entity world matrix (identity when unavailable).
+  /// Engine-space node / entity world matrix (identity when unavailable).
   glm::mat4 model{1.0f};
 };
 

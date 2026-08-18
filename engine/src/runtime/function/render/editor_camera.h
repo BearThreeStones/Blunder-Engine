@@ -47,11 +47,16 @@ class EditorCamera final {
   float getProjectionTransitionT() const { return m_projection_transition_t; }
 
   bool isWindowPositionInViewport(const Vec2& window_position) const;
+  bool isLogicalPositionInViewport(const Vec2& logical_position) const;
   Vec2 windowToViewportLocal(const Vec2& window_position) const;
+  Vec2 logicalToViewportLocal(const Vec2& logical_position) const;
   /// Maps a window click to offscreen render-target pixel coordinates (HiDPI aware).
   glm::ivec2 windowToViewportRenderPixel(const Vec2& window_position) const;
   Vec2 viewportLocalToNdc(const Vec2& viewport_position) const;
   Ray makeRayFromWindowPosition(const Vec2& window_position) const;
+  /// Slint logical window coordinates (already HiDPI-mapped). Do not pass these
+  /// to makeRayFromWindowPosition — that API remaps SDL client pixels.
+  Ray makeRayFromLogicalPosition(const Vec2& logical_position) const;
 
   void setViewportRect(int32_t x, int32_t y, float logical_width,
                        float logical_height, float render_width,

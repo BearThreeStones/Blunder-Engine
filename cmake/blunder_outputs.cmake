@@ -3,6 +3,16 @@
 # Product:  ${CMAKE_BINARY_DIR}/bin/<Config>/
 # Tests:    ${CMAKE_BINARY_DIR}/tests/<Config>/
 
+# VS 2022+/2026 debugger uses Path.IsPathFullyQualified: "E:/foo" is rejected as
+# "not a complete path". Write a native Windows cwd for F5.
+function(blunder_set_debugger_working_directory target)
+    cmake_path(NATIVE_PATH CMAKE_SOURCE_DIR NORMALIZE _blunder_debugger_wd)
+    set_property(TARGET ${target} PROPERTY
+        VS_DEBUGGER_WORKING_DIRECTORY "${_blunder_debugger_wd}")
+    set_property(TARGET ${target} PROPERTY
+        DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endfunction()
+
 macro(blunder_use_bin_outputs)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG
         "${CMAKE_BINARY_DIR}/bin/Debug")

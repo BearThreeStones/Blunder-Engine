@@ -41,9 +41,9 @@ class GridOverlay final : public Overlay {
 
   void begin_sync(OverlayResources& res, const OverlayState& state) override;
 
-  /// Draw after SSAO (ScreenOverlayPass, LOAD) so the composite pass cannot
-  /// erase grid pixels from the scene snapshot.
-  void draw_screen(VkCommandBuffer cmd, const OverlayState& state) override;
+  /// Draw after opaque meshes in the forward pass (before alpha-blend draws)
+  /// so lines depth-test against solids and blend meshes composite over them.
+  void draw(VkCommandBuffer cmd, const OverlayState& state) override;
 
  private:
   VulkanContext* m_vk_context{nullptr};

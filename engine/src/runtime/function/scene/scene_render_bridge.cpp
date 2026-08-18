@@ -68,7 +68,9 @@ void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
                                        fallback_texture);
   }
 
-  const bool is_blend = draw_renderer.alpha_mode == cgltf_alpha_mode_blend;
+  const bool is_blend =
+      material ? material->usesForwardTransparentPass()
+               : draw_renderer.alpha_mode == cgltf_alpha_mode_blend;
   if (is_blend) {
     render_system->addTransparentMeshDraw(
         gpu_mesh, material, base_color_texture, metallic_roughness_texture,
@@ -79,7 +81,8 @@ void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
     render_system->addOpaqueMeshDraw(
         gpu_mesh, material, base_color_texture, metallic_roughness_texture,
         normal_texture, occlusion_texture, draw_renderer.world_matrix,
-        draw_renderer.alpha_cutoff, draw_renderer.alpha_mode,
+        draw_renderer.alpha_cutoff,
+        material ? material->getAlphaMode() : draw_renderer.alpha_mode,
         draw_renderer.double_sided, eastl::move(gpu_bone_palette));
   }
 }

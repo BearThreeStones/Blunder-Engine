@@ -12,6 +12,7 @@
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 
@@ -67,7 +68,11 @@ void PickInstanceBuffer::rebuild(SceneInstance& scene, RenderSystem* render_syst
 
   scene.forEachMeshRenderer([&](EntityId entity_id,
                                 const MeshRendererComponent& renderer) {
-    if (!renderer.mesh || renderer.alpha_mode == cgltf_alpha_mode_blend) {
+    if (!renderer.mesh) {
+      return;
+    }
+    if (renderer.material ? renderer.material->usesForwardTransparentPass()
+                          : renderer.alpha_mode == cgltf_alpha_mode_blend) {
       return;
     }
 

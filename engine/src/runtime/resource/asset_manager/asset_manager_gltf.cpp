@@ -315,6 +315,11 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   normal_texture_asset = loadGltfImageTexture(material.normal_texture.texture);
   occlusion_texture_asset = loadGltfImageTexture(material.occlusion_texture.texture);
 
+  if (alpha_mode == cgltf_alpha_mode_blend && base_color_factor.a >= 0.999f) {
+    // Blender often tags solid meshes as BLEND; that skips depth write.
+    alpha_mode = cgltf_alpha_mode_opaque;
+  }
+
   if (base_color_texture_asset) {
     base_color_texture_handle =
         makeHandle(Asset::Type::Texture2D, base_color_texture_asset->getVirtualPath());

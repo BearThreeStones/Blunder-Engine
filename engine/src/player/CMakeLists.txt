@@ -8,9 +8,7 @@ target_link_libraries(engine_player
         blunder_engine_c_static
 )
 
-set_target_properties(engine_player PROPERTIES
-    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-)
+blunder_set_debugger_working_directory(engine_player)
 
 if(MSVC)
     target_compile_options(engine_player PRIVATE /Zc:preprocessor)

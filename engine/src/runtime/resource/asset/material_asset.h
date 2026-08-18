@@ -96,6 +96,12 @@ class MaterialAsset final : public Asset {
   bool isMaskTransparent() const {
     return m_alpha_mode == cgltf_alpha_mode_mask;
   }
+  /// glTF BLEND with opaque base-color alpha is treated as opaque so the mesh
+  /// writes depth (Blender often tags solid characters as BLEND).
+  bool usesForwardTransparentPass() const {
+    return m_alpha_mode == cgltf_alpha_mode_blend &&
+           m_base_color_factor.a < 0.999f;
+  }
 
  private:
   glm::vec4 m_base_color_factor{1.0f};

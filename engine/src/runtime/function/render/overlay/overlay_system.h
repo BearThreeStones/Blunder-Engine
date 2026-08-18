@@ -46,10 +46,10 @@ class IOffscreenRenderTarget;
 struct ForwardFrameState;
 
 /// Orchestrates overlay rendering in ordered phases:
-///   1. draw_scene_overlays — inside forward pass (depth-aware solids)
+///   1. draw_scene_overlays — inside forward pass after opaque, before blend
 ///   2. draw_overlay_lines — MRT line capture (OverlayLinePass)
 ///   3. draw_overlay_aa — composite AA lines onto main color
-///   4. draw_screen_overlays — after SSAO (ScreenOverlayPass: grid + transform + nav gizmo)
+///   4. draw_screen_overlays — after SSAO (ScreenOverlayPass: gizmos / HUD)
 class OverlaySystem final {
  public:
   OverlaySystem() = default;

@@ -6,7 +6,7 @@
 
 namespace Blunder {
 
-Vec3 groundPlacementFromWindow(float window_x, float window_y) {
+Vec3 groundPlacementFromWindow(float logical_x, float logical_y) {
   RenderSystem* render_system = g_runtime_global_context.m_render_system.get();
   if (render_system == nullptr) {
     return Vec3(0.0f);
@@ -14,11 +14,11 @@ Vec3 groundPlacementFromWindow(float window_x, float window_y) {
 
   EditorCamera* camera = render_system->getEditorCamera();
   if (camera == nullptr ||
-      !camera->isWindowPositionInViewport(Vec2(window_x, window_y))) {
+      !camera->isLogicalPositionInViewport(Vec2(logical_x, logical_y))) {
     return Vec3(0.0f);
   }
 
-  const Ray ray = camera->makeRayFromWindowPosition(Vec2(window_x, window_y));
+  const Ray ray = camera->makeRayFromLogicalPosition(Vec2(logical_x, logical_y));
   return groundPlacementFromRay(ray);
 }
 

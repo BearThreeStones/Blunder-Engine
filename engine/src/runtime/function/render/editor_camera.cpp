@@ -15,6 +15,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/core/event/key_event.h"
 #include "runtime/core/event/mouse_event.h"
+#include "runtime/function/render/viewport_unproject.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -385,14 +386,30 @@ Vec2 EditorCamera::windowToViewportLocal(const Vec2& window_position) const {
               logical[1] - static_cast<float>(m_viewport_origin_y));
 }
 
-Vec2 EditorCamera::viewportLocalToNdc(const Vec2& viewport_position) const {
+bool EditorCamera::isLogicalPositionInViewport(
+    const Vec2& logical_position) const {
   if (!isViewportReady()) {
-    return Vec2(0.0f, 0.0f);
+    return true;
   }
+  return Blunder::isLogicalPositionInViewport(
+      logical_position,
+      Vec2(static_cast<float>(m_viewport_origin_x),
+           static_cast<float>(m_viewport_origin_y)),
+      m_viewport_logical_width, m_viewport_logical_height);
+}
 
-  const float normalized_x = viewport_position.x / m_viewport_logical_width;
-  const float normalized_y = viewport_position.y / m_viewport_logical_height;
-  return Vec2(normalized_x * 2.0f - 1.0f, 1.0f - normalized_y * 2.0f);
+Vec2 EditorCamera::logicalToViewportLocal(const Vec2& logical_position) const {
+  if (!isViewportReady()) {
+    return logical_position;
+  }
+  return Blunder::logicalToViewportLocal(
+      logical_position, Vec2(static_cast<float>(m_viewport_origin_x),
+                             static_cast<float>(m_viewport_origin_y)));
+}
+
+Vec2 EditorCamera::viewportLocalToNdc(const Vec2& viewport_position) const {
+  return viewportLocalToClipNdc(viewport_position, m_viewport_logical_width,
+                                m_viewport_logical_height);
 }
 
 glm::ivec2 EditorCamera::windowToViewportRenderPixel(
@@ -411,25 +428,17 @@ glm::ivec2 EditorCamera::windowToViewportRenderPixel(
 }
 
 Ray EditorCamera::makeRayFromWindowPosition(const Vec2& window_position) const {
-  const Vec2 viewport_position = windowToViewportLocal(window_position);
-  const Vec2 ndc = viewportLocalToNdc(viewport_position);
-  const Mat4 inverse_view_projection =
-      glm::inverse(m_projection_matrix * m_view_matrix);
+  return unprojectViewportRay(
+      viewportLocalToNdc(windowToViewportLocal(window_position)), m_view_matrix,
+      m_projection_matrix, m_position,
+      m_projection_mode == ProjectionMode::orthographic);
+}
 
-  Vec4 near_world = inverse_view_projection * Vec4(ndc.x, ndc.y, 0.0f, 1.0f);
-  Vec4 far_world = inverse_view_projection * Vec4(ndc.x, ndc.y, 1.0f, 1.0f);
-  near_world /= near_world.w;
-  far_world /= far_world.w;
-
-  const Vec3 near_point(near_world.x, near_world.y, near_world.z);
-  const Vec3 far_point(far_world.x, far_world.y, far_world.z);
-  const Vec3 direction = glm::normalize(far_point - near_point);
-
-  if (m_projection_mode == ProjectionMode::orthographic) {
-    return Ray{near_point, direction};
-  }
-
-  return Ray{m_position, direction};
+Ray EditorCamera::makeRayFromLogicalPosition(const Vec2& logical_position) const {
+  return unprojectViewportRay(
+      viewportLocalToNdc(logicalToViewportLocal(logical_position)),
+      m_view_matrix, m_projection_matrix, m_position,
+      m_projection_mode == ProjectionMode::orthographic);
 }
 
 void EditorCamera::setViewportRect(const int32_t x, const int32_t y,

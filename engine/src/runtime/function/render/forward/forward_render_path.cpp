@@ -909,17 +909,17 @@ void ForwardRenderPath::renderFrameTo(
   target->beginRenderPass(command_list, clears, 2);
   bindViewportScissor(command_buffer, extent.width, extent.height);
 
-  // Scene passes: opaque (depth write ON), then transparent (depth write OFF).
+  // Opaque (depth write ON), then depth-tested overlays (grid), then
+  // transparent (depth write OFF) so blend meshes composite over the grid.
   drawOpaqueList(command_buffer, frame_state, opaque_draws, opaque_draw_count,
                  frame_index);
-  drawTransparentList(command_buffer, frame_state, transparent_draws,
-                      transparent_draw_count, frame_index);
 
-  // Overlay pass: draws grid, axes, wireframes, etc. after scene geometry.
-  // Overlays read the scene depth but do not write to it.
   if (draw_overlays && m_overlay_system != nullptr) {
     m_overlay_system->draw_scene_overlays(command_buffer);
   }
+
+  drawTransparentList(command_buffer, frame_state, transparent_draws,
+                      transparent_draw_count, frame_index);
 
   target->endRenderPass(command_list);
   target->markPostRenderPassShaderRead();

@@ -5,6 +5,7 @@
 #include <cgltf.h>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_manager/asset_manager_gltf.h"
 
@@ -55,7 +56,7 @@ eastl::vector<MeshPreviewSubmeshDraw> collectMeshPreviewSubmeshes(
 
     cgltf_float world[16];
     cgltf_node_transform_world(&node, world);
-    const glm::mat4 model = glm::make_mat4(world);
+    const glm::mat4 model = similarityGltfToEngine(glm::make_mat4(world));
 
     const cgltf_mesh& mesh = data->meshes[mesh_index];
     const cgltf_skin* skin = node.skin;

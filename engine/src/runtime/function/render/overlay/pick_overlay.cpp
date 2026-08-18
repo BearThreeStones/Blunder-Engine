@@ -395,7 +395,11 @@ eastl::vector<PickOverlay::PickDraw> PickOverlay::collectPickableDraws(
   eastl::vector<PickDraw> draws;
   scene.forEachMeshRenderer([&](EntityId entity_id,
                                 const MeshRendererComponent& renderer) {
-    if (!renderer.mesh || renderer.alpha_mode == cgltf_alpha_mode_blend) {
+    if (!renderer.mesh) {
+      return;
+    }
+    if (renderer.material ? renderer.material->usesForwardTransparentPass()
+                          : renderer.alpha_mode == cgltf_alpha_mode_blend) {
       return;
     }
 

@@ -174,7 +174,7 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   ASSERT(ctx);
   ASSERT(alloc);
   ASSERT(compiler);
-  ASSERT(res.screen_render_pass != VK_NULL_HANDLE);
+  ASSERT(res.scene_render_pass != VK_NULL_HANDLE);
 
   m_vk_context = ctx;
   m_vk_allocator = alloc;
@@ -191,7 +191,7 @@ void GridOverlay::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_pipeline->bind(ctx, compiler);
   m_pipeline->initializeWithRenderPass(
-      reinterpret_cast<VkRenderPass>(res.screen_render_pass), desc);
+      reinterpret_cast<VkRenderPass>(res.scene_render_pass), desc);
 
   // Per-frame uniform buffers.
   const uint32_t frames = VulkanSync::k_max_frames_in_flight;
@@ -297,7 +297,7 @@ void GridOverlay::begin_sync(OverlayResources& /*res*/,
   enabled_ = true;
 }
 
-void GridOverlay::draw_screen(VkCommandBuffer cmd, const OverlayState& state) {
+void GridOverlay::draw(VkCommandBuffer cmd, const OverlayState& state) {
   if (!enabled_ || m_pipeline == nullptr) {
     return;
   }

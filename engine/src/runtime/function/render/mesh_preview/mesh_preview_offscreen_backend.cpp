@@ -98,7 +98,7 @@ void appendForwardDraw(const MeshPreviewSubmeshDraw& submesh_draw, GpuMesh* gpu_
                                  glm::mat4(1.0f));
   }
 
-  if (alpha_mode == cgltf_alpha_mode_blend) {
+  if (material != nullptr && material->usesForwardTransparentPass()) {
     transparent_out.push_back(draw);
   } else {
     opaque_out.push_back(draw);

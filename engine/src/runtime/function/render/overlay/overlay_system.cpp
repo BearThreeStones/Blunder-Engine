@@ -38,6 +38,7 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   ASSERT(m_native_offscreen);
 
   m_screen_pass.initialize(ctx, m_native_offscreen);
+  m_resources.scene_render_pass = m_native_offscreen->getRenderPass();
   m_resources.screen_render_pass = m_screen_pass.renderPass();
 
   m_line_targets.initialize(ctx, alloc, m_native_offscreen);
@@ -79,6 +80,7 @@ void OverlaySystem::shutdown() {
   m_screen_pass.shutdown();
 
   m_native_offscreen = nullptr;
+  m_resources.scene_render_pass = VK_NULL_HANDLE;
   m_resources.screen_render_pass = VK_NULL_HANDLE;
   m_resources.offscreen = nullptr;
   m_resources.slang_compiler = nullptr;
@@ -169,6 +171,8 @@ void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
   if (!authorshipOverlaysActive()) {
     return;
   }
+  // Grid depth-tests against opaque meshes; blend meshes then composite over it.
+  m_grid.draw(cmd, m_state);
   m_axes.draw(cmd, m_state);
   m_wireframe.draw(cmd, m_state);
   m_origins.draw_color_only(cmd, m_state);
@@ -207,7 +211,6 @@ void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
     return;
   }
   m_screen_pass.begin(cmd);
-  m_grid.draw_screen(cmd, m_state);
   m_camera_gizmo.draw_screen(cmd, m_state);
   m_transform_gizmo.draw_screen(cmd, m_state);
   m_navigate_gizmo.draw_screen(cmd, m_state);

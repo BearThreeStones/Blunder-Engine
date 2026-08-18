@@ -23,9 +23,9 @@
 ## 4. Validation
 
 - [x] 4.1 Build `placement_preview_test` and `engine_editor`
-- [ ] 4.2 Manual QA pending human verification:
-  - [ ] Mesh Asset drag over viewport: follow-mesh + pointer cursor
-  - [ ] Leave viewport: preview hides; folder hover: move cursor
-  - [ ] Scene Asset over viewport: pointer, no preview; drop opens
-  - [ ] Inspector/chrome: not-allowed
-  - [ ] Escape cancels; drop still spawns and is undoable
+- [x] 4.2 Manual QA:
+  - [x] Mesh Asset drag over viewport: follow-mesh + pointer cursor
+  - [x] Leave viewport: preview hides; folder hover: move cursor
+  - [x] Scene Asset over viewport: pointer, no preview; drop opens
+  - [x] Inspector/chrome: not-allowed
+  - [x] Escape cancels; drop still spawns and is undoable

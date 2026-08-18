@@ -22,13 +22,13 @@ endif()
 file(TO_CMAKE_PATH "${BLUNDER_DEFAULT_PROJECT_ROOT}" _blunder_editor_debug_root)
 set_target_properties(engine_editor PROPERTIES
     WIN32_EXECUTABLE TRUE
-    VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     VS_DEBUGGER_COMMAND_ARGUMENTS "--project-root \"${_blunder_editor_debug_root}\""
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/bin/RelWithDebInfo"
     RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/bin/MinSizeRel"
 )
+blunder_set_debugger_working_directory(engine_editor)
 
 if(BLUNDER_EDITOR_PROFILE_EXE)
     set_target_properties(engine_editor PROPERTIES
