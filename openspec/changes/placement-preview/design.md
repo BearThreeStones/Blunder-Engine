@@ -1,6 +1,6 @@
 ## Context
 
-Content Browser drag already exists (`ContentBrowserDragController`, viewport drop → `spawnAssetAtWindowPosition`, folder reparent). Spawn uses Ground placement (camera ray ∩ Z=0) and `loadMesh` + `MeshRendererComponent`. `syncSceneToRender` rebuilds opaque/transparent draws from scene MeshRenderers every engine tick. There is no transient draw, and the cursor stays default during Browser drag. See proposal.md for product rules.
+Content Browser drag already exists (`ContentBrowserDragController`, viewport drop → `spawnAssetAtWindowPosition`, folder reparent). Spawn uses Ground placement (camera ray ∩ Z=0) and `GltfSceneImporter::importUnderEntity` (every glTF primitive, same as scene mesh attach). `loadMesh` is a single-primitive fallback when glTF expansion fails. `syncSceneToRender` rebuilds opaque/transparent draws from scene MeshRenderers every engine tick. There is no transient draw, and the cursor stays default during Browser drag. See proposal.md for product rules.
 
 Constraints: no scene Entity during drag; spawn Command only on drop; do not reuse Mesh Preview Render (studio lighting / offscreen); SDL3 has no copy cursor (pointer / move / not-allowed only).
 
@@ -17,7 +17,6 @@ Constraints: no scene Entity during drag; spawn Command only on drop; do not reu
 
 - OS file drop onto the viewport.
 - Surface snapping or view-plane billboards.
-- Multi-primitive preview beyond what `loadMesh` / spawn already draws.
 - Custom (non-system) cursors.
 - Changing spawn/open/reparent drop semantics except sharing Ground placement.
 
@@ -25,7 +24,7 @@ Constraints: no scene Entity during drag; spawn Command only on drop; do not reu
 
 ### 1. Transient draw list, not a live Entity
 
-**Decision:** `PlacementPreviewController` holds source path, loaded `MeshAsset`, visibility, and world position. After `syncSceneToRender`, `submitStandaloneMeshToRender` appends the same opaque/transparent path as scene meshes. Drop still calls `spawnMeshAsset`.
+**Decision:** `PlacementPreviewController` holds source path, collected `MeshPreviewSubmeshDraw`s, visibility, and world position. After `syncSceneToRender`, `submitStandaloneMeshToRender` appends each primitive at Ground placement × glTF node transform. Drop still calls `spawnMeshAsset`.
 
 **Alternatives considered:**
 
@@ -51,12 +50,12 @@ Constraints: no scene Entity during drag; spawn Command only on drop; do not reu
 
 ### 4. Load mesh on first viewport enter
 
-**Decision:** Call `AssetManager::loadMesh` when Placement Preview becomes visible for a path; cache until source changes or drag ends. Load failure hides preview; drop still attempts spawn as today.
+**Decision:** Call `collectMeshPreviewSubmeshes` when Placement Preview becomes visible for a path; cache until source changes or drag ends. Load failure hides preview; drop still attempts spawn as today.
 
 **Alternatives considered:**
 
 - Load at drag threshold — extra hitch while still over the Browser.
-- `collectMeshPreviewSubmeshes` — can enumerate more primitives than spawn's single `loadMesh`; keep spawn parity.
+- Single `loadMesh` — only the first glTF primitive; spawn now expands the full node graph, so preview must match.
 
 ## Risks / Trade-offs
 

@@ -2485,6 +2485,7 @@ void SlintSystem::syncHierarchy() {
     m_window_component->operator->()->set_hierarchy_tree_rows(tree_model);
     m_window_component->operator->()->set_hierarchy_selected_entity_id(
         isValid(primary) ? static_cast<int>(primary) : 0);
+    hierarchy.clearDirty();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncHierarchy] {}", e.what());
   } catch (...) {

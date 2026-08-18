@@ -1,14 +1,14 @@
 #pragma once
 
-#include "EASTL/shared_ptr.h"
 #include "EASTL/string.h"
+#include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 
 namespace Blunder {
 
 class AssetManager;
-class MeshAsset;
 class RenderSystem;
 
 /// Transient follow-mesh while dragging a Mesh Asset over the editor viewport.
@@ -31,7 +31,7 @@ class PlacementPreviewController final {
   eastl::string m_loaded_path;
   Vec3 m_ground_position{0.0f};
   bool m_over_viewport{false};
-  eastl::shared_ptr<MeshAsset> m_mesh;
+  eastl::vector<MeshPreviewSubmeshDraw> m_submeshes;
 };
 
 }  // namespace Blunder

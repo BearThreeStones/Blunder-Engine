@@ -121,6 +121,7 @@ Kernel handoff: Object Behaviour lists and the .NET host MVP are covered by ADR 
 | `scene_soft_delete_test` | Soft-delete EntityId stability; export omits tombstones |
 | `editor_commands_test` | Transform / spawn / soft-delete command undo/redo |
 | `placement_preview_test` | Ground placement, Content Browser drag cursor, Placement Preview visibility |
+| `spawn_mesh_primitives_test` | Viewport spawn expands every glTF primitive (not `loadMesh` first-primitive only) |
 
 ## See also
 

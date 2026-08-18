@@ -530,6 +530,21 @@ bool SceneInstance::isTombstoned(EntityId id) const {
   return entity != nullptr && entity->isTombstoned();
 }
 
+bool SceneInstance::isOmittedFromDocument(EntityId id) const {
+  EntityId current = id;
+  while (isValid(current)) {
+    if (isTombstoned(current)) {
+      return true;
+    }
+    const Entity* entity = getEntity(current);
+    if (entity == nullptr) {
+      break;
+    }
+    current = entity->getParentId();
+  }
+  return false;
+}
+
 const Entity* SceneInstance::getEntity(EntityId id) const {
   if (!isValid(id)) {
     return nullptr;
@@ -572,7 +587,7 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
 
   for (size_t i = 0; i < m_entities.size(); ++i) {
     const Entity& entity = m_entities[i];
-    if (entity.isTombstoned()) {
+    if (isOmittedFromDocument(indexToId(i))) {
       continue;
     }
     SceneEntityDefinition definition;

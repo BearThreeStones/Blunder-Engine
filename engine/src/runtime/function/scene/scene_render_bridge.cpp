@@ -160,6 +160,9 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
                                   bone_palette_scratch);
               gpu_bone_palette = bone_palette_scratch;
             } else {
+              if (!skeleton->hasValidPoseBuffers()) {
+                skeleton->rebuildPoseBuffers();
+              }
               applyCpuSkinning(*skeleton, renderer.mesh->getSkinData(),
                                renderer.mesh->getVertices(),
                                skinned_vertices_scratch);

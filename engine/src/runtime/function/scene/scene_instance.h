@@ -46,6 +46,8 @@ class SceneInstance final {
   bool softDeleteEntity(EntityId id);
   bool restoreEntity(EntityId id);
   bool isTombstoned(EntityId id) const;
+  /// True if this entity or any ancestor is tombstoned (hidden from document).
+  bool isOmittedFromDocument(EntityId id) const;
 
   const Entity* getEntity(EntityId id) const;
   Entity* getEntity(EntityId id);
@@ -82,7 +84,7 @@ class SceneInstance final {
   template <typename Fn>
   void forEachMeshRenderer(const Fn& fn) const {
     for (const auto& entry : m_mesh_renderers) {
-      if (isTombstoned(entry.first)) {
+      if (isOmittedFromDocument(entry.first)) {
         continue;
       }
       fn(entry.first, entry.second);

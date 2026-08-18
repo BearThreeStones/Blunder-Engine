@@ -108,6 +108,7 @@ void populateSkeletonFromSkin(cgltf_skin* skin, Skeleton& skeleton) {
   }
 
   skeleton.resetPoseToRest();
+  skeleton.rebuildPoseBuffers();
 }
 
 namespace {

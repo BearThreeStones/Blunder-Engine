@@ -16,7 +16,7 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
 
   if (m_expanded_entity_ids.empty()) {
     scene_instance->forEachEntity([&](EntityId entity_id, const Entity& entity) {
-      if (entity.isTombstoned()) {
+      if (entity.isTombstoned() || isValid(entity.getParentId())) {
         return;
       }
       bool has_children = false;

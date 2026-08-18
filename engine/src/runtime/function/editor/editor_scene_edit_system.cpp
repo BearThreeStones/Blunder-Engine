@@ -9,6 +9,7 @@
 #include "runtime/core/log/log_system.h"
 #include "runtime/function/editor/ground_placement.h"
 #include "runtime/resource/content_browser/content_browser_drop.h"
+#include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -245,14 +246,6 @@ SpawnAssetResult EditorSceneEditSystem::spawnMeshAsset(
     return result;
   }
 
-  const eastl::shared_ptr<MeshAsset> mesh =
-      m_asset_manager->loadMesh(asset_virtual_path);
-  if (!mesh) {
-    LOG_ERROR("[EditorSceneEdit] spawn failed: cannot load mesh '{}'",
-              asset_virtual_path.c_str());
-    return result;
-  }
-
   const Vec3 position = groundPlacementFromWindow(window_x, window_y);
   const eastl::string entity_name =
       makeUniqueEntityName(*instance, entityStemFromAssetPath(asset_virtual_path));
@@ -262,15 +255,29 @@ SpawnAssetResult EditorSceneEditSystem::spawnMeshAsset(
     spawned->setMeshVirtualPath(asset_virtual_path);
   }
 
-  MeshRendererComponent renderer{};
-  renderer.mesh = mesh;
-  renderer.material = mesh->getMaterialAsset();
-  if (renderer.material) {
-    renderer.alpha_mode = renderer.material->getAlphaMode();
-    renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
-    renderer.double_sided = renderer.material->isDoubleSided();
+  const GltfSceneImporter::ImportResult import_result =
+      GltfSceneImporter::importUnderEntity(m_asset_manager, asset_virtual_path,
+                                           *instance, entity_id);
+  if (!import_result.success) {
+    const eastl::shared_ptr<MeshAsset> mesh =
+        m_asset_manager->loadMesh(asset_virtual_path);
+    if (!mesh) {
+      LOG_ERROR("[EditorSceneEdit] spawn failed: cannot load mesh '{}': {}",
+                asset_virtual_path.c_str(), import_result.error_message.c_str());
+      instance->softDeleteEntity(entity_id);
+      return result;
+    }
+
+    MeshRendererComponent renderer{};
+    renderer.mesh = mesh;
+    renderer.material = mesh->getMaterialAsset();
+    if (renderer.material) {
+      renderer.alpha_mode = renderer.material->getAlphaMode();
+      renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
+      renderer.double_sided = renderer.material->isDoubleSided();
+    }
+    instance->setMeshRenderer(entity_id, eastl::move(renderer));
   }
-  instance->setMeshRenderer(entity_id, eastl::move(renderer));
 
   const SelectionSnapshot selection_before = currentSelectionSnapshot();
   if (g_runtime_global_context.m_editor_selection) {

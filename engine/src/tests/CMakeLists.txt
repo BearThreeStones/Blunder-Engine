@@ -73,6 +73,30 @@ target_precompile_headers(placement_preview_test
 add_test(NAME placement_preview_test
          COMMAND placement_preview_test)
 
+add_executable(spawn_mesh_primitives_test
+    "spawn_mesh_primitives_test.cpp"
+)
+
+target_link_libraries(spawn_mesh_primitives_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(spawn_mesh_primitives_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(spawn_mesh_primitives_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(spawn_mesh_primitives_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME spawn_mesh_primitives_test
+         COMMAND spawn_mesh_primitives_test)
+
 add_executable(inspector_transform_ops_test
     "inspector_transform_ops_test.cpp"
 )
