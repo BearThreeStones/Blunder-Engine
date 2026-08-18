@@ -170,6 +170,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.expanded = row.expanded;
         slint_row.has_children = row.has_children;
         slint_row.selected = row.selected;
+        slint_row.is_last_sibling = row.is_last_sibling;
+        slint_row.ancestor_cont_mask = row.ancestor_cont_mask;
         rows->push_back(slint_row);
       }
       ui.set_hierarchy_tree_rows(rows);

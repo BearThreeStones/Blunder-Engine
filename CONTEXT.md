@@ -176,6 +176,14 @@ _Avoid_: Runtime PeerTable as the type picker source; ClassDB registration of ga
 The authored parent/child hierarchy of Objects. Outline, reparenting, and naming walk this tree. When an Object has an ECS Entity, transform parenting is projected from the Scene Tree into the ECS World — the tree is not stored twice.
 _Avoid_: Dual-written parents on Object and ECS, ECS Parent as the editor-facing tree of record
 
+**Hierarchy Panel**:
+The editor chrome that lists the visible Scene Tree for selection, expand/collapse, and naming. The scene display name is panel chrome above the tree, not a tree parent. A pointer down on a visible row (including the Hierarchy Line gutter) selects that entity; a pointer down on the expand chevron of a row with children toggles expand.
+_Avoid_: Outliner as the product name, calling the panel the Scene Tree, treating the scene title as a Scene Tree root, treating the Hierarchy Line as a separate control or reparent handle
+
+**Hierarchy Line**:
+The parent/child guide in the Hierarchy Panel gutter: a vertical stem under an expanded parent and a horizontal tick to each visible child's expand-chevron column (the slot stays empty when the row has no children). Nested expanded rows draw their own stem. A parent's stem ends at its last visible child; it does not run through grandchildren. Same-depth names share one left edge. Root entity rows have no incoming line. The line is quieter than expand chevrons and row names, and keeps that color on a selected row. Visual chrome, not Scene Tree storage.
+_Avoid_: Outliner connector, Scene Tree line, indent-only as this decoration, treating the guide as authored scene data, requiring the same guides in the Content Browser as this term, shifting a leaf label left because it has no chevron, drawing a stem from the scene title to root entities, matching selection blue or glowing on select
+
 **Exported type**:
 A C++ type deliberately marked for inclusion in ClassDB (and thus in editor and script surfaces). Unmarked types stay engine-private.
 _Avoid_: Reflecting every engine type by default, silent auto-export of all headers

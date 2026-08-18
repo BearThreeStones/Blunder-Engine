@@ -5,69 +5,102 @@ import {
 } from "editor_icons.slint";
 
 export struct HierarchyTreeRow {
-
     entity-id: int,
-
     name: string,
-
     depth: int,
-
     expanded: bool,
-
     has-children: bool,
-
     selected: bool,
+    is-last-sibling: bool,
+    ancestor-cont-mask: int,
+}
 
+component HierarchyLineGutterCell {
+    in property <int> column;
+    in property <int> row-depth;
+    in property <bool> is-last-sibling;
+    in property <int> ancestor-cont-mask;
+
+    width: 18px;
+    height: 22px;
+
+    property <bool> parent-col: column == row-depth - 1;
+    property <bool> through-stem:
+        !parent-col
+        && column >= 0
+        && column <= 30
+        && Math.mod(Math.floor(ancestor-cont-mask / Math.pow(2, column)), 2) == 1;
+    property <bool> draw-tee: parent-col && !is-last-sibling;
+    property <bool> draw-ell: parent-col && is-last-sibling;
+
+    // Through-stem for a non-last ancestor.
+    if root.through-stem: Rectangle {
+        x: (parent.width - 1px) / 2;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: #737373;
+    }
+
+    // T: full-height stem + tick into the chevron column.
+    if root.draw-tee: Rectangle {
+        x: (parent.width - 1px) / 2;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: #737373;
+    }
+    if root.draw-tee: Rectangle {
+        x: (parent.width - 1px) / 2;
+        y: (parent.height - 1px) / 2;
+        width: parent.width / 2;
+        height: 1px;
+        background: #737373;
+    }
+
+    // L: stem to mid-row + tick into the chevron column.
+    if root.draw-ell: Rectangle {
+        x: (parent.width - 1px) / 2;
+        y: 0;
+        width: 1px;
+        height: parent.height / 2;
+        background: #737373;
+    }
+    if root.draw-ell: Rectangle {
+        x: (parent.width - 1px) / 2;
+        y: (parent.height - 1px) / 2;
+        width: parent.width / 2;
+        height: 1px;
+        background: #737373;
+    }
 }
 
 export component HierarchyPanel {
-
     in-out property <[HierarchyTreeRow]> tree-rows: [];
-
     in property <int> selected-entity-id: 0;
     in property <bool> show-title: false;
     in property <string> scene-display-name: "(No Scene)";
 
     callback entity-selected(int);
-
     callback entity-toggle(int);
 
-
-
     out property <length> hierarchy-origin-x: hierarchy-root.absolute-position.x;
-
     out property <length> hierarchy-origin-y: hierarchy-root.absolute-position.y;
-
     out property <length> hierarchy-width: hierarchy-root.width;
-
     out property <length> hierarchy-height: hierarchy-root.height;
-
     in-out property <length> tree-origin-y: tree-list.absolute-position.y;
 
-
-
     min-height: 80px;
-
     vertical-stretch: 0;
 
-
-
     hierarchy-root := Rectangle {
-
         background: #2d2d2d;
-
         border-color: #2a2a2a;
-
         border-width: 1px;
-
         vertical-stretch: 1;
 
-
-
         VerticalLayout {
-
             padding: 8px;
-
             spacing: 6px;
 
             if root.show-title: Text {
@@ -106,147 +139,96 @@ export component HierarchyPanel {
             }
 
             tree-panel := Rectangle {
-
                 horizontal-stretch: 1;
-
                 vertical-stretch: 1;
-
                 clip: true;
 
-
-
                 tree-scroll := Flickable {
-
                     width: parent.width;
-
                     height: parent.height;
-
                     interactive: true;
-
                     viewport-width: parent.width;
-
                     viewport-height: tree-list.preferred-height;
 
-
-
                     tree-list := VerticalLayout {
-
                         horizontal-stretch: 1;
-
-                        spacing: 2px;
-
-
+                        spacing: 0px;
 
                         for row[index] in root.tree-rows: Rectangle {
-
                             horizontal-stretch: 1;
-
                             height: 22px;
-
                             background: row.selected ? #3a3a4a : #00000000;
 
+                            row-touch := TouchArea {
+                                width: 100%;
+                                height: 100%;
 
-
-                            HorizontalLayout {
-
-                                horizontal-stretch: 1;
-
-                                padding-left: row.depth * 12px;
-
-                                spacing: 4px;
-
-                                height: 22px;
-
-
-
-                                arrow-touch := TouchArea {
-
-                                    width: 18px;
-
-                                    height: 22px;
-
-                                    if row.has-children && row.expanded: EditorIconTreeArrowDown {
-                                        icon-size: 10px;
-                                        icon-color: #a0a0a0;
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
+                                pointer-event(event) => {
+                                    if (event.button == PointerEventButton.left
+                                        && event.kind == PointerEventKind.down) {
+                                        root.entity-selected(row.entity-id);
                                     }
-                                    if row.has-children && !row.expanded: EditorIconTreeArrowRight {
-                                        icon-size: 10px;
-                                        icon-color: #a0a0a0;
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-
-                                    pointer-event(event) => {
-
-                                        if (row.has-children
-
-                                            && event.button == PointerEventButton.left
-
-                                            && event.kind == PointerEventKind.down) {
-
-                                            root.entity-toggle(row.entity-id);
-
-                                        }
-
-                                    }
-
                                 }
 
+                                HorizontalLayout {
+                                    width: 100%;
+                                    height: 100%;
+                                    spacing: 0px;
 
+                                    for column in row.depth: HierarchyLineGutterCell {
+                                        column: column;
+                                        row-depth: row.depth;
+                                        is-last-sibling: row.is-last-sibling;
+                                        ancestor-cont-mask: row.ancestor-cont-mask;
+                                    }
 
-                                row-touch := TouchArea {
+                                    if row.has-children: TouchArea {
+                                        width: 18px;
+                                        height: 22px;
 
-                                    horizontal-stretch: 1;
+                                        if row.expanded: EditorIconTreeArrowDown {
+                                            icon-size: 10px;
+                                            icon-color: #a0a0a0;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                        }
+                                        if !row.expanded: EditorIconTreeArrowRight {
+                                            icon-size: 10px;
+                                            icon-color: #a0a0a0;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                        }
 
-                                    height: 22px;
+                                        pointer-event(event) => {
+                                            if (event.button == PointerEventButton.left
+                                                && event.kind == PointerEventKind.down) {
+                                                root.entity-toggle(row.entity-id);
+                                            }
+                                        }
+                                    }
 
+                                    if !row.has-children: Rectangle {
+                                        width: 18px;
+                                        height: 22px;
+                                    }
 
+                                    Rectangle { width: 4px; height: 22px; }
 
                                     Text {
-
                                         text: row.name;
-
                                         color: row.selected ? #bde7ff : #d8d8d8;
-
                                         font-size: 11px;
-
                                         vertical-alignment: center;
-
+                                        horizontal-alignment: left;
                                         horizontal-stretch: 1;
-
+                                        overflow: elide;
                                     }
-
-
-
-                                    pointer-event(event) => {
-
-                                        if (event.button == PointerEventButton.left
-
-                                            && event.kind == PointerEventKind.down) {
-
-                                            root.entity-selected(row.entity-id);
-
-                                        }
-
-                                    }
-
                                 }
-
                             }
-
                         }
-
                     }
-
                 }
-
             }
-
         }
-
     }
-
 }
-

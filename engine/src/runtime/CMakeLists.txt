@@ -270,6 +270,7 @@ add_library(engine_runtime STATIC
     "function/editor/inspector_mesh_preview.h"
     "function/editor/inspector_mesh_preview.cpp"
     "function/editor/hierarchy_types.h"
+    "function/editor/hierarchy_line.h"
     "function/editor/hierarchy_system.h"
     "function/editor/hierarchy_system.cpp"
     "function/editor/editor_scene_edit_system.h"

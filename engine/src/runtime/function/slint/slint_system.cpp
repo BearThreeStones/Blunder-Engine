@@ -2477,6 +2477,8 @@ void SlintSystem::syncHierarchy() {
       slint_row.depth = row.depth;
       slint_row.expanded = row.is_expanded;
       slint_row.has_children = row.has_children;
+      slint_row.is_last_sibling = row.is_last_sibling;
+      slint_row.ancestor_cont_mask = static_cast<int>(row.ancestor_cont_mask);
       slint_row.selected =
           selection != nullptr &&
           selection->isSelected(static_cast<EntityId>(row.entity_id));
@@ -5643,7 +5645,7 @@ bool SlintSystem::trySelectHierarchyEntity(float window_x, float window_y) {
           ? resolveHierarchyTreeOriginY(*m_window_component->operator->())
           : m_cached_hierarchy_logical_rect.y + 36;
 
-  constexpr float k_row_pitch = 24.0f;
+  constexpr float k_row_pitch = 22.0f;
   const bool selected = hierarchy.selectEntityAt(
       window_x, window_y, hierarchy_origin_x, tree_origin_y,
       static_cast<float>(m_cached_hierarchy_logical_rect.width),
@@ -6468,6 +6470,8 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.expanded = row.expanded;
             copy.has_children = row.has_children;
             copy.selected = row.selected;
+            copy.is_last_sibling = row.is_last_sibling;
+            copy.ancestor_cont_mask = row.ancestor_cont_mask;
             snapshot.hierarchy_rows.push_back(eastl::move(copy));
           }
         }

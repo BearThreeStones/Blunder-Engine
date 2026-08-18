@@ -12,6 +12,8 @@ struct EditorHierarchyTreeRow {
   int32_t depth{0};
   bool is_expanded{false};
   bool has_children{false};
+  bool is_last_sibling{false};
+  uint32_t ancestor_cont_mask{0};
 };
 
 }  // namespace Blunder

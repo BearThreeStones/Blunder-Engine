@@ -27,6 +27,8 @@ struct NativeFloatHierarchyRow {
   bool expanded{false};
   bool has_children{false};
   bool selected{false};
+  bool is_last_sibling{false};
+  int ancestor_cont_mask{0};
 };
 
 struct NativeFloatBrowserTreeRow {

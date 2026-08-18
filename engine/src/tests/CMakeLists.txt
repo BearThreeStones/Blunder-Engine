@@ -38,6 +38,25 @@ endif()
 add_test(NAME outline_color_tests
          COMMAND outline_color_tests)
 
+add_executable(hierarchy_line_test
+    "hierarchy_line_test.cpp"
+)
+
+target_link_libraries(hierarchy_line_test
+    PRIVATE
+)
+
+target_include_directories(hierarchy_line_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(hierarchy_line_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME hierarchy_line_test
+         COMMAND hierarchy_line_test)
+
 add_executable(outline_aa_test
     "outline_aa_test.cpp"
     "../runtime/function/render/overlay/outline_aa.cpp"
