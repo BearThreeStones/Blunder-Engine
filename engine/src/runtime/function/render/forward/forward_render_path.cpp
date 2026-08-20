@@ -38,8 +38,15 @@ struct ShadowUniformData {
   glm::mat4 light_projection;
 };
 
+// Main viewport + Camera Preview each need a FIF-sized UBO ring. Preview records
+// in the same command buffer and must not memcpy over the main pass's uniforms
+// before submit (host-visible upload is visible to both recorded draws).
+constexpr uint32_t kForwardDescriptorPasses = 2;
+constexpr uint32_t kForwardDescriptorFrames =
+    VulkanSync::k_max_frames_in_flight * kForwardDescriptorPasses;
+
 uint32_t opaqueDescriptorIndex(uint32_t slot_index, uint32_t frame_index) {
-  return slot_index * VulkanSync::k_max_frames_in_flight + frame_index;
+  return slot_index * kForwardDescriptorFrames + frame_index;
 }
 
 void writeTextureSamplerPair(VkDevice device, VkDescriptorSet descriptor_set,
@@ -185,7 +192,7 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   m_fallback_texture = init.fallback_texture;
   m_overlay_system = init.overlay_system;
 
-  const uint32_t frames = VulkanSync::k_max_frames_in_flight;
+  const uint32_t frames = kForwardDescriptorFrames;
   const uint32_t opaque_slots = k_max_opaque_draws;
   const uint32_t total_opaque_sets = opaque_slots * frames;
 
@@ -877,6 +884,11 @@ void ForwardRenderPath::drawShadowOpaqueList(
                          VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(cmd, draw.index_count, 1, 0, 0, 0);
   }
+}
+
+uint32_t ForwardRenderPath::cameraPreviewDescriptorFrame(
+    uint32_t main_frame_index) {
+  return main_frame_index + VulkanSync::k_max_frames_in_flight;
 }
 
 void ForwardRenderPath::renderFrameTo(

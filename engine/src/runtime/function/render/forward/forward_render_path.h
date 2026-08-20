@@ -53,6 +53,11 @@ class ForwardRenderPath final {
   void initialize(const ForwardRenderPathInit& init);
   void shutdown();
 
+  /// Host-visible mesh UBOs are uploaded at record time. Camera Preview records
+  /// into the same command buffer as the main viewport, so it must use a second
+  /// descriptor-frame half (main: 0..FIF-1, preview: FIF..2*FIF-1).
+  static uint32_t cameraPreviewDescriptorFrame(uint32_t main_frame_index);
+
   /// Renders opaque+transparent into `target`. When draw_overlays is false, skips
   /// OverlaySystem (required for Camera Preview). Uses `target` extent for viewport.
   void renderFrameTo(rhi::IOffscreenRenderTarget* target,

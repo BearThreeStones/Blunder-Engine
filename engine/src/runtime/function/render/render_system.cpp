@@ -1042,7 +1042,7 @@ bool RenderSystem::recordCameraPreviewPass(
       opaque_draws.data(), static_cast<uint32_t>(opaque_draws.size()),
       preview_transparent_draws.data(),
       static_cast<uint32_t>(preview_transparent_draws.size()),
-      frame_index, false);
+      ForwardRenderPath::cameraPreviewDescriptorFrame(frame_index), false);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
