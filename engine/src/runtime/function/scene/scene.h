@@ -8,6 +8,7 @@
 #include "runtime/core/reflection/variant.h"
 #include "runtime/core/object/skeleton_modifier_extra_field.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/light_component.h"
 
 namespace Blunder {
 
@@ -112,6 +113,10 @@ struct SceneEntityDefinition final {
   eastl::vector<SceneSkeletonModifierDef> skeleton_modifiers;
   bool has_camera{false};
   CameraComponent camera{};
+  bool has_light{false};
+  LightComponent light{};
+  /// Persist Light linking as entity names; EntityId is session-dense.
+  eastl::vector<eastl::string> light_linking_names;
 };
 
 /// Static scene data: entity templates (flat Scene Asset — no nested scenes).

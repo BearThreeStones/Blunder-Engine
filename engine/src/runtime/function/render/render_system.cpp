@@ -56,6 +56,7 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
+#include "runtime/function/scene/light_eval.h"
 #include <vulkan/vulkan.h>
 
 #include "runtime/function/render/offscreen_render_target.h"
@@ -515,7 +516,8 @@ bool RenderSystem::addOpaqueMeshDraw(
     VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
     VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
     const glm::mat4& model, float alpha_cutoff, cgltf_alpha_mode alpha_mode,
-    bool double_sided, eastl::vector<glm::mat4> gpu_bone_palette) {
+    bool double_sided, eastl::vector<glm::mat4> gpu_bone_palette,
+    EntityId entity_id) {
   if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
       gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
     return false;
@@ -540,6 +542,7 @@ bool RenderSystem::addOpaqueMeshDraw(
   draw.alpha_mode = alpha_mode;
   draw.double_sided = double_sided;
   draw.gpu_bone_palette = eastl::move(gpu_bone_palette);
+  draw.entity_id = entity_id;
   draw.slot_index = static_cast<uint32_t>(m_opaque_mesh_draws.size());
   m_opaque_mesh_draws.push_back(eastl::move(draw));
   return true;
@@ -550,7 +553,7 @@ bool RenderSystem::addTransparentMeshDraw(
     VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
     VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
     const glm::mat4& model, float alpha_cutoff, bool double_sided,
-    eastl::vector<glm::mat4> gpu_bone_palette) {
+    eastl::vector<glm::mat4> gpu_bone_palette, EntityId entity_id) {
   if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
       gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
     return false;
@@ -576,6 +579,7 @@ bool RenderSystem::addTransparentMeshDraw(
   draw.double_sided = double_sided;
   draw.is_transparent = true;
   draw.gpu_bone_palette = eastl::move(gpu_bone_palette);
+  draw.entity_id = entity_id;
   draw.slot_index =
       static_cast<uint32_t>(m_opaque_mesh_draws.size() + m_transparent_mesh_draws.size());
   m_transparent_mesh_draws.push_back(eastl::move(draw));
@@ -1503,35 +1507,47 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         projection_mode == EditorCamera::ProjectionMode::perspective);
   }
   if (m_preview_settings_source != nullptr) {
-    frame_state.shading = m_preview_settings_source->previewSettings().get();
+    const BlinnPhongEditorSettings preview =
+        m_preview_settings_source->previewSettings().get();
+    frame_state.shading.light_direction = preview.light_direction;
+    frame_state.shading.light_color = preview.light_color;
   }
-  // Slint UI defaults SSAO on; disable until AO generate is stable for large scenes.
   frame_state.shading.ssao_enabled = false;
-  // Editor viewport: shadow pass duplicates every opaque draw (expensive on Sponza).
-  // Opt in with BLUNDER_EDITOR_SHADOWS=1.
-  frame_state.shadows_enabled = editorShadowsEnabled();
-  if (!m_opaque_mesh_draws.empty() || !m_transparent_mesh_draws.empty()) {
-    frame_state.shading.ambient_color =
-        glm::max(frame_state.shading.ambient_color, glm::vec3(0.35f));
-    frame_state.shading.diffuse_color =
-        glm::max(frame_state.shading.diffuse_color, glm::vec3(0.9f));
+  SceneInstance* active_scene = nullptr;
+  if (g_runtime_global_context.m_scene_system != nullptr) {
+    active_scene = g_runtime_global_context.m_scene_system->getActiveInstance();
   }
+  frame_state.lighting_scene = active_scene;
+  frame_state.live_scene_lighting = true;
+  frame_state.shadow_caster_id = k_invalid_entity_id;
+  glm::vec3 shadow_light_dir = glm::normalize(glm::vec3(0.45f, 0.7f, 0.55f));
+  if (active_scene != nullptr) {
+    frame_state.shadow_caster_id = pickDirectionalShadowCaster(*active_scene);
+    if (isValid(frame_state.shadow_caster_id)) {
+      const Vec3 emit =
+          lightWorldEmit(active_scene->getWorldMatrix(frame_state.shadow_caster_id));
+      shadow_light_dir = lightShadingL(LightType::directional, emit, Vec3(0.0f),
+                                       Vec3(0.0f));
+    }
+  }
+  const bool host_is_player =
+      g_runtime_global_context.hostMode() == EngineHostMode::Player;
+  frame_state.shadows_enabled =
+      isValid(frame_state.shadow_caster_id) &&
+      (host_is_player || editorShadowsEnabled());
+  (void)0;
 
   glm::vec3 shadow_focus(0.0f);
   float shadow_ortho_half_extent = k_shadow_ortho_half_extent;
-  if (g_runtime_global_context.m_scene_system != nullptr) {
-    SceneInstance* active_scene =
-        g_runtime_global_context.m_scene_system->getActiveInstance();
-    if (active_scene != nullptr && active_scene->hasWorldBounds()) {
-      const AABB& bounds = active_scene->getWorldBounds();
-      shadow_focus = bounds.center();
-      shadow_ortho_half_extent = computeShadowOrthoHalfExtentFromAABB(
-          bounds, frame_state.shading.light_direction);
-    }
+  if (active_scene != nullptr && active_scene->hasWorldBounds()) {
+    const AABB& bounds = active_scene->getWorldBounds();
+    shadow_focus = bounds.center();
+    shadow_ortho_half_extent = computeShadowOrthoHalfExtentFromAABB(
+        bounds, shadow_light_dir);
   }
 
   computeDirectionalLightMatrices(
-      frame_state.shading.light_direction, shadow_focus, shadow_ortho_half_extent,
+      shadow_light_dir, shadow_focus, shadow_ortho_half_extent,
       k_shadow_near_plane, k_shadow_far_plane, frame_state.light_view,
       frame_state.light_projection, frame_state.light_view_projection);
 
@@ -1609,6 +1625,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         draw.alpha_cutoff = mesh_draw.alpha_cutoff;
         draw.alpha_mode = mesh_draw.alpha_mode;
         draw.double_sided = mesh_draw.double_sided;
+        draw.entity_id = mesh_draw.entity_id;
         draw.gpu_bone_palette = mesh_draw.gpu_bone_palette;
         out.push_back(draw);
       };
@@ -1843,7 +1860,7 @@ void RenderSystem::onEvent(Event& event) {
         event.handled = true;
         return;
       }
-      if (m_overlay_system->camera_gizmo().tryHandleMouseClick(
+      if (m_overlay_system->tryHandleCameraOrLightGizmoClick(
               Vec2(mouse_event.getX(), mouse_event.getY()), *m_editor_camera)) {
         event.handled = true;
         return;

@@ -29,6 +29,8 @@ namespace vulkan_backend {
 class VulkanGraphicsPipeline;
 }
 
+class SceneInstance;
+
 /// Owns the dedicated Mesh Preview RT, forward draw path, and CPU readback.
 /// Separate from RenderSystem's Camera Preview and main viewport targets.
 class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend {
@@ -54,7 +56,8 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend {
   bool renderSubmeshDraws(const eastl::vector<MeshPreviewSubmeshDraw>& draws,
                           const MeshPreviewCameraFrame& framing,
                           const MeshPreviewStudioLights& lights, uint32_t width,
-                          uint32_t height, eastl::vector<uint8_t>& out_rgba);
+                          uint32_t height, eastl::vector<uint8_t>& out_rgba,
+                          const SceneInstance* lighting_scene = nullptr);
 
   const rhi::IOffscreenRenderTarget* offscreenTarget() const {
     return m_offscreen.get();

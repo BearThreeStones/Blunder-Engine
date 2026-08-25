@@ -22,6 +22,7 @@
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/resource/content_browser/content_browser_system.h"
 
 namespace Blunder {
 
@@ -439,11 +440,29 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
   }
 
   if (!m_translate_session.isActive() && !m_active_axis) {
-    DocumentHistory* history = g_runtime_global_context.m_document_history.get();
-    if (history != nullptr && key_event.isCtrlDown()) {
+    if (key_event.isCtrlDown()) {
       const int key_code = key_event.getKeyCode();
-      if (key_code == SDLK_Z && !key_event.isShiftDown()) {
-        if (history->undo()) {
+      const bool is_undo = key_code == SDLK_Z && !key_event.isShiftDown();
+      const bool is_redo = key_code == SDLK_Y ||
+                           (key_code == SDLK_Z && key_event.isShiftDown());
+      if (is_undo || is_redo) {
+        const EditorUndoScope scope = resolveUndoScope(
+            g_runtime_global_context.contentBrowserHasInputFocus(),
+            g_runtime_global_context.inlineRenameActive(),
+            g_runtime_global_context.assetInspectorHasUndoFocus(),
+            g_runtime_global_context.attachmentPreviewHasInputFocus());
+        if (scope == EditorUndoScope::text) {
+          return false;
+        }
+        DocumentHistory* history =
+            scope == EditorUndoScope::global
+                ? g_runtime_global_context.m_global_history.get()
+                : g_runtime_global_context.m_document_history.get();
+        if (history == nullptr) {
+          return true;
+        }
+        const bool ok = is_undo ? history->undo() : history->redo();
+        if (ok && scope == EditorUndoScope::document) {
           markSceneDirty();
           syncInspectorLive();
           if (g_runtime_global_context.m_hierarchy && activeScene()) {
@@ -459,33 +478,37 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
             }
           }
         }
-        return true;
-      }
-      if (key_code == SDLK_Y ||
-          (key_code == SDLK_Z && key_event.isShiftDown())) {
-        if (history->redo()) {
-          markSceneDirty();
-          syncInspectorLive();
-          if (g_runtime_global_context.m_hierarchy && activeScene()) {
-            g_runtime_global_context.m_hierarchy->rebuildVisibleTree(
-                activeScene());
-            g_runtime_global_context.m_hierarchy->markDirty();
+        if (ok && scope == EditorUndoScope::global) {
+          if (g_runtime_global_context.m_content_browser) {
+            g_runtime_global_context.m_content_browser->refresh();
           }
-          if (g_runtime_global_context.m_editor_scene_edit) {
-            if (history->isDirtyRelativeToSave()) {
-              g_runtime_global_context.m_editor_scene_edit->markDirty();
-            } else {
-              g_runtime_global_context.m_editor_scene_edit->clearDirty();
-            }
+          if (g_runtime_global_context.m_slint_system) {
+            g_runtime_global_context.m_slint_system->syncContentBrowser();
           }
         }
         return true;
       }
     }
 
-    if (key_event.getKeyCode() == SDLK_DELETE &&
-        g_runtime_global_context.m_editor_scene_edit) {
-      return g_runtime_global_context.m_editor_scene_edit->softDeleteSelection();
+    if (key_event.getKeyCode() == SDLK_DELETE) {
+      if (g_runtime_global_context.inlineRenameActive()) {
+        return false;
+      }
+      if (g_runtime_global_context.contentBrowserHasInputFocus()) {
+        if (g_runtime_global_context.m_slint_system) {
+          g_runtime_global_context.m_slint_system->requestBrowserDelete({});
+        }
+        return true;
+      }
+      if (g_runtime_global_context.m_editor_scene_edit) {
+        return g_runtime_global_context.m_editor_scene_edit->softDeleteSelection();
+      }
+    }
+    if (key_event.getKeyCode() == SDLK_F2 &&
+        g_runtime_global_context.contentBrowserHasInputFocus() &&
+        g_runtime_global_context.m_slint_system) {
+      g_runtime_global_context.m_slint_system->requestBrowserInlineRename();
+      return true;
     }
   }
 
@@ -583,6 +606,13 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
 
 bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera) {
   auto& mouse = static_cast<MouseButtonPressedEvent&>(event);
+  if (mouse.hasMousePosition()) {
+    const Vec2 window_pos(mouse.getX(), mouse.getY());
+    if (camera.isWindowPositionInViewport(window_pos)) {
+      g_runtime_global_context.setContentBrowserHasInputFocus(false);
+      g_runtime_global_context.setInspectorHasInputFocus(false);
+    }
+  }
   if (mouse.getMouseButton() == SDL_BUTTON_RIGHT &&
       m_translate_session.isActive()) {
     return cancelTranslateModalSession(camera);

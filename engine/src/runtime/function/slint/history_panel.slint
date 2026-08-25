@@ -1,4 +1,4 @@
-import { CheckBox } from "std-widgets.slint";
+import { EditorTheme, EditorToggle, EditorTab } from "editor_controls.slint";
 import {
     ContentBrowser,
     BrowserTreeRow,
@@ -9,8 +9,10 @@ import {
 export struct HistoryRow {
     label: string,
     index: int,
+    stack: int,
     is-applied: bool,
     is-current: bool,
+    is-group: bool,
 }
 
 export component HistoryPanel {
@@ -19,15 +21,15 @@ export component HistoryPanel {
     in-out property <bool> filter-global: true;
 
     callback filter-changed();
-    callback entry-clicked(int);
+    callback entry-clicked(int, int);
 
     min-height: 120px;
     horizontal-stretch: 1;
     vertical-stretch: 1;
 
     Rectangle {
-        background: #252525;
-        border-color: #1a1a1a;
+        background: EditorTheme.window;
+        border-color: EditorTheme.hairline;
         border-width: 1px;
 
         VerticalLayout {
@@ -36,7 +38,7 @@ export component HistoryPanel {
 
             Rectangle {
                 height: 34px;
-                background: #2d2d2d;
+                background: EditorTheme.toolbar;
 
                 HorizontalLayout {
                     padding: 6px;
@@ -44,12 +46,12 @@ export component HistoryPanel {
                     spacing: 14px;
                     alignment: start;
 
-                    CheckBox {
+                    EditorToggle {
                         text: "Scene";
                         checked <=> root.filter-scene;
                         toggled => { root.filter-changed(); }
                     }
-                    CheckBox {
+                    EditorToggle {
                         text: "Global";
                         checked <=> root.filter-global;
                         toggled => { root.filter-changed(); }
@@ -59,7 +61,7 @@ export component HistoryPanel {
 
             Rectangle {
                 vertical-stretch: 1;
-                background: #252525;
+                background: EditorTheme.field;
                 clip: true;
 
                 Flickable {
@@ -76,7 +78,8 @@ export component HistoryPanel {
                         for row[i] in root.rows: Rectangle {
                             height: 26px;
                             width: parent.width;
-                            background: row.is-current ? #3a3a3a : transparent;
+                            background: row.is-group ? EditorTheme.toolbar
+                                : (row.is-current ? EditorTheme.accent-sel-fill : transparent);
 
                             HorizontalLayout {
                                 padding-left: 10px;
@@ -85,8 +88,9 @@ export component HistoryPanel {
 
                                 Text {
                                     text: row.label;
-                                    color: row.is-applied ? #e0e0e0 : #707070;
-                                    font-size: 12px;
+                                    color: row.is-group ? EditorTheme.muted
+                                        : (row.is-applied ? EditorTheme.default-text : EditorTheme.muted);
+                                    font-size: row.is-group ? 11px : 12px;
                                     overflow: elide;
                                     horizontal-stretch: 1;
                                 }
@@ -95,7 +99,11 @@ export component HistoryPanel {
                             TouchArea {
                                 width: 100%;
                                 height: 100%;
-                                clicked => { root.entry-clicked(row.index); }
+                                clicked => {
+                                    if (!row.is-group) {
+                                        root.entry-clicked(row.stack, row.index);
+                                    }
+                                }
                             }
                         }
                     }
@@ -133,8 +141,10 @@ export component FilesystemHistoryHost {
     callback folder-toggle(string);
     callback refresh-requested();
     callback import-requested();
-    callback new-scene-requested();
-    callback delete-requested();
+    callback new-scene-requested(string);
+    callback new-folder-requested(string);
+    callback rename-requested(string);
+    callback delete-requested(string);
     callback duplicate-scene-requested(string);
     callback open-scene-requested(string);
     callback grid-select(string, bool, bool);
@@ -146,7 +156,11 @@ export component FilesystemHistoryHost {
     callback path-segment-clicked(string);
     callback sort-clicked(int);
     callback history-filter-changed();
-    callback history-entry-clicked(int);
+    callback history-entry-clicked(int, int);
+    in-out property <string> inline-rename-path: "";
+    in-out property <string> inline-rename-buffer: "";
+    callback inline-rename-commit(string);
+    callback inline-rename-cancel();
 
     out property <length> browser-origin-x: browser.browser-origin-x;
     out property <length> browser-origin-y: browser.browser-origin-y;
@@ -170,7 +184,7 @@ export component FilesystemHistoryHost {
     host-root := Rectangle {
         width: 100%;
         height: 100%;
-        background: #1e1e1e;
+        background: EditorTheme.window;
 
         Rectangle {
             width: 100%;
@@ -182,48 +196,22 @@ export component FilesystemHistoryHost {
                 y: 0px;
                 width: 100%;
                 height: 28px;
-                background: #2a2a2a;
+                background: EditorTheme.app-bar;
 
                 HorizontalLayout {
-                    spacing: 0px;
+                    padding-left: 8px;
+                    spacing: 4px;
                     alignment: start;
 
-                    TouchArea {
-                        width: fs-tab.preferred-width + 24px;
-                        height: 100%;
+                    EditorTab {
+                        text: "File System";
+                        active: root.active-subtab == 0;
                         clicked => { root.active-subtab = 0; }
-                        Rectangle {
-                            background: root.active-subtab == 0 ? #3a3a3a : transparent;
-                            HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
-                                alignment: center;
-                                fs-tab := Text {
-                                    text: "File System";
-                                    color: root.active-subtab == 0 ? #ffffff : #a0a0a0;
-                                    font-size: 12px;
-                                }
-                            }
-                        }
                     }
-
-                    TouchArea {
-                        width: hist-tab.preferred-width + 24px;
-                        height: 100%;
+                    EditorTab {
+                        text: "History";
+                        active: root.active-subtab == 1;
                         clicked => { root.active-subtab = 1; }
-                        Rectangle {
-                            background: root.active-subtab == 1 ? #3a3a3a : transparent;
-                            HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
-                                alignment: center;
-                                hist-tab := Text {
-                                    text: "History";
-                                    color: root.active-subtab == 1 ? #ffffff : #a0a0a0;
-                                    font-size: 12px;
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -250,12 +238,16 @@ export component FilesystemHistoryHost {
                 details-view <=> root.details-view;
                 sort-column: root.sort-column;
                 sort-ascending: root.sort-ascending;
+                inline-rename-path <=> root.inline-rename-path;
+                inline-rename-buffer <=> root.inline-rename-buffer;
                 folder-selected(path) => { root.folder-selected(path); }
                 folder-toggle(path) => { root.folder-toggle(path); }
                 refresh-requested => { root.refresh-requested(); }
                 import-requested => { root.import-requested(); }
-                new-scene-requested => { root.new-scene-requested(); }
-                delete-requested => { root.delete-requested(); }
+                new-scene-requested(path) => { root.new-scene-requested(path); }
+                new-folder-requested(path) => { root.new-folder-requested(path); }
+                rename-requested(path) => { root.rename-requested(path); }
+                delete-requested(path) => { root.delete-requested(path); }
                 duplicate-scene-requested(path) => { root.duplicate-scene-requested(path); }
                 open-scene-requested(path) => { root.open-scene-requested(path); }
                 grid-select(path, ctrl, shift) => { root.grid-select(path, ctrl, shift); }
@@ -268,6 +260,8 @@ export component FilesystemHistoryHost {
                 search-changed(text) => { root.search-changed(text); }
                 path-segment-clicked(path) => { root.path-segment-clicked(path); }
                 sort-clicked(column) => { root.sort-clicked(column); }
+                inline-rename-commit(name) => { root.inline-rename-commit(name); }
+                inline-rename-cancel => { root.inline-rename-cancel(); }
             }
 
             HistoryPanel {
@@ -280,7 +274,7 @@ export component FilesystemHistoryHost {
                 filter-scene <=> root.history-filter-scene;
                 filter-global <=> root.history-filter-global;
                 filter-changed => { root.history-filter-changed(); }
-                entry-clicked(index) => { root.history-entry-clicked(index); }
+                entry-clicked(stack, index) => { root.history-entry-clicked(stack, index); }
             }
         }
     }

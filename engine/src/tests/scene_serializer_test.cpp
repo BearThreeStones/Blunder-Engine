@@ -3,6 +3,7 @@
 #include "runtime/core/reflection/variant.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/scene.h"
+#include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/guid.h"
@@ -356,6 +357,104 @@ void serializeAndParseCamera() {
   expect_true("isMain restored", out.camera.is_main);
 }
 
+void fillLightForType(Blunder::SceneEntityDefinition& entity,
+                      Blunder::LightType type) {
+  entity.has_light = true;
+  entity.light.type = type;
+  entity.light.color = Blunder::Vec3(0.2f, 0.4f, 0.6f);
+  entity.light.intensity = 2.5f;
+  entity.light.enabled = true;
+  entity.light.contribution = Blunder::LightContribution::illuminateOnly;
+  entity.light.range = 12.0f;
+  entity.light.inner_cone_degrees = 10.0f;
+  entity.light.outer_cone_degrees = 35.0f;
+  entity.light.width = 2.0f;
+  entity.light.height = 1.5f;
+}
+
+/// Light Component round-trips type/color/intensity/enabled/contribution and
+/// type-specific fields; linking persists as entity names.
+void serializeAndParseLightAllTypes() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const LightType types[] = {LightType::directional, LightType::point,
+                             LightType::spot, LightType::area};
+  const char* type_keys[] = {"directional", "point", "spot", "area"};
+  for (int i = 0; i < 4; ++i) {
+    Scene scene;
+    scene.setGuid("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    SceneEntityDefinition entity;
+    entity.name = "Lamp";
+    fillLightForType(entity, types[i]);
+    entity.light_linking_names.push_back("Cube");
+    scene.getEntities().push_back(eastl::move(entity));
+
+    eastl::string json;
+    expect_true("serialize light", SceneSerializer::serialize(scene, json));
+    expect_true("json contains light key",
+                json.find("\"light\"") != eastl::string::npos);
+    expect_true("json contains type",
+                json.find(type_keys[i]) != eastl::string::npos);
+    expect_true("json contains linking name",
+                json.find("\"Cube\"") != eastl::string::npos);
+
+    Scene loaded;
+    expect_true("deserialize light", SceneSerializer::deserialize(json, loaded));
+    expect_true("one entity after light deserialize",
+                loaded.getEntities().size() == 1);
+    const SceneEntityDefinition& out = loaded.getEntities()[0];
+    expect_true("has_light restored", out.has_light);
+    expect_true("type restored", out.light.type == types[i]);
+    expect_true("color restored", float_near(out.light.color.x, 0.2f) &&
+                                      float_near(out.light.color.y, 0.4f) &&
+                                      float_near(out.light.color.z, 0.6f));
+    expect_true("intensity restored", float_near(out.light.intensity, 2.5f));
+    expect_true("enabled restored", out.light.enabled);
+    expect_true("contribution restored",
+                out.light.contribution == LightContribution::illuminateOnly);
+    expect_true("range restored", float_near(out.light.range, 12.0f));
+    expect_true("inner cone restored",
+                float_near(out.light.inner_cone_degrees, 10.0f));
+    expect_true("outer cone restored",
+                float_near(out.light.outer_cone_degrees, 35.0f));
+    expect_true("width restored", float_near(out.light.width, 2.0f));
+    expect_true("height restored", float_near(out.light.height, 1.5f));
+    expect_true("linking name restored",
+                out.light_linking_names.size() == 1 &&
+                    out.light_linking_names[0] == "Cube");
+  }
+}
+
+/// instantiate() resolves linking names to EntityIds and drops stale names.
+void instantiateLightLinkingResolvesNames() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  SceneEntityDefinition cube;
+  cube.name = "Cube";
+  scene.getEntities().push_back(eastl::move(cube));
+
+  SceneEntityDefinition lamp;
+  lamp.name = "Lamp";
+  lamp.has_light = true;
+  lamp.light_linking_names.push_back("Cube");
+  lamp.light_linking_names.push_back("Missing");
+  scene.getEntities().push_back(eastl::move(lamp));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  const EntityId cube_id = instance.findEntityByName("Cube");
+  const EntityId lamp_id = instance.findEntityByName("Lamp");
+  expect_true("cube and lamp spawned", isValid(cube_id) && isValid(lamp_id));
+  const LightComponent* light = instance.getLight(lamp_id);
+  expect_true("light attached", light != nullptr);
+  expect_true("stale name ignored",
+              light != nullptr && light->linking.size() == 1 &&
+                  light->linking[0] == cube_id);
+}
+
 /// AnimationPlayer clip map + Skeleton presence round-trip; clip GUID list stays
 /// consistent with the map for dependency-graph edges.
 void serializeAndParseAnimationPlayerAndSkeleton() {
@@ -536,6 +635,7 @@ void deserializeLegacyEntityWithoutCamera() {
   expect_true("legacy entity present", loaded.getEntities().size() == 1);
   expect_true("legacy has_camera false",
               !loaded.getEntities()[0].has_camera);
+  expect_true("legacy has_light false", !loaded.getEntities()[0].has_light);
 }
 
 /// Quotes / backslashes in type names and string property values must round-trip.
@@ -681,6 +781,8 @@ int main() {
   deserializeBehavioursScopedKeyLookup();
   serializeAndParseEscapedBehaviourStrings();
   serializeAndParseCamera();
+  serializeAndParseLightAllTypes();
+  instantiateLightLinkingResolvesNames();
   serializeAndParseAnimationPlayerAndSkeleton();
   serializeAndParseAnimationPlayerPhase2Defaults();
   serializeAndParseAnimationTreeTopology();

@@ -67,6 +67,18 @@ int main() {
       expect_true("flag is bool",
                   flag->kind == BehaviourCatalogMember::Kind::Bool);
     }
+    const BehaviourCatalogMember* idle = findMember(*motor, "IdleClip");
+    expect_true("has IdleClip", idle != nullptr);
+    if (idle != nullptr) {
+      expect_true("IdleClip is clip_name",
+                  idle->kind == BehaviourCatalogMember::Kind::ClipName);
+    }
+    const BehaviourCatalogMember* walk = findMember(*motor, "WalkClip");
+    expect_true("has WalkClip", walk != nullptr);
+    if (walk != nullptr) {
+      expect_true("WalkClip is clip_name",
+                  walk->kind == BehaviourCatalogMember::Kind::ClipName);
+    }
   }
 
   if (g_failures != 0) {

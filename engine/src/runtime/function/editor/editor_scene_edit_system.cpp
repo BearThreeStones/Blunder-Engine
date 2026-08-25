@@ -14,6 +14,7 @@
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
+#include "runtime/function/scene/scene_starter.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/document_history_helpers.h"
@@ -103,6 +104,28 @@ void EditorSceneEditSystem::setActiveScenePath(eastl::string virtual_path) {
   m_dirty = false;
 }
 
+void EditorSceneEditSystem::retargetActiveScenePath(eastl::string virtual_path) {
+  m_active_scene_virtual_path = eastl::move(virtual_path);
+}
+
+void EditorSceneEditSystem::closeActiveScene() {
+  if (m_scene_system != nullptr) {
+    if (SceneInstance* active = m_scene_system->getActiveInstance()) {
+      m_scene_system->unloadSceneInstance(active);
+      m_scene_system->setActiveInstance(nullptr);
+    }
+  }
+  m_active_scene_virtual_path.clear();
+  m_dirty = false;
+  if (g_runtime_global_context.m_document_history) {
+    g_runtime_global_context.m_document_history->clear();
+  }
+  g_runtime_global_context.closeAttachmentPreviewCards();
+  if (g_runtime_global_context.m_editor_selection) {
+    g_runtime_global_context.m_editor_selection->clearSelection();
+  }
+}
+
 bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
   if (!m_scene_system || virtual_path.empty()) {
     return false;
@@ -133,6 +156,7 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
       if (g_runtime_global_context.m_document_history) {
         g_runtime_global_context.m_document_history->clear();
       }
+      g_runtime_global_context.closeAttachmentPreviewCards();
       return true;
     }
   }
@@ -150,6 +174,7 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
   if (g_runtime_global_context.m_document_history) {
     g_runtime_global_context.m_document_history->clear();
   }
+  g_runtime_global_context.closeAttachmentPreviewCards();
 
   if (g_runtime_global_context.m_editor_selection) {
     g_runtime_global_context.m_editor_selection->clearSelection();
@@ -311,6 +336,7 @@ SpawnAssetResult EditorSceneEditSystem::spawnAssetAtWindowPosition(
       return result;
     case ContentBrowserDropKind::mesh:
       return spawnMeshAsset(asset_virtual_path, window_x, window_y);
+    case ContentBrowserDropKind::animation_clip:
     case ContentBrowserDropKind::other:
       break;
   }
@@ -337,6 +363,11 @@ bool EditorSceneEditSystem::softDeleteSelection() {
     return false;
   }
 
+  eastl::string entity_name;
+  if (const Entity* entity = instance->getEntity(entity_id)) {
+    entity_name = entity->getName();
+  }
+
   const SelectionSnapshot selection_before = currentSelectionSnapshot();
   if (!instance->softDeleteEntity(entity_id)) {
     return false;
@@ -344,7 +375,8 @@ bool EditorSceneEditSystem::softDeleteSelection() {
 
   g_runtime_global_context.m_editor_selection->clearSelection();
   pushDocumentCommand(makeSoftDeleteEntityCommand(
-      instance, entity_id, selection_before, currentSelectionSnapshot()));
+      instance, entity_id, selection_before, currentSelectionSnapshot(),
+      deleteEntityCommandLabel(entity_name)));
 
   if (g_runtime_global_context.m_hierarchy) {
     g_runtime_global_context.m_hierarchy->rebuildVisibleTree(instance);
@@ -464,12 +496,7 @@ SceneAssetOpResult EditorSceneEditSystem::createNewSceneAsset(
   scene.setGuid(registry->allocateGuid());
   scene.setName(entityStemFromAssetPath(virtual_path));
 
-  SceneEntityDefinition camera_entity{};
-  camera_entity.name = "Main Camera";
-  camera_entity.position = Vec3(0.0f, -8.0f, 2.0f);
-  camera_entity.has_camera = true;
-  camera_entity.camera.is_main = true;
-  scene.getEntities().push_back(eastl::move(camera_entity));
+  appendNewSceneStarterEntities(scene.getEntities());
 
   if (!writeSceneDocument(virtual_path, scene)) {
     return result;

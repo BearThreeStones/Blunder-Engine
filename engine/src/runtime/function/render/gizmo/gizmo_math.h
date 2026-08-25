@@ -114,6 +114,7 @@ std::optional<glm::vec3> intersectRayPlaneQuad(const Ray& ray, const glm::vec3& 
                                                const glm::vec3& axis_u,
                                                const glm::vec3& axis_v, float half_extent);
 
+/// Closest distance between a ray (s >= 0) and a finite segment [a, b].
 float distanceRayToSegment(const Ray& ray, const glm::vec3& a, const glm::vec3& b);
 
 glm::vec3 worldTranslationDelta(const GizmoBasis& basis, ManipulatorAxis axis,

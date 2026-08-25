@@ -71,6 +71,8 @@ struct TransformGizmoMetrics {
   /// Local mesh extents from transform_gizmo.slang (must match shader).
   static constexpr float k_mesh_arrow_length = 1.0f;
   static constexpr float k_mesh_stem_radius = 0.025f;
+  static constexpr float k_mesh_cone_base_z = 0.72f;
+  static constexpr float k_mesh_cone_base_radius = 0.06f;
   /// Blender ED_GIZMO_ARROW_STYLE_PLANE local scale (~0.1).
   static constexpr float k_mesh_plane_half_extent = 0.08f;
   /// Offset from pivot along each plane axis (Blender plane handles sit in axis corners).
@@ -93,6 +95,10 @@ struct TransformGizmoMetrics {
   static constexpr float k_trackball_alpha_factor = 0.05f;
 
   static constexpr float k_pick_slop = 1.25f;
+  /// Clickable radius in screen pixels for plane squares and center handles.
+  static constexpr float k_min_pick_pixels = 12.0f;
+  /// Wider hotspot for thin axis arrows / scale stems (pixels).
+  static constexpr float k_axis_pick_pixels = 24.0f;
 
   /// Blender GIZMO_AXIS_LINE_WIDTH; WM_gizmo_set_line_width(rot axis) adds +1.0f.
   static constexpr float k_axis_line_width = 2.0f;

@@ -9,6 +9,7 @@
 #include "runtime/core/object/object_id.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/play_camera_resolve.h"
 #include "runtime/function/scene/entity_id.h"
@@ -104,6 +105,19 @@ class SceneInstance final {
     }
   }
 
+  void setLight(EntityId id, LightComponent light);
+  const LightComponent* getLight(EntityId id) const;
+  void clearLight(EntityId id);
+  template <typename Fn>
+  void forEachLight(const Fn& fn) const {
+    for (const auto& entry : m_lights) {
+      if (isTombstoned(entry.first)) {
+        continue;
+      }
+      fn(entry.first, entry.second);
+    }
+  }
+
   bool hasWorldBounds() const { return m_has_world_bounds; }
   const AABB& getWorldBounds() const { return m_world_bounds; }
   void setWorldBounds(const AABB& bounds);
@@ -134,6 +148,7 @@ class SceneInstance final {
   eastl::unordered_map<eastl::string, EntityId> m_name_to_id;
   eastl::unordered_map<EntityId, MeshRendererComponent> m_mesh_renderers;
   eastl::unordered_map<EntityId, CameraComponent> m_cameras;
+  eastl::unordered_map<EntityId, LightComponent> m_lights;
   /// Objects created for Behaviour-bearing entities; destroyed on clear().
   eastl::vector<ObjectId> m_bound_object_ids;
   eastl::unordered_map<EntityId, eastl::string> m_default_animation_clip_names;

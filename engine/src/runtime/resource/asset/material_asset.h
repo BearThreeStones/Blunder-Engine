@@ -103,6 +103,30 @@ class MaterialAsset final : public Asset {
            m_base_color_factor.a < 0.999f;
   }
 
+  void setBaseColorFactor(const glm::vec4& value) { m_base_color_factor = value; }
+  void setBaseColorTexture(AssetHandle handle,
+                           eastl::shared_ptr<Texture2DAsset> asset) {
+    m_base_color_texture = eastl::move(handle);
+    m_base_color_texture_asset = eastl::move(asset);
+  }
+  void setMetallicRoughnessTextureAsset(
+      eastl::shared_ptr<Texture2DAsset> asset) {
+    m_metallic_roughness_texture_asset = eastl::move(asset);
+  }
+  void setNormalTextureAsset(eastl::shared_ptr<Texture2DAsset> asset) {
+    m_normal_texture_asset = eastl::move(asset);
+  }
+  void setOcclusionTextureAsset(eastl::shared_ptr<Texture2DAsset> asset) {
+    m_occlusion_texture_asset = eastl::move(asset);
+  }
+  void setAmbientColor(const glm::vec3& value) { m_ambient_color = value; }
+  void setDiffuseColor(const glm::vec3& value) { m_diffuse_color = value; }
+  void setSpecularColor(const glm::vec3& value) { m_specular_color = value; }
+  void setShininess(float value) { m_shininess = value; }
+  void setMetallicFactor(float value) { m_metallic_factor = value; }
+  void setRoughnessFactor(float value) { m_roughness_factor = value; }
+  void setUnlit(bool value) { m_unlit = value; }
+
  private:
   glm::vec4 m_base_color_factor{1.0f};
   AssetHandle m_base_color_texture;

@@ -7,10 +7,12 @@
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/editor/animation_tree_canvas_document.h"
+#include "runtime/function/editor/content_browser_commands.h"
+#include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/document_history_helpers.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/hierarchy_system.h"
-#include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/inspector_asset_ops.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/render_system.h"
@@ -261,6 +263,43 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       openSceneAssetPath(services, created.path);
       break;
     }
+    case UiEventKind::newFolder: {
+      if (!services.content_browser) {
+        break;
+      }
+      eastl::string folder = event.path;
+      if (folder.empty()) {
+        folder = services.content_browser->selectedFolder();
+      }
+      g_runtime_global_context.setContentBrowserHasInputFocus(true);
+      const ContentBrowserMutateResult created =
+          services.content_browser->createFolder(folder);
+      if (!created.success) {
+        break;
+      }
+      services.content_browser->setSelectedFolder(folder);
+      pushGlobalCommand(makeCreateFolderCommand(services.content_browser.get(),
+                                                created.virtual_path));
+      m_panels.markDirty(EditorPanelDirty::content_browser);
+      if (m_presentation) {
+        m_presentation->syncContentBrowser();
+        m_presentation->selectBrowserGridPath(created.virtual_path);
+      }
+      break;
+    }
+    case UiEventKind::browserRename: {
+      if (!services.content_browser || event.path.empty()) {
+        break;
+      }
+      g_runtime_global_context.setContentBrowserHasInputFocus(true);
+      services.content_browser->beginInlineRename(event.path);
+      g_runtime_global_context.setInlineRenameActive(true);
+      m_panels.markDirty(EditorPanelDirty::content_browser);
+      if (m_presentation) {
+        m_presentation->syncContentBrowser();
+      }
+      break;
+    }
     case UiEventKind::duplicateSceneAsset: {
       if (!services.editor_scene_edit || event.path.empty()) {
         break;
@@ -282,13 +321,36 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
     }
     case UiEventKind::undo:
     case UiEventKind::redo: {
-      DocumentHistory* history = g_runtime_global_context.m_document_history.get();
+      const EditorUndoScope scope = resolveUndoScope(
+          g_runtime_global_context.contentBrowserHasInputFocus(),
+          g_runtime_global_context.inlineRenameActive(),
+          g_runtime_global_context.assetInspectorHasUndoFocus(),
+          g_runtime_global_context.attachmentPreviewHasInputFocus());
+      if (scope == EditorUndoScope::text) {
+        break;
+      }
+      DocumentHistory* history =
+          scope == EditorUndoScope::global
+              ? g_runtime_global_context.m_global_history.get()
+              : g_runtime_global_context.m_document_history.get();
       if (history == nullptr) {
         break;
       }
       const bool ok = event.kind == UiEventKind::undo ? history->undo()
                                                        : history->redo();
       if (!ok) {
+        break;
+      }
+      if (scope == EditorUndoScope::global) {
+        if (services.content_browser) {
+          services.content_browser->refresh();
+          m_panels.markDirty(EditorPanelDirty::content_browser);
+        }
+        if (m_presentation) {
+          m_presentation->syncContentBrowser();
+          m_presentation->syncInspectorFromSelection();
+        }
+        m_panels.markDirty(EditorPanelDirty::inspector);
         break;
       }
       if (services.editor_scene_edit) {

@@ -7,8 +7,11 @@
 
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/scene/entity_id.h"
 
 namespace Blunder {
+
+class SceneInstance;
 
 enum class ForwardGridPlane : uint32_t {
   xy = 0,
@@ -39,6 +42,9 @@ struct ForwardFrameState {
   bool shadows_enabled{true};
   uint32_t viewport_width{1};
   uint32_t viewport_height{1};
+  const SceneInstance* lighting_scene{nullptr};
+  bool live_scene_lighting{false};
+  EntityId shadow_caster_id{k_invalid_entity_id};
 };
 
 }  // namespace Blunder

@@ -76,6 +76,11 @@ static class Program
                 {
                     if (TryMapKind(field.FieldType, out string kind))
                     {
+                        if (kind == "string" && HasClipNameMark(field))
+                        {
+                            kind = "clip_name";
+                        }
+
                         members.Add(new CatalogMember(field.Name, kind));
                     }
                 }
@@ -90,6 +95,11 @@ static class Program
 
                     if (TryMapKind(property.PropertyType, out string kind))
                     {
+                        if (kind == "string" && HasClipNameMark(property))
+                        {
+                            kind = "clip_name";
+                        }
+
                         members.Add(new CatalogMember(property.Name, kind));
                     }
                 }
@@ -138,6 +148,20 @@ static class Program
         }
 
         return null;
+    }
+
+    static bool HasClipNameMark(MemberInfo member)
+    {
+        foreach (CustomAttributeData attribute in member.GetCustomAttributesData())
+        {
+            string? attrName = attribute.AttributeType.FullName;
+            if (attrName == "Blunder.BehaviourClipNameAttribute")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     static bool TryMapKind(Type type, out string kind)

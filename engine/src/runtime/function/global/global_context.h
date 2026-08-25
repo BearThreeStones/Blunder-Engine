@@ -65,6 +65,43 @@ class RuntimeGlobalContext {
   bool isPlayPaused() const { return m_play_paused; }
   void setPlayPaused(bool paused) { m_play_paused = paused; }
 
+  bool contentBrowserHasInputFocus() const {
+    return m_content_browser_input_focus;
+  }
+  void setContentBrowserHasInputFocus(bool focused) {
+    m_content_browser_input_focus = focused;
+    if (focused) {
+      m_inspector_input_focus = false;
+      m_attachment_preview_input_focus = false;
+    }
+  }
+  bool inlineRenameActive() const { return m_inline_rename_active; }
+  void setInlineRenameActive(bool active) { m_inline_rename_active = active; }
+
+  bool inspectorHasInputFocus() const { return m_inspector_input_focus; }
+  void setInspectorHasInputFocus(bool focused) {
+    m_inspector_input_focus = focused;
+  }
+  bool inspectorAssetMode() const { return m_inspector_asset_mode; }
+  void setInspectorAssetMode(bool asset_mode) {
+    m_inspector_asset_mode = asset_mode;
+  }
+  bool assetInspectorHasUndoFocus() const {
+    return m_inspector_input_focus && m_inspector_asset_mode;
+  }
+  bool attachmentPreviewHasInputFocus() const {
+    return m_attachment_preview_input_focus;
+  }
+  void setAttachmentPreviewHasInputFocus(bool focused) {
+    m_attachment_preview_input_focus = focused;
+    if (focused) {
+      m_content_browser_input_focus = false;
+    }
+  }
+
+  /// Closes every Attachment property preview card (document swap / openScene).
+  void closeAttachmentPreviewCards();
+
  public:
   MemorySystem m_memory_system;
   eastl::shared_ptr<LogSystem> m_logger_system;
@@ -85,6 +122,7 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<EditorSceneEditSystem> m_editor_scene_edit;
   eastl::unique_ptr<PlacementPreviewController> m_placement_preview;
   eastl::shared_ptr<DocumentHistory> m_document_history;
+  eastl::shared_ptr<DocumentHistory> m_global_history;
   eastl::shared_ptr<ViewportPickSystem> m_viewport_pick;
   // eastl::shared_ptr<ConfigManager> m_config_manager;
   // eastl::shared_ptr<WorldManager> m_world_manager;
@@ -111,6 +149,11 @@ class RuntimeGlobalContext {
  private:
   EngineHostMode m_host_mode{EngineHostMode::Editor};
   bool m_play_paused{false};
+  bool m_content_browser_input_focus{false};
+  bool m_inline_rename_active{false};
+  bool m_inspector_input_focus{false};
+  bool m_inspector_asset_mode{false};
+  bool m_attachment_preview_input_focus{false};
 };
 
 extern RuntimeGlobalContext g_runtime_global_context;

@@ -29,11 +29,16 @@ class EditorSceneEditSystem final {
                   SceneSystem* scene_system);
 
   void setActiveScenePath(eastl::string virtual_path);
+  /// Updates the open document path without changing dirty or Document History.
+  void retargetActiveScenePath(eastl::string virtual_path);
   const eastl::string& activeScenePath() const { return m_active_scene_virtual_path; }
 
   bool isDirty() const { return m_dirty; }
   void markDirty() { m_dirty = true; }
   void clearDirty() { m_dirty = false; }
+
+  /// Unloads the live document and clears the active path.
+  void closeActiveScene();
 
   /// Writes the active SceneInstance to the active Scene Asset path.
   bool saveActiveScene();

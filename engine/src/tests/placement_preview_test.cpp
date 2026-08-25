@@ -76,6 +76,10 @@ int main() {
   expect_true("texture is other",
               classifyContentBrowserDrop("assets/Textures/a.texture.yaml") ==
                   ContentBrowserDropKind::other);
+  expect_true(
+      "animation clip drop kind",
+      classifyContentBrowserDrop("assets/Animations/idle.animation.yaml") ==
+          ContentBrowserDropKind::animation_clip);
   expect_true("empty path is other",
               classifyContentBrowserDrop("") == ContentBrowserDropKind::other);
 

@@ -46,7 +46,8 @@ eastl::string meshGpuCacheKey(const MeshAsset& mesh_asset) {
 void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
                     const MeshRendererComponent& draw_renderer,
                     VulkanTexture* fallback_texture,
-                    eastl::vector<glm::mat4> gpu_bone_palette) {
+                    eastl::vector<glm::mat4> gpu_bone_palette,
+                    EntityId entity_id) {
   eastl::shared_ptr<MaterialAsset> material = draw_renderer.material;
   VulkanTexture* base_color_texture = fallback_texture;
   VulkanTexture* metallic_roughness_texture = fallback_texture;
@@ -76,14 +77,14 @@ void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
         gpu_mesh, material, base_color_texture, metallic_roughness_texture,
         normal_texture, occlusion_texture, draw_renderer.world_matrix,
         draw_renderer.alpha_cutoff, draw_renderer.double_sided,
-        eastl::move(gpu_bone_palette));
+        eastl::move(gpu_bone_palette), entity_id);
   } else {
     render_system->addOpaqueMeshDraw(
         gpu_mesh, material, base_color_texture, metallic_roughness_texture,
         normal_texture, occlusion_texture, draw_renderer.world_matrix,
         draw_renderer.alpha_cutoff,
         material ? material->getAlphaMode() : draw_renderer.alpha_mode,
-        draw_renderer.double_sided, eastl::move(gpu_bone_palette));
+        draw_renderer.double_sided, eastl::move(gpu_bone_palette), entity_id);
   }
 }
 
@@ -112,7 +113,7 @@ void submitStandaloneMeshToRender(RenderSystem* render_system,
   }
 
   submitMeshDraw(render_system, gpu_mesh, renderer,
-                 render_system->getFallbackTexture(), {});
+                 render_system->getFallbackTexture(), {}, k_invalid_entity_id);
 }
 
 void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instance) {
@@ -186,7 +187,7 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
         }
 
         submitMeshDraw(render_system, gpu_mesh, draw_renderer, fallback_texture,
-                       eastl::move(gpu_bone_palette));
+                       eastl::move(gpu_bone_palette), entity_id);
       });
 }
 

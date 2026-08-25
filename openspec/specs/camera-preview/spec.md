@@ -30,6 +30,14 @@ In Edit Mode, the editor SHALL show a **Camera Preview** floating panel over the
 - **WHEN** the Player process is running Play Mode
 - **THEN** Camera Preview is not shown
 
+### Requirement: Hierarchy Camera icon does not drive Camera Preview
+Alt+left-pointer down on a Hierarchy Camera Unique icon SHALL NOT show, hide, or change the Camera Preview target. Camera Preview SHALL continue to follow its existing selection-based visibility rules.
+
+#### Scenario: Alt+LMB Camera icon leaves Camera Preview rule unchanged
+- **WHEN** the author Alt+LMBs the Hierarchy Camera icon
+- **THEN** Camera Preview does not open or retarget as a result of that gesture
+- **AND** Attachment property preview for the Camera Component may open per that capability
+
 ### Requirement: Live overlay-free preview image
 
 While Camera Preview is visible and not collapsed, the editor SHALL render the scene each frame from the target Camera Component’s world pose, vertical FOV, near clip, and far clip into a dedicated offscreen target, and present that image in the panel content area. The preview render SHALL NOT draw Editor Overlays (grid, gizmos, outline, Camera Gizmo, etc.). Projection aspect SHALL equal the preview content box width/height. The offscreen longest edge SHALL be at most 480 pixels. When the panel is collapsed, preview rendering SHALL stop.
@@ -57,3 +65,15 @@ Camera Preview SHALL use a Slint floating panel over the viewport tile (independ
 
 - **WHEN** the pointer clicks inside the Camera Preview panel over a mesh
 - **THEN** mesh pick / camera orbit does not claim that click
+
+### Requirement: Camera Preview uses Light Components
+While Camera Preview is visible, the preview render SHALL shade the scene from Light Components in that scene. It SHALL NOT use Studio lighting, a process-global editor directional, or an ambient floor. Editor Overlays including Light Gizmo SHALL remain excluded from the preview image.
+
+#### Scenario: Preview matches scene lights
+- **WHEN** Camera Preview is visible and the scene has a Light enabled Directional Light
+- **THEN** the preview image is shaded by that Light Component
+
+#### Scenario: Preview has no Light Gizmo
+- **WHEN** Camera Preview is visible and the scene has Light Components
+- **THEN** the preview image does not contain Light Gizmo wires
+

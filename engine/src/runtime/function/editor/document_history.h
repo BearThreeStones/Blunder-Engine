@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
+
 #include "EASTL/functional.h"
+#include "EASTL/string.h"
 #include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
@@ -18,6 +21,7 @@ class IEditorCommand {
   virtual ~IEditorCommand() = default;
   virtual void undo() = 0;
   virtual void redo() = 0;
+  virtual eastl::string label() const { return eastl::string("Edit"); }
 
   SelectionSnapshot selection_before{};
   SelectionSnapshot selection_after{};
@@ -41,6 +45,12 @@ class DocumentHistory final {
   bool undo();
   bool redo();
 
+  size_t commandCount() const { return m_commands.size(); }
+  size_t cursor() const { return m_cursor; }
+  const IEditorCommand* commandAt(size_t index) const;
+  /// Undo/redo until `cursor()` equals `applied_count`.
+  bool jumpTo(size_t applied_count);
+
   void markSaveBaseline();
   bool isDirtyRelativeToSave() const;
 
@@ -52,10 +62,23 @@ class DocumentHistory final {
   void dropOldestIfNeeded();
 
   eastl::vector<eastl::unique_ptr<IEditorCommand>> m_commands;
-  size_t m_cursor{0};       // next push index; undo moves left
+  size_t m_cursor{0};  // next push index; undo moves left
   size_t m_max_depth{k_default_max_depth};
   size_t m_save_baseline{0};
   eastl::function<void(const SelectionSnapshot&)> m_selection_restorer;
 };
+
+enum class EditorUndoScope : uint8_t {
+  document = 0,
+  global = 1,
+  text = 2,
+};
+
+/// Inline Rename claims Ctrl+Z. Browser or Asset Inspector focus routes to
+/// Global History. Attachment property preview focus stays on Document History.
+EditorUndoScope resolveUndoScope(bool content_browser_focused,
+                                 bool inline_rename_active,
+                                 bool asset_inspector_focused = false,
+                                 bool attachment_preview_focused = false);
 
 }  // namespace Blunder

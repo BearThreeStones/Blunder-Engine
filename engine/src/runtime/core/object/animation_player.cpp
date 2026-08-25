@@ -52,6 +52,13 @@ void AnimationPlayer::setClipBindings(
     const eastl::vector<ClipBinding>& bindings) {
   m_name_to_guid.clear();
   for (const ClipBinding& binding : bindings) {
+    if (binding.name.empty() && binding.guid.empty()) {
+      continue;
+    }
+    // First write wins: authorship paths must reject duplicates before call.
+    if (m_name_to_guid.find(binding.name) != m_name_to_guid.end()) {
+      continue;
+    }
     m_name_to_guid[binding.name] = binding.guid;
   }
 }

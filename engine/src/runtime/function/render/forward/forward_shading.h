@@ -6,20 +6,32 @@
 #include <cgltf.h>
 
 #include "runtime/core/math/geometry.h"
+#include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gpu_skinning.h"
 
 namespace Blunder {
 
 class MaterialAsset;
+class SceneInstance;
 struct BlinnPhongEditorSettings;
 struct ForwardFrameState;
+
+constexpr uint32_t k_max_forward_scene_lights = 8;
+
+struct GpuSceneLight {
+  glm::vec4 position_type{0.0f};
+  glm::vec4 color_flags{0.0f};
+  glm::vec4 emit_range{0.0f, 0.0f, -1.0f, 0.0f};
+  glm::vec4 cone_area{0.0f};
+  glm::vec4 axis_x{1.0f, 0.0f, 0.0f, 0.0f};
+};
 
 /// GPU bone palette UBO (std140) shared with skinned shaders; see k_max_gpu_skin_joints.
 struct GpuSkinPaletteData {
   glm::mat4 joint_matrices[k_max_gpu_skin_joints];
 };
 
-/// Mesh UBO layout shared with engine/shaders/basic.slang (std140).
+/// Mesh UBO layout shared with engine/shaders/basic.slang / pbr.slang (std140).
 struct ForwardMeshUniformData {
   glm::mat4 model;
   glm::mat4 view;
@@ -37,6 +49,8 @@ struct ForwardMeshUniformData {
   glm::vec4 shadow_params{0.0f};
   glm::vec4 metallic_roughness_factors{1.0f, 1.0f, 0.5f, 0.0f};
   glm::vec4 pbr_texture_flags{0.0f};
+  glm::vec4 light_count{0.0f};
+  GpuSceneLight lights[k_max_forward_scene_lights];
 };
 
 void computeDirectionalLightMatrices(
@@ -47,14 +61,16 @@ void computeDirectionalLightMatrices(
 void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                                     const MaterialAsset* material,
                                     const BlinnPhongEditorSettings& editor,
-                                    const ForwardFrameState& frame_state);
+                                    const ForwardFrameState& frame_state,
+                                    EntityId mesh_entity_id = k_invalid_entity_id);
 
 void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                             const MaterialAsset* material,
                             const BlinnPhongEditorSettings& editor,
                             const ForwardFrameState& frame_state,
                             cgltf_alpha_mode alpha_mode, float alpha_cutoff,
-                            bool double_sided);
+                            bool double_sided,
+                            EntityId mesh_entity_id = k_invalid_entity_id);
 
 float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
                                            const glm::vec3& light_direction);

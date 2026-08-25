@@ -5,7 +5,7 @@ add_executable(translate_modal_session_tests
 )
 
 target_link_libraries(translate_modal_session_tests
-    PRIVATE engine_runtime
+    PRIVATE engine_runtime blunder_engine_c_static
 )
 
 if(MSVC)
@@ -17,7 +17,26 @@ target_precompile_headers(translate_modal_session_tests
 )
 
 add_test(NAME translate_modal_session_tests
-         COMMAND translate_modal_session_tests)
+    COMMAND translate_modal_session_tests)
+
+add_executable(transform_gizmo_hover_test
+    "transform_gizmo_hover_test.cpp"
+)
+
+target_link_libraries(transform_gizmo_hover_test
+    PRIVATE engine_runtime blunder_engine_c_static
+)
+
+if(MSVC)
+    target_compile_options(transform_gizmo_hover_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(transform_gizmo_hover_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME transform_gizmo_hover_test
+    COMMAND transform_gizmo_hover_test)
 
 add_executable(outline_color_tests
     "outline_color_tests.cpp"
@@ -651,6 +670,7 @@ add_executable(editor_history_test
 
 target_link_libraries(editor_history_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 if(MSVC)
@@ -663,6 +683,30 @@ target_precompile_headers(editor_history_test
 
 add_test(NAME editor_history_test
          COMMAND editor_history_test)
+
+add_executable(mesh_material_override_test
+    "mesh_material_override_test.cpp"
+)
+
+target_link_libraries(mesh_material_override_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(mesh_material_override_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(mesh_material_override_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(mesh_material_override_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME mesh_material_override_test
+         COMMAND mesh_material_override_test)
 
 add_executable(scene_soft_delete_test
     "scene_soft_delete_test.cpp"
@@ -693,6 +737,7 @@ add_executable(editor_commands_test
 
 target_link_libraries(editor_commands_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
 )
 
 target_include_directories(editor_commands_test
@@ -709,6 +754,56 @@ target_precompile_headers(editor_commands_test
 
 add_test(NAME editor_commands_test
          COMMAND editor_commands_test)
+
+add_executable(hierarchy_create_test
+    "hierarchy_create_test.cpp"
+)
+
+target_link_libraries(hierarchy_create_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(hierarchy_create_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(hierarchy_create_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(hierarchy_create_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME hierarchy_create_test
+         COMMAND hierarchy_create_test)
+
+add_executable(hierarchy_row_icons_test
+    "hierarchy_row_icons_test.cpp"
+)
+
+target_link_libraries(hierarchy_row_icons_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(hierarchy_row_icons_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(hierarchy_row_icons_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(hierarchy_row_icons_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME hierarchy_row_icons_test
+         COMMAND hierarchy_row_icons_test)
 
 
 add_executable(project_create_test
@@ -832,6 +927,50 @@ endif()
 
 add_test(NAME camera_gizmo_hit_test_test
          COMMAND camera_gizmo_hit_test_test)
+
+add_executable(light_gizmo_hit_test_test
+    "light_gizmo_hit_test_test.cpp"
+)
+
+target_include_directories(light_gizmo_hit_test_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+target_link_libraries(light_gizmo_hit_test_test
+    PRIVATE glm::glm-header-only
+)
+
+if(MSVC)
+    target_compile_options(light_gizmo_hit_test_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME light_gizmo_hit_test_test
+         COMMAND light_gizmo_hit_test_test)
+
+add_executable(light_eval_test
+    "light_eval_test.cpp"
+)
+
+target_link_libraries(light_eval_test
+    PRIVATE engine_runtime blunder_engine_c_static
+)
+
+target_include_directories(light_eval_test
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(light_eval_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(light_eval_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME light_eval_test
+         COMMAND light_eval_test)
 
 add_executable(camera_gizmo_math_test
     "camera_gizmo_math_test.cpp"
@@ -1137,6 +1276,15 @@ target_link_libraries(content_browser_test
     PRIVATE blunder_engine_c_static
 )
 
+target_include_directories(content_browser_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/efsw/include"
+)
+if(TARGET efsw)
+    target_compile_definitions(content_browser_test PRIVATE BLUNDER_HAS_EFSW=1)
+endif()
+
 if(MSVC)
     target_compile_options(content_browser_test PRIVATE /Zc:preprocessor)
 endif()
@@ -1193,6 +1341,10 @@ add_executable(scene_serializer_test
 
 target_link_libraries(scene_serializer_test
     PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_serializer_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 
 if(MSVC)
@@ -1258,6 +1410,11 @@ add_executable(inspector_animation_player_clip_map_test
 
 target_link_libraries(inspector_animation_player_clip_map_test
     PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(inspector_animation_player_clip_map_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 
 if(MSVC)

@@ -16,6 +16,13 @@ void pushDocumentCommand(eastl::unique_ptr<IEditorCommand> command) {
   }
 }
 
+void pushGlobalCommand(eastl::unique_ptr<IEditorCommand> command) {
+  if (!command || !g_runtime_global_context.m_global_history) {
+    return;
+  }
+  g_runtime_global_context.m_global_history->push(eastl::move(command));
+}
+
 SelectionSnapshot currentSelectionSnapshot() {
   SelectionSnapshot snapshot;
   if (g_runtime_global_context.m_editor_selection &&

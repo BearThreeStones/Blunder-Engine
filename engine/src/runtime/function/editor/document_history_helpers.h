@@ -9,6 +9,9 @@ namespace Blunder {
 /// Push an already-applied command and mark the active scene dirty.
 void pushDocumentCommand(eastl::unique_ptr<IEditorCommand> command);
 
+/// Push an already-applied Global Command. Does not dirty the open scene.
+void pushGlobalCommand(eastl::unique_ptr<IEditorCommand> command);
+
 SelectionSnapshot currentSelectionSnapshot();
 
 }  // namespace Blunder

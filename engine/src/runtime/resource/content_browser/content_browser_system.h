@@ -91,6 +91,24 @@ class ContentBrowserSystem final {
 
   bool reparentEntry(const eastl::string& source_virtual_path,
                      const eastl::string& target_folder_virtual_path);
+  bool canReparentEntry(const eastl::string& source_virtual_path,
+                        const eastl::string& target_folder_virtual_path) const;
+
+  const eastl::vector<ContentEntry>& indexedEntries() const { return m_entries; }
+
+  ContentBrowserMutateResult createFolder(
+      const eastl::string& parent_virtual_path);
+  ContentBrowserMutateResult renameEntry(const eastl::string& virtual_path,
+                                         const eastl::string& new_name);
+
+  const eastl::string& pendingInlineRenamePath() const {
+    return m_pending_inline_rename_path;
+  }
+  void clearPendingInlineRename() { m_pending_inline_rename_path.clear(); }
+  void beginInlineRename(const eastl::string& virtual_path);
+
+  bool removeEmptyFolder(const eastl::string& virtual_path);
+  bool recreateFolder(const eastl::string& virtual_path);
 
   uint32_t importExternalFiles(
       const eastl::vector<eastl::string>& absolute_paths,
@@ -118,6 +136,14 @@ class ContentBrowserSystem final {
       const eastl::string& virtual_path) const;
   eastl::string makeUniqueDestinationName(const eastl::string& folder_virtual,
                                           const eastl::string& file_name) const;
+  bool isAssetsRootPath(const eastl::string& virtual_path) const;
+  void remapRegistryPrefix(const eastl::string& from_prefix,
+                           const eastl::string& to_prefix);
+  void retargetSelectedFolder(const eastl::string& from_prefix,
+                              const eastl::string& to_prefix);
+  ContentBrowserMutateResult failMutate(const char* message) const;
+  bool siblingTaken(const eastl::string& parent_folder,
+                    const eastl::string& name, bool as_directory) const;
 
   void rebuildGrid();
   void rebuildPathSegments();
@@ -143,6 +169,8 @@ class ContentBrowserSystem final {
   bool m_grid_sort_ascending{true};
   ContentBrowserDragController m_drag;
   ContentBrowserWatch m_file_watch;
+  AssetRegistry* m_asset_registry{nullptr};
+  eastl::string m_pending_inline_rename_path;
   bool m_is_initialized{false};
 };
 

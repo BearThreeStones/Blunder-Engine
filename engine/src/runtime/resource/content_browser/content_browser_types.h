@@ -61,4 +61,10 @@ struct ContentBrowserRefreshStats {
   uint32_t thumbnails_failed{0};
 };
 
+struct ContentBrowserMutateResult {
+  bool success{false};
+  eastl::string virtual_path;
+  eastl::string error;
+};
+
 }  // namespace Blunder

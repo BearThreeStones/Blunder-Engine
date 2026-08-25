@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Blunder Editor Theme preview — modern dark shell</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --app-bar: #191919;
+      --app-btn: #383838;
+      --app-btn-hover: #424242;
+      --app-btn-checked: #6A6A6A;
+      --app-btn-border: #191919;
+      --app-btn-accent: #222222;
+      --window: #383838;
+      --window-border: #242424;
+      --window-text: #BDBDBD;
+      --tab: #353535;
+      --tab-active: #3C3C3C;
+      --tab-hover: #303030;
+      --tab-text: #BDBDBD;
+      --toolbar: #3C3C3C;
+      --toolbar-border: #232323;
+      --toolbar-btn-hover: #464646;
+      --toolbar-btn-checked: #505050;
+      --input: #2A2A2A;
+      --input-border: #212121;
+      --input-accent: #0D0D0D;
+      --input-focus: #3A79BB;
+      --button: #585858;
+      --button-hover: #676767;
+      --button-pressed: #46607C;
+      --button-border: #303030;
+      --button-accent: #242424;
+      --button-text: #EEEEEE;
+      --titlebar: #3E3E3E;
+      --titlebar-hover: #474747;
+      --titlebar-border: #1A1A1A;
+      --titlebar-accent: #303030;
+      --label: #C4C4C4;
+      --default-text: #D2D2D2;
+      --icon: #C4C4C4;
+      --highlight: #2C5D87;
+      --default-bg: #282828;
+      --modal-dim: rgba(0,0,0,.45);
+      --hier-sel-bg: #3a3a4a;
+      --hier-sel-text: #bde7ff;
+      --hier-line: #737373;
+      --axis-x: #ff3352;
+      --axis-y: #40d040;
+      --axis-z: #4d9fff;
+      --line: 18px;
+      --line-lg: 20px;
+      --font: 12px;
+      --radius-ctl: 3px;
+      --radius-surface: 4px;
+      --radius-modal: 6px;
+
+      --hairline: var(--window-border);
+      --muted: #9a9a9a;
+      --accent: #3A79BB;
+      --accent-soft: #2C5D87;
+      --accent-text: #ffffff;
+      --viewport-bg: #1a1a1a;
+      --viewport-grid: #2a2a2a;
+      --godot-cell: #252525;
+      --godot-label: #a8a8a8;
+      --godot-val: #e0e0e0;
+      --mini-bg: #2a2a2a;
+      --mini-on: #3a5a7a;
+      --link-bg: #3a5a7a;
+      --panel-gap: 2px;
+      --shadow-panel: none;
+      --shadow-float: none;
+      --shadow-modal: 0 8px 32px rgba(0,0,0,.5);
+    }
+
+    /* ── Modern skin (ADR 0039 canonical): same IA, hairline depth, accent states ── */
+    body.modern {
+      --app-bar: #191B1F;
+      --app-btn: #2E3238;
+      --app-btn-hover: #34383F;
+      --app-btn-checked: #454A52;
+      --app-btn-border: transparent;
+      --app-btn-accent: transparent;
+      --window: #2A2D31;
+      --window-border: #3B3F45;
+      --window-text: #B8BFC6;
+      --tab: transparent;
+      --tab-active: #2A2D31;
+      --tab-hover: #24272B;
+      --tab-text: #98A0A8;
+      --toolbar: #34383D;
+      --toolbar-border: #3F444A;
+      --toolbar-btn-hover: #3E4349;
+      --toolbar-btn-checked: #474D55;
+      --input: #1E2125;
+      --input-border: #3B3F45;
+      --input-accent: #3B3F45;
+      --button: #3A3E44;
+      --button-hover: #454A51;
+      --button-pressed: #4E545C;
+      --button-border: #454A50;
+      --button-accent: #454A50;
+      --button-text: #E8EBEF;
+      --titlebar: #34383D;
+      --titlebar-hover: #3C4046;
+      --titlebar-border: #3B3F45;
+      --titlebar-accent: transparent;
+      --label: #B8BFC6;
+      --default-text: #E8EBEF;
+      --icon: #BFC6CD;
+      --highlight: #4C8DFF;
+      --default-bg: #24272B;
+      --modal-dim: rgba(10,12,14,.58);
+      --hier-sel-bg: color-mix(in srgb, var(--accent) 22%, transparent);
+      --hier-sel-text: color-mix(in srgb, var(--accent) 32%, #ffffff);
+      --hairline: #3B3F45;
+      --muted: #98A0A8;
+      --accent: #4C8DFF;
+      --accent-hover: color-mix(in srgb, var(--accent) 82%, #ffffff);
+      --accent-soft: color-mix(in srgb, var(--accent) 17%, transparent);
+      --accent-line: color-mix(in srgb, var(--accent) 45%, transparent);
+      --accent-text: #ffffff;
+      --viewport-bg: #1E2125;
+      --viewport-grid: #33373D;
+      --godot-cell: #1E2125;
+      --godot-label: #98A0A8;
+      --godot-val: #E8EBEF;
+      --mini-bg: #33373C;
+      --mini-on: var(--accent-soft);
+      --link-bg: var(--accent-soft);
+      --line: 22px;
+      --line-lg: 26px;
+      --radius-ctl: 6px;
+      --radius-surface: 10px;
+      --radius-modal: 14px;
+      --panel-gap: 6px;
+      --shadow-panel: 0 1px 2px rgba(0,0,0,.45);
+      --shadow-float: 0 6px 20px rgba(0,0,0,.45);
+      --shadow-modal: 0 24px 64px rgba(0,0,0,.6);
+    }
+    /* Accent candidates — single knob, everything else derives from it */
+    body[data-accent="azure"]  { --accent: #4A90D9; }
+    body[data-accent="bright"] { --accent: #4C8DFF; }
+    body[data-accent="teal"]   { --accent: #23B8A6; }
+    body[data-accent="violet"] { --accent: #8B7BFF; }
+    body[data-accent="amber"]  { --accent: #E0A030; }
+    body[data-accent="green"]  { --accent: #46B96B; }
+
+    body.modern .outset,
+    body.modern .inset {
+      border: 1px solid var(--hairline);
+    }
+    body.modern .btn,
+    body.modern .app-btn,
+    body.modern .tab,
+    body.modern .tb,
+    body.modern .fold,
+    body.modern .prow,
+    body.modern .add-btn,
+    body.modern .mini,
+    body.modern .thumb .box {
+      transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: Inter, Verdana, sans-serif;
+      font-size: var(--font);
+      color: var(--default-text);
+      background: #111;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Preview chrome — not product */
+    .preview-bar {
+      flex: 0 0 auto;
+      background: #2c2416;
+      border-bottom: 1px solid #6a5420;
+      padding: 8px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      color: #f0d78c;
+      font-size: 12px;
+    }
+    .preview-bar strong { color: #fff6d4; font-weight: 600; }
+    .preview-bar button {
+      font: inherit;
+      height: 22px;
+      padding: 0 10px;
+      border: 1px solid #6a5420;
+      background: #3a3018;
+      color: #f0d78c;
+      cursor: pointer;
+      border-radius: var(--radius-ctl);
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    .preview-bar button.on { background: #6a5420; color: #fff6d4; }
+    .preview-bar .grow { flex: 1; }
+    .swatches { display: flex; gap: 4px; align-items: center; }
+    .swatches button {
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .swatches button.on { border-color: #fff6d4; }
+    .callout {
+      position: absolute;
+      z-index: 20;
+      font-size: 10px;
+      line-height: 1.3;
+      background: #6a5420;
+      color: #fff6d4;
+      padding: 3px 6px;
+      border-radius: var(--radius-ctl);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    body.hide-notes .callout { display: none; }
+
+    .stage { flex: 1; min-height: 0; position: relative; }
+
+    /* Unity outset / inset */
+    .outset {
+      border: 1px solid var(--button-border);
+      border-top-color: #6e6e6e;
+      border-left-color: #6e6e6e;
+      border-bottom-color: var(--button-accent);
+      border-right-color: var(--button-accent);
+    }
+    .inset {
+      border: 1px solid var(--input-border);
+      border-top-color: var(--input-accent);
+      border-left-color: var(--input-accent);
+      border-bottom-color: #3a3a3a;
+      border-right-color: #3a3a3a;
+    }
+    .btn {
+      height: var(--line);
+      padding: 0 8px;
+      background: var(--button);
+      color: var(--button-text);
+      font: 500 12px/var(--line) Inter, sans-serif;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      user-select: none;
+      border-radius: var(--radius-ctl);
+    }
+    .btn:hover { background: var(--button-hover); }
+    .btn:active { background: var(--button-pressed); }
+    .app-btn {
+      height: 24px;
+      min-width: 52px;
+      padding: 0 10px;
+      background: var(--app-btn);
+      color: var(--button-text);
+      border: 1px solid var(--app-btn-border);
+      border-top-color: var(--app-btn-accent);
+      font: 500 12px/24px Inter, sans-serif;
+      cursor: pointer;
+      border-radius: var(--radius-ctl);
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    .app-btn:hover { background: var(--app-btn-hover); }
+    .app-btn.play { min-width: 36px; }
+    .app-btn.checked { background: var(--app-btn-checked); }
+
+    .icon { width: 14px; height: 14px; fill: var(--icon); display: inline-block; vertical-align: middle; }
+
+    .editor {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--app-bar);
+    }
+    .app-bar {
+      height: 36px;
+      background: var(--app-bar);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 8px;
+      position: relative;
+    }
+    .app-left, .app-right { display: flex; gap: 4px; align-items: center; }
+    .app-right { justify-content: flex-end; }
+    .app-center { display: flex; gap: 2px; justify-content: center; }
+    .brand {
+      color: #eee;
+      font-weight: 600;
+      margin-right: 10px;
+      letter-spacing: .02em;
+    }
+
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 220px;
+      gap: var(--panel-gap);
+      background: var(--app-bar);
+      padding: 0 var(--panel-gap) var(--panel-gap);
+    }
+    .upper {
+      display: grid;
+      grid-template-columns: 240px 1fr 300px;
+      gap: var(--panel-gap);
+      min-height: 0;
+    }
+    .panel {
+      background: var(--window);
+      border: 1px solid var(--window-border);
+      border-radius: var(--radius-surface);
+      box-shadow: var(--shadow-panel);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      position: relative;
+    }
+    .tabwell {
+      height: 22px;
+      background: var(--app-bar);
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--window-border);
+    }
+    .tab {
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--tab);
+      color: var(--tab-text);
+      border-right: 1px solid var(--app-bar);
+      font-size: 12px;
+      border-radius: var(--radius-ctl) var(--radius-ctl) 0 0;
+    }
+    .tab.active {
+      background: var(--tab-active);
+      color: #ddd;
+    }
+    .tab .x { opacity: .45; font-size: 10px; }
+    .panel-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      color: var(--window-text);
+    }
+
+    /* Hierarchy — frozen interior */
+    .hier-title {
+      height: 22px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--window-text);
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .tree { padding: 4px 0 12px; }
+    .row {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      padding-left: 4px;
+      color: #d8d8d8;
+      position: relative;
+    }
+    .row.sel { background: var(--hier-sel-bg); color: var(--hier-sel-text); }
+    .gutter {
+      width: 18px;
+      height: 22px;
+      position: relative;
+      flex: 0 0 18px;
+    }
+    .stem {
+      position: absolute;
+      left: 8px;
+      top: 0;
+      width: 1px;
+      height: 100%;
+      background: var(--hier-line);
+    }
+    .tick {
+      position: absolute;
+      left: 8px;
+      top: 10px;
+      width: 9px;
+      height: 1px;
+      background: var(--hier-line);
+    }
+    .chev { width: 10px; color: #a0a0a0; font-size: 9px; }
+    .row-name { margin-left: 4px; }
+
+    /* Viewport */
+    .viewport {
+      position: relative;
+      background: var(--viewport-bg);
+      overflow: hidden;
+    }
+    .vp-grid {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(var(--viewport-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--viewport-grid) 1px, transparent 1px);
+      background-size: 32px 32px;
+      opacity: .35;
+    }
+    .vp-axis {
+      position: absolute;
+      left: 24px;
+      bottom: 24px;
+      width: 72px;
+      height: 72px;
+    }
+    .toolstrip {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      height: 24px;
+      background: var(--toolbar);
+      border: 1px solid var(--toolbar-border);
+      border-radius: var(--radius-surface);
+      box-shadow: var(--shadow-float);
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+      gap: 1px;
+    }
+    .tb {
+      width: 24px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      color: var(--icon);
+      cursor: pointer;
+      border-radius: var(--radius-ctl);
+    }
+    .tb:hover { background: var(--toolbar-btn-hover); }
+    .tb.on { background: var(--toolbar-btn-checked); }
+    .proj-strip {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+      height: 24px;
+      background: var(--toolbar);
+      border: 1px solid var(--toolbar-border);
+      border-radius: var(--radius-surface);
+      box-shadow: var(--shadow-float);
+      display: flex;
+      align-items: center;
+      color: var(--label);
+      padding: 0 8px;
+      gap: 8px;
+    }
+
+    /* Inspector */
+    .insp { display: flex; flex-direction: column; }
+    .insp-head {
+      padding: 6px 8px 4px;
+      color: var(--default-text);
+      font-weight: 600;
+    }
+    .fold {
+      background: var(--titlebar);
+      border-top: 1px solid var(--titlebar-accent);
+      border-bottom: 1px solid var(--titlebar-border);
+      height: var(--line-lg);
+      display: flex;
+      align-items: center;
+      margin: 0 6px;
+      padding: 0 6px;
+      gap: 6px;
+      color: var(--default-text);
+      cursor: pointer;
+      border-radius: var(--radius-ctl);
+    }
+    .fold:hover { background: var(--titlebar-hover); }
+    .fold .rm {
+      margin-left: auto;
+      height: 16px;
+      padding: 0 6px;
+      font-size: 10px;
+      background: var(--button);
+      color: var(--button-text);
+      border: 1px solid var(--button-border);
+      border-radius: var(--radius-ctl);
+    }
+    .section { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+    .godot-row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      align-items: center;
+      min-height: 22px;
+      gap: 4px;
+    }
+    .godot-row > span { color: var(--godot-label); font-size: 11px; }
+    .godot-cell {
+      height: 22px;
+      background: var(--godot-cell);
+      border-radius: var(--radius-ctl);
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      color: var(--godot-val);
+      font-size: 11px;
+    }
+    .axes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+    .axis {
+      height: 22px;
+      background: var(--godot-cell);
+      border-radius: var(--radius-ctl);
+      display: flex;
+      align-items: center;
+      padding: 0 4px;
+      gap: 4px;
+    }
+    .axis b { width: 10px; font-size: 11px; font-weight: 700; }
+    .axis .val { flex: 1; color: var(--godot-val); font-size: 11px; }
+    .lbl { color: var(--godot-label); font-size: 12px; margin: 2px 0; }
+    .link {
+      width: 22px;
+      height: 22px;
+      background: var(--link-bg);
+      border-radius: var(--radius-ctl);
+      display: grid;
+      place-items: center;
+    }
+    .toggles { display: flex; gap: 4px; }
+    .mini {
+      height: 18px;
+      padding: 0 8px;
+      font-size: 11px;
+      background: var(--mini-bg);
+      color: #c8c8c8;
+      border-radius: var(--radius-ctl);
+      display: inline-flex;
+      align-items: center;
+    }
+    .mini.on { background: var(--mini-on); color: #fff; }
+    body.modern .mini.on { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+    body.modern .link { color: var(--accent); }
+    .add-btn {
+      height: var(--line);
+      width: 100%;
+      background: var(--button);
+      color: var(--button-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-ctl);
+    }
+    .add-btn:hover { background: var(--button-hover); }
+
+    /* Browser */
+    .browser { display: grid; grid-template-columns: 160px 1fr; min-height: 0; }
+    .browser-toolbar {
+      grid-column: 1 / -1;
+      height: 24px;
+      background: var(--toolbar);
+      border-bottom: 1px solid var(--toolbar-border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+    }
+    .search {
+      height: 18px;
+      width: 180px;
+      background: var(--input);
+      color: var(--window-text);
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: var(--radius-ctl);
+    }
+    .crumb { color: var(--label); }
+    .btree { border-right: 1px solid var(--window-border); padding: 6px; color: var(--window-text); }
+    .bgrid { padding: 8px; display: flex; gap: 10px; }
+    .thumb {
+      width: 72px;
+      text-align: center;
+      color: var(--window-text);
+    }
+    .thumb .box {
+      height: 64px;
+      background: var(--default-bg);
+      border: 1px solid var(--window-border);
+      border-radius: var(--radius-surface);
+      margin-bottom: 4px;
+    }
+    .thumb.sel .box { outline: 1px solid var(--highlight); }
+
+    /* Modal */
+    .dim {
+      position: absolute;
+      inset: 0;
+      background: var(--modal-dim);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 30;
+    }
+    body.show-modal .dim { display: flex; }
+    .modal {
+      width: 420px;
+      background: var(--window);
+      border: 1px solid var(--window-border);
+      border-radius: var(--radius-modal);
+      overflow: hidden;
+      box-shadow: var(--shadow-modal);
+    }
+    .modal-bar {
+      height: 24px;
+      background: var(--titlebar);
+      border-bottom: 1px solid var(--titlebar-border);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      color: var(--default-text);
+      font-weight: 500;
+    }
+    .modal-body { padding: 12px; color: var(--window-text); line-height: 1.45; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px 12px; }
+
+    /* Project Manager */
+    .pm { display: none; height: 100%; background: var(--window); flex-direction: column; }
+    body.pm-view .editor { display: none; }
+    body.pm-view .pm { display: flex; }
+    .pm-top {
+      height: 48px;
+      background: var(--app-bar);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 24px;
+      color: #eee;
+    }
+    .pm-top .tab-u {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-weight: 600;
+    }
+    .pm-top .tab-u::after {
+      content: "";
+      width: 64px;
+      height: 2px;
+      background: #3a6ea5;
+      margin-top: 4px;
+    }
+    .pm-tools {
+      height: 36px;
+      background: var(--toolbar);
+      border-bottom: 1px solid var(--toolbar-border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+    }
+    .pm-body { flex: 1; display: grid; grid-template-columns: 1fr 160px; }
+    .plist { padding: 8px; }
+    .prow {
+      height: 44px;
+      padding: 6px 10px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-surface);
+      color: var(--default-text);
+    }
+    .prow.sel { background: var(--hier-sel-bg); }
+    .prow small { display: block; color: var(--window-text); font-size: 11px; }
+    .pactions { padding: 12px; display: flex; flex-direction: column; gap: 6px; border-left: 1px solid var(--window-border); }
+
+    /* ── Editor controls specimen sheet ── */
+    .sheet {
+      display: none;
+      height: 100%;
+      overflow: auto;
+      background: var(--app-bar);
+      padding: 16px;
+    }
+    body.sheet-view .editor, body.sheet-view .pm { display: none; }
+    body.sheet-view .sheet { display: block; }
+    .sheet-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: var(--panel-gap);
+      align-items: start;
+    }
+    .card {
+      background: var(--window);
+      border: 1px solid var(--window-border);
+      border-radius: var(--radius-surface);
+      box-shadow: var(--shadow-panel);
+      padding: 12px 14px 14px;
+    }
+    .card > h3 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .spec {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      align-items: center;
+      gap: 10px;
+      min-height: 30px;
+    }
+    .spec > .state { color: var(--muted); font-size: 11px; }
+    .spec > .demo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .disabled { opacity: .4; pointer-events: none; }
+
+    .ctl-field {
+      height: var(--line);
+      min-width: 130px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--input);
+      border: 1px solid var(--input-border);
+      border-radius: var(--radius-ctl);
+      color: var(--default-text);
+    }
+    .ctl-field .ph { color: var(--muted); }
+    .ctl-field .caret {
+      width: 1px;
+      height: 12px;
+      background: var(--accent);
+      margin-left: -3px;
+    }
+    .ctl-field.focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .ctl-field .unit { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .ctl-field .grab { margin-left: auto; color: var(--muted); font-size: 10px; }
+
+    .ctl-toggle {
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--input-border);
+      background: var(--input);
+      border-radius: 4px;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      color: transparent;
+      flex: 0 0 auto;
+    }
+    .ctl-toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ctl-toggle.hover { border-color: var(--accent-line); }
+    .ctl-switch {
+      width: 30px;
+      height: 16px;
+      border-radius: 8px;
+      background: var(--input);
+      border: 1px solid var(--input-border);
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .ctl-switch i {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .ctl-switch.on { background: var(--accent-soft); border-color: var(--accent-line); }
+    .ctl-switch.on i { left: auto; right: 2px; background: var(--accent); }
+
+    .ctl-slider { flex: 1; min-width: 140px; height: 16px; display: flex; align-items: center; position: relative; }
+    .ctl-slider .track {
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--input);
+      border: 1px solid var(--input-border);
+      overflow: hidden;
+    }
+    .ctl-slider .fill { height: 100%; background: var(--accent); }
+    .ctl-slider .thumb {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #EEF2F7;
+      box-shadow: 0 1px 3px rgba(0,0,0,.5);
+    }
+    .ctl-color {
+      width: 46px;
+      height: var(--line);
+      border-radius: var(--radius-ctl);
+      border: 1px solid var(--input-border);
+      background: linear-gradient(135deg, #4C8DFF, #23B8A6);
+      flex: 0 0 auto;
+    }
+    .ctl-object {
+      min-width: 170px;
+      height: var(--line);
+      padding: 0 4px 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--input);
+      border: 1px solid var(--input-border);
+      border-radius: var(--radius-ctl);
+      color: var(--default-text);
+    }
+    .ctl-object .kind { color: var(--muted); font-size: 11px; }
+    .ctl-object .pick {
+      margin-left: auto;
+      width: 18px;
+      height: 16px;
+      display: grid;
+      place-items: center;
+      border-radius: 4px;
+      background: var(--button);
+      color: var(--icon);
+      font-size: 9px;
+    }
+    .ctl-object.dropping { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+    .ctl-rows { border: 1px solid var(--hairline); border-radius: var(--radius-ctl); overflow: hidden; width: 100%; }
+    .ctl-rows .r {
+      height: 22px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--window-text);
+    }
+    .ctl-rows .r.hover { background: var(--tab-hover); color: var(--default-text); }
+    .ctl-rows .r.sel { background: var(--accent-soft); color: var(--accent); }
+    .ctl-rows .r .chev { width: 10px; font-size: 9px; color: var(--muted); }
+    /* tabs read against Base 1 in the product, so specimens need that ground */
+    .tabwell-demo {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 6px;
+      background: var(--app-bar);
+      border-radius: var(--radius-ctl);
+    }
+
+    .hidden { display: none !important; }
+
+    /* ── Modern skin: structure ── */
+    body.modern .app-bar {
+      height: 48px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    body.modern .brand {
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: .06em;
+      color: #F2F5F8;
+    }
+    body.modern .app-left, body.modern .app-right { gap: 2px; }
+    body.modern .app-btn {
+      height: 28px;
+      min-width: 0;
+      padding: 0 12px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--label);
+      font: 500 12px/28px Inter, sans-serif;
+      border-radius: 7px;
+    }
+    body.modern .app-btn:hover { background: var(--app-btn-hover); color: var(--default-text); }
+    body.modern .app-center {
+      gap: 2px;
+      padding: 3px;
+      background: #222529;
+      border: 1px solid var(--hairline);
+      border-radius: 9px;
+    }
+    body.modern .app-btn.play {
+      min-width: 34px;
+      height: 24px;
+      line-height: 24px;
+      font-size: 11px;
+      border-radius: 6px;
+      color: var(--muted);
+    }
+    body.modern .app-btn.play:first-child {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+    body.modern .app-btn.play:first-child:hover { background: var(--accent-hover); }
+
+    body.modern .tabwell {
+      height: 34px;
+      background: transparent;
+      align-items: center;
+      gap: 2px;
+      padding: 0 6px;
+      border-bottom: 1px solid var(--hairline);
+    }
+    body.modern .tab {
+      height: 24px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 7px;
+      color: var(--tab-text);
+      font-weight: 500;
+    }
+    body.modern .tab:hover { background: var(--tab-hover); }
+    body.modern .tab.active { background: var(--tab-active); color: var(--default-text); }
+
+    body.modern .hier-title {
+      height: 28px;
+      padding: 0 12px;
+      color: var(--muted);
+      letter-spacing: .01em;
+      border-bottom: 1px solid var(--hairline);
+    }
+    body.modern .tree { padding: 6px 0 12px; }
+    body.modern .panel-body { scrollbar-width: thin; scrollbar-color: #4A5058 transparent; }
+    body.modern .panel-body::-webkit-scrollbar { width: 10px; height: 10px; }
+    body.modern .panel-body::-webkit-scrollbar-track { background: transparent; }
+    body.modern .panel-body::-webkit-scrollbar-thumb {
+      background: #4A5058;
+      border: 3px solid transparent;
+      border-radius: 6px;
+      background-clip: content-box;
+    }
+    body.modern .panel-body::-webkit-scrollbar-thumb:hover { background: #565D66; background-clip: content-box; }
+
+    body.modern .toolstrip,
+    body.modern .proj-strip {
+      height: 32px;
+      padding: 3px;
+      background: rgba(52,56,61,.86);
+      border-color: rgba(255,255,255,.09);
+      backdrop-filter: blur(10px);
+    }
+    body.modern .proj-strip { padding: 0 12px; color: var(--label); }
+    body.modern .tb { width: 28px; height: 24px; border-radius: 6px; }
+    body.modern .tb.on { background: var(--accent-soft); color: var(--accent); }
+
+    body.modern .insp-head {
+      padding: 10px 12px 6px;
+      font-size: 13px;
+      letter-spacing: .01em;
+    }
+    body.modern .fold {
+      height: 28px;
+      margin: 2px 8px;
+      padding: 0 8px;
+      background: transparent;
+      border: none;
+      border-radius: 7px;
+      font-weight: 600;
+      color: var(--default-text);
+    }
+    body.modern .fold:hover { background: var(--titlebar-hover); }
+    body.modern .fold .rm {
+      height: 20px;
+      padding: 0 8px;
+      background: transparent;
+      border: 1px solid var(--hairline);
+      border-radius: 6px;
+      color: var(--muted);
+    }
+    body.modern .fold .rm:hover { background: var(--button); color: var(--default-text); }
+    body.modern .section { padding: 4px 12px 10px; gap: 6px; }
+    body.modern .godot-row { gap: 8px; }
+    body.modern .godot-cell,
+    body.modern .axis { box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); }
+    body.modern .add-btn {
+      height: 26px;
+      background: transparent;
+      border: 1px dashed var(--hairline);
+      color: var(--label);
+      font-weight: 500;
+      border-radius: 7px;
+    }
+    body.modern .add-btn:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent-line);
+      border-style: solid;
+      color: var(--accent);
+    }
+
+    body.modern .btn {
+      height: 26px;
+      padding: 0 14px;
+      border-radius: 7px;
+      font-weight: 500;
+    }
+    body.modern .btn.primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: var(--accent-text);
+    }
+    body.modern .btn.primary:hover { background: var(--accent-hover); }
+
+    body.modern .browser-toolbar {
+      height: 34px;
+      background: transparent;
+      border-bottom: 1px solid var(--hairline);
+      padding: 0 10px;
+      gap: 10px;
+    }
+    body.modern .search {
+      height: 24px;
+      width: 220px;
+      border-radius: 7px;
+      color: var(--muted);
+    }
+    body.modern .btree { padding: 10px; border-color: var(--hairline); line-height: 22px; }
+    body.modern .bgrid { padding: 12px; gap: 14px; }
+    body.modern .thumb .box {
+      height: 72px;
+      border-radius: 8px;
+      border-color: var(--hairline);
+      background: linear-gradient(180deg, #2E3237, #22252A);
+    }
+    body.modern .thumb.sel .box {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-color: transparent;
+    }
+
+    body.modern .dim { backdrop-filter: blur(3px); }
+    body.modern .modal { width: 440px; }
+    body.modern .modal-bar {
+      height: 44px;
+      background: transparent;
+      border-bottom: none;
+      padding: 0 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    body.modern .modal-body { padding: 0 16px 4px; line-height: 1.55; }
+    body.modern .modal-actions { padding: 14px 16px 16px; gap: 8px; }
+
+    body.modern .pm-top { height: 60px; padding: 0 20px; border-bottom: 1px solid var(--hairline); }
+    body.modern .pm-top .tab-u::after { background: var(--accent); border-radius: 2px; }
+    body.modern .pm-tools {
+      height: 48px;
+      background: transparent;
+      border-bottom: 1px solid var(--hairline);
+      padding: 0 16px;
+    }
+    body.modern .plist { padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+    body.modern .prow {
+      height: 52px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border-color: var(--hairline);
+      background: var(--default-bg);
+    }
+    body.modern .prow:hover { background: var(--tab-active); }
+    body.modern .prow.sel {
+      background: var(--accent-soft);
+      border-color: var(--accent-line);
+    }
+    body.modern .prow small { color: var(--muted); }
+    body.modern .pactions { padding: 12px; gap: 8px; border-color: var(--hairline); }
+  </style>
+</head>
+<body class="modern">
+  <div class="preview-bar">
+    <strong>ADR 0039 preview · modern dark</strong>
+    <span id="skin-note">Modern skin（ADR 0039 正典）· accent #4C8DFF 驱动全部强调态（含 Hierarchy 选中）· hairline + 软阴影，无斜角 · FOV/TRS 仍是 Godot 值格</span>
+    <div class="grow"></div>
+    <span>Accent</span>
+    <div class="swatches" id="swatches">
+      <button type="button" data-accent="azure" title="Azure #4A90D9 (贴合现有 dock guide)" style="background:#4A90D9"></button>
+      <button type="button" data-accent="bright" class="on" title="Bright blue #4C8DFF" style="background:#4C8DFF"></button>
+      <button type="button" data-accent="teal" title="Teal #23B8A6" style="background:#23B8A6"></button>
+      <button type="button" data-accent="violet" title="Violet #8B7BFF" style="background:#8B7BFF"></button>
+      <button type="button" data-accent="amber" title="Amber #E0A030" style="background:#E0A030"></button>
+      <button type="button" data-accent="green" title="Green #46B96B" style="background:#46B96B"></button>
+    </div>
+    <button type="button" id="btn-skin" class="on">Modern skin</button>
+    <button type="button" id="btn-editor" class="on">Editor Session</button>
+    <button type="button" id="btn-pm">Project Manager</button>
+    <button type="button" id="btn-sheet">Controls</button>
+    <button type="button" id="btn-modal">Play dirty modal</button>
+    <button type="button" id="btn-notes" class="on">Callouts</button>
+  </div>
+
+  <div class="stage">
+    <div class="editor">
+      <div class="app-bar">
+        <div class="app-left">
+          <span class="brand">Blunder</span>
+          <button class="app-btn" type="button">Save</button>
+          <button class="app-btn" type="button">Save As…</button>
+          <button class="app-btn" type="button">Undo</button>
+          <button class="app-btn" type="button">Redo</button>
+        </div>
+        <div class="app-center">
+          <button class="app-btn play" type="button" title="Play">▶</button>
+          <button class="app-btn play" type="button" title="Pause">❚❚</button>
+          <button class="app-btn play" type="button" title="Stop">■</button>
+        </div>
+        <div class="app-right">
+          <button class="app-btn" type="button">View</button>
+        </div>
+      </div>
+
+      <div class="workspace">
+        <div class="upper">
+          <div class="panel">
+            <div class="tabwell">
+              <div class="tab active">Hierarchy <span class="x">×</span></div>
+            </div>
+            <div class="panel-body">
+              <div class="callout" style="left: 8px; bottom: 8px;">行高 22px · 方角 · Line #737373 冻结 · 选中色跟 accent 同步</div>
+              <div class="hier-title">demo.scene.asset</div>
+              <div class="tree">
+                <div class="row">
+                  <span class="gutter"></span>
+                  <span class="chev">▾</span>
+                  <span class="row-name">World</span>
+                </div>
+                <div class="row sel">
+                  <span class="gutter"><i class="stem"></i><i class="tick"></i></span>
+                  <span class="chev">▾</span>
+                  <span class="row-name">Player</span>
+                </div>
+                <div class="row">
+                  <span class="gutter"><i class="stem" style="height:50%;"></i><i class="tick"></i></span>
+                  <span class="chev">▸</span>
+                  <span class="row-name">Camera</span>
+                </div>
+                <div class="row">
+                  <span class="gutter"></span>
+                  <span class="chev">▸</span>
+                  <span class="row-name">Directional Light</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="tabwell">
+              <div class="tab active">Scene</div>
+            </div>
+            <div class="panel-body viewport">
+              <div class="vp-grid"></div>
+              <div class="toolstrip">
+                <div class="callout" style="left: 0; top: 36px;">Viewport tool strip · 仍是 overlay · Modern: 半透明玻璃 + accent 选中</div>
+                <div class="tb on">↔</div>
+                <div class="tb">↻</div>
+                <div class="tb">⤢</div>
+              </div>
+              <div class="proj-strip">Persp ▾</div>
+              <svg class="vp-axis" viewBox="0 0 72 72">
+                <line x1="8" y1="64" x2="56" y2="64" stroke="#ff3352" />
+                <line x1="8" y1="64" x2="8" y2="16" stroke="#4d9fff" />
+                <line x1="8" y1="64" x2="40" y2="40" stroke="#40d040" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="tabwell">
+              <div class="tab active">Inspector</div>
+            </div>
+            <div class="panel-body insp">
+              <div class="callout" style="right: 8px; bottom: 8px;">FOV 等仍是 Godot 值格</div>
+              <div class="insp-head">Player</div>
+              <div class="fold">▾ Transform</div>
+              <div class="section">
+                <div class="toggles">
+                  <span class="mini on">Absolute</span>
+                  <span class="mini">Delta</span>
+                </div>
+                <div class="lbl">Position</div>
+                <div class="axes">
+                  <div class="axis"><b style="color:var(--axis-x)">x</b><span class="val">0</span></div>
+                  <div class="axis"><b style="color:var(--axis-y)">y</b><span class="val">0</span></div>
+                  <div class="axis"><b style="color:var(--axis-z)">z</b><span class="val">0</span></div>
+                </div>
+                <div class="lbl">Rotation</div>
+                <div class="axes">
+                  <div class="axis"><b style="color:var(--axis-x)">x</b><span class="val">0</span></div>
+                  <div class="axis"><b style="color:var(--axis-y)">y</b><span class="val">0</span></div>
+                  <div class="axis"><b style="color:var(--axis-z)">z</b><span class="val">0</span></div>
+                </div>
+                <div class="lbl" style="display:flex;align-items:center;gap:6px;">
+                  Scale
+                  <span class="link" title="Scale-link (Godot chain)">⛓</span>
+                </div>
+                <div class="axes">
+                  <div class="axis"><b style="color:var(--axis-x)">x</b><span class="val">1</span></div>
+                  <div class="axis"><b style="color:var(--axis-y)">y</b><span class="val">1</span></div>
+                  <div class="axis"><b style="color:var(--axis-z)">z</b><span class="val">1</span></div>
+                </div>
+              </div>
+              <div class="fold">▾ Camera <button class="rm outset" type="button">Remove</button></div>
+              <div class="section">
+                <div class="godot-row"><span>FOV</span><div class="godot-cell">45</div></div>
+                <div class="godot-row"><span>Near</span><div class="godot-cell">0.1</div></div>
+                <div class="godot-row"><span>Far</span><div class="godot-cell">1000</div></div>
+              </div>
+              <div class="section">
+                <div class="add-btn outset">Add…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="tabwell">
+            <div class="tab active">Content Browser</div>
+            <div class="tab">History</div>
+          </div>
+          <div class="panel-body browser">
+            <div class="callout" style="left: 8px; bottom: 8px;">换皮不换 IA · Assets/Resources · 非 Unity Project 窗</div>
+            <div class="browser-toolbar">
+              <div class="search inset">⌕  Search…</div>
+              <span class="crumb">assets / Scenes</span>
+              <span style="margin-left:auto;color:var(--label)">4 items</span>
+            </div>
+            <div class="btree">
+              <div>▾ assets</div>
+              <div style="padding-left:14px">▾ Scenes</div>
+              <div style="padding-left:14px">▸ Models</div>
+              <div>▸ resources</div>
+            </div>
+            <div class="bgrid">
+              <div class="thumb sel"><div class="box"></div>demo</div>
+              <div class="thumb"><div class="box"></div>Player</div>
+              <div class="thumb"><div class="box"></div>Ground</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pm">
+      <div class="pm-top">
+        <span style="font-weight:700;letter-spacing:.06em">BLUNDER</span>
+        <div class="tab-u">Projects</div>
+      </div>
+      <div class="pm-tools">
+        <button class="btn outset primary" type="button">New Project</button>
+        <button class="btn outset" type="button">Import</button>
+      </div>
+      <div class="pm-body">
+        <div class="plist">
+          <div class="prow sel">Test<small>E:/Blunder Projects/Test</small></div>
+          <div class="prow">DogWalk<small>E:/Blunder Projects/DogWalk</small></div>
+        </div>
+        <div class="pactions">
+          <button class="btn outset primary" type="button">Open</button>
+          <button class="btn outset" type="button">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet">
+      <div class="sheet-grid">
+        <div class="card">
+          <h3>Button</h3>
+          <div class="spec"><span class="state">default</span><span class="demo"><span class="btn outset">Import…</span><span class="btn outset">Cancel</span></span></div>
+          <div class="spec"><span class="state">hover</span><span class="demo"><span class="btn outset" style="background:var(--button-hover)">Import…</span></span></div>
+          <div class="spec"><span class="state">pressed</span><span class="demo"><span class="btn outset" style="background:var(--button-pressed)">Import…</span></span></div>
+          <div class="spec"><span class="state">primary</span><span class="demo"><span class="btn outset primary">Save</span></span></div>
+          <div class="spec"><span class="state">primary hover</span><span class="demo"><span class="btn outset primary" style="background:var(--accent-hover)">Save</span></span></div>
+          <div class="spec"><span class="state">focus</span><span class="demo"><span class="btn outset" style="border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)">Import…</span></span></div>
+          <div class="spec"><span class="state">disabled</span><span class="demo"><span class="btn outset disabled">Import…</span></span></div>
+        </div>
+
+        <div class="card">
+          <h3>ToolbarButton &amp; Tab</h3>
+          <div class="spec"><span class="state">idle / hover</span><span class="demo">
+            <span class="toolstrip" style="position:static">
+              <span class="tb">↔</span>
+              <span class="tb" style="background:var(--toolbar-btn-hover)">↻</span>
+              <span class="tb">⤢</span>
+            </span>
+          </span></div>
+          <div class="spec"><span class="state">checked</span><span class="demo">
+            <span class="toolstrip" style="position:static">
+              <span class="tb on">↔</span>
+              <span class="tb">↻</span>
+              <span class="tb">⤢</span>
+            </span>
+          </span></div>
+          <div class="spec"><span class="state">tabs</span><span class="demo">
+            <span class="tabwell-demo">
+              <span class="tab active">Scene</span>
+              <span class="tab" style="background:var(--tab-hover)">Game</span>
+              <span class="tab">Animation</span>
+            </span>
+          </span></div>
+          <div class="spec"><span class="state">closable</span><span class="demo">
+            <span class="tabwell-demo"><span class="tab active">Hierarchy <span class="x">×</span></span></span>
+          </span></div>
+        </div>
+
+        <div class="card">
+          <h3>Foldout</h3>
+          <div class="spec"><span class="state">expanded</span><span class="demo" style="width:100%"><span class="fold" style="flex:1;margin:0">▾ Transform</span></span></div>
+          <div class="spec"><span class="state">collapsed</span><span class="demo" style="width:100%"><span class="fold" style="flex:1;margin:0">▸ Mesh Renderer</span></span></div>
+          <div class="spec"><span class="state">hover + Remove</span><span class="demo" style="width:100%"><span class="fold" style="flex:1;margin:0;background:var(--titlebar-hover)">▾ Camera <span class="rm outset">Remove</span></span></span></div>
+          <div class="spec"><span class="state">Add…</span><span class="demo" style="width:100%"><span class="add-btn outset" style="flex:1">Add…</span></span></div>
+          <div class="spec"><span class="state">Add… hover</span><span class="demo" style="width:100%"><span class="add-btn outset" id="add-hover" style="flex:1;background:var(--accent-soft);border-color:var(--accent-line);border-style:solid;color:var(--accent)">Add…</span></span></div>
+        </div>
+
+        <div class="card">
+          <h3>Text / Numeric / Search Field</h3>
+          <div class="spec"><span class="state">empty</span><span class="demo"><span class="ctl-field inset"><span class="ph">Entity name</span></span></span></div>
+          <div class="spec"><span class="state">filled</span><span class="demo"><span class="ctl-field inset">Player</span></span></div>
+          <div class="spec"><span class="state">focus</span><span class="demo"><span class="ctl-field inset focus">Player<span class="caret"></span></span></span></div>
+          <div class="spec"><span class="state">numeric</span><span class="demo"><span class="ctl-field inset" style="min-width:96px">45<span class="unit">°</span></span></span></div>
+          <div class="spec"><span class="state">scrub</span><span class="demo"><span class="ctl-field inset" style="min-width:96px">45<span class="grab">↔</span></span></span></div>
+          <div class="spec"><span class="state">search</span><span class="demo"><span class="search inset">⌕ <span class="ph">Search…</span></span></span></div>
+          <div class="spec"><span class="state">disabled</span><span class="demo"><span class="ctl-field inset disabled">1000</span></span></div>
+        </div>
+
+        <div class="card">
+          <h3>Toggle</h3>
+          <div class="spec"><span class="state">off / hover</span><span class="demo"><span class="ctl-toggle">✓</span><span class="ctl-toggle hover">✓</span><span style="color:var(--label)">Cast shadows</span></span></div>
+          <div class="spec"><span class="state">on</span><span class="demo"><span class="ctl-toggle on">✓</span><span style="color:var(--label)">Cast shadows</span></span></div>
+          <div class="spec"><span class="state">disabled</span><span class="demo"><span class="ctl-toggle on disabled">✓</span><span class="disabled" style="color:var(--label)">Cast shadows</span></span></div>
+          <div class="spec"><span class="state">switch</span><span class="demo"><span class="ctl-switch"><i></i></span><span class="ctl-switch on"><i></i></span></span></div>
+          <div class="spec"><span class="state">segmented</span><span class="demo"><span class="mini on">Absolute</span><span class="mini">Delta</span></span></div>
+        </div>
+
+        <div class="card">
+          <h3>Slider &amp; Color Field</h3>
+          <div class="spec"><span class="state">slider</span><span class="demo">
+            <span class="ctl-slider"><span class="track"><span class="fill" style="width:35%"></span></span><span class="thumb" style="left:calc(35% - 6px)"></span></span>
+            <span class="ctl-field inset" style="min-width:56px">0.35</span>
+          </span></div>
+          <div class="spec"><span class="state">at max</span><span class="demo">
+            <span class="ctl-slider"><span class="track"><span class="fill" style="width:100%"></span></span><span class="thumb" style="right:-6px"></span></span>
+            <span class="ctl-field inset" style="min-width:56px">1.00</span>
+          </span></div>
+          <div class="spec"><span class="state">disabled</span><span class="demo disabled">
+            <span class="ctl-slider"><span class="track"><span class="fill" style="width:60%"></span></span><span class="thumb" style="left:calc(60% - 6px)"></span></span>
+          </span></div>
+          <div class="spec"><span class="state">color</span><span class="demo"><span class="ctl-color inset"></span><span style="color:var(--muted)">Light color</span></span></div>
+        </div>
+
+        <div class="card">
+          <h3>Object Field &amp; Dropdown</h3>
+          <div class="spec"><span class="state">empty</span><span class="demo"><span class="ctl-object inset"><span class="ph" style="color:var(--muted)">None (Mesh Asset)</span><span class="pick">◎</span></span></span></div>
+          <div class="spec"><span class="state">assigned</span><span class="demo"><span class="ctl-object inset">Chocomel <span class="kind">(Mesh)</span><span class="pick">◎</span></span></span></div>
+          <div class="spec"><span class="state">drop target</span><span class="demo"><span class="ctl-object inset dropping">Chocomel <span class="kind">(Mesh)</span><span class="pick">◎</span></span></span></div>
+          <div class="spec"><span class="state">dropdown</span><span class="demo"><span class="ctl-field inset" style="min-width:120px">Perspective <span class="unit">▾</span></span></span></div>
+          <div class="spec"><span class="state">open</span><span class="demo" style="flex-direction:column;align-items:stretch">
+            <span class="ctl-field inset focus" style="min-width:120px">Perspective <span class="unit">▾</span></span>
+            <span class="ctl-rows" style="box-shadow:var(--shadow-float)">
+              <span class="r sel">Perspective</span>
+              <span class="r hover">Orthographic</span>
+            </span>
+          </span></div>
+        </div>
+
+        <div class="card">
+          <h3>List View &amp; Tree View</h3>
+          <div class="spec"><span class="state">list</span><span class="demo">
+            <span class="ctl-rows">
+              <span class="r">Spawn Entity</span>
+              <span class="r hover">Move Player</span>
+              <span class="r sel">Add Camera</span>
+              <span class="r">Rename Cube</span>
+            </span>
+          </span></div>
+          <div class="spec"><span class="state">tree</span><span class="demo">
+            <span class="ctl-rows">
+              <span class="r"><span class="chev">▾</span>assets</span>
+              <span class="r" style="padding-left:22px"><span class="chev">▾</span>Scenes</span>
+              <span class="r sel" style="padding-left:22px"><span class="chev">▸</span>Models</span>
+              <span class="r"><span class="chev">▸</span>resources</span>
+            </span>
+          </span></div>
+        </div>
+
+        <div class="card">
+          <h3>Inspector property field <span style="text-transform:none;font-weight:400">— Godot 值格，不是 Editor controls</span></h3>
+          <div class="spec"><span class="state">scalar</span><span class="demo" style="width:100%">
+            <span class="godot-row" style="flex:1"><span>FOV</span><span class="godot-cell">45</span></span>
+          </span></div>
+          <div class="spec"><span class="state">vector</span><span class="demo" style="width:100%">
+            <span class="axes" style="flex:1">
+              <span class="axis"><b style="color:var(--axis-x)">x</b><span class="val">0</span></span>
+              <span class="axis"><b style="color:var(--axis-y)">y</b><span class="val">0</span></span>
+              <span class="axis"><b style="color:var(--axis-z)">z</b><span class="val">0</span></span>
+            </span>
+          </span></div>
+          <div class="spec"><span class="state">scale-link</span><span class="demo"><span class="link">⛓</span><span style="color:var(--muted)">accent 淡染</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dim" id="dim">
+      <div class="modal">
+        <div class="modal-bar">Scene has unsaved changes</div>
+        <div class="modal-body">
+          Save the current scene before entering Play Mode?
+        </div>
+        <div class="modal-actions">
+          <button class="btn outset" type="button">Cancel</button>
+          <button class="btn outset" type="button">Don't Save</button>
+          <button class="btn outset primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const SKIN_NOTE = {
+      modern: "Modern skin（ADR 0039 正典）· accent #4C8DFF 驱动全部强调态（含 Hierarchy 选中）· hairline + 软阴影，无斜角 · FOV/TRS 仍是 Godot 值格",
+      unity: "Unity Dark skin（仅作对比，不出货）· Base 1/2/3 原色 + 斜角 · FOV/TRS 仍是 Godot 值格",
+    };
+    document.body.dataset.accent = "bright";
+    $("swatches").addEventListener("click", (e) => {
+      const swatch = e.target.closest("button[data-accent]");
+      if (!swatch) return;
+      document.body.dataset.accent = swatch.dataset.accent;
+      for (const b of $("swatches").children) b.classList.toggle("on", b === swatch);
+    });
+    $("btn-skin").onclick = () => {
+      const modern = document.body.classList.toggle("modern");
+      $("btn-skin").classList.toggle("on", modern);
+      $("btn-skin").textContent = modern ? "Modern skin" : "Unity Dark skin";
+      $("skin-note").textContent = modern ? SKIN_NOTE.modern : SKIN_NOTE.unity;
+    };
+    const VIEWS = { "btn-editor": "", "btn-pm": "pm-view", "btn-sheet": "sheet-view" };
+    const showView = (id) => {
+      for (const [btn, cls] of Object.entries(VIEWS)) {
+        const on = btn === id;
+        $(btn).classList.toggle("on", on);
+        if (cls) document.body.classList.toggle(cls, on);
+      }
+    };
+    for (const id of Object.keys(VIEWS)) $(id).onclick = () => showView(id);
+    $("btn-modal").onclick = () => {
+      document.body.classList.toggle("show-modal");
+      $("btn-modal").classList.toggle("on");
+    };
+    $("btn-notes").onclick = () => {
+      document.body.classList.toggle("hide-notes");
+      $("btn-notes").classList.toggle("on");
+    };
+    $("dim").onclick = (e) => {
+      if (e.target === $("dim")) {
+        document.body.classList.remove("show-modal");
+        $("btn-modal").classList.remove("on");
+      }
+    };
+  </script>
+</body>
+</html>

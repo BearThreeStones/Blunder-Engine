@@ -192,6 +192,10 @@ bool parseMemberObjectKey(JsonCursor& cur, const eastl::string& key, void* user)
       ctx->member->kind = BehaviourCatalogMember::Kind::String;
       return true;
     }
+    if (kind == "clip_name") {
+      ctx->member->kind = BehaviourCatalogMember::Kind::ClipName;
+      return true;
+    }
     return false;
   }
   return cur.skipValue();

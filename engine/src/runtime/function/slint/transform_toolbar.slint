@@ -1,4 +1,5 @@
-import { HorizontalBox } from "std-widgets.slint";
+import { EditorTheme, EditorToolbarButton } from "editor_controls.slint";
+import { EditorGlyphs } from "editor_icons.slint";
 
 export component TransformToolbar inherits Rectangle {
     in property <int> transform-mode: 0;
@@ -8,91 +9,47 @@ export component TransformToolbar inherits Rectangle {
     callback gizmo-space-toggled();
 
     height: 32px;
-    background: #1a1a1acc;
-    border-radius: 4px;
+    width: strip.preferred-width;
+    horizontal-stretch: 0;
+    background: EditorTheme.toolbar.with-alpha(88%);
+    border-radius: EditorTheme.radius-surface;
     border-width: 1px;
-    border-color: #3a3a3a;
+    border-color: EditorTheme.hairline;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000066;
 
-    HorizontalLayout {
-        padding: 4px;
-        spacing: 4px;
+    strip := HorizontalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 2px;
+        alignment: start;
 
-        Rectangle {
-            width: 52px;
-            height: 24px;
-            border-radius: 3px;
-            background: root.transform-mode == 1 ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: root.transform-mode == 1 ? #6ab0ff : #444444;
-            Text {
-                text: "Move";
-                color: root.transform-mode == 1 ? #ffffff : #b0b0b0;
-                font-size: 11px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            TouchArea {
-                clicked => { root.transform-mode-selected(1); }
-            }
+        EditorToolbarButton {
+            icon: EditorGlyphs.tool-move;
+            checked: root.transform-mode == 1;
+            clicked => { root.transform-mode-selected(1); }
+        }
+        EditorToolbarButton {
+            icon: EditorGlyphs.tool-rotate;
+            checked: root.transform-mode == 2;
+            clicked => { root.transform-mode-selected(2); }
+        }
+        EditorToolbarButton {
+            icon: EditorGlyphs.tool-scale;
+            checked: root.transform-mode == 3;
+            clicked => { root.transform-mode-selected(3); }
         }
 
         Rectangle {
-            width: 52px;
-            height: 24px;
-            border-radius: 3px;
-            background: root.transform-mode == 2 ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: root.transform-mode == 2 ? #6ab0ff : #444444;
-            Text {
-                text: "Rotate";
-                color: root.transform-mode == 2 ? #ffffff : #b0b0b0;
-                font-size: 11px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            TouchArea {
-                clicked => { root.transform-mode-selected(2); }
-            }
+            width: 6px;
+            horizontal-stretch: 0;
         }
 
-        Rectangle {
-            width: 52px;
-            height: 24px;
-            border-radius: 3px;
-            background: root.transform-mode == 3 ? #3d6b9a : #2a2a2a;
-            border-width: 1px;
-            border-color: root.transform-mode == 3 ? #6ab0ff : #444444;
-            Text {
-                text: "Scale";
-                color: root.transform-mode == 3 ? #ffffff : #b0b0b0;
-                font-size: 11px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            TouchArea {
-                clicked => { root.transform-mode-selected(3); }
-            }
-        }
-
-        Rectangle { width: 8px; }
-
-        Rectangle {
-            width: 64px;
-            height: 24px;
-            border-radius: 3px;
-            background: #2a2a2a;
-            border-width: 1px;
-            border-color: #444444;
-            Text {
-                text: root.gizmo-space-global ? "Global" : "Local";
-                color: #bde7ff;
-                font-size: 11px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-            TouchArea {
-                clicked => { root.gizmo-space-toggled(); }
-            }
+        EditorToolbarButton {
+            icon: root.gizmo-space-global ? EditorGlyphs.space-global : EditorGlyphs.space-local;
+            clicked => { root.gizmo-space-toggled(); }
         }
     }
 }

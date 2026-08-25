@@ -1,5 +1,9 @@
 #include "runtime/resource/asset/asset_yaml.h"
 
+#include <string>
+
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include "runtime/core/base/macro.h"
@@ -54,6 +58,205 @@ YAML::Node loadRoot(const eastl::string& yaml_text) {
   return YAML::Load(yaml_text.c_str());
 }
 
+bool isKnownMeshRootKey(const std::string& key) {
+  return key == "type" || key == "guid" || key == "source" ||
+         key == "archived_source" || key == "texture_guids" ||
+         key == "import_texture_guids" ||
+         key == "companion_animation_sources" || key == "import" ||
+         key == "material_override";
+}
+
+void readGuidSequence(const YAML::Node& node,
+                      eastl::vector<eastl::string>& out_guids) {
+  out_guids.clear();
+  if (!node || !node.IsSequence()) {
+    return;
+  }
+  for (const auto& item : node) {
+    if (!item || !item.IsScalar()) {
+      continue;
+    }
+    const eastl::string guid = item.as<std::string>().c_str();
+    if (!guid.empty()) {
+      out_guids.push_back(guid);
+    }
+  }
+}
+
+void writeGuidSequence(YAML::Emitter& emitter, const char* key,
+                       const eastl::vector<eastl::string>& guids) {
+  if (guids.empty()) {
+    return;
+  }
+  emitter << YAML::Key << key << YAML::Value << YAML::BeginSeq;
+  for (const eastl::string& guid : guids) {
+    emitter << guid.c_str();
+  }
+  emitter << YAML::EndSeq;
+}
+
+bool readOptionalFloat(const YAML::Node& parent, const char* key,
+                       OptionalOverrideFloat& out_value) {
+  const YAML::Node node = parent[key];
+  if (!node || !node.IsScalar()) {
+    out_value = {};
+    return false;
+  }
+  out_value.present = true;
+  out_value.value = node.as<float>();
+  return true;
+}
+
+bool readOptionalBool(const YAML::Node& parent, const char* key,
+                      OptionalOverrideBool& out_value) {
+  const YAML::Node node = parent[key];
+  if (!node || !node.IsScalar()) {
+    out_value = {};
+    return false;
+  }
+  out_value.present = true;
+  out_value.value = node.as<bool>();
+  return true;
+}
+
+bool readOptionalVec3(const YAML::Node& parent, const char* key,
+                      OptionalOverrideVec3& out_value) {
+  const YAML::Node node = parent[key];
+  if (!node || !node.IsSequence() || node.size() < 3) {
+    out_value = {};
+    return false;
+  }
+  out_value.present = true;
+  out_value.value = glm::vec3(node[0].as<float>(), node[1].as<float>(),
+                              node[2].as<float>());
+  return true;
+}
+
+bool readOptionalVec4(const YAML::Node& parent, const char* key,
+                      OptionalOverrideVec4& out_value) {
+  const YAML::Node node = parent[key];
+  if (!node || !node.IsSequence() || node.size() < 3) {
+    out_value = {};
+    return false;
+  }
+  out_value.present = true;
+  const float alpha = node.size() >= 4 ? node[3].as<float>() : 1.0f;
+  out_value.value = glm::vec4(node[0].as<float>(), node[1].as<float>(),
+                              node[2].as<float>(), alpha);
+  return true;
+}
+
+bool readOptionalSlot(const YAML::Node& parent, const char* key,
+                      OptionalOverrideSlot& out_value) {
+  const YAML::Node node = parent[key];
+  if (!node || node.IsNull()) {
+    out_value = {};
+    return false;
+  }
+  if (!node.IsScalar()) {
+    out_value = {};
+    return false;
+  }
+  out_value.present = true;
+  out_value.guid = node.as<std::string>().c_str();
+  return true;
+}
+
+void parseMaterialOverride(const YAML::Node& node, MeshMaterialOverride& out) {
+  out = {};
+  if (!node || !node.IsMap()) {
+    return;
+  }
+  readOptionalBool(node, "unlit", out.unlit);
+  readOptionalVec4(node, "base_color", out.base_color);
+  readOptionalFloat(node, "metallic", out.metallic);
+  readOptionalFloat(node, "roughness", out.roughness);
+  readOptionalVec3(node, "ambient", out.ambient);
+  readOptionalVec3(node, "diffuse", out.diffuse);
+  readOptionalVec3(node, "specular", out.specular);
+  readOptionalFloat(node, "shininess", out.shininess);
+  const YAML::Node textures = node["textures"];
+  const YAML::Node slot_parent =
+      textures && textures.IsMap() ? textures : node;
+  readOptionalSlot(slot_parent, "base_color", out.base_color_texture);
+  readOptionalSlot(slot_parent, "metallic_roughness",
+                   out.metallic_roughness_texture);
+  readOptionalSlot(slot_parent, "normal", out.normal_texture);
+  readOptionalSlot(slot_parent, "occlusion", out.occlusion_texture);
+}
+
+void emitOptionalFloat(YAML::Emitter& emitter, const char* key,
+                       const OptionalOverrideFloat& value) {
+  if (value.present) {
+    emitter << YAML::Key << key << YAML::Value << value.value;
+  }
+}
+
+void emitOptionalBool(YAML::Emitter& emitter, const char* key,
+                      const OptionalOverrideBool& value) {
+  if (value.present) {
+    emitter << YAML::Key << key << YAML::Value << value.value;
+  }
+}
+
+void emitVec3(YAML::Emitter& emitter, const glm::vec3& value) {
+  emitter << YAML::Flow << YAML::BeginSeq << value.x << value.y << value.z
+          << YAML::EndSeq;
+}
+
+void emitVec4(YAML::Emitter& emitter, const glm::vec4& value) {
+  emitter << YAML::Flow << YAML::BeginSeq << value.x << value.y << value.z
+          << value.w << YAML::EndSeq;
+}
+
+void emitOptionalSlot(YAML::Emitter& emitter, const char* key,
+                      const OptionalOverrideSlot& value) {
+  if (!value.present) {
+    return;
+  }
+  emitter << YAML::Key << key << YAML::Value << value.guid.c_str();
+}
+
+void serializeMaterialOverride(YAML::Emitter& emitter,
+                               const MeshMaterialOverride& overlay) {
+  if (overlay.empty()) {
+    return;
+  }
+  emitter << YAML::Key << "material_override" << YAML::Value << YAML::BeginMap;
+  emitOptionalBool(emitter, "unlit", overlay.unlit);
+  if (overlay.base_color.present) {
+    emitter << YAML::Key << "base_color" << YAML::Value;
+    emitVec4(emitter, overlay.base_color.value);
+  }
+  emitOptionalFloat(emitter, "metallic", overlay.metallic);
+  emitOptionalFloat(emitter, "roughness", overlay.roughness);
+  if (overlay.ambient.present) {
+    emitter << YAML::Key << "ambient" << YAML::Value;
+    emitVec3(emitter, overlay.ambient.value);
+  }
+  if (overlay.diffuse.present) {
+    emitter << YAML::Key << "diffuse" << YAML::Value;
+    emitVec3(emitter, overlay.diffuse.value);
+  }
+  if (overlay.specular.present) {
+    emitter << YAML::Key << "specular" << YAML::Value;
+    emitVec3(emitter, overlay.specular.value);
+  }
+  emitOptionalFloat(emitter, "shininess", overlay.shininess);
+  if (overlay.base_color_texture.present ||
+      overlay.metallic_roughness_texture.present ||
+      overlay.normal_texture.present || overlay.occlusion_texture.present) {
+    emitter << YAML::Key << "textures" << YAML::Value << YAML::BeginMap;
+    emitOptionalSlot(emitter, "base_color", overlay.base_color_texture);
+    emitOptionalSlot(emitter, "metallic_roughness",
+                     overlay.metallic_roughness_texture);
+    emitOptionalSlot(emitter, "normal", overlay.normal_texture);
+    emitOptionalSlot(emitter, "occlusion", overlay.occlusion_texture);
+    emitter << YAML::EndMap;
+  }
+  emitter << YAML::EndMap;
+}
+
 }  // namespace
 
 bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
@@ -63,6 +266,8 @@ bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
     if (!root || !root.IsMap()) {
       return false;
     }
+
+    out_descriptor = {};
 
     const YAML::Node type_node = root["type"];
     if (!type_node || type_node.as<std::string>() != "Mesh") {
@@ -78,18 +283,27 @@ bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
     readOptionalStringField(root, "archived_source",
                             out_descriptor.archived_source);
 
-    out_descriptor.texture_guids.clear();
-    const YAML::Node texture_guids = root["texture_guids"];
-    if (texture_guids && texture_guids.IsSequence()) {
-      for (const auto& item : texture_guids) {
-        if (!item || !item.IsScalar()) {
-          continue;
-        }
-        const eastl::string guid = item.as<std::string>().c_str();
-        if (!guid.empty()) {
-          out_descriptor.texture_guids.push_back(guid);
-        }
+    readGuidSequence(root["texture_guids"], out_descriptor.texture_guids);
+    readGuidSequence(root["import_texture_guids"],
+                     out_descriptor.import_texture_guids);
+    parseMaterialOverride(root["material_override"],
+                          out_descriptor.material_override);
+    if (out_descriptor.import_texture_guids.empty()) {
+      out_descriptor.import_texture_guids = out_descriptor.texture_guids;
+    }
+
+    out_descriptor.unknown_root_fields.clear();
+    for (const auto& kv : root) {
+      if (!kv.first || !kv.first.IsScalar()) {
+        continue;
       }
+      const std::string key = kv.first.as<std::string>();
+      if (isKnownMeshRootKey(key)) {
+        continue;
+      }
+      out_descriptor.unknown_root_fields.push_back(
+          {eastl::string(key.c_str()),
+           eastl::string(YAML::Dump(kv.second).c_str())});
     }
 
     out_descriptor.companion_animation_sources.clear();
@@ -168,12 +382,12 @@ eastl::string AssetYaml::serializeMeshDescriptor(
     emitter << YAML::Key << "archived_source" << YAML::Value
             << descriptor.archived_source.c_str();
   }
-  if (!descriptor.texture_guids.empty()) {
-    emitter << YAML::Key << "texture_guids" << YAML::Value << YAML::BeginSeq;
-    for (const eastl::string& guid : descriptor.texture_guids) {
-      emitter << guid.c_str();
-    }
-    emitter << YAML::EndSeq;
+  writeGuidSequence(emitter, "texture_guids", descriptor.texture_guids);
+  if (!descriptor.import_texture_guids.empty() &&
+      (!descriptor.material_override.empty() ||
+       descriptor.import_texture_guids != descriptor.texture_guids)) {
+    writeGuidSequence(emitter, "import_texture_guids",
+                      descriptor.import_texture_guids);
   }
   if (!descriptor.companion_animation_sources.empty()) {
     emitter << YAML::Key << "companion_animation_sources" << YAML::Value
@@ -191,6 +405,15 @@ eastl::string AssetYaml::serializeMeshDescriptor(
           << descriptor.import.animations;
   emitter << YAML::Key << "scale" << YAML::Value << descriptor.import.scale;
   emitter << YAML::EndMap;
+  serializeMaterialOverride(emitter, descriptor.material_override);
+  for (const auto& field : descriptor.unknown_root_fields) {
+    emitter << YAML::Key << field.first.c_str();
+    try {
+      emitter << YAML::Load(field.second.c_str());
+    } catch (const YAML::Exception&) {
+      emitter << field.second.c_str();
+    }
+  }
   emitter << YAML::EndMap;
   return eastl::string(emitter.c_str());
 }

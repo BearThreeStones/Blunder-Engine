@@ -34,6 +34,8 @@ class InspectorMeshPreview final {
   /// Renders when dirty; returns true when pixels were updated.
   bool tick(MeshPreviewRenderService* service);
 
+  void markDirty() { m_dirty = hasActiveMesh(); }
+
  private:
   bool renderFrame(MeshPreviewRenderService* service);
 

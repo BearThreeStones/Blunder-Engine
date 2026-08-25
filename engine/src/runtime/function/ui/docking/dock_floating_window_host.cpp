@@ -161,9 +161,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
   auto& ui = *(*component)->operator->();
   switch (snapshot.panel_kind) {
     case DockPanelKind::hierarchy: {
-      auto rows = std::make_shared<slint::VectorModel<HierarchyTreeRow>>();
-      for (const NativeFloatHierarchyRow& row : snapshot.hierarchy_rows) {
-        HierarchyTreeRow slint_row{};
+      auto fill_row = [](HierarchyTreeRow& slint_row,
+                         const NativeFloatHierarchyRow& row) {
         slint_row.entity_id = row.entity_id;
         slint_row.name = toSharedString(row.name);
         slint_row.depth = row.depth;
@@ -172,9 +171,72 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.selected = row.selected;
         slint_row.is_last_sibling = row.is_last_sibling;
         slint_row.ancestor_cont_mask = row.ancestor_cont_mask;
-        rows->push_back(slint_row);
+        auto icons = std::make_shared<slint::VectorModel<HierarchyRowIcon>>();
+        const size_t icon_n = row.icon_kinds.size();
+        for (size_t i = 0; i < icon_n; ++i) {
+          HierarchyRowIcon icon{};
+          icon.kind = row.icon_kinds[i];
+          icon.index = i < row.icon_indices.size() ? row.icon_indices[i] : 0;
+          icons->push_back(icon);
+        }
+        slint_row.icons = icons;
+      };
+      const auto existing = ui.get_hierarchy_tree_rows();
+      bool patch = existing && existing->row_count() == snapshot.hierarchy_rows.size();
+      if (patch) {
+        for (std::size_t i = 0; i < snapshot.hierarchy_rows.size(); ++i) {
+          const auto cur = existing->row_data(i);
+          if (!cur.has_value() ||
+              cur->entity_id != snapshot.hierarchy_rows[i].entity_id) {
+            patch = false;
+            break;
+          }
+        }
       }
-      ui.set_hierarchy_tree_rows(rows);
+      if (patch) {
+        for (std::size_t i = 0; i < snapshot.hierarchy_rows.size(); ++i) {
+          HierarchyTreeRow slint_row = existing->row_data(i).value();
+          const NativeFloatHierarchyRow& row = snapshot.hierarchy_rows[i];
+          if (slint_row.name != toSharedString(row.name) ||
+              slint_row.depth != row.depth ||
+              slint_row.expanded != row.expanded ||
+              slint_row.has_children != row.has_children ||
+              slint_row.selected != row.selected ||
+              slint_row.is_last_sibling != row.is_last_sibling ||
+              slint_row.ancestor_cont_mask != row.ancestor_cont_mask) {
+            fill_row(slint_row, row);
+            existing->set_row_data(i, slint_row);
+          } else {
+            const auto cur_icons = slint_row.icons;
+            bool icons_differ =
+                !cur_icons || cur_icons->row_count() != row.icon_kinds.size();
+            if (!icons_differ) {
+              for (size_t k = 0; k < row.icon_kinds.size(); ++k) {
+                const auto icon = cur_icons->row_data(k);
+                const int want_index =
+                    k < row.icon_indices.size() ? row.icon_indices[k] : 0;
+                if (!icon.has_value() || icon->kind != row.icon_kinds[k] ||
+                    icon->index != want_index) {
+                  icons_differ = true;
+                  break;
+                }
+              }
+            }
+            if (icons_differ) {
+              fill_row(slint_row, row);
+              existing->set_row_data(i, slint_row);
+            }
+          }
+        }
+      } else {
+        auto rows = std::make_shared<slint::VectorModel<HierarchyTreeRow>>();
+        for (const NativeFloatHierarchyRow& row : snapshot.hierarchy_rows) {
+          HierarchyTreeRow slint_row{};
+          fill_row(slint_row, row);
+          rows->push_back(slint_row);
+        }
+        ui.set_hierarchy_tree_rows(rows);
+      }
       ui.set_hierarchy_selected_entity_id(snapshot.hierarchy_selected_entity_id);
       ui.set_hierarchy_scene_display_name(
           toSharedString(snapshot.hierarchy_scene_display_name));
@@ -227,6 +289,7 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
             slint_prop.number_value = prop.number_value;
             slint_prop.string_value = toSharedString(prop.string_value);
             slint_prop.missing_type = prop.missing_type;
+            slint_prop.clip_name_invalid = prop.clip_name_invalid;
             prop_model->push_back(slint_prop);
           }
           slint_row.props = prop_model;
@@ -238,6 +301,13 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
           choices_model->push_back(toSharedString(choice));
         }
         ui.set_inspector_behaviour_type_choices(choices_model);
+        auto clip_name_choices =
+            std::make_shared<slint::VectorModel<slint::SharedString>>();
+        for (const eastl::string& choice :
+             snapshot.inspector_behaviour_clip_name_choices) {
+          clip_name_choices->push_back(toSharedString(choice));
+        }
+        ui.set_inspector_behaviour_clip_name_choices(clip_name_choices);
         ui.set_inspector_behaviours_expanded(snapshot.inspector_behaviours_expanded);
       }
       {
@@ -273,6 +343,22 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_camera_far(snapshot.inspector_camera_far);
       ui.set_inspector_camera_is_main(snapshot.inspector_camera_is_main);
       ui.set_inspector_camera_expanded(snapshot.inspector_camera_expanded);
+      ui.set_inspector_has_light(snapshot.inspector_has_light);
+      ui.set_inspector_light_type(snapshot.inspector_light_type);
+      ui.set_inspector_light_color_r(snapshot.inspector_light_color_r);
+      ui.set_inspector_light_color_g(snapshot.inspector_light_color_g);
+      ui.set_inspector_light_color_b(snapshot.inspector_light_color_b);
+      ui.set_inspector_light_intensity(snapshot.inspector_light_intensity);
+      ui.set_inspector_light_enabled(snapshot.inspector_light_enabled);
+      ui.set_inspector_light_contribution(snapshot.inspector_light_contribution);
+      ui.set_inspector_light_range(snapshot.inspector_light_range);
+      ui.set_inspector_light_inner_cone(snapshot.inspector_light_inner_cone);
+      ui.set_inspector_light_outer_cone(snapshot.inspector_light_outer_cone);
+      ui.set_inspector_light_width(snapshot.inspector_light_width);
+      ui.set_inspector_light_height(snapshot.inspector_light_height);
+      ui.set_inspector_light_linking_text(
+          toSharedString(snapshot.inspector_light_linking_text));
+      ui.set_inspector_light_expanded(snapshot.inspector_light_expanded);
       ui.set_inspector_has_animation_player(snapshot.inspector_has_animation_player);
       {
         auto clip_model = std::make_shared<slint::VectorModel<AnimationClipRow>>();
@@ -281,6 +367,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
           slint_row.entry_index = row.entry_index;
           slint_row.clip_name = toSharedString(row.clip_name);
           slint_row.clip_guid = toSharedString(row.clip_guid);
+          slint_row.clip_display = toSharedString(row.clip_display);
+          slint_row.clip_invalid = row.clip_invalid;
           clip_model->push_back(slint_row);
         }
         ui.set_inspector_animation_clips(clip_model);
@@ -298,27 +386,34 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_asset_type(toSharedString(snapshot.inspector_asset_type));
       ui.set_inspector_asset_intermediate_path(
           toSharedString(snapshot.inspector_asset_intermediate_path));
-      ui.set_light_dir_x(snapshot.light_dir_x);
-      ui.set_light_dir_y(snapshot.light_dir_y);
-      ui.set_light_dir_z(snapshot.light_dir_z);
-      ui.set_light_color_r(snapshot.light_color_r);
-      ui.set_light_color_g(snapshot.light_color_g);
-      ui.set_light_color_b(snapshot.light_color_b);
-      ui.set_ambient_r(snapshot.ambient_r);
-      ui.set_ambient_g(snapshot.ambient_g);
-      ui.set_ambient_b(snapshot.ambient_b);
-      ui.set_diffuse_r(snapshot.diffuse_r);
-      ui.set_diffuse_g(snapshot.diffuse_g);
-      ui.set_diffuse_b(snapshot.diffuse_b);
-      ui.set_specular_r(snapshot.specular_r);
-      ui.set_specular_g(snapshot.specular_g);
-      ui.set_specular_b(snapshot.specular_b);
-      ui.set_shininess(snapshot.shininess);
-      ui.set_shading_unlit(snapshot.shading_unlit);
-      ui.set_ssao_enabled(snapshot.ssao_enabled);
-      ui.set_ssao_radius(snapshot.ssao_radius);
-      ui.set_ssao_bias(snapshot.ssao_bias);
-      ui.set_ssao_strength(snapshot.ssao_strength);
+      ui.set_mesh_material_section_visible(snapshot.mesh_material_section_visible);
+      ui.set_mesh_material_unlit(snapshot.mesh_material_unlit);
+      ui.set_mesh_base_color_r(snapshot.mesh_base_color_r);
+      ui.set_mesh_base_color_g(snapshot.mesh_base_color_g);
+      ui.set_mesh_base_color_b(snapshot.mesh_base_color_b);
+      ui.set_mesh_base_color_a(snapshot.mesh_base_color_a);
+      ui.set_mesh_metallic(snapshot.mesh_metallic);
+      ui.set_mesh_roughness(snapshot.mesh_roughness);
+      ui.set_mesh_ambient_r(snapshot.mesh_ambient_r);
+      ui.set_mesh_ambient_g(snapshot.mesh_ambient_g);
+      ui.set_mesh_ambient_b(snapshot.mesh_ambient_b);
+      ui.set_mesh_diffuse_r(snapshot.mesh_diffuse_r);
+      ui.set_mesh_diffuse_g(snapshot.mesh_diffuse_g);
+      ui.set_mesh_diffuse_b(snapshot.mesh_diffuse_b);
+      ui.set_mesh_specular_r(snapshot.mesh_specular_r);
+      ui.set_mesh_specular_g(snapshot.mesh_specular_g);
+      ui.set_mesh_specular_b(snapshot.mesh_specular_b);
+      ui.set_mesh_shininess(snapshot.mesh_shininess);
+      ui.set_mesh_slot_base_color_name(
+          toSharedString(snapshot.mesh_slot_base_color_name));
+      ui.set_mesh_slot_base_color_assigned(snapshot.mesh_slot_base_color_assigned);
+      ui.set_mesh_slot_metallic_name(toSharedString(snapshot.mesh_slot_metallic_name));
+      ui.set_mesh_slot_metallic_assigned(snapshot.mesh_slot_metallic_assigned);
+      ui.set_mesh_slot_normal_name(toSharedString(snapshot.mesh_slot_normal_name));
+      ui.set_mesh_slot_normal_assigned(snapshot.mesh_slot_normal_assigned);
+      ui.set_mesh_slot_occlusion_name(
+          toSharedString(snapshot.mesh_slot_occlusion_name));
+      ui.set_mesh_slot_occlusion_assigned(snapshot.mesh_slot_occlusion_assigned);
       break;
 
     case DockPanelKind::content_browser: {
@@ -373,6 +468,24 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_browser_details_view(snapshot.browser_details_view);
       ui.set_browser_sort_column(snapshot.browser_sort_column);
       ui.set_browser_sort_ascending(snapshot.browser_sort_ascending);
+      auto history_model = std::make_shared<slint::VectorModel<HistoryRow>>();
+      for (const NativeFloatHistoryRow& row : snapshot.history_rows) {
+        HistoryRow slint_row{};
+        slint_row.label = toSharedString(row.label);
+        slint_row.index = row.index;
+        slint_row.stack = row.stack;
+        slint_row.is_applied = row.is_applied;
+        slint_row.is_current = row.is_current;
+        slint_row.is_group = row.is_group;
+        history_model->push_back(slint_row);
+      }
+      ui.set_history_rows(history_model);
+      ui.set_history_filter_scene(snapshot.history_filter_scene);
+      ui.set_history_filter_global(snapshot.history_filter_global);
+      ui.set_browser_inline_rename_path(
+          toSharedString(snapshot.browser_inline_rename_path));
+      ui.set_browser_inline_rename_buffer(
+          toSharedString(snapshot.browser_inline_rename_buffer));
       break;
     }
     default:
@@ -511,9 +624,67 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_hierarchy_entity_selected(entity_id);
       }
     });
+    component->on_hierarchy_entity_context_selected([this](int entity_id) {
+      if (m_callbacks.on_hierarchy_entity_context_selected) {
+        m_callbacks.on_hierarchy_entity_context_selected(entity_id);
+      }
+    });
     component->on_hierarchy_entity_toggle([this](int entity_id) {
       if (m_callbacks.on_hierarchy_entity_toggle) {
         m_callbacks.on_hierarchy_entity_toggle(entity_id);
+      }
+    });
+    component->on_hierarchy_create_requested(
+        [this](int parent_id, const slint::SharedString& kind) {
+          if (m_callbacks.on_hierarchy_create_requested) {
+            m_callbacks.on_hierarchy_create_requested(parent_id, kind);
+          }
+        });
+    component->on_hierarchy_delete_requested([this](int entity_id) {
+      if (m_callbacks.on_hierarchy_delete_requested) {
+        m_callbacks.on_hierarchy_delete_requested(entity_id);
+      }
+    });
+    component->on_hierarchy_icon_pressed(
+        [this](int entity_id, float mouse_x, float row_width) {
+          if (m_callbacks.on_hierarchy_icon_pressed) {
+            m_callbacks.on_hierarchy_icon_pressed(entity_id, mouse_x, row_width);
+          }
+        });
+    component->on_inspector_activated([this]() {
+      if (m_callbacks.on_inspector_activated) {
+        m_callbacks.on_inspector_activated();
+      }
+    });
+    component->on_mesh_material_unlit_toggled([this](bool checked) {
+      if (m_callbacks.on_mesh_material_unlit_toggled) {
+        m_callbacks.on_mesh_material_unlit_toggled(checked);
+      }
+    });
+    component->on_mesh_material_scalar_committed(
+        [this](int field, float a, float b, float c, float d) {
+          if (m_callbacks.on_mesh_material_scalar_committed) {
+            m_callbacks.on_mesh_material_scalar_committed(field, a, b, c, d);
+          }
+        });
+    component->on_mesh_material_reset_requested([this]() {
+      if (m_callbacks.on_mesh_material_reset_requested) {
+        m_callbacks.on_mesh_material_reset_requested();
+      }
+    });
+    component->on_mesh_slot_pick_requested([this](int slot) {
+      if (m_callbacks.on_mesh_slot_pick_requested) {
+        m_callbacks.on_mesh_slot_pick_requested(slot);
+      }
+    });
+    component->on_mesh_slot_clear_requested([this](int slot) {
+      if (m_callbacks.on_mesh_slot_clear_requested) {
+        m_callbacks.on_mesh_slot_clear_requested(slot);
+      }
+    });
+    component->on_mesh_slot_drop_requested([this](int slot) {
+      if (m_callbacks.on_mesh_slot_drop_requested) {
+        m_callbacks.on_mesh_slot_drop_requested(slot);
       }
     });
     component->on_inspector_transform_edited([this]() {
@@ -603,6 +774,11 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_inspector_camera_edited();
       }
     });
+    component->on_inspector_light_edited([this]() {
+      if (m_callbacks.on_inspector_light_edited) {
+        m_callbacks.on_inspector_light_edited();
+      }
+    });
     component->on_inspector_add_unique_attachment([this](const slint::SharedString& kind) {
       if (m_callbacks.on_inspector_add_unique_attachment) {
         m_callbacks.on_inspector_add_unique_attachment(kind);
@@ -631,6 +807,18 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
                                                          clip_guid);
           }
         });
+    component->on_inspector_open_clip_picker([this](int target_index) {
+      if (m_callbacks.on_inspector_open_clip_picker) {
+        m_callbacks.on_inspector_open_clip_picker(target_index);
+      }
+    });
+    component->on_inspector_pick_clip_choice(
+        [this](const slint::SharedString& guid, const slint::SharedString& stem,
+               const slint::SharedString& display) {
+          if (m_callbacks.on_inspector_pick_clip_choice) {
+            m_callbacks.on_inspector_pick_clip_choice(guid, stem, display);
+          }
+        });
     component->on_browser_folder_selected([this](const slint::SharedString& path) {
       if (m_callbacks.on_browser_folder_selected) {
         m_callbacks.on_browser_folder_selected(path);
@@ -651,9 +839,51 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_browser_import_requested();
       }
     });
-    component->on_browser_delete_requested([this]() {
-      if (m_callbacks.on_browser_delete_requested) {
-        m_callbacks.on_browser_delete_requested();
+    component->on_browser_new_scene_requested(
+        [this](const slint::SharedString& path) {
+          if (m_callbacks.on_browser_new_scene_requested) {
+            m_callbacks.on_browser_new_scene_requested(path);
+          }
+        });
+    component->on_browser_new_folder_requested(
+        [this](const slint::SharedString& path) {
+          if (m_callbacks.on_browser_new_folder_requested) {
+            m_callbacks.on_browser_new_folder_requested(path);
+          }
+        });
+    component->on_browser_rename_requested(
+        [this](const slint::SharedString& path) {
+          if (m_callbacks.on_browser_rename_requested) {
+            m_callbacks.on_browser_rename_requested(path);
+          }
+        });
+    component->on_browser_delete_requested(
+        [this](const slint::SharedString& path) {
+          if (m_callbacks.on_browser_delete_requested) {
+            m_callbacks.on_browser_delete_requested(path);
+          }
+        });
+    component->on_history_filter_changed([this, component]() {
+      if (m_callbacks.on_history_filter_changed) {
+        m_callbacks.on_history_filter_changed(
+            component->get_history_filter_scene(),
+            component->get_history_filter_global());
+      }
+    });
+    component->on_history_entry_clicked([this](int stack, int index) {
+      if (m_callbacks.on_history_entry_clicked) {
+        m_callbacks.on_history_entry_clicked(stack, index);
+      }
+    });
+    component->on_browser_inline_rename_commit(
+        [this](const slint::SharedString& name) {
+          if (m_callbacks.on_browser_inline_rename_commit) {
+            m_callbacks.on_browser_inline_rename_commit(name);
+          }
+        });
+    component->on_browser_inline_rename_cancel([this]() {
+      if (m_callbacks.on_browser_inline_rename_cancel) {
+        m_callbacks.on_browser_inline_rename_cancel();
       }
     });
     component->on_browser_grid_select(

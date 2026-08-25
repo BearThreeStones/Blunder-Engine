@@ -105,6 +105,26 @@ class SetCameraComponentCommand final : public IEditorCommand {
   }
 };
 
+class SetLightComponentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  LightComponent before_light{};
+  LightComponent after_light{};
+
+  void undo() override { apply(before_light); }
+
+  void redo() override { apply(after_light); }
+
+ private:
+  void apply(const LightComponent& light) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    scene->setLight(entity_id, light);
+  }
+};
+
 class SetAnimationPlayerClipBindingsCommand final : public IEditorCommand {
  public:
   SceneInstance* scene{nullptr};
@@ -175,6 +195,9 @@ class SoftDeleteEntityCommand final : public IEditorCommand {
  public:
   SceneInstance* scene{nullptr};
   EntityId entity_id{k_invalid_entity_id};
+  eastl::string display_label{"Delete Entity"};
+
+  eastl::string label() const override { return display_label; }
 
   void undo() override {
     if (scene != nullptr) {
@@ -193,6 +216,9 @@ class SpawnEntityCommand final : public IEditorCommand {
  public:
   SceneInstance* scene{nullptr};
   EntityId entity_id{k_invalid_entity_id};
+  eastl::string display_label{"Spawn Entity"};
+
+  eastl::string label() const override { return display_label; }
 
   void undo() override {
     if (scene != nullptr) {
@@ -529,6 +555,20 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
   return command;
 }
 
+eastl::unique_ptr<IEditorCommand> makeSetLightComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const LightComponent& before_light,
+    const LightComponent& after_light, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetLightComponentCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_light = before_light;
+  command->after_light = after_light;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
 eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
     SceneInstance* scene, EntityId entity_id,
     eastl::vector<AnimationPlayer::ClipBinding> before_bindings,
@@ -567,25 +607,36 @@ eastl::unique_ptr<IEditorCommand> makeAlignCameraToViewCommand(
   return command;
 }
 
+eastl::string deleteEntityCommandLabel(const eastl::string& entity_name) {
+  if (entity_name.empty()) {
+    return eastl::string("Delete Entity");
+  }
+  return eastl::string("Delete ") + entity_name;
+}
+
 eastl::unique_ptr<IEditorCommand> makeSoftDeleteEntityCommand(
     SceneInstance* scene, EntityId entity_id,
-    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after,
+    eastl::string label) {
   auto command = eastl::make_unique<SoftDeleteEntityCommand>();
   command->scene = scene;
   command->entity_id = entity_id;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  command->display_label = eastl::move(label);
   return command;
 }
 
 eastl::unique_ptr<IEditorCommand> makeSpawnEntityCommand(
     SceneInstance* scene, EntityId entity_id,
-    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after,
+    eastl::string label) {
   auto command = eastl::make_unique<SpawnEntityCommand>();
   command->scene = scene;
   command->entity_id = entity_id;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  command->display_label = eastl::move(label);
   return command;
 }
 

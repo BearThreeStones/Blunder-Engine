@@ -714,7 +714,8 @@ void drawMeshList(VkCommandBuffer cmd, VkDevice device,
     mesh_ubo.projection = frame_state.projection;
     mesh_ubo.camera_position = glm::vec4(frame_state.camera_position, 1.0f);
     applyPbrToMeshUniforms(mesh_ubo, draw.material, frame_state.shading, frame_state,
-                             draw.alpha_mode, draw.alpha_cutoff, draw.double_sided);
+                             draw.alpha_mode, draw.alpha_cutoff, draw.double_sided,
+                             draw.entity_id);
 
     VulkanTexture* base_color =
         draw.base_color_texture != nullptr ? draw.base_color_texture : fallback_texture;

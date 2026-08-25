@@ -11,7 +11,10 @@
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/overlay/editor_overlay_policy.h"
+#include "runtime/function/render/overlay/overlay_gizmo_pick.h"
 #include "runtime/function/render/overlay/overlay_state.h"
+
+#include <optional>
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/slang/slang_compiler.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
@@ -58,6 +61,7 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_navigate_gizmo.initialize(m_resources, compiler);
   m_transform_gizmo.initialize(m_resources, compiler);
   m_camera_gizmo.initialize(m_resources, compiler);
+  m_light_gizmo.initialize(m_resources, compiler);
   m_anti_aliasing.initialize(ctx, alloc, offscreen, compiler, &m_line_targets);
 }
 
@@ -72,6 +76,7 @@ void OverlaySystem::shutdown() {
   m_navigate_gizmo.shutdown();
   m_transform_gizmo.shutdown();
   m_camera_gizmo.shutdown();
+  m_light_gizmo.shutdown();
   m_grid.shutdown();
   m_outline.shutdown();
   m_outline_targets.shutdown();
@@ -121,6 +126,7 @@ void OverlaySystem::disableAuthorshipOverlays() {
   m_navigate_gizmo.enabled_ = false;
   m_transform_gizmo.enabled_ = false;
   m_camera_gizmo.enabled_ = false;
+  m_light_gizmo.enabled_ = false;
   m_anti_aliasing.enabled_ = false;
 }
 
@@ -155,6 +161,7 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
   m_navigate_gizmo.begin_sync(m_resources, m_state);
   m_transform_gizmo.begin_sync(m_resources, m_state);
   m_camera_gizmo.begin_sync(m_resources, m_state);
+  m_light_gizmo.begin_sync(m_resources, m_state);
   m_outline.begin_sync(m_resources, m_state);
   m_anti_aliasing.begin_sync(m_resources, m_state);
 }
@@ -212,9 +219,33 @@ void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
   }
   m_screen_pass.begin(cmd);
   m_camera_gizmo.draw_screen(cmd, m_state);
+  m_light_gizmo.draw_screen(cmd, m_state);
   m_transform_gizmo.draw_screen(cmd, m_state);
   m_navigate_gizmo.draw_screen(cmd, m_state);
   m_screen_pass.end(cmd);
+}
+
+bool OverlaySystem::tryHandleCameraOrLightGizmoClick(const Vec2& window_position,
+                                                     EditorCamera& camera) {
+  if (!authorshipOverlaysActive()) {
+    return false;
+  }
+  const std::optional<OverlayGizmoPickHit> camera_hit =
+      m_camera_gizmo.hitTest(window_position, camera);
+  const std::optional<OverlayGizmoPickHit> light_hit =
+      m_light_gizmo.hitTest(window_position, camera);
+  const std::optional<OverlayGizmoPickHit> best =
+      pickCloserOverlayGizmoHit(camera_hit, light_hit);
+  if (!best.has_value()) {
+    return false;
+  }
+  if (g_runtime_global_context.m_editor_selection) {
+    g_runtime_global_context.m_editor_selection->setSelection(best->entity_id);
+  }
+  if (g_runtime_global_context.m_viewport_pick) {
+    g_runtime_global_context.m_viewport_pick->suppressNextLeftReleasePick();
+  }
+  return true;
 }
 
 EntityId OverlaySystem::pickAtWindowPosition(const float window_x,

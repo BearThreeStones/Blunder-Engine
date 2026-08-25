@@ -26,6 +26,9 @@ ContentBrowserDropKind classifyContentBrowserDrop(
   if (endsWithSuffix(virtual_path, ".scene.asset")) {
     return ContentBrowserDropKind::scene;
   }
+  if (endsWithSuffix(virtual_path, ".animation.yaml")) {
+    return ContentBrowserDropKind::animation_clip;
+  }
   return ContentBrowserDropKind::other;
 }
 

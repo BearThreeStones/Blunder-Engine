@@ -1,8 +1,10 @@
+import { EditorTheme } from "editor_theme.slint";
+
 // Godot editor/icons wrappers for Content Browser + Inspector.
 // Paths are relative to this file under function/slint/.
 
 export component EditorIconSearch inherits Rectangle {
-    in property <color> icon-color: #808080;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 12px;
 
     width: icon-size;
@@ -19,7 +21,7 @@ export component EditorIconSearch inherits Rectangle {
 }
 
 export component EditorIconReload inherits Rectangle {
-    in property <color> icon-color: #b0b0b0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -36,7 +38,7 @@ export component EditorIconReload inherits Rectangle {
 }
 
 export component EditorIconFolder inherits Rectangle {
-    in property <color> icon-color: #d0d0d0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -53,7 +55,7 @@ export component EditorIconFolder inherits Rectangle {
 }
 
 export component EditorIconTreeArrowRight inherits Rectangle {
-    in property <color> icon-color: #707070;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 10px;
 
     width: icon-size;
@@ -70,7 +72,7 @@ export component EditorIconTreeArrowRight inherits Rectangle {
 }
 
 export component EditorIconTreeArrowDown inherits Rectangle {
-    in property <color> icon-color: #707070;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 10px;
 
     width: icon-size;
@@ -87,7 +89,7 @@ export component EditorIconTreeArrowDown inherits Rectangle {
 }
 
 export component EditorIconInstance inherits Rectangle {
-    in property <color> icon-color: #e0e0e0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -104,7 +106,7 @@ export component EditorIconInstance inherits Rectangle {
 }
 
 export component EditorIconScene inherits Rectangle {
-    in property <color> icon-color: #e0e0e0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -121,7 +123,7 @@ export component EditorIconScene inherits Rectangle {
 }
 
 export component EditorIconUnlinked inherits Rectangle {
-    in property <color> icon-color: #808080;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -138,7 +140,7 @@ export component EditorIconUnlinked inherits Rectangle {
 }
 
 export component EditorIconMesh inherits Rectangle {
-    in property <color> icon-color: #d0d0d0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -155,7 +157,7 @@ export component EditorIconMesh inherits Rectangle {
 }
 
 export component EditorIconTexture inherits Rectangle {
-    in property <color> icon-color: #d0d0d0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -172,7 +174,7 @@ export component EditorIconTexture inherits Rectangle {
 }
 
 export component EditorIconAnimation inherits Rectangle {
-    in property <color> icon-color: #d0d0d0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -189,7 +191,7 @@ export component EditorIconAnimation inherits Rectangle {
 }
 
 export component EditorIconFile inherits Rectangle {
-    in property <color> icon-color: #d0d0d0;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
 
     width: icon-size;
@@ -206,7 +208,7 @@ export component EditorIconFile inherits Rectangle {
 }
 
 export component EditorIconViewLayout inherits Rectangle {
-    in property <color> icon-color: #606060;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 12px;
 
     width: icon-size;
@@ -220,4 +222,167 @@ export component EditorIconViewLayout inherits Rectangle {
         colorize: root.icon-color;
         image-fit: contain;
     }
+}
+
+export component EditorIconCamera3D inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Camera3D.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconLight inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/GizmoLight.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconSkeleton3D inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Skeleton3D.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconAnimationPlayer inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/AnimationPlayer.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconAnimationTree inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/AnimationTree.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconScript inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/Script.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconSkeletonModifier3D inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/SkeletonModifier3D.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconToolMove inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/ToolMove.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+// Glyphs for icon-only chrome (App Bar Play cluster, Viewport transform strip).
+export global EditorGlyphs {
+    out property <image> play: @image-url("../../../../3rdparty/godot-icons/Play.svg");
+    out property <image> pause: @image-url("../../../../3rdparty/godot-icons/Pause.svg");
+    out property <image> stop: @image-url("../../../../3rdparty/godot-icons/Stop.svg");
+    out property <image> tool-move: @image-url("../../../../3rdparty/godot-icons/ToolMove.svg");
+    out property <image> tool-rotate: @image-url("../../../../3rdparty/godot-icons/ToolRotate.svg");
+    out property <image> tool-scale: @image-url("../../../../3rdparty/godot-icons/ToolScale.svg");
+    out property <image> space-global: @image-url("../../../../3rdparty/godot-icons/WorldEnvironment.svg");
+    out property <image> space-local: @image-url("../../../../3rdparty/godot-icons/Object.svg");
+    out property <image> arrow-right: @image-url("../../../../3rdparty/godot-icons/GuiTreeArrowRight.svg");
+    out property <image> arrow-down: @image-url("../../../../3rdparty/godot-icons/GuiTreeArrowDown.svg");
+    out property <image> close: @image-url("../../../../3rdparty/godot-icons/Close.svg");
+    out property <image> more: @image-url("../../../../3rdparty/godot-icons/GuiEllipsis.svg");
+    out property <image> move-up: @image-url("../../../../3rdparty/godot-icons/MoveUp.svg");
+    out property <image> move-down: @image-url("../../../../3rdparty/godot-icons/MoveDown.svg");
+    out property <image> mesh: @image-url("../../../../3rdparty/godot-icons/MeshInstance3D.svg");
+    out property <image> material: @image-url("../../../../3rdparty/godot-icons/StandardMaterial3D.svg");
+    out property <image> script: @image-url("../../../../3rdparty/godot-icons/Script.svg");
+    out property <image> camera: @image-url("../../../../3rdparty/godot-icons/Camera3D.svg");
+    out property <image> light: @image-url("../../../../3rdparty/godot-icons/GizmoLight.svg");
+    out property <image> skeleton: @image-url("../../../../3rdparty/godot-icons/Skeleton3D.svg");
+    out property <image> animation-player: @image-url("../../../../3rdparty/godot-icons/AnimationPlayer.svg");
+    out property <image> animation-tree: @image-url("../../../../3rdparty/godot-icons/AnimationTree.svg");
+    out property <image> skeleton-modifier: @image-url("../../../../3rdparty/godot-icons/SkeletonModifier3D.svg");
 }

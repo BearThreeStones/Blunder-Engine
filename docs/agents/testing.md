@@ -81,7 +81,7 @@ Stage `engine_player` beside ScriptHost (CMake POST_BUILD). From a Project with 
 
 ```powershell
 cmake --build build/vs2026-debug --config Debug --target engine_player
-.\build\vs2026-debug\engine\src\player\Debug\engine_player.exe `
+.\build\vs2026-debug\bin\Debug\engine_player.exe `
   --project-root "E:/Blunder Projects/Test" `
   --scene "assets/Scenes/pick_test.scene.asset"
 # Optional IPC (editor PlaySessionController passes this):

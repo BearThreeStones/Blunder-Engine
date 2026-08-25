@@ -8,7 +8,19 @@ target_link_libraries(engine_player
         blunder_engine_c_static
 )
 
+# Same staging dir as engine_editor so Play can spawn a sibling exe.
+set_target_properties(engine_player PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/bin/RelWithDebInfo"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_BINARY_DIR}/bin/MinSizeRel"
+)
 blunder_set_debugger_working_directory(engine_player)
+
+# Building the editor must also stage the Player (Play Mode is a separate process).
+if(TARGET engine_editor)
+    add_dependencies(engine_editor engine_player)
+endif()
 
 if(MSVC)
     target_compile_options(engine_player PRIVATE /Zc:preprocessor)

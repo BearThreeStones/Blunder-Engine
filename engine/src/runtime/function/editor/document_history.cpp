@@ -64,6 +64,46 @@ bool DocumentHistory::redo() {
   return true;
 }
 
+const IEditorCommand* DocumentHistory::commandAt(size_t index) const {
+  if (index >= m_commands.size()) {
+    return nullptr;
+  }
+  return m_commands[index].get();
+}
+
+bool DocumentHistory::jumpTo(size_t applied_count) {
+  if (applied_count > m_commands.size()) {
+    return false;
+  }
+  while (m_cursor > applied_count) {
+    if (!undo()) {
+      return false;
+    }
+  }
+  while (m_cursor < applied_count) {
+    if (!redo()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+EditorUndoScope resolveUndoScope(bool content_browser_focused,
+                                 bool inline_rename_active,
+                                 bool asset_inspector_focused,
+                                 bool attachment_preview_focused) {
+  if (inline_rename_active) {
+    return EditorUndoScope::text;
+  }
+  if (attachment_preview_focused) {
+    return EditorUndoScope::document;
+  }
+  if (content_browser_focused || asset_inspector_focused) {
+    return EditorUndoScope::global;
+  }
+  return EditorUndoScope::document;
+}
+
 void DocumentHistory::markSaveBaseline() { m_save_baseline = m_cursor; }
 
 bool DocumentHistory::isDirtyRelativeToSave() const {

@@ -8,6 +8,7 @@
 
 #include "runtime/function/render/overlay/axes_overlay.h"
 #include "runtime/function/render/overlay/camera_gizmo_overlay.h"
+#include "runtime/function/render/overlay/light_gizmo_overlay.h"
 #include "runtime/function/render/overlay/grid_overlay.h"
 #include "runtime/function/render/gizmo/transform_gizmo_overlay.h"
 #include "runtime/function/render/overlay/navigate_gizmo_overlay.h"
@@ -99,6 +100,10 @@ class OverlaySystem final {
   NavigateGizmoOverlay& navigate_gizmo() { return m_navigate_gizmo; }
   TransformGizmoOverlay& transform_gizmo() { return m_transform_gizmo; }
   CameraGizmoOverlay& camera_gizmo() { return m_camera_gizmo; }
+  LightGizmoOverlay& light_gizmo() { return m_light_gizmo; }
+
+  bool tryHandleCameraOrLightGizmoClick(const Vec2& window_position,
+                                        EditorCamera& camera);
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
 
  private:
@@ -129,6 +134,7 @@ class OverlaySystem final {
   NavigateGizmoOverlay m_navigate_gizmo;
   TransformGizmoOverlay m_transform_gizmo;
   CameraGizmoOverlay m_camera_gizmo;
+  LightGizmoOverlay m_light_gizmo;
   OverlayAntiAliasing m_anti_aliasing;
 };
 

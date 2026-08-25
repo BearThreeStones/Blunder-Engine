@@ -1,0 +1,5 @@
+# Content Browser filesystem mutations use Global History
+
+New Folder, Rename Folder, Browser Folder delete, Browser Folder reparent, Asset rename, and Asset delete are project-filesystem authorship actions, not scene-document edits. They record as Editor Commands on **Global History**, so Document History stays scene-scoped and opening another scene does not drop filesystem undo. This fills the empty Global stack from [ADR 0008](0008-history-panel-and-global-history.md); it does not merge Scene and Global into one timeline. Keyboard Undo/Redo follow **panel focus**: Content Browser focus targets Global History; otherwise Document History. Scene-reference detach on delete is part of that Global Command ([ADR 0038](0038-delete-scene-detach-global-command.md)), not a second Document Command.
+
+Rejected: stuffing Browser file ops into Document History; irreversible Browser mutations with no History; a merged Ctrl+Z timeline across both stacks; always-Document shortcuts once Global Commands exist.

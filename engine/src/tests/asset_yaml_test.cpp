@@ -1,4 +1,5 @@
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset/asset_descriptor.h"
 
 #include <cassert>
 #include <cstdio>
@@ -361,6 +362,87 @@ void rejectUnknownInterpolation() {
               !AssetYaml::parseAnimationClipData(yaml, data));
 }
 
+void parseSparseMaterialOverrideAndEmptySlot() {
+  using namespace Blunder;
+  const eastl::string yaml =
+      "type: Mesh\n"
+      "guid: 10101010-1010-4010-8010-101010101010\n"
+      "source: resources/Models/Hero.gltf\n"
+      "texture_guids:\n"
+      "  - aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\n"
+      "material_override:\n"
+      "  shininess: 64\n"
+      "  textures:\n"
+      "    base_color: \"\"\n"
+      "legacy_note: keep-me\n"
+      "import:\n"
+      "  materials: true\n"
+      "  animations: true\n"
+      "  scale: 1.0\n";
+
+  MeshAssetDescriptor desc;
+  expect_true("parse sparse material_override",
+              AssetYaml::parseMeshDescriptor(yaml, desc));
+  expect_true("shininess present", desc.material_override.shininess.present);
+  expect_true("shininess 64", desc.material_override.shininess.value == 64.0f);
+  expect_true("empty slot present",
+              desc.material_override.base_color_texture.present);
+  expect_true("empty slot guid empty",
+              desc.material_override.base_color_texture.guid.empty());
+  expect_true("metallic absent", !desc.material_override.metallic.present);
+  expect_true("unknown root preserved",
+              desc.unknown_root_fields.size() == 1 &&
+                  desc.unknown_root_fields[0].first == "legacy_note");
+
+  const eastl::string written = AssetYaml::serializeMeshDescriptor(desc);
+  expect_true("serialize writes empty slot",
+              written.find("base_color:") != eastl::string::npos);
+  expect_true("serialize omits absent metallic",
+              written.find("metallic:") == eastl::string::npos);
+  expect_true("unknown key round-trips",
+              written.find("legacy_note:") != eastl::string::npos);
+
+  MeshAssetDescriptor round;
+  expect_true("override round-trip parse",
+              AssetYaml::parseMeshDescriptor(written, round));
+  expect_true("round-trip shininess",
+              round.material_override.shininess == desc.material_override.shininess);
+  expect_true("round-trip empty slot",
+              round.material_override.base_color_texture.present &&
+                  round.material_override.base_color_texture.guid.empty());
+  expect_true("round-trip unknown",
+              round.unknown_root_fields.size() == 1 &&
+                  round.unknown_root_fields[0].first == "legacy_note");
+}
+
+void rebuildTextureGuidsUnionAndEmptySlotKeepsImport() {
+  using namespace Blunder;
+  MeshAssetDescriptor desc;
+  desc.guid = "20202020-2020-4020-8020-202020202020";
+  desc.source = "resources/Models/Hero.gltf";
+  desc.texture_guids.push_back("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  desc.import_texture_guids = desc.texture_guids;
+  desc.material_override.base_color_texture.present = true;
+  desc.material_override.base_color_texture.guid.clear();
+  rebuildMeshTextureGuids(desc);
+  expect_true("empty slot keeps import guid",
+              desc.texture_guids.size() == 1 &&
+                  desc.texture_guids[0] ==
+                      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+
+  desc.material_override.normal_texture.present = true;
+  desc.material_override.normal_texture.guid =
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  rebuildMeshTextureGuids(desc);
+  expect_true("new slot guid unioned", desc.texture_guids.size() == 2);
+  expect_true("union keeps import",
+              desc.texture_guids[0] ==
+                  "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+  expect_true("union adds override slot",
+              desc.texture_guids[1] ==
+                  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+}
+
 }  // namespace
 
 int main() {
@@ -379,6 +461,8 @@ int main() {
   roundTripAnimationClipDataConstantAndLinear();
   roundTripAnimationClipMethodKeys();
   rejectUnknownInterpolation();
+  parseSparseMaterialOverrideAndEmptySlot();
+  rebuildTextureGuidsUnionAndEmptySlotKeepsImport();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

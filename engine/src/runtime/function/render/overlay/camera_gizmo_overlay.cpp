@@ -373,17 +373,33 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
 
 bool CameraGizmoOverlay::tryHandleMouseClick(const Vec2& window_position,
                                              EditorCamera& camera) {
-  if (!enabled_ || !camera.isWindowPositionInViewport(window_position)) {
+  const std::optional<OverlayGizmoPickHit> hit = hitTest(window_position, camera);
+  if (!hit.has_value()) {
     return false;
   }
 
+  if (g_runtime_global_context.m_editor_selection) {
+    g_runtime_global_context.m_editor_selection->setSelection(hit->entity_id);
+  }
+  if (g_runtime_global_context.m_viewport_pick) {
+    g_runtime_global_context.m_viewport_pick->suppressNextLeftReleasePick();
+  }
+  return true;
+}
+
+std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
+    const Vec2& window_position, EditorCamera& camera) const {
+  if (!enabled_ || !camera.isWindowPositionInViewport(window_position)) {
+    return std::nullopt;
+  }
+
   if (!g_runtime_global_context.m_scene_system) {
-    return false;
+    return std::nullopt;
   }
   SceneInstance* scene =
       g_runtime_global_context.m_scene_system->getActiveInstance();
   if (scene == nullptr) {
-    return false;
+    return std::nullopt;
   }
 
   const Vec2 viewport_local = camera.windowToViewportLocal(window_position);
@@ -404,7 +420,8 @@ bool CameraGizmoOverlay::tryHandleMouseClick(const Vec2& window_position,
     const glm::mat4 world = scene->getWorldMatrix(entity_id);
     const std::optional<float> hit_depth = hitTestCameraGizmoFrameViewportLocal(
         pointer, frame, world, view, proj, vp_w, vp_h);
-    if (!hit_depth.has_value() || hit_depth.value() <= best_depth) {
+    if (!hit_depth.has_value() ||
+        !overlayGizmoViewDepthIsCloser(hit_depth.value(), best_depth)) {
       return;
     }
     best_depth = hit_depth.value();
@@ -412,16 +429,9 @@ bool CameraGizmoOverlay::tryHandleMouseClick(const Vec2& window_position,
   });
 
   if (!isValid(best_entity)) {
-    return false;
+    return std::nullopt;
   }
-
-  if (g_runtime_global_context.m_editor_selection) {
-    g_runtime_global_context.m_editor_selection->setSelection(best_entity);
-  }
-  if (g_runtime_global_context.m_viewport_pick) {
-    g_runtime_global_context.m_viewport_pick->suppressNextLeftReleasePick();
-  }
-  return true;
+  return OverlayGizmoPickHit{best_entity, best_depth};
 }
 
 }  // namespace Blunder

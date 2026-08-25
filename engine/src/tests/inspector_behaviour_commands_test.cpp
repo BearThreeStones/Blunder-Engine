@@ -1,8 +1,10 @@
 #include "runtime/core/object/behaviour_id.h"
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/reflection/variant.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/editor_commands.h"
+#include "runtime/function/editor/inspector_behaviour_ops.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -168,6 +170,95 @@ int main() {
     expect_true("after restored",
                 props != nullptr && props->size() == 1 &&
                     props->at(0).value == after);
+  }
+
+  // Behaviour clip-name dropdown choices + weak invalid + no cascade
+  {
+    SceneInstance scene;
+    const EntityId entity_id =
+        scene.createEntity("ClipName", Vec3(0, 0, 0), glm::identity<Quat>(),
+                           Vec3(1));
+    Object* object = scene.ensureBoundObject(entity_id);
+    expect_true("clip-name object", object != nullptr);
+    AnimationPlayer* player = object->ensureAnimationPlayer();
+    expect_true("player", player != nullptr);
+
+    eastl::vector<eastl::string> empty_choices;
+    buildBehaviourClipNameDropdownChoices(object, empty_choices);
+    expect_true("empty map only clear",
+                empty_choices.size() == 1 && empty_choices[0].empty());
+
+    eastl::vector<AnimationPlayer::ClipBinding> bindings;
+    AnimationPlayer::ClipBinding idle{};
+    idle.name = "idle";
+    idle.guid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    AnimationPlayer::ClipBinding walk{};
+    walk.name = "walk";
+    walk.guid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    bindings.push_back(idle);
+    bindings.push_back(walk);
+    player->setClipBindings(bindings);
+
+    eastl::vector<eastl::string> choices;
+    buildBehaviourClipNameDropdownChoices(object, choices);
+    expect_true("choices has empty + 2 names", choices.size() == 3);
+    expect_true("first empty", choices[0].empty());
+    expect_true("has idle", choices[1] == "idle");
+    expect_true("has walk", choices[2] == "walk");
+
+    expect_true("empty not invalid",
+                !isBehaviourClipNameInvalid("", choices));
+    eastl::vector<eastl::string> names_only;
+    names_only.push_back("idle");
+    names_only.push_back("walk");
+    expect_true("idle valid", !isBehaviourClipNameInvalid("idle", names_only));
+    expect_true("orphan invalid",
+                isBehaviourClipNameInvalid("rest", names_only));
+
+    const BehaviourId behaviour_id = object->addBehaviour("Game.Motor");
+    eastl::vector<SceneBehaviourProperty> bag;
+    SceneBehaviourProperty prop;
+    prop.key = "IdleClip";
+    prop.value = Variant(eastl::string("idle"));
+    bag.push_back(prop);
+    expect_true("set IdleClip", object->setBehaviourProperties(behaviour_id, bag));
+
+    eastl::vector<AnimationPlayer::ClipBinding> renamed = bindings;
+    renamed[0].name = "rest";
+    player->setClipBindings(renamed);
+    const eastl::vector<SceneBehaviourProperty>* after_rename =
+        object->getBehaviourProperties(behaviour_id);
+    expect_true(
+        "weak ref survives rename",
+        after_rename != nullptr && after_rename->size() == 1 &&
+            after_rename->at(0).value.asString() == "idle");
+    eastl::vector<eastl::string> renamed_names;
+    renamed_names.push_back("rest");
+    renamed_names.push_back("walk");
+    expect_true("idle invalid after rename",
+                isBehaviourClipNameInvalid("idle", renamed_names));
+
+    BehaviourCatalogType motor{};
+    motor.clr_name = "Game.Motor";
+    BehaviourCatalogMember idle_member{};
+    idle_member.name = "IdleClip";
+    idle_member.kind = BehaviourCatalogMember::Kind::ClipName;
+    BehaviourCatalogMember label_member{};
+    label_member.name = "Label";
+    label_member.kind = BehaviourCatalogMember::Kind::String;
+    motor.members.push_back(idle_member);
+    motor.members.push_back(label_member);
+    eastl::vector<BehaviourCatalogType> catalog;
+    catalog.push_back(motor);
+
+    eastl::vector<InspectorBehaviourRowData> rows;
+    buildInspectorBehaviourRows(object, catalog, rows);
+    expect_true("one behaviour row", rows.size() == 1);
+    expect_true("two props", rows[0].props.size() == 2);
+    expect_true("IdleClip kind", rows[0].props[0].kind == "clip_name");
+    expect_true("IdleClip invalid after rename",
+                rows[0].props[0].clip_name_invalid);
+    expect_true("Label free text", rows[0].props[1].kind == "string");
   }
 
   if (g_failures != 0) {

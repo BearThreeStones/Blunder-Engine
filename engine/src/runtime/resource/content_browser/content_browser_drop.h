@@ -4,7 +4,7 @@
 
 namespace Blunder {
 
-enum class ContentBrowserDropKind { other, mesh, scene };
+enum class ContentBrowserDropKind { other, mesh, scene, animation_clip };
 
 enum class ContentBrowserDragCursorKind {
   default_arrow,

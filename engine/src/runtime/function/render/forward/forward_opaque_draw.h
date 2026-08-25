@@ -8,6 +8,8 @@
 
 #include "EASTL/vector.h"
 
+#include "runtime/function/scene/entity_id.h"
+
 namespace Blunder {
 
 class MaterialAsset;
@@ -30,6 +32,7 @@ struct ForwardOpaqueDraw {
   float alpha_cutoff{0.5f};
   cgltf_alpha_mode alpha_mode{cgltf_alpha_mode_opaque};
   bool double_sided{false};
+  EntityId entity_id{k_invalid_entity_id};
   eastl::vector<glm::mat4> gpu_bone_palette;
 };
 

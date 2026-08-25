@@ -497,12 +497,25 @@ bool endsWithSuffix(const eastl::string& value, const char* suffix) {
   return value.compare(value.size() - suffix_length, suffix_length, suffix) == 0;
 }
 
+bool guidInList(const eastl::vector<eastl::string>* list, const eastl::string& guid) {
+  if (list == nullptr || guid.empty()) {
+    return false;
+  }
+  for (const eastl::string& item : *list) {
+    if (item == guid) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Clear mesh / animation-clip GUID refs from Scene Asset dependents so Delete
-/// can proceed. Non-scene dependents are reported and refuse the operation.
+/// can proceed. Non-scene dependents outside `in_set_guids` refuse the operation.
 bool detachGuidFromSceneDependents(
     FileSystem* file_system, AssetRegistry* asset_registry,
     const eastl::string& guid,
     const eastl::vector<eastl::string>& dependent_guids,
+    const eastl::vector<eastl::string>* in_set_guids,
     eastl::string* out_error) {
   if (file_system == nullptr || asset_registry == nullptr || guid.empty()) {
     if (out_error != nullptr) {
@@ -521,6 +534,8 @@ bool detachGuidFromSceneDependents(
     }
     if (endsWithSuffix(path, ".scene.asset")) {
       scene_dependents.push_back(dependent_guid);
+    } else if (guidInList(in_set_guids, dependent_guid)) {
+      continue;
     } else {
       non_scene_dependents.push_back(path);
     }
@@ -1394,6 +1409,12 @@ bool AssetImportService::requestReimport(const eastl::string& guid) {
 
 bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_path,
                                      eastl::string* out_error) {
+  return deleteAsset(descriptor_virtual_path, DeleteAssetOptions{}, out_error);
+}
+
+bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_path,
+                                     const DeleteAssetOptions& options,
+                                     eastl::string* out_error) {
   const auto fail = [&](const char* message) {
     if (out_error != nullptr) {
       *out_error = message;
@@ -1431,7 +1452,8 @@ bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_pat
     return fail("unsupported descriptor type (folder or unknown)");
   }
 
-  if (is_scene && g_runtime_global_context.m_editor_scene_edit &&
+  if (is_scene && !options.allow_active_scene &&
+      g_runtime_global_context.m_editor_scene_edit &&
       g_runtime_global_context.m_editor_scene_edit->activeScenePath() ==
           normalized) {
     return fail("cannot delete the active scene");
@@ -1459,20 +1481,25 @@ bool AssetImportService::deleteAsset(const eastl::string& descriptor_virtual_pat
       }
       eastl::string detach_error;
       if (!detachGuidFromSceneDependents(m_file_system, m_asset_registry, guid,
-                                         dependents, &detach_error)) {
+                                         dependents, options.in_set_guids,
+                                         &detach_error)) {
         return fail(detach_error.c_str());
       }
       m_asset_compiler->rebuildDependencyGraph();
       const eastl::vector<eastl::string> remaining =
           m_asset_compiler->dependentsOf(guid);
-      if (!remaining.empty()) {
-        eastl::string message = "asset still has dependents after scene detach:";
-        for (const eastl::string& dependent_guid : remaining) {
-          const eastl::string path =
-              m_asset_registry->resolveGuid(dependent_guid);
-          message.append(" ");
-          message.append(path.empty() ? dependent_guid : path);
+      eastl::string remaining_outside;
+      for (const eastl::string& remaining_guid : remaining) {
+        if (guidInList(options.in_set_guids, remaining_guid)) {
+          continue;
         }
+        const eastl::string path = m_asset_registry->resolveGuid(remaining_guid);
+        remaining_outside.append(" ");
+        remaining_outside.append(path.empty() ? remaining_guid : path);
+      }
+      if (!remaining_outside.empty()) {
+        eastl::string message = "asset still has dependents after scene detach:";
+        message.append(remaining_outside);
         return fail(message.c_str());
       }
     }

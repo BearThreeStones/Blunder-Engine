@@ -15,6 +15,8 @@
 #include "runtime/function/render/gpu_mesh.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_frame_state.h"
+#include "runtime/function/scene/light_eval.h"
+#include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/i_render_backend.h"
@@ -91,6 +93,7 @@ void appendForwardDraw(const MeshPreviewSubmeshDraw& submesh_draw, GpuMesh* gpu_
   draw.alpha_cutoff = alpha_cutoff;
   draw.alpha_mode = alpha_mode;
   draw.double_sided = double_sided;
+  draw.entity_id = submesh_draw.entity_id;
 
   if (submesh_draw.mesh && submesh_draw.mesh->isSkinned() &&
       shouldUseGpuSkinning(*submesh_draw.mesh)) {
@@ -547,7 +550,7 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
     const eastl::vector<MeshPreviewSubmeshDraw>& draws,
     const MeshPreviewCameraFrame& framing,
     const MeshPreviewStudioLights& lights, uint32_t width, uint32_t height,
-    eastl::vector<uint8_t>& out_rgba) {
+    eastl::vector<uint8_t>& out_rgba, const SceneInstance* lighting_scene) {
   out_rgba.clear();
   m_last_submitted_draw_count = 0;
   if (!framing.ok || draws.empty() || !ensureResources(width, height) ||
@@ -623,8 +626,20 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
   m_last_submitted_draw_count =
       static_cast<uint32_t>(opaque_draws.size() + transparent_draws.size());
 
-  const ForwardFrameState frame_state =
+  ForwardFrameState frame_state =
       buildMeshPreviewForwardFrameState(framing, lights, width, height);
+  if (lighting_scene != nullptr) {
+    bool has_light = false;
+    lighting_scene->forEachLight([&](EntityId, const LightComponent&) {
+      has_light = true;
+    });
+    if (has_light) {
+      frame_state.live_scene_lighting = true;
+      frame_state.lighting_scene = lighting_scene;
+      frame_state.shadow_caster_id = pickDirectionalShadowCaster(*lighting_scene);
+      frame_state.shadows_enabled = isValid(frame_state.shadow_caster_id);
+    }
+  }
 
   VkCommandBuffer command_buffer = context->beginImmediateCommands();
   m_forward_path->renderFrameTo(

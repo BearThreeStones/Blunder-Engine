@@ -1,3 +1,5 @@
+import { EditorTheme } from "editor_theme.slint";
+
 /// One Transform axis cell: colored letter, editable value, unit, scrub, optional under-slider.
 /// Godot-style: compact value row; rotation under-slider is a thin bottom track.
 export component AxisNumberField inherits Rectangle {
@@ -25,12 +27,11 @@ export component AxisNumberField inherits Rectangle {
     private property <float> slider-t: Math.max(0.0, Math.min(1.0,
         (root.value - root.slider-min) / root.slider-span));
 
-    background: #252525;
+    background: EditorTheme.field;
     border-radius: 3px;
     horizontal-stretch: 1;
     vertical-stretch: 0;
-    min-height: root.show-slider ? 32px : 22px;
-    preferred-height: root.show-slider ? 32px : 22px;
+    height: root.show-slider ? 32px : EditorTheme.line;
 
     VerticalLayout {
         padding-left: 4px;

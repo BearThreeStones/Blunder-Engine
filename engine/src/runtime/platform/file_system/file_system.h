@@ -126,6 +126,20 @@ class FileSystem final {
   /// Creates parent directories for `path` when missing.
   bool ensureParentDirectory(const std::filesystem::path& path) const;
 
+  /// Creates `path` as a directory. Returns false when `path` already exists
+  /// or creation fails.
+  bool createDirectory(const std::filesystem::path& path) const;
+
+  /// True when `path` is a directory with no children.
+  bool isEmptyDirectory(const std::filesystem::path& path) const;
+
+  /// Removes an empty directory. Returns false when missing, not a directory,
+  /// not empty, or the remove fails.
+  bool removeEmptyDirectory(const std::filesystem::path& path) const;
+
+  /// Removes a regular file. Returns false when missing, not a file, or remove fails.
+  bool removeFile(const std::filesystem::path& path) const;
+
   /// Copies a regular file. When `overwrite` is false and `dst` exists, returns false.
   bool copyFile(const std::filesystem::path& src,
                 const std::filesystem::path& dst,

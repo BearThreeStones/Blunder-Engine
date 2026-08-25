@@ -29,6 +29,8 @@ struct NativeFloatHierarchyRow {
   bool selected{false};
   bool is_last_sibling{false};
   int ancestor_cont_mask{0};
+  eastl::vector<int> icon_kinds;
+  eastl::vector<int> icon_indices;
 };
 
 struct NativeFloatBrowserTreeRow {
@@ -65,6 +67,7 @@ struct NativeFloatBehaviourPropRow {
   float number_value{0.0f};
   eastl::string string_value;
   bool missing_type{false};
+  bool clip_name_invalid{false};
 };
 
 struct NativeFloatBehaviourRow {
@@ -78,6 +81,8 @@ struct NativeFloatAnimationClipRow {
   int entry_index{0};
   eastl::string clip_name;
   eastl::string clip_guid;
+  eastl::string clip_display;
+  bool clip_invalid{false};
 };
 
 struct NativeFloatSkeletonModifierRow {
@@ -92,6 +97,15 @@ struct NativeFloatSkeletonModifierRow {
   float target_y{0.0f};
   float target_z{1.0f};
   eastl::string child_entity_name;
+};
+
+struct NativeFloatHistoryRow {
+  eastl::string label;
+  int index{0};
+  int stack{0};
+  bool is_applied{false};
+  bool is_current{false};
+  bool is_group{false};
 };
 
 struct NativeFloatPanelSnapshot {
@@ -130,6 +144,7 @@ struct NativeFloatPanelSnapshot {
   bool inspector_multi_edit_absolute{true};
   eastl::vector<NativeFloatBehaviourRow> inspector_behaviours;
   eastl::vector<eastl::string> inspector_behaviour_type_choices;
+  eastl::vector<eastl::string> inspector_behaviour_clip_name_choices;
   bool inspector_behaviours_expanded{true};
   eastl::vector<NativeFloatSkeletonModifierRow> inspector_skeleton_modifiers;
   eastl::vector<eastl::string> inspector_skeleton_modifier_type_choices;
@@ -140,6 +155,21 @@ struct NativeFloatPanelSnapshot {
   float inspector_camera_far{1000.0f};
   bool inspector_camera_is_main{false};
   bool inspector_camera_expanded{true};
+  bool inspector_has_light{false};
+  int inspector_light_type{0};
+  float inspector_light_color_r{1.0f};
+  float inspector_light_color_g{1.0f};
+  float inspector_light_color_b{1.0f};
+  float inspector_light_intensity{1.0f};
+  bool inspector_light_enabled{true};
+  int inspector_light_contribution{0};
+  float inspector_light_range{10.0f};
+  float inspector_light_inner_cone{0.0f};
+  float inspector_light_outer_cone{45.0f};
+  float inspector_light_width{1.0f};
+  float inspector_light_height{1.0f};
+  eastl::string inspector_light_linking_text;
+  bool inspector_light_expanded{true};
   bool inspector_has_animation_player{false};
   eastl::vector<NativeFloatAnimationClipRow> inspector_animation_clips;
   bool inspector_animation_player_expanded{true};
@@ -152,27 +182,32 @@ struct NativeFloatPanelSnapshot {
   eastl::string inspector_asset_guid;
   eastl::string inspector_asset_type;
   eastl::string inspector_asset_intermediate_path;
-  float light_dir_x{0.45f};
-  float light_dir_y{0.7f};
-  float light_dir_z{0.55f};
-  float light_color_r{1.0f};
-  float light_color_g{1.0f};
-  float light_color_b{1.0f};
-  float ambient_r{0.15f};
-  float ambient_g{0.15f};
-  float ambient_b{0.15f};
-  float diffuse_r{1.0f};
-  float diffuse_g{1.0f};
-  float diffuse_b{1.0f};
-  float specular_r{0.4f};
-  float specular_g{0.4f};
-  float specular_b{0.4f};
-  float shininess{32.0f};
-  bool shading_unlit{false};
-  bool ssao_enabled{true};
-  float ssao_radius{0.45f};
-  float ssao_bias{0.025f};
-  float ssao_strength{0.85f};
+  bool mesh_material_section_visible{false};
+  bool mesh_material_unlit{false};
+  float mesh_base_color_r{1.0f};
+  float mesh_base_color_g{1.0f};
+  float mesh_base_color_b{1.0f};
+  float mesh_base_color_a{1.0f};
+  float mesh_metallic{0.0f};
+  float mesh_roughness{1.0f};
+  float mesh_ambient_r{0.0f};
+  float mesh_ambient_g{0.0f};
+  float mesh_ambient_b{0.0f};
+  float mesh_diffuse_r{1.0f};
+  float mesh_diffuse_g{1.0f};
+  float mesh_diffuse_b{1.0f};
+  float mesh_specular_r{0.4f};
+  float mesh_specular_g{0.4f};
+  float mesh_specular_b{0.4f};
+  float mesh_shininess{32.0f};
+  eastl::string mesh_slot_base_color_name;
+  bool mesh_slot_base_color_assigned{false};
+  eastl::string mesh_slot_metallic_name;
+  bool mesh_slot_metallic_assigned{false};
+  eastl::string mesh_slot_normal_name;
+  bool mesh_slot_normal_assigned{false};
+  eastl::string mesh_slot_occlusion_name;
+  bool mesh_slot_occlusion_assigned{false};
   eastl::vector<NativeFloatBrowserTreeRow> browser_tree_rows;
   eastl::vector<NativeFloatBrowserGridRow> browser_grid_rows;
   eastl::vector<NativeFloatBrowserPathSegment> browser_path_segments;
@@ -186,6 +221,11 @@ struct NativeFloatPanelSnapshot {
   bool browser_details_view{false};
   int browser_sort_column{0};
   bool browser_sort_ascending{true};
+  eastl::vector<NativeFloatHistoryRow> history_rows;
+  bool history_filter_scene{true};
+  bool history_filter_global{true};
+  eastl::string browser_inline_rename_path;
+  eastl::string browser_inline_rename_buffer;
 };
 
 class DockFloatingWindowHost final {
@@ -209,7 +249,18 @@ class DockFloatingWindowHost final {
     std::function<void(float x, float y)> on_tab_moved;
     std::function<void(float x, float y)> on_tab_released;
     std::function<void(int entity_id)> on_hierarchy_entity_selected;
+    std::function<void(int entity_id)> on_hierarchy_entity_context_selected;
     std::function<void(int entity_id)> on_hierarchy_entity_toggle;
+    std::function<void(int entity_id, const slint::SharedString& kind)> on_hierarchy_create_requested;
+    std::function<void(int entity_id)> on_hierarchy_delete_requested;
+    std::function<void(int entity_id, float mouse_x, float row_width)> on_hierarchy_icon_pressed;
+    std::function<void()> on_inspector_activated;
+    std::function<void(bool)> on_mesh_material_unlit_toggled;
+    std::function<void(int, float, float, float, float)> on_mesh_material_scalar_committed;
+    std::function<void()> on_mesh_material_reset_requested;
+    std::function<void(int)> on_mesh_slot_pick_requested;
+    std::function<void(int)> on_mesh_slot_clear_requested;
+    std::function<void(int)> on_mesh_slot_drop_requested;
     std::function<void()> on_inspector_transform_edited;
     std::function<void(int, const slint::SharedString&)> on_inspector_field_text_committed;
     std::function<void(int, bool)> on_inspector_field_focus_changed;
@@ -228,17 +279,25 @@ class DockFloatingWindowHost final {
     std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
         on_inspector_commit_skeleton_modifier_field;
     std::function<void()> on_inspector_camera_edited;
+    std::function<void()> on_inspector_light_edited;
     std::function<void(const slint::SharedString&)> on_inspector_add_unique_attachment;
     std::function<void(const slint::SharedString&)> on_inspector_remove_unique_attachment;
     std::function<void()> on_inspector_add_clip;
     std::function<void(int)> on_inspector_remove_clip;
     std::function<void(int, const slint::SharedString&, const slint::SharedString&)>
         on_inspector_commit_animation_clip;
+    std::function<void(int)> on_inspector_open_clip_picker;
+    std::function<void(const slint::SharedString&, const slint::SharedString&,
+                       const slint::SharedString&)>
+        on_inspector_pick_clip_choice;
     std::function<void(const slint::SharedString&)> on_browser_folder_selected;
     std::function<void(const slint::SharedString&)> on_browser_folder_toggle;
     std::function<void()> on_browser_refresh_requested;
     std::function<void()> on_browser_import_requested;
-    std::function<void()> on_browser_delete_requested;
+    std::function<void(const slint::SharedString&)> on_browser_new_scene_requested;
+    std::function<void(const slint::SharedString&)> on_browser_new_folder_requested;
+    std::function<void(const slint::SharedString&)> on_browser_rename_requested;
+    std::function<void(const slint::SharedString&)> on_browser_delete_requested;
     std::function<void(const slint::SharedString&, bool, bool)> on_browser_grid_select;
     std::function<void(const slint::SharedString&, float, float)> on_browser_item_press;
     std::function<void(const slint::SharedString&, float, float)> on_browser_item_move;
@@ -246,6 +305,10 @@ class DockFloatingWindowHost final {
     std::function<void(const slint::SharedString&)> on_browser_search_changed;
     std::function<void(const slint::SharedString&)> on_browser_path_segment_clicked;
     std::function<void(int)> on_browser_sort_clicked;
+    std::function<void(bool, bool)> on_history_filter_changed;
+    std::function<void(int, int)> on_history_entry_clicked;
+    std::function<void(const slint::SharedString&)> on_browser_inline_rename_commit;
+    std::function<void()> on_browser_inline_rename_cancel;
   };
 
   void setCallbacks(Callbacks callbacks) { m_callbacks = eastl::move(callbacks); }

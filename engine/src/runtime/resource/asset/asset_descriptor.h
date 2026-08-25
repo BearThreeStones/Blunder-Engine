@@ -1,6 +1,10 @@
 #pragma once
 
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
+
 #include "EASTL/string.h"
+#include "EASTL/utility.h"
 #include "EASTL/vector.h"
 
 namespace Blunder {
@@ -16,15 +20,107 @@ struct TextureImportSettings {
   bool generate_mips{false};
 };
 
+struct OptionalOverrideFloat {
+  bool present{false};
+  float value{0.0f};
+
+  bool operator==(const OptionalOverrideFloat& other) const {
+    return present == other.present && (!present || value == other.value);
+  }
+};
+
+struct OptionalOverrideBool {
+  bool present{false};
+  bool value{false};
+
+  bool operator==(const OptionalOverrideBool& other) const {
+    return present == other.present && (!present || value == other.value);
+  }
+};
+
+struct OptionalOverrideVec3 {
+  bool present{false};
+  glm::vec3 value{0.0f};
+
+  bool operator==(const OptionalOverrideVec3& other) const {
+    return present == other.present && (!present || value == other.value);
+  }
+};
+
+struct OptionalOverrideVec4 {
+  bool present{false};
+  glm::vec4 value{1.0f};
+
+  bool operator==(const OptionalOverrideVec4& other) const {
+    return present == other.present && (!present || value == other.value);
+  }
+};
+
+/// present + empty guid = suppress Import texture. Absent = keep Import.
+struct OptionalOverrideSlot {
+  bool present{false};
+  eastl::string guid;
+
+  bool operator==(const OptionalOverrideSlot& other) const {
+    return present == other.present && (!present || guid == other.guid);
+  }
+};
+
+struct MeshMaterialOverride {
+  OptionalOverrideBool unlit;
+  OptionalOverrideVec4 base_color;
+  OptionalOverrideFloat metallic;
+  OptionalOverrideFloat roughness;
+  OptionalOverrideVec3 ambient;
+  OptionalOverrideVec3 diffuse;
+  OptionalOverrideVec3 specular;
+  OptionalOverrideFloat shininess;
+  OptionalOverrideSlot base_color_texture;
+  OptionalOverrideSlot metallic_roughness_texture;
+  OptionalOverrideSlot normal_texture;
+  OptionalOverrideSlot occlusion_texture;
+
+  bool empty() const {
+    return !unlit.present && !base_color.present && !metallic.present &&
+           !roughness.present && !ambient.present && !diffuse.present &&
+           !specular.present && !shininess.present &&
+           !base_color_texture.present &&
+           !metallic_roughness_texture.present && !normal_texture.present &&
+           !occlusion_texture.present;
+  }
+
+  bool operator==(const MeshMaterialOverride& other) const {
+    return unlit == other.unlit && base_color == other.base_color &&
+           metallic == other.metallic && roughness == other.roughness &&
+           ambient == other.ambient && diffuse == other.diffuse &&
+           specular == other.specular && shininess == other.shininess &&
+           base_color_texture == other.base_color_texture &&
+           metallic_roughness_texture == other.metallic_roughness_texture &&
+           normal_texture == other.normal_texture &&
+           occlusion_texture == other.occlusion_texture;
+  }
+};
+
+struct MeshAssetDescriptor;
+
+/// `texture_guids` = Import-discovered ∪ non-empty override slot GUIDs.
+void rebuildMeshTextureGuids(MeshAssetDescriptor& descriptor);
+
 struct MeshAssetDescriptor {
   eastl::string guid;
   eastl::string source;
   eastl::string archived_source;
-  /// Optional explicit Texture Asset GUID references (Mesh→Texture graph edges).
+  /// Graph edges: Import-discovered ∪ non-empty override slots.
   eastl::vector<eastl::string> texture_guids;
+  /// Import-discovered Texture GUIDs before override union. Empty on legacy
+  /// descriptors: treat `texture_guids` as Import-only until first override write.
+  eastl::vector<eastl::string> import_texture_guids;
   /// Deprecated packaging list (ADR 0028). Ignored on Import; cleared by migration.
   eastl::vector<eastl::string> companion_animation_sources;
   MeshImportSettings import{};
+  MeshMaterialOverride material_override{};
+  /// Unknown root YAML keys preserved on round-trip (Dump of each value).
+  eastl::vector<eastl::pair<eastl::string, eastl::string>> unknown_root_fields;
 };
 
 struct TextureAssetDescriptor {

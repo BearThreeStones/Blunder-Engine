@@ -50,6 +50,14 @@ fs::path queryExecutablePath() {
 #endif
 }
 
+fs::path stripTrailingSeparator(const fs::path& path) {
+  fs::path normalized = path.lexically_normal();
+  if (!normalized.empty() && normalized.filename().empty()) {
+    normalized = normalized.parent_path();
+  }
+  return normalized;
+}
+
 }  // namespace
 
 void FileSystem::initialize(const FileSystemInitInfo& info) {
@@ -337,6 +345,51 @@ bool FileSystem::ensureParentDirectory(const fs::path& path) const {
   return true;
 }
 
+bool FileSystem::createDirectory(const fs::path& path) const {
+  std::error_code ec;
+  if (fs::exists(path, ec)) {
+    return false;
+  }
+  fs::create_directories(path, ec);
+  if (ec) {
+    LOG_ERROR("[FileSystem] createDirectory failed: {} ({})",
+              path.generic_string(), ec.message());
+    return false;
+  }
+  return fs::is_directory(path, ec);
+}
+
+bool FileSystem::isEmptyDirectory(const fs::path& path) const {
+  std::error_code ec;
+  return fs::is_directory(path, ec) && fs::is_empty(path, ec);
+}
+
+bool FileSystem::removeEmptyDirectory(const fs::path& path) const {
+  std::error_code ec;
+  if (!fs::is_directory(path, ec) || fs::is_empty(path, ec) == false) {
+    return false;
+  }
+  if (!fs::remove(path, ec) || ec) {
+    LOG_ERROR("[FileSystem] removeEmptyDirectory failed: {} ({})",
+              path.generic_string(), ec.message());
+    return false;
+  }
+  return true;
+}
+
+bool FileSystem::removeFile(const fs::path& path) const {
+  std::error_code ec;
+  if (!fs::is_regular_file(path, ec)) {
+    return false;
+  }
+  if (!fs::remove(path, ec) || ec) {
+    LOG_ERROR("[FileSystem] removeFile failed: {} ({})", path.generic_string(),
+              ec.message());
+    return false;
+  }
+  return true;
+}
+
 bool FileSystem::copyFile(const fs::path& src, const fs::path& dst,
                           bool overwrite) const {
   std::error_code ec;
@@ -367,24 +420,42 @@ bool FileSystem::copyFile(const fs::path& src, const fs::path& dst,
 
 bool FileSystem::movePath(const fs::path& src, const fs::path& dst) const {
   std::error_code ec;
-  if (!fs::exists(src, ec)) {
-    LOG_ERROR("[FileSystem] movePath source missing: {}", src.generic_string());
+  const fs::path source = stripTrailingSeparator(src);
+  const fs::path dest = stripTrailingSeparator(dst);
+  if (!fs::exists(source, ec)) {
+    LOG_ERROR("[FileSystem] movePath source missing: {}",
+              source.generic_string());
     return false;
   }
-  if (!ensureParentDirectory(dst)) {
+  if (!ensureParentDirectory(dest)) {
     return false;
   }
-  fs::rename(src, dst, ec);
+  fs::rename(source, dest, ec);
   if (!ec) {
     return true;
   }
-  if (!copyFile(src, dst, false)) {
+  if (fs::is_directory(source, ec)) {
+    fs::copy(source, dest, fs::copy_options::recursive, ec);
+    if (ec) {
+      LOG_ERROR("[FileSystem] movePath directory copy failed {} -> {} ({})",
+                source.generic_string(), dest.generic_string(), ec.message());
+      return false;
+    }
+    fs::remove_all(source, ec);
+    if (ec) {
+      LOG_ERROR("[FileSystem] movePath remove_all after copy failed: {} ({})",
+                source.generic_string(), ec.message());
+      return false;
+    }
+    return true;
+  }
+  if (!copyFile(source, dest, false)) {
     return false;
   }
-  fs::remove(src, ec);
+  fs::remove(source, ec);
   if (ec) {
     LOG_ERROR("[FileSystem] movePath remove after copy failed: {} ({})",
-              src.generic_string(), ec.message());
+              source.generic_string(), ec.message());
     return false;
   }
   return true;

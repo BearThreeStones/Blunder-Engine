@@ -82,6 +82,7 @@ void collectDrawsFromInstance(AssetManager& asset_manager,
       draw.material = renderer.material ? renderer.material
                                         : renderer.mesh->getMaterialAsset();
       draw.model = instance.getWorldMatrix(entity_id);
+      draw.entity_id = entity_id;
       out.push_back(eastl::move(draw));
       return;
     }
@@ -94,11 +95,13 @@ void collectDrawsFromInstance(AssetManager& asset_manager,
       draw.material = renderer.material ? renderer.material
                                         : renderer.mesh->getMaterialAsset();
       draw.model = world;
+      draw.entity_id = entity_id;
       out.push_back(eastl::move(draw));
       return;
     }
     for (MeshPreviewSubmeshDraw& part : parts) {
       part.model = world * part.model;
+      part.entity_id = entity_id;
       out.push_back(eastl::move(part));
     }
   });
@@ -195,7 +198,7 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
   const MeshPreviewStudioLights lights = defaultMeshPreviewStudioLights();
 
   if (!m_backend->renderSubmeshDraws(draws, framing, lights, request.width,
-                                     request.height, result.rgba)) {
+                                     request.height, result.rgba, root.get())) {
     result.error = "GPU scene thumbnail render failed";
     result.rgba.clear();
     return result;

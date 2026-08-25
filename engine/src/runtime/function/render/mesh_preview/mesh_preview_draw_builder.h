@@ -6,6 +6,8 @@
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
 
+#include "runtime/function/scene/entity_id.h"
+
 namespace Blunder {
 
 class AssetManager;
@@ -18,6 +20,7 @@ struct MeshPreviewSubmeshDraw {
   eastl::shared_ptr<MaterialAsset> material;
   /// Engine-space node / entity world matrix (identity when unavailable).
   glm::mat4 model{1.0f};
+  EntityId entity_id{k_invalid_entity_id};
 };
 
 /// Collect all glTF primitives for a Mesh descriptor or glTF path. Cooked Final

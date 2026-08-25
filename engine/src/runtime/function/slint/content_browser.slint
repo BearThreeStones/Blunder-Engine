@@ -1,4 +1,4 @@
-import { Button, VerticalBox, HorizontalBox, LineEdit, Slider } from "std-widgets.slint";
+import { EditorTheme, EditorSlider } from "editor_controls.slint";
 import {
     EditorIconSearch,
     EditorIconReload,
@@ -40,6 +40,61 @@ export struct BrowserPathSegment {
     name: string,
 }
 
+component BrowserContextMenu {
+    in property <string> target-path: "";
+    in property <bool> show-new: false;
+    in property <bool> show-scene-actions: false;
+    in property <bool> show-rename: false;
+    in property <bool> show-delete: false;
+    in property <bool> enabled: true;
+    property <bool> show-separator:
+        (root.show-new || root.show-scene-actions)
+        && (root.show-rename || root.show-delete);
+
+    callback new-folder(string);
+    callback new-scene(string);
+    callback open-scene(string);
+    callback duplicate-scene(string);
+    callback rename(string);
+    callback delete-item(string);
+
+    width: 100%;
+    height: 100%;
+
+    ContextMenuArea {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        Menu {
+            if root.show-new: MenuItem {
+                title: "New Folder";
+                activated => { root.new-folder(root.target-path); }
+            }
+            if root.show-new: MenuItem {
+                title: "New Scene";
+                activated => { root.new-scene(root.target-path); }
+            }
+            if root.show-scene-actions: MenuItem {
+                title: "Open";
+                activated => { root.open-scene(root.target-path); }
+            }
+            if root.show-scene-actions: MenuItem {
+                title: "Duplicate";
+                activated => { root.duplicate-scene(root.target-path); }
+            }
+            if root.show-separator: MenuSeparator {}
+            if root.show-rename: MenuItem {
+                title: "Rename";
+                activated => { root.rename(root.target-path); }
+            }
+            if root.show-delete: MenuItem {
+                title: "Delete";
+                activated => { root.delete-item(root.target-path); }
+            }
+        }
+    }
+}
+
 export component ContentBrowser {
     // --- Data from C++ ---
     in-out property <[BrowserTreeRow]> tree-rows: [];
@@ -60,22 +115,20 @@ export component ContentBrowser {
     in-out property <bool> details-view: false;
     in-out property <length> tree-pane-width: 200px;
     in property <bool> layout-drag-active: false;
-    property <bool> context-menu-visible: false;
-    property <length> context-menu-x: 0px;
-    property <length> context-menu-y: 0px;
-    property <string> context-menu-path: "";
-    property <bool> context-menu-is-scene: false;
-    property <bool> context-menu-is-empty: false;
-    property <bool> context-menu-can-delete: false;
     property <bool> view-menu-visible: false;
+    property <bool> context-menus-enabled:
+        !root.drag-active && !root.layout-drag-active
+        && root.inline-rename-path == "";
 
     // --- Callbacks ---
     callback folder-selected(string);
     callback folder-toggle(string);
     callback refresh-requested();
     callback import-requested();
-    callback new-scene-requested();
-    callback delete-requested();
+    callback new-scene-requested(string);
+    callback new-folder-requested(string);
+    callback rename-requested(string);
+    callback delete-requested(string);
     callback duplicate-scene-requested(string);
     callback open-scene-requested(string);
     /// Grid click selection: ctrl = toggle, shift = range from anchor.
@@ -87,6 +140,10 @@ export component ContentBrowser {
     callback search-changed(string);
     callback path-segment-clicked(string);
     callback sort-clicked(int);
+    in-out property <string> inline-rename-path: "";
+    in-out property <string> inline-rename-buffer: "";
+    callback inline-rename-commit(string);
+    callback inline-rename-cancel();
 
     // --- Geometry output for C++ hit-testing ---
     out property <length> browser-origin-x: browser-root.absolute-position.x;
@@ -127,8 +184,8 @@ export component ContentBrowser {
     browser-root := Rectangle {
         width: 100%;
         height: 100%;
-        background: #252525;
-        border-color: #1a1a1a;
+        background: EditorTheme.window;
+        border-color: EditorTheme.hairline;
         border-width: 1px;
         horizontal-stretch: 1;
         vertical-stretch: 1;
@@ -141,7 +198,7 @@ export component ContentBrowser {
             // ═══════════════ Toolbar ═══════════════
             Rectangle {
                 height: 34px;
-                background: #2d2d2d;
+                background: EditorTheme.toolbar;
 
                 HorizontalLayout {
                     padding: 5px;
@@ -152,9 +209,9 @@ export component ContentBrowser {
                     // Search box
                     Rectangle {
                         horizontal-stretch: 1;
-                        background: #1a1a1a;
-                        border-radius: 3px;
-                        border-color: #3a3a3a;
+                        background: EditorTheme.field;
+                        border-radius: EditorTheme.radius-ctl;
+                        border-color: EditorTheme.hairline;
                         border-width: 1px;
 
                         HorizontalLayout {
@@ -167,14 +224,14 @@ export component ContentBrowser {
                                 alignment: center;
                                 EditorIconSearch {
                                     icon-size: 12px;
-                                    icon-color: #808080;
+                                    icon-color: EditorTheme.icon;
                                 }
                             }
 
                             search-input := TextInput {
                                 horizontal-stretch: 1;
                                 font-size: 11px;
-                                color: #d8d8d8;
+                                color: EditorTheme.default-text;
                                 vertical-alignment: center;
 
                                 accepted => {
@@ -191,14 +248,14 @@ export component ContentBrowser {
                     refresh-btn := Rectangle {
                         width: 26px;
                         height: 24px;
-                        background: refresh-touch.has-hover ? #444444 : #353535;
-                        border-radius: 3px;
-                        border-color: #4a4a4a;
+                        background: refresh-touch.has-hover ? EditorTheme.button-hover : EditorTheme.button;
+                        border-radius: EditorTheme.radius-ctl;
+                        border-color: EditorTheme.hairline;
                         border-width: 1px;
 
                         EditorIconReload {
                             icon-size: 14px;
-                            icon-color: #b0b0b0;
+                            icon-color: EditorTheme.icon;
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                         }
@@ -217,14 +274,14 @@ export component ContentBrowser {
                     import-btn := Rectangle {
                         width: 68px;
                         height: 24px;
-                        background: import-touch.has-hover ? #444444 : #353535;
-                        border-radius: 3px;
-                        border-color: #4a4a4a;
+                        background: import-touch.has-hover ? EditorTheme.button-hover : EditorTheme.button;
+                        border-radius: EditorTheme.radius-ctl;
+                        border-color: EditorTheme.hairline;
                         border-width: 1px;
 
                         Text {
                             text: "+ Import";
-                            color: #d0d0d0;
+                            color: EditorTheme.button-text;
                             font-size: 11px;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -240,18 +297,45 @@ export component ContentBrowser {
                         }
                     }
 
+                    // New Folder
+                    new-folder-btn := Rectangle {
+                        width: 88px;
+                        height: 24px;
+                        background: new-folder-touch.has-hover ? EditorTheme.button-hover : EditorTheme.button;
+                        border-radius: EditorTheme.radius-ctl;
+                        border-color: EditorTheme.hairline;
+                        border-width: 1px;
+
+                        Text {
+                            text: "+ New Folder";
+                            color: EditorTheme.button-text;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        new-folder-touch := TouchArea {
+                            pointer-event(event) => {
+                                if (event.button == PointerEventButton.left
+                                    && event.kind == PointerEventKind.down) {
+                                    root.new-folder-requested(root.selected-folder-path);
+                                }
+                            }
+                        }
+                    }
+
                     // New Scene Asset
                     new-scene-btn := Rectangle {
                         width: 88px;
                         height: 24px;
-                        background: new-scene-touch.has-hover ? #444444 : #353535;
-                        border-radius: 3px;
-                        border-color: #4a4a4a;
+                        background: new-scene-touch.has-hover ? EditorTheme.button-hover : EditorTheme.button;
+                        border-radius: EditorTheme.radius-ctl;
+                        border-color: EditorTheme.hairline;
                         border-width: 1px;
 
                         Text {
                             text: "+ New Scene";
-                            color: #d0d0d0;
+                            color: EditorTheme.button-text;
                             font-size: 11px;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -261,7 +345,7 @@ export component ContentBrowser {
                             pointer-event(event) => {
                                 if (event.button == PointerEventButton.left
                                     && event.kind == PointerEventKind.down) {
-                                    root.new-scene-requested();
+                                    root.new-scene-requested(root.selected-folder-path);
                                 }
                             }
                         }
@@ -271,15 +355,15 @@ export component ContentBrowser {
                     delete-btn := Rectangle {
                         width: 68px;
                         height: 24px;
-                        background: delete-touch.has-hover ? #553333 : #353535;
-                        border-radius: 3px;
-                        border-color: #4a4a4a;
+                        background: delete-touch.has-hover ? EditorTheme.button-hover : EditorTheme.button;
+                        border-radius: EditorTheme.radius-ctl;
+                        border-color: EditorTheme.hairline;
                         border-width: 1px;
                         opacity: root.selected-grid-path == "" ? 0.45 : 1.0;
 
                         Text {
                             text: "Delete";
-                            color: #d0d0d0;
+                            color: EditorTheme.button-text;
                             font-size: 11px;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -290,7 +374,7 @@ export component ContentBrowser {
                                 if (event.button == PointerEventButton.left
                                     && event.kind == PointerEventKind.down
                                     && root.selected-grid-path != "") {
-                                    root.delete-requested();
+                                    root.delete-requested("");
                                 }
                             }
                         }
@@ -299,12 +383,12 @@ export component ContentBrowser {
             }
 
             // Toolbar separator
-            Rectangle { height: 1px; background: #1a1a1a; }
+            Rectangle { height: 1px; background: EditorTheme.hairline; }
 
             // ═══════════════ Breadcrumb Path Bar ═══════════════
             Rectangle {
                 height: 24px;
-                background: #2a2a2a;
+                background: EditorTheme.toolbar;
 
                 HorizontalLayout {
                     padding-left: 10px;
@@ -320,14 +404,14 @@ export component ContentBrowser {
                             alignment: center;
                             EditorIconTreeArrowRight {
                                 icon-size: 10px;
-                                icon-color: #505050;
+                                icon-color: EditorTheme.icon;
                             }
                         }
 
                         path-seg-touch := TouchArea {
 
                             Rectangle {
-                                background: path-seg-touch.has-hover ? #383838 : #00000000;
+                                background: path-seg-touch.has-hover ? EditorTheme.tab-hover : #00000000;
                                 border-radius: 2px;
 
                                 HorizontalLayout {
@@ -336,7 +420,7 @@ export component ContentBrowser {
 
                                     Text {
                                         text: seg.name;
-                                        color: path-seg-touch.has-hover ? #e0e0e0 : #909090;
+                                        color: path-seg-touch.has-hover ? EditorTheme.default-text : EditorTheme.muted;
                                         font-size: 11px;
                                         vertical-alignment: center;
                                     }
@@ -355,7 +439,7 @@ export component ContentBrowser {
             }
 
             // Path bar separator
-            Rectangle { height: 1px; background: #1a1a1a; }
+            Rectangle { height: 1px; background: EditorTheme.hairline; }
 
             // ═══════════════ Main Body: Tree (left) + Grid (right) ═══════════════
             body := HorizontalLayout {
@@ -365,7 +449,7 @@ export component ContentBrowser {
                 // ─── Left: Folder Tree ───
                 tree-panel := Rectangle {
                     width: root.tree-pane-width;
-                    background: #252525;
+                    background: EditorTheme.field;
                     clip: true;
 
                     tree-scroll := Flickable {
@@ -374,6 +458,16 @@ export component ContentBrowser {
                         interactive: true;
                         viewport-width: parent.width;
                         viewport-height: tree-list.preferred-height;
+
+                        BrowserContextMenu {
+                            width: parent.width;
+                            height: Math.max(parent.height, tree-list.preferred-height);
+                            target-path: root.selected-folder-path;
+                            show-new: true;
+                            enabled: root.context-menus-enabled;
+                            new-folder(path) => { root.new-folder-requested(path); }
+                            new-scene(path) => { root.new-scene-requested(path); }
+                        }
 
                         tree-list := VerticalLayout {
                             horizontal-stretch: 1;
@@ -385,9 +479,9 @@ export component ContentBrowser {
                                 height: 22px;
                                 background:
                                     row.path == root.selected-folder-path
-                                        ? #2c5db8
+                                        ? EditorTheme.accent-sel-fill
                                     : tree-name-touch.has-hover || tree-arrow-touch.has-hover
-                                        ? #333333
+                                        ? EditorTheme.tab-hover
                                     : #00000000;
 
                                 HorizontalLayout {
@@ -403,13 +497,13 @@ export component ContentBrowser {
 
                                         if row.has-children && row.expanded: EditorIconTreeArrowDown {
                                             icon-size: 10px;
-                                            icon-color: #707070;
+                                            icon-color: EditorTheme.icon;
                                             x: (parent.width - self.width) / 2;
                                             y: (parent.height - self.height) / 2;
                                         }
                                         if row.has-children && !row.expanded: EditorIconTreeArrowRight {
                                             icon-size: 10px;
-                                            icon-color: #707070;
+                                            icon-color: EditorTheme.icon;
                                             x: (parent.width - self.width) / 2;
                                             y: (parent.height - self.height) / 2;
                                         }
@@ -429,7 +523,7 @@ export component ContentBrowser {
                                         alignment: center;
                                         EditorIconFolder {
                                             icon-size: 12px;
-                                            icon-color: #d0d0d0;
+                                            icon-color: EditorTheme.icon;
                                         }
                                     }
 
@@ -441,7 +535,7 @@ export component ContentBrowser {
                                         Text {
                                             text: row.name;
                                             color: row.path == root.selected-folder-path
-                                                ? #ffffff : #d0d0d0;
+                                                ? EditorTheme.accent-sel-text : EditorTheme.default-text;
                                             font-size: 11px;
                                             vertical-alignment: center;
                                             horizontal-stretch: 1;
@@ -456,6 +550,22 @@ export component ContentBrowser {
                                         }
                                     }
                                 }
+
+                                BrowserContextMenu {
+                                    x: 0px;
+                                    y: 0px;
+                                    width: 100%;
+                                    height: 100%;
+                                    target-path: row.path;
+                                    show-new: true;
+                                    show-rename: row.path != "assets" && row.path != "assets/";
+                                    show-delete: row.path != "assets" && row.path != "assets/";
+                                    enabled: root.context-menus-enabled;
+                                    new-folder(path) => { root.new-folder-requested(path); }
+                                    new-scene(path) => { root.new-scene-requested(path); }
+                                    rename(path) => { root.rename-requested(path); }
+                                    delete-item(path) => { root.delete-requested(path); }
+                                }
                             }
                         }
                     }
@@ -464,14 +574,14 @@ export component ContentBrowser {
                 // Vertical divider (tree ↔ grid)
                 Rectangle {
                     width: 3px;
-                    background: #1a1a1a;
+                    background: EditorTheme.hairline;
                 }
 
                 // ─── Right: Asset Grid ───
                 grid-area := Rectangle {
                     horizontal-stretch: 1;
                     vertical-stretch: 1;
-                    background: #2a2a2a;
+                    background: EditorTheme.toolbar;
                     clip: true;
 
                     VerticalLayout {
@@ -481,7 +591,7 @@ export component ContentBrowser {
 
                         if root.details-view: Rectangle {
                             height: root.details-row-h;
-                            background: #303030;
+                            background: EditorTheme.toolbar;
 
                             HorizontalLayout {
                                 padding-left: 6px;
@@ -498,7 +608,7 @@ export component ContentBrowser {
                                         text: root.sort-column == 0
                                             ? (root.sort-ascending ? "Name ▲" : "Name ▼")
                                             : "Name";
-                                        color: #a0a0a0;
+                                        color: EditorTheme.muted;
                                         font-size: 10px;
                                         vertical-alignment: center;
                                         overflow: elide;
@@ -511,7 +621,7 @@ export component ContentBrowser {
                                         text: root.sort-column == 1
                                             ? (root.sort-ascending ? "Type ▲" : "Type ▼")
                                             : "Type";
-                                        color: #a0a0a0;
+                                        color: EditorTheme.muted;
                                         font-size: 10px;
                                         vertical-alignment: center;
                                     }
@@ -523,7 +633,7 @@ export component ContentBrowser {
                                         text: root.sort-column == 2
                                             ? (root.sort-ascending ? "Size ▲" : "Size ▼")
                                             : "Size";
-                                        color: #a0a0a0;
+                                        color: EditorTheme.muted;
                                         font-size: 10px;
                                         vertical-alignment: center;
                                         horizontal-alignment: right;
@@ -536,7 +646,7 @@ export component ContentBrowser {
                                         text: root.sort-column == 3
                                             ? (root.sort-ascending ? "Date modified ▲" : "Date modified ▼")
                                             : "Date modified";
-                                        color: #a0a0a0;
+                                        color: EditorTheme.muted;
                                         font-size: 10px;
                                         vertical-alignment: center;
                                         horizontal-alignment: right;
@@ -549,33 +659,16 @@ export component ContentBrowser {
                             vertical-stretch: 1;
                             clip: true;
 
-                            grid-empty-touch := TouchArea {
-                                width: 100%;
-                                height: 100%;
-                                pointer-event(event) => {
-                                    if (event.button == PointerEventButton.right
-                                        && event.kind == PointerEventKind.down) {
-                                        root.context-menu-visible = true;
-                                        root.context-menu-x = self.absolute-position.x + self.mouse-x;
-                                        root.context-menu-y = self.absolute-position.y + self.mouse-y;
-                                        root.context-menu-path = "";
-                                        root.context-menu-is-scene = false;
-                                        root.context-menu-is-empty = true;
-                                        root.context-menu-can-delete = false;
-                                    }
-                                }
-                            }
-
                             if root.drag-active: Rectangle {
                                 z: 10;
                                 height: 26px;
-                                background: #1a3a5acc;
+                                background: EditorTheme.accent-sel-fill;
 
                                 Text {
                                     text: root.viewport-drop-active
                                         ? "Release over viewport to place"
                                         : "Dragging: " + root.drag-source-path;
-                                    color: #80c0ff;
+                                    color: EditorTheme.accent-sel-text;
                                     font-size: 10px;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
@@ -591,6 +684,18 @@ export component ContentBrowser {
                                     Math.ceil(root.grid-rows.length / Math.max(1, root.grid-cols))
                                     * root.cell-total-h + 8px);
 
+                                BrowserContextMenu {
+                                    width: parent.width;
+                                    height: Math.max(parent.height,
+                                        Math.ceil(root.grid-rows.length / Math.max(1, root.grid-cols))
+                                        * root.cell-total-h + 8px);
+                                    target-path: root.selected-folder-path;
+                                    show-new: true;
+                                    enabled: root.context-menus-enabled;
+                                    new-folder(path) => { root.new-folder-requested(path); }
+                                    new-scene(path) => { root.new-scene-requested(path); }
+                                }
+
                                 for tile[index] in root.grid-rows: Rectangle {
                                     x: root.details-view ? 0px
                                         : (Math.mod(index, Math.max(1, root.grid-cols))
@@ -603,15 +708,17 @@ export component ContentBrowser {
                                     width: root.details-view ? parent.width : root.thumb-size;
                                     height: root.details-view ? root.details-row-h
                                         : (root.thumb-size + 24px);
-                                    border-radius: root.details-view ? 0px : 4px;
+                                    border-radius: root.details-view ? 0px : EditorTheme.radius-surface;
+                                    border-width: (!root.details-view && (tile.selected || tile.path == root.selected-grid-path)) ? 2px : 0px;
+                                    border-color: EditorTheme.accent;
                                     background:
                                         tile.selected || tile.path == root.selected-grid-path
-                                            ? #3a4a5a
+                                            ? EditorTheme.accent-sel-fill
                                         : tile.path == root.drag-source-path
-                                            ? #3a3a5a
+                                            ? EditorTheme.accent-soft
                                         : grid-tile-touch.has-hover
-                                            ? #404040
-                                        : (root.details-view ? #00000000 : #333333);
+                                            ? EditorTheme.tab-hover
+                                        : (root.details-view ? #00000000 : EditorTheme.toolbar);
 
                                     if !root.details-view: VerticalLayout {
                                         spacing: 2px;
@@ -620,12 +727,12 @@ export component ContentBrowser {
                                         Rectangle {
                                             horizontal-stretch: 1;
                                             vertical-stretch: 1;
-                                            background: tile.is-dir ? #00000000 : #1a1a1a;
-                                            border-radius: 3px;
+                                            background: tile.is-dir ? #00000000 : EditorTheme.field;
+                                            border-radius: EditorTheme.radius-ctl;
 
                                             if tile.is-dir: EditorIconFolder {
                                                 icon-size: root.thumb-size * 0.4;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                                 x: (parent.width - self.width) / 2;
                                                 y: (parent.height - self.height) / 2;
                                             }
@@ -638,13 +745,51 @@ export component ContentBrowser {
                                             }
                                         }
 
-                                        Text {
-                                            text: tile.name;
-                                            color: #c8c8c8;
-                                            font-size: 10px;
-                                            horizontal-alignment: center;
-                                            overflow: elide;
+                                        if tile.path == root.inline-rename-path: Rectangle {
                                             height: 16px;
+                                            background: EditorTheme.field;
+                                            border-radius: 3px;
+                                            border-width: 1px;
+                                            border-color: EditorTheme.accent;
+                                            rename-input := TextInput {
+                                                x: 4px;
+                                                width: parent.width - 8px;
+                                                height: 100%;
+                                                text <=> root.inline-rename-buffer;
+                                                color: EditorTheme.default-text;
+                                                font-size: 10px;
+                                                single-line: true;
+                                                init => { self.focus(); }
+                                                accepted => {
+                                                    root.inline-rename-commit(self.text);
+                                                }
+                                                key-pressed(event) => {
+                                                    if (event.text == Key.Escape) {
+                                                        root.inline-rename-cancel();
+                                                        return accept;
+                                                    }
+                                                    return reject;
+                                                }
+                                            }
+                                        }
+                                        if tile.path != root.inline-rename-path: Rectangle {
+                                            height: 16px;
+                                            Text {
+                                                text: tile.name;
+                                                color: EditorTheme.default-text;
+                                                font-size: 10px;
+                                                horizontal-alignment: center;
+                                                overflow: elide;
+                                                width: 100%;
+                                                height: 100%;
+                                            }
+                                            TouchArea {
+                                                clicked => {
+                                                    if (tile.selected) {
+                                                        root.rename-requested(tile.path);
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -658,41 +803,80 @@ export component ContentBrowser {
                                             alignment: center;
                                             if tile.type-kind == 0: EditorIconFolder {
                                                 icon-size: 16px;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                             }
                                             if tile.type-kind == 1: EditorIconMesh {
                                                 icon-size: 16px;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                             }
                                             if tile.type-kind == 2: EditorIconScene {
                                                 icon-size: 16px;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                             }
                                             if tile.type-kind == 3: EditorIconTexture {
                                                 icon-size: 16px;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                             }
                                             if tile.type-kind == 4: EditorIconAnimation {
                                                 icon-size: 16px;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                             }
                                             if tile.type-kind == 5: EditorIconFile {
                                                 icon-size: 16px;
-                                                icon-color: #d0d0d0;
+                                                icon-color: EditorTheme.icon;
                                             }
                                         }
 
-                                        Text {
-                                            text: tile.name;
-                                            color: #d8d8d8;
-                                            font-size: 11px;
-                                            vertical-alignment: center;
-                                            overflow: elide;
+                                        if tile.path == root.inline-rename-path: Rectangle {
+                                            vertical-stretch: 1;
+                                            background: EditorTheme.field;
+                                            border-radius: 3px;
+                                            border-width: 1px;
+                                            border-color: EditorTheme.accent;
+                                            TextInput {
+                                                x: 4px;
+                                                width: parent.width - 8px;
+                                                height: 100%;
+                                                text <=> root.inline-rename-buffer;
+                                                color: EditorTheme.default-text;
+                                                font-size: 11px;
+                                                single-line: true;
+                                                init => { self.focus(); }
+                                                accepted => {
+                                                    root.inline-rename-commit(self.text);
+                                                }
+                                                key-pressed(event) => {
+                                                    if (event.text == Key.Escape) {
+                                                        root.inline-rename-cancel();
+                                                        return accept;
+                                                    }
+                                                    return reject;
+                                                }
+                                            }
+                                        }
+                                        if tile.path != root.inline-rename-path: Rectangle {
                                             horizontal-stretch: 1;
+                                            vertical-stretch: 1;
+                                            Text {
+                                                text: tile.name;
+                                                color: EditorTheme.default-text;
+                                                font-size: 11px;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                                width: 100%;
+                                                height: 100%;
+                                            }
+                                            TouchArea {
+                                                clicked => {
+                                                    if (tile.selected) {
+                                                        root.rename-requested(tile.path);
+                                                    }
+                                                }
+                                            }
                                         }
                                         Text {
                                             text: tile.type-label;
-                                            color: #909090;
+                                            color: EditorTheme.muted;
                                             font-size: 11px;
                                             vertical-alignment: center;
                                             width: root.details-type-w;
@@ -700,7 +884,7 @@ export component ContentBrowser {
                                         }
                                         Text {
                                             text: tile.size-text;
-                                            color: #909090;
+                                            color: EditorTheme.muted;
                                             font-size: 11px;
                                             vertical-alignment: center;
                                             horizontal-alignment: right;
@@ -709,7 +893,7 @@ export component ContentBrowser {
                                         }
                                         Text {
                                             text: tile.date-text;
-                                            color: #909090;
+                                            color: EditorTheme.muted;
                                             font-size: 11px;
                                             vertical-alignment: center;
                                             horizontal-alignment: right;
@@ -746,18 +930,29 @@ export component ContentBrowser {
                                                 root.item-release(tile.path,
                                                     self.mouse-x / 1px, self.mouse-y / 1px);
                                             }
-                                            if (event.button == PointerEventButton.right
-                                                && event.kind == PointerEventKind.down) {
-                                                root.grid-select(tile.path, false, false);
-                                                root.context-menu-visible = true;
-                                                root.context-menu-x = self.absolute-position.x + self.mouse-x;
-                                                root.context-menu-y = self.absolute-position.y + self.mouse-y;
-                                                root.context-menu-path = tile.path;
-                                                root.context-menu-is-empty = tile.is-dir;
-                                                root.context-menu-is-scene = tile.is-scene;
-                                                root.context-menu-can-delete = !tile.is-dir;
-                                            }
                                         }
+                                    }
+
+                                    BrowserContextMenu {
+                                        x: 0px;
+                                        y: 0px;
+                                        width: 100%;
+                                        height: 100%;
+                                        target-path: tile.path;
+                                        show-new: tile.is-dir;
+                                        show-scene-actions: tile.is-scene;
+                                        show-rename: tile.path != "assets"
+                                            && tile.path != "assets/";
+                                        show-delete: !tile.is-dir
+                                            || (tile.path != "assets"
+                                                && tile.path != "assets/");
+                                        enabled: root.context-menus-enabled;
+                                        new-folder(path) => { root.new-folder-requested(path); }
+                                        new-scene(path) => { root.new-scene-requested(path); }
+                                        open-scene(path) => { root.open-scene-requested(path); }
+                                        duplicate-scene(path) => { root.duplicate-scene-requested(path); }
+                                        rename(path) => { root.rename-requested(path); }
+                                        delete-item(path) => { root.delete-requested(path); }
                                     }
                                 }
                             }
@@ -769,8 +964,8 @@ export component ContentBrowser {
             // ═══════════════ Status Bar ═══════════════
             Rectangle {
                 height: 22px;
-                background: #2d2d2d;
-                border-color: #1a1a1a;
+                background: EditorTheme.toolbar;
+                border-color: EditorTheme.hairline;
                 border-width: 0px;
 
                 HorizontalLayout {
@@ -781,7 +976,7 @@ export component ContentBrowser {
                     // Item count
                     Text {
                         text: root.status-text;
-                        color: #707070;
+                        color: EditorTheme.muted;
                         font-size: 10px;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
@@ -792,7 +987,7 @@ export component ContentBrowser {
                         text: root.viewport-drop-active
                             ? "Drop on viewport to place"
                             : "Dragging...";
-                        color: #6090c0;
+                        color: EditorTheme.accent-sel-text;
                         font-size: 10px;
                         vertical-alignment: center;
                     }
@@ -802,23 +997,22 @@ export component ContentBrowser {
                         height: 18px;
                         clicked => {
                             root.view-menu-visible = !root.view-menu-visible;
-                            root.context-menu-visible = false;
                         }
                         VerticalLayout {
                             alignment: center;
                             EditorIconViewLayout {
                                 icon-size: 12px;
-                                icon-color: view-layout-btn.has-hover ? #b0b0b0 : #606060;
+                                icon-color: view-layout-btn.has-hover ? EditorTheme.default-text : EditorTheme.icon;
                             }
                         }
                     }
 
-                    Slider {
+                    EditorSlider {
                         width: 100px;
                         minimum: 0;
                         maximum: 128;
                         value: root.details-view ? 0 : (root.thumb-size / 1px);
-                        changed => {
+                        edited => {
                             if (self.value < 48) {
                                 root.details-view = true;
                             } else {
@@ -831,120 +1025,12 @@ export component ContentBrowser {
             }
         }
 
-        if root.context-menu-visible || root.view-menu-visible: context-dismiss := TouchArea {
+        if root.view-menu-visible: context-dismiss := TouchArea {
             z: 100;
             width: 100%;
             height: 100%;
             clicked => {
-                root.context-menu-visible = false;
                 root.view-menu-visible = false;
-            }
-        }
-
-        if root.context-menu-visible: context-panel := Rectangle {
-            z: 101;
-            x: root.context-menu-x - browser-root.absolute-position.x;
-            y: root.context-menu-y - browser-root.absolute-position.y;
-            width: 160px;
-            height: root.context-menu-is-empty ? 30px
-                : (root.context-menu-is-scene ? 86px
-                    : (root.context-menu-can-delete ? 30px : 30px));
-            background: #252525;
-            border-color: #444444;
-            border-width: 1px;
-            border-radius: 4px;
-
-            VerticalLayout {
-                padding: 4px;
-                spacing: 0px;
-
-                if root.context-menu-is-empty: Rectangle {
-                    height: 26px;
-                    background: new-row.has-hover ? #3a3a3a : transparent;
-                    border-radius: 2px;
-                    new-row := TouchArea {
-                        width: 100%;
-                        height: 100%;
-                        clicked => {
-                            root.context-menu-visible = false;
-                            root.new-scene-requested();
-                        }
-                        Text {
-                            x: 8px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            text: "New Scene";
-                            color: #e8e8e8;
-                            font-size: 12px;
-                        }
-                    }
-                }
-
-                if root.context-menu-is-scene: Rectangle {
-                    height: 26px;
-                    background: open-row.has-hover ? #3a3a3a : transparent;
-                    border-radius: 2px;
-                    open-row := TouchArea {
-                        width: 100%;
-                        height: 100%;
-                        clicked => {
-                            root.context-menu-visible = false;
-                            root.open-scene-requested(root.context-menu-path);
-                        }
-                        Text {
-                            x: 8px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            text: "Open";
-                            color: #e8e8e8;
-                            font-size: 12px;
-                        }
-                    }
-                }
-
-                if root.context-menu-is-scene: Rectangle {
-                    height: 26px;
-                    background: dup-row.has-hover ? #3a3a3a : transparent;
-                    border-radius: 2px;
-                    dup-row := TouchArea {
-                        width: 100%;
-                        height: 100%;
-                        clicked => {
-                            root.context-menu-visible = false;
-                            root.duplicate-scene-requested(root.context-menu-path);
-                        }
-                        Text {
-                            x: 8px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            text: "Duplicate";
-                            color: #e8e8e8;
-                            font-size: 12px;
-                        }
-                    }
-                }
-
-                if root.context-menu-can-delete: Rectangle {
-                    height: 26px;
-                    background: del-row.has-hover ? #3a3a3a : transparent;
-                    border-radius: 2px;
-                    del-row := TouchArea {
-                        width: 100%;
-                        height: 100%;
-                        clicked => {
-                            root.context-menu-visible = false;
-                            root.delete-requested();
-                        }
-                        Text {
-                            x: 8px;
-                            height: parent.height;
-                            vertical-alignment: center;
-                            text: "Delete";
-                            color: #e8e8e8;
-                            font-size: 12px;
-                        }
-                    }
-                }
             }
         }
 
@@ -954,10 +1040,10 @@ export component ContentBrowser {
             y: browser-root.height - 22px - 142px;
             width: 188px;
             height: 138px;
-            background: #252525;
-            border-color: #444444;
+            background: EditorTheme.window;
+            border-color: EditorTheme.hairline;
             border-width: 1px;
-            border-radius: 4px;
+            border-radius: EditorTheme.radius-ctl;
 
             VerticalLayout {
                 padding: 4px;
@@ -971,14 +1057,14 @@ export component ContentBrowser {
                         root.view-menu-visible = false;
                     }
                     Rectangle {
-                        background: view-xl.has-hover ? #3a3a3a : transparent;
+                        background: view-xl.has-hover ? EditorTheme.tab-hover : transparent;
                         border-radius: 2px;
                         Text {
                             x: 8px;
                             height: parent.height;
                             vertical-alignment: center;
                             text: (!root.details-view && root.nearest-icon-px == 128 ? "✓  " : "    ") + "Extra Large Icons";
-                            color: #e8e8e8;
+                            color: EditorTheme.default-text;
                             font-size: 12px;
                         }
                     }
@@ -991,14 +1077,14 @@ export component ContentBrowser {
                         root.view-menu-visible = false;
                     }
                     Rectangle {
-                        background: view-lg.has-hover ? #3a3a3a : transparent;
+                        background: view-lg.has-hover ? EditorTheme.tab-hover : transparent;
                         border-radius: 2px;
                         Text {
                             x: 8px;
                             height: parent.height;
                             vertical-alignment: center;
                             text: (!root.details-view && root.nearest-icon-px == 104 ? "✓  " : "    ") + "Large Icons";
-                            color: #e8e8e8;
+                            color: EditorTheme.default-text;
                             font-size: 12px;
                         }
                     }
@@ -1011,14 +1097,14 @@ export component ContentBrowser {
                         root.view-menu-visible = false;
                     }
                     Rectangle {
-                        background: view-md.has-hover ? #3a3a3a : transparent;
+                        background: view-md.has-hover ? EditorTheme.tab-hover : transparent;
                         border-radius: 2px;
                         Text {
                             x: 8px;
                             height: parent.height;
                             vertical-alignment: center;
                             text: (!root.details-view && root.nearest-icon-px == 80 ? "✓  " : "    ") + "Medium Icons";
-                            color: #e8e8e8;
+                            color: EditorTheme.default-text;
                             font-size: 12px;
                         }
                     }
@@ -1031,14 +1117,14 @@ export component ContentBrowser {
                         root.view-menu-visible = false;
                     }
                     Rectangle {
-                        background: view-sm.has-hover ? #3a3a3a : transparent;
+                        background: view-sm.has-hover ? EditorTheme.tab-hover : transparent;
                         border-radius: 2px;
                         Text {
                             x: 8px;
                             height: parent.height;
                             vertical-alignment: center;
                             text: (!root.details-view && root.nearest-icon-px == 48 ? "✓  " : "    ") + "Small Icons";
-                            color: #e8e8e8;
+                            color: EditorTheme.default-text;
                             font-size: 12px;
                         }
                     }
@@ -1050,14 +1136,14 @@ export component ContentBrowser {
                         root.view-menu-visible = false;
                     }
                     Rectangle {
-                        background: view-dt.has-hover ? #3a3a3a : transparent;
+                        background: view-dt.has-hover ? EditorTheme.tab-hover : transparent;
                         border-radius: 2px;
                         Text {
                             x: 8px;
                             height: parent.height;
                             vertical-alignment: center;
                             text: (root.details-view ? "✓  " : "    ") + "Details";
-                            color: #e8e8e8;
+                            color: EditorTheme.default-text;
                             font-size: 12px;
                         }
                     }

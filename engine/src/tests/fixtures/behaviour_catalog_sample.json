@@ -5,7 +5,9 @@
       "members": [
         { "name": "Speed", "kind": "number" },
         { "name": "Label", "kind": "string" },
-        { "name": "EnabledFlag", "kind": "bool" }
+        { "name": "EnabledFlag", "kind": "bool" },
+        { "name": "IdleClip", "kind": "clip_name" },
+        { "name": "WalkClip", "kind": "clip_name" }
       ]
     }
   ]

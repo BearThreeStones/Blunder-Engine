@@ -1,4 +1,4 @@
-import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { EditorTheme, EditorButton, EditorModalPanel } from "editor_controls.slint";
 
 export component OpenDirtySceneDialog inherits Rectangle {
     in property <bool> show-dialog: false;
@@ -8,54 +8,46 @@ export component OpenDirtySceneDialog inherits Rectangle {
     callback cancelled();
 
     visible: root.show-dialog;
-    background: #000000aa;
+    background: EditorTheme.modal-dim;
 
     TouchArea {
         width: 100%;
         height: 100%;
     }
 
-    dialog-panel := Rectangle {
-        width: 420px;
-        height: 180px;
+    EditorModalPanel {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        background: #252525;
-        border-color: #444444;
-        border-width: 1px;
-        border-radius: 6px;
+        panel-width: 420px;
 
-        VerticalBox {
-            padding: 16px;
-            spacing: 12px;
+        Text {
+            text: "Scene has unsaved changes";
+            color: EditorTheme.default-text;
+            font-size: EditorTheme.font-lg;
+        }
 
-            Text {
-                text: "Scene has unsaved changes";
-                color: #f0f0f0;
-                font-size: 14px;
+        Text {
+            text: "Save before opening another scene, discard changes, or cancel.";
+            color: EditorTheme.window-text;
+            font-size: EditorTheme.font;
+            wrap: word-wrap;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            EditorButton {
+                text: "Cancel";
+                clicked => { root.cancelled(); }
             }
-
-            Text {
-                text: "Save before opening another scene, discard changes, or cancel.";
-                color: #c0c0c0;
-                font-size: 12px;
-                wrap: word-wrap;
+            EditorButton {
+                text: "Discard and Open";
+                clicked => { root.discard-and-open(); }
             }
-
-            HorizontalBox {
-                spacing: 8px;
-                Button {
-                    text: "Cancel";
-                    clicked => { root.cancelled(); }
-                }
-                Button {
-                    text: "Discard and Open";
-                    clicked => { root.discard-and-open(); }
-                }
-                Button {
-                    text: "Save and Open";
-                    clicked => { root.save-and-open(); }
-                }
+            EditorButton {
+                text: "Save and Open";
+                primary: true;
+                clicked => { root.save-and-open(); }
             }
         }
     }

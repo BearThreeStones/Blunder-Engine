@@ -2,6 +2,8 @@
 
 #include "EASTL/string.h"
 
+#include "runtime/resource/asset/asset_descriptor.h"
+
 namespace Blunder {
 
 class AssetRegistry;
@@ -24,6 +26,14 @@ eastl::string meshAssetDisplayNameFromPath(const eastl::string& virtual_path);
 bool resolveMeshAssetInspectorIdentity(
     const eastl::string& descriptor_virtual_path, const AssetRegistry* registry,
     FileSystem* file_system, AssetInspectorIdentity& out_identity);
+
+bool loadMeshAssetDescriptor(const eastl::string& descriptor_virtual_path,
+                             FileSystem* file_system,
+                             MeshAssetDescriptor& out_descriptor);
+
+bool saveMeshAssetDescriptor(const eastl::string& descriptor_virtual_path,
+                             FileSystem* file_system,
+                             const MeshAssetDescriptor& descriptor);
 
 /// Content Browser selection enters Asset Inspector only for Mesh descriptors.
 inline bool shouldEnterAssetInspectorForBrowserPath(

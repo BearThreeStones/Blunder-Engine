@@ -1,6 +1,7 @@
 #include "runtime/function/editor/hierarchy_system.h"
 
 #include "runtime/function/editor/hierarchy_line.h"
+#include "runtime/function/editor/hierarchy_row_icons.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -77,6 +78,7 @@ void HierarchySystem::appendVisibleSubtree(SceneInstance* scene_instance,
   row.has_children = has_children;
   row.is_last_sibling = is_last_sibling;
   row.ancestor_cont_mask = ancestor_cont_mask;
+  fillHierarchyRowIcons(*scene_instance, entity_id, row.icons);
   m_tree_rows.push_back(eastl::move(row));
 
   if (!has_children || !expanded) {
@@ -101,6 +103,14 @@ void HierarchySystem::toggleExpanded(EntityId entity_id) {
   } else {
     m_expanded_entity_ids.insert(entity_id);
   }
+  m_dirty = true;
+}
+
+void HierarchySystem::ensureExpanded(EntityId entity_id) {
+  if (!isValid(entity_id) || isExpanded(entity_id)) {
+    return;
+  }
+  m_expanded_entity_ids.insert(entity_id);
   m_dirty = true;
 }
 

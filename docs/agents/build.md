@@ -25,7 +25,7 @@ cmake --build build/vs2026-debug --config Debug --target engine_editor
 start build/vs2026-debug/BlunderEngine.sln
 
 # Run editor
-./build/vs2026-debug/engine/src/editor/Debug/engine_editor.exe
+./build/vs2026-debug/bin/Debug/engine_editor.exe
 
 # Debug builds open E:/Blunder Projects/Test by default (BLUNDER_DEFAULT_PROJECT_ROOT).
 # Override:
@@ -44,12 +44,12 @@ Product Play Mode is a **separate Player process** (ADR 0014), not an in-editor 
 cmake --build build/vs2026-debug --config Debug --target engine_player
 
 # Manual run (no editor):
-.\build\vs2026-debug\engine\src\player\Debug\engine_player.exe `
+.\build\vs2026-debug\bin\Debug\engine_player.exe `
   --project-root "<ProjectRoot>" `
   --scene "assets/Scenes/<entry>.scene.asset"
 
 # From the editor: open a Project, use Play / Pause / Stop (requires engine_player
-# next to the editor staging layout the session controller resolves).
+# next to the editor in bin/<Config>/; building engine_editor also builds the player).
 ```
 
 Play session automated coverage: `play_ipc_test`, `play_session_controller_test`, `play_preflight_test`, `play_pause_tick_gate_test` (see [testing.md](testing.md)).

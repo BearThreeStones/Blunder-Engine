@@ -22,6 +22,8 @@ enum class UiEventKind : uint8_t {
   saveScene,
   saveSceneAs,
   newSceneAsset,
+  newFolder,
+  browserRename,
   duplicateSceneAsset,
   browserRefresh,
   browserFolderSelected,

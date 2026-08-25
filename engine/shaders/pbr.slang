@@ -1,3 +1,12 @@
+struct GpuSceneLight
+{
+    float4 positionType;
+    float4 colorFlags;
+    float4 emitRange;
+    float4 coneArea;
+    float4 axisX;
+};
+
 struct GlobalUniformData
 {
     float4x4 model;
@@ -16,6 +25,8 @@ struct GlobalUniformData
     float4 shadowParams;
     float4 metallicRoughnessFactors;
     float4 pbrTextureFlags;
+    float4 lightCount;
+    GpuSceneLight lights[8];
 };
 
 [[vk::binding(0, 0)]]
@@ -168,6 +179,92 @@ float3 fresnelSchlick(float cosTheta, float3 f0)
     return f0 + (1.0 - f0) * pow(1.0 - cosTheta, 5.0);
 }
 
+float punctualAtten(float dist, float range)
+{
+    if (range <= 1e-6 || dist >= range)
+    {
+        return 0.0;
+    }
+    float invSq = 1.0 / max(dist * dist, 1e-8);
+    float t = 1.0 - dist / range;
+    return invSq * t * t;
+}
+
+float3 lightDirAndAtten(GpuSceneLight light, float3 worldPos, out float atten)
+{
+    float type = light.positionType.w;
+    float3 emit = light.emitRange.xyz;
+    float emitLen = length(emit);
+    emit = emitLen > 1e-6 ? emit / emitLen : float3(0.0, 0.0, -1.0);
+    atten = 1.0;
+    if (type < 0.5)
+    {
+        return normalize(-emit);
+    }
+    float3 toLight = light.positionType.xyz - worldPos;
+    float dist = length(toLight);
+    float3 L = dist > 1e-6 ? toLight / dist : float3(0.0, 0.0, 1.0);
+    atten = punctualAtten(dist, light.emitRange.w);
+    if (type > 1.5 && type < 2.5)
+    {
+        float cd = dot(-L, emit);
+        float innerCos = light.coneArea.x;
+        float outerCos = light.coneArea.y;
+        atten *= saturate((cd - outerCos) / max(innerCos - outerCos, 1e-5));
+    }
+    return L;
+}
+
+float3 shadePbrLight(float3 L, float3 radiance, float3 normal, float3 viewDir,
+                     float3 albedo, float metallic, float roughness, float ao)
+{
+    float ndotl = saturate(dot(normal, L));
+    float ndotv = saturate(dot(normal, viewDir));
+    float3 halfDir = normalize(L + viewDir);
+    float ndoth = saturate(dot(normal, halfDir));
+    float hdotv = saturate(dot(halfDir, viewDir));
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+    float d = distributionGGX(ndoth, roughness);
+    float g = geometrySmith(ndotv, ndotl, roughness);
+    float3 specular = (d * g * fresnelSchlick(hdotv, f0)) / max(4.0 * ndotv * ndotl, 0.001);
+    float3 diffuse = (1.0 - specular) * (1.0 - metallic) * albedo / 3.14159265;
+    return (diffuse + specular) * radiance * ndotl * ao;
+}
+
+float3 shadeAreaLight(GpuSceneLight light, float3 worldPos, float3 normal, float3 viewDir,
+                      float3 albedo, float metallic, float roughness, float ao, float shadowTerm)
+{
+    float3 emit = light.emitRange.xyz;
+    float emitLen = length(emit);
+    emit = emitLen > 1e-6 ? emit / emitLen : float3(0.0, 0.0, -1.0);
+    float3 center = light.positionType.xyz;
+    if (dot(worldPos - center, emit) <= 0.0)
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+    float3 axisX = light.axisX.xyz;
+    float axisLen = length(axisX);
+    axisX = axisLen > 1e-6 ? axisX / axisLen : float3(1.0, 0.0, 0.0);
+    float3 axisY = normalize(cross(emit, axisX));
+    float3 accum = float3(0.0, 0.0, 0.0);
+    float offsets[2] = { -0.25, 0.25 };
+    for (int ix = 0; ix < 2; ++ix)
+    {
+        for (int iy = 0; iy < 2; ++iy)
+        {
+            float3 samplePos = center + axisX * (light.coneArea.z * offsets[ix]) +
+                               axisY * (light.coneArea.w * offsets[iy]);
+            float3 toLight = samplePos - worldPos;
+            float dist = length(toLight);
+            float3 L = dist > 1e-6 ? toLight / dist : float3(0.0, 0.0, 1.0);
+            float atten = 1.0 / max(dist * dist, 1e-4);
+            float3 radiance = light.colorFlags.rgb * atten * shadowTerm;
+            accum += shadePbrLight(L, radiance, normal, viewDir, albedo, metallic, roughness, ao);
+        }
+    }
+    return accum * 0.25;
+}
+
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
@@ -206,24 +303,34 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     {
         normal = -normal;
     }
-    float3 lightDir = normalize(ubo.lightDirection.xyz);
-    float3 halfDir = normalize(lightDir + viewDir);
-
-    float ndotl = saturate(dot(normal, lightDir));
-    float ndotv = saturate(dot(normal, viewDir));
-    float ndoth = saturate(dot(normal, halfDir));
-    float hdotv = saturate(dot(halfDir, viewDir));
-
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
     float shadow = sampleShadowPCF(input.worldPos);
 
-    float d = distributionGGX(ndoth, roughness);
-    float g = geometrySmith(ndotv, ndotl, roughness);
-    float3 specular = (d * g * fresnelSchlick(hdotv, f0)) / max(4.0 * ndotv * ndotl, 0.001);
-
-    float3 diffuse = (1.0 - specular) * (1.0 - metallic) * albedo / 3.14159265;
-    float3 radiance = ubo.lightColor.rgb * shadow;
-  float3 color = (diffuse + specular) * radiance * ndotl * ao;
-  color += albedo * ubo.ambientColor.rgb * ao;
+    float3 color = float3(0.0, 0.0, 0.0);
+    int count = int(ubo.lightCount.x);
+    for (int i = 0; i < 8; ++i)
+    {
+        if (i >= count)
+        {
+            break;
+        }
+        GpuSceneLight light = ubo.lights[i];
+        if (light.colorFlags.w < 0.5)
+        {
+            continue;
+        }
+        float shadowTerm = light.axisX.w > 0.5 ? shadow : 1.0;
+        if (light.positionType.w > 2.5)
+        {
+            color += shadeAreaLight(light, input.worldPos, normal, viewDir, albedo,
+                                    metallic, roughness, ao, shadowTerm);
+            continue;
+        }
+        float atten = 1.0;
+        float3 lightDir = lightDirAndAtten(light, input.worldPos, atten);
+        float3 radiance = light.colorFlags.rgb * atten * shadowTerm;
+        color += shadePbrLight(lightDir, radiance, normal, viewDir, albedo, metallic,
+                               roughness, ao);
+    }
+    color += albedo * ubo.ambientColor.rgb * ao;
     return float4(color, alpha);
 }

@@ -1,4 +1,4 @@
-import { Button, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { EditorTheme, EditorButton, EditorModalPanel } from "editor_controls.slint";
 
 export component DetectionReimportDialog inherits Rectangle {
     in property <bool> show-dialog: false;
@@ -8,56 +8,44 @@ export component DetectionReimportDialog inherits Rectangle {
     callback dismissed();
 
     visible: root.show-dialog;
-    background: #000000aa;
+    background: EditorTheme.modal-dim;
 
     TouchArea {
         width: 100%;
         height: 100%;
     }
 
-    dialog-panel := Rectangle {
-        width: 440px;
-        height: 170px;
+    EditorModalPanel {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        background: #252525;
-        border-color: #444444;
-        border-width: 1px;
-        border-radius: 6px;
+        panel-width: 440px;
 
-        VerticalBox {
-            padding: 16px;
-            spacing: 12px;
+        Text {
+            text: "Source file updated, reimport?";
+            color: EditorTheme.default-text;
+            font-size: EditorTheme.font-lg;
+        }
 
-            Text {
-                text: "Source file updated, reimport?";
-                color: #f0f0f0;
-                font-size: 14px;
+        Text {
+            text: root.asset-count == 1
+                ? "1 Asset changed on disk."
+                : root.asset-count + " Assets changed on disk.";
+            color: EditorTheme.window-text;
+            font-size: EditorTheme.font;
+            wrap: word-wrap;
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            EditorButton {
+                text: "Dismiss";
+                clicked => { root.dismissed(); }
             }
-
-            Text {
-                text: root.asset-count == 1
-                    ? "1 Asset changed on disk."
-                    : root.asset-count + " Assets changed on disk.";
-                color: #c0c0c0;
-                font-size: 12px;
-                wrap: word-wrap;
-            }
-
-            HorizontalBox {
-                spacing: 8px;
-                alignment: end;
-
-                Button {
-                    text: "Dismiss";
-                    clicked => { root.dismissed(); }
-                }
-
-                Button {
-                    text: "Reimport All";
-                    primary: true;
-                    clicked => { root.reimport-all(); }
-                }
+            EditorButton {
+                text: "Reimport All";
+                primary: true;
+                clicked => { root.reimport-all(); }
             }
         }
     }

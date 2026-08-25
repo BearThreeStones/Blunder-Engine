@@ -22,6 +22,7 @@ class HierarchySystem final {
   const eastl::vector<EditorHierarchyTreeRow>& treeRows() const { return m_tree_rows; }
 
   void toggleExpanded(EntityId entity_id);
+  void ensureExpanded(EntityId entity_id);
   bool isExpanded(EntityId entity_id) const;
 
   /// Row index under the hierarchy tree band, or -1 if none.

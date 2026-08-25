@@ -11,6 +11,7 @@
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
 
@@ -31,6 +32,11 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
     const CameraComponent& after_camera, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
 
+eastl::unique_ptr<IEditorCommand> makeSetLightComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const LightComponent& before_light,
+    const LightComponent& after_light, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
 eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
     SceneInstance* scene, EntityId entity_id,
     eastl::vector<AnimationPlayer::ClipBinding> before_bindings,
@@ -45,13 +51,17 @@ eastl::unique_ptr<IEditorCommand> makeAlignCameraToViewCommand(
     const CameraComponent& after_camera, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
 
+eastl::string deleteEntityCommandLabel(const eastl::string& entity_name);
+
 eastl::unique_ptr<IEditorCommand> makeSoftDeleteEntityCommand(
     SceneInstance* scene, EntityId entity_id,
-    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after,
+    eastl::string label = eastl::string("Delete Entity"));
 
 eastl::unique_ptr<IEditorCommand> makeSpawnEntityCommand(
     SceneInstance* scene, EntityId entity_id,
-    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after,
+    eastl::string label = eastl::string("Spawn Entity"));
 
 eastl::unique_ptr<IEditorCommand> makeAddBehaviourCommand(
     SceneInstance* scene, EntityId entity_id, const eastl::string& clr_type,

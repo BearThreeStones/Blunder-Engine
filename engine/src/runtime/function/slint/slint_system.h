@@ -17,6 +17,7 @@
 #include "runtime/platform/window/child_window_registry.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/resource/asset/asset_descriptor.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_manager.h"
@@ -24,6 +25,7 @@
 #include "runtime/function/editor/inspector_mesh_preview.h"
 #include "runtime/function/ui/ui_context.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
+#include "runtime/resource/content_browser/content_browser_delete.h"
 
 namespace Blunder {
 
@@ -240,6 +242,17 @@ class SlintSystem final : public IEditorUiPresentation {
   void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) override;
   void clearAssetInspectorSelection() override;
   void syncInspectorAssetMode();
+  void onInspectorActivated();
+  void commitMeshMaterialUnlit(bool unlit);
+  void commitMeshMaterialScalar(int field, float a, float b, float c, float d);
+  void commitMeshMaterialReset();
+  void commitMeshSlotPick(int slot);
+  void commitMeshSlotClear(int slot);
+  void commitMeshSlotDrop(int slot);
+  void pushMeshMaterialInspectorFields();
+  void commitMeshMaterialPatch(MeshAssetDescriptor after, const char* label);
+  eastl::string guidFromBrowserTexture(bool from_drop) const;
+  void commitMeshSlotGuid(int slot, const eastl::string& guid, bool clear);
   void tickInspectorMeshPreview();
   void pushInspectorMeshPreviewToSlint();
   void clearInspectorMeshPreviewImage();
@@ -251,11 +264,59 @@ class SlintSystem final : public IEditorUiPresentation {
   void fireAnimationSyncPreview() override;
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
   void applyInspectorCamera();
+  void applyInspectorLight();
   void applyInspectorAddUniqueAttachment(const eastl::string& kind_name);
   void applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name);
+  void applyHierarchyCreateRequested(int parent_entity_id, const eastl::string& kind_name);
+  void applyHierarchyDeleteRequested(int entity_id);
+  void applyHierarchyContextSelect(int entity_id);
+  void tryHierarchyRowContextSelect(float logical_x, float logical_y);
+  void patchHierarchySelectionHighlight(EntityId selected);
+  void closeAttachmentPreviewCards();
+
+  struct AttachmentPreviewCardState {
+    EntityId entity_id{k_invalid_entity_id};
+    int kind{0};
+    int index{0};
+    bool pinned{false};
+    float x{80.0f};
+    float y{120.0f};
+  };
+  void handleHierarchyIconPressed(int entity_id, float mouse_x, float row_width);
+  void handlePreviewPinToggled(int entity_id, int kind, int index);
+  void handlePreviewClose(int entity_id, int kind, int index);
+  void pruneUnpinnedPreviewCards(EntityId selected);
+  void pruneGonePreviewCards();
+  void rebuildHierarchyAfterAttachmentChange();
+  void syncAttachmentPreviewCards();
+  void applyPreviewTransform(int entity_id, int kind, int index, float pos_x,
+                             float pos_y, float pos_z, float rot_x, float rot_y,
+                             float rot_z, float scale_x, float scale_y,
+                             float scale_z);
+  void applyPreviewCamera(int entity_id, int kind, int index, float fov,
+                          float near_clip, float far_clip, bool is_main);
+  void applyPreviewLight(int entity_id, int kind, int index, int light_type,
+                         float color_r, float color_g, float color_b,
+                         float intensity, bool enabled, float range);
+  void applyPreviewUniqueRemove(int entity_id, int kind, int index);
+  void applyPreviewTreeCanvas(int entity_id);
+  void applyPreviewBehaviourRemove(int entity_id, int kind, int index);
+  void applyPreviewBehaviourProp(int entity_id, int kind, int index, int behaviour_id,
+                                 const eastl::string& key, const eastl::string& text,
+                                 float number, bool bool_value);
+  void applyPreviewModifierRemove(int entity_id, int kind, int index);
+  void applyPreviewModifierEnabled(int entity_id, int kind, int index, bool enabled);
+  void applyPreviewModifierField(int entity_id, int kind, int index,
+                                 const eastl::string& key, const eastl::string& text,
+                                 float number, bool bool_value);
   void applyInspectorAddClipRow();
+  void applyInspectorOpenClipPicker(int target_index);
+  void applyInspectorPickClipChoice(const eastl::string& guid,
+                                    const eastl::string& stem,
+                                    const eastl::string& display);
   void applyInspectorRemoveClipRow(int entry_index);
   void syncInspectorCameraFromSelection();
+  void syncInspectorLightFromSelection();
   void syncInspectorAnimationPlayerFromSelection();
   void syncInspectorUniqueAttachmentsFromSelection();
   void applyInspectorAnimationClipCommit(int entry_index, const eastl::string& clip_name,
@@ -289,6 +350,8 @@ class SlintSystem final : public IEditorUiPresentation {
   void showOpenDirtySceneDialog() override;
   void hideOpenDirtySceneDialog() override;
   void selectBrowserGridPath(const eastl::string& virtual_path) override;
+  void requestBrowserDelete(const eastl::string& extra_path);
+  void requestBrowserInlineRename();
 
   void showDetectionReimportDialog(int asset_count) override;
   void hideDetectionReimportDialog() override;
@@ -482,6 +545,16 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Updates only `BrowserGridRow.selected` flags — avoids rebuilding thumbs.
   void refreshBrowserGridSelectionVisuals();
   void deleteSelectedBrowserAssets();
+  void commitBrowserInlineRename(const eastl::string& new_name);
+  void cancelBrowserInlineRename();
+  void syncHistoryPanel();
+  void jumpHistory(int stack, int index);
+  void applyPendingBrowserDelete();
+  void finishPendingBrowserDeleteAfterDirty(bool save_first);
+  void showBrowserDeleteDialog();
+  void hideBrowserDeleteDialog();
+  BrowserDeleteServices browserDeleteServices(
+      const UiContext::LockedServices& services) const;
   void onPiercingMenuEntitySelected(EntityId entity_id);
   /// Polls SDL/Win32 size and applies Slint layout (dispatch_resize + committed).
   /// Optional override from SDL_EVENT_WINDOW_RESIZED (logical px).
@@ -535,6 +608,15 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_pending_file_dialog_is_import{false};
   eastl::vector<eastl::string> m_browser_selected_grid_paths;
   eastl::string m_browser_selection_anchor_path;
+  BrowserDeleteSet m_pending_browser_delete;
+  bool m_pending_browser_delete_after_dirty{false};
+  eastl::string m_synced_inline_rename_path;
+  size_t m_history_panel_doc_count{static_cast<size_t>(-1)};
+  size_t m_history_panel_doc_cursor{static_cast<size_t>(-1)};
+  size_t m_history_panel_global_count{static_cast<size_t>(-1)};
+  size_t m_history_panel_global_cursor{static_cast<size_t>(-1)};
+  bool m_history_panel_filter_scene{false};
+  bool m_history_panel_filter_global{false};
   bool m_scene_indicator_initialized{false};
   eastl::string m_synced_scene_path;
   bool m_synced_scene_dirty{false};
@@ -654,6 +736,9 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_inspector_mesh_preview_slint_image_bound{false};
   uint32_t m_inspector_mesh_preview_image_w{0};
   uint32_t m_inspector_mesh_preview_image_h{0};
+
+  eastl::vector<AttachmentPreviewCardState> m_preview_cards;
+  bool m_applying_preview_sync{false};
 };
 
 }  // namespace Blunder

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <optional>
 
 #include <vulkan/vulkan.h>
 
@@ -13,6 +13,7 @@
 #include "runtime/core/math/math_types.h"
 #include "runtime/function/render/overlay/camera_gizmo_controller.h"
 #include "runtime/function/render/overlay/overlay_base.h"
+#include "runtime/function/render/overlay/overlay_gizmo_pick.h"
 
 namespace Blunder {
 
@@ -44,6 +45,9 @@ class CameraGizmoOverlay final : public Overlay {
 
   /// Returns true when the click hit a scene camera gizmo (entity selection).
   bool tryHandleMouseClick(const Vec2& window_position, EditorCamera& camera);
+
+  std::optional<OverlayGizmoPickHit> hitTest(const Vec2& window_position,
+                                             EditorCamera& camera) const;
 
   CameraGizmoController& controller() { return m_controller; }
   const CameraGizmoController& controller() const { return m_controller; }

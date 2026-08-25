@@ -154,6 +154,10 @@ class AssetManager final {
   void invalidateMeshCache(const eastl::string& virtual_path_or_key);
   void invalidateSceneCache(const eastl::string& virtual_path_or_key);
 
+  /// Re-overlay the Mesh YAML bag onto a cached descriptor MeshAsset in place
+  /// so live MeshRenderer / Mesh Preview pointers stay valid.
+  void refreshMeshMaterialOverride(const eastl::string& descriptor_virtual_path);
+
  private:
   template <typename T>
   using Cache = eastl::unordered_map<eastl::string, eastl::weak_ptr<T>>;

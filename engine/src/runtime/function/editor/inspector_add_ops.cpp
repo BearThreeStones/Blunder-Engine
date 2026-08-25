@@ -54,6 +54,10 @@ bool parseInspectorUniqueKind(const eastl::string& name,
     out_kind = InspectorUniqueKind::Camera;
     return true;
   }
+  if (name == "Light") {
+    out_kind = InspectorUniqueKind::Light;
+    return true;
+  }
   if (name == "Skeleton") {
     out_kind = InspectorUniqueKind::Skeleton;
     return true;
@@ -97,6 +101,16 @@ InspectorUniqueAddResult applyInspectorUniqueAdd(
     }
     scene.setCamera(entity_id, camera);
     result.created_camera = true;
+    return result;
+  }
+
+  if (kind == InspectorUniqueKind::Light) {
+    if (scene.getLight(entity_id) != nullptr) {
+      result.already_present = true;
+      return result;
+    }
+    scene.setLight(entity_id, LightComponent{});
+    result.created_light = true;
     return result;
   }
 
@@ -156,6 +170,9 @@ void undoInspectorUniqueAdd(SceneInstance& scene, EntityId entity_id,
   if (created.created_camera) {
     scene.clearCamera(entity_id);
   }
+  if (created.created_light) {
+    scene.clearLight(entity_id);
+  }
 
   Object* object = scene.findBoundObject(entity_id);
   if (object != nullptr) {
@@ -186,6 +203,16 @@ bool applyInspectorUniqueRemove(AssetManager* /*asset_manager*/, SceneInstance& 
     }
     out_snapshot.camera = *camera;
     scene.clearCamera(entity_id);
+    return true;
+  }
+
+  if (kind == InspectorUniqueKind::Light) {
+    const LightComponent* light = scene.getLight(entity_id);
+    if (light == nullptr) {
+      return false;
+    }
+    out_snapshot.light = *light;
+    scene.clearLight(entity_id);
     return true;
   }
 
@@ -232,6 +259,11 @@ void undoInspectorUniqueRemove(AssetManager* asset_manager, SceneInstance& scene
     return;
   }
 
+  if (kind == InspectorUniqueKind::Light) {
+    scene.setLight(entity_id, snapshot.light);
+    return;
+  }
+
   Object* object = scene.ensureBoundObject(entity_id);
   if (object == nullptr) {
     return;
@@ -263,16 +295,93 @@ bool applyInspectorAddClip(
     SceneInstance& scene, EntityId entity_id,
     eastl::vector<AnimationPlayer::ClipBinding>& out_before,
     eastl::vector<AnimationPlayer::ClipBinding>& out_after) {
+  // Empty drafts are not a product path (clip-binding-authorship). Add clip
+  // must open an AnimationClip picker and append a complete binding — see
+  // applyInspectorAddClipBinding.
+  (void)scene;
+  (void)entity_id;
+  out_before.clear();
+  out_after.clear();
+  return false;
+}
+
+bool applyInspectorAddClipBinding(
+    SceneInstance& scene, EntityId entity_id, const eastl::string& clip_name,
+    const eastl::string& clip_guid,
+    eastl::vector<AnimationPlayer::ClipBinding>& out_before,
+    eastl::vector<AnimationPlayer::ClipBinding>& out_after) {
   Object* object = scene.findBoundObject(entity_id);
   if (object == nullptr || !object->hasAnimationPlayer()) {
     return false;
   }
+  if (clip_name.empty() && clip_guid.empty()) {
+    return false;
+  }
   out_before = clipBindingsFromObject(object);
   out_after = out_before;
-  AnimationPlayer::ClipBinding draft{};
-  out_after.push_back(eastl::move(draft));
-  applyClipBindingsToObject(object, out_after);
+  AnimationPlayer::ClipBinding binding{};
+  binding.name = clip_name;
+  binding.guid = clip_guid;
+  out_after.push_back(eastl::move(binding));
+  if (!clipBindingLogicalNamesUnique(
+          sanitizeClipBindingsDiscardDualEmpty(out_after))) {
+    out_after = out_before;
+    return false;
+  }
+  if (!applyClipBindingsToObject(object, out_after)) {
+    out_after = out_before;
+    return false;
+  }
+  out_after = sanitizeClipBindingsDiscardDualEmpty(out_after);
   return true;
+}
+
+bool applyInspectorRetargetClipBinding(
+    SceneInstance& scene, EntityId entity_id, size_t index,
+    const eastl::string& clip_guid,
+    eastl::vector<AnimationPlayer::ClipBinding>& out_before,
+    eastl::vector<AnimationPlayer::ClipBinding>& out_after) {
+  Object* object = scene.findBoundObject(entity_id);
+  if (object == nullptr || !object->hasAnimationPlayer()) {
+    return false;
+  }
+  if (clip_guid.empty()) {
+    return false;
+  }
+  out_before = clipBindingsFromObject(object);
+  if (index >= out_before.size()) {
+    return false;
+  }
+  out_after = out_before;
+  out_after[index].guid = clip_guid;
+  if (!applyClipBindingsToObject(object, out_after)) {
+    out_after = out_before;
+    return false;
+  }
+  out_after = sanitizeClipBindingsDiscardDualEmpty(out_after);
+  return true;
+}
+
+bool applyInspectorAnimationClipDrop(
+    SceneInstance& scene, EntityId entity_id, int drop_target,
+    const eastl::string& clip_stem, const eastl::string& clip_guid,
+    eastl::vector<AnimationPlayer::ClipBinding>& out_before,
+    eastl::vector<AnimationPlayer::ClipBinding>& out_after) {
+  out_before.clear();
+  out_after.clear();
+  if (clip_guid.empty() || drop_target == k_animation_clip_drop_miss) {
+    return false;
+  }
+  if (drop_target == k_animation_clip_drop_append) {
+    return applyInspectorAddClipBinding(scene, entity_id, clip_stem, clip_guid,
+                                        out_before, out_after);
+  }
+  if (drop_target < 0) {
+    return false;
+  }
+  return applyInspectorRetargetClipBinding(
+      scene, entity_id, static_cast<size_t>(drop_target), clip_guid, out_before,
+      out_after);
 }
 
 bool applyInspectorRemoveClip(
@@ -289,7 +398,10 @@ bool applyInspectorRemoveClip(
   }
   out_after = out_before;
   out_after.erase(out_after.begin() + static_cast<ptrdiff_t>(index));
-  applyClipBindingsToObject(object, out_after);
+  if (!applyClipBindingsToObject(object, out_after)) {
+    out_after = out_before;
+    return false;
+  }
   return true;
 }
 

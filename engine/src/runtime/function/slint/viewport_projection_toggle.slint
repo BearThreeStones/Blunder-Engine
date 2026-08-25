@@ -1,43 +1,24 @@
+import { EditorTheme } from "editor_theme.slint";
+
 // Persp/Iso strip at window coordinates (above viewport Image; TouchArea root).
 
-
-
 export component ViewportProjectionToggle inherits TouchArea {
-
     in property <length> viewport-origin-x: 0px;
-
     in property <length> viewport-origin-y: 0px;
-
     in property <length> viewport-width: 0px;
-
     in property <length> viewport-height: 0px;
-
     in-out property <bool> is-perspective: true;
-
     in property <bool> layout-drag-active: false;
-
     in property <bool> dialog-active: false;
-
     callback projection-toggled();
-
-
 
     private property <length> gizmo-size: Math.max(30px, Math.min(110px, Math.min(root.viewport-width, root.viewport-height) * 0.35));
 
-
-
-    // Large hit target: nav gizmo + Persp/Iso label (Unity-style top-right chrome).
-
     x: root.viewport-origin-x + root.viewport-width - root.gizmo-size - 10px;
-
     y: root.viewport-origin-y + 10px;
-
     width: root.gizmo-size + 10px;
-
     height: root.gizmo-size + 26px;
-
     visible: root.viewport-width >= 80px && root.viewport-height >= 48px && !root.layout-drag-active && !root.dialog-active;
-
     mouse-cursor: pointer;
 
     pointer-event(event) => {
@@ -47,43 +28,24 @@ export component ViewportProjectionToggle inherits TouchArea {
         }
     }
 
-
-
     Rectangle {
-
         x: (parent.width - 56px) / 2;
-
         y: parent.height - 18px;
-
         width: 56px;
-
         height: 16px;
-
-        background: #1e1e22cc;
-
+        background: EditorTheme.toolbar.with-alpha(88%);
         border-width: 1px;
-
-        border-color: #3a3a42;
-
-        border-radius: 2px;
-
-
+        border-color: EditorTheme.hairline;
+        border-radius: EditorTheme.radius-ctl;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000066;
 
         Text {
-
             x: 4px;
-
             y: 2px;
-
             text: root.is-perspective ? "Persp" : "Iso";
-
-            color: #ebebef;
-
-            font-size: 11px;
-
+            color: EditorTheme.default-text;
+            font-size: EditorTheme.font-sm;
         }
-
     }
-
 }
-

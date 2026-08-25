@@ -1,4 +1,4 @@
-import { HorizontalBox, LineEdit } from "std-widgets.slint";
+import { EditorTheme, EditorButton, EditorTextField } from "editor_controls.slint";
 import { AxisNumberField } from "axis_number_field.slint";
 
 export component AnimationPreviewToolbar inherits Rectangle {
@@ -33,10 +33,12 @@ export component AnimationPreviewToolbar inherits Rectangle {
     y: 48px;
     x: 8px;
     height: 58px;
-    background: #1a1a1acc;
-    border-radius: 4px;
+    background: EditorTheme.toolbar.with-alpha(88%);
+    border-radius: EditorTheme.radius-surface;
     border-width: 1px;
-    border-color: #3a3a3a;
+    border-color: EditorTheme.hairline;
+    drop-shadow-blur: 16px;
+    drop-shadow-color: #00000066;
 
     VerticalLayout {
         padding: 4px;
@@ -45,86 +47,32 @@ export component AnimationPreviewToolbar inherits Rectangle {
         HorizontalLayout {
             spacing: 4px;
 
-            Rectangle {
-                width: 44px;
-                height: 24px;
-                border-radius: 3px;
-                background: play-touch.has-hover ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: #444444;
-                Text {
-                    text: "Play";
-                    color: #e8e8e8;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                play-touch := TouchArea {
-                    enabled: root.preview-enabled;
-                    clicked => { root.preview-play-requested(); }
-                }
+            EditorButton {
+                text: "Play";
+                primary: true;
+                enabled: root.preview-enabled;
+                clicked => { root.preview-play-requested(); }
             }
 
-            Rectangle {
-                width: 52px;
-                height: 24px;
-                border-radius: 3px;
-                background: pause-touch.has-hover ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: #444444;
-                Text {
-                    text: root.preview-paused ? "Resume" : "Pause";
-                    color: root.preview-pause-enabled ? #e8e8e8 : #707070;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                pause-touch := TouchArea {
-                    enabled: root.preview-pause-enabled;
-                    clicked => { root.preview-pause-requested(); }
-                }
+            EditorButton {
+                text: root.preview-paused ? "Resume" : "Pause";
+                enabled: root.preview-pause-enabled;
+                clicked => { root.preview-pause-requested(); }
             }
 
-            Rectangle {
-                width: 44px;
-                height: 24px;
-                border-radius: 3px;
-                background: stop-touch.has-hover ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: #444444;
-                Text {
-                    text: "Stop";
-                    color: root.preview-stop-enabled ? #e8e8e8 : #707070;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                stop-touch := TouchArea {
-                    enabled: root.preview-stop-enabled;
-                    clicked => { root.preview-stop-requested(); }
-                }
+            EditorButton {
+                text: "Stop";
+                enabled: root.preview-stop-enabled;
+                clicked => { root.preview-stop-requested(); }
             }
 
             Rectangle { width: 8px; }
 
-            Rectangle {
-                width: 52px;
-                height: 24px;
-                border-radius: 3px;
-                background: root.preview-looping ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: root.preview-looping ? #6ab0ff : #444444;
-                Text {
-                    text: "Loop";
-                    color: root.preview-looping ? #ffffff : #b0b0b0;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                loop-touch := TouchArea {
-                    enabled: root.preview-enabled;
-                    clicked => { root.preview-loop-toggled(); }
-                }
+            EditorButton {
+                text: "Loop";
+                checked: root.preview-looping;
+                enabled: root.preview-enabled;
+                clicked => { root.preview-loop-toggled(); }
             }
 
             Rectangle { width: 8px; }
@@ -165,93 +113,51 @@ export component AnimationPreviewToolbar inherits Rectangle {
 
             Text {
                 text: "S0";
-                color: #b0b0b0;
+                color: EditorTheme.muted;
                 font-size: 11px;
                 vertical-alignment: center;
             }
-            LineEdit {
+            EditorTextField {
                 width: 80px;
-                height: 22px;
+                height: EditorTheme.line;
                 text <=> root.preview-slot0;
                 edited => { root.preview-params-edited(); }
             }
 
             Text {
                 text: "S1";
-                color: #b0b0b0;
+                color: EditorTheme.muted;
                 font-size: 11px;
                 vertical-alignment: center;
             }
-            LineEdit {
+            EditorTextField {
                 width: 80px;
-                height: 22px;
+                height: EditorTheme.line;
                 text <=> root.preview-slot1;
                 edited => { root.preview-params-edited(); }
             }
 
             Rectangle { width: 8px; }
 
-            Rectangle {
-                width: 40px;
-                height: 24px;
-                border-radius: 3px;
-                background: fire-touch.has-hover ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: #444444;
+            EditorButton {
+                text: "Fire";
                 visible: root.preview-sync-fire-enabled;
-                Text {
-                    text: "Fire";
-                    color: root.preview-sync-fire-enabled && root.preview-slot0 != "" ? #e8e8e8 : #707070;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                fire-touch := TouchArea {
-                    enabled: root.preview-sync-fire-enabled && root.preview-slot0 != "";
-                    clicked => { root.preview-sync-fire-requested(); }
-                }
+                enabled: root.preview-sync-fire-enabled && root.preview-slot0 != "";
+                clicked => { root.preview-sync-fire-requested(); }
             }
 
-            Rectangle {
-                width: 48px;
-                height: 24px;
-                border-radius: 3px;
-                background: enter-cine-touch.has-hover ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: #444444;
+            EditorButton {
+                text: "Enter";
                 visible: root.preview-enter-cine-enabled;
-                Text {
-                    text: "Enter";
-                    color: #e8e8e8;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                enter-cine-touch := TouchArea {
-                    enabled: root.preview-enter-cine-enabled;
-                    clicked => { root.preview-enter-cine-requested(); }
-                }
+                enabled: root.preview-enter-cine-enabled;
+                clicked => { root.preview-enter-cine-requested(); }
             }
 
-            Rectangle {
-                width: 36px;
-                height: 24px;
-                border-radius: 3px;
-                background: end-cine-touch.has-hover ? #3d6b9a : #2a2a2a;
-                border-width: 1px;
-                border-color: #444444;
+            EditorButton {
+                text: "End";
                 visible: root.preview-end-cine-enabled;
-                Text {
-                    text: "End";
-                    color: #e8e8e8;
-                    font-size: 11px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                end-cine-touch := TouchArea {
-                    enabled: root.preview-end-cine-enabled;
-                    clicked => { root.preview-end-cine-requested(); }
-                }
+                enabled: root.preview-end-cine-enabled;
+                clicked => { root.preview-end-cine-requested(); }
             }
 
             Rectangle { width: 8px; }
@@ -259,7 +165,7 @@ export component AnimationPreviewToolbar inherits Rectangle {
             Rectangle {
                 width: 52px;
                 height: 24px;
-                border-radius: 3px;
+                border-radius: EditorTheme.radius-ctl;
                 background: root.preview-in-cine ? #6a3d9a : #2a2a2a;
                 border-width: 1px;
                 border-color: root.preview-in-cine ? #b06aff : #444444;
@@ -276,7 +182,7 @@ export component AnimationPreviewToolbar inherits Rectangle {
             Rectangle {
                 width: 44px;
                 height: 24px;
-                border-radius: 3px;
+                border-radius: EditorTheme.radius-ctl;
                 background: root.preview-input-suppressed ? #9a3d3d : #2a2a2a;
                 border-width: 1px;
                 border-color: root.preview-input-suppressed ? #ff6a6a : #444444;

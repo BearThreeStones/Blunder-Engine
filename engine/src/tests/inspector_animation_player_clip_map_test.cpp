@@ -120,7 +120,7 @@ void inspectorClipMapEditPersistsThroughExportAndSerialize() {
 
   DocumentHistory history;
   history.push(makeSetAnimationPlayerClipBindingsCommand(
-      &instance, dog_id, after_bindings, before_bindings,
+      &instance, dog_id, before_bindings, after_bindings,
       SelectionSnapshot{dog_id}, SelectionSnapshot{dog_id}));
   expect_true("undo clip edit", history.undo());
   eastl::string restored_guid;
@@ -135,8 +135,76 @@ void inspectorClipMapEditPersistsThroughExportAndSerialize() {
   ObjectDB::clear();
 }
 
+void clipBindingUniquenessAndLoadSanitize() {
+  using namespace Blunder;
+  ensureLogger();
+  ObjectDB::clear();
+
+  expect_true("unique ok",
+              clipBindingLogicalNamesUnique({{"idle", "a"}, {"walk", "b"}}));
+  expect_true("dup rejected",
+              !clipBindingLogicalNamesUnique({{"idle", "a"}, {"idle", "b"}}));
+
+  const eastl::vector<AnimationPlayer::ClipBinding> with_draft = {
+      {"", ""},
+      {"idle", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+      {"broken", ""},
+  };
+  const eastl::vector<AnimationPlayer::ClipBinding> sanitized =
+      sanitizeClipBindingsDiscardDualEmpty(with_draft);
+  expect_true("dual empty stripped", sanitized.size() == 2);
+  expect_true("half-filled kept",
+              sanitized.size() == 2 && sanitized[1].name == "broken" &&
+                  sanitized[1].guid.empty());
+
+  Scene scene;
+  scene.setGuid("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  SceneEntityDefinition entity;
+  entity.name = "Sanitize";
+  entity.has_skeleton = true;
+  entity.animation_player_clips.push_back({"", ""});
+  entity.animation_player_clips.push_back(
+      {"idle", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"});
+  entity.animation_player_clips.push_back({"orphan", ""});
+  scene.getEntities().push_back(eastl::move(entity));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  Object* object = instance.findBoundObject(instance.findEntityByName("Sanitize"));
+  expect_true("object", object != nullptr && object->hasAnimationPlayer());
+  AnimationPlayer* player = object->getAnimationPlayer();
+  expect_true("dual empty not loaded",
+              player != nullptr && player->getClipMapEntryCount() == 2);
+  eastl::string guid;
+  expect_true("idle loaded", player->getClipGuid("idle", guid) && !guid.empty());
+  expect_true("orphan half-filled kept",
+              player->getClipGuid("orphan", guid) && guid.empty());
+
+  eastl::vector<AnimationPlayer::ClipBinding> before = player->getClipBindings();
+  eastl::vector<AnimationPlayer::ClipBinding> collide = before;
+  collide.push_back(
+      {"idle", eastl::string("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")});
+  expect_true("apply rejects duplicate",
+              !applyClipBindingsToObject(object, collide));
+  expect_true("map unchanged after reject",
+              player->getClipMapEntryCount() == 2);
+
+  collide = before;
+  for (AnimationPlayer::ClipBinding& binding : collide) {
+    if (binding.name == "orphan") {
+      binding.name = "idle";
+      break;
+    }
+  }
+  expect_true("rename collision rejected",
+              !applyClipBindingsToObject(object, collide));
+
+  ObjectDB::clear();
+}
+
 int main() {
   inspectorClipMapEditPersistsThroughExportAndSerialize();
+  clipBindingUniquenessAndLoadSanitize();
 
   using namespace Blunder;
   ObjectDB::clear();

@@ -5,6 +5,7 @@
 #include <glm/vec3.hpp>
 
 #include "runtime/core/math/geometry.h"
+#include "runtime/function/render/gizmo/gizmo_math.h"
 #include "runtime/function/render/gizmo/transform_gizmo_pick.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 
@@ -39,6 +40,22 @@ Blunder::TransformGizmoPickContext makeTranslatePickCtx() {
   ctx.gizmo_pixel_size = 0.01f;
   ctx.camera_forward = glm::vec3(0.0f, 0.0f, -1.0f);
   ctx.camera_position = glm::vec3(0.0f, 0.0f, 5.0f);
+  return ctx;
+}
+
+Blunder::TransformGizmoPickContext makeLookAtPickCtx(const glm::vec3& camera,
+                                                     const glm::vec3& target) {
+  Blunder::TransformGizmoPickContext ctx{};
+  ctx.basis.origin = glm::vec3(0.0f);
+  ctx.basis.axis_x = glm::vec3(1.0f, 0.0f, 0.0f);
+  ctx.basis.axis_y = glm::vec3(0.0f, 1.0f, 0.0f);
+  ctx.basis.axis_z = glm::vec3(0.0f, 0.0f, 1.0f);
+  ctx.group_scale = 1.0f;
+  ctx.gizmo_pixel_size = 0.01f;
+  ctx.camera_position = camera;
+  ctx.camera_forward = glm::normalize(target - camera);
+  ctx.ray.origin = camera;
+  ctx.ray.direction = glm::normalize(target - camera);
   return ctx;
 }
 
@@ -139,6 +156,53 @@ int main() {
     expect_axis("pick scale XY plane handle",
                 pickTransformGizmoHandle(TransformGizmoMode::scale, plane_ctx),
                 ManipulatorAxis::trans_xy);
+  }
+  {
+    const auto ctx_center =
+        makeLookAtPickCtx(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f));
+    expect_axis("pick translate center disc from typical camera",
+                pickTransformGizmoHandle(TransformGizmoMode::translate, ctx_center),
+                ManipulatorAxis::trans_c);
+    expect_axis("pick scale center cube from typical camera",
+                pickTransformGizmoHandle(TransformGizmoMode::scale, ctx_center),
+                ManipulatorAxis::trans_c);
+  }
+  {
+    const glm::vec3 camera(4.0f, 3.0f, 5.0f);
+    const auto ctx_axis = makeLookAtPickCtx(camera, glm::vec3(0.85f, 0.0f, 0.0f));
+    expect_axis("pick translate X arrow from 3/4 view without plane steal",
+                pickTransformGizmoHandle(TransformGizmoMode::translate, ctx_axis),
+                ManipulatorAxis::trans_x);
+    const glm::vec3 box = scaleHandleWorldCenter(
+        ctx_axis.basis, ManipulatorAxis::trans_x, ctx_axis.group_scale);
+    const auto ctx_box = makeLookAtPickCtx(camera, box);
+    expect_axis("pick scale X cube from 3/4 view",
+                pickTransformGizmoHandle(TransformGizmoMode::scale, ctx_box),
+                ManipulatorAxis::trans_x);
+  }
+  {
+    const auto ctx_near = makeLookAtPickCtx(glm::vec3(0.0f, 0.0f, 5.0f),
+                                            glm::vec3(0.85f, 0.08f, 0.0f));
+    expect_axis("pick translate X arrow with a few pixels of slop",
+                pickTransformGizmoHandle(TransformGizmoMode::translate, ctx_near),
+                ManipulatorAxis::trans_x);
+  }
+  {
+    const auto ctx_inner = makeLookAtPickCtx(glm::vec3(0.0f, 0.0f, 5.0f),
+                                             glm::vec3(0.18f, 0.0f, 0.0f));
+    expect_axis("pick translate X arrow on inner stem outside center disc",
+                pickTransformGizmoHandle(TransformGizmoMode::translate, ctx_inner),
+                ManipulatorAxis::trans_x);
+  }
+  {
+    const auto ctx_wide = makeLookAtPickCtx(glm::vec3(0.0f, 0.0f, 5.0f),
+                                            glm::vec3(0.65f, 0.20f, 0.0f));
+    expect_axis("pick translate X arrow with ~20px lateral slop",
+                pickTransformGizmoHandle(TransformGizmoMode::translate, ctx_wide),
+                ManipulatorAxis::trans_x);
+    expect_axis("pick scale X stem with ~20px lateral slop",
+                pickTransformGizmoHandle(TransformGizmoMode::scale, ctx_wide),
+                ManipulatorAxis::trans_x);
   }
   {
     const auto hit = pickTransformGizmoHandle(TransformGizmoMode::none, ctx);

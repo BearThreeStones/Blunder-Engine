@@ -9,6 +9,8 @@
 #include "EASTL/shared_ptr.h"
 #include "EASTL/vector.h"
 
+#include "runtime/function/scene/entity_id.h"
+
 namespace Blunder {
 
 class GpuMesh;
@@ -30,6 +32,7 @@ struct OpaqueMeshDraw {
   bool double_sided{false};
   bool is_transparent{false};
   float sort_depth{0.0f};
+  EntityId entity_id{k_invalid_entity_id};
   eastl::vector<glm::mat4> gpu_bone_palette;
 };
 

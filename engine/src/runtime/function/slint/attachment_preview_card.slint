@@ -1,0 +1,561 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { EditorTheme, EditorButton, EditorToggle, EditorCompactField } from "editor_controls.slint";
+import { EditorGlyphs } from "editor_icons.slint";
+import { DockChromePinIcon } from "dock_chrome_icons.slint";
+
+// Local copy — do not import inspector_panel.slint (that inlines the whole Inspector
+// into editor_window's generated TU and trips MSVC C1060).
+export struct PreviewBehaviourPropRow {
+    key: string,
+    kind: string,
+    bool-value: bool,
+    number-value: float,
+    string-value: string,
+    missing-type: bool,
+    clip-name-invalid: bool,
+}
+
+component PreviewFloatField {
+    in property <string> label;
+    in-out property <float> value;
+    callback committed();
+    callback focused();
+
+    height: EditorTheme.line;
+    HorizontalLayout {
+        spacing: 4px;
+        Text {
+            text: root.label;
+            color: EditorTheme.muted;
+            font-size: 11px;
+            width: 14px;
+            vertical-alignment: center;
+        }
+        EditorCompactField {
+            horizontal-stretch: 1;
+            text: "" + root.value;
+            accepted => {
+                root.value = self.text.to-float();
+                root.committed();
+            }
+            changed has-focus => {
+                if self.has-focus {
+                    root.focused();
+                } else {
+                    root.value = self.text.to-float();
+                    root.committed();
+                }
+            }
+        }
+    }
+}
+
+export struct AttachmentPreviewCardRow {
+    entity-id: int,
+    kind: int,
+    index: int,
+    pinned: bool,
+    title: string,
+    card-x: float,
+    card-y: float,
+    pos-x: float,
+    pos-y: float,
+    pos-z: float,
+    rot-x: float,
+    rot-y: float,
+    rot-z: float,
+    scale-x: float,
+    scale-y: float,
+    scale-z: float,
+    camera-fov: float,
+    camera-near: float,
+    camera-far: float,
+    camera-is-main: bool,
+    light-type: int,
+    light-color-r: float,
+    light-color-g: float,
+    light-color-b: float,
+    light-intensity: float,
+    light-enabled: bool,
+    light-contribution: int,
+    light-range: float,
+    light-inner-cone: float,
+    light-outer-cone: float,
+    light-width: float,
+    light-height: float,
+    light-linking: string,
+    mesh-path: string,
+    behaviour-id: int,
+    behaviour-type: string,
+    behaviour-missing: bool,
+    behaviour-props: [PreviewBehaviourPropRow],
+    modifier-type: string,
+    modifier-enabled: bool,
+    modifier-missing: bool,
+    modifier-bone: string,
+    modifier-open-amount: float,
+    modifier-attach-driven: bool,
+    modifier-target-x: float,
+    modifier-target-y: float,
+    modifier-target-z: float,
+    modifier-child-name: string,
+    tree-canvas-enabled: bool,
+}
+
+export component AttachmentPreviewCard inherits Rectangle {
+    in-out property <AttachmentPreviewCardRow> card;
+
+    callback pin-toggled();
+    callback close-requested();
+    callback focus-changed(bool);
+    callback transform-edited(float, float, float, float, float, float, float, float, float);
+    callback camera-edited(float, float, float, bool);
+    callback light-edited(int, float, float, float, float, bool, float);
+    callback unique-remove-requested();
+    callback tree-canvas-requested();
+    callback behaviour-remove-requested();
+    callback behaviour-prop-committed(int, string, string, float, bool);
+    callback modifier-remove-requested();
+    callback modifier-enabled-toggled(bool);
+    callback modifier-field-committed(string, string, float, bool);
+
+    function emit-transform() {
+        root.transform-edited(
+            root.card.pos-x, root.card.pos-y, root.card.pos-z,
+            root.card.rot-x, root.card.rot-y, root.card.rot-z,
+            root.card.scale-x, root.card.scale-y, root.card.scale-z);
+    }
+    function emit-camera() {
+        root.camera-edited(
+            root.card.camera-fov, root.card.camera-near, root.card.camera-far,
+            root.card.camera-is-main);
+    }
+    function emit-light() {
+        root.light-edited(
+            root.card.light-type,
+            root.card.light-color-r, root.card.light-color-g, root.card.light-color-b,
+            root.card.light-intensity, root.card.light-enabled, root.card.light-range);
+    }
+
+    width: 280px;
+    height: 360px;
+    background: EditorTheme.window;
+    border-width: 1px;
+    border-color: EditorTheme.hairline;
+    border-radius: EditorTheme.radius-surface;
+    clip: true;
+
+    card-touch := TouchArea {
+        width: 100%;
+        height: 100%;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down
+                && event.button == PointerEventButton.left) {
+                root.focus-changed(true);
+            }
+        }
+    }
+
+    VerticalLayout {
+        padding: 0;
+        spacing: 0;
+
+        Rectangle {
+            height: 26px;
+            background: EditorTheme.app-bar;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 4px;
+                spacing: 4px;
+
+                Text {
+                    text: root.card.title;
+                    color: EditorTheme.default-text;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                pin-area := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.pin-toggled(); }
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        background: parent.has-hover ? EditorTheme.titlebar-hover : transparent;
+                        border-radius: 3px;
+                        DockChromePinIcon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            icon-color: root.card.pinned
+                                ? (pin-area.has-hover ? EditorTheme.accent-hover : EditorTheme.accent)
+                                : (pin-area.has-hover ? EditorTheme.default-text : EditorTheme.icon);
+                        }
+                    }
+                }
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.close-requested(); }
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        background: parent.has-hover ? #5a2a2a : transparent;
+                        border-radius: 3px;
+                        Image {
+                            x: (parent.width - 10px) / 2;
+                            y: (parent.height - 10px) / 2;
+                            width: 10px;
+                            height: 10px;
+                            source: EditorGlyphs.close;
+                            colorize: EditorTheme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: EditorTheme.hairline; }
+
+        Flickable {
+            vertical-stretch: 1;
+            viewport-width: self.width;
+            viewport-height: body.preferred-height;
+
+            body := VerticalBox {
+                width: parent.width;
+                padding: 8px;
+                spacing: 6px;
+                alignment: start;
+
+                if root.card.kind == 0: VerticalBox {
+                    spacing: 6px;
+                    Text { text: "Position (m)"; color: EditorTheme.muted; font-size: 11px; }
+                    HorizontalBox {
+                        spacing: 4px;
+                        PreviewFloatField { label: "x"; value <=> root.card.pos-x; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "y"; value <=> root.card.pos-y; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "z"; value <=> root.card.pos-z; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                    }
+                    Text { text: "Rotation (°)"; color: EditorTheme.muted; font-size: 11px; }
+                    HorizontalBox {
+                        spacing: 4px;
+                        PreviewFloatField { label: "x"; value <=> root.card.rot-x; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "y"; value <=> root.card.rot-y; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "z"; value <=> root.card.rot-z; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                    }
+                    Text { text: "Scale"; color: EditorTheme.muted; font-size: 11px; }
+                    HorizontalBox {
+                        spacing: 4px;
+                        PreviewFloatField { label: "x"; value <=> root.card.scale-x; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "y"; value <=> root.card.scale-y; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "z"; value <=> root.card.scale-z; committed => { root.emit-transform(); } focused => { root.focus-changed(true); } }
+                    }
+                }
+
+                if root.card.kind == 1: Text {
+                    text: root.card.mesh-path;
+                    color: EditorTheme.default-text;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+
+                if root.card.kind == 2: VerticalBox {
+                    spacing: 6px;
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "FOV"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        fov-input := EditorCompactField {
+                            horizontal-stretch: 1;
+                            text: "" + root.card.camera-fov;
+                            accepted => {
+                                root.card.camera-fov = self.text.to-float();
+                                root.emit-camera();
+                            }
+                            changed has-focus => {
+                                if self.has-focus {
+                                    root.focus-changed(true);
+                                } else {
+                                    root.card.camera-fov = self.text.to-float();
+                                    root.emit-camera();
+                                }
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Near"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        near-input := EditorCompactField {
+                            horizontal-stretch: 1;
+                            text: "" + root.card.camera-near;
+                            accepted => {
+                                root.card.camera-near = self.text.to-float();
+                                root.emit-camera();
+                            }
+                            changed has-focus => {
+                                if self.has-focus {
+                                    root.focus-changed(true);
+                                } else {
+                                    root.card.camera-near = self.text.to-float();
+                                    root.emit-camera();
+                                }
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Far"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        far-input := EditorCompactField {
+                            horizontal-stretch: 1;
+                            text: "" + root.card.camera-far;
+                            accepted => {
+                                root.card.camera-far = self.text.to-float();
+                                root.emit-camera();
+                            }
+                            changed has-focus => {
+                                if self.has-focus {
+                                    root.focus-changed(true);
+                                } else {
+                                    root.card.camera-far = self.text.to-float();
+                                    root.emit-camera();
+                                }
+                            }
+                        }
+                    }
+                    EditorToggle {
+                        text: "Main Camera";
+                        checked: root.card.camera-is-main;
+                        toggled => {
+                            root.card.camera-is-main = self.checked;
+                            root.emit-camera();
+                        }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 3: VerticalBox {
+                    spacing: 6px;
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Type"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.card.light-type = root.card.light-type >= 3 ? 0 : root.card.light-type + 1;
+                                root.emit-light();
+                            }
+                            Text {
+                                text: root.card.light-type == 0 ? "Directional" : (root.card.light-type == 1 ? "Point" : (root.card.light-type == 2 ? "Spot" : "Area"));
+                                color: EditorTheme.default-text;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 4px;
+                        PreviewFloatField { label: "r"; value <=> root.card.light-color-r; committed => { root.emit-light(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "g"; value <=> root.card.light-color-g; committed => { root.emit-light(); } focused => { root.focus-changed(true); } }
+                        PreviewFloatField { label: "b"; value <=> root.card.light-color-b; committed => { root.emit-light(); } focused => { root.focus-changed(true); } }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Intensity"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        intensity-input := EditorCompactField {
+                            horizontal-stretch: 1;
+                            text: "" + root.card.light-intensity;
+                            accepted => {
+                                root.card.light-intensity = self.text.to-float();
+                                root.emit-light();
+                            }
+                            changed has-focus => {
+                                if self.has-focus {
+                                    root.focus-changed(true);
+                                } else {
+                                    root.card.light-intensity = self.text.to-float();
+                                    root.emit-light();
+                                }
+                            }
+                        }
+                    }
+                    EditorToggle {
+                        text: "Enabled";
+                        checked: root.card.light-enabled;
+                        toggled => {
+                            root.card.light-enabled = self.checked;
+                            root.emit-light();
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Range"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        range-input := EditorCompactField {
+                            horizontal-stretch: 1;
+                            text: "" + root.card.light-range;
+                            accepted => {
+                                root.card.light-range = self.text.to-float();
+                                root.emit-light();
+                            }
+                            changed has-focus => {
+                                if !self.has-focus {
+                                    root.card.light-range = self.text.to-float();
+                                    root.emit-light();
+                                }
+                            }
+                        }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 4: VerticalBox {
+                    spacing: 6px;
+                    Text {
+                        text: "Rest/bind on this Object";
+                        color: EditorTheme.muted;
+                        font-size: 11px;
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 5: VerticalBox {
+                    spacing: 6px;
+                    EditorButton {
+                        text: "Open Canvas";
+                        enabled: root.card.tree-canvas-enabled;
+                        clicked => { root.tree-canvas-requested(); }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 6: VerticalBox {
+                    spacing: 6px;
+                    Text {
+                        text: root.card.behaviour-type + (root.card.behaviour-missing ? " (missing)" : "");
+                        color: root.card.behaviour-missing ? #ff9a9a : EditorTheme.default-text;
+                        font-size: 12px;
+                    }
+                    for prop in root.card.behaviour-props: VerticalBox {
+                        spacing: 2px;
+                        if prop.kind == "bool": EditorToggle {
+                            text: prop.key;
+                            checked: prop.bool-value;
+                            toggled => {
+                                root.behaviour-prop-committed(
+                                    root.card.behaviour-id, prop.key, "", 0.0, self.checked);
+                            }
+                        }
+                        if prop.kind == "number": HorizontalBox {
+                            spacing: 6px;
+                            Text {
+                                text: prop.key;
+                                color: EditorTheme.muted;
+                                font-size: 11px;
+                                width: 72px;
+                                vertical-alignment: center;
+                            }
+                            num-input := EditorCompactField {
+                                horizontal-stretch: 1;
+                                text: "" + prop.number-value;
+                                accepted => {
+                                    root.behaviour-prop-committed(
+                                        root.card.behaviour-id, prop.key, self.text,
+                                        self.text.to-float(), false);
+                                }
+                                changed has-focus => {
+                                    if self.has-focus {
+                                        root.focus-changed(true);
+                                    } else {
+                                        root.behaviour-prop-committed(
+                                            root.card.behaviour-id, prop.key, self.text,
+                                            self.text.to-float(), false);
+                                    }
+                                }
+                            }
+                        }
+                        if prop.kind == "string" || prop.kind == "clip_name": HorizontalBox {
+                            spacing: 6px;
+                            Text {
+                                text: prop.key;
+                                color: EditorTheme.muted;
+                                font-size: 11px;
+                                width: 72px;
+                                vertical-alignment: center;
+                            }
+                            str-input := EditorCompactField {
+                                horizontal-stretch: 1;
+                                text: prop.string-value;
+                                accepted => {
+                                    root.behaviour-prop-committed(
+                                        root.card.behaviour-id, prop.key, self.text, 0.0, false);
+                                }
+                                changed has-focus => {
+                                    if self.has-focus {
+                                        root.focus-changed(true);
+                                    } else {
+                                        root.behaviour-prop-committed(
+                                            root.card.behaviour-id, prop.key, self.text, 0.0, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.behaviour-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 7: VerticalBox {
+                    spacing: 6px;
+                    Text {
+                        text: root.card.modifier-type + (root.card.modifier-missing ? " (missing)" : "");
+                        color: root.card.modifier-missing ? #ff9a9a : EditorTheme.default-text;
+                        font-size: 12px;
+                    }
+                    EditorToggle {
+                        text: "Enabled";
+                        checked: root.card.modifier-enabled;
+                        toggled => { root.modifier-enabled-toggled(self.checked); }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Bone"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        bone-input := EditorCompactField {
+                            horizontal-stretch: 1;
+                            text: root.card.modifier-bone;
+                            accepted => {
+                                root.modifier-field-committed("bone_name", self.text, 0.0, false);
+                            }
+                            changed has-focus => {
+                                if self.has-focus {
+                                    root.focus-changed(true);
+                                } else {
+                                    root.modifier-field-committed("bone_name", self.text, 0.0, false);
+                                }
+                            }
+                        }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.modifier-remove-requested(); }
+                    }
+                }
+            }
+        }
+    }
+}

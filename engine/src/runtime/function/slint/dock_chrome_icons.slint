@@ -1,7 +1,9 @@
+import { EditorTheme } from "editor_theme.slint";
+
 // Dock chrome glyphs: close/pin from vendored Godot editor icons; minimize stays geometry.
 
 export component DockChromeCloseIcon inherits Rectangle {
-    in property <color> icon-color: #808080;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 10px;
 
     width: icon-size;
@@ -18,7 +20,7 @@ export component DockChromeCloseIcon inherits Rectangle {
 }
 
 export component DockChromePinIcon inherits Rectangle {
-    in property <color> icon-color: #808080;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 10px;
 
     width: icon-size;
@@ -35,7 +37,7 @@ export component DockChromePinIcon inherits Rectangle {
 }
 
 export component DockChromeMinimizeIcon inherits Rectangle {
-    in property <color> icon-color: #808080;
+    in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 10px;
 
     width: icon-size;

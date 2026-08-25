@@ -270,6 +270,7 @@ void RuntimeGlobalContext::startSystems(
           g_runtime_global_context.m_editor_selection->clearSelection();
         }
       });
+  m_global_history = eastl::make_shared<DocumentHistory>();
   m_viewport_pick = eastl::make_shared<ViewportPickSystem>();
 
   m_thumbnail_generator = eastl::make_shared<ThumbnailGenerator>();
@@ -509,6 +510,7 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   m_viewport_pick.reset();
+  m_global_history.reset();
   m_document_history.reset();
   m_editor_scene_edit.reset();
   m_hierarchy.reset();
@@ -543,5 +545,11 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_config_manager.reset();
 
   // m_particle_manager.reset();
+}
+
+void RuntimeGlobalContext::closeAttachmentPreviewCards() {
+  if (m_slint_system) {
+    m_slint_system->closeAttachmentPreviewCards();
+  }
 }
 }  // namespace Blunder

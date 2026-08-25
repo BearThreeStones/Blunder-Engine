@@ -21,6 +21,8 @@ int main() {
               editorOverlaysEnabled(EngineHostMode::Editor));
   expect_true("player disables overlays",
               !editorOverlaysEnabled(EngineHostMode::Player));
+  expect_true("player overlay gate includes Light Gizmo",
+              !editorOverlaysEnabled(EngineHostMode::Player));
 
   // Pause is a separate flag; policy is host-mode only. Document that Pause
   // does not re-enable overlays by asserting Player stays false.

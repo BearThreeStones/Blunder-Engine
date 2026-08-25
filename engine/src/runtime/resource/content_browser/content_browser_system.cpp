@@ -1,5 +1,6 @@
 #include "runtime/resource/content_browser/content_browser_system.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include <filesystem>
@@ -7,11 +8,16 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/project/editor_detection_settings.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/resource/content/content_index.h"
+#include "runtime/resource/content_browser/content_browser_names.h"
 #include "runtime/resource/content_browser/content_browser_view.h"
 #include "runtime/resource/thumbnail/thumbnail_generation_queue.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
 
 namespace Blunder {
 
@@ -52,6 +58,35 @@ eastl::string normalizeFolderVirtualPath(const eastl::string& virtual_path) {
   return folder;
 }
 
+void retargetOpenSceneIfMoved(const eastl::string& from, const eastl::string& to) {
+  EditorSceneEditSystem* edit = g_runtime_global_context.m_editor_scene_edit.get();
+  if (edit == nullptr || from.empty() || to.empty() || from == to) {
+    return;
+  }
+  const eastl::string& active = edit->activeScenePath();
+  if (active.empty()) {
+    return;
+  }
+  eastl::string next;
+  if (active == from) {
+    next = to;
+  } else if (from.back() == '/' && active.size() >= from.size() &&
+             active.compare(0, from.size(), from) == 0) {
+    next = to;
+    next.append(active.c_str() + from.size());
+  }
+  if (next.empty() || next == active) {
+    return;
+  }
+  edit->retargetActiveScenePath(next);
+  if (g_runtime_global_context.m_scene_system) {
+    if (SceneInstance* instance =
+            g_runtime_global_context.m_scene_system->getActiveInstance()) {
+      instance->setSourcePath(next);
+    }
+  }
+}
+
 }  // namespace
 
 void ContentBrowserSystem::initialize(const ContentBrowserInit& init) {
@@ -63,6 +98,7 @@ void ContentBrowserSystem::initialize(const ContentBrowserInit& init) {
   m_is_initialized = m_file_system != nullptr && m_thumbnail_generator != nullptr;
   m_file_watch.initialize(m_file_system);
   m_file_watch.setInvalidateTargets(init.asset_compiler, init.asset_registry);
+  m_asset_registry = init.asset_registry;
 }
 
 void ContentBrowserSystem::shutdown() {
@@ -79,6 +115,8 @@ void ContentBrowserSystem::shutdown() {
   m_file_system = nullptr;
   m_asset_manager = nullptr;
   m_thumbnail_generator = nullptr;
+  m_asset_registry = nullptr;
+  m_pending_inline_rename_path.clear();
   m_is_initialized = false;
 }
 
@@ -182,6 +220,245 @@ eastl::string ContentBrowserSystem::makeUniqueDestinationName(
     }
   }
   return file_name;
+}
+
+ContentBrowserMutateResult ContentBrowserSystem::failMutate(
+    const char* message) const {
+  ContentBrowserMutateResult result{};
+  result.error = message;
+  LOG_WARN("[ContentBrowser] {}", message);
+  return result;
+}
+
+bool ContentBrowserSystem::isAssetsRootPath(
+    const eastl::string& virtual_path) const {
+  return virtual_path == "assets" || virtual_path == "assets/";
+}
+
+bool ContentBrowserSystem::siblingTaken(const eastl::string& parent_folder,
+                                        const eastl::string& name,
+                                        bool as_directory) const {
+  eastl::string candidate = joinVirtualPath(parent_folder, name);
+  if (as_directory) {
+    candidate = normalizeFolderVirtualPath(candidate);
+  }
+  if (findEntry(candidate) != nullptr) {
+    return true;
+  }
+  return m_file_system->exists(resolveVirtualAbsolute(candidate));
+}
+
+void ContentBrowserSystem::remapRegistryPrefix(
+    const eastl::string& from_prefix, const eastl::string& to_prefix) {
+  if (m_asset_registry == nullptr || from_prefix.empty() ||
+      from_prefix == to_prefix) {
+    return;
+  }
+  const auto entries = m_asset_registry->registeredEntries();
+  for (const auto& pair : entries) {
+    const eastl::string& path = pair.second;
+    const bool exact = path == from_prefix;
+    const bool nested =
+        from_prefix.back() == '/' && path.size() > from_prefix.size() &&
+        path.compare(0, from_prefix.size(), from_prefix) == 0;
+    if (!exact && !nested) {
+      continue;
+    }
+    eastl::string new_path = to_prefix;
+    if (path.size() > from_prefix.size()) {
+      new_path.append(path.c_str() + from_prefix.size());
+    }
+    m_asset_registry->registerAsset(pair.first, new_path);
+  }
+}
+
+void ContentBrowserSystem::retargetSelectedFolder(
+    const eastl::string& from_prefix, const eastl::string& to_prefix) {
+  if (from_prefix.empty() || m_selected_folder.empty()) {
+    return;
+  }
+  if (m_selected_folder == from_prefix) {
+    m_selected_folder = to_prefix;
+    return;
+  }
+  if (from_prefix.back() == '/' &&
+      isDescendantPath(from_prefix, m_selected_folder)) {
+    eastl::string next = to_prefix;
+    next.append(m_selected_folder.c_str() + from_prefix.size());
+    m_selected_folder = next;
+  }
+}
+
+ContentBrowserMutateResult ContentBrowserSystem::createFolder(
+    const eastl::string& parent_virtual_path) {
+  ContentBrowserMutateResult result{};
+  if (!m_is_initialized) {
+    return failMutate("createFolder: not initialized");
+  }
+  if (m_entries.empty()) {
+    refresh();
+  }
+  const eastl::string parent = normalizeFolderVirtualPath(parent_virtual_path);
+  if (rootFromVirtualPath(parent) != ContentRoot::Assets) {
+    return failMutate("createFolder: Assets tree only");
+  }
+  const ContentEntry* parent_entry = findEntry(parent);
+  if (parent_entry == nullptr || !parent_entry->is_directory) {
+    return failMutate("createFolder: parent is not a folder");
+  }
+
+  struct TakenCtx {
+    const ContentBrowserSystem* self;
+    eastl::string parent;
+  } ctx{this, parent};
+  const auto taken = [](const eastl::string& name, void* user) -> bool {
+    const TakenCtx* taken_ctx = static_cast<const TakenCtx*>(user);
+    return taken_ctx->self->siblingTaken(taken_ctx->parent, name, true);
+  };
+  const eastl::string name = uniqueNewFolderName(taken, &ctx);
+  eastl::string dest = joinVirtualPath(parent, name);
+  dest = normalizeFolderVirtualPath(dest);
+  const fs::path abs = resolveVirtualAbsolute(dest);
+  if (!m_file_system->createDirectory(abs)) {
+    return failMutate("createFolder: createDirectory failed");
+  }
+  refresh();
+  m_pending_inline_rename_path = dest;
+  result.success = true;
+  result.virtual_path = dest;
+  LOG_INFO("[ContentBrowser] created folder {}", dest.c_str());
+  return result;
+}
+
+void ContentBrowserSystem::beginInlineRename(const eastl::string& virtual_path) {
+  if (!m_is_initialized || virtual_path.empty() ||
+      isAssetsRootPath(virtual_path)) {
+    m_pending_inline_rename_path.clear();
+    return;
+  }
+  const ContentEntry* entry = findEntry(virtual_path);
+  if (entry == nullptr) {
+    m_pending_inline_rename_path.clear();
+    return;
+  }
+  m_pending_inline_rename_path = entry->is_directory
+                                     ? normalizeFolderVirtualPath(entry->virtual_path)
+                                     : entry->virtual_path;
+}
+
+ContentBrowserMutateResult ContentBrowserSystem::renameEntry(
+    const eastl::string& virtual_path, const eastl::string& new_name) {
+  ContentBrowserMutateResult result{};
+  if (!m_is_initialized) {
+    return failMutate("renameEntry: not initialized");
+  }
+  if (m_entries.empty()) {
+    refresh();
+  }
+  if (isAssetsRootPath(virtual_path)) {
+    return failMutate("renameEntry: cannot rename Assets root");
+  }
+  const ContentEntry* source = findEntry(virtual_path);
+  if (source == nullptr) {
+    return failMutate("renameEntry: missing entry");
+  }
+  if (rootFromVirtualPath(source->virtual_path) != ContentRoot::Assets) {
+    return failMutate("renameEntry: Assets tree only");
+  }
+
+  const eastl::string trimmed = trimBrowserEntryName(new_name);
+  if (!isLegalBrowserEntryName(trimmed)) {
+    result.error = "illegal name";
+    return result;
+  }
+
+  const eastl::string parent = parentVirtualPath(source->virtual_path);
+  eastl::string dest_name = trimmed;
+  if (!source->is_directory) {
+    eastl::string old_stem;
+    eastl::string suffix;
+    splitBrowserFileName(displayNameFromPath(source->virtual_path), old_stem,
+                         suffix);
+    dest_name = trimmed;
+    dest_name.append(suffix);
+  }
+  eastl::string dest = joinVirtualPath(parent, dest_name);
+  if (source->is_directory) {
+    dest = normalizeFolderVirtualPath(dest);
+  }
+  eastl::string source_key = source->is_directory
+                                 ? normalizeFolderVirtualPath(source->virtual_path)
+                                 : source->virtual_path;
+  if (dest == source_key) {
+    result.success = true;
+    result.virtual_path = dest;
+    m_pending_inline_rename_path.clear();
+    return result;
+  }
+  if (findEntry(dest) != nullptr ||
+      m_file_system->exists(resolveVirtualAbsolute(dest))) {
+    result.error = "collision";
+    return result;
+  }
+
+  if (!m_file_system->movePath(resolveVirtualAbsolute(source_key),
+                               resolveVirtualAbsolute(dest))) {
+    return failMutate("renameEntry: movePath failed");
+  }
+  remapRegistryPrefix(source_key, dest);
+  retargetSelectedFolder(source_key, dest);
+  retargetOpenSceneIfMoved(source_key, dest);
+  m_pending_inline_rename_path.clear();
+  refresh();
+  result.success = true;
+  result.virtual_path = dest;
+  LOG_INFO("[ContentBrowser] renamed {} -> {}", source_key.c_str(),
+           dest.c_str());
+  return result;
+}
+
+bool ContentBrowserSystem::removeEmptyFolder(
+    const eastl::string& virtual_path) {
+  if (!m_is_initialized || virtual_path.empty() ||
+      isAssetsRootPath(virtual_path)) {
+    return false;
+  }
+  const eastl::string dest = normalizeFolderVirtualPath(virtual_path);
+  if (rootFromVirtualPath(dest) != ContentRoot::Assets) {
+    return false;
+  }
+  const fs::path abs = resolveVirtualAbsolute(dest);
+  if (!m_file_system->removeEmptyDirectory(abs)) {
+    return false;
+  }
+  if (m_pending_inline_rename_path == dest) {
+    m_pending_inline_rename_path.clear();
+  }
+  refresh();
+  LOG_INFO("[ContentBrowser] removed empty folder {}", dest.c_str());
+  return true;
+}
+
+bool ContentBrowserSystem::recreateFolder(const eastl::string& virtual_path) {
+  if (!m_is_initialized || virtual_path.empty() ||
+      isAssetsRootPath(virtual_path)) {
+    return false;
+  }
+  const eastl::string dest = normalizeFolderVirtualPath(virtual_path);
+  if (rootFromVirtualPath(dest) != ContentRoot::Assets) {
+    return false;
+  }
+  const fs::path abs = resolveVirtualAbsolute(dest);
+  if (m_file_system->isDirectory(abs)) {
+    refresh();
+    return true;
+  }
+  if (!m_file_system->createDirectory(abs)) {
+    return false;
+  }
+  refresh();
+  LOG_INFO("[ContentBrowser] recreated folder {}", dest.c_str());
+  return true;
 }
 
 void ContentBrowserSystem::setActiveRoot(ContentRoot root) {
@@ -606,6 +883,56 @@ void ContentBrowserSystem::rebuildVisibleTree() {
   walk(walk, root_path, 0);
 }
 
+bool ContentBrowserSystem::canReparentEntry(
+    const eastl::string& source_virtual_path,
+    const eastl::string& target_folder_virtual_path) const {
+  if (!m_is_initialized || source_virtual_path.empty() ||
+      target_folder_virtual_path.empty()) {
+    return false;
+  }
+  const ContentEntry* source = findEntry(source_virtual_path);
+  const ContentEntry* target = findEntry(target_folder_virtual_path);
+  if (source == nullptr || target == nullptr || !target->is_directory) {
+    return false;
+  }
+  if (isAssetsRootPath(source->virtual_path)) {
+    return false;
+  }
+  if (rootFromVirtualPath(source->virtual_path) != ContentRoot::Assets ||
+      rootFromVirtualPath(target->virtual_path) != ContentRoot::Assets) {
+    return false;
+  }
+  if (source->root != target->root) {
+    return false;
+  }
+
+  eastl::string source_key = source->is_directory
+                                 ? normalizeFolderVirtualPath(source->virtual_path)
+                                 : source->virtual_path;
+  const eastl::string target_key =
+      normalizeFolderVirtualPath(target_folder_virtual_path);
+  if (isDescendantPath(source_key, target_key) || source_key == target_key) {
+    return false;
+  }
+
+  const eastl::string file_name = displayNameFromPath(source_key);
+  eastl::string dest_virtual = joinVirtualPath(target_key, file_name);
+  if (source->is_directory) {
+    dest_virtual = normalizeFolderVirtualPath(dest_virtual);
+  }
+  if (dest_virtual == source_key) {
+    return true;
+  }
+  if (findEntry(dest_virtual) != nullptr) {
+    return false;
+  }
+  if (m_file_system != nullptr &&
+      m_file_system->exists(resolveVirtualAbsolute(dest_virtual))) {
+    return false;
+  }
+  return true;
+}
+
 bool ContentBrowserSystem::reparentEntry(
     const eastl::string& source_virtual_path,
     const eastl::string& target_folder_virtual_path) {
@@ -613,12 +940,23 @@ bool ContentBrowserSystem::reparentEntry(
       target_folder_virtual_path.empty()) {
     return false;
   }
+  if (m_entries.empty()) {
+    refresh();
+  }
 
   const ContentEntry* source = findEntry(source_virtual_path);
   const ContentEntry* target = findEntry(target_folder_virtual_path);
-  if (source == nullptr || target == nullptr || source->is_directory ||
-      !target->is_directory) {
+  if (source == nullptr || target == nullptr || !target->is_directory) {
     LOG_WARN("[ContentBrowser] reparent rejected: invalid source/target");
+    return false;
+  }
+  if (isAssetsRootPath(source->virtual_path)) {
+    LOG_WARN("[ContentBrowser] reparent rejected: Assets root");
+    return false;
+  }
+  if (rootFromVirtualPath(source->virtual_path) != ContentRoot::Assets ||
+      rootFromVirtualPath(target->virtual_path) != ContentRoot::Assets) {
+    LOG_WARN("[ContentBrowser] reparent rejected: Assets tree only");
     return false;
   }
 
@@ -627,27 +965,42 @@ bool ContentBrowserSystem::reparentEntry(
     return false;
   }
 
-  if (isDescendantPath(source_virtual_path, target_folder_virtual_path)) {
+  eastl::string source_key = source->is_directory
+                                 ? normalizeFolderVirtualPath(source->virtual_path)
+                                 : source->virtual_path;
+  const eastl::string target_key =
+      normalizeFolderVirtualPath(target_folder_virtual_path);
+  if (isDescendantPath(source_key, target_key) || source_key == target_key) {
     LOG_WARN("[ContentBrowser] reparent rejected: target inside source");
     return false;
   }
 
-  const eastl::string file_name = displayNameFromPath(source_virtual_path);
-  const eastl::string dest_virtual =
-      joinVirtualPath(target_folder_virtual_path, file_name);
-  if (dest_virtual == source_virtual_path) {
+  const eastl::string file_name = displayNameFromPath(source_key);
+  eastl::string dest_virtual = joinVirtualPath(target_key, file_name);
+  if (source->is_directory) {
+    dest_virtual = normalizeFolderVirtualPath(dest_virtual);
+  }
+  if (dest_virtual == source_key) {
     return true;
   }
-
-  const fs::path src_abs = resolveVirtualAbsolute(source_virtual_path);
-  const fs::path dst_abs = resolveVirtualAbsolute(dest_virtual);
-  if (!m_file_system->movePath(src_abs, dst_abs)) {
-    LOG_ERROR("[ContentBrowser] reparent move failed {} -> {}",
-              source_virtual_path.c_str(), dest_virtual.c_str());
+  if (findEntry(dest_virtual) != nullptr ||
+      m_file_system->exists(resolveVirtualAbsolute(dest_virtual))) {
+    LOG_WARN("[ContentBrowser] reparent rejected: collision");
     return false;
   }
 
-  LOG_INFO("[ContentBrowser] moved {} -> {}", source_virtual_path.c_str(),
+  const fs::path src_abs = resolveVirtualAbsolute(source_key);
+  const fs::path dst_abs = resolveVirtualAbsolute(dest_virtual);
+  if (!m_file_system->movePath(src_abs, dst_abs)) {
+    LOG_ERROR("[ContentBrowser] reparent move failed {} -> {}",
+              source_key.c_str(), dest_virtual.c_str());
+    return false;
+  }
+
+  remapRegistryPrefix(source_key, dest_virtual);
+  retargetSelectedFolder(source_key, dest_virtual);
+  retargetOpenSceneIfMoved(source_key, dest_virtual);
+  LOG_INFO("[ContentBrowser] moved {} -> {}", source_key.c_str(),
            dest_virtual.c_str());
   refresh();
   return true;

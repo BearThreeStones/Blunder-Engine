@@ -296,10 +296,15 @@ void SceneInstance::instantiate(const Scene& scene) {
         wireAnimationPlayerAssetResolver(*player);
         for (const SceneEntityDefinition::AnimationClipBinding& binding :
              definition.animation_player_clips) {
+          if (binding.name.empty() && binding.guid.empty()) {
+            continue;
+          }
           player->setClipGuid(binding.name, binding.guid);
           if (m_default_animation_clip_names.find(id) ==
               m_default_animation_clip_names.end()) {
-            m_default_animation_clip_names[id] = binding.name;
+            if (!binding.name.empty()) {
+              m_default_animation_clip_names[id] = binding.name;
+            }
           }
         }
         if (!definition.animation_player_clips.empty()) {
@@ -397,6 +402,22 @@ void SceneInstance::instantiate(const Scene& scene) {
 
   m_world_matrices_dirty = true;
   rebuildWorldMatrices();
+
+  for (size_t i = 0; i < scene.getEntities().size(); ++i) {
+    const SceneEntityDefinition& definition = scene.getEntities()[i];
+    if (!definition.has_light) {
+      continue;
+    }
+    LightComponent light = definition.light;
+    light.linking.clear();
+    for (const eastl::string& name : definition.light_linking_names) {
+      const EntityId linked_id = findEntityByName(name);
+      if (isValid(linked_id)) {
+        light.linking.push_back(linked_id);
+      }
+    }
+    setLight(ids[i], eastl::move(light));
+  }
 }
 
 void SceneInstance::clear() {
@@ -413,6 +434,7 @@ void SceneInstance::clear() {
   m_name_to_id.clear();
   m_mesh_renderers.clear();
   m_cameras.clear();
+  m_lights.clear();
   m_has_world_bounds = false;
   m_world_bounds = AABB{};
   m_world_matrices_dirty = true;
@@ -453,6 +475,28 @@ void SceneInstance::clearCamera(EntityId id) {
     return;
   }
   m_cameras.erase(id);
+}
+
+void SceneInstance::setLight(EntityId id, LightComponent light) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_lights[id] = eastl::move(light);
+}
+
+const LightComponent* SceneInstance::getLight(EntityId id) const {
+  const auto it = m_lights.find(id);
+  if (it == m_lights.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+void SceneInstance::clearLight(EntityId id) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_lights.erase(id);
 }
 
 void SceneInstance::setWorldBounds(const AABB& bounds) {
@@ -619,15 +663,6 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
       if (bound->hasSkeleton()) {
         definition.has_skeleton = true;
       }
-      if (AnimationPlayer* player = bound->getAnimationPlayer()) {
-        for (const AnimationPlayer::ClipBinding& binding :
-             player->getClipBindings()) {
-          SceneEntityDefinition::AnimationClipBinding clip_binding;
-          clip_binding.name = binding.name;
-          clip_binding.guid = binding.guid;
-          definition.animation_player_clips.push_back(eastl::move(clip_binding));
-        }
-      }
       const size_t behaviour_count = bound->getBehaviourCount();
       definition.behaviours.reserve(behaviour_count);
       for (size_t bi = 0; bi < behaviour_count; ++bi) {
@@ -650,6 +685,7 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
           SceneEntityDefinition* definition;
         };
         ClipExportContext ctx{&definition};
+        definition.animation_player_clips.clear();
         player->visitClipBindings(
             [](const eastl::string& name, const eastl::string& guid,
                void* userdata) {
@@ -675,6 +711,23 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
     if (const CameraComponent* camera = getCamera(entity_id)) {
       definition.has_camera = true;
       definition.camera = *camera;
+    }
+
+    if (const LightComponent* light = getLight(entity_id)) {
+      definition.has_light = true;
+      definition.light = *light;
+      definition.light.linking.clear();
+      definition.light_linking_names.clear();
+      for (EntityId linked_id : light->linking) {
+        if (isOmittedFromDocument(linked_id)) {
+          continue;
+        }
+        const Entity* linked = getEntity(linked_id);
+        if (linked == nullptr || linked->getName().empty()) {
+          continue;
+        }
+        definition.light_linking_names.push_back(linked->getName());
+      }
     }
 
     out_scene.getEntities().push_back(eastl::move(definition));

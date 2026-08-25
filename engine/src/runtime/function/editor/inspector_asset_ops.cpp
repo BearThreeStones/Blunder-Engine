@@ -97,4 +97,52 @@ bool resolveMeshAssetInspectorIdentity(
   return !out_identity.display_name.empty();
 }
 
+std::filesystem::path meshDescriptorAbsolutePath(
+    FileSystem* file_system, const eastl::string& descriptor_virtual_path) {
+  if (file_system == nullptr) {
+    return {};
+  }
+  if (descriptor_virtual_path.compare(0, 7, "assets/") == 0) {
+    return file_system->resolveAsset(
+        std::filesystem::path(descriptor_virtual_path.c_str() + 7));
+  }
+  if (descriptor_virtual_path.compare(0, 10, "resources/") == 0) {
+    return file_system->resolveResource(
+        std::filesystem::path(descriptor_virtual_path.c_str() + 10));
+  }
+  return file_system->resolve(
+      std::filesystem::path(descriptor_virtual_path.c_str()));
+}
+
+bool loadMeshAssetDescriptor(const eastl::string& descriptor_virtual_path,
+                             FileSystem* file_system,
+                             MeshAssetDescriptor& out_descriptor) {
+  out_descriptor = {};
+  if (file_system == nullptr ||
+      !isMeshAssetDescriptorPath(descriptor_virtual_path)) {
+    return false;
+  }
+  eastl::string yaml_text;
+  if (!file_system->readText(
+          meshDescriptorAbsolutePath(file_system, descriptor_virtual_path),
+          yaml_text)) {
+    return false;
+  }
+  return AssetYaml::parseMeshDescriptor(yaml_text, out_descriptor);
+}
+
+bool saveMeshAssetDescriptor(const eastl::string& descriptor_virtual_path,
+                             FileSystem* file_system,
+                             const MeshAssetDescriptor& descriptor) {
+  if (file_system == nullptr ||
+      !isMeshAssetDescriptorPath(descriptor_virtual_path)) {
+    return false;
+  }
+  const std::filesystem::path absolute =
+      meshDescriptorAbsolutePath(file_system, descriptor_virtual_path);
+  file_system->ensureParentDirectory(absolute);
+  return file_system->writeText(absolute,
+                                AssetYaml::serializeMeshDescriptor(descriptor));
+}
+
 }  // namespace Blunder

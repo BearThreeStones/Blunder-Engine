@@ -57,6 +57,7 @@ add_library(engine_runtime STATIC
     "platform/window/child_window_registry.cpp"
     "function/slint/slint_system.h"
     "function/slint/slint_system.cpp"
+    "function/slint/slint_attachment_preview.cpp"
     "core/log/log_access.h"
     "core/log/log_access.cpp"
     "core/log/log_system.h"
@@ -184,6 +185,7 @@ add_library(engine_runtime STATIC
     "resource/asset/asset_descriptor.h"
     "resource/asset/asset_yaml.h"
     "resource/asset/asset_yaml.cpp"
+    "resource/asset/mesh_material_override.cpp"
     "resource/asset_registry/asset_registry.h"
     "resource/asset_registry/asset_registry.cpp"
     "resource/asset_cook/asset_cook_types.h"
@@ -230,12 +232,16 @@ add_library(engine_runtime STATIC
     "resource/thumbnail/thumbnail_generator.h"
     "resource/thumbnail/thumbnail_generator.cpp"
     "resource/content_browser/content_browser_types.h"
+    "resource/content_browser/content_browser_names.h"
+    "resource/content_browser/content_browser_names.cpp"
     "resource/content_browser/content_browser_view.h"
     "resource/content_browser/content_browser_view.cpp"
     "resource/content_browser/content_browser_drag.h"
     "resource/content_browser/content_browser_drag.cpp"
     "resource/content_browser/content_browser_drop.h"
     "resource/content_browser/content_browser_drop.cpp"
+    "resource/content_browser/content_browser_delete.h"
+    "resource/content_browser/content_browser_delete.cpp"
     "resource/content_browser/content_browser_system.h"
     "resource/content_browser/content_browser_system.cpp"
     "resource/content_browser/content_browser_watch.h"
@@ -244,6 +250,10 @@ add_library(engine_runtime STATIC
     "function/scene/entity.h"
     "function/scene/entity.cpp"
     "function/scene/scene.h"
+    "function/scene/light_component.h"
+    "function/scene/light_eval.h"
+    "function/scene/light_eval.cpp"
+    "function/scene/scene_starter.h"
     "function/scene/scene_instance.h"
     "function/scene/scene_instance.cpp"
     "function/scene/scene_serializer.h"
@@ -270,6 +280,8 @@ add_library(engine_runtime STATIC
     "function/editor/inspector_mesh_preview.h"
     "function/editor/inspector_mesh_preview.cpp"
     "function/editor/hierarchy_types.h"
+    "function/editor/hierarchy_row_icons.h"
+    "function/editor/hierarchy_row_icons.cpp"
     "function/editor/hierarchy_line.h"
     "function/editor/hierarchy_system.h"
     "function/editor/hierarchy_system.cpp"
@@ -287,6 +299,8 @@ add_library(engine_runtime STATIC
     "function/editor/editor_commands.cpp"
     "function/editor/inspector_add_ops.h"
     "function/editor/inspector_add_ops.cpp"
+    "function/editor/hierarchy_create_ops.h"
+    "function/editor/hierarchy_create_ops.cpp"
     "function/editor/align_camera_actions.h"
     "function/editor/align_camera_actions.cpp"
     "function/editor/animation_clip_resolve.h"
@@ -300,6 +314,10 @@ add_library(engine_runtime STATIC
     "function/editor/animation_sync_cine_preview_controller.cpp"
     "function/editor/document_history_helpers.h"
     "function/editor/document_history_helpers.cpp"
+    "function/editor/content_browser_commands.h"
+    "function/editor/content_browser_commands.cpp"
+    "function/editor/mesh_material_inspector_commands.h"
+    "function/editor/mesh_material_inspector_commands.cpp"
     "function/editor/viewport_pick_system.h"
     "function/editor/viewport_pick_system.cpp"
     "function/script/dotnet_host.h"
@@ -318,10 +336,12 @@ slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
     "function/slint/import_mesh_dialog.slint"
     "function/slint/play_dirty_scene_dialog.slint"
+    "function/slint/browser_delete_dialog.slint"
     "function/slint/detection_reimport_dialog.slint"
     "function/slint/piercing_menu.slint"
     "function/slint/hierarchy.slint"
     "function/slint/inspector_panel.slint"
+    "function/slint/attachment_preview_card.slint"
     "function/slint/axis_number_field.slint"
     "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
@@ -330,6 +350,17 @@ slint_target_sources(engine_runtime
     "function/slint/animation_tree_canvas_panel.slint"
     "function/slint/camera_preview_panel.slint"
 )
+
+# Generated editor_window.cpp is ~10MB; Debug+PCH on that TU trips MSVC C1060.
+if(MSVC)
+    set_source_files_properties(
+        "${CMAKE_CURRENT_BINARY_DIR}/slint_generated_editor_window_1.cpp"
+        PROPERTIES
+            SKIP_PRECOMPILE_HEADERS ON
+            COMPILE_OPTIONS "/Zm400;/bigobj"
+            VS_SETTINGS "DebugInformationFormat=None"
+    )
+endif()
 
 target_sources(engine_runtime PRIVATE ${RENDER_SOURCES})
 

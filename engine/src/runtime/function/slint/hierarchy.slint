@@ -1,8 +1,22 @@
+import { EditorTheme } from "editor_theme.slint";
 import {
     EditorIconTreeArrowRight,
     EditorIconTreeArrowDown,
     EditorIconScene,
+    EditorIconToolMove,
+    EditorIconMesh,
+    EditorIconCamera3D,
+    EditorIconLight,
+    EditorIconSkeleton3D,
+    EditorIconAnimationTree,
+    EditorIconScript,
+    EditorIconSkeletonModifier3D,
 } from "editor_icons.slint";
+
+export struct HierarchyRowIcon {
+    kind: int,
+    index: int,
+}
 
 export struct HierarchyTreeRow {
     entity-id: int,
@@ -13,6 +27,7 @@ export struct HierarchyTreeRow {
     selected: bool,
     is-last-sibling: bool,
     ancestor-cont-mask: int,
+    icons: [HierarchyRowIcon],
 }
 
 component HierarchyLineGutterCell {
@@ -39,7 +54,7 @@ component HierarchyLineGutterCell {
         y: 0;
         width: 1px;
         height: parent.height;
-        background: #737373;
+        background: EditorTheme.hier-line;
     }
 
     // T: full-height stem + tick into the chevron column.
@@ -48,14 +63,14 @@ component HierarchyLineGutterCell {
         y: 0;
         width: 1px;
         height: parent.height;
-        background: #737373;
+        background: EditorTheme.hier-line;
     }
     if root.draw-tee: Rectangle {
         x: (parent.width - 1px) / 2;
         y: (parent.height - 1px) / 2;
         width: parent.width / 2;
         height: 1px;
-        background: #737373;
+        background: EditorTheme.hier-line;
     }
 
     // L: stem to mid-row + tick into the chevron column.
@@ -64,14 +79,14 @@ component HierarchyLineGutterCell {
         y: 0;
         width: 1px;
         height: parent.height / 2;
-        background: #737373;
+        background: EditorTheme.hier-line;
     }
     if root.draw-ell: Rectangle {
         x: (parent.width - 1px) / 2;
         y: (parent.height - 1px) / 2;
         width: parent.width / 2;
         height: 1px;
-        background: #737373;
+        background: EditorTheme.hier-line;
     }
 }
 
@@ -82,7 +97,11 @@ export component HierarchyPanel {
     in property <string> scene-display-name: "(No Scene)";
 
     callback entity-selected(int);
+    callback entity-context-selected(int);
     callback entity-toggle(int);
+    callback create-requested(int, string);
+    callback delete-requested(int);
+    callback icon-pressed(int, float, float);
 
     out property <length> hierarchy-origin-x: hierarchy-root.absolute-position.x;
     out property <length> hierarchy-origin-y: hierarchy-root.absolute-position.y;
@@ -94,8 +113,8 @@ export component HierarchyPanel {
     vertical-stretch: 0;
 
     hierarchy-root := Rectangle {
-        background: #2d2d2d;
-        border-color: #2a2a2a;
+        background: EditorTheme.window;
+        border-color: EditorTheme.hairline;
         border-width: 1px;
         vertical-stretch: 1;
 
@@ -105,11 +124,11 @@ export component HierarchyPanel {
 
             if root.show-title: Text {
                 text: "Hierarchy";
-                color: #d0d0d0;
+                color: EditorTheme.window-text;
                 font-size: 14px;
             }
 
-            if root.show-title: Rectangle { background: #2a2a2a; height: 1px; }
+            if root.show-title: Rectangle { background: EditorTheme.hairline; height: 1px; }
 
             scene-header := Rectangle {
                 horizontal-stretch: 1;
@@ -123,17 +142,36 @@ export component HierarchyPanel {
 
                     EditorIconScene {
                         icon-size: 14px;
-                        icon-color: #e0e0e0;
+                        icon-color: EditorTheme.icon;
                         y: (parent.height - self.height) / 2;
                     }
 
                     Text {
                         text: root.scene-display-name;
-                        color: #d8d8d8;
+                        color: EditorTheme.default-text;
                         font-size: 11px;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                         overflow: elide;
+                    }
+                }
+
+                ContextMenuArea {
+                    width: 100%;
+                    height: 100%;
+                    Menu {
+                        MenuItem {
+                            title: "Empty";
+                            activated => { root.create-requested(0, "empty"); }
+                        }
+                        MenuItem {
+                            title: "Camera";
+                            activated => { root.create-requested(0, "camera"); }
+                        }
+                        MenuItem {
+                            title: "Light";
+                            activated => { root.create-requested(0, "light"); }
+                        }
                     }
                 }
             }
@@ -150,6 +188,25 @@ export component HierarchyPanel {
                     viewport-width: parent.width;
                     viewport-height: tree-list.preferred-height;
 
+                    ContextMenuArea {
+                        width: parent.width;
+                        height: Math.max(parent.height, tree-list.preferred-height);
+                        Menu {
+                            MenuItem {
+                                title: "Empty";
+                                activated => { root.create-requested(0, "empty"); }
+                            }
+                            MenuItem {
+                                title: "Camera";
+                                activated => { root.create-requested(0, "camera"); }
+                            }
+                            MenuItem {
+                                title: "Light";
+                                activated => { root.create-requested(0, "light"); }
+                            }
+                        }
+                    }
+
                     tree-list := VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 0px;
@@ -157,16 +214,30 @@ export component HierarchyPanel {
                         for row[index] in root.tree-rows: Rectangle {
                             horizontal-stretch: 1;
                             height: 22px;
-                            background: row.selected ? #3a3a4a : #00000000;
+                            background: row.selected ? EditorTheme.accent-sel-fill : #00000000;
 
                             row-touch := TouchArea {
                                 width: 100%;
                                 height: 100%;
 
+                                property <length> chevron-x: row.depth * 18px;
+
                                 pointer-event(event) => {
-                                    if (event.button == PointerEventButton.left
-                                        && event.kind == PointerEventKind.down) {
-                                        root.entity-selected(row.entity-id);
+                                    if (event.kind == PointerEventKind.down
+                                        && event.button == PointerEventButton.left) {
+                                        if (row.has-children
+                                            && self.mouse-x >= self.chevron-x
+                                            && self.mouse-x < self.chevron-x + 18px) {
+                                            root.entity-toggle(row.entity-id);
+                                        } else {
+                                            root.entity-selected(row.entity-id);
+                                            if (self.mouse-x >= self.width - icon-strip.width) {
+                                                root.icon-pressed(
+                                                    row.entity-id,
+                                                    self.mouse-x / 1px,
+                                                    self.width / 1px);
+                                            }
+                                        }
                                     }
                                 }
 
@@ -182,28 +253,21 @@ export component HierarchyPanel {
                                         ancestor-cont-mask: row.ancestor-cont-mask;
                                     }
 
-                                    if row.has-children: TouchArea {
+                                    if row.has-children: Rectangle {
                                         width: 18px;
                                         height: 22px;
 
                                         if row.expanded: EditorIconTreeArrowDown {
                                             icon-size: 10px;
-                                            icon-color: #a0a0a0;
+                                            icon-color: EditorTheme.icon;
                                             x: (parent.width - self.width) / 2;
                                             y: (parent.height - self.height) / 2;
                                         }
                                         if !row.expanded: EditorIconTreeArrowRight {
                                             icon-size: 10px;
-                                            icon-color: #a0a0a0;
+                                            icon-color: EditorTheme.icon;
                                             x: (parent.width - self.width) / 2;
                                             y: (parent.height - self.height) / 2;
-                                        }
-
-                                        pointer-event(event) => {
-                                            if (event.button == PointerEventButton.left
-                                                && event.kind == PointerEventKind.down) {
-                                                root.entity-toggle(row.entity-id);
-                                            }
                                         }
                                     }
 
@@ -216,12 +280,98 @@ export component HierarchyPanel {
 
                                     Text {
                                         text: row.name;
-                                        color: row.selected ? #bde7ff : #d8d8d8;
+                                        color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.default-text;
                                         font-size: 11px;
                                         vertical-alignment: center;
                                         horizontal-alignment: left;
                                         horizontal-stretch: 1;
                                         overflow: elide;
+                                    }
+
+                                    icon-strip := HorizontalLayout {
+                                        spacing: 2px;
+                                        padding-right: 4px;
+                                        alignment: end;
+
+                                        for icon in row.icons: Rectangle {
+                                            width: 16px;
+                                            height: 22px;
+
+                                            if icon.kind == 0: EditorIconToolMove {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 1: EditorIconMesh {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 2: EditorIconCamera3D {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 3: EditorIconLight {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 4: EditorIconSkeleton3D {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 5: EditorIconAnimationTree {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 6: EditorIconScript {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 7: EditorIconSkeletonModifier3D {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            ContextMenuArea {
+                                x: 0px;
+                                y: 0px;
+                                width: 100%;
+                                height: 100%;
+                                Menu {
+                                    MenuItem {
+                                        title: "Empty";
+                                        activated => { root.create-requested(row.entity-id, "empty"); }
+                                    }
+                                    MenuItem {
+                                        title: "Camera";
+                                        activated => { root.create-requested(row.entity-id, "camera"); }
+                                    }
+                                    MenuItem {
+                                        title: "Light";
+                                        activated => { root.create-requested(row.entity-id, "light"); }
+                                    }
+                                    MenuSeparator {}
+                                    MenuItem {
+                                        title: "Delete";
+                                        activated => { root.delete-requested(row.entity-id); }
                                     }
                                 }
                             }

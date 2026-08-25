@@ -3,6 +3,7 @@
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset/mesh_material_override.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
@@ -893,23 +894,28 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
       return nullptr;
     }
 
-    if (auto cooked = loadCookedMeshAsset(m_file_system, key,
-                                          descriptor_path.absolute,
-                                          descriptor.guid)) {
-      m_mesh_cache[key] = cooked;
-      return cooked;
+    eastl::shared_ptr<MeshAsset> loaded = loadCookedMeshAsset(
+        m_file_system, key, descriptor_path.absolute, descriptor.guid);
+    if (!loaded) {
+      LOG_WARN(
+          "[AssetManager] cooked mesh missing/stale for {}, Fast Path "
+          "Intermediate + request Cook",
+          key.c_str());
+      (void)descriptor.import;
+      loaded = loadMesh(descriptor.source);
+      if (loaded) {
+        requestCookAfterFastPath(descriptor.guid);
+      }
     }
-
-    LOG_WARN(
-        "[AssetManager] cooked mesh missing/stale for {}, Fast Path "
-        "Intermediate + request Cook",
-        key.c_str());
-    (void)descriptor.import;
-    eastl::shared_ptr<MeshAsset> intermediate = loadMesh(descriptor.source);
-    if (intermediate) {
-      requestCookAfterFastPath(descriptor.guid);
+    if (!loaded) {
+      return nullptr;
     }
-    return intermediate;
+    const AssetRegistry* registry =
+        g_runtime_global_context.m_asset_registry.get();
+    eastl::shared_ptr<MeshAsset> yaml_mesh = instantiateMeshWithMaterialOverride(
+        loaded, descriptor, this, registry);
+    m_mesh_cache[key] = yaml_mesh;
+    return yaml_mesh;
   }
   if (endsWithSuffix(request_key, ".mesh.asset")) {
     const ResolvedContentPath descriptor_path =
@@ -1186,6 +1192,44 @@ void AssetManager::invalidateMeshCache(const eastl::string& virtual_path_or_key)
       m_mesh_cache.erase(raw);
     }
   }
+}
+
+void AssetManager::refreshMeshMaterialOverride(
+    const eastl::string& descriptor_virtual_path) {
+  if (!m_is_initialized || descriptor_virtual_path.empty()) {
+    return;
+  }
+
+  const eastl::string key = canonicalKey(descriptor_virtual_path);
+  eastl::shared_ptr<MeshAsset> cached;
+  if (auto it = m_mesh_cache.find(key); it != m_mesh_cache.end()) {
+    cached = it->second.lock();
+  }
+  if (!cached) {
+    (void)loadMesh(descriptor_virtual_path);
+    return;
+  }
+
+  const ResolvedContentPath descriptor_path =
+      resolveContentPath(m_file_system, descriptor_virtual_path, false);
+  eastl::string yaml_text;
+  if (!m_file_system->readText(descriptor_path.absolute, yaml_text)) {
+    return;
+  }
+
+  MeshAssetDescriptor descriptor{};
+  if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+    return;
+  }
+
+  eastl::shared_ptr<MeshAsset> import_source;
+  if (!cached->isFromCookedFinal() && !descriptor.source.empty()) {
+    import_source = loadMesh(descriptor.source);
+  }
+  const AssetRegistry* registry =
+      g_runtime_global_context.m_asset_registry.get();
+  reapplyMeshMaterialOverride(*cached, import_source.get(),
+                              descriptor.material_override, this, registry);
 }
 
 void AssetManager::invalidateSceneCache(const eastl::string& virtual_path_or_key) {

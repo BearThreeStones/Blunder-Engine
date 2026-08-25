@@ -283,7 +283,7 @@ std::filesystem::path resolvePlayerExecutablePath() {
       return staged;
     }
   }
-  return sibling;
+  return {};
 }
 
 PlaySessionHooks PlaySessionController::makeDefaultHooks() {

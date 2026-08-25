@@ -1,4 +1,4 @@
-import { Button, HorizontalBox, LineEdit, VerticalBox } from "std-widgets.slint";
+import { EditorTheme, EditorButton, EditorTextField, EditorToggle, EditorModalPanel } from "editor_controls.slint";
 
 export struct ProjectRow {
     name: string,
@@ -11,7 +11,7 @@ export component ProjectManagerWindow inherits Window {
     title: "Blunder Project Manager";
     preferred-width: 1100px;
     preferred-height: 700px;
-    background: #181818;
+    background: EditorTheme.app-bar;
 
     in-out property <[ProjectRow]> projects: [];
     in-out property <int> selected-index: -1;
@@ -37,109 +37,110 @@ export component ProjectManagerWindow inherits Window {
     callback show-import-requested();
     callback selection-changed(int);
 
-    VerticalBox {
+    VerticalLayout {
         padding: 0;
         spacing: 0;
 
-        // Top chrome: brand + Projects tab
         Rectangle {
-            height: 48px;
-            background: #1f1f1f;
-            HorizontalBox {
+            height: EditorTheme.app-bar-height;
+            background: EditorTheme.app-bar;
+            HorizontalLayout {
                 padding-left: 16px;
                 padding-right: 16px;
                 spacing: 24px;
                 alignment: start;
                 Text {
                     text: "BLUNDER";
-                    color: #eeeeee;
+                    color: EditorTheme.default-text;
                     font-size: 16px;
                     font-weight: 700;
                     vertical-alignment: center;
                 }
-                VerticalBox {
+                VerticalLayout {
                     alignment: center;
                     spacing: 0;
                     Text {
                         text: "Projects";
-                        color: #eeeeee;
+                        color: EditorTheme.default-text;
                         font-size: 13px;
                         font-weight: 600;
                         horizontal-alignment: center;
                     }
                     Rectangle {
                         height: 2px;
-                        background: #3a6ea5;
+                        background: EditorTheme.accent;
                         width: 64px;
                     }
                 }
             }
         }
-        Rectangle { height: 1px; background: #2a2a2a; }
+        Rectangle { height: 1px; background: EditorTheme.hairline; }
 
-        // Body: toolbar + list + side actions
-        HorizontalBox {
+        HorizontalLayout {
             padding: 12px;
             spacing: 12px;
 
-            VerticalBox {
+            VerticalLayout {
                 spacing: 10px;
                 horizontal-stretch: 1;
 
-                HorizontalBox {
+                HorizontalLayout {
                     spacing: 8px;
-                    Button {
+                    EditorButton {
                         text: "Create";
+                        primary: true;
                         clicked => { root.show-create-requested(); }
                     }
-                    Button {
+                    EditorButton {
                         text: "Import";
                         clicked => { root.show-import-requested(); }
                     }
                 }
 
                 Rectangle {
-                    background: #1f1f1f;
-                    border-radius: 4px;
+                    background: EditorTheme.window;
+                    border-radius: EditorTheme.radius-surface;
                     border-width: 1px;
-                    border-color: #2d2d2d;
+                    border-color: EditorTheme.hairline;
                     vertical-stretch: 1;
-                    VerticalBox {
+                    VerticalLayout {
                         padding: 6px;
-                        spacing: 2px;
+                        spacing: 6px;
                         if root.projects.length == 0: Text {
                             text: "No projects yet. Create or Import to get started.";
-                            color: #888888;
-                            padding: 12px;
+                            color: EditorTheme.muted;
                         }
                         for project[index] in root.projects: Rectangle {
                             height: 56px;
-                            background: index == root.selected-index ? #2a3a4a : transparent;
-                            border-radius: 3px;
-                            HorizontalBox {
+                            background: index == root.selected-index ? EditorTheme.accent-sel-fill : transparent;
+                            border-radius: EditorTheme.radius-ctl;
+                            border-width: 1px;
+                            border-color: index == root.selected-index ? EditorTheme.accent-line : EditorTheme.hairline;
+                            HorizontalLayout {
                                 padding-left: 12px;
                                 padding-right: 12px;
                                 spacing: 16px;
-                                VerticalBox {
+                                VerticalLayout {
                                     spacing: 2px;
                                     vertical-stretch: 1;
                                     alignment: center;
                                     Text {
                                         text: project.name;
-                                        color: project.missing ? #cc6666 : #eeeeee;
+                                        color: project.missing ? #cc6666
+                                            : (index == root.selected-index ? EditorTheme.accent-sel-text : EditorTheme.default-text);
                                         font-size: 14px;
                                         font-weight: 600;
                                     }
                                     Text {
                                         text: project.missing ? project.path + " (missing)" : project.path;
-                                        color: #888888;
+                                        color: EditorTheme.muted;
                                         font-size: 11px;
                                         overflow: elide;
                                     }
                                 }
                                 Text {
                                     text: project.last-opened;
-                                    color: #888888;
+                                    color: EditorTheme.muted;
                                     font-size: 11px;
                                     vertical-alignment: center;
                                     horizontal-alignment: right;
@@ -162,17 +163,17 @@ export component ProjectManagerWindow inherits Window {
                 }
             }
 
-            // Side actions
-            VerticalBox {
+            VerticalLayout {
                 width: 140px;
                 spacing: 8px;
                 padding-top: 34px;
-                Button {
+                EditorButton {
                     text: "Open";
+                    primary: true;
                     enabled: root.selected-index >= 0;
                     clicked => { root.open-requested(); }
                 }
-                Button {
+                EditorButton {
                     text: "Remove";
                     enabled: root.selected-index >= 0;
                     clicked => { root.remove-requested(); }
@@ -180,16 +181,16 @@ export component ProjectManagerWindow inherits Window {
             }
         }
 
-        Rectangle { height: 1px; background: #2a2a2a; }
+        Rectangle { height: 1px; background: EditorTheme.hairline; }
         Rectangle {
             height: 28px;
-            background: #1f1f1f;
-            HorizontalBox {
+            background: EditorTheme.app-bar;
+            HorizontalLayout {
                 padding-left: 12px;
                 padding-right: 12px;
                 Text {
                     text: root.status-text;
-                    color: #cccc66;
+                    color: EditorTheme.muted;
                     font-size: 11px;
                     vertical-alignment: center;
                 }
@@ -198,120 +199,94 @@ export component ProjectManagerWindow inherits Window {
     }
 
     if root.create-dialog-visible: Rectangle {
-        background: #000000aa;
-        VerticalBox {
-            alignment: center;
-            HorizontalBox {
-                alignment: center;
-                Rectangle {
-                    width: 500px;
-                    background: #2d2d2d;
-                    border-radius: 6px;
-                    border-width: 1px;
-                    border-color: #3a3a3a;
-                    VerticalBox {
-                        padding: 20px;
-                        spacing: 12px;
-                        Text {
-                            text: "Create New Project";
-                            color: #eeeeee;
-                            font-size: 16px;
-                            font-weight: 700;
-                        }
-                        Text { text: "Name"; color: #999999; font-size: 12px; }
-                        LineEdit { text <=> root.create-name; }
-                        Text { text: "Path"; color: #999999; font-size: 12px; }
-                        HorizontalBox {
-                            spacing: 8px;
-                            LineEdit {
-                                horizontal-stretch: 1;
-                                text <=> root.create-path;
-                            }
-                            Button {
-                                text: "Browse…";
-                                clicked => { root.create-browse-requested(); }
-                            }
-                        }
-                        HorizontalBox {
-                            spacing: 8px;
-                            Text {
-                                text: "Create Folder";
-                                color: #999999;
-                                vertical-alignment: center;
-                            }
-                            Button {
-                                text: root.create-folder ? "On" : "Off";
-                                clicked => { root.create-folder = !root.create-folder; }
-                            }
-                        }
-                        HorizontalBox {
-                            alignment: end;
-                            spacing: 8px;
-                            Button {
-                                text: "Cancel";
-                                clicked => { root.create-cancel-requested(); }
-                            }
-                            Button {
-                                text: "Create & Open";
-                                clicked => { root.create-confirm-requested(); }
-                            }
-                        }
-                    }
+        width: 100%;
+        height: 100%;
+        background: EditorTheme.modal-dim;
+        EditorModalPanel {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            panel-width: 500px;
+            Text {
+                text: "Create New Project";
+                color: EditorTheme.default-text;
+                font-size: 16px;
+                font-weight: 700;
+            }
+            Text { text: "Name"; color: EditorTheme.muted; font-size: EditorTheme.font; }
+            EditorTextField { text <=> root.create-name; }
+            Text { text: "Path"; color: EditorTheme.muted; font-size: EditorTheme.font; }
+            HorizontalLayout {
+                spacing: 8px;
+                EditorTextField {
+                    horizontal-stretch: 1;
+                    text <=> root.create-path;
+                }
+                EditorButton {
+                    text: "Browse…";
+                    clicked => { root.create-browse-requested(); }
+                }
+            }
+            EditorToggle {
+                text: "Create Folder";
+                checked <=> root.create-folder;
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                EditorButton {
+                    text: "Cancel";
+                    clicked => { root.create-cancel-requested(); }
+                }
+                EditorButton {
+                    text: "Create & Open";
+                    primary: true;
+                    clicked => { root.create-confirm-requested(); }
                 }
             }
         }
     }
 
     if root.import-dialog-visible: Rectangle {
-        background: #000000aa;
-        VerticalBox {
-            alignment: center;
-            HorizontalBox {
-                alignment: center;
-                Rectangle {
-                    width: 500px;
-                    background: #2d2d2d;
-                    border-radius: 6px;
-                    border-width: 1px;
-                    border-color: #3a3a3a;
-                    VerticalBox {
-                        padding: 20px;
-                        spacing: 12px;
-                        Text {
-                            text: "Import Existing Project";
-                            color: #eeeeee;
-                            font-size: 16px;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: "Project path (folder or project.blunder)";
-                            color: #999999;
-                            font-size: 12px;
-                        }
-                        HorizontalBox {
-                            spacing: 8px;
-                            LineEdit {
-                                horizontal-stretch: 1;
-                                text <=> root.import-path;
-                            }
-                            Button {
-                                text: "Browse…";
-                                clicked => { root.import-browse-requested(); }
-                            }
-                        }
-                        HorizontalBox {
-                            alignment: end;
-                            spacing: 8px;
-                            Button {
-                                text: "Cancel";
-                                clicked => { root.import-cancel-requested(); }
-                            }
-                            Button {
-                                text: "Import & Open";
-                                clicked => { root.import-confirm-requested(); }
-                            }
-                        }
-                    }
+        width: 100%;
+        height: 100%;
+        background: EditorTheme.modal-dim;
+        EditorModalPanel {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            panel-width: 500px;
+            Text {
+                text: "Import Existing Project";
+                color: EditorTheme.default-text;
+                font-size: 16px;
+                font-weight: 700;
+            }
+            Text {
+                text: "Project path (folder or project.blunder)";
+                color: EditorTheme.muted;
+                font-size: EditorTheme.font;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                EditorTextField {
+                    horizontal-stretch: 1;
+                    text <=> root.import-path;
+                }
+                EditorButton {
+                    text: "Browse…";
+                    clicked => { root.import-browse-requested(); }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                EditorButton {
+                    text: "Cancel";
+                    clicked => { root.import-cancel-requested(); }
+                }
+                EditorButton {
+                    text: "Import & Open";
+                    primary: true;
+                    clicked => { root.import-confirm-requested(); }
                 }
             }
         }

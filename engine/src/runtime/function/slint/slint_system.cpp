@@ -14,6 +14,7 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -24,13 +25,21 @@
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
+
+#include "EASTL/string.h"
+#include "EASTL/utility.h"
 
 #include "runtime/core/base/macro.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/resource/content_browser/content_browser_delete.h"
+#include "runtime/resource/content_browser/content_browser_names.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
+#include "runtime/platform/file_system/file_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/editor/document_history.h"
@@ -47,20 +56,27 @@
 #include "runtime/function/editor/placement_preview_controller.h"
 #include "runtime/resource/content_browser/content_browser_drop.h"
 #include "runtime/function/ui/active_scene_display.h"
+#include "runtime/function/editor/content_browser_commands.h"
 #include "runtime/function/editor/document_history_helpers.h"
 #include "runtime/function/editor/editor_commands.h"
 #include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
+#include "runtime/function/editor/hierarchy_create_ops.h"
+#include "runtime/function/editor/hierarchy_row_icons.h"
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/editor/inspector_behaviour_ops.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/editor/inspector_asset_ops.h"
+#include "runtime/function/editor/mesh_material_inspector_commands.h"
+#include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/mesh_material_override.h"
 #include "runtime/function/editor/inspector_mesh_preview.h"
 #include "runtime/core/object/object.h"
 #include "runtime/function/script/behaviour_type_catalog.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
@@ -155,6 +171,18 @@ bool slintPartialCompositeEnabledEnv() {
     return false;
   }
   return true;
+}
+
+eastl::string browserEntryDisplayName(const eastl::string& virtual_path) {
+  eastl::string trimmed = virtual_path;
+  if (!trimmed.empty() && trimmed.back() == '/') {
+    trimmed.pop_back();
+  }
+  const size_t slash = trimmed.find_last_of('/');
+  if (slash == eastl::string::npos) {
+    return trimmed;
+  }
+  return trimmed.substr(slash + 1);
 }
 
 uint64_t editorViewportPresentMinIntervalNs() {
@@ -841,9 +869,6 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         "notifier: {}",
         static_cast<int>(*notifier_error));
     }
-    component->on_sync_shading_from_asset(UiCallbackBinder::bind(
-        m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::syncShadingFromAsset)); }));
-
     component->on_save_scene_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::saveScene)); }));
     component->on_save_scene_as_requested(UiCallbackBinder::bind(
@@ -940,15 +965,29 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
           host.enqueue(UiEvent::simple(UiEventKind::playDirtyCancel));
         }));
     component->on_open_dirty_save_and_open(UiCallbackBinder::bind(
-        m_ui_host, [](UiHost& host) {
+        m_ui_host, [this](UiHost& host) {
+          if (m_pending_browser_delete_after_dirty) {
+            finishPendingBrowserDeleteAfterDirty(true);
+            return;
+          }
           host.enqueue(UiEvent::simple(UiEventKind::openDirtySaveAndOpen));
         }));
     component->on_open_dirty_discard_and_open(UiCallbackBinder::bind(
-        m_ui_host, [](UiHost& host) {
+        m_ui_host, [this](UiHost& host) {
+          if (m_pending_browser_delete_after_dirty) {
+            finishPendingBrowserDeleteAfterDirty(false);
+            return;
+          }
           host.enqueue(UiEvent::simple(UiEventKind::openDirtyDiscardAndOpen));
         }));
     component->on_open_dirty_cancelled(UiCallbackBinder::bind(
-        m_ui_host, [](UiHost& host) {
+        m_ui_host, [this](UiHost& host) {
+          if (m_pending_browser_delete_after_dirty) {
+            hideOpenDirtySceneDialog();
+            m_pending_browser_delete_after_dirty = false;
+            m_pending_browser_delete = {};
+            return;
+          }
           host.enqueue(UiEvent::simple(UiEventKind::openDirtyCancel));
         }));
     component->on_detection_reimport_all(UiCallbackBinder::bind(
@@ -978,6 +1017,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
 
     component->on_hierarchy_entity_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, int entity_id) {
+          g_runtime_global_context.setContentBrowserHasInputFocus(false);
           m_hierarchy_handled_by_slint = true;
           UiSelectionMode mode = UiSelectionMode::replace;
           const SDL_Keymod mods = SDL_GetModState();
@@ -989,11 +1029,95 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
           host.enqueue(UiEvent::selectEntity(static_cast<EntityId>(entity_id), mode));
         }));
 
+    component->on_hierarchy_entity_context_selected(
+        [this](int entity_id) { applyHierarchyContextSelect(entity_id); });
+
     component->on_hierarchy_entity_toggle(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, int entity_id) {
           m_hierarchy_handled_by_slint = true;
           host.enqueue(UiEvent::toggleHierarchyNode(static_cast<EntityId>(entity_id)));
         }));
+
+    component->on_hierarchy_create_requested(
+        [this](int parent_id, const slint::SharedString& kind) {
+          applyHierarchyCreateRequested(parent_id, eastl::string(kind.data()));
+        });
+
+    component->on_hierarchy_delete_requested(
+        [this](int entity_id) { applyHierarchyDeleteRequested(entity_id); });
+
+    component->on_hierarchy_icon_pressed(
+        [this](int entity_id, float mouse_x, float row_width) {
+          handleHierarchyIconPressed(entity_id, mouse_x, row_width);
+        });
+
+    component->on_attachment_preview_pin_toggled(
+        [this](int entity_id, int kind, int index) {
+          handlePreviewPinToggled(entity_id, kind, index);
+        });
+    component->on_attachment_preview_close_requested(
+        [this](int entity_id, int kind, int index) {
+          handlePreviewClose(entity_id, kind, index);
+        });
+    component->on_attachment_preview_focus_changed([this](bool focused) {
+      g_runtime_global_context.setAttachmentPreviewHasInputFocus(focused);
+    });
+    component->on_attachment_preview_transform_edited(
+        [this](int entity_id, int kind, int index, float pos_x, float pos_y,
+               float pos_z, float rot_x, float rot_y, float rot_z, float scale_x,
+               float scale_y, float scale_z) {
+          applyPreviewTransform(entity_id, kind, index, pos_x, pos_y, pos_z, rot_x,
+                                rot_y, rot_z, scale_x, scale_y, scale_z);
+        });
+    component->on_attachment_preview_camera_edited(
+        [this](int entity_id, int kind, int index, float fov, float near_clip,
+               float far_clip, bool is_main) {
+          applyPreviewCamera(entity_id, kind, index, fov, near_clip, far_clip,
+                             is_main);
+        });
+    component->on_attachment_preview_light_edited(
+        [this](int entity_id, int kind, int index, int light_type, float color_r,
+               float color_g, float color_b, float intensity, bool enabled,
+               float range) {
+          applyPreviewLight(entity_id, kind, index, light_type, color_r, color_g,
+                            color_b, intensity, enabled, range);
+        });
+    component->on_attachment_preview_unique_remove(
+        [this](int entity_id, int kind, int index) {
+          applyPreviewUniqueRemove(entity_id, kind, index);
+        });
+    component->on_attachment_preview_tree_canvas(
+        [this](int entity_id, int kind, int index) {
+          (void)kind;
+          (void)index;
+          applyPreviewTreeCanvas(entity_id);
+        });
+    component->on_attachment_preview_behaviour_remove(
+        [this](int entity_id, int kind, int index) {
+          applyPreviewBehaviourRemove(entity_id, kind, index);
+        });
+    component->on_attachment_preview_behaviour_prop(
+        [this](int entity_id, int kind, int index, int behaviour_id,
+               const slint::SharedString& key, const slint::SharedString& text,
+               float number, bool bool_value) {
+          applyPreviewBehaviourProp(entity_id, kind, index, behaviour_id,
+                                    eastl::string(key.data()),
+                                    eastl::string(text.data()), number, bool_value);
+        });
+    component->on_attachment_preview_modifier_remove(
+        [this](int entity_id, int kind, int index) {
+          applyPreviewModifierRemove(entity_id, kind, index);
+        });
+    component->on_attachment_preview_modifier_enabled(
+        [this](int entity_id, int kind, int index, bool enabled) {
+          applyPreviewModifierEnabled(entity_id, kind, index, enabled);
+        });
+    component->on_attachment_preview_modifier_field(
+        [this](int entity_id, int kind, int index, const slint::SharedString& key,
+               const slint::SharedString& text, float number, bool bool_value) {
+          applyPreviewModifierField(entity_id, kind, index, eastl::string(key.data()),
+                                    eastl::string(text.data()), number, bool_value);
+        });
 
     component->on_inspector_transform_edited(UiCallbackBinder::bind(
         m_ui_host,
@@ -1011,6 +1135,18 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       m_inspector_mesh_preview.resetView();
       tickInspectorMeshPreview();
     });
+    component->on_inspector_activated([this]() { onInspectorActivated(); });
+    component->on_mesh_material_unlit_toggled([this](bool checked) {
+      commitMeshMaterialUnlit(checked);
+    });
+    component->on_mesh_material_scalar_committed(
+        [this](int field, float a, float b, float c, float d) {
+          commitMeshMaterialScalar(field, a, b, c, d);
+        });
+    component->on_mesh_material_reset_requested([this]() { commitMeshMaterialReset(); });
+    component->on_mesh_slot_pick_requested([this](int slot) { commitMeshSlotPick(slot); });
+    component->on_mesh_slot_clear_requested([this](int slot) { commitMeshSlotClear(slot); });
+    component->on_mesh_slot_drop_requested([this](int slot) { commitMeshSlotDrop(slot); });
 
     component->on_inspector_field_focus_changed([this](int field_id, bool focused) {
       if (focused) {
@@ -1159,6 +1295,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
                                                   eastl::string(text.data()), number, flag);
         });
     component->on_inspector_camera_edited([this]() { applyInspectorCamera(); });
+    component->on_inspector_light_edited([this]() { applyInspectorLight(); });
     component->on_inspector_add_unique_attachment(
         [this](const slint::SharedString& kind) {
           applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
@@ -1175,6 +1312,15 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
                const slint::SharedString& clip_guid) {
           applyInspectorAnimationClipCommit(entry_index, eastl::string(clip_name.data()),
                                           eastl::string(clip_guid.data()));
+        });
+    component->on_inspector_open_clip_picker(
+        [this](int target_index) { applyInspectorOpenClipPicker(target_index); });
+    component->on_inspector_pick_clip_choice(
+        [this](const slint::SharedString& guid, const slint::SharedString& stem,
+               const slint::SharedString& display) {
+          applyInspectorPickClipChoice(eastl::string(guid.data()),
+                                       eastl::string(stem.data()),
+                                       eastl::string(display.data()));
         });
 
     component->on_transform_mode_selected([](int mode) {
@@ -1213,10 +1359,46 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); }));
     component->on_browser_import_requested([this]() { queueOpenImportFileDialog(); });
     component->on_browser_new_scene_requested(UiCallbackBinder::bind(
-        m_ui_host, [](UiHost& host) {
-          host.enqueue(UiEvent::simple(UiEventKind::newSceneAsset));
+        m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+          host.enqueue(UiEvent::withPath(UiEventKind::newSceneAsset,
+                                         eastl::string(path.data())));
         }));
-    component->on_browser_delete_requested([this]() { deleteSelectedBrowserAssets(); });
+    component->on_browser_new_folder_requested(UiCallbackBinder::bind(
+        m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+          host.enqueue(UiEvent::withPath(UiEventKind::newFolder,
+                                         eastl::string(path.data())));
+        }));
+    component->on_browser_rename_requested(UiCallbackBinder::bind(
+        m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+          if (m_browser_selected_grid_paths.size() > 1) {
+            return;
+          }
+          host.enqueue(UiEvent::withPath(UiEventKind::browserRename,
+                                         eastl::string(path.data())));
+        }));
+    component->on_browser_delete_requested(
+        [this](const slint::SharedString& path) {
+          requestBrowserDelete(eastl::string(path.data()));
+        });
+    component->on_browser_inline_rename_commit(
+        [this](const slint::SharedString& name) {
+          commitBrowserInlineRename(eastl::string(name.data()));
+        });
+    component->on_browser_inline_rename_cancel(
+        [this]() { cancelBrowserInlineRename(); });
+    component->on_history_filter_changed([this]() { syncHistoryPanel(); });
+    component->on_history_entry_clicked([this](int stack, int index) {
+      jumpHistory(stack, index);
+    });
+    component->on_browser_delete_confirmed([this]() {
+      hideBrowserDeleteDialog();
+      applyPendingBrowserDelete();
+    });
+    component->on_browser_delete_cancelled([this]() {
+      hideBrowserDeleteDialog();
+      m_pending_browser_delete = {};
+      m_pending_browser_delete_after_dirty = false;
+    });
     component->on_browser_duplicate_scene_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host, const slint::SharedString& path) {
           host.enqueue(UiEvent::withPath(UiEventKind::duplicateSceneAsset,
@@ -1260,6 +1442,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         }));
     component->on_browser_folder_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+          g_runtime_global_context.setContentBrowserHasInputFocus(true);
           m_tree_folder_handled_by_slint = true;
           clearBrowserGridSelection();
           host.enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
@@ -2079,18 +2262,6 @@ BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
                                          ui->get_light_dir_z());
     settings.light_color = glm::vec3(ui->get_light_color_r(), ui->get_light_color_g(),
                                      ui->get_light_color_b());
-    settings.ambient_color = glm::vec3(ui->get_ambient_r(), ui->get_ambient_g(),
-                                       ui->get_ambient_b());
-    settings.diffuse_color = glm::vec3(ui->get_diffuse_r(), ui->get_diffuse_g(),
-                                       ui->get_diffuse_b());
-    settings.specular_color = glm::vec3(ui->get_specular_r(), ui->get_specular_g(),
-                                        ui->get_specular_b());
-    settings.shininess = ui->get_shininess();
-    settings.unlit = ui->get_shading_unlit();
-    settings.ssao_enabled = ui->get_ssao_enabled();
-    settings.ssao_radius = ui->get_ssao_radius();
-    settings.ssao_bias = ui->get_ssao_bias();
-    settings.ssao_strength = ui->get_ssao_strength();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::getBlinnPhongEditorSettings] {}", e.what());
   } catch (...) {
@@ -2118,21 +2289,6 @@ void SlintSystem::pushPreviewSettingsToSlint(const BlinnPhongEditorSettings& set
     ui->set_light_color_r(settings.light_color.r);
     ui->set_light_color_g(settings.light_color.g);
     ui->set_light_color_b(settings.light_color.b);
-    ui->set_ambient_r(settings.ambient_color.r);
-    ui->set_ambient_g(settings.ambient_color.g);
-    ui->set_ambient_b(settings.ambient_color.b);
-    ui->set_diffuse_r(settings.diffuse_color.r);
-    ui->set_diffuse_g(settings.diffuse_color.g);
-    ui->set_diffuse_b(settings.diffuse_color.b);
-    ui->set_specular_r(settings.specular_color.r);
-    ui->set_specular_g(settings.specular_color.g);
-    ui->set_specular_b(settings.specular_color.b);
-    ui->set_shininess(settings.shininess);
-    ui->set_shading_unlit(settings.unlit);
-    ui->set_ssao_enabled(settings.ssao_enabled);
-    ui->set_ssao_radius(settings.ssao_radius);
-    ui->set_ssao_bias(settings.ssao_bias);
-    ui->set_ssao_strength(settings.ssao_strength);
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::pushPreviewSettingsToSlint] {}", e.what());
   } catch (...) {
@@ -2145,33 +2301,7 @@ void SlintSystem::setBlinnPhongMaterialSource(const MaterialAsset* material) {
 }
 
 void SlintSystem::syncBlinnPhongFromMaterialSource() {
-  if (!m_window_component || !m_blinn_phong_material_source) {
-    return;
-  }
-  if (m_slint_dispatch_depth > 0) {
-    return;
-  }
-
-  const MaterialAsset& material = *m_blinn_phong_material_source;
-  try {
-    ScopedDispatchGuard guard(m_slint_dispatch_depth);
-    auto& ui = *m_window_component;
-    ui->set_ambient_r(material.getAmbientColor().x);
-    ui->set_ambient_g(material.getAmbientColor().y);
-    ui->set_ambient_b(material.getAmbientColor().z);
-    ui->set_diffuse_r(material.getDiffuseColor().x);
-    ui->set_diffuse_g(material.getDiffuseColor().y);
-    ui->set_diffuse_b(material.getDiffuseColor().z);
-    ui->set_specular_r(material.getSpecularColor().x);
-    ui->set_specular_g(material.getSpecularColor().y);
-    ui->set_specular_b(material.getSpecularColor().z);
-    ui->set_shininess(material.getShininess());
-    ui->set_shading_unlit(material.isUnlit());
-  } catch (const std::exception& e) {
-    LOG_ERROR("[SlintSystem::syncBlinnPhongFromMaterialSource] {}", e.what());
-  } catch (...) {
-    LOG_ERROR("[SlintSystem::syncBlinnPhongFromMaterialSource] unknown exception");
-  }
+  // Entity Inspector no longer hosts BRDF; Material Inspector owns those fields.
 }
 
 namespace {
@@ -2284,6 +2414,32 @@ int32_t resolveContentBrowserTreeOriginY(const MainEditorWindow& ui) {
   return browser_origin_y + k_tree_chrome_height_px;
 }
 
+int resolveInspectorClipDropTarget(const MainEditorWindow& ui, float logical_x,
+                                   float logical_y) {
+  if (!ui.get_inspector_has_animation_player()) {
+    return k_animation_clip_drop_miss;
+  }
+  int clip_count = 0;
+  if (const auto clips = ui.get_inspector_animation_clips()) {
+    clip_count = static_cast<int>(clips->row_count());
+  }
+  return hitTestAnimationClipDropTarget(
+      logical_x, logical_y,
+      static_cast<float>(ui.get_inspector_clip_list_origin_x()),
+      static_cast<float>(ui.get_inspector_clip_list_origin_y()),
+      static_cast<float>(ui.get_inspector_clip_list_width()),
+      static_cast<float>(ui.get_inspector_clip_row_pitch()), clip_count,
+      static_cast<float>(ui.get_inspector_add_clip_origin_y()),
+      static_cast<float>(ui.get_inspector_add_clip_height()));
+}
+
+void setInspectorClipDropHighlight(MainEditorWindow& ui, int highlight_index) {
+  if (ui.get_inspector_clip_drop_highlight_index() == highlight_index) {
+    return;
+  }
+  ui.set_inspector_clip_drop_highlight_index(highlight_index);
+}
+
 bool loadInspectorBehaviourCatalog(eastl::vector<BehaviourCatalogType>& out) {
   out.clear();
   if (!g_runtime_global_context.m_file_system) {
@@ -2316,6 +2472,7 @@ std::shared_ptr<slint::VectorModel<BehaviourRow>> makeBehaviourRowModel(
       slint_prop.number_value = prop.number_value;
       slint_prop.string_value = slint::SharedString(prop.string_value.c_str());
       slint_prop.missing_type = prop.missing_type;
+      slint_prop.clip_name_invalid = prop.clip_name_invalid;
       prop_model->push_back(slint_prop);
     }
     slint_row.props = prop_model;
@@ -2329,6 +2486,18 @@ std::shared_ptr<slint::VectorModel<slint::SharedString>> makeBehaviourTypeChoice
   auto model = std::make_shared<slint::VectorModel<slint::SharedString>>();
   for (const eastl::string& choice : choices) {
     model->push_back(slint::SharedString(choice.c_str()));
+  }
+  return model;
+}
+
+std::shared_ptr<slint::VectorModel<HierarchyRowIcon>> makeHierarchyIconModel(
+    const eastl::vector<HierarchyRowIconSlot>& icons) {
+  auto model = std::make_shared<slint::VectorModel<HierarchyRowIcon>>();
+  for (const HierarchyRowIconSlot& slot : icons) {
+    HierarchyRowIcon row{};
+    row.kind = static_cast<int>(slot.kind);
+    row.index = slot.index;
+    model->push_back(row);
   }
   return model;
 }
@@ -2367,7 +2536,23 @@ std::shared_ptr<slint::VectorModel<AnimationClipRow>> makeAnimationClipRowModel(
     slint_row.entry_index = row.entry_index;
     slint_row.clip_name = slint::SharedString(row.clip_name.c_str());
     slint_row.clip_guid = slint::SharedString(row.clip_guid.c_str());
+    slint_row.clip_display = slint::SharedString(row.clip_display.c_str());
+    slint_row.clip_invalid = row.clip_invalid;
     model->push_back(slint_row);
+  }
+  return model;
+}
+
+std::shared_ptr<slint::VectorModel<AnimationClipPickerRow>>
+makeAnimationClipPickerModel(
+    const eastl::vector<AnimationClipPickerEntry>& entries) {
+  auto model = std::make_shared<slint::VectorModel<AnimationClipPickerRow>>();
+  for (const AnimationClipPickerEntry& entry : entries) {
+    AnimationClipPickerRow row{};
+    row.display_name = slint::SharedString(entry.display_name.c_str());
+    row.guid = slint::SharedString(entry.guid.c_str());
+    row.stem = slint::SharedString(entry.stem.c_str());
+    model->push_back(row);
   }
   return model;
 }
@@ -2418,6 +2603,7 @@ void copyBehaviourRowsToSnapshot(const slint::Model<BehaviourRow>& rows,
         prop_copy.number_value = prop.number_value;
         prop_copy.string_value = prop.string_value.data();
         prop_copy.missing_type = prop.missing_type;
+        prop_copy.clip_name_invalid = prop.clip_name_invalid;
         copy.props.push_back(eastl::move(prop_copy));
       }
     }
@@ -2482,6 +2668,7 @@ void SlintSystem::syncHierarchy() {
       slint_row.selected =
           selection != nullptr &&
           selection->isSelected(static_cast<EntityId>(row.entity_id));
+      slint_row.icons = makeHierarchyIconModel(row.icons);
       tree_model->push_back(slint_row);
     }
     m_window_component->operator->()->set_hierarchy_tree_rows(tree_model);
@@ -2493,6 +2680,7 @@ void SlintSystem::syncHierarchy() {
   } catch (...) {
     LOG_ERROR("[SlintSystem::syncHierarchy] unknown exception");
   }
+  pruneUnpinnedPreviewCards(primary);
   syncActiveSceneIndicator();
 }
 
@@ -2583,7 +2771,6 @@ void SlintSystem::syncInspectorAssetMode() {
     ui->set_inspector_asset_type(slint::SharedString(identity.type_label.c_str()));
     ui->set_inspector_asset_intermediate_path(
         slint::SharedString(identity.intermediate_path.c_str()));
-
     m_applying_inspector_sync = false;
   } catch (const std::exception& e) {
     m_applying_inspector_sync = false;
@@ -2592,6 +2779,328 @@ void SlintSystem::syncInspectorAssetMode() {
     m_applying_inspector_sync = false;
     LOG_ERROR("[SlintSystem::syncInspectorAssetMode] unknown exception");
   }
+
+  g_runtime_global_context.setInspectorAssetMode(true);
+  pushMeshMaterialInspectorFields();
+}
+
+namespace {
+
+bool endsWithPathSuffix(const eastl::string& path, const char* suffix) {
+  const size_t n = std::strlen(suffix);
+  return path.size() >= n && path.compare(path.size() - n, n, suffix) == 0;
+}
+
+OptionalOverrideSlot* meshSlot(MeshMaterialOverride& overlay, int slot) {
+  switch (slot) {
+    case 0:
+      return &overlay.base_color_texture;
+    case 1:
+      return &overlay.metallic_roughness_texture;
+    case 2:
+      return &overlay.normal_texture;
+    case 3:
+      return &overlay.occlusion_texture;
+    default:
+      return nullptr;
+  }
+}
+
+const OptionalOverrideSlot* meshSlot(const MeshMaterialOverride& overlay,
+                                     int slot) {
+  return meshSlot(const_cast<MeshMaterialOverride&>(overlay), slot);
+}
+
+bool descriptorsMaterialEqual(const MeshAssetDescriptor& a,
+                              const MeshAssetDescriptor& b) {
+  return a.material_override == b.material_override &&
+         a.texture_guids == b.texture_guids;
+}
+
+}  // namespace
+
+void SlintSystem::onInspectorActivated() {
+  g_runtime_global_context.setContentBrowserHasInputFocus(false);
+  g_runtime_global_context.setAttachmentPreviewHasInputFocus(false);
+  g_runtime_global_context.setInspectorHasInputFocus(true);
+  g_runtime_global_context.setInspectorAssetMode(m_inspector_asset_mode);
+}
+
+void SlintSystem::pushMeshMaterialInspectorFields() {
+  if (!m_window_component) {
+    return;
+  }
+  auto& ui = *m_window_component;
+  FileSystem* file_system = g_runtime_global_context.m_file_system.get();
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  AssetManager* assets = g_runtime_global_context.m_asset_manager.get();
+  MeshAssetDescriptor descriptor{};
+  if (!m_inspector_asset_mode ||
+      !loadMeshAssetDescriptor(m_inspector_asset_virtual_path, file_system,
+                               descriptor)) {
+    ui->set_mesh_material_section_visible(false);
+    return;
+  }
+
+  const MeshMaterialOverride& overlay = descriptor.material_override;
+  eastl::shared_ptr<MaterialAsset> material;
+  if (assets != nullptr) {
+    if (const auto mesh = assets->loadMesh(m_inspector_asset_virtual_path)) {
+      material = mesh->getMaterialAsset();
+    }
+  }
+
+  const auto slotName = [&](const OptionalOverrideSlot& slot,
+                            bool import_assigned) -> eastl::pair<eastl::string, bool> {
+    if (slot.present) {
+      if (slot.guid.empty()) {
+        return {eastl::string(), false};
+      }
+      eastl::string path;
+      if (registry != nullptr) {
+        path = registry->resolveGuid(slot.guid);
+      }
+      if (path.empty()) {
+        return {slot.guid, true};
+      }
+      return {meshAssetDisplayNameFromPath(path), true};
+    }
+    return {import_assigned ? eastl::string("Import") : eastl::string(),
+            import_assigned};
+  };
+
+  glm::vec4 base_color(1.0f);
+  if (overlay.base_color.present) {
+    base_color = overlay.base_color.value;
+  } else if (material) {
+    base_color = material->getBaseColorFactor();
+  }
+  const float metallic = overlay.metallic.present
+                             ? overlay.metallic.value
+                             : (material ? material->getMetallicFactor() : 0.0f);
+  const float roughness =
+      overlay.roughness.present
+          ? overlay.roughness.value
+          : (material ? material->getRoughnessFactor() : 1.0f);
+  glm::vec3 ambient(0.0f);
+  if (overlay.ambient.present) {
+    ambient = overlay.ambient.value;
+  } else if (material) {
+    ambient = material->getAmbientColor();
+  }
+  glm::vec3 diffuse(1.0f);
+  if (overlay.diffuse.present) {
+    diffuse = overlay.diffuse.value;
+  } else if (material) {
+    diffuse = material->getDiffuseColor();
+  }
+  glm::vec3 specular(0.4f);
+  if (overlay.specular.present) {
+    specular = overlay.specular.value;
+  } else if (material) {
+    specular = material->getSpecularColor();
+  }
+  const float shininess = overlay.shininess.present
+                              ? overlay.shininess.value
+                              : (material ? material->getShininess() : 32.0f);
+  const bool unlit =
+      overlay.unlit.present ? overlay.unlit.value
+                            : (material ? material->isUnlit() : false);
+
+  const auto base_slot =
+      slotName(overlay.base_color_texture,
+               material && material->hasBaseColorTexture());
+  const auto metal_slot =
+      slotName(overlay.metallic_roughness_texture,
+               material && material->hasMetallicRoughnessTexture());
+  const auto normal_slot =
+      slotName(overlay.normal_texture, material && material->hasNormalTexture());
+  const auto occlusion_slot = slotName(
+      overlay.occlusion_texture, material && material->hasOcclusionTexture());
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    ui->set_mesh_material_section_visible(true);
+    ui->set_mesh_material_unlit(unlit);
+    ui->set_mesh_base_color_r(base_color.r);
+    ui->set_mesh_base_color_g(base_color.g);
+    ui->set_mesh_base_color_b(base_color.b);
+    ui->set_mesh_base_color_a(base_color.a);
+    ui->set_mesh_metallic(metallic);
+    ui->set_mesh_roughness(roughness);
+    ui->set_mesh_ambient_r(ambient.x);
+    ui->set_mesh_ambient_g(ambient.y);
+    ui->set_mesh_ambient_b(ambient.z);
+    ui->set_mesh_diffuse_r(diffuse.x);
+    ui->set_mesh_diffuse_g(diffuse.y);
+    ui->set_mesh_diffuse_b(diffuse.z);
+    ui->set_mesh_specular_r(specular.x);
+    ui->set_mesh_specular_g(specular.y);
+    ui->set_mesh_specular_b(specular.z);
+    ui->set_mesh_shininess(shininess);
+    ui->set_mesh_slot_base_color_name(slint::SharedString(base_slot.first.c_str()));
+    ui->set_mesh_slot_base_color_assigned(base_slot.second);
+    ui->set_mesh_slot_metallic_name(slint::SharedString(metal_slot.first.c_str()));
+    ui->set_mesh_slot_metallic_assigned(metal_slot.second);
+    ui->set_mesh_slot_normal_name(slint::SharedString(normal_slot.first.c_str()));
+    ui->set_mesh_slot_normal_assigned(normal_slot.second);
+    ui->set_mesh_slot_occlusion_name(
+        slint::SharedString(occlusion_slot.first.c_str()));
+    ui->set_mesh_slot_occlusion_assigned(occlusion_slot.second);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::pushMeshMaterialInspectorFields] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::pushMeshMaterialInspectorFields] unknown exception");
+  }
+}
+
+void SlintSystem::commitMeshMaterialPatch(
+    MeshAssetDescriptor after, const char* label) {
+  FileSystem* file_system = g_runtime_global_context.m_file_system.get();
+  MeshAssetDescriptor before{};
+  if (!loadMeshAssetDescriptor(m_inspector_asset_virtual_path, file_system,
+                               before)) {
+    return;
+  }
+  rebuildMeshTextureGuids(after);
+  if (descriptorsMaterialEqual(before, after)) {
+    return;
+  }
+  auto command = makeMeshMaterialOverrideCommand(
+      file_system, g_runtime_global_context.m_asset_manager.get(),
+      &m_inspector_mesh_preview, m_inspector_asset_virtual_path, before,
+      after, eastl::string(label));
+  if (!command) {
+    return;
+  }
+  command->redo();
+  pushGlobalCommand(eastl::move(command));
+  pushMeshMaterialInspectorFields();
+}
+
+void SlintSystem::commitMeshMaterialUnlit(bool unlit) {
+  onInspectorActivated();
+  MeshAssetDescriptor after{};
+  if (!loadMeshAssetDescriptor(m_inspector_asset_virtual_path,
+                               g_runtime_global_context.m_file_system.get(),
+                               after)) {
+    return;
+  }
+  after.material_override.unlit.present = true;
+  after.material_override.unlit.value = unlit;
+  commitMeshMaterialPatch(eastl::move(after), "Edit Mesh Unlit");
+}
+
+void SlintSystem::commitMeshMaterialScalar(int field, float a, float b, float c,
+                                           float d) {
+  onInspectorActivated();
+  MeshAssetDescriptor after{};
+  if (!loadMeshAssetDescriptor(m_inspector_asset_virtual_path,
+                               g_runtime_global_context.m_file_system.get(),
+                               after)) {
+    return;
+  }
+  MeshMaterialOverride& overlay = after.material_override;
+  switch (field) {
+    case 0:
+      overlay.base_color.present = true;
+      overlay.base_color.value = glm::vec4(a, b, c, d);
+      break;
+    case 1:
+      overlay.metallic.present = true;
+      overlay.metallic.value = a;
+      break;
+    case 2:
+      overlay.roughness.present = true;
+      overlay.roughness.value = a;
+      break;
+    case 3:
+      overlay.ambient.present = true;
+      overlay.ambient.value = glm::vec3(a, b, c);
+      break;
+    case 4:
+      overlay.diffuse.present = true;
+      overlay.diffuse.value = glm::vec3(a, b, c);
+      break;
+    case 5:
+      overlay.specular.present = true;
+      overlay.specular.value = glm::vec3(a, b, c);
+      break;
+    case 6:
+      overlay.shininess.present = true;
+      overlay.shininess.value = a;
+      break;
+    default:
+      return;
+  }
+  commitMeshMaterialPatch(eastl::move(after), "Edit Mesh Material");
+}
+
+void SlintSystem::commitMeshMaterialReset() {
+  onInspectorActivated();
+  MeshAssetDescriptor after{};
+  if (!loadMeshAssetDescriptor(m_inspector_asset_virtual_path,
+                               g_runtime_global_context.m_file_system.get(),
+                               after)) {
+    return;
+  }
+  after.material_override = {};
+  commitMeshMaterialPatch(eastl::move(after), "Reset Mesh Material Overrides");
+}
+
+eastl::string SlintSystem::guidFromBrowserTexture(bool from_drop) const {
+  eastl::string path;
+  if (from_drop && m_window_component) {
+    path = (*m_window_component)->get_browser_drag_source_path().data();
+  } else if (!m_browser_selected_grid_paths.empty()) {
+    path = m_browser_selected_grid_paths.back();
+  }
+  if (!endsWithPathSuffix(path, ".texture.yaml")) {
+    return {};
+  }
+  const AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry == nullptr) {
+    return {};
+  }
+  return registry->findGuidForPath(path);
+}
+
+void SlintSystem::commitMeshSlotGuid(int slot, const eastl::string& guid,
+                                     bool clear) {
+  onInspectorActivated();
+  MeshAssetDescriptor after{};
+  if (!loadMeshAssetDescriptor(m_inspector_asset_virtual_path,
+                               g_runtime_global_context.m_file_system.get(),
+                               after)) {
+    return;
+  }
+  OptionalOverrideSlot* overlay_slot = meshSlot(after.material_override, slot);
+  if (overlay_slot == nullptr) {
+    return;
+  }
+  overlay_slot->present = true;
+  overlay_slot->guid = clear ? eastl::string() : guid;
+  commitMeshMaterialPatch(eastl::move(after), "Edit Mesh Texture Slot");
+}
+
+void SlintSystem::commitMeshSlotPick(int slot) {
+  const eastl::string guid = guidFromBrowserTexture(false);
+  if (guid.empty()) {
+    return;
+  }
+  commitMeshSlotGuid(slot, guid, false);
+}
+
+void SlintSystem::commitMeshSlotClear(int slot) {
+  commitMeshSlotGuid(slot, {}, true);
+}
+
+void SlintSystem::commitMeshSlotDrop(int slot) {
+  const eastl::string guid = guidFromBrowserTexture(true);
+  if (guid.empty()) {
+    return;
+  }
+  commitMeshSlotGuid(slot, guid, false);
 }
 
 void SlintSystem::syncInspectorFromSelection() {
@@ -2629,6 +3138,8 @@ void SlintSystem::syncInspectorFromSelection() {
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
       ui->set_inspector_multi_edit_visible(false);
+      ui->set_mesh_material_section_visible(false);
+      g_runtime_global_context.setInspectorAssetMode(false);
       m_applying_inspector_sync = false;
       if (selection) {
         selection->clearDirty();
@@ -2636,6 +3147,7 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorBehavioursFromSelection();
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
+      syncInspectorLightFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       syncInspectorUniqueAttachmentsFromSelection();
       return;
@@ -2648,11 +3160,14 @@ void SlintSystem::syncInspectorFromSelection() {
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
       ui->set_inspector_multi_edit_visible(false);
+      ui->set_mesh_material_section_visible(false);
+      g_runtime_global_context.setInspectorAssetMode(false);
       m_applying_inspector_sync = false;
       selection->clearDirty();
       syncInspectorBehavioursFromSelection();
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
+      syncInspectorLightFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       syncInspectorUniqueAttachmentsFromSelection();
       return;
@@ -2665,6 +3180,8 @@ void SlintSystem::syncInspectorFromSelection() {
         multi || m_inspector_rotation_mode == InspectorRotationEditMode::euler;
 
     ui->set_inspector_asset_mode(false);
+    ui->set_mesh_material_section_visible(false);
+    g_runtime_global_context.setInspectorAssetMode(false);
     ui->set_inspector_has_selection(true);
     if (multi) {
       char label[64];
@@ -2786,6 +3303,7 @@ void SlintSystem::syncInspectorFromSelection() {
     syncInspectorBehavioursFromSelection();
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
+    syncInspectorLightFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
   } catch (const std::exception& e) {
@@ -3084,16 +3602,24 @@ void SlintSystem::syncInspectorBehavioursFromSelection() {
     buildBehaviourTypeChoices(catalog, type_choices);
 
     eastl::vector<InspectorBehaviourRowData> rows;
+    eastl::vector<eastl::string> clip_name_choices;
     if (selection != nullptr && scene != nullptr && selection->hasSelection()) {
       const eastl::vector<EntityId> ids = selection->getSelectedIds();
       if (ids.size() == 1) {
         Object* object = scene->findBoundObject(ids[0]);
         buildInspectorBehaviourRows(object, catalog, rows);
+        buildBehaviourClipNameDropdownChoices(object, clip_name_choices);
+      } else {
+        clip_name_choices.push_back(eastl::string{});
       }
+    } else {
+      clip_name_choices.push_back(eastl::string{});
     }
 
     ui->set_inspector_behaviours(makeBehaviourRowModel(rows));
     ui->set_inspector_behaviour_type_choices(makeBehaviourTypeChoiceModel(type_choices));
+    ui->set_inspector_behaviour_clip_name_choices(
+        makeBehaviourTypeChoiceModel(clip_name_choices));
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncInspectorBehavioursFromSelection] {}", e.what());
   } catch (...) {
@@ -3151,6 +3677,124 @@ void clearOtherMainCameras(SceneInstance& scene, EntityId keep_id) {
     updated.is_main = false;
     scene.setCamera(entity_id, eastl::move(updated));
   });
+}
+
+}  // namespace
+
+namespace {
+
+int lightTypeToUi(LightType type) {
+  return static_cast<int>(type);
+}
+
+LightType lightTypeFromUi(int value) {
+  switch (value) {
+    case 1:
+      return LightType::point;
+    case 2:
+      return LightType::spot;
+    case 3:
+      return LightType::area;
+    case 0:
+    default:
+      return LightType::directional;
+  }
+}
+
+int lightContributionToUi(LightContribution contribution) {
+  return static_cast<int>(contribution);
+}
+
+LightContribution lightContributionFromUi(int value) {
+  switch (value) {
+    case 1:
+      return LightContribution::illuminateOnly;
+    case 2:
+      return LightContribution::shadowsOnly;
+    case 0:
+    default:
+      return LightContribution::illuminateAndShadows;
+  }
+}
+
+eastl::string formatLightLinkingText(const SceneInstance& scene,
+                                     const LightComponent& light) {
+  eastl::string out;
+  for (const EntityId id : light.linking) {
+    const Entity* entity = scene.getEntity(id);
+    if (entity == nullptr) {
+      continue;
+    }
+    if (!out.empty()) {
+      out += ", ";
+    }
+    out += entity->getName();
+  }
+  return out;
+}
+
+void parseLightLinkingText(const SceneInstance& scene, const eastl::string& text,
+                           eastl::vector<EntityId>& out_ids) {
+  out_ids.clear();
+  size_t i = 0;
+  while (i < text.size()) {
+    while (i < text.size() &&
+           (text[i] == ' ' || text[i] == '\t' || text[i] == ',')) {
+      ++i;
+    }
+    const size_t start = i;
+    while (i < text.size() && text[i] != ',') {
+      ++i;
+    }
+    size_t end = i;
+    while (end > start && (text[end - 1] == ' ' || text[end - 1] == '\t')) {
+      --end;
+    }
+    if (end <= start) {
+      continue;
+    }
+    const eastl::string name = text.substr(start, end - start);
+    const EntityId id = scene.findEntityByName(name);
+    if (!isValid(id) || scene.getMeshRenderer(id) == nullptr) {
+      continue;
+    }
+    bool duplicate = false;
+    for (const EntityId existing : out_ids) {
+      if (existing == id) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (!duplicate) {
+      out_ids.push_back(id);
+    }
+  }
+}
+
+void sanitizeLightComponent(LightComponent& light) {
+  light.intensity = std::max(light.intensity, 0.0f);
+  light.range = std::max(light.range, 1e-3f);
+  light.width = std::max(light.width, 1e-3f);
+  light.height = std::max(light.height, 1e-3f);
+  light.outer_cone_degrees = glm::clamp(light.outer_cone_degrees, 0.001f, 90.0f);
+  light.inner_cone_degrees =
+      glm::clamp(light.inner_cone_degrees, 0.0f, light.outer_cone_degrees - 0.001f);
+}
+
+bool lightsEqual(const LightComponent& a, const LightComponent& b) {
+  if (a.type != b.type || a.color != b.color || a.intensity != b.intensity ||
+      a.enabled != b.enabled || a.contribution != b.contribution ||
+      a.range != b.range || a.inner_cone_degrees != b.inner_cone_degrees ||
+      a.outer_cone_degrees != b.outer_cone_degrees || a.width != b.width ||
+      a.height != b.height || a.linking.size() != b.linking.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < a.linking.size(); ++i) {
+    if (a.linking[i] != b.linking[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -3255,6 +3899,122 @@ void SlintSystem::applyInspectorCamera() {
   }
 }
 
+void SlintSystem::syncInspectorLightFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_has_light(false);
+      return;
+    }
+
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    if (ids.size() != 1) {
+      ui->set_inspector_has_light(false);
+      return;
+    }
+
+    if (const LightComponent* light = scene->getLight(ids[0])) {
+      ui->set_inspector_has_light(true);
+      ui->set_inspector_light_type(lightTypeToUi(light->type));
+      ui->set_inspector_light_color_r(light->color.r);
+      ui->set_inspector_light_color_g(light->color.g);
+      ui->set_inspector_light_color_b(light->color.b);
+      ui->set_inspector_light_intensity(light->intensity);
+      ui->set_inspector_light_enabled(light->enabled);
+      ui->set_inspector_light_contribution(lightContributionToUi(light->contribution));
+      ui->set_inspector_light_range(light->range);
+      ui->set_inspector_light_inner_cone(light->inner_cone_degrees);
+      ui->set_inspector_light_outer_cone(light->outer_cone_degrees);
+      ui->set_inspector_light_width(light->width);
+      ui->set_inspector_light_height(light->height);
+      ui->set_inspector_light_linking_text(
+          slint::SharedString(formatLightLinkingText(*scene, *light).c_str()));
+    } else {
+      ui->set_inspector_has_light(false);
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorLightFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorLightFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorLight() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  const LightComponent* existing_light = scene->getLight(entity_id);
+  if (existing_light == nullptr) {
+    return;
+  }
+
+  try {
+    const auto& ui = *m_window_component;
+    const LightComponent before_light = *existing_light;
+    LightComponent after_light = before_light;
+    after_light.type = lightTypeFromUi(ui->get_inspector_light_type());
+    after_light.color = Vec3(ui->get_inspector_light_color_r(),
+                             ui->get_inspector_light_color_g(),
+                             ui->get_inspector_light_color_b());
+    after_light.intensity = ui->get_inspector_light_intensity();
+    after_light.enabled = ui->get_inspector_light_enabled();
+    after_light.contribution =
+        lightContributionFromUi(ui->get_inspector_light_contribution());
+    after_light.range = ui->get_inspector_light_range();
+    after_light.inner_cone_degrees = ui->get_inspector_light_inner_cone();
+    after_light.outer_cone_degrees = ui->get_inspector_light_outer_cone();
+    after_light.width = ui->get_inspector_light_width();
+    after_light.height = ui->get_inspector_light_height();
+    parseLightLinkingText(*scene, eastl::string(ui->get_inspector_light_linking_text().data()),
+                          after_light.linking);
+    sanitizeLightComponent(after_light);
+    if (lightsEqual(before_light, after_light)) {
+      return;
+    }
+    scene->setLight(entity_id, after_light);
+    pushDocumentCommand(makeSetLightComponentCommand(
+        scene, entity_id, before_light, after_light, SelectionSnapshot{entity_id},
+        SelectionSnapshot{entity_id}));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
+    syncInspectorLightFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorLight] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorLight] unknown exception");
+  }
+}
+
 void notifyAnimationPreviewAfterSkeletonModifierEdit(RenderSystem* render_system);
 
 void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_name) {
@@ -3291,7 +4051,7 @@ void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_na
     }
     const bool created_anything =
         result.created_object || result.created_skeleton || result.created_player ||
-        result.created_tree || result.created_camera;
+        result.created_tree || result.created_camera || result.created_light;
     if (!created_anything) {
       return;
     }
@@ -3301,14 +4061,176 @@ void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_na
     syncInspectorBehavioursFromSelection();
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
+    syncInspectorLightFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorAddUniqueAttachment] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::applyInspectorAddUniqueAttachment] unknown exception");
   }
+}
+
+void SlintSystem::applyHierarchyCreateRequested(int parent_entity_id,
+                                                const eastl::string& kind_name) {
+  HierarchyCreateKind kind{};
+  if (!parseHierarchyCreateKind(kind_name, kind)) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->scene) {
+    return;
+  }
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (scene == nullptr) {
+    return;
+  }
+
+  const EntityId parent_id = static_cast<EntityId>(parent_entity_id);
+  const SelectionSnapshot selection_before = currentSelectionSnapshot();
+  const HierarchyCreateResult result =
+      applyHierarchyCreate(scene, parent_id, kind);
+  if (!result.created) {
+    return;
+  }
+
+  if (services->selection) {
+    services->selection->setSelection(result.entity_id);
+  }
+
+  eastl::string name;
+  if (const Entity* entity = scene->getEntity(result.entity_id)) {
+    name = entity->getName();
+  }
+  pushDocumentCommand(makeSpawnEntityCommand(
+      scene, result.entity_id, selection_before,
+      SelectionSnapshot{result.entity_id}, hierarchyCreateCommandLabel(name)));
+
+  if (services->hierarchy) {
+    if (isValid(parent_id)) {
+      services->hierarchy->ensureExpanded(parent_id);
+    }
+    services->hierarchy->rebuildVisibleTree(scene);
+    services->hierarchy->markDirty();
+  }
+
+  syncHierarchy();
+  syncInspectorFromSelection();
+  if (services->render_system) {
+    services->render_system->requestViewportRedraw();
+  }
+}
+
+void SlintSystem::applyHierarchyDeleteRequested(int entity_id) {
+  const auto services = lockServices();
+  if (!services || !services->editor_scene_edit || !services->selection) {
+    return;
+  }
+
+  const EntityId id = static_cast<EntityId>(entity_id);
+  if (!isValid(id)) {
+    return;
+  }
+  services->selection->setSelection(id);
+  if (!services->editor_scene_edit->softDeleteSelection()) {
+    return;
+  }
+
+  syncHierarchy();
+  syncInspectorFromSelection();
+  pruneGonePreviewCards();
+  if (services->render_system) {
+    services->render_system->requestViewportRedraw();
+  }
+}
+
+void SlintSystem::patchHierarchySelectionHighlight(EntityId selected) {
+  if (!m_window_component) {
+    return;
+  }
+  auto& ui = *m_window_component->operator->();
+  const auto rows = ui.get_hierarchy_tree_rows();
+  if (rows) {
+    const int selected_i = isValid(selected) ? static_cast<int>(selected) : 0;
+    for (std::size_t i = 0; i < rows->row_count(); ++i) {
+      std::optional<HierarchyTreeRow> row = rows->row_data(i);
+      if (!row.has_value()) {
+        continue;
+      }
+      const bool want = selected_i != 0 && row->entity_id == selected_i;
+      if (row->selected == want) {
+        continue;
+      }
+      row->selected = want;
+      rows->set_row_data(i, *row);
+    }
+  }
+  ui.set_hierarchy_selected_entity_id(
+      isValid(selected) ? static_cast<int>(selected) : 0);
+  pruneUnpinnedPreviewCards(selected);
+}
+
+void SlintSystem::applyHierarchyContextSelect(int entity_id) {
+  const auto services = lockServices();
+  if (!services || !services->selection) {
+    return;
+  }
+  const EntityId id = static_cast<EntityId>(entity_id);
+  if (!isValid(id)) {
+    return;
+  }
+
+  g_runtime_global_context.setContentBrowserHasInputFocus(false);
+  m_hierarchy_handled_by_slint = true;
+  clearAssetInspectorSelection();
+  services->selection->setSelection(id);
+
+  if (AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get()) {
+    SceneInstance* scene =
+        services->scene ? services->scene->getActiveInstance() : nullptr;
+    preview->bindSelection(scene, services->selection->getPrimarySelection());
+  }
+
+  patchHierarchySelectionHighlight(id);
+  syncInspectorFromSelection();
+}
+
+void SlintSystem::tryHierarchyRowContextSelect(float logical_x, float logical_y) {
+  const auto services = lockServices();
+  if (!m_window_component || !services || !services->hierarchy) {
+    return;
+  }
+
+  MainEditorWindow& ui = *m_window_component->operator->();
+  const float hierarchy_x = ui.get_hierarchy_origin_x();
+  const float hierarchy_y = ui.get_hierarchy_origin_y();
+  const float hierarchy_w = ui.get_hierarchy_width();
+  const float hierarchy_h = ui.get_hierarchy_height();
+  if (hierarchy_w <= 0.0f || hierarchy_h <= 0.0f) {
+    return;
+  }
+  if (logical_x < hierarchy_x || logical_x >= hierarchy_x + hierarchy_w ||
+      logical_y < hierarchy_y || logical_y >= hierarchy_y + hierarchy_h) {
+    return;
+  }
+
+  const int32_t tree_origin_y = resolveHierarchyTreeOriginY(ui);
+  constexpr float k_row_pitch = 22.0f;
+  const int32_t row_index = services->hierarchy->hitTestRow(
+      logical_x, logical_y, tree_origin_y, k_row_pitch);
+  if (row_index < 0) {
+    return;
+  }
+  const auto& rows = services->hierarchy->treeRows();
+  if (static_cast<size_t>(row_index) >= rows.size()) {
+    return;
+  }
+  applyHierarchyContextSelect(
+      static_cast<int>(rows[static_cast<size_t>(row_index)].entity_id));
 }
 
 void SlintSystem::applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name) {
@@ -3348,9 +4270,11 @@ void SlintSystem::applyInspectorRemoveUniqueAttachment(const eastl::string& kind
     syncInspectorBehavioursFromSelection();
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
+    syncInspectorLightFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorRemoveUniqueAttachment] {}", e.what());
   } catch (...) {
@@ -3359,6 +4283,10 @@ void SlintSystem::applyInspectorRemoveUniqueAttachment(const eastl::string& kind
 }
 
 void SlintSystem::applyInspectorAddClipRow() {
+  applyInspectorOpenClipPicker(-1);
+}
+
+void SlintSystem::applyInspectorOpenClipPicker(int target_index) {
   if (!m_window_component || m_applying_inspector_sync) {
     return;
   }
@@ -3375,21 +4303,90 @@ void SlintSystem::applyInspectorAddClipRow() {
   if (ids.size() != 1) {
     return;
   }
+  Object* object = scene->findBoundObject(ids[0]);
+  if (object == nullptr || !object->hasAnimationPlayer()) {
+    return;
+  }
+  if (target_index >= 0) {
+    const size_t count =
+        object->getAnimationPlayer()->getClipMapEntryCount();
+    if (static_cast<size_t>(target_index) >= count) {
+      return;
+    }
+  }
+
+  try {
+    eastl::vector<AnimationClipPickerEntry> entries;
+    listRegisteredAnimationClips(g_runtime_global_context.m_asset_registry.get(),
+                                 entries);
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_inspector_clip_picker_choices(makeAnimationClipPickerModel(entries));
+    ui->set_inspector_clip_picker_target_index(target_index);
+    ui->set_inspector_clip_picker_open(true);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorOpenClipPicker] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorOpenClipPicker] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorPickClipChoice(const eastl::string& guid,
+                                               const eastl::string& stem,
+                                               const eastl::string& /*display*/) {
+  if (!m_window_component || m_applying_inspector_sync || guid.empty()) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
   const EntityId entity_id = ids[0];
+  MainEditorWindow& ui = *m_window_component->operator->();
+  const int target_index = ui.get_inspector_clip_picker_target_index();
   try {
     eastl::vector<AnimationPlayer::ClipBinding> before;
     eastl::vector<AnimationPlayer::ClipBinding> after;
-    if (!applyInspectorAddClip(*scene, entity_id, before, after)) {
+    bool ok = false;
+    if (target_index < 0) {
+      eastl::string name = stem;
+      if (name.empty()) {
+        name = animationClipDisplayNameForGuid(
+            guid, g_runtime_global_context.m_asset_registry.get());
+      }
+      ok = applyInspectorAddClipBinding(*scene, entity_id, name, guid, before,
+                                        after);
+    } else {
+      ok = applyInspectorRetargetClipBinding(
+          *scene, entity_id, static_cast<size_t>(target_index), guid, before,
+          after);
+    }
+    ui.set_inspector_clip_picker_open(false);
+    if (!ok) {
+      syncInspectorAnimationPlayerFromSelection();
       return;
     }
     pushDocumentCommand(makeSetAnimationPlayerClipBindingsCommand(
         scene, entity_id, before, after, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
     syncInspectorAnimationPlayerFromSelection();
+    syncInspectorBehavioursFromSelection();
   } catch (const std::exception& e) {
-    LOG_ERROR("[SlintSystem::applyInspectorAddClipRow] {}", e.what());
+    LOG_ERROR("[SlintSystem::applyInspectorPickClipChoice] {}", e.what());
   } catch (...) {
-    LOG_ERROR("[SlintSystem::applyInspectorAddClipRow] unknown exception");
+    LOG_ERROR("[SlintSystem::applyInspectorPickClipChoice] unknown exception");
   }
 }
 
@@ -3422,6 +4419,7 @@ void SlintSystem::applyInspectorRemoveClipRow(int entry_index) {
         scene, entity_id, before, after, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorAnimationPlayerFromSelection();
+    syncInspectorBehavioursFromSelection();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorRemoveClipRow] {}", e.what());
   } catch (...) {
@@ -3508,7 +4506,8 @@ void SlintSystem::syncInspectorAnimationPlayerFromSelection() {
     }
 
     eastl::vector<InspectorAnimationClipRowData> rows;
-    buildInspectorAnimationClipRows(object, rows);
+    buildInspectorAnimationClipRows(
+        object, g_runtime_global_context.m_asset_registry.get(), rows);
     ui->set_inspector_has_animation_player(true);
     ui->set_inspector_animation_clips(makeAnimationClipRowModel(rows));
   } catch (const std::exception& e) {
@@ -3562,14 +4561,24 @@ void SlintSystem::applyInspectorAnimationClipCommit(int entry_index,
       return;
     }
 
-    applyClipBindingsToObject(object, after_bindings);
+    if (!clipBindingLogicalNamesUnique(
+            sanitizeClipBindingsDiscardDualEmpty(after_bindings))) {
+      syncInspectorAnimationPlayerFromSelection();
+      return;
+    }
+    if (!applyClipBindingsToObject(object, after_bindings)) {
+      syncInspectorAnimationPlayerFromSelection();
+      return;
+    }
     pushDocumentCommand(makeSetAnimationPlayerClipBindingsCommand(
-        scene, entity_id, before_bindings, after_bindings,
+        scene, entity_id, before_bindings,
+        sanitizeClipBindingsDiscardDualEmpty(after_bindings),
         currentSelectionSnapshot(), currentSelectionSnapshot()));
     if (services->editor_scene_edit) {
       services->editor_scene_edit->markDirty();
     }
     syncInspectorAnimationPlayerFromSelection();
+    syncInspectorBehavioursFromSelection();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorAnimationClipCommit] {}", e.what());
   } catch (...) {
@@ -3609,6 +4618,7 @@ void SlintSystem::applyInspectorAddBehaviour(const eastl::string& clr_type) {
         scene, entity_id, clr_type, created_id, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorBehavioursFromSelection();
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorAddBehaviour] {}", e.what());
   } catch (...) {
@@ -3662,6 +4672,7 @@ void SlintSystem::applyInspectorRemoveBehaviour(BehaviourId behaviour_id) {
         eastl::move(properties), currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorBehavioursFromSelection();
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorRemoveBehaviour] {}", e.what());
   } catch (...) {
@@ -3697,6 +4708,7 @@ void SlintSystem::applyInspectorReorderBehaviours(size_t from_index, size_t to_i
         scene, entity_id, from_index, to_index, currentSelectionSnapshot(),
         currentSelectionSnapshot()));
     syncInspectorBehavioursFromSelection();
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorReorderBehaviours] {}", e.what());
   } catch (...) {
@@ -3853,6 +4865,7 @@ void SlintSystem::applyInspectorAddSkeletonModifier(const eastl::string& type_na
         currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorAddSkeletonModifier] {}", e.what());
   } catch (...) {
@@ -3893,6 +4906,7 @@ void SlintSystem::applyInspectorRemoveSkeletonModifier(size_t modifier_index) {
         currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorRemoveSkeletonModifier] {}", e.what());
   } catch (...) {
@@ -3930,6 +4944,7 @@ void SlintSystem::applyInspectorReorderSkeletonModifiers(size_t from_index,
         currentSelectionSnapshot()));
     syncInspectorSkeletonModifiersFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
+    rebuildHierarchyAfterAttachmentChange();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorReorderSkeletonModifiers] {}", e.what());
   } catch (...) {
@@ -4074,6 +5089,8 @@ void SlintSystem::refreshEditorScenePanels() {
   syncCameraPreviewFromEngine();
   syncAnimationTreeCanvas();
   syncActiveSceneIndicator();
+  pruneGonePreviewCards();
+  syncAttachmentPreviewCards();
 }
 
 void SlintSystem::syncAnimationTreeCanvas() {
@@ -4269,12 +5286,23 @@ void SlintSystem::syncTransformToolbarFromEngine() {
     ui->set_transform_gizmo_mode(slint_mode);
     ui->set_transform_gizmo_space_global(
         g_runtime_global_context.m_render_system->isTransformGizmoSpaceGlobal());
-    if (g_runtime_global_context.m_document_history) {
-      ui->set_edit_can_undo(
-          g_runtime_global_context.m_document_history->canUndo());
-      ui->set_edit_can_redo(
-          g_runtime_global_context.m_document_history->canRedo());
+    if (g_runtime_global_context.m_document_history ||
+        g_runtime_global_context.m_global_history) {
+      const EditorUndoScope scope = resolveUndoScope(
+          g_runtime_global_context.contentBrowserHasInputFocus(),
+          g_runtime_global_context.inlineRenameActive(),
+          g_runtime_global_context.assetInspectorHasUndoFocus(),
+          g_runtime_global_context.attachmentPreviewHasInputFocus());
+      DocumentHistory* history = nullptr;
+      if (scope == EditorUndoScope::global) {
+        history = g_runtime_global_context.m_global_history.get();
+      } else if (scope == EditorUndoScope::document) {
+        history = g_runtime_global_context.m_document_history.get();
+      }
+      ui->set_edit_can_undo(history != nullptr && history->canUndo());
+      ui->set_edit_can_redo(history != nullptr && history->canRedo());
     }
+    syncHistoryPanel();
     if (PlaySessionController* session =
             g_runtime_global_context.m_play_session.get()) {
       session->poll();
@@ -4452,6 +5480,7 @@ bool SlintSystem::isBrowserGridPathSelected(const eastl::string& path) const {
 
 void SlintSystem::applyBrowserGridSelection(const eastl::string& path, bool ctrl,
                                             bool shift) {
+  g_runtime_global_context.setContentBrowserHasInputFocus(true);
   if (path.empty()) {
     return;
   }
@@ -4570,60 +5599,318 @@ void SlintSystem::refreshBrowserGridSelectionVisuals() {
 }
 
 void SlintSystem::deleteSelectedBrowserAssets() {
-  if (m_browser_selected_grid_paths.empty()) {
-    LOG_WARN("[ContentBrowser] Delete ignored: no asset selected");
+  requestBrowserDelete({});
+}
+
+BrowserDeleteServices SlintSystem::browserDeleteServices(
+    const UiContext::LockedServices& services) const {
+  BrowserDeleteServices out;
+  out.browser = services.content_browser.get();
+  out.import = services.asset_import.get();
+  out.registry = g_runtime_global_context.m_asset_registry.get();
+  out.compiler = services.asset_compiler.get();
+  out.file_system = g_runtime_global_context.m_file_system.get();
+  out.scene_edit = services.editor_scene_edit.get();
+  out.scene_system = services.scene.get();
+  return out;
+}
+
+void SlintSystem::showBrowserDeleteDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  auto& ui = *m_window_component->operator->();
+  ui.set_browser_delete_dialog_name(
+      slint::SharedString(m_pending_browser_delete.confirm_name.c_str()));
+  ui.set_browser_delete_dialog_asset_count(
+      static_cast<int>(m_pending_browser_delete.asset_count));
+  ui.set_browser_delete_dialog_visible(true);
+}
+
+void SlintSystem::hideBrowserDeleteDialog() {
+  if (!m_window_component) {
+    return;
+  }
+  m_window_component->operator->()->set_browser_delete_dialog_visible(false);
+}
+
+void SlintSystem::applyPendingBrowserDelete() {
+  if (!m_pending_browser_delete.ok) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services) {
+    m_pending_browser_delete = {};
+    return;
+  }
+  BrowserDeleteSnapshot snapshot;
+  eastl::string error;
+  const BrowserDeleteServices delete_services = browserDeleteServices(*services);
+  if (!snapshotAndApplyBrowserDelete(delete_services, m_pending_browser_delete,
+                                     snapshot, &error)) {
+    LOG_WARN("[ContentBrowser] Delete failed: {}", error.c_str());
+    m_pending_browser_delete = {};
+    return;
+  }
+  pushGlobalCommand(makeDeleteBrowserEntriesCommand(
+      delete_services, m_pending_browser_delete, eastl::move(snapshot)));
+  m_pending_browser_delete = {};
+  clearBrowserGridSelection();
+  syncContentBrowser();
+  syncHistoryPanel();
+}
+
+void SlintSystem::finishPendingBrowserDeleteAfterDirty(bool save_first) {
+  hideOpenDirtySceneDialog();
+  m_pending_browser_delete_after_dirty = false;
+  if (!m_pending_browser_delete.ok) {
+    return;
+  }
+  if (save_first) {
+    const auto services = lockServices();
+    if (!services || !services->editor_scene_edit ||
+        !services->editor_scene_edit->saveActiveScene()) {
+      LOG_WARN("[ContentBrowser] Delete aborted: save failed");
+      m_pending_browser_delete = {};
+      return;
+    }
+  }
+  if (m_pending_browser_delete.needs_confirm) {
+    showBrowserDeleteDialog();
+    return;
+  }
+  applyPendingBrowserDelete();
+}
+
+void SlintSystem::requestBrowserDelete(const eastl::string& extra_path) {
+  if (g_runtime_global_context.inlineRenameActive()) {
+    return;
+  }
+  hideBrowserDeleteDialog();
+  m_pending_browser_delete_after_dirty = false;
+
+  eastl::vector<eastl::string> paths;
+  if (!extra_path.empty() && isBrowserGridPathSelected(extra_path)) {
+    paths = m_browser_selected_grid_paths;
+  } else if (!extra_path.empty()) {
+    paths.push_back(extra_path);
+  } else {
+    paths = m_browser_selected_grid_paths;
+  }
+  if (paths.empty()) {
+    LOG_WARN("[ContentBrowser] Delete ignored: no item selected");
     return;
   }
 
   const auto services = lockServices();
-  if (!services || !services->asset_import) {
-    LOG_WARN("[ContentBrowser] Delete ignored: AssetImportService unavailable");
+  if (!services || !services->content_browser) {
+    LOG_WARN("[ContentBrowser] Delete ignored: services unavailable");
     return;
   }
 
-  const eastl::vector<eastl::string> to_delete = m_browser_selected_grid_paths;
-  LOG_INFO("[ContentBrowser] Delete requested for {} item(s)",
-           static_cast<unsigned>(to_delete.size()));
-
-  uint32_t deleted = 0;
-  uint32_t failed = 0;
-  uint32_t skipped_folders = 0;
-  for (const eastl::string& path_str : to_delete) {
-    if (path_str.empty()) {
-      continue;
-    }
-    if (!path_str.empty() && path_str.back() == '/') {
-      ++skipped_folders;
-      LOG_INFO("[ContentBrowser] Delete skipped folder {}", path_str.c_str());
-      continue;
-    }
-    if (services->content_browser) {
-      if (const ContentEntry* entry =
-              services->content_browser->findEntry(path_str);
-          entry != nullptr && entry->is_directory) {
-        ++skipped_folders;
-        LOG_INFO("[ContentBrowser] Delete skipped folder {}", path_str.c_str());
-        continue;
-      }
-    }
-
-    eastl::string error;
-    if (!services->asset_import->deleteAsset(path_str, &error)) {
-      ++failed;
-      LOG_WARN("[ContentBrowser] Delete failed: {} ({})", error.c_str(),
-               path_str.c_str());
-      continue;
-    }
-    ++deleted;
-    LOG_INFO("[ContentBrowser] Deleted {}", path_str.c_str());
+  m_pending_browser_delete =
+      buildBrowserDeleteSet(browserDeleteServices(*services), paths);
+  if (!m_pending_browser_delete.ok) {
+    LOG_WARN("[ContentBrowser] Delete refused: {}",
+             m_pending_browser_delete.error.c_str());
+    m_pending_browser_delete = {};
+    return;
   }
 
-  clearBrowserGridSelection();
+  if (m_pending_browser_delete.contains_open_scene && services->editor_scene_edit &&
+      services->editor_scene_edit->isDirty()) {
+    m_pending_browser_delete_after_dirty = true;
+    showOpenDirtySceneDialog();
+    return;
+  }
+  if (m_pending_browser_delete.needs_confirm) {
+    showBrowserDeleteDialog();
+    return;
+  }
+  applyPendingBrowserDelete();
+}
+
+void SlintSystem::requestBrowserInlineRename() {
+  if (m_browser_selected_grid_paths.size() != 1) {
+    return;
+  }
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
+    return;
+  }
+  g_runtime_global_context.setContentBrowserHasInputFocus(true);
+  services->content_browser->beginInlineRename(m_browser_selected_grid_paths[0]);
+  g_runtime_global_context.setInlineRenameActive(
+      !services->content_browser->pendingInlineRenamePath().empty());
   syncContentBrowser();
-  LOG_INFO(
-      "[ContentBrowser] Delete finished: deleted={}, failed={}, "
-      "skipped_folders={}",
-      deleted, failed, skipped_folders);
+}
+
+void SlintSystem::commitBrowserInlineRename(const eastl::string& new_name) {
+  const auto services = lockServices();
+  if (!services || !services->content_browser) {
+    cancelBrowserInlineRename();
+    return;
+  }
+  ContentBrowserSystem& browser = *services->content_browser;
+  const eastl::string path = browser.pendingInlineRenamePath();
+  if (path.empty()) {
+    cancelBrowserInlineRename();
+    return;
+  }
+  const ContentEntry* entry = browser.findEntry(path);
+  if (entry == nullptr) {
+    cancelBrowserInlineRename();
+    return;
+  }
+  const bool is_directory = entry->is_directory;
+  eastl::string from_name = browserEntryDisplayName(path);
+  if (!is_directory) {
+    eastl::string stem;
+    eastl::string suffix;
+    splitBrowserFileName(from_name, stem, suffix);
+    from_name = stem;
+  }
+  const ContentBrowserMutateResult renamed = browser.renameEntry(path, new_name);
+  if (!renamed.success) {
+    if (renamed.error == "illegal name" || renamed.error == "collision") {
+      LOG_WARN("[ContentBrowser] Rename stayed in edit: {}",
+               renamed.error.c_str());
+      return;
+    }
+    cancelBrowserInlineRename();
+    return;
+  }
+  g_runtime_global_context.setInlineRenameActive(false);
+  m_synced_inline_rename_path.clear();
+  if (renamed.virtual_path != path) {
+    const eastl::string to_name = trimBrowserEntryName(new_name);
+    pushGlobalCommand(makeRenameEntryCommand(
+        &browser, path, renamed.virtual_path, from_name, to_name, is_directory));
+  }
+  selectBrowserGridPath(renamed.virtual_path);
+  syncContentBrowser();
+  syncHistoryPanel();
+}
+
+void SlintSystem::cancelBrowserInlineRename() {
+  const auto services = lockServices();
+  if (services && services->content_browser) {
+    services->content_browser->clearPendingInlineRename();
+  }
+  g_runtime_global_context.setInlineRenameActive(false);
+  m_synced_inline_rename_path.clear();
+  if (m_window_component) {
+    auto& ui = *m_window_component->operator->();
+    ui.set_browser_inline_rename_path(slint::SharedString());
+    ui.set_browser_inline_rename_buffer(slint::SharedString());
+  }
+}
+
+void SlintSystem::jumpHistory(int stack, int index) {
+  DocumentHistory* history =
+      stack == 1 ? g_runtime_global_context.m_global_history.get()
+                 : g_runtime_global_context.m_document_history.get();
+  if (history == nullptr || index < 0) {
+    return;
+  }
+  if (!history->jumpTo(static_cast<size_t>(index) + 1)) {
+    return;
+  }
+  if (stack == 1) {
+    const auto services = lockServices();
+    if (services && services->content_browser) {
+      services->content_browser->refresh();
+    }
+    syncContentBrowser();
+  } else {
+    const auto services = lockServices();
+    if (services && services->editor_scene_edit) {
+      if (history->isDirtyRelativeToSave()) {
+        services->editor_scene_edit->markDirty();
+      } else {
+        services->editor_scene_edit->clearDirty();
+      }
+    }
+    refreshEditorScenePanels();
+    if (services && services->render_system) {
+      services->render_system->requestViewportRedraw();
+    }
+  }
+  syncHistoryPanel();
+}
+
+void SlintSystem::syncHistoryPanel() {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    auto& ui = *m_window_component->operator->();
+    const bool filter_scene = ui.get_history_filter_scene();
+    const bool filter_global = ui.get_history_filter_global();
+    DocumentHistory* document = g_runtime_global_context.m_document_history.get();
+    DocumentHistory* global = g_runtime_global_context.m_global_history.get();
+    const size_t doc_count = document != nullptr ? document->commandCount() : 0;
+    const size_t doc_cursor = document != nullptr ? document->cursor() : 0;
+    const size_t global_count = global != nullptr ? global->commandCount() : 0;
+    const size_t global_cursor = global != nullptr ? global->cursor() : 0;
+    if (doc_count == m_history_panel_doc_count &&
+        doc_cursor == m_history_panel_doc_cursor &&
+        global_count == m_history_panel_global_count &&
+        global_cursor == m_history_panel_global_cursor &&
+        filter_scene == m_history_panel_filter_scene &&
+        filter_global == m_history_panel_filter_global) {
+      return;
+    }
+    m_history_panel_doc_count = doc_count;
+    m_history_panel_doc_cursor = doc_cursor;
+    m_history_panel_global_count = global_count;
+    m_history_panel_global_cursor = global_cursor;
+    m_history_panel_filter_scene = filter_scene;
+    m_history_panel_filter_global = filter_global;
+
+    auto model = std::make_shared<slint::VectorModel<HistoryRow>>();
+    const auto append_group = [&](const char* title, int stack,
+                                  DocumentHistory* history) {
+      if (history == nullptr) {
+        return;
+      }
+      HistoryRow header{};
+      header.label = slint::SharedString(title);
+      header.index = 0;
+      header.stack = stack;
+      header.is_applied = false;
+      header.is_current = false;
+      header.is_group = true;
+      model->push_back(header);
+      const size_t count = history->commandCount();
+      const size_t cursor = history->cursor();
+      for (size_t i = 0; i < count; ++i) {
+        const IEditorCommand* command = history->commandAt(i);
+        HistoryRow row{};
+        row.label = slint::SharedString(
+            command != nullptr ? command->label().c_str() : "Edit");
+        row.index = static_cast<int>(i);
+        row.stack = stack;
+        row.is_applied = i < cursor;
+        row.is_current = cursor > 0 && i == cursor - 1;
+        row.is_group = false;
+        model->push_back(row);
+      }
+    };
+    if (filter_scene || filter_global) {
+      if (filter_scene) {
+        append_group("Scene", 0, document);
+      }
+      if (filter_global) {
+        append_group("Global", 1, global);
+      }
+    }
+    ui.set_history_rows(model);
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncHistoryPanel] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncHistoryPanel] unknown exception");
+  }
 }
 
 void SlintSystem::showImportMeshDialogForPendingPaths() {
@@ -4971,6 +6258,29 @@ void SlintSystem::syncContentBrowser() {
         slint::SharedString(m_drop_highlight_path.c_str()));
     m_window_component->operator->()->set_browser_viewport_drop_active(
         m_viewport_drop_active);
+
+    const eastl::string& pending = browser_system.pendingInlineRenamePath();
+    g_runtime_global_context.setInlineRenameActive(!pending.empty());
+    if (pending != m_synced_inline_rename_path) {
+      m_synced_inline_rename_path = pending;
+      m_window_component->operator->()->set_browser_inline_rename_path(
+          slint::SharedString(pending.c_str()));
+      if (pending.empty()) {
+        m_window_component->operator->()->set_browser_inline_rename_buffer(
+            slint::SharedString());
+      } else {
+        eastl::string display = browserEntryDisplayName(pending);
+        eastl::string buffer = display;
+        const ContentEntry* entry = browser_system.findEntry(pending);
+        if (entry != nullptr && !entry->is_directory) {
+          eastl::string suffix;
+          splitBrowserFileName(display, buffer, suffix);
+        }
+        m_window_component->operator->()->set_browser_inline_rename_buffer(
+            slint::SharedString(buffer.c_str()));
+      }
+    }
+    syncHistoryPanel();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncContentBrowser] {}", e.what());
   } catch (...) {
@@ -5367,18 +6677,76 @@ void SlintSystem::finishContentBrowserDrag(float logical_x, float logical_y) {
   clearContentBrowserDragCursor();
 
   if (!source.empty()) {
-    if (isPointerOverViewport(logical_x, logical_y) &&
-        services->editor_scene_edit) {
-      const SpawnAssetResult spawn_result =
-          services->editor_scene_edit->spawnAssetAtWindowPosition(
-              source, logical_x, logical_y);
-      if (spawn_result.success && services->render_system && services->scene) {
-        syncSceneToRender(services->render_system.get(),
-                          services->scene->getActiveInstance());
-        refreshEditorScenePanels();
+    const ContentBrowserDropKind drop_kind = classifyContentBrowserDrop(source);
+    if (drop_kind == ContentBrowserDropKind::animation_clip &&
+        services->selection && services->scene &&
+        !isPointerOverViewport(logical_x, logical_y) && m_window_component) {
+      EditorSelectionSystem* selection = services->selection.get();
+      SceneInstance* scene = services->scene->getActiveInstance();
+      auto& ui = *m_window_component->operator->();
+      const int drop_target =
+          resolveInspectorClipDropTarget(ui, logical_x, logical_y);
+      setInspectorClipDropHighlight(ui, k_animation_clip_drop_miss);
+      if (drop_target != k_animation_clip_drop_miss && selection != nullptr &&
+          scene != nullptr && selection->hasSelection()) {
+        const eastl::vector<EntityId> ids = selection->getSelectedIds();
+        if (ids.size() == 1) {
+          AssetRegistry* registry =
+              g_runtime_global_context.m_asset_registry.get();
+          eastl::string guid;
+          if (registry != nullptr) {
+            guid = registry->findGuidForPath(source);
+          }
+          if (!guid.empty()) {
+            eastl::vector<AnimationPlayer::ClipBinding> before;
+            eastl::vector<AnimationPlayer::ClipBinding> after;
+            const eastl::string stem =
+                animationClipStemFromDescriptorPath(source);
+            if (applyInspectorAnimationClipDrop(*scene, ids[0], drop_target,
+                                                stem, guid, before, after)) {
+              pushDocumentCommand(makeSetAnimationPlayerClipBindingsCommand(
+                  scene, ids[0], before, after, currentSelectionSnapshot(),
+                  currentSelectionSnapshot()));
+              if (services->editor_scene_edit) {
+                services->editor_scene_edit->markDirty();
+              }
+              syncInspectorAnimationPlayerFromSelection();
+              syncInspectorBehavioursFromSelection();
+            }
+          }
+        }
+      }
+    } else if (isPointerOverViewport(logical_x, logical_y) &&
+               services->editor_scene_edit) {
+      const bool source_is_folder = !source.empty() && source.back() == '/';
+      if (!source_is_folder) {
+        const SpawnAssetResult spawn_result =
+            services->editor_scene_edit->spawnAssetAtWindowPosition(
+                source, logical_x, logical_y);
+        if (spawn_result.success && services->render_system && services->scene) {
+          syncSceneToRender(services->render_system.get(),
+                            services->scene->getActiveInstance());
+          refreshEditorScenePanels();
+        }
       }
     } else if (!m_drop_highlight_path.empty()) {
-      browser_system.reparentEntry(source, m_drop_highlight_path);
+      eastl::string original_parent = source;
+      if (!original_parent.empty() && original_parent.back() == '/') {
+        original_parent.pop_back();
+      }
+      const size_t slash = original_parent.find_last_of('/');
+      if (slash != eastl::string::npos) {
+        original_parent = original_parent.substr(0, slash + 1);
+      } else {
+        original_parent.clear();
+      }
+      const bool is_directory = !source.empty() && source.back() == '/';
+      if (browser_system.canReparentEntry(source, m_drop_highlight_path) &&
+          browser_system.reparentEntry(source, m_drop_highlight_path)) {
+        pushGlobalCommand(makeReparentEntryCommand(
+            &browser_system, source, m_drop_highlight_path, original_parent,
+            is_directory));
+      }
     }
   }
 
@@ -5473,6 +6841,10 @@ void SlintSystem::updateContentBrowserDragSession(float logical_x,
   const bool over_viewport = isPointerOverViewport(logical_x, logical_y);
   const ContentBrowserDropKind kind = classifyContentBrowserDrop(drag.sourcePath());
   const bool over_folder = !over_viewport && !m_drop_highlight_path.empty();
+  const bool legal_folder_drop =
+      over_folder &&
+      services->content_browser->canReparentEntry(drag.sourcePath(),
+                                                 m_drop_highlight_path);
 
   if (preview != nullptr) {
     const bool was_visible = preview->isVisible();
@@ -5492,7 +6864,18 @@ void SlintSystem::updateContentBrowserDragSession(float logical_x,
   }
 
   applyContentBrowserDragCursor(static_cast<int>(
-      resolveContentBrowserDragCursor(true, over_viewport, over_folder, kind)));
+      resolveContentBrowserDragCursor(true, over_viewport, legal_folder_drop,
+                                      kind)));
+
+  if (m_window_component && kind == ContentBrowserDropKind::animation_clip &&
+      !over_viewport) {
+    auto& ui = *m_window_component->operator->();
+    setInspectorClipDropHighlight(
+        ui, resolveInspectorClipDropTarget(ui, logical_x, logical_y));
+  } else if (m_window_component) {
+    setInspectorClipDropHighlight(*m_window_component->operator->(),
+                                  k_animation_clip_drop_miss);
+  }
 }
 
 void SlintSystem::cancelContentBrowserDrag() {
@@ -5511,6 +6894,10 @@ void SlintSystem::cancelContentBrowserDrag() {
   m_drop_highlight_path.clear();
   m_viewport_drop_active = false;
   clearContentBrowserDragCursor();
+  if (m_window_component) {
+    setInspectorClipDropHighlight(*m_window_component->operator->(),
+                                  k_animation_clip_drop_miss);
+  }
   if (was_dragging) {
     syncContentBrowser();
     if (services->render_system) {
@@ -6472,6 +7859,16 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.selected = row.selected;
             copy.is_last_sibling = row.is_last_sibling;
             copy.ancestor_cont_mask = row.ancestor_cont_mask;
+            if (row.icons) {
+              for (std::size_t k = 0; k < row.icons->row_count(); ++k) {
+                const auto icon = row.icons->row_data(k);
+                if (!icon.has_value()) {
+                  continue;
+                }
+                copy.icon_kinds.push_back(icon->kind);
+                copy.icon_indices.push_back(icon->index);
+              }
+            }
             snapshot.hierarchy_rows.push_back(eastl::move(copy));
           }
         }
@@ -6521,6 +7918,14 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
                 choices->row_data(ci).value().data());
           }
         }
+        if (const auto clip_choices =
+                main.get_inspector_behaviour_clip_name_choices()) {
+          snapshot.inspector_behaviour_clip_name_choices.clear();
+          for (std::size_t ci = 0; ci < clip_choices->row_count(); ++ci) {
+            snapshot.inspector_behaviour_clip_name_choices.push_back(
+                clip_choices->row_data(ci).value().data());
+          }
+        }
         snapshot.inspector_behaviours_expanded = main.get_inspector_behaviours_expanded();
         if (const auto skeleton_rows = main.get_inspector_skeleton_modifiers()) {
           copySkeletonModifierRowsToSnapshot(*skeleton_rows,
@@ -6541,6 +7946,22 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_camera_far = main.get_inspector_camera_far();
         snapshot.inspector_camera_is_main = main.get_inspector_camera_is_main();
         snapshot.inspector_camera_expanded = main.get_inspector_camera_expanded();
+        snapshot.inspector_has_light = main.get_inspector_has_light();
+        snapshot.inspector_light_type = main.get_inspector_light_type();
+        snapshot.inspector_light_color_r = main.get_inspector_light_color_r();
+        snapshot.inspector_light_color_g = main.get_inspector_light_color_g();
+        snapshot.inspector_light_color_b = main.get_inspector_light_color_b();
+        snapshot.inspector_light_intensity = main.get_inspector_light_intensity();
+        snapshot.inspector_light_enabled = main.get_inspector_light_enabled();
+        snapshot.inspector_light_contribution = main.get_inspector_light_contribution();
+        snapshot.inspector_light_range = main.get_inspector_light_range();
+        snapshot.inspector_light_inner_cone = main.get_inspector_light_inner_cone();
+        snapshot.inspector_light_outer_cone = main.get_inspector_light_outer_cone();
+        snapshot.inspector_light_width = main.get_inspector_light_width();
+        snapshot.inspector_light_height = main.get_inspector_light_height();
+        snapshot.inspector_light_linking_text =
+            main.get_inspector_light_linking_text().data();
+        snapshot.inspector_light_expanded = main.get_inspector_light_expanded();
         snapshot.inspector_has_animation_player =
             main.get_inspector_has_animation_player();
         snapshot.inspector_animation_clips.clear();
@@ -6551,6 +7972,8 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.entry_index = row.entry_index;
             copy.clip_name = row.clip_name.data();
             copy.clip_guid = row.clip_guid.data();
+            copy.clip_display = row.clip_display.data();
+            copy.clip_invalid = row.clip_invalid;
             snapshot.inspector_animation_clips.push_back(eastl::move(copy));
           }
         }
@@ -6568,27 +7991,37 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_asset_type = main.get_inspector_asset_type().data();
         snapshot.inspector_asset_intermediate_path =
             main.get_inspector_asset_intermediate_path().data();
-        snapshot.light_dir_x = main.get_light_dir_x();
-        snapshot.light_dir_y = main.get_light_dir_y();
-        snapshot.light_dir_z = main.get_light_dir_z();
-        snapshot.light_color_r = main.get_light_color_r();
-        snapshot.light_color_g = main.get_light_color_g();
-        snapshot.light_color_b = main.get_light_color_b();
-        snapshot.ambient_r = main.get_ambient_r();
-        snapshot.ambient_g = main.get_ambient_g();
-        snapshot.ambient_b = main.get_ambient_b();
-        snapshot.diffuse_r = main.get_diffuse_r();
-        snapshot.diffuse_g = main.get_diffuse_g();
-        snapshot.diffuse_b = main.get_diffuse_b();
-        snapshot.specular_r = main.get_specular_r();
-        snapshot.specular_g = main.get_specular_g();
-        snapshot.specular_b = main.get_specular_b();
-        snapshot.shininess = main.get_shininess();
-        snapshot.shading_unlit = main.get_shading_unlit();
-        snapshot.ssao_enabled = main.get_ssao_enabled();
-        snapshot.ssao_radius = main.get_ssao_radius();
-        snapshot.ssao_bias = main.get_ssao_bias();
-        snapshot.ssao_strength = main.get_ssao_strength();
+        snapshot.mesh_material_section_visible =
+            main.get_mesh_material_section_visible();
+        snapshot.mesh_material_unlit = main.get_mesh_material_unlit();
+        snapshot.mesh_base_color_r = main.get_mesh_base_color_r();
+        snapshot.mesh_base_color_g = main.get_mesh_base_color_g();
+        snapshot.mesh_base_color_b = main.get_mesh_base_color_b();
+        snapshot.mesh_base_color_a = main.get_mesh_base_color_a();
+        snapshot.mesh_metallic = main.get_mesh_metallic();
+        snapshot.mesh_roughness = main.get_mesh_roughness();
+        snapshot.mesh_ambient_r = main.get_mesh_ambient_r();
+        snapshot.mesh_ambient_g = main.get_mesh_ambient_g();
+        snapshot.mesh_ambient_b = main.get_mesh_ambient_b();
+        snapshot.mesh_diffuse_r = main.get_mesh_diffuse_r();
+        snapshot.mesh_diffuse_g = main.get_mesh_diffuse_g();
+        snapshot.mesh_diffuse_b = main.get_mesh_diffuse_b();
+        snapshot.mesh_specular_r = main.get_mesh_specular_r();
+        snapshot.mesh_specular_g = main.get_mesh_specular_g();
+        snapshot.mesh_specular_b = main.get_mesh_specular_b();
+        snapshot.mesh_shininess = main.get_mesh_shininess();
+        snapshot.mesh_slot_base_color_name =
+            main.get_mesh_slot_base_color_name().data();
+        snapshot.mesh_slot_base_color_assigned =
+            main.get_mesh_slot_base_color_assigned();
+        snapshot.mesh_slot_metallic_name = main.get_mesh_slot_metallic_name().data();
+        snapshot.mesh_slot_metallic_assigned = main.get_mesh_slot_metallic_assigned();
+        snapshot.mesh_slot_normal_name = main.get_mesh_slot_normal_name().data();
+        snapshot.mesh_slot_normal_assigned = main.get_mesh_slot_normal_assigned();
+        snapshot.mesh_slot_occlusion_name =
+            main.get_mesh_slot_occlusion_name().data();
+        snapshot.mesh_slot_occlusion_assigned =
+            main.get_mesh_slot_occlusion_assigned();
         break;
       case DockPanelKind::content_browser: {
         if (const auto tree_rows = main.get_browser_tree_rows()) {
@@ -6640,6 +8073,25 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.browser_details_view = main.get_browser_details_view();
         snapshot.browser_sort_column = main.get_browser_sort_column();
         snapshot.browser_sort_ascending = main.get_browser_sort_ascending();
+        snapshot.history_filter_scene = main.get_history_filter_scene();
+        snapshot.history_filter_global = main.get_history_filter_global();
+        snapshot.browser_inline_rename_path =
+            main.get_browser_inline_rename_path().data();
+        snapshot.browser_inline_rename_buffer =
+            main.get_browser_inline_rename_buffer().data();
+        if (const auto history_rows = main.get_history_rows()) {
+          for (std::size_t i = 0; i < history_rows->row_count(); ++i) {
+            const HistoryRow row = history_rows->row_data(i).value();
+            NativeFloatHistoryRow copy{};
+            copy.label = row.label.data();
+            copy.index = row.index;
+            copy.stack = row.stack;
+            copy.is_applied = row.is_applied;
+            copy.is_current = row.is_current;
+            copy.is_group = row.is_group;
+            snapshot.history_rows.push_back(eastl::move(copy));
+          }
+        }
         break;
       }
       default:
@@ -6696,6 +8148,7 @@ void SlintSystem::wireNativeFloatingCallbacks() {
     m_docking_model_dirty = true;
   };
   callbacks.on_hierarchy_entity_selected = [this](int entity_id) {
+    g_runtime_global_context.setContentBrowserHasInputFocus(false);
     m_hierarchy_handled_by_slint = true;
     if (const auto host = m_ui_host.lock()) {
       UiSelectionMode mode = UiSelectionMode::replace;
@@ -6708,12 +8161,37 @@ void SlintSystem::wireNativeFloatingCallbacks() {
       host->enqueue(UiEvent::selectEntity(static_cast<EntityId>(entity_id), mode));
     }
   };
+  callbacks.on_hierarchy_entity_context_selected = [this](int entity_id) {
+    applyHierarchyContextSelect(entity_id);
+  };
   callbacks.on_hierarchy_entity_toggle = [this](int entity_id) {
     m_hierarchy_handled_by_slint = true;
     if (const auto host = m_ui_host.lock()) {
       host->enqueue(UiEvent::toggleHierarchyNode(static_cast<EntityId>(entity_id)));
     }
   };
+  callbacks.on_hierarchy_create_requested =
+      [this](int parent_id, const slint::SharedString& kind) {
+        applyHierarchyCreateRequested(parent_id, eastl::string(kind.data()));
+      };
+  callbacks.on_hierarchy_delete_requested =
+      [this](int entity_id) { applyHierarchyDeleteRequested(entity_id); };
+  callbacks.on_hierarchy_icon_pressed =
+      [this](int entity_id, float mouse_x, float row_width) {
+        handleHierarchyIconPressed(entity_id, mouse_x, row_width);
+      };
+  callbacks.on_inspector_activated = [this]() { onInspectorActivated(); };
+  callbacks.on_mesh_material_unlit_toggled = [this](bool checked) {
+    commitMeshMaterialUnlit(checked);
+  };
+  callbacks.on_mesh_material_scalar_committed =
+      [this](int field, float a, float b, float c, float d) {
+        commitMeshMaterialScalar(field, a, b, c, d);
+      };
+  callbacks.on_mesh_material_reset_requested = [this]() { commitMeshMaterialReset(); };
+  callbacks.on_mesh_slot_pick_requested = [this](int slot) { commitMeshSlotPick(slot); };
+  callbacks.on_mesh_slot_clear_requested = [this](int slot) { commitMeshSlotClear(slot); };
+  callbacks.on_mesh_slot_drop_requested = [this](int slot) { commitMeshSlotDrop(slot); };
   callbacks.on_inspector_transform_edited = [this]() {
     if (const auto host = m_ui_host.lock()) {
       host->enqueue(UiEvent::simple(UiEventKind::inspectorTransformEdited));
@@ -6861,6 +8339,7 @@ void SlintSystem::wireNativeFloatingCallbacks() {
                                                 eastl::string(text.data()), number, flag);
       };
   callbacks.on_inspector_camera_edited = [this]() { applyInspectorCamera(); };
+  callbacks.on_inspector_light_edited = [this]() { applyInspectorLight(); };
   callbacks.on_inspector_add_unique_attachment =
       [this](const slint::SharedString& kind) {
         applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
@@ -6879,8 +8358,19 @@ void SlintSystem::wireNativeFloatingCallbacks() {
         applyInspectorAnimationClipCommit(entry_index, eastl::string(clip_name.data()),
                                         eastl::string(clip_guid.data()));
       };
+  callbacks.on_inspector_open_clip_picker = [this](int target_index) {
+    applyInspectorOpenClipPicker(target_index);
+  };
+  callbacks.on_inspector_pick_clip_choice =
+      [this](const slint::SharedString& guid, const slint::SharedString& stem,
+             const slint::SharedString& display) {
+        applyInspectorPickClipChoice(eastl::string(guid.data()),
+                                     eastl::string(stem.data()),
+                                     eastl::string(display.data()));
+      };
   callbacks.on_browser_folder_selected = UiCallbackBinder::bind(
       m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+        g_runtime_global_context.setContentBrowserHasInputFocus(true);
         m_tree_folder_handled_by_slint = true;
         clearBrowserGridSelection();
         host.enqueue(UiEvent::withPath(UiEventKind::browserFolderSelected,
@@ -6895,7 +8385,47 @@ void SlintSystem::wireNativeFloatingCallbacks() {
   callbacks.on_browser_refresh_requested = UiCallbackBinder::bind(
       m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); });
   callbacks.on_browser_import_requested = [this]() { queueOpenImportFileDialog(); };
-  callbacks.on_browser_delete_requested = [this]() { deleteSelectedBrowserAssets(); };
+  callbacks.on_browser_new_scene_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+        host.enqueue(UiEvent::withPath(UiEventKind::newSceneAsset,
+                                       eastl::string(path.data())));
+      });
+  callbacks.on_browser_new_folder_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host, const slint::SharedString& path) {
+        host.enqueue(UiEvent::withPath(UiEventKind::newFolder,
+                                       eastl::string(path.data())));
+      });
+  callbacks.on_browser_rename_requested = UiCallbackBinder::bind(
+      m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
+        if (m_browser_selected_grid_paths.size() > 1) {
+          return;
+        }
+        host.enqueue(UiEvent::withPath(UiEventKind::browserRename,
+                                       eastl::string(path.data())));
+      });
+  callbacks.on_browser_delete_requested =
+      [this](const slint::SharedString& path) {
+        requestBrowserDelete(eastl::string(path.data()));
+      };
+  callbacks.on_history_filter_changed = [this](bool scene, bool global) {
+    if (m_window_component) {
+      auto& ui = *m_window_component->operator->();
+      ui.set_history_filter_scene(scene);
+      ui.set_history_filter_global(global);
+    }
+    m_history_panel_filter_scene = !scene;
+    syncHistoryPanel();
+  };
+  callbacks.on_history_entry_clicked = [this](int stack, int index) {
+    jumpHistory(stack, index);
+  };
+  callbacks.on_browser_inline_rename_commit =
+      [this](const slint::SharedString& name) {
+        commitBrowserInlineRename(eastl::string(name.data()));
+      };
+  callbacks.on_browser_inline_rename_cancel = [this]() {
+    cancelBrowserInlineRename();
+  };
   callbacks.on_browser_grid_select =
       [this](const slint::SharedString& path, bool ctrl, bool shift) {
         applyBrowserGridSelection(eastl::string(path.data()), ctrl, shift);
@@ -7628,6 +9158,9 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               m_left_mouse_down_prev = true;
               break;
             }
+          }
+          if (event.button.button == SDL_BUTTON_RIGHT && !modal_dialog_open) {
+            tryHierarchyRowContextSelect(logical_ptr.x, logical_ptr.y);
           }
           window.dispatch_pointer_press_event(
               slintPointerPosition(m_window_system, raw_x, raw_y),

@@ -33,6 +33,11 @@ struct AssetImportServiceInit {
   AssetCompilerService* asset_compiler{nullptr};
 };
 
+struct DeleteAssetOptions {
+  bool allow_active_scene{false};
+  const eastl::vector<eastl::string>* in_set_guids{nullptr};
+};
+
 /// Registers Intermediate exchange files (glTF/GLB / images) as Assets, and runs
 /// Assimp Source Export for FBX/OBJ (dual-write Source archive + Intermediate
 /// glTF). Descriptor field `source` stores the Intermediate virtual path;
@@ -79,12 +84,15 @@ class AssetImportService final {
   bool requestReimports(const eastl::vector<eastl::string>& guids);
 
   /// Delete a registered Asset by descriptor virtual path (e.g. assets/Meshes/X.mesh.yaml).
-  /// Refuses when the dependency graph reports dependents. On success: removes
-  /// Intermediate `source` (and Mesh companion Intermediate bodies), descriptor,
-  /// unregisters GUID, marks Finals stale, refreshes Content Browser.
-  /// `out_error` receives a short reason when returning false.
+  /// Refuses when a non-Scene dependent outside `options.in_set_guids` remains after
+  /// Scene detach. On success: removes Intermediate `source` (and Mesh companion
+  /// Intermediate bodies), descriptor, unregisters GUID, marks Finals stale,
+  /// refreshes Content Browser. `out_error` receives a short reason when returning false.
   bool deleteAsset(const eastl::string& descriptor_virtual_path,
                    eastl::string* out_error = nullptr);
+  bool deleteAsset(const eastl::string& descriptor_virtual_path,
+                   const DeleteAssetOptions& options,
+                   eastl::string* out_error);
 
   /// Lazy Intermediate migration (project open / registry scan): for each mesh
   /// Asset whose Intermediate `source` is still `.dae`, migrate GUID-preserving

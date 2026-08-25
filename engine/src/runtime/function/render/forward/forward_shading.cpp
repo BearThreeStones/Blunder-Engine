@@ -6,14 +6,16 @@
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/core/math/geometry.h"
 
-#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/vec3.hpp>
 
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
+#include "runtime/function/scene/light_eval.h"
+#include "runtime/function/scene/scene_instance.h"
 #include "runtime/resource/asset/material_asset.h"
 
 namespace Blunder {
@@ -51,16 +53,9 @@ void computeDirectionalLightMatrices(
   out_light_view_projection = out_light_projection * out_light_view;
 }
 
-void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
-                                    const MaterialAsset* material,
-                                    const BlinnPhongEditorSettings& editor,
-                                    const ForwardFrameState& frame_state) {
-  if (material != nullptr) {
-    mesh_ubo.base_color_factor = material->getBaseColorFactor();
-  } else {
-    mesh_ubo.base_color_factor = glm::vec4(1.0f);
-  }
-
+void packStudioLight(ForwardMeshUniformData& mesh_ubo,
+                     const BlinnPhongEditorSettings& editor,
+                     const ForwardFrameState& frame_state) {
   const float light_dir_length = glm::length(editor.light_direction);
   const glm::vec3 light_dir =
       light_dir_length > 0.0001f
@@ -68,14 +63,107 @@ void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
           : k_default_light_direction;
   mesh_ubo.light_direction = glm::vec4(light_dir, 0.0f);
   mesh_ubo.light_color = glm::vec4(editor.light_color, 0.0f);
-  const glm::vec3 ambient =
-      glm::max(editor.ambient_color, glm::vec3(0.25f));
-  mesh_ubo.ambient_color = glm::vec4(ambient, 0.0f);
-  mesh_ubo.diffuse_color = glm::vec4(editor.diffuse_color, 0.0f);
-  mesh_ubo.specular_color_and_shininess =
-      glm::vec4(editor.specular_color, editor.shininess);
-  mesh_ubo.material_flags =
-      glm::vec4(editor.unlit ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+  mesh_ubo.light_count = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+  GpuSceneLight& gpu = mesh_ubo.lights[0];
+  gpu.position_type = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+  gpu.color_flags = glm::vec4(editor.light_color, 1.0f);
+  gpu.emit_range = glm::vec4(-light_dir, 0.0f);
+  gpu.cone_area = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
+  gpu.axis_x = glm::vec4(1.0f, 0.0f, 0.0f, frame_state.shadows_enabled ? 1.0f : 0.0f);
+}
+
+float gpuLightTypeCode(LightType type) {
+  switch (type) {
+    case LightType::point:
+      return 1.0f;
+    case LightType::spot:
+      return 2.0f;
+    case LightType::area:
+      return 3.0f;
+    case LightType::directional:
+    default:
+      return 0.0f;
+  }
+}
+
+void packEvaluatedLight(GpuSceneLight& gpu, const EvaluatedLight& light,
+                        EntityId shadow_caster_id, bool shadows_enabled) {
+  gpu.position_type =
+      glm::vec4(light.world_position, gpuLightTypeCode(light.type));
+  const float illuminate =
+      lightContributionIncludesIlluminate(light.contribution) ? 1.0f : 0.0f;
+  gpu.color_flags = glm::vec4(light.color_times_intensity, illuminate);
+  gpu.emit_range = glm::vec4(light.world_emit, light.range);
+  gpu.cone_area = glm::vec4(glm::cos(glm::radians(light.inner_cone_degrees)),
+                            glm::cos(glm::radians(light.outer_cone_degrees)),
+                            light.width, light.height);
+  const float uses_shadow =
+      shadows_enabled && light.entity_id == shadow_caster_id && illuminate > 0.5f
+          ? 1.0f
+          : 0.0f;
+  gpu.axis_x = glm::vec4(light.world_axis_x, uses_shadow);
+}
+
+void packSceneLights(ForwardMeshUniformData& mesh_ubo,
+                     const ForwardFrameState& frame_state,
+                     EntityId mesh_entity_id) {
+  mesh_ubo.ambient_color = glm::vec4(0.0f);
+  mesh_ubo.light_count = glm::vec4(0.0f);
+  if (frame_state.lighting_scene == nullptr) {
+    return;
+  }
+  EvaluatedLight gathered[k_max_forward_scene_lights];
+  const size_t count = gatherLightsForMesh(
+      *frame_state.lighting_scene, mesh_entity_id, gathered,
+      k_max_forward_scene_lights);
+  mesh_ubo.light_count = glm::vec4(static_cast<float>(count), 0.0f, 0.0f, 0.0f);
+  if (count > 0) {
+    const Vec3 l = lightShadingL(gathered[0].type, gathered[0].world_emit,
+                                 gathered[0].world_position, Vec3(0.0f));
+    mesh_ubo.light_direction = glm::vec4(l, 0.0f);
+    mesh_ubo.light_color = glm::vec4(gathered[0].color_times_intensity, 0.0f);
+  }
+  for (size_t i = 0; i < count; ++i) {
+    packEvaluatedLight(mesh_ubo.lights[i], gathered[i],
+                       frame_state.shadow_caster_id, frame_state.shadows_enabled);
+  }
+}
+
+void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
+                                    const MaterialAsset* material,
+                                    const BlinnPhongEditorSettings& editor,
+                                    const ForwardFrameState& frame_state,
+                                    EntityId mesh_entity_id) {
+  const glm::vec3 k_mesh_default_diffuse{1.0f, 1.0f, 1.0f};
+  const glm::vec3 k_mesh_default_specular{0.4f, 0.4f, 0.4f};
+  const glm::vec3 k_mesh_default_ambient{0.0f, 0.0f, 0.0f};
+  constexpr float k_mesh_default_shininess = 32.0f;
+
+  if (material != nullptr) {
+    mesh_ubo.base_color_factor = material->getBaseColorFactor();
+    mesh_ubo.diffuse_color = glm::vec4(material->getDiffuseColor(), 0.0f);
+    mesh_ubo.specular_color_and_shininess =
+        glm::vec4(material->getSpecularColor(), material->getShininess());
+    mesh_ubo.material_flags =
+        glm::vec4(material->isUnlit() ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+  } else {
+    mesh_ubo.base_color_factor = glm::vec4(1.0f);
+    mesh_ubo.diffuse_color = glm::vec4(k_mesh_default_diffuse, 0.0f);
+    mesh_ubo.specular_color_and_shininess =
+        glm::vec4(k_mesh_default_specular, k_mesh_default_shininess);
+    mesh_ubo.material_flags = glm::vec4(0.0f);
+  }
+
+  if (frame_state.live_scene_lighting) {
+    packSceneLights(mesh_ubo, frame_state, mesh_entity_id);
+  } else {
+    const glm::vec3 ambient =
+        material != nullptr
+            ? glm::max(material->getAmbientColor(), glm::vec3(0.0f))
+            : k_mesh_default_ambient;
+    mesh_ubo.ambient_color = glm::vec4(ambient, 0.0f);
+    packStudioLight(mesh_ubo, editor, frame_state);
+  }
 
   mesh_ubo.light_view_projection = frame_state.light_view_projection;
   const float inv_shadow_map_size =
@@ -90,8 +178,9 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                               const BlinnPhongEditorSettings& editor,
                               const ForwardFrameState& frame_state,
                               cgltf_alpha_mode alpha_mode, float alpha_cutoff,
-                              bool double_sided) {
-  applyBlinnPhongToMeshUniforms(mesh_ubo, material, editor, frame_state);
+                              bool double_sided, EntityId mesh_entity_id) {
+  applyBlinnPhongToMeshUniforms(mesh_ubo, material, editor, frame_state,
+                                mesh_entity_id);
 
   float metallic = 1.0f;
   float roughness = 1.0f;

@@ -702,7 +702,8 @@ bool parseStringStringMapObject(
     if (!parseJsonString(p, object_end, binding.guid, &after_value)) {
       return false;
     }
-    if (!binding.name.empty() && !binding.guid.empty()) {
+    // Discard dual-empty drafts; keep half-filled for repair.
+    if (!(binding.name.empty() && binding.guid.empty())) {
       out_bindings.push_back(eastl::move(binding));
     }
     p = skipWhitespace(after_value);
@@ -986,6 +987,43 @@ bool parseCameraObject(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseLightObject(const char* object_start, const char* object_end,
+                      LightComponent& out_light,
+                      eastl::vector<eastl::string>& out_linking_names) {
+  eastl::string type;
+  if (parseStringField(object_start, object_end, "\"type\"", type)) {
+    LightType parsed = LightType::directional;
+    if (lightTypeFromJson(type, parsed)) {
+      out_light.type = parsed;
+    }
+  }
+
+  parseVec3Field(object_start, object_end, "\"color\"", out_light.color,
+                 Vec3(1.0f, 1.0f, 1.0f));
+  parseFloatField(object_start, object_end, "\"intensity\"", out_light.intensity);
+  parseBoolField(object_start, object_end, "\"enabled\"", out_light.enabled);
+
+  eastl::string contribution;
+  if (parseStringField(object_start, object_end, "\"contribution\"",
+                       contribution)) {
+    LightContribution parsed = LightContribution::illuminateAndShadows;
+    if (lightContributionFromJson(contribution, parsed)) {
+      out_light.contribution = parsed;
+    }
+  }
+
+  parseFloatField(object_start, object_end, "\"range\"", out_light.range);
+  parseFloatField(object_start, object_end, "\"innerConeDegrees\"",
+                  out_light.inner_cone_degrees);
+  parseFloatField(object_start, object_end, "\"outerConeDegrees\"",
+                  out_light.outer_cone_degrees);
+  parseFloatField(object_start, object_end, "\"width\"", out_light.width);
+  parseFloatField(object_start, object_end, "\"height\"", out_light.height);
+  parseStringArrayField(object_start, object_end, "\"linking\"",
+                        out_linking_names);
+  return true;
+}
+
 bool parseAnimationTreeObject(const char* object_start, const char* object_end,
                               SceneEntityDefinition& out_entity);
 
@@ -1087,6 +1125,17 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   if (camera_content != nullptr) {
     out_entity.has_camera = true;
     if (!parseCameraObject(camera_content, camera_end, out_entity.camera)) {
+      return false;
+    }
+  }
+
+  const char* light_end = nullptr;
+  const char* light_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"light\"", &light_end);
+  if (light_content != nullptr) {
+    out_entity.has_light = true;
+    if (!parseLightObject(light_content, light_end, out_entity.light,
+                          out_entity.light_linking_names)) {
       return false;
     }
   }
@@ -1851,6 +1900,39 @@ void appendCameraJson(eastl::string& out, const CameraComponent& camera) {
   out.append("\n      }");
 }
 
+void appendLightJson(eastl::string& out, const LightComponent& light,
+                     const eastl::vector<eastl::string>& linking_names) {
+  char buffer[160];
+  out.append(",\n      \"light\": {\n");
+  out.append("        \"type\": \"");
+  out.append(lightTypeToJson(light.type));
+  out.append("\",\n        \"color\": ");
+  appendFloat3(out, light.color);
+  std::snprintf(buffer, sizeof(buffer), ",\n        \"intensity\": %.6g,\n",
+                static_cast<double>(light.intensity));
+  out.append(buffer);
+  out.append("        \"enabled\": ");
+  out.append(light.enabled ? "true" : "false");
+  out.append(",\n        \"contribution\": \"");
+  out.append(lightContributionToJson(light.contribution));
+  std::snprintf(buffer, sizeof(buffer),
+                "\",\n        \"range\": %.6g,\n        \"innerConeDegrees\": %.6g,\n"
+                "        \"outerConeDegrees\": %.6g,\n        \"width\": %.6g,\n"
+                "        \"height\": %.6g,\n        \"linking\": [\n",
+                static_cast<double>(light.range),
+                static_cast<double>(light.inner_cone_degrees),
+                static_cast<double>(light.outer_cone_degrees),
+                static_cast<double>(light.width),
+                static_cast<double>(light.height));
+  out.append(buffer);
+  for (size_t i = 0; i < linking_names.size(); ++i) {
+    out.append("          ");
+    appendJsonString(out, linking_names[i]);
+    out.append(i + 1 == linking_names.size() ? "\n" : ",\n");
+  }
+  out.append("        ]\n      }");
+}
+
 eastl::string meshReferenceForSerialize(const eastl::string& mesh_ref,
                                         const AssetRegistry* registry) {
   if (mesh_ref.empty() || isValidGuidFormat(mesh_ref) || registry == nullptr) {
@@ -1946,6 +2028,10 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
 
   if (entity.has_camera) {
     appendCameraJson(out, entity.camera);
+  }
+
+  if (entity.has_light) {
+    appendLightJson(out, entity.light, entity.light_linking_names);
   }
 
   out.append(is_last ? "\n    }\n" : "\n    },\n");

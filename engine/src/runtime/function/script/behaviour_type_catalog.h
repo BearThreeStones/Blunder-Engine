@@ -9,7 +9,7 @@ namespace Blunder {
 
 struct BehaviourCatalogMember {
   eastl::string name;
-  enum class Kind { Bool, Number, String } kind{Kind::String};
+  enum class Kind { Bool, Number, String, ClipName } kind{Kind::String};
 };
 
 struct BehaviourCatalogType {

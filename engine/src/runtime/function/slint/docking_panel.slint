@@ -1,4 +1,5 @@
 import { DockChromeCloseIcon, DockChromePinIcon, DockChromeMinimizeIcon } from "dock_chrome_icons.slint";
+import { EditorTheme } from "editor_theme.slint";
 
 // Keep in sync with DockLayoutMetrics::chrome_bar_height in dock_manager.h
 export global DockChromeMetrics {
@@ -162,21 +163,29 @@ export component DockTabsLayer inherits Rectangle {
         y: tab.y;
         width: tab.width;
         height: tab.height;
-        // Active tab matches panel/view surface (#2d2d2d) so chrome and content read as one plane.
-        background: tab.active ? #2d2d2d : #242424;
-        border-color: tab.active ? #2d2d2d : #1a1a1a;
-        border-width: tab.active ? 0px : 1px;
-        border-radius: 4px;
+        // Active tab matches Window so chrome and content read as one plane.
+        background: transparent;
+
+        // 4px inset keeps 24px pills inside 32px chrome (task 2.4 — no C++ height bump).
+        Rectangle {
+            x: 4px;
+            y: 4px;
+            width: parent.width - 8px;
+            height: parent.height - 8px;
+            border-radius: EditorTheme.radius-ctl;
+            background: tab.active ? EditorTheme.tab-active
+                : (drag-area.has-hover ? EditorTheme.tab-hover : EditorTheme.tab-idle);
+        }
 
         Text {
-            x: 8px;
-            width: parent.width - (tab.show-pin ? 44px : 26px);
+            x: 12px;
+            width: parent.width - (tab.show-pin ? 48px : 30px);
             height: parent.height;
             vertical-alignment: center;
             overflow: elide;
             text: tab.title;
-            color: tab.active ? #ffffff : #a8a8a8;
-            font-size: 12px;
+            color: tab.active ? EditorTheme.default-text : EditorTheme.tab-text;
+            font-size: EditorTheme.font;
         }
 
         drag-area := TouchArea {
@@ -215,7 +224,7 @@ export component DockTabsLayer inherits Rectangle {
             DockChromePinIcon {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                icon-color: pin-area.has-hover ? #ffffff : #808080;
+                icon-color: pin-area.has-hover ? EditorTheme.default-text : EditorTheme.icon;
             }
         }
 
@@ -230,7 +239,7 @@ export component DockTabsLayer inherits Rectangle {
             DockChromeCloseIcon {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                icon-color: close-area.has-hover ? #ffffff : #808080;
+                icon-color: close-area.has-hover ? EditorTheme.default-text : EditorTheme.icon;
             }
         }
     }
@@ -257,8 +266,8 @@ export component DockChromeBar inherits Rectangle {
     callback window-close-pressed();
 
     preferred-height: (root.embedded || root.chrome-bar-only) ? DockChromeMetrics.bar-height : 0;
-    background: root.embedded || root.chrome-bar-only ? #2d2d2d : transparent;
-    border-color: #2a2a2a;
+    background: root.embedded || root.chrome-bar-only ? EditorTheme.app-bar : transparent;
+    border-color: EditorTheme.hairline;
     border-width: root.embedded ? 1px : 0px;
 
     property <length> window-close-width: 26px;
@@ -340,7 +349,7 @@ export component DockChromeBar inherits Rectangle {
                 height: 10px;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                icon-color: window-close-touch.has-hover ? #ffffff : #d0d0d0;
+                icon-color: window-close-touch.has-hover ? EditorTheme.default-text : EditorTheme.icon;
             }
         }
     }
@@ -360,7 +369,7 @@ export component DockSplittersLayer inherits Rectangle {
         y: handle.y;
         width: handle.width;
         height: handle.height;
-        background: split-area.has-hover ? #3a6ea5 : #2e2e2e;
+        background: split-area.has-hover ? EditorTheme.accent-line : EditorTheme.hairline;
 
         split-area := TouchArea {
             mouse-cursor: handle.vertical ? MouseCursor.ew-resize : MouseCursor.ns-resize;
@@ -386,12 +395,12 @@ export component DockSplittersLayer inherits Rectangle {
 }
 
 export global DockGuideMetrics {
-    in-out property <brush> frame-stroke: #4a90d9;
-    in-out property <brush> frame-stroke-highlight: #6ab0ff;
-    in-out property <brush> chrome-fill: #4a90d9;
-    in-out property <brush> active-fill: #4a90d9;
-    in-out property <color> inactive-fill: #2a2a2a;
-    in-out property <brush> dash-color: #5a9fd4;
+    in-out property <brush> frame-stroke: EditorTheme.accent;
+    in-out property <brush> frame-stroke-highlight: EditorTheme.accent-hover;
+    in-out property <brush> chrome-fill: EditorTheme.accent;
+    in-out property <brush> active-fill: EditorTheme.accent;
+    in-out property <color> inactive-fill: EditorTheme.field;
+    in-out property <brush> dash-color: EditorTheme.accent-line;
     in-out property <length> chrome-height: 9px;
     in-out property <length> dash-length: 3px;
     in-out property <length> dash-gap: 2px;
@@ -560,7 +569,7 @@ export global DockEdgeGuideMetrics {
     in-out property <length> chrome-height: 7px;
     in-out property <float> body-opacity: 0.3;
     in-out property <float> faint-opacity: 0.45;
-    in-out property <brush> arrow-fill: #ffffff;
+    in-out property <brush> arrow-fill: EditorTheme.accent-text;
 }
 
 // Deprecated alias — use DockEdgeGuideMetrics.
@@ -710,9 +719,9 @@ export component DockGuidesLayer inherits Rectangle {
         width: root.preview.width;
         height: root.preview.height;
         visible: root.preview.visible;
-        background: #4a90d9;
+        background: EditorTheme.accent;
         opacity: 0.28;
-        border-color: #7fc1ff;
+        border-color: EditorTheme.accent-hover;
         border-width: 2px;
         border-radius: 2px;
     }
@@ -741,9 +750,9 @@ export component DockHostGuidesLayer inherits Rectangle {
         width: root.preview.width;
         height: root.preview.height;
         visible: root.preview.visible;
-        background: #4a90d9;
+        background: EditorTheme.accent;
         opacity: 0.28;
-        border-color: #7fc1ff;
+        border-color: EditorTheme.accent-hover;
         border-width: 2px;
         border-radius: 2px;
     }
@@ -777,9 +786,9 @@ export component DockAutoHideDropPreviewLayer inherits Rectangle {
         width: root.preview.width;
         height: root.preview.height;
         visible: root.preview.visible;
-        background: #3a6ea5;
+        background: EditorTheme.accent;
         opacity: 0.35;
-        border-color: #6ab0ff;
+        border-color: EditorTheme.accent-hover;
         border-width: 2px;
         border-radius: 2px;
     }
@@ -795,18 +804,18 @@ export component DockFloatingDragPreviewLayer inherits Rectangle {
         y: root.preview.y;
         width: root.preview.width;
         height: root.preview.height;
-        background: #1c1c1c;
+        background: EditorTheme.field;
         opacity: 0.6;
-        border-color: #7fc1ff;
+        border-color: EditorTheme.accent-hover;
         border-width: 1px;
-        border-radius: 2px;
+        border-radius: EditorTheme.radius-ctl;
 
         Rectangle {
             x: 0;
             y: 0;
             width: parent.width;
             height: DockChromeMetrics.bar-height;
-            background: #2b2b2b;
+            background: EditorTheme.app-bar;
             opacity: 1.0;
 
             Text {
@@ -816,8 +825,8 @@ export component DockFloatingDragPreviewLayer inherits Rectangle {
                 vertical-alignment: center;
                 overflow: elide;
                 text: root.preview.title;
-                color: #d0d0d0;
-                font-size: 12px;
+                color: EditorTheme.default-text;
+                font-size: EditorTheme.font;
             }
         }
     }
@@ -836,8 +845,8 @@ export component DockAutoHideTabsLayer inherits Rectangle {
         y: tab.y;
         width: tab.width;
         height: tab.height;
-        background: tab.expanded ? #3a6ea5 : #242424;
-        border-color: #161616;
+        background: tab.expanded ? EditorTheme.accent : EditorTheme.toolbar;
+        border-color: EditorTheme.hairline;
         border-width: 1px;
 
         Text {
@@ -848,8 +857,8 @@ export component DockAutoHideTabsLayer inherits Rectangle {
             horizontal-alignment: center;
             overflow: elide;
             text: tab.title;
-            color: tab.expanded ? #ffffff : #c8c8c8;
-            font-size: 11px;
+            color: tab.expanded ? EditorTheme.accent-text : EditorTheme.tab-text;
+            font-size: EditorTheme.font-sm;
         }
 
         tab-touch := TouchArea {
@@ -875,7 +884,7 @@ export component DockAutoHideTabsLayer inherits Rectangle {
                 icon-size: 8px;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                icon-color: unpin-touch.has-hover ? #ffffff : #666666;
+                icon-color: unpin-touch.has-hover ? EditorTheme.default-text : EditorTheme.icon;
             }
         }
     }
@@ -897,8 +906,8 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
         y: overlay.frame-y;
         width: overlay.frame-width;
         height: overlay.frame-height;
-        background: #2d2d2d;
-        border-color: #4a4a4a;
+        background: EditorTheme.window;
+        border-color: EditorTheme.hairline;
         border-width: 1px;
         clip: true;
 
@@ -907,7 +916,7 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
             y: overlay.title-y - overlay.frame-y;
             width: overlay.title-width;
             height: overlay.title-height;
-            background: #2b2b2b;
+            background: EditorTheme.app-bar;
 
             Text {
                 x: 8px;
@@ -916,8 +925,8 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
                 vertical-alignment: center;
                 overflow: elide;
                 text: overlay.title;
-                color: #d0d0d0;
-                font-size: 12px;
+                color: EditorTheme.default-text;
+                font-size: EditorTheme.font;
             }
 
             if overlay.show-minimize: minimize-touch := TouchArea {
@@ -928,7 +937,7 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
                 DockChromeMinimizeIcon {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    icon-color: minimize-touch.has-hover ? #ffffff : #888888;
+                    icon-color: minimize-touch.has-hover ? EditorTheme.default-text : EditorTheme.icon;
                 }
             }
 
@@ -940,7 +949,7 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
                 DockChromeCloseIcon {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    icon-color: close-touch.has-hover ? #ffffff : #888888;
+                    icon-color: close-touch.has-hover ? EditorTheme.default-text : EditorTheme.icon;
                 }
             }
         }
@@ -950,7 +959,7 @@ export component DockAutoHideOverlaysLayer inherits Rectangle {
             y: overlay.resize-y - overlay.frame-y;
             width: overlay.resize-width;
             height: overlay.resize-height;
-            background: resize-touch.has-hover ? #3a6ea5 : #2e2e2e;
+            background: resize-touch.has-hover ? EditorTheme.accent : EditorTheme.button;
 
             resize-touch := TouchArea {
                 width: parent.width;
@@ -994,7 +1003,7 @@ export component DockingHost inherits Rectangle {
     callback splitter-moved(int, length, length);
     callback splitter-released();
 
-    background: #161616;
+    background: EditorTheme.app-bar;
 
     TouchArea {
         width: 100%;
@@ -1006,7 +1015,7 @@ export component DockingHost inherits Rectangle {
         y: tile.tab-y;
         width: tile.tab-width;
         height: tile.tab-height;
-        background: #2d2d2d;
+        background: EditorTheme.app-bar;
     }
 
     for tile in root.tiles: Rectangle {
@@ -1014,9 +1023,11 @@ export component DockingHost inherits Rectangle {
         y: tile.content-y;
         width: tile.content-width;
         height: tile.content-height;
-        background: #2d2d2d;
-        border-color: #2a2a2a;
+        background: EditorTheme.window;
+        border-color: EditorTheme.hairline;
         border-width: 1px;
+        border-radius: EditorTheme.radius-surface;
+        clip: true;
     }
 
     DockChromeBar {

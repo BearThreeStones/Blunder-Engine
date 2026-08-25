@@ -141,6 +141,49 @@ int main() {
     expect_true("clear resets dirty", !history.isDirtyRelativeToSave());
   }
 
+  {
+    expect_true(
+        "viewport routes document",
+        resolveUndoScope(false, false, false) == EditorUndoScope::document);
+    expect_true("browser routes global",
+                resolveUndoScope(true, false, false) == EditorUndoScope::global);
+    expect_true("asset inspector routes global",
+                resolveUndoScope(false, false, true) == EditorUndoScope::global);
+    expect_true("inline rename claims text",
+                resolveUndoScope(true, true, true) == EditorUndoScope::text);
+  }
+
+  {
+    DocumentHistory document;
+    DocumentHistory global;
+    int document_value = 0;
+    int global_value = 0;
+    document.push(makeCounter(&document_value, 1, k_invalid_entity_id, EntityId{1}));
+    global.push(makeCounter(&global_value, 5, k_invalid_entity_id, EntityId{1}));
+    document.clear();
+    expect_true("open-scene style clear leaves global", global.canUndo());
+    expect_true("global value untouched by document clear", global_value == 5);
+    expect_true("document cannot undo after clear", !document.undo());
+    expect_true("viewport undo would not change global", global_value == 5);
+    expect_true("global undo", global.undo());
+    expect_true("global undone", global_value == 0);
+  }
+
+  {
+    DocumentHistory history;
+    int value = 0;
+    history.push(makeCounter(&value, 1, k_invalid_entity_id, EntityId{1}));
+    history.push(makeCounter(&value, 2, EntityId{1}, EntityId{2}));
+    history.push(makeCounter(&value, 4, EntityId{2}, EntityId{3}));
+    expect_true("label default",
+                history.commandAt(0) != nullptr &&
+                    history.commandAt(0)->label() == "Edit");
+    expect_true("jumpTo undoes to first", history.jumpTo(1));
+    expect_true("value after jumpTo 1", value == 1);
+    expect_true("jumpTo redoes to all", history.jumpTo(3));
+    expect_true("value after jumpTo 3", value == 7);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

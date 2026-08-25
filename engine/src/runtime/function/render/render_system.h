@@ -134,13 +134,15 @@ class RenderSystem final {
       VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
       const glm::mat4& model, float alpha_cutoff = 0.5f,
       cgltf_alpha_mode alpha_mode = cgltf_alpha_mode_opaque, bool double_sided = false,
-      eastl::vector<glm::mat4> gpu_bone_palette = {});
+      eastl::vector<glm::mat4> gpu_bone_palette = {},
+      EntityId entity_id = k_invalid_entity_id);
   bool addTransparentMeshDraw(
       GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
       VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
       VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
       const glm::mat4& model, float alpha_cutoff = 0.5f, bool double_sided = false,
-      eastl::vector<glm::mat4> gpu_bone_palette = {});
+      eastl::vector<glm::mat4> gpu_bone_palette = {},
+      EntityId entity_id = k_invalid_entity_id);
   void clearOpaqueMeshDraws();
   void clearTransparentMeshDraws();
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }

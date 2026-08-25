@@ -5,6 +5,7 @@
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
 
+#include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/behaviour_id.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/reflection/variant.h"
@@ -14,11 +15,13 @@ namespace Blunder {
 
 struct InspectorBehaviourPropRowData final {
   eastl::string key;
-  eastl::string kind;  // "bool" | "number" | "string"
+  eastl::string kind;  // "bool" | "number" | "string" | "clip_name"
   bool bool_value{false};
   float number_value{0.0f};
   eastl::string string_value;
   bool missing_type{false};
+  /// True when kind is clip_name, value non-empty, and name ∉ player map.
+  bool clip_name_invalid{false};
 };
 
 struct InspectorBehaviourRowData final {
@@ -36,6 +39,8 @@ inline const char* behaviourCatalogKindName(BehaviourCatalogMember::Kind kind) {
       return "number";
     case BehaviourCatalogMember::Kind::String:
       return "string";
+    case BehaviourCatalogMember::Kind::ClipName:
+      return "clip_name";
   }
   return "string";
 }
@@ -80,18 +85,68 @@ inline Variant variantFromInspectorCommit(const eastl::string& kind,
     }
     return Variant(number_value);
   }
+  // "string" and "clip_name" both persist as string bag values.
   if (!text_value.empty()) {
     return Variant(text_value);
   }
   return Variant(eastl::string{});
 }
 
-inline void fillInspectorBehaviourPropRow(InspectorBehaviourPropRowData& row,
-                                          const BehaviourCatalogMember& member,
-                                          const Variant* bag_value) {
+/// Logical names from co-located AnimationPlayer (empty if none).
+inline void collectBehaviourClipNameChoices(
+    const Object* object, eastl::vector<eastl::string>& out_names) {
+  out_names.clear();
+  if (object == nullptr || !object->hasAnimationPlayer()) {
+    return;
+  }
+  const AnimationPlayer* player = object->getAnimationPlayer();
+  if (player == nullptr) {
+    return;
+  }
+  const eastl::vector<AnimationPlayer::ClipBinding> bindings =
+      player->getClipBindings();
+  out_names.reserve(bindings.size());
+  for (const AnimationPlayer::ClipBinding& binding : bindings) {
+    if (!binding.name.empty()) {
+      out_names.push_back(binding.name);
+    }
+  }
+}
+
+/// Dropdown choices: leading empty clear option, then player logical names.
+inline void buildBehaviourClipNameDropdownChoices(
+    const Object* object, eastl::vector<eastl::string>& out_choices) {
+  out_choices.clear();
+  out_choices.push_back(eastl::string{});
+  eastl::vector<eastl::string> names;
+  collectBehaviourClipNameChoices(object, names);
+  for (eastl::string& name : names) {
+    out_choices.push_back(eastl::move(name));
+  }
+}
+
+inline bool isBehaviourClipNameInvalid(
+    const eastl::string& stored_name,
+    const eastl::vector<eastl::string>& player_names) {
+  if (stored_name.empty()) {
+    return false;
+  }
+  for (const eastl::string& name : player_names) {
+    if (name == stored_name) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline void fillInspectorBehaviourPropRow(
+    InspectorBehaviourPropRowData& row, const BehaviourCatalogMember& member,
+    const Variant* bag_value,
+    const eastl::vector<eastl::string>* player_clip_names) {
   row.key = member.name;
   row.kind = behaviourCatalogKindName(member.kind);
   row.missing_type = false;
+  row.clip_name_invalid = false;
   switch (member.kind) {
     case BehaviourCatalogMember::Kind::Bool:
       row.bool_value =
@@ -113,6 +168,18 @@ inline void fillInspectorBehaviourPropRow(InspectorBehaviourPropRowData& row,
               ? bag_value->asString()
               : eastl::string{};
       break;
+    case BehaviourCatalogMember::Kind::ClipName:
+      row.string_value =
+          bag_value != nullptr && bag_value->getType() == VariantType::String
+              ? bag_value->asString()
+              : eastl::string{};
+      if (player_clip_names != nullptr) {
+        row.clip_name_invalid =
+            isBehaviourClipNameInvalid(row.string_value, *player_clip_names);
+      } else {
+        row.clip_name_invalid = !row.string_value.empty();
+      }
+      break;
   }
 }
 
@@ -123,6 +190,9 @@ inline void buildInspectorBehaviourRows(
   if (object == nullptr) {
     return;
   }
+
+  eastl::vector<eastl::string> player_clip_names;
+  collectBehaviourClipNameChoices(object, player_clip_names);
 
   const size_t count = object->getBehaviourCount();
   out_rows.reserve(count);
@@ -146,8 +216,9 @@ inline void buildInspectorBehaviourRows(
       row.props.reserve(catalog_type->members.size());
       for (const BehaviourCatalogMember& member : catalog_type->members) {
         InspectorBehaviourPropRowData prop_row{};
-        fillInspectorBehaviourPropRow(
-            prop_row, member, findBehaviourBagValue(bag, member.name));
+        fillInspectorBehaviourPropRow(prop_row, member,
+                                      findBehaviourBagValue(bag, member.name),
+                                      &player_clip_names);
         row.props.push_back(eastl::move(prop_row));
       }
     }

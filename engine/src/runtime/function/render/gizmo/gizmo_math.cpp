@@ -388,14 +388,54 @@ std::optional<glm::vec3> intersectRayPlaneQuad(const Ray& ray,
 float distanceRayToSegment(const Ray& ray, const glm::vec3& a, const glm::vec3& b) {
   const glm::vec3 ab = b - a;
   const float ab_len_sq = glm::dot(ab, ab);
-  if (ab_len_sq < 1e-8f) {
-    return glm::length(glm::cross(ray.direction, a - ray.origin)) /
-           std::max(glm::length(ray.direction), 1e-6f);
+  const float dir_len = glm::length(ray.direction);
+  if (dir_len < 1e-6f) {
+    if (ab_len_sq < 1e-8f) {
+      return glm::length(a - ray.origin);
+    }
+    const float t =
+        std::clamp(glm::dot(ray.origin - a, ab) / ab_len_sq, 0.0f, 1.0f);
+    return glm::length(a + ab * t - ray.origin);
   }
-  const float t = std::clamp(glm::dot(ray.origin - a, ab) / ab_len_sq, 0.0f, 1.0f);
-  const glm::vec3 closest = a + ab * t;
-  return glm::length(glm::cross(ray.direction, closest - ray.origin)) /
-         std::max(glm::length(ray.direction), 1e-6f);
+  const glm::vec3 d = ray.direction / dir_len;
+  if (ab_len_sq < 1e-8f) {
+    const float s = glm::dot(a - ray.origin, d);
+    const glm::vec3 closest = s > 0.0f ? ray.origin + d * s : ray.origin;
+    return glm::length(a - closest);
+  }
+
+  const glm::vec3 w0 = ray.origin - a;
+  const float bb = glm::dot(d, ab);
+  const float cc = ab_len_sq;
+  const float dd = glm::dot(d, w0);
+  const float ee = glm::dot(ab, w0);
+  const float denom = cc - bb * bb;
+
+  float s = 0.0f;
+  float t = 0.0f;
+  if (std::abs(denom) < 1e-8f) {
+    t = std::clamp(ee / cc, 0.0f, 1.0f);
+    s = -dd + t * bb;
+  } else {
+    t = (ee - bb * dd) / denom;
+    if (t < 0.0f) {
+      t = 0.0f;
+      s = -dd;
+    } else if (t > 1.0f) {
+      t = 1.0f;
+      s = -dd + bb;
+    } else {
+      s = t * bb - dd;
+    }
+  }
+  if (s < 0.0f) {
+    s = 0.0f;
+    t = std::clamp(ee / cc, 0.0f, 1.0f);
+  }
+
+  const glm::vec3 p = ray.origin + d * s;
+  const glm::vec3 q = a + ab * t;
+  return glm::length(p - q);
 }
 
 glm::vec3 worldTranslationDelta(const GizmoBasis& basis, const ManipulatorAxis axis,

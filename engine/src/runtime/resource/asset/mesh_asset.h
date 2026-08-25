@@ -70,6 +70,9 @@ class MeshAsset final : public Asset {
   bool hasMaterial() const {
     return m_material.isValid() || m_material_asset != nullptr;
   }
+  void setMaterialAsset(eastl::shared_ptr<MaterialAsset> material) {
+    m_material_asset = eastl::move(material);
+  }
   size_t getVertexCount() const { return m_vertices.size(); }
   size_t getVertexByteSize() const { return m_vertices.size() * sizeof(MeshVertex); }
   size_t getIndexCount() const { return m_indices.size(); }
