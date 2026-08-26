@@ -96,6 +96,70 @@ int main() {
     expect_true("headless debug flag", opts.headless);
   }
 
+  {
+    std::vector<std::string> args = {"engine_editor", "--mcp", "--project-root",
+                                     "C:/Games/Demo"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("mcp with root ok", opts.ok);
+    expect_true("mcp implies headless", opts.headless);
+    expect_true("mcp kind", opts.adapter == MachineAdapterKind::mcp);
+    expect_true("mcp scene empty", opts.scene.empty());
+  }
+
+  {
+    std::vector<std::string> args = {
+        "engine_editor", "--project-root", "C:/Games/Demo", "--scene",
+        "assets/Scenes/main.scene.asset", "capture", "--subject", "live",
+        "--out", "shot.png"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("cli capture ok", opts.ok);
+    expect_true("cli implies headless", opts.headless);
+    expect_true("cli kind", opts.adapter == MachineAdapterKind::cli);
+    expect_true("cli verb", opts.cli.verb == "capture");
+    expect_true("cli subject", opts.cli.subject == "live");
+    expect_true("cli out", opts.cli.out_path == "shot.png");
+    expect_true("cli scene",
+                opts.scene == "assets/Scenes/main.scene.asset");
+  }
+
+  {
+    std::vector<std::string> args = {"engine_editor", "--mcp"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), true,
+        fs::path("E:/Dev/Blunder-Engine"));
+    expect_true("debug mcp without root fails", !opts.ok);
+    expect_true("debug mcp code",
+                opts.failure_code == k_request_launch_project_root_required);
+  }
+
+  {
+    std::vector<std::string> args = {
+        "engine_editor", "--mcp", "--project-root", "C:/Games/Demo",
+        "--windowed"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("windowed mcp fails", !opts.ok);
+    expect_true("windowed mcp code",
+                opts.failure_code == k_request_adapter_windowed_forbidden);
+  }
+
+  {
+    std::vector<std::string> args = {
+        "engine_editor", "--mcp", "--project-root", "C:/Games/Demo", "capture"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("mcp plus verb fails", !opts.ok);
+    expect_true("mcp plus verb code",
+                opts.failure_code == k_request_launch_adapter_conflict);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

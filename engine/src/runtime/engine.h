@@ -33,8 +33,10 @@ class BlunderEngine {
                    bool headless = false);
   void shutdownEngine();
 
-  /// Editor path uses startup scene env/default. Player passes CLI `--scene`.
-  void initialize(const eastl::string& play_scene = {});
+  /// Editor path uses startup scene env/default unless `use_startup_scene_when_empty`
+  /// is false (CLI/MCP with no `--scene`). Player passes CLI `--scene`.
+  void initialize(const eastl::string& play_scene = {},
+                  bool use_startup_scene_when_empty = true);
   void clear();
 
   bool isQuit() const { return m_is_quit; }

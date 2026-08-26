@@ -291,7 +291,8 @@ void BlunderEngine::shutdownEngine() {
   g_runtime_global_context.shutdownSystems();
 }
 
-void BlunderEngine::initialize(const eastl::string& play_scene) {
+void BlunderEngine::initialize(const eastl::string& play_scene,
+                               bool use_startup_scene_when_empty) {
   if (!g_runtime_global_context.m_asset_manager ||
       !g_runtime_global_context.m_render_system) {
     LOG_WARN("[BlunderEngine] initialize skipped startup asset verification because required systems are unavailable");
@@ -321,8 +322,14 @@ void BlunderEngine::initialize(const eastl::string& play_scene) {
 
   if (g_runtime_global_context.m_scene_system) {
     const eastl::string scene_path =
-        !play_scene.empty() ? play_scene : eastl::string(resolveStartupScenePath());
-    activateEditorScene(scene_path);
+        !play_scene.empty()
+            ? play_scene
+            : (use_startup_scene_when_empty
+                   ? eastl::string(resolveStartupScenePath())
+                   : eastl::string{});
+    if (!scene_path.empty()) {
+      activateEditorScene(scene_path);
+    }
     if (SceneInstance* active =
             g_runtime_global_context.m_scene_system->getActiveInstance()) {
       LOG_INFO("[BlunderEngine] active scene '{}' (entities={})",

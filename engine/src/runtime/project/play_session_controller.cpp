@@ -572,7 +572,8 @@ bool PlaySessionController::requestPlayFrame() {
   return m_last_play_frame.width != 0 && m_last_play_frame.height != 0;
 }
 
-bool PlaySessionController::waitForPlayFrame(int timeout_ms) {
+bool PlaySessionController::waitForPlayFrame(int timeout_ms,
+                                             std::function<void()> pump) {
   m_last_request_failure.clear();
   m_last_play_frame = {};
   if (!m_ready || (m_state != PlaySessionState::Playing &&
@@ -592,6 +593,9 @@ bool PlaySessionController::waitForPlayFrame(int timeout_ms) {
     }
     if (now() >= deadline) {
       break;
+    }
+    if (pump) {
+      pump();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }

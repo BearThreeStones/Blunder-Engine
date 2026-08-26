@@ -989,6 +989,31 @@ target_precompile_headers(editor_launch_test
 add_test(NAME editor_launch_test
          COMMAND editor_launch_test)
 
+add_executable(machine_adapter_test
+    "machine_adapter_test.cpp"
+)
+
+target_link_libraries(machine_adapter_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(machine_adapter_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(machine_adapter_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(machine_adapter_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME machine_adapter_test
+         COMMAND machine_adapter_test)
+
 add_executable(play_pause_tick_gate_test
     "play_pause_tick_gate_test.cpp"
 )

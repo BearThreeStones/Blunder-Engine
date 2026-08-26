@@ -23,8 +23,8 @@ Which Systems start in a given process. Today that is Editor Session versus Play
 _Avoid_: Cordis profile / bundle / patch YAML as the first composition format, hot-swapping Host composition inside a live process, treating Play Mode as a Host composition (Play Mode is a session; Player is the host); `EngineHostMode::Headless` as a third host
 
 **Headless**:
-An Editor Session or Player running with no OS window. Still Editor or Player `EngineHostMode`, not a third mode. Headless Editor mounts Authorship System and Play Session; it does not mount Slint, UiHost, or the viewport sink/bridge. Headless Player still does not mount Authorship System. Windowed Player close is **Player window close**; Headless Player ends via Stop or process exit.
-_Avoid_: A Headless host mode beside Editor and Player; `engine_agent` as a third process kind; treating no-window as a different Authorship contract; calling an orphan-after-close Player Headless; requiring Slint for Capture; a Headless-only observation API
+An Editor Session or Player running with no OS window. Still Editor or Player `EngineHostMode`, not a third mode. Headless Editor mounts Authorship System and Play Session; it does not mount Slint, UiHost, or the viewport sink/bridge. Headless Player still does not mount Authorship System. Windowed Player close is **Player window close**; Headless Player ends via Stop or process exit. A CLI or MCP Editor Session is Headless; the windowed editor does not host those adapters.
+_Avoid_: A Headless host mode beside Editor and Player; `engine_agent` as a third process kind; treating no-window as a different Authorship contract; calling an orphan-after-close Player Headless; requiring Slint for Capture; a Headless-only observation API; mounting CLI or MCP on the windowed Editor Session
 
 **Seam**:
 A declared extension point beside the Privileged core with three roles: a definition (the interface), providers (implementations), and at least one consumer (the System that uses them). One role alone is not a Seam. Adding a first-party capability means designing all three. The first Seam to cut is the **SkeletonModifier type catalog**; Import codec is the second. Editor Command and Add… Unique attachments are not Seams.
@@ -314,8 +314,8 @@ The standalone `project_manager` executable that lists, creates, imports, and op
 _Avoid_: Manager as a mode of `engine_editor`, Unity Hub multi-editor-version management, an in-editor dock that assumes a Project is already loaded
 
 **Editor Session**:
-A full editor run bound to exactly one open Project (its project root). Started by launching `engine_editor` with that Project's path (typically `--project-root`); not the Project Manager app. It may be **Headless** (no OS window) and is still Editor.
-_Avoid_: Multi-project tabs in one process for v1, hot-swapping project root inside a live session (deferred); requiring a visible window for Capture or Diagnose
+A full editor run bound to exactly one open Project (its project root). Started by launching `engine_editor` with that Project's path (typically `--project-root`); not the Project Manager app. It may be **Headless** (no OS window) and is still Editor. A CLI or MCP invocation is its own Headless Editor Session; it does not attach to a windowed editor already running on the same root.
+_Avoid_: Multi-project tabs in one process for v1, hot-swapping project root inside a live session (deferred); requiring a visible window for Capture or Diagnose; attaching CLI/MCP to another Editor Session; a windowed CLI/MCP Editor Session
 
 **Project Open**:
 Leaving Project Manager by spawning sibling `engine_editor` with the chosen Project root (CLI such as `--project-root`), which starts an Editor Session. v1 does not re-initialize a live process onto a new root.
@@ -334,8 +334,8 @@ The Project Manager window layout mirrors Godot's Project Manager spatial rhythm
 _Avoid_: Greyed-out Scan/Favorites/Asset Library/Settings chrome; labeling Open as Edit; a Manager UI language that diverges from the rest of the editor; rebuilding Manager as Unity Hub
 
 **Editor entry (v1)**:
-Run `project_manager` to choose/create/import Projects. Run `engine_editor` with `--project-root` for an Editor Session. Debug builds that define `BLUNDER_PROJECT_ROOT` may open that root when no `--project-root` is given. Release / packaged builds do not use compile-time root as a silent default.
-_Avoid_: Embedding Manager UI inside `engine_editor`; Release silently opening the engine checkout; requiring every Debug contributor to pass CLI with no escape hatch
+Run `project_manager` to choose/create/import Projects. Run `engine_editor` with `--project-root` for an Editor Session. Debug builds that define `BLUNDER_PROJECT_ROOT` may open that root when no `--project-root` is given. CLI and MCP launches require `--project-root` even in Debug. Release / packaged builds do not use compile-time root as a silent default.
+_Avoid_: Embedding Manager UI inside `engine_editor`; Release silently opening the engine checkout; requiring every Debug contributor to pass CLI with no escape hatch; adapter launches omitting `--project-root` and falling back to `BLUNDER_PROJECT_ROOT`
 
 **Projects directory**:
 The canonical parent folder for user-created Projects. On Windows this is `E:/Blunder Projects`. Project Manager Create prefills this path; new Projects are subfolders under it (when Create Folder is on). The engine checkout is not a Project and must not ship a root `project.blunder`.
@@ -885,16 +885,16 @@ The grade on an Issue: Log, Warning, or Error. Same three names as Console sever
 _Avoid_: A second severity vocabulary; calling this LogLevel; treating a Warning as a Play blocker
 
 **Request failure**:
-A stable code when a Query or Op cannot be carried out (unknown Authorship Address, no Live document, Op aimed at an On-disk Project). It is not an Issue and does not push Editor History.
-_Avoid_: Reporting request errors as Diagnose Issues; a successful no-op on unknown address; using Console Message as this result
+A stable code when a Query or Op cannot be carried out (unknown Authorship Address, no Live document, Op aimed at an On-disk Project). It is not an Issue and does not push Editor History. CLI maps this to a non-zero exit and a JSON object on stdout; Diagnose that ran is not this, even when it returns Error Issues.
+_Avoid_: Reporting request errors as Diagnose Issues; a successful no-op on unknown address; using Console Message as this result; treating Diagnose Error Issues as a CLI request failure
 
 **Authorship Address**:
 The public target of Query, Op, and Diagnose. For a scene entity it is that entity's scene-unique name — the same string the Scene Asset already persists. For an Asset it is the Asset Reference (GUID). It is not EntityId and not ObjectId in this slice.
 _Avoid_: EntityId on the machine contract; ObjectId as a durable scene address before it is persisted on the scene; virtual path as Asset identity; hierarchy path as entity identity
 
 **Live document**:
-The open editable document in an Editor Session (v1: the active scene, including unsaved edits). Op always mutates this.
-_Avoid_: The Play Process world; treating the last-saved Scene Asset as this when the editor is dirty
+The open editable document in an Editor Session (v1: the active scene, including unsaved edits). Op always mutates this. Each Editor Session has its own Live document — a CLI or MCP process does not see unsaved edits from a different windowed editor. A CLI or MCP session has a Live document only when launched with `--scene` (virtual path of that scene). Without `--scene`, Live verbs fail closed; On-disk verbs may still target a saved Scene Asset.
+_Avoid_: The Play Process world; treating the last-saved Scene Asset as this when the editor is dirty; treating another process's dirty buffers as this Live document; opening last-opened GUI scene as the machine Live document; guessing a main scene when `--scene` is omitted
 
 **On-disk Project**:
 The Project as stored on disk (Scene Assets, descriptors, Scripts), independent of an Editor Session. Op may not target this.
@@ -905,8 +905,8 @@ The world a Query or Diagnose is evaluated against: the Live document or the On-
 _Avoid_: A silent default that mixes dirty editor state with saved files; a third unnamed world; treating Player simulation as an Authorship Subject
 
 **Authorship contract**:
-The first-party Query / Op / Diagnose contract for reading and changing a Project. GUI, CLI, and MCP are adapters. Not a Seam, not Message, and not the C-ABI bridge. Decision record: [ADR 0041](docs/adr/0041-authorship-contract.md).
-_Avoid_: Agent API as the product name; Editor Command type registry; MCP as the domain name; exposing this contract from the Player; a fourth Observe intent; putting screenshots or Play dumps on this contract
+The first-party Query / Op / Diagnose contract for reading and changing a Project. GUI, CLI, and MCP adapt this contract; the same adapters also speak Host observation and Play Session control. They do not merge stills into Query, Op, or Diagnose. CLI and MCP share one verb set — two presentations, not two catalogs. CLI and MCP run in the Headless Editor Session process; Player does not host them. The MCP adapter uses stdio on that process and does not listen on a port. The CLI adapter is one verb, one process, then exit. `--mcp` or a CLI verb implies Headless. Adapter launches require `--project-root` (no Debug compiled-root fallback). MCP `save` persists the Live document and is not an Op; CLI Op requires `--save`. Not a Seam, not Message, and not the C-ABI bridge. Decision records: [ADR 0041](docs/adr/0041-authorship-contract.md), [ADR 0044](docs/adr/0044-machine-adapters.md).
+_Avoid_: Agent API as the product name; Editor Command type registry; MCP as the domain name; exposing this contract from the Player; a fourth Observe intent; putting screenshots or Play dumps on this contract; a third process kind whose only job is to adapt (`engine_agent`); a second machine catalog beside this contract; HTTP or a listen port as the v1 MCP path; a long-lived CLI REPL beside MCP; adapter launches using `BLUNDER_PROJECT_ROOT` when `--project-root` is omitted
 
 **Authorship System**:
 The Registered System that hosts the Authorship contract in an Editor Session. It routes Op to Editor Commands and Live Query / Diagnose against the Live document. Player does not mount it. On-disk Diagnose reuses the same rule code from a tool without mounting this System in the Player.
@@ -917,12 +917,12 @@ The first slice of the Authorship contract: Query of the scene's entity names an
 _Avoid_: Diagnose-only; Query/Op with no Command path; Import, Cook, or Play-start as this slice; exposing EntityId
 
 **Host observation**:
-Stills a Host can emit for machines, plus Play step. Not Query, not Op, not Diagnose, and not a fourth Authorship intent. Editor stills are **Capture** (a Scene still). Play Process v1 observation is **Play step** plus **Play frame** on the Play control channel. Diagnostic utterances stay **Console Messages** (Player origin via Play log forwarding). There is no Host event stream beside Console. Decision record: [ADR 0043](docs/adr/0043-host-observation.md).
-_Avoid_: Observe as an Authorship intent; Query of the Player simulation; Message; Diagnose that returns PNG; scraping the OS or Slint window composite; calling Play frame Capture; a Host event bus or NDJSON log beside Console
+Stills a Host can emit for machines, plus Play step. Not Query, not Op, not Diagnose, and not a fourth Authorship intent. Editor stills are **Capture** (a Scene still). Play Process v1 observation is **Play step** plus **Play frame** on the Play control channel. Diagnostic utterances stay **Console Messages** (Player origin via Play log forwarding). There is no Host event stream beside Console. CLI and MCP adapt this from the Editor Session process (same Play Session as the GUI), not from the Player process. Decision records: [ADR 0043](docs/adr/0043-host-observation.md), [ADR 0044](docs/adr/0044-machine-adapters.md).
+_Avoid_: Observe as an Authorship intent; Query of the Player simulation; Message; Diagnose that returns PNG; scraping the OS or Slint window composite; calling Play frame Capture; a Host event bus or NDJSON log beside Console; a Player-hosted observation adapter
 
 **Host observation v1**:
-Capture, Play step, and Play frame. Play dump is out. **Headless** uses this same observation; no OS window is not a different API.
-_Avoid_: Shipping Headless as a second observation protocol; Play dump in this slice; HWND Capture
+Capture, Play step, and Play frame. Play dump is out. **Headless** uses this same observation; no OS window is not a different API. MCP keeps granular Play Session verbs. CLI presents Play observation as one process (Play, optional steps, one Play frame, Stop, exit). Capture and Play frame leave the process as PNG: CLI writes `--out`; MCP returns ImageContent. The CLI command and the MCP tool for that still are both **play-frame** — same product, different presentation.
+_Avoid_: Shipping Headless as a second observation protocol; Play dump in this slice; HWND Capture; a second Play protocol for CLI; chaining play/step/frame across CLI processes; returning stills as a filesystem path from MCP; CLI stdout as a raw PNG stream; naming the CLI episode `capture-play`
 
 **Capture**:
 A 16:9 **Scene still** (capped longest edge) returned as Host observation, not written to the Thumbnail cache. Play-rule camera, no Editor Overlays. No Camera is failure — not an Editor Camera fallback. Not Query, not a Content Browser Thumbnail, not the OS window, not Camera Preview's selected camera, not a **Play frame**.

@@ -39,6 +39,12 @@ PlayerLaunch parsePlayerLaunch(int argc, char** argv) {
       headless = true;
       continue;
     }
+    if (std::strcmp(arg, "--mcp") == 0) {
+      options.ok = false;
+      options.error =
+          "engine_player does not host CLI or MCP. Use engine_editor.";
+      return options;
+    }
   }
 
   if (project_root.empty()) {

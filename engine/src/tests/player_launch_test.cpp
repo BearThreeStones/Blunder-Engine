@@ -111,6 +111,18 @@ int main() {
                 opts.scene == "assets/Scenes/main.scene.asset");
   }
 
+  {
+    std::vector<std::string> args = {
+        "engine_player", "--project-root", "C:/Games/Demo", "--scene",
+        "assets/Scenes/main.scene.asset", "--mcp"};
+    auto argv = makeArgv(args);
+    const PlayerLaunch opts =
+        parsePlayerLaunch(static_cast<int>(argv.size()), argv.data());
+    expect_true("player mcp fails", !opts.ok);
+    expect_true("player mcp mentions engine_editor",
+                opts.error.find("engine_editor") != std::string::npos);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

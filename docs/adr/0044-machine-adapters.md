@@ -1,0 +1,3 @@
+# Machine adapters live in Headless engine_editor; CLI and MCP share one verb set
+
+GUI, CLI, and MCP are presentations of the Authorship contract, Host observation, and Play Session — not a fourth intent, not a third process (`engine_agent`), not MCP-as-domain. MCP is stdio on a Headless Editor Session that does not attach to a windowed editor; CLI is one verb then exit (Play observation composed as a `play-frame` episode). Adapter launches require `--project-root`; Live requires `--scene`. Rejected: HTTP/listen port, attaching to a live GUI, Player-hosted adapters, a second machine catalog, CLI REPL, Play dump, windowed MCP, `BLUNDER_PROJECT_ROOT` as the adapter default.

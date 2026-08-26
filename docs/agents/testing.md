@@ -9,14 +9,21 @@ cmake --build build/vs2026-debug --config Debug --target classdb_test
 .\build\vs2026-debug\engine\src\tests\Debug\classdb_test.exe
 
 # Or, from the build tree:
-ctest --test-dir build/vs2026-debug -C Debug -R "classdb|variant|object_db|ptrcall|engine_c_abi|dotnet_host|editor_history|scene_soft_delete|editor_commands|authorship_contract|host_observation|headless_host|scene_serializer|scene_behaviour|play_" --output-on-failure
+ctest --test-dir build/vs2026-debug -C Debug -R "classdb|variant|object_db|ptrcall|engine_c_abi|dotnet_host|editor_history|scene_soft_delete|editor_commands|authorship_contract|host_observation|headless_host|machine_adapter|editor_launch|player_launch|scene_serializer|scene_behaviour|play_" --output-on-failure
 ```
 
 Tests that only pull ClassDB/Object (not SceneInstance/Vulkan) stay small and do not need `slang.dll`. Prefer `IEntityStore` fakes over linking `SceneInstance` in unit tests.
 
-`scene_soft_delete_test` / `editor_commands_test` / `authorship_contract_test` / `host_observation_test` / `headless_host_test` link `SceneInstance` and may need `slang.dll` + `slint_cpp.dll` on `PATH` (e.g. VulkanSDK Bin + `.cmake_deps/slint-build`).
+`scene_soft_delete_test` / `editor_commands_test` / `authorship_contract_test` / `host_observation_test` / `headless_host_test` / `machine_adapter_test` link `SceneInstance` and may need `slang.dll` + `slint_cpp.dll` on `PATH` (e.g. VulkanSDK Bin + `.cmake_deps/slint-build`).
 
 `headless_host_test` covers `--headless` composition (no OS window, Authorship mounted only on Editor, Capture 16:9 without a window). It does **not** boot Vulkan. Real Headless boot (`engine_editor --headless` / `engine_player --headless`) needs the same GPU + `slang.dll` PATH as other render tests.
+
+`editor_launch_test` / `machine_adapter_test` cover CLI/MCP launch parse and dispatch fail-closed codes (no Vulkan). GPU smoke:
+
+```powershell
+.\build\vs2026-debug\bin\Debug\engine_editor.exe --project-root "<project>" --scene "assets/Scenes/root.scene.asset" diagnose --subject live
+.\build\vs2026-debug\bin\Debug\engine_editor.exe --mcp --project-root "<project>" --scene "assets/Scenes/root.scene.asset"
+```
 
 ## .NET scripting host
 
@@ -68,7 +75,7 @@ cmake --build build/vs2026-debug --config Debug --target dotnet_host_test
 .\build\vs2026-debug\engine\src\tests\Debug\dotnet_host_test.exe
 
 # Play session / IPC / preflight (no CoreCLR required for most):
-ctest --test-dir build/vs2026-debug -C Debug -R "play_(pause_tick_gate|ipc|session_controller|preflight)|host_observation|headless_host|editor_launch|player_launch" --output-on-failure
+ctest --test-dir build/vs2026-debug -C Debug -R "play_(pause_tick_gate|ipc|session_controller|preflight)|host_observation|headless_host|machine_adapter|editor_launch|player_launch" --output-on-failure
 
 # Debug-only editor host smoke (not product Play):
 $env:BLUNDER_DOTNET_SCRIPTS = "1"

@@ -110,8 +110,9 @@ class PlaySessionController final {
   bool step(uint32_t ticks);
   bool requestPlayFrame();
   /// Send Play frame then poll until a frame arrives or `timeout_ms` elapses.
-  /// Windowed GUI still uses one-shot `requestPlayFrame`.
-  bool waitForPlayFrame(int timeout_ms);
+  /// Windowed GUI still uses one-shot `requestPlayFrame`. `pump` runs each
+  /// wait iteration so Headless adapters can tick while IPC arrives.
+  bool waitForPlayFrame(int timeout_ms, std::function<void()> pump = {});
   void poll();
 
   static PlaySessionHooks makeDefaultHooks();
