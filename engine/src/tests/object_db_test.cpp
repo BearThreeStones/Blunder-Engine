@@ -1,9 +1,12 @@
 #include "runtime/core/object/entity_store.h"
 #include "runtime/core/object/object_db.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include "EASTL/vector.h"
+
+#include <glm/gtc/quaternion.hpp>
 
 namespace {
 
@@ -134,6 +137,28 @@ int main() {
     expect_true("position round-trip",
                 lazy->getPosition() == Vec3(1.0f, 2.0f, 3.0f));
     expect_true("store marked dirty", store.dirty_count >= 1);
+
+    const Quat yaw =
+        glm::angleAxis(glm::radians(45.0f), Vec3(0.0f, 0.0f, 1.0f));
+    lazy->setRotation(yaw);
+    lazy->setPosition(Vec3(4.0f, 5.0f, 6.0f));
+    expect_true("position after rotation write",
+                lazy->getPosition() == Vec3(4.0f, 5.0f, 6.0f));
+    const Quat got = lazy->getRotation();
+    expect_true("rotation survives position write",
+                std::fabs(got.x - yaw.x) < 1e-5f &&
+                    std::fabs(got.y - yaw.y) < 1e-5f &&
+                    std::fabs(got.z - yaw.z) < 1e-5f &&
+                    std::fabs(got.w - yaw.w) < 1e-5f);
+
+    lazy->setRotation(Quat(0.0f, 0.0f, 0.0f, 0.0f));
+    const Quat identity = glm::identity<Quat>();
+    const Quat after_zero = lazy->getRotation();
+    expect_true("zero quat becomes identity",
+                std::fabs(after_zero.x - identity.x) < 1e-5f &&
+                    std::fabs(after_zero.y - identity.y) < 1e-5f &&
+                    std::fabs(after_zero.z - identity.z) < 1e-5f &&
+                    std::fabs(after_zero.w - identity.w) < 1e-5f);
   }
 
   ObjectDB::destroy(child_id);

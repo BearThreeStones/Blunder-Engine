@@ -112,6 +112,10 @@ bool ClassDB::setProperty(void* instance, const char* class_name,
   }
   for (PropertyBinding& binding : it->second.properties) {
     if (binding.info.name == property_name && binding.setter != nullptr) {
+      if (binding.info.type != VariantType::Nil &&
+          binding.info.type != value.getType()) {
+        return false;
+      }
       binding.setter(instance, value);
       return true;
     }

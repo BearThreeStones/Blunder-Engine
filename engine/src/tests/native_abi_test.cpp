@@ -54,6 +54,10 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.object_set_vec3_property != nullptr);
   expect_true((std::string(label) + ": object_get_vec3_property").c_str(),
               abi.object_get_vec3_property != nullptr);
+  expect_true((std::string(label) + ": object_set_quat_property").c_str(),
+              abi.object_set_quat_property != nullptr);
+  expect_true((std::string(label) + ": object_get_quat_property").c_str(),
+              abi.object_get_quat_property != nullptr);
   expect_true((std::string(label) + ": lifecycle_set_tick_hook").c_str(),
               abi.lifecycle_set_tick_hook != nullptr);
   expect_true((std::string(label) + ": lifecycle_set_ready_hook").c_str(),
@@ -214,6 +218,8 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
   expect_true((std::string(label) + ": cine_is_gameplay_input_suppressed").c_str(),
               abi.cine_is_gameplay_input_suppressed != nullptr);
   expect_true((std::string(label) + ": log").c_str(), abi.log != nullptr);
+  expect_true((std::string(label) + ": animation_tree_play").c_str(),
+              abi.animation_tree_play != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -233,7 +239,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 11", BLUNDER_ENGINE_C_ABI_VERSION >= 11);
+  expect_true("abi version >= 12", BLUNDER_ENGINE_C_ABI_VERSION >= 12);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

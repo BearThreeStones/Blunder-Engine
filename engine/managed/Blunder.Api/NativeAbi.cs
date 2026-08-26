@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v11 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v12 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -25,6 +25,10 @@ public unsafe struct BlunderNativeAbi
         object_set_vec3_property;
     public delegate* unmanaged[Cdecl]<ulong, byte*, byte*, float*, float*, float*, int>
         object_get_vec3_property;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, byte*, float, float, float, float, int>
+        object_set_quat_property;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, byte*, float*, float*, float*, float*, int>
+        object_get_quat_property;
     public delegate* unmanaged[Cdecl]<byte*, void*, int> lifecycle_set_tick_hook;
     public delegate* unmanaged[Cdecl]<byte*, void*, int> lifecycle_set_ready_hook;
     public delegate* unmanaged[Cdecl]<int> lifecycle_clear_hooks;
@@ -124,6 +128,7 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<int*, int> cine_is_in_cine;
     public delegate* unmanaged[Cdecl]<int*, int> cine_is_gameplay_input_suppressed;
     public delegate* unmanaged[Cdecl]<int, byte*, byte*, int> log;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_play;
 }
 
 /// <summary>

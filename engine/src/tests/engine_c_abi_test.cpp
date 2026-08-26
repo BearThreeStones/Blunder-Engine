@@ -4,6 +4,7 @@
 #include "runtime/core/reflection/engine_c_abi.h"
 #include "runtime/core/reflection/lifecycle.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include "EASTL/string.h"
@@ -27,7 +28,7 @@ int main() {
   ObjectDB::clear();
   ClassDB::initialize();
 
-  expect_true("abi version >= 11", blunder_engine_abi_version() >= 11);
+  expect_true("abi version >= 12", blunder_engine_abi_version() >= 12);
   expect_true("abi version matches header",
               blunder_engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
 
@@ -75,6 +76,42 @@ int main() {
               blunder_object_get_vec3_property(id, "Object", "position", &x, &y,
                                               &z) == BLUNDER_ENGINE_OK);
   expect_true("pos values", x == 1.f && y == 2.f && z == 3.f);
+
+  expect_true("set rot",
+              blunder_object_set_quat_property(id, "Object", "rotation", 0.f, 0.f,
+                                              0.70710677f, 0.70710677f) ==
+                  BLUNDER_ENGINE_OK);
+  float qx = 0, qy = 0, qz = 0, qw = 0;
+  expect_true("get rot",
+              blunder_object_get_quat_property(id, "Object", "rotation", &qx,
+                                              &qy, &qz, &qw) ==
+                  BLUNDER_ENGINE_OK);
+  expect_true("rot values", std::fabs(qx) < 1e-5f && std::fabs(qy) < 1e-5f &&
+                                std::fabs(qz - 0.70710677f) < 1e-5f &&
+                                std::fabs(qw - 0.70710677f) < 1e-5f);
+
+  expect_true("vec3 cannot set rotation",
+              blunder_object_set_vec3_property(id, "Object", "rotation", 1, 2,
+                                              3) == BLUNDER_ENGINE_ERROR);
+  qx = qy = qz = qw = 0;
+  expect_true("rotation unchanged after vec3 reject",
+              blunder_object_get_quat_property(id, "Object", "rotation", &qx,
+                                              &qy, &qz, &qw) ==
+                      BLUNDER_ENGINE_OK &&
+                  std::fabs(qx) < 1e-5f && std::fabs(qy) < 1e-5f &&
+                  std::fabs(qz - 0.70710677f) < 1e-5f &&
+                  std::fabs(qw - 0.70710677f) < 1e-5f);
+
+  expect_true("zero quat",
+              blunder_object_set_quat_property(id, "Object", "rotation", 0.f, 0.f,
+                                              0.f, 0.f) == BLUNDER_ENGINE_OK);
+  qx = qy = qz = qw = 0;
+  expect_true("zero quat becomes identity",
+              blunder_object_get_quat_property(id, "Object", "rotation", &qx,
+                                              &qy, &qz, &qw) ==
+                      BLUNDER_ENGINE_OK &&
+                  std::fabs(qx) < 1e-5f && std::fabs(qy) < 1e-5f &&
+                  std::fabs(qz) < 1e-5f && std::fabs(qw - 1.f) < 1e-5f);
 
   eastl::string name = "ViaCAbi";
   const void* args[1] = {&name};

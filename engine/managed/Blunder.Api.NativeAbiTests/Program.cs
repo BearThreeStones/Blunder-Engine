@@ -28,6 +28,7 @@ static unsafe class Program
     static string s_lastBlend2DNode = "";
     static string s_treeAssetGuid = "";
     static string s_lastOneShotClip = "";
+    static string s_lastClipPlayClip = "";
     static float s_add2Weight;
     static int s_modifierCount;
     static bool[] s_modifierEnabled = [true, true];
@@ -59,11 +60,16 @@ static unsafe class Program
     static string s_lastLogText = "";
     static string s_lastLogStack = "";
 
+    static float s_quatX;
+    static float s_quatY;
+    static float s_quatZ;
+    static float s_quatW = 1f;
+
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 84 * sizeof(nint),
-            "BlunderNativeAbi layout size is 84 pointers");
+            sizeof(BlunderNativeAbi) == 87 * sizeof(nint),
+            "BlunderNativeAbi layout size is 87 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -101,6 +107,8 @@ static unsafe class Program
         abi.object_get_behaviour_peer = &StubGetPeer;
         abi.object_set_vec3_property = &StubSetVec3;
         abi.object_get_vec3_property = &StubGetVec3;
+        abi.object_set_quat_property = &StubSetQuat;
+        abi.object_get_quat_property = &StubGetQuat;
         abi.lifecycle_set_tick_hook = &StubSetTickHook;
         abi.lifecycle_set_ready_hook = &StubSetReadyHook;
         abi.lifecycle_clear_hooks = &StubClearHooks;
@@ -177,6 +185,7 @@ static unsafe class Program
         abi.cine_is_in_cine = &StubCineIsInCine;
         abi.cine_is_gameplay_input_suppressed = &StubCineIsGameplayInputSuppressed;
         abi.log = &StubLog;
+        abi.animation_tree_play = &StubAnimationTreePlay;
 
         Native.Register(in abi);
 
@@ -191,6 +200,7 @@ static unsafe class Program
         Expect(move.X == 0.3f && move.Y == -0.4f, "Input.GetMove via stub");
         Expect(Input.WasJumpPressed(), "Input.WasJumpPressed via stub");
 
+        RunObjectHandleRotationSmokeTests();
         RunDebugLogSmokeTests();
 
         BlunderNativeAbi incomplete = default;
@@ -221,6 +231,32 @@ static unsafe class Program
 
         Console.Error.WriteLine($"Blunder.Api.NativeAbiTests: {s_failures} failure(s)");
         return 1;
+    }
+
+    static void RunObjectHandleRotationSmokeTests()
+    {
+        s_quatX = 0f;
+        s_quatY = 0f;
+        s_quatZ = 0f;
+        s_quatW = 1f;
+
+        ObjectHandle handle = ObjectHandle.GetOrCreate(7);
+        Expect(handle.Rotation == Quat.Identity, "ObjectHandle.Rotation default identity");
+
+        Quat written = new(0f, 0f, 0.70710677f, 0.70710677f);
+        handle.Rotation = written;
+        Expect(handle.Rotation == written, "ObjectHandle.Rotation round-trip");
+
+        Expect(
+            Native.blunder_object_set_quat_property(
+                7, "Object", "rotation", 0f, 0.5f, 0f, 0.8660254f) == Native.Ok,
+            "Native set_quat after register");
+        Expect(
+            Native.blunder_object_get_quat_property(
+                7, "Object", "rotation", out float x, out float y, out float z, out float w) ==
+            Native.Ok &&
+            x == 0f && y == 0.5f && z == 0f && w == 0.8660254f,
+            "Native get_quat after register");
     }
 
     static void RunDebugLogSmokeTests()
@@ -308,6 +344,7 @@ static unsafe class Program
         s_blendSpace2DY = 0.2f;
         s_treeAssetGuid = "";
         s_lastOneShotClip = "";
+        s_lastClipPlayClip = "";
         s_add2Weight = 0.25f;
         s_modifierCount = 2;
         s_modifierEnabled = [true, true];
@@ -348,6 +385,9 @@ static unsafe class Program
 
         Expect(tree.RequestOneShot("trip"), "AnimationTree.RequestOneShot");
         Expect(s_lastOneShotClip == "trip", "RequestOneShot forwarded");
+
+        Expect(tree.Play("Hit"), "AnimationTree.Play");
+        Expect(s_lastClipPlayClip == "Hit", "Play forwarded");
 
         tree.Add2Weight = 0.9f;
         Expect(Math.Abs(s_add2Weight - 0.9f) < 0.0001f, "Add2Weight set");
@@ -615,6 +655,51 @@ static unsafe class Program
         *x = 1;
         *y = 2;
         *z = 3;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSetQuat(
+        ulong id,
+        byte* className,
+        byte* propertyName,
+        float x,
+        float y,
+        float z,
+        float w)
+    {
+        if (id == 0 || className == null || propertyName == null)
+        {
+            return Native.Error;
+        }
+
+        s_quatX = x;
+        s_quatY = y;
+        s_quatZ = z;
+        s_quatW = w;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubGetQuat(
+        ulong id,
+        byte* className,
+        byte* propertyName,
+        float* x,
+        float* y,
+        float* z,
+        float* w)
+    {
+        if (id == 0 || className == null || propertyName == null || x == null ||
+            y == null || z == null || w == null)
+        {
+            return Native.Error;
+        }
+
+        *x = s_quatX;
+        *y = s_quatY;
+        *z = s_quatZ;
+        *w = s_quatW;
         return Native.Ok;
     }
 
@@ -930,6 +1015,18 @@ static unsafe class Program
         }
 
         s_lastOneShotClip = Utf8ToString(clipName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubAnimationTreePlay(ulong id, byte* clipName)
+    {
+        if (id == 0 || clipName == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastClipPlayClip = Utf8ToString(clipName);
         return Native.Ok;
     }
 

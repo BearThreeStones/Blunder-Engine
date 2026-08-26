@@ -28,6 +28,18 @@ void set_object_position(void* instance, const Variant& value) {
 Variant get_object_position(const void* instance) {
   return Variant(static_cast<const Object*>(instance)->getPosition());
 }
+void set_object_rotation(void* instance, const Variant& value) {
+  static_cast<Object*>(instance)->setRotation(value.asQuat());
+}
+Variant get_object_rotation(const void* instance) {
+  return Variant(static_cast<const Object*>(instance)->getRotation());
+}
+void set_object_scale(void* instance, const Variant& value) {
+  static_cast<Object*>(instance)->setScale(value.asVec3());
+}
+Variant get_object_scale(const void* instance) {
+  return Variant(static_cast<const Object*>(instance)->getScale());
+}
 
 class SetNameMethodBind final : public MethodBind {
  public:
@@ -49,6 +61,10 @@ void register_reflection_generated() {
                       set_object_enabled, get_object_enabled);
   ClassDB::addProperty("Object", PropertyInfo{"position", VariantType::Vec3},
                       set_object_position, get_object_position);
+  ClassDB::addProperty("Object", PropertyInfo{"rotation", VariantType::Quat},
+                      set_object_rotation, get_object_rotation);
+  ClassDB::addProperty("Object", PropertyInfo{"scale", VariantType::Vec3},
+                      set_object_scale, get_object_scale);
   ClassDB::addMethod("Object", new SetNameMethodBind());
 }
 

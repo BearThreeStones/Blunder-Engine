@@ -13,6 +13,8 @@
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 
+#include <glm/geometric.hpp>
+
 namespace Blunder {
 
 namespace {
@@ -238,17 +240,10 @@ Vec3 Object::getPosition() const {
 }
 
 void Object::setPosition(const Vec3& position) {
+  syncLocalTransformFromStore();
   m_local_position = position;
   m_has_local_trs = true;
-  materializeEntityIfNeeded();
-  if (hasEntity()) {
-    IEntityStore* store = ObjectDB::getEntityStore();
-    if (store != nullptr) {
-      store->setTransform(m_entity_id, m_local_position, m_local_rotation,
-                          m_local_scale);
-      store->markTransformsDirty();
-    }
-  }
+  writeLocalTransformToStore();
 }
 
 Quat Object::getRotation() const {
@@ -266,17 +261,10 @@ Quat Object::getRotation() const {
 }
 
 void Object::setRotation(const Quat& rotation) {
-  m_local_rotation = rotation;
+  syncLocalTransformFromStore();
+  applyNormalizedRotation(rotation);
   m_has_local_trs = true;
-  materializeEntityIfNeeded();
-  if (hasEntity()) {
-    IEntityStore* store = ObjectDB::getEntityStore();
-    if (store != nullptr) {
-      store->setTransform(m_entity_id, m_local_position, m_local_rotation,
-                          m_local_scale);
-      store->markTransformsDirty();
-    }
-  }
+  writeLocalTransformToStore();
 }
 
 Vec3 Object::getScale() const {
@@ -294,17 +282,10 @@ Vec3 Object::getScale() const {
 }
 
 void Object::setScale(const Vec3& scale) {
+  syncLocalTransformFromStore();
   m_local_scale = scale;
   m_has_local_trs = true;
-  materializeEntityIfNeeded();
-  if (hasEntity()) {
-    IEntityStore* store = ObjectDB::getEntityStore();
-    if (store != nullptr) {
-      store->setTransform(m_entity_id, m_local_position, m_local_rotation,
-                          m_local_scale);
-      store->markTransformsDirty();
-    }
-  }
+  writeLocalTransformToStore();
 }
 
 void Object::materializeEntityIfNeeded() {
@@ -542,6 +523,29 @@ void Object::syncLocalTransformFromStore() {
   m_local_rotation = rotation;
   m_local_scale = scale;
   m_has_local_trs = true;
+}
+
+void Object::writeLocalTransformToStore() {
+  materializeEntityIfNeeded();
+  if (!hasEntity()) {
+    return;
+  }
+  IEntityStore* store = ObjectDB::getEntityStore();
+  if (store == nullptr) {
+    return;
+  }
+  store->setTransform(m_entity_id, m_local_position, m_local_rotation,
+                      m_local_scale);
+  store->markTransformsDirty();
+}
+
+void Object::applyNormalizedRotation(const Quat& rotation) {
+  const float length = glm::length(rotation);
+  if (length < 1e-8f) {
+    m_local_rotation = glm::identity<Quat>();
+    return;
+  }
+  m_local_rotation = rotation / length;
 }
 
 }  // namespace Blunder

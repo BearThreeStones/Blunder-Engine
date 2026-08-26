@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 11
+#define BLUNDER_ENGINE_C_ABI_VERSION 12
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -61,6 +61,15 @@ BLUNDER_ENGINE_C_API int blunder_object_set_vec3_property(
 BLUNDER_ENGINE_C_API int blunder_object_get_vec3_property(
     BlunderObjectId id, const char* class_name, const char* property_name,
     float* x, float* y, float* z);
+
+/// Quat ClassDB properties. Components are glm .x/.y/.z/.w (same as Inspector
+/// quat_x..w). Native constructs `Quat(w, x, y, z)` — do not memcpy glm::quat.
+BLUNDER_ENGINE_C_API int blunder_object_set_quat_property(
+    BlunderObjectId id, const char* class_name, const char* property_name,
+    float x, float y, float z, float w);
+BLUNDER_ENGINE_C_API int blunder_object_get_quat_property(
+    BlunderObjectId id, const char* class_name, const char* property_name,
+    float* x, float* y, float* z, float* w);
 
 typedef void (*BlunderTickHook)(void* script_peer, float delta_time);
 typedef void (*BlunderReadyHook)(void* script_peer);
@@ -153,6 +162,8 @@ BLUNDER_ENGINE_C_API int blunder_animation_tree_get_blend_space_scalar(
     BlunderObjectId id, const char* node_name, float* out_scalar);
 BLUNDER_ENGINE_C_API int blunder_animation_tree_request_one_shot(
     BlunderObjectId id, const char* clip_name);
+BLUNDER_ENGINE_C_API int blunder_animation_tree_play(BlunderObjectId id,
+                                                     const char* clip_name);
 BLUNDER_ENGINE_C_API int blunder_animation_tree_set_add2_weight(
     BlunderObjectId id, float weight);
 BLUNDER_ENGINE_C_API int blunder_animation_tree_get_add2_weight(
@@ -262,7 +273,7 @@ BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
-// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v4 entry points.
+// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v12 entry points.
 // Hosts register this into ScriptHost so managed code shares one ObjectDB image.
 typedef struct BlunderNativeAbi {
   int (*engine_abi_version)(void);
@@ -289,6 +300,12 @@ typedef struct BlunderNativeAbi {
   int (*object_get_vec3_property)(BlunderObjectId id, const char* class_name,
                                   const char* property_name, float* x, float* y,
                                   float* z);
+  int (*object_set_quat_property)(BlunderObjectId id, const char* class_name,
+                                  const char* property_name, float x, float y,
+                                  float z, float w);
+  int (*object_get_quat_property)(BlunderObjectId id, const char* class_name,
+                                  const char* property_name, float* x, float* y,
+                                  float* z, float* w);
   int (*lifecycle_set_tick_hook)(const char* class_name, BlunderTickHook hook);
   int (*lifecycle_set_ready_hook)(const char* class_name, BlunderReadyHook hook);
   int (*lifecycle_clear_hooks)(void);
@@ -415,6 +432,7 @@ typedef struct BlunderNativeAbi {
   int (*cine_is_in_cine)(int* out_value);
   int (*cine_is_gameplay_input_suppressed)(int* out_value);
   int (*log)(int severity, const char* text, const char* stack);
+  int (*animation_tree_play)(BlunderObjectId id, const char* clip_name);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).

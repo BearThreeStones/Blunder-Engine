@@ -161,6 +161,15 @@ class AnimationTree {
   const eastl::string& getOneShotClipName() const { return m_oneshot_clip_name; }
   void clearOneShot();
 
+  /// Clip Play: replace the tree base with a Clip Binding clip (hard cut).
+  bool clipPlay(const eastl::string& clip_name);
+  void clearClipPlay();
+  bool isClipPlayOverride() const { return m_clip_play_active; }
+  const eastl::string& getClipPlayClipName() const {
+    return m_clip_play_clip_name;
+  }
+  float getClipPlayTime() const { return m_clip_play_time; }
+
   /// Edit Animation Window ruler: insert clip while OneShot occupies, else base dominant.
   float rulerPosition() const;
   float rulerLength() const;
@@ -267,6 +276,9 @@ class AnimationTree {
   eastl::string m_oneshot_clip_name;
   float m_oneshot_time{0.0f};
   eastl::string m_oneshot_slot_clip;
+  bool m_clip_play_active{false};
+  eastl::string m_clip_play_clip_name;
+  float m_clip_play_time{0.0f};
   float m_method_prev_clock{0.0f};
   eastl::string m_asset_guid;
 };

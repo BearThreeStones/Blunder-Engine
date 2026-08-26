@@ -7,6 +7,12 @@ public readonly struct Vec3 : IEquatable<Vec3>
     public float Y { get; }
     public float Z { get; }
 
+    public static Vec3 UnitX => new(1f, 0f, 0f);
+
+    public static Vec3 UnitY => new(0f, 1f, 0f);
+
+    public static Vec3 UnitZ => new(0f, 0f, 1f);
+
     public Vec3(float x, float y, float z)
     {
         X = x;

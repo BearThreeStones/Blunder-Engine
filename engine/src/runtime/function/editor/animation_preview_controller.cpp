@@ -224,6 +224,7 @@ bool AnimationPreviewController::resume() {
 void AnimationPreviewController::stop() {
   if (AnimationTree* tree = treeFor(m_target_object)) {
     tree->clearOneShot();
+    tree->clearClipPlay();
     tree->seekRuler(0.0f);
     endCine();
     m_state = AnimationPreviewState::Stopped;

@@ -310,6 +310,42 @@ int blunder_object_get_vec3_property(BlunderObjectId id, const char* class_name,
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_object_set_quat_property(BlunderObjectId id, const char* class_name,
+                                     const char* property_name, float x,
+                                     float y, float z, float w) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return ClassDB::setProperty(object, class_name, property_name,
+                              Variant(Quat(w, x, y, z)))
+             ? BLUNDER_ENGINE_OK
+             : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_object_get_quat_property(BlunderObjectId id, const char* class_name,
+                                     const char* property_name, float* x,
+                                     float* y, float* z, float* w) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  if (object == nullptr || x == nullptr || y == nullptr || z == nullptr ||
+      w == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  Variant value;
+  if (!ClassDB::getProperty(object, class_name, property_name, value)) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  if (value.getType() != VariantType::Quat) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Quat q = value.asQuat();
+  *x = q.x;
+  *y = q.y;
+  *z = q.z;
+  *w = q.w;
+  return BLUNDER_ENGINE_OK;
+}
+
 int blunder_lifecycle_set_tick_hook(const char* class_name,
                                     BlunderTickHook hook) {
   LifecycleDispatch::setTickHook(class_name, hook);
@@ -666,6 +702,18 @@ int blunder_animation_tree_request_one_shot(BlunderObjectId id,
   }
   return tree->requestOneShot(eastl::string(clip_name)) ? BLUNDER_ENGINE_OK
                                                         : BLUNDER_ENGINE_ERROR;
+}
+
+int blunder_animation_tree_play(BlunderObjectId id, const char* clip_name) {
+  if (clip_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  AnimationTree* tree = animationTreeForObject(id);
+  if (tree == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return tree->clipPlay(eastl::string(clip_name)) ? BLUNDER_ENGINE_OK
+                                                  : BLUNDER_ENGINE_ERROR;
 }
 
 int blunder_animation_tree_set_add2_weight(BlunderObjectId id, float weight) {
@@ -1287,6 +1335,8 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->object_get_behaviour_peer = &blunder_object_get_behaviour_peer;
   out->object_set_vec3_property = &blunder_object_set_vec3_property;
   out->object_get_vec3_property = &blunder_object_get_vec3_property;
+  out->object_set_quat_property = &blunder_object_set_quat_property;
+  out->object_get_quat_property = &blunder_object_get_quat_property;
   out->lifecycle_set_tick_hook = &blunder_lifecycle_set_tick_hook;
   out->lifecycle_set_ready_hook = &blunder_lifecycle_set_ready_hook;
   out->lifecycle_clear_hooks = &blunder_lifecycle_clear_hooks;
@@ -1387,6 +1437,7 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->cine_is_gameplay_input_suppressed =
       &blunder_cine_is_gameplay_input_suppressed;
   out->log = &blunder_log;
+  out->animation_tree_play = &blunder_animation_tree_play;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -1436,6 +1487,10 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_object_set_vec3_property");
   BLUNDER_NATIVE_ABI_LOAD(object_get_vec3_property,
                           "blunder_object_get_vec3_property");
+  BLUNDER_NATIVE_ABI_LOAD(object_set_quat_property,
+                          "blunder_object_set_quat_property");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_quat_property,
+                          "blunder_object_get_quat_property");
   BLUNDER_NATIVE_ABI_LOAD(lifecycle_set_tick_hook,
                           "blunder_lifecycle_set_tick_hook");
   BLUNDER_NATIVE_ABI_LOAD(lifecycle_set_ready_hook,
@@ -1559,6 +1614,7 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
   BLUNDER_NATIVE_ABI_LOAD(cine_is_gameplay_input_suppressed,
                           "blunder_cine_is_gameplay_input_suppressed");
   BLUNDER_NATIVE_ABI_LOAD(log, "blunder_log");
+  BLUNDER_NATIVE_ABI_LOAD(animation_tree_play, "blunder_animation_tree_play");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

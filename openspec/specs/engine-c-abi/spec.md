@@ -41,6 +41,17 @@ The C-ABI SHALL support get/set of Vec3 ClassDB properties (at least Object posi
 - **WHEN** a caller sets Object position to (1,2,3) through the C-ABI Vec3 setter and then gets it
 - **THEN** the returned components match the written values
 
+### Requirement: Quat properties through C-ABI
+The C-ABI SHALL support get/set of Quat ClassDB properties (at least Object rotation) by ObjectId for managed bindings. Components SHALL be glm `.x/.y/.z/.w` (same as Inspector `quat_x..w`). Native SHALL construct `Quat(w, x, y, z)` and SHALL NOT memcpy `glm::quat`. A Vec3 setter SHALL NOT succeed on a Quat property.
+
+#### Scenario: Rotation round-trip via C-ABI
+- **WHEN** a caller sets Object rotation through the C-ABI Quat setter and then gets it
+- **THEN** the returned `.x/.y/.z/.w` components match the written values (after normalize)
+
+#### Scenario: Vec3 cannot set rotation
+- **WHEN** a caller sets Object rotation through the C-ABI Vec3 setter
+- **THEN** the call fails and the stored rotation is unchanged
+
 ### Requirement: ABI version for script host
 The C-ABI version constant SHALL be greater than or equal to 2 when Behaviour and Vec3 entry points are present.
 
@@ -105,3 +116,14 @@ The engine C-ABI SHALL expose a log entry (`blunder_log` or NativeAbi-equivalent
 #### Scenario: Native log without managed host
 - **WHEN** a native caller invokes the log entry with Warning severity and text `clip missing` and a null stack
 - **THEN** the process Console ring contains a Warning whose text is `clip missing`
+
+### Requirement: C-ABI AnimationTree Clip Play
+The engine C-ABI SHALL expose a Clip Play entry on AnimationTree (logical clip name). Success SHALL set the Clip Play override. Failure SHALL match the Clip Play failure contract (empty name, missing binding, inactive tree). ABI version SHALL be at least 12 when this entry ships.
+
+#### Scenario: ABI version is at least 12
+- **WHEN** `blunder_engine_abi_version` is queried after this change
+- **THEN** the returned value is >= 12
+
+#### Scenario: Native Clip Play without managed host
+- **WHEN** a native caller Clip Plays a bound logical name on an active AnimationTree
+- **THEN** the call succeeds and the tree base samples that clip

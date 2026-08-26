@@ -1425,6 +1425,290 @@ void test_state_machine_travel_switches_clip_to_blend_space() {
                         Vec3(10.0f, 0.0f, 0.0f)));
 }
 
+void test_clip_play_replaces_blend_space_base() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  const eastl::string hit_guid = "33333333-3333-3333-3333-333333333333";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData hit;
+  hit.duration = 0.5f;
+  hit.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(77.0f, 0.0f, 0.0f)}, {0.5f, Vec3(77.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("hit", hit_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(hit_guid, hit);
+
+  tree.addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree.addBlendSpacePoint("Locomotion", "walk", 1.0f);
+  tree.setBlendSpaceScalar("Locomotion", 0.5f);
+  tree.setStateBlendSpace("Locomotion", "Locomotion");
+  tree.setActive(true);
+  tree.travel("Locomotion");
+  expect_true("blend space midpoint",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+
+  expect_true("clip play hit", tree.clipPlay("hit"));
+  expect_true("override set", tree.isClipPlayOverride());
+  expect_true("hit pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(77.0f, 0.0f, 0.0f)));
+  expect_true("state still locomotion",
+              tree.getCurrentStateName() == "Locomotion");
+  expect_true("ruler hit", tree.rulerClipName() == "hit");
+}
+
+void test_clip_play_restart_hold_and_travel_clear() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string hit_guid = "22222222-2222-2222-2222-222222222222";
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+
+  AnimationClipData hit;
+  hit.duration = 0.4f;
+  hit.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(1.0f, 0.0f, 0.0f)}, {0.4f, Vec3(9.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("hit", hit_guid);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(hit_guid, hit);
+
+  tree.setStateClip("Locomotion", "walk");
+  tree.setActive(true);
+  tree.travel("Locomotion");
+  expect_true("clip play", tree.clipPlay("hit"));
+  tree.advance(0.2f);
+  expect_true("mid hit time", float_near(tree.getClipPlayTime(), 0.2f, 1e-3f));
+  expect_true("restart same name", tree.clipPlay("hit"));
+  expect_true("time zero", float_near(tree.getClipPlayTime(), 0.0f));
+  expect_true("origin key",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(1.0f, 0.0f, 0.0f)));
+
+  tree.advance(1.0f);
+  expect_true("still override", tree.isClipPlayOverride());
+  expect_true("hold last key",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(9.0f, 0.0f, 0.0f)));
+
+  expect_true("travel clears", tree.travel("Locomotion"));
+  expect_true("override cleared", !tree.isClipPlayOverride());
+  expect_true("walk pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(8.0f, 0.0f, 0.0f)));
+
+  expect_true("clip play for start", tree.clipPlay("hit"));
+  expect_true("start clears", tree.start("Locomotion"));
+  expect_true("start override cleared", !tree.isClipPlayOverride());
+}
+
+void test_clip_play_suspends_auto_transition() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  const eastl::string hit_guid = "33333333-3333-3333-3333-333333333333";
+
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+  AnimationClipData hit;
+  hit.duration = 1.0f;
+  hit.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(77.0f, 0.0f, 0.0f)}, {1.0f, Vec3(77.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("hit", hit_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(hit_guid, hit);
+
+  tree.setStateClip("Idle", "idle");
+  tree.setStateClip("Walk", "walk");
+  tree.setActive(true);
+  tree.start("Idle");
+
+  StateMachineTransition edge;
+  edge.from_state = "Idle";
+  edge.to_state = "Walk";
+  edge.source = TransitionConditionSource::TreeParam;
+  edge.param_name = "goWalk";
+  edge.is_bool_predicate = true;
+  edge.bool_operand = true;
+  expect_true("add edge", tree.addTransition(edge));
+  tree.setTreeParamBool("goWalk", true);
+
+  expect_true("clip play", tree.clipPlay("hit"));
+  tree.advance(0.016f);
+  expect_true("state still idle", tree.getCurrentStateName() == "Idle");
+  expect_true("hit pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(77.0f, 0.0f, 0.0f)));
+}
+
+void test_clip_play_fire_add2_and_failures() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  skeleton.setBoneRestLocal(0, BoneTransform{});
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string hit_guid = "22222222-2222-2222-2222-222222222222";
+  const eastl::string fire_guid = "33333333-3333-3333-3333-333333333333";
+  const eastl::string add2_guid = "44444444-4444-4444-4444-444444444444";
+
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+  AnimationClipData hit;
+  hit.duration = 1.0f;
+  hit.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(40.0f, 0.0f, 0.0f)}, {1.0f, Vec3(40.0f, 0.0f, 0.0f)}}));
+  AnimationClipData fire;
+  fire.duration = 0.3f;
+  fire.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(99.0f, 0.0f, 0.0f)}, {0.3f, Vec3(99.0f, 0.0f, 0.0f)}}));
+  AnimationClipData add2;
+  add2.duration = 1.0f;
+  add2.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("hit", hit_guid);
+  player.setClipGuid("react", fire_guid);
+  player.setClipGuid("turn_add", add2_guid);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(hit_guid, hit);
+  player.injectClipData(fire_guid, fire);
+  player.injectClipData(add2_guid, add2);
+
+  tree.setStateClip("Locomotion", "walk");
+  tree.setAdd2ClipName("turn_add");
+  tree.setAdd2Weight(0.5f);
+  tree.setActive(true);
+  tree.travel("Locomotion");
+
+  expect_true("clip play", tree.clipPlay("hit"));
+  expect_true("hit plus add2",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(41.0f, 0.0f, 0.0f)));
+
+  expect_true("fire", tree.requestOneShot("react"));
+  expect_true("fire pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(100.0f, 0.0f, 0.0f)));
+  expect_true("override remains", tree.isClipPlayOverride());
+  const float time_during_fire = tree.getClipPlayTime();
+  tree.advance(0.4f);
+  expect_true("fire ended", !tree.isOneShotActive());
+  expect_true("back to hit override", tree.isClipPlayOverride());
+  expect_true("clock advanced during fire",
+              tree.getClipPlayTime() > time_during_fire);
+
+  expect_true("empty fails", !tree.clipPlay(""));
+  expect_true("missing fails", !tree.clipPlay("missing"));
+  expect_true("override still hit", tree.getClipPlayClipName() == "hit");
+
+  tree.setActive(false);
+  expect_true("inactive fails", !tree.clipPlay("walk"));
+  expect_true("inactive no mutate name", tree.getClipPlayClipName() == "hit");
+}
+
+void test_clip_play_not_exported_in_topology() {
+  using namespace Blunder;
+
+  AnimationPlayer player;
+  AnimationTree tree;
+  tree.bindAnimationPlayer(&player);
+
+  const eastl::string hit_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("hit", hit_guid);
+  player.injectClipData(hit_guid, make_test_clip("hit", 0.5f));
+  player.setClipGuid("walk", "11111111-1111-1111-1111-111111111111");
+  player.injectClipData("11111111-1111-1111-1111-111111111111",
+                        make_test_clip("walk", 1.0f));
+
+  tree.setStateClip("Locomotion", "walk");
+  tree.setActive(true);
+  tree.travel("Locomotion");
+  expect_true("clip play", tree.clipPlay("hit"));
+
+  AnimationTreeTopologyData topology;
+  tree.exportTopologyData(topology);
+  AnimationTree other;
+  other.bindAnimationPlayer(&player);
+  expect_true("apply topology", other.applyTopologyData(topology));
+  other.setActive(true);
+  expect_true("loaded has no override", !other.isClipPlayOverride());
+}
+
 }  // namespace
 
 int main() {
@@ -1458,6 +1742,11 @@ int main() {
   test_tree_playback_position_ignores_add2_clock();
   test_tree_advance_uses_player_time_scale();
   test_tree_oneshot_dominant_playback_position();
+  test_clip_play_replaces_blend_space_base();
+  test_clip_play_restart_hold_and_travel_clear();
+  test_clip_play_suspends_auto_transition();
+  test_clip_play_fire_add2_and_failures();
+  test_clip_play_not_exported_in_topology();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

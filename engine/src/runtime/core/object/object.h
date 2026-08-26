@@ -141,6 +141,8 @@ class Object {
 
   void materializeEntityIfNeeded();
   void syncLocalTransformFromStore();
+  void writeLocalTransformToStore();
+  void applyNormalizedRotation(const Quat& rotation);
 
   ObjectId m_id{k_invalid_object_id};
   eastl::string m_name;

@@ -1,22 +1,4 @@
-# animation-window Specification
-
-## Purpose
-
-Persistent docked Edit animation preview on the current single selection's AnimationTree: transport, ruler clock, Fire slot, CINE session marks, and the shared TimeScale field — without overlay S0/S1 chrome or AnimationPlayer as the play host.
-
-## Requirements
-
-### Requirement: Persistent Animation dock
-The Editor Session SHALL provide an **Animation Window** as its own dock panel kind, titled Animation, defaulting to a bottom dock under the viewport. Authors MAY retile or float it. The panel SHALL remain present when unbound. It SHALL NOT auto-hide or auto-show from Hierarchy selection. It SHALL NOT be Camera Preview and SHALL NOT host AnimationTree Canvas.
-
-#### Scenario: Default layout places Animation under the viewport
-- **WHEN** an Editor Session opens with the default dock layout
-- **THEN** an Animation panel is docked below the Scene viewport
-
-#### Scenario: Unbound selection keeps the dock open
-- **WHEN** the Hierarchy selection is empty, multi-select, or a single entity with no AnimationTree
-- **THEN** the Animation panel is still visible
-- **AND** transport and the timeline are disabled
+## MODIFIED Requirements
 
 ### Requirement: Bind to the selected AnimationTree
 The window SHALL bind when Hierarchy has exactly one selected entity that has an AnimationTree. Changing selection SHALL Stop the previously bound tree (ruler to 0, clear Fire slot, clear Clip Play override, halt transport, End CINE) then bind the new Tree or the empty state. An unbound previous tree SHALL NOT keep preview-advancing.
@@ -119,19 +101,3 @@ Window TimeScale SHALL be the same AnimationTree playback-rate field the Inspect
 - **WHEN** the document is clean
 - **AND** the author presses Play then Pause
 - **THEN** the document stays clean
-
-### Requirement: Icon-first chrome
-Transport Play / Pause / Stop / Loop, Fire, and Enter / End CINE SHALL be **Editor Icon**-only with tooltip names (ADR 0042). The Fire-target dropdown SHALL keep Clip Binding logical names as text. CINE and Inp badges SHALL stay word badges. Dock tab title Animation MAY have a leading icon and SHALL keep the word Animation.
-
-#### Scenario: Play is an icon
-- **WHEN** the Animation Window is shown
-- **THEN** the Play control shows the Play Editor Icon
-- **AND** it has no visible word Play on the button face
-
-### Requirement: Overlay preview toolbar is gone
-The Scene viewport SHALL NOT show the overlay AnimationPreviewToolbar (Play/S0/S1/BW/Fd). The transform tool strip SHALL remain a viewport overlay.
-
-#### Scenario: Viewport has transform strip only
-- **WHEN** the Scene viewport is visible
-- **THEN** Move / Rotate / Scale overlay the viewport
-- **AND** no overlay S0 / S1 / BW / Fd toolbar is shown

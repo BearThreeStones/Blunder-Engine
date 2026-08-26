@@ -81,7 +81,7 @@ int main() {
   ClassDB::initialize();
   animationSyncGroupService().clearAll();
 
-  expect_true("abi version >= 11", blunder_engine_abi_version() >= 11);
+  expect_true("abi version >= 12", blunder_engine_abi_version() >= 12);
   expect_true("abi version matches header",
               blunder_engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
 
@@ -91,6 +91,7 @@ int main() {
   expect_true("abi tree travel", abi.animation_tree_travel != nullptr);
   expect_true("abi tree request oneshot",
               abi.animation_tree_request_one_shot != nullptr);
+  expect_true("abi tree play", abi.animation_tree_play != nullptr);
   expect_true("abi tree set add2 weight",
               abi.animation_tree_set_add2_weight != nullptr);
   expect_true("abi tree set blend 2d",
@@ -184,6 +185,13 @@ int main() {
               blunder_animation_tree_get_add2_weight(id, &add2) ==
                   BLUNDER_ENGINE_OK);
   expect_true("add2 value", float_near(add2, 0.25f));
+
+  expect_true("clip play",
+              blunder_animation_tree_play(id, "walk") == BLUNDER_ENGINE_OK);
+  expect_true("clip play override",
+              object->getAnimationTree()->isClipPlayOverride());
+  expect_true("clip play name",
+              object->getAnimationTree()->getClipPlayClipName() == "walk");
 
   expect_true("request oneshot",
               blunder_animation_tree_request_one_shot(id, "trip") ==

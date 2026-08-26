@@ -613,6 +613,9 @@ bool AnimationTree::travel(const eastl::string& state_name) {
   if (!applyStatePlayback(it->second)) {
     return false;
   }
+  m_clip_play_active = false;
+  m_clip_play_clip_name.clear();
+  m_clip_play_time = 0.0f;
   m_current_state_name = state_name;
   if (m_active) {
     sampleBoundSkeleton();
@@ -848,6 +851,31 @@ void AnimationTree::clearOneShot() {
   }
 }
 
+bool AnimationTree::clipPlay(const eastl::string& clip_name) {
+  if (!m_active || clip_name.empty()) {
+    return false;
+  }
+  eastl::string guid;
+  if (!resolveClipGuid(clip_name, guid)) {
+    return false;
+  }
+  m_clip_play_clip_name = clip_name;
+  m_clip_play_time = 0.0f;
+  m_clip_play_active = true;
+  resetMethodDispatchClock(0.0f);
+  sampleBoundSkeleton();
+  return true;
+}
+
+void AnimationTree::clearClipPlay() {
+  m_clip_play_active = false;
+  m_clip_play_clip_name.clear();
+  m_clip_play_time = 0.0f;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
 float AnimationTree::rulerPosition() const {
   return getDominantBasePlaybackPosition();
 }
@@ -859,6 +887,10 @@ float AnimationTree::rulerLength() const {
 eastl::string AnimationTree::rulerClipName() const {
   if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
     return m_oneshot_clip_name;
+  }
+
+  if (m_clip_play_active && !m_clip_play_clip_name.empty()) {
+    return m_clip_play_clip_name;
   }
 
   if (!m_base_blend_space_2d_node.empty()) {
@@ -909,6 +941,8 @@ void AnimationTree::seekRuler(float seconds) {
   }
   if (m_oneshot_active) {
     m_oneshot_time = clamped;
+  } else if (m_clip_play_active) {
+    m_clip_play_time = clamped;
   } else {
     m_sample_time = clamped;
   }
@@ -984,6 +1018,9 @@ void AnimationTree::clearAuthoredTopology() {
   m_oneshot_active = false;
   m_oneshot_clip_name.clear();
   m_oneshot_time = 0.0f;
+  m_clip_play_active = false;
+  m_clip_play_clip_name.clear();
+  m_clip_play_time = 0.0f;
 }
 
 bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology) {
@@ -1277,7 +1314,7 @@ void AnimationTree::advance(float delta_seconds) {
     return;
   }
 
-  if (m_active) {
+  if (m_active && !m_clip_play_active) {
     evaluateTransitions();
   }
 
@@ -1303,6 +1340,9 @@ void AnimationTree::advance(float delta_seconds) {
   }
 
   m_sample_time += scaled_delta;
+  if (m_clip_play_active) {
+    m_clip_play_time += scaled_delta;
+  }
 
   if (m_oneshot_active) {
     m_oneshot_time += scaled_delta;
@@ -1378,6 +1418,10 @@ void AnimationTree::dispatchDominantMethodKeysCrossed(float prev_time,
 bool AnimationTree::resolveDominantBaseClip(AnimationClipData& out_clip) const {
   if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
     return resolveClipForName(m_oneshot_clip_name, out_clip);
+  }
+
+  if (m_clip_play_active && !m_clip_play_clip_name.empty()) {
+    return resolveClipForName(m_clip_play_clip_name, out_clip);
   }
 
   if (!m_base_blend_space_2d_node.empty()) {
@@ -1516,6 +1560,14 @@ void AnimationTree::sampleBaseOntoSkeleton(Skeleton& skeleton) {
     }
   }
 
+  if (m_clip_play_active && !m_clip_play_clip_name.empty()) {
+    AnimationClipData clip;
+    if (resolveClipForName(m_clip_play_clip_name, clip)) {
+      sampleClipOntoSkeleton(skeleton, clip, m_clip_play_time);
+      return;
+    }
+  }
+
   if (!m_base_blend_space_2d_node.empty()) {
     const BlendSpace2DParam param =
         getBlendSpace2DParam(m_base_blend_space_2d_node);
@@ -1548,7 +1600,8 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
     return;
   }
 
-  const bool has_base = !m_base_blend_space_node.empty() ||
+  const bool has_base = m_clip_play_active || m_oneshot_active ||
+                        !m_base_blend_space_node.empty() ||
                         !m_base_blend_space_2d_node.empty() ||
                         !m_sample_clip_name.empty();
   if (!has_base) {
@@ -1595,6 +1648,9 @@ float AnimationTree::getDominantBasePlaybackPosition() const {
   if (m_oneshot_active) {
     return m_oneshot_time;
   }
+  if (m_clip_play_active) {
+    return m_clip_play_time;
+  }
   return m_sample_time;
 }
 
@@ -1602,6 +1658,14 @@ float AnimationTree::getDominantBaseClipLength() const {
   if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
     AnimationClipData clip;
     if (resolveClipForName(m_oneshot_clip_name, clip)) {
+      return clip.duration;
+    }
+    return 0.0f;
+  }
+
+  if (m_clip_play_active && !m_clip_play_clip_name.empty()) {
+    AnimationClipData clip;
+    if (resolveClipForName(m_clip_play_clip_name, clip)) {
       return clip.duration;
     }
     return 0.0f;

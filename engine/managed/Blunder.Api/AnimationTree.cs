@@ -1,7 +1,7 @@
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for an Object's co-located AnimationTree (C-ABI v10).
+/// Managed façade for an Object's co-located AnimationTree (C-ABI v12).
 /// </summary>
 public sealed class AnimationTree
 {
@@ -75,6 +75,12 @@ public sealed class AnimationTree
 
     public bool RequestOneShot(string clipName) =>
         Native.blunder_animation_tree_request_one_shot(_owner.Id, clipName) == Native.Ok;
+
+    /// <summary>
+    /// Clip Play: replace the tree base with a Clip Binding logical name (hard cut, clock 0).
+    /// </summary>
+    public bool Play(string clipName) =>
+        Native.blunder_animation_tree_play(_owner.Id, clipName) == Native.Ok;
 
     public void SetTreeParamBool(string name, bool value) =>
         Native.blunder_animation_tree_set_tree_param_bool(_owner.Id, name, value ? 1 : 0);

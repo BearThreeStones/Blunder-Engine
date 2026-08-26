@@ -54,6 +54,8 @@ internal static unsafe class Native
         abi.object_get_behaviour_peer != null &&
         abi.object_set_vec3_property != null &&
         abi.object_get_vec3_property != null &&
+        abi.object_set_quat_property != null &&
+        abi.object_get_quat_property != null &&
         abi.lifecycle_set_tick_hook != null &&
         abi.lifecycle_set_ready_hook != null &&
         abi.lifecycle_clear_hooks != null &&
@@ -123,7 +125,8 @@ internal static unsafe class Native
         abi.cine_end != null &&
         abi.cine_is_in_cine != null &&
         abi.cine_is_gameplay_input_suppressed != null &&
-        abi.log != null;
+        abi.log != null &&
+        abi.animation_tree_play != null;
 
     static void EnsureRegistered()
     {
@@ -270,6 +273,58 @@ internal static unsafe class Native
         x = ox;
         y = oy;
         z = oz;
+        return rc;
+    }
+
+    public static int blunder_object_set_quat_property(
+        ulong id,
+        string className,
+        string propertyName,
+        float x,
+        float y,
+        float z,
+        float w)
+    {
+        EnsureRegistered();
+        byte[] classUtf8 = ToUtf8(className);
+        byte[] propUtf8 = ToUtf8(propertyName);
+        fixed (byte* classPtr = classUtf8)
+        fixed (byte* propPtr = propUtf8)
+        {
+            return s_abi.object_set_quat_property(
+                id, classPtr, propPtr, x, y, z, w);
+        }
+    }
+
+    public static int blunder_object_get_quat_property(
+        ulong id,
+        string className,
+        string propertyName,
+        out float x,
+        out float y,
+        out float z,
+        out float w)
+    {
+        EnsureRegistered();
+        x = 0;
+        y = 0;
+        z = 0;
+        w = 0;
+        byte[] classUtf8 = ToUtf8(className);
+        byte[] propUtf8 = ToUtf8(propertyName);
+        float ox = 0, oy = 0, oz = 0, ow = 0;
+        int rc;
+        fixed (byte* classPtr = classUtf8)
+        fixed (byte* propPtr = propUtf8)
+        {
+            rc = s_abi.object_get_quat_property(
+                id, classPtr, propPtr, &ox, &oy, &oz, &ow);
+        }
+
+        x = ox;
+        y = oy;
+        z = oz;
+        w = ow;
         return rc;
     }
 
@@ -548,6 +603,16 @@ internal static unsafe class Native
         fixed (byte* namePtr = utf8)
         {
             return s_abi.animation_tree_request_one_shot(id, namePtr);
+        }
+    }
+
+    public static int blunder_animation_tree_play(ulong id, string clipName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(clipName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.animation_tree_play(id, namePtr);
         }
     }
 

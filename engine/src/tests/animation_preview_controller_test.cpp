@@ -460,6 +460,69 @@ void test_fire_hard_cut_and_enter_cine_does_not_fire() {
   LifecycleDispatch::clear();
 }
 
+void test_clip_play_stop_rebind_and_end_cine() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* object = makeTreePreviewObject(nullptr);
+  AnimationTree* tree = object->getAnimationTree();
+  tree->start("Locomotion");
+  tree->setActive(true);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  expect_true("clip play", tree->clipPlay("walk"));
+  expect_true("override on", tree->isClipPlayOverride());
+  expect_true("ruler walk", controller.rulerClipName() == "walk");
+
+  controller.enterCine();
+  controller.endCine();
+  expect_true("end cine keeps override", tree->isClipPlayOverride());
+  expect_true("ruler still walk", controller.rulerClipName() == "walk");
+
+  controller.stop();
+  expect_true("stop clears override", !tree->isClipPlayOverride());
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  ensureLogger();
+  Scene scene;
+  scene.setGuid("ffffffff-ffff-4fff-8fff-ffffffffffff");
+  SceneEntityDefinition dog_a;
+  dog_a.name = "DogA";
+  dog_a.has_skeleton = true;
+  dog_a.has_animation_tree = true;
+  dog_a.animation_player_clips.push_back({"walk", eastl::string(kWalkGuid)});
+  SceneEntityDefinition dog_b = dog_a;
+  dog_b.name = "DogB";
+  scene.getEntities().push_back(eastl::move(dog_a));
+  scene.getEntities().push_back(eastl::move(dog_b));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  const EntityId id_a = instance.findEntityByName("DogA");
+  const EntityId id_b = instance.findEntityByName("DogB");
+  expect_true("dog A", isValid(id_a));
+  expect_true("dog B", isValid(id_b));
+  Object* object_a = instance.findBoundObject(id_a);
+  expect_true("object A", object_a != nullptr && object_a->hasAnimationTree());
+  AnimationTree* tree_a = object_a->getAnimationTree();
+
+  controller.bindSelection(&instance, id_a, 1);
+  expect_true("play A", controller.play());
+  expect_true("clip play A", tree_a != nullptr && tree_a->clipPlay("walk"));
+  expect_true("clip play A set",
+              tree_a != nullptr && tree_a->isClipPlayOverride());
+
+  controller.bindSelection(&instance, id_b, 1);
+  expect_true("rebind cleared clip play",
+              tree_a != nullptr && !tree_a->isClipPlayOverride());
+  controller.clearTarget();
+}
+
 void test_timescale_command_dirties_play_does_not() {
   using namespace Blunder;
 
@@ -933,6 +996,7 @@ int main() {
   test_tree_stop_and_rebind();
   test_session_loop_off_pauses_last_frame();
   test_fire_hard_cut_and_enter_cine_does_not_fire();
+  test_clip_play_stop_rebind_and_end_cine();
   test_timescale_command_dirties_play_does_not();
 
   Blunder::ObjectDB::clear();

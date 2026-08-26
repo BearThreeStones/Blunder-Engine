@@ -9,6 +9,7 @@ public sealed class ObjectHandle
 {
     const string ObjectClass = "Object";
     const string PositionProperty = "position";
+    const string RotationProperty = "rotation";
 
     static readonly Dictionary<ulong, ObjectHandle> s_byId = new();
 
@@ -39,6 +40,29 @@ public sealed class ObjectHandle
         set =>
             Native.blunder_object_set_vec3_property(
                 Id, ObjectClass, PositionProperty, value.X, value.Y, value.Z);
+    }
+
+    public Quat Rotation
+    {
+        get
+        {
+            if (Native.blunder_object_get_quat_property(
+                    Id,
+                    ObjectClass,
+                    RotationProperty,
+                    out float x,
+                    out float y,
+                    out float z,
+                    out float w) != Native.Ok)
+            {
+                return Quat.Identity;
+            }
+
+            return new Quat(x, y, z, w);
+        }
+        set =>
+            Native.blunder_object_set_quat_property(
+                Id, ObjectClass, RotationProperty, value.X, value.Y, value.Z, value.W);
     }
 
     /// <summary>
