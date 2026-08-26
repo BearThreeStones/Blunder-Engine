@@ -32,6 +32,14 @@ struct PlayDirtySceneDecision {
 PlayDirtySceneDecision decidePlayDirtyScene(
     bool scene_dirty, std::optional<PlayDirtySceneChoice> choice = std::nullopt);
 
+/// Windowed Editor: nullopt (prompt). Headless: last saved, no prompt, no auto-save.
+inline std::optional<PlayDirtySceneChoice> playDirtyChoiceForHost(bool headless) {
+  if (headless) {
+    return PlayDirtySceneChoice::PlayLastSaved;
+  }
+  return std::nullopt;
+}
+
 /// True when Scripts sources/csproj are newer than `.blunder/scripts_bin`
 /// outputs, or when sources exist but no game DLL output is present.
 /// Projects without a Scripts folder / csproj are treated as not dirty.

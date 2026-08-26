@@ -37,6 +37,7 @@ void handlePlayIpcCommand(Blunder::PlayIpcHostCommand command) {
       Blunder::g_runtime_global_context.setPlayPaused(false);
       break;
     case PlayIpcCommand::Stop:
+      Blunder::g_runtime_global_context.requestQuit();
       if (Blunder::g_runtime_global_context.m_window_system) {
         Blunder::g_runtime_global_context.m_window_system->requestClose();
       }
@@ -114,7 +115,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     g_engine = new Blunder::BlunderEngine();
     *appstate = g_engine;
     g_engine->startEngine(g_launch.project_root, Blunder::EngineHostMode::Player,
-                          eastl::string(g_launch.scene.c_str()));
+                          eastl::string(g_launch.scene.c_str()),
+                          g_launch.headless);
     g_engine->initialize(eastl::string(g_launch.scene.c_str()));
 
     if (ipc_endpoint.ok) {

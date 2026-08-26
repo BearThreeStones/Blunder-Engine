@@ -16,6 +16,7 @@
 #include "runtime/function/render/player_authorship_input.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/post/ssao_pass.h"
+#include "runtime/function/render/scene_thumbnail/scene_still.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 
 #include <SDL3/SDL.h>
@@ -94,6 +95,18 @@ constexpr uint32_t k_smoke_texture_size = 64;
 constexpr float k_shadow_ortho_half_extent = 14.0f;
 constexpr float k_shadow_near_plane = 0.1f;
 constexpr float k_shadow_far_plane = 60.0f;
+
+void defaultOffscreenExtent(const RenderSystemInitInfo& info, uint32_t& width,
+                            uint32_t& height) {
+  if (info.window_system == nullptr) {
+    const SceneStillExtent cap = captureStillExtent();
+    width = cap.width;
+    height = cap.height;
+    return;
+  }
+  width = k_default_viewport_w;
+  height = k_default_viewport_h;
+}
 
 bool viewportZeroCopyDisabled() {
   const char* env = std::getenv("BLUNDER_VIEWPORT_ZERO_COPY");
@@ -224,7 +237,6 @@ void RenderSystem::initializeBackend(const RenderSystemInitInfo& info) {
   if (m_backend) {
     return;  // Backend already created (e.g. early, to share device with Slint).
   }
-  ASSERT(info.window_system);
 
   m_asset_manager = info.asset_manager;
   m_window_system = info.window_system;
@@ -240,7 +252,6 @@ void RenderSystem::initializeBackend(const RenderSystemInitInfo& info) {
 }
 
 void RenderSystem::initialize(const RenderSystemInitInfo& info) {
-  ASSERT(info.window_system);
   initializeBackend(info);
 
   if (m_backend->type() == rhi::RenderBackendType::D3D12) {
@@ -270,14 +281,12 @@ SharedVulkanHandles RenderSystem::getSharedVulkanHandles() const {
 
 void RenderSystem::initializeD3D12SkeletonPath(
     const RenderSystemInitInfo& info) {
-  (void)info;
   LOG_WARN(
       "[RenderSystem] D3D12 skeleton backend: scene pipelines are not "
       "implemented in P0");
 
   rhi::OffscreenTargetDesc offscreen_desc{};
-  offscreen_desc.width = k_default_viewport_w;
-  offscreen_desc.height = k_default_viewport_h;
+  defaultOffscreenExtent(info, offscreen_desc.width, offscreen_desc.height);
   m_offscreen = m_backend->device().createOffscreenTarget(offscreen_desc);
   m_editor_camera = eastl::make_unique<EditorCamera>(m_window_system);
   if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
@@ -286,11 +295,8 @@ void RenderSystem::initializeD3D12SkeletonPath(
 }
 
 void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
-  (void)info;
-
   rhi::OffscreenTargetDesc offscreen_desc{};
-  offscreen_desc.width = k_default_viewport_w;
-  offscreen_desc.height = k_default_viewport_h;
+  defaultOffscreenExtent(info, offscreen_desc.width, offscreen_desc.height);
   m_offscreen = vkBackend(this)->device().createOffscreenTarget(offscreen_desc);
 
   rhi::GraphicsPipelineDesc mesh_pipeline_desc{};
@@ -417,7 +423,7 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_ssao_pass = eastl::make_unique<SsaOPass>();
   m_ssao_pass->initialize(vkCtx(this), vkAlloc(this),
                           vkBackend(this)->nativeSlangCompiler());
-  m_ssao_pass->resize(k_default_viewport_w, k_default_viewport_h);
+  m_ssao_pass->resize(offscreen_desc.width, offscreen_desc.height);
 
   LOG_INFO(
       "[RenderSystem] PBR pipelines ready (descriptor layout shared: opaque={}, "
@@ -427,7 +433,7 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
 
   if (m_viewport_bridge) {
     m_viewport_bridge->initialize(vkCtx(this), vkAlloc(this), vkSync(this));
-    resizeViewportReadback(k_default_viewport_w, k_default_viewport_h);
+    resizeViewportReadback(offscreen_desc.width, offscreen_desc.height);
   }
 
   // Best-effort RenderDoc hookup. If the engine wasn't launched from

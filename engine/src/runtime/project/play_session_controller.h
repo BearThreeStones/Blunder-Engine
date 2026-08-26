@@ -24,6 +24,7 @@ enum class PlaySessionState : uint8_t {
 struct PlaySessionRequest {
   std::filesystem::path project_root;
   std::string scene;
+  bool headless{false};
 };
 
 struct PlaySpawnArgs {
@@ -31,10 +32,11 @@ struct PlaySpawnArgs {
   std::filesystem::path project_root;
   std::string scene;
   std::string play_ipc;
+  bool headless{false};
 };
 
 /// Argv for `engine_player`: exe, --project-root, path, --scene, scene,
-/// --play-ipc, endpoint.
+/// --play-ipc, endpoint, optional `--headless`.
 std::vector<std::string> buildPlayerSpawnArgv(const PlaySpawnArgs& args);
 
 /// Sibling `engine_player` next to the current executable.
@@ -107,6 +109,9 @@ class PlaySessionController final {
   bool stop();
   bool step(uint32_t ticks);
   bool requestPlayFrame();
+  /// Send Play frame then poll until a frame arrives or `timeout_ms` elapses.
+  /// Windowed GUI still uses one-shot `requestPlayFrame`.
+  bool waitForPlayFrame(int timeout_ms);
   void poll();
 
   static PlaySessionHooks makeDefaultHooks();

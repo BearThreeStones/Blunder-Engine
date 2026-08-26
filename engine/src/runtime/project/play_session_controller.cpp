@@ -7,6 +7,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -248,7 +249,7 @@ bool spawnPlayerProcess(const PlaySpawnArgs& args,
 
 std::vector<std::string> buildPlayerSpawnArgv(const PlaySpawnArgs& args) {
   std::vector<std::string> argv;
-  argv.reserve(7);
+  argv.reserve(args.headless ? 8 : 7);
   argv.push_back(args.exe.empty() ? std::string("engine_player")
                                   : args.exe.generic_string());
   argv.push_back("--project-root");
@@ -257,6 +258,9 @@ std::vector<std::string> buildPlayerSpawnArgv(const PlaySpawnArgs& args) {
   argv.push_back(args.scene);
   argv.push_back("--play-ipc");
   argv.push_back(args.play_ipc);
+  if (args.headless) {
+    argv.push_back("--headless");
+  }
   return argv;
 }
 
@@ -483,6 +487,7 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
   spawn_args.project_root = request.project_root;
   spawn_args.scene = request.scene;
   spawn_args.play_ipc = formatPlayIpcEndpoint(endpoint);
+  spawn_args.headless = request.headless;
 
   if (!m_hooks.spawn(spawn_args)) {
     if (m_hooks.ipc_close) {
@@ -565,6 +570,32 @@ bool PlaySessionController::requestPlayFrame() {
   }
   ingestPlayFrames();
   return m_last_play_frame.width != 0 && m_last_play_frame.height != 0;
+}
+
+bool PlaySessionController::waitForPlayFrame(int timeout_ms) {
+  m_last_request_failure.clear();
+  m_last_play_frame = {};
+  if (!m_ready || (m_state != PlaySessionState::Playing &&
+                   m_state != PlaySessionState::Paused)) {
+    return false;
+  }
+  if (!m_hooks.ipc_send_frame || !m_hooks.ipc_send_frame()) {
+    m_last_error = "failed to send frame";
+    return false;
+  }
+  const auto deadline =
+      now() + std::chrono::milliseconds(timeout_ms < 0 ? 0 : timeout_ms);
+  for (;;) {
+    ingestPlayFrames();
+    if (m_last_play_frame.width != 0 && m_last_play_frame.height != 0) {
+      return true;
+    }
+    if (now() >= deadline) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return false;
 }
 
 void PlaySessionController::ingestPlayLogs() {

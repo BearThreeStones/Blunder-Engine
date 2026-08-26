@@ -79,6 +79,23 @@ int main() {
   }
 
   {
+    expect_true("windowed dirty prompts",
+                !playDirtyChoiceForHost(false).has_value());
+    expect_true("headless dirty is last saved",
+                playDirtyChoiceForHost(true) ==
+                    PlayDirtySceneChoice::PlayLastSaved);
+    const PlayDirtySceneDecision headless_dirty = decidePlayDirtyScene(
+        true, playDirtyChoiceForHost(true));
+    expect_true("headless dirty proceeds", headless_dirty.proceed);
+    expect_true("headless dirty no save", !headless_dirty.save_first);
+    expect_true("headless dirty no prompt", !headless_dirty.needs_prompt);
+    const PlayDirtySceneDecision windowed_dirty = decidePlayDirtyScene(
+        true, playDirtyChoiceForHost(false));
+    expect_true("windowed dirty prompts", windowed_dirty.needs_prompt);
+    expect_true("windowed dirty does not proceed", !windowed_dirty.proceed);
+  }
+
+  {
     const PlayDirtySceneDecision cancel =
         decidePlayDirtyScene(true, PlayDirtySceneChoice::Cancel);
     expect_true("cancel aborts", !cancel.proceed);

@@ -856,6 +856,30 @@ target_precompile_headers(host_observation_test
 add_test(NAME host_observation_test
          COMMAND host_observation_test)
 
+add_executable(headless_host_test
+    "headless_host_test.cpp"
+)
+
+target_link_libraries(headless_host_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(headless_host_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(headless_host_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(headless_host_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME headless_host_test
+         COMMAND headless_host_test)
+
 add_executable(hierarchy_create_test
     "hierarchy_create_test.cpp"
 )
@@ -941,6 +965,29 @@ endif()
 
 add_test(NAME player_launch_test
          COMMAND player_launch_test)
+
+add_executable(editor_launch_test
+    "editor_launch_test.cpp"
+)
+
+target_link_libraries(editor_launch_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(editor_launch_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(editor_launch_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(editor_launch_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME editor_launch_test
+         COMMAND editor_launch_test)
 
 add_executable(play_pause_tick_gate_test
     "play_pause_tick_gate_test.cpp"

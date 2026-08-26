@@ -9,6 +9,7 @@ EditorSessionLaunch resolveEditorSessionLaunch(
     const std::filesystem::path& compiled_project_root) {
   EditorSessionLaunch options;
   std::filesystem::path cli_root;
+  bool headless = false;
 
   for (int i = 1; i < argc; ++i) {
     const char* arg = argv[i];
@@ -21,17 +22,23 @@ EditorSessionLaunch resolveEditorSessionLaunch(
       }
       continue;
     }
+    if (std::strcmp(arg, "--headless") == 0) {
+      headless = true;
+      continue;
+    }
   }
 
   if (!cli_root.empty()) {
     options.ok = true;
     options.project_root = cli_root;
+    options.headless = headless;
     return options;
   }
 
   if (debug_build && !compiled_project_root.empty()) {
     options.ok = true;
     options.project_root = compiled_project_root;
+    options.headless = headless;
     return options;
   }
 

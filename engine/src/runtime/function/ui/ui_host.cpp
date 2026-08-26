@@ -54,6 +54,7 @@ bool startPlaySession(PlaySessionController& session, FileSystem& fs,
   PlaySessionRequest req;
   req.project_root = fs.getProjectRoot();
   req.scene = scene_edit.activeScenePath().c_str();
+  req.headless = g_runtime_global_context.isHeadless();
   if (req.scene.empty()) {
     LOG_ERROR("[Play] aborted: no active scene path");
     return false;
@@ -395,7 +396,8 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         break;
       }
       const PlayDirtySceneDecision decision = decidePlayDirtyScene(
-          services.editor_scene_edit->isDirty(), std::nullopt);
+          services.editor_scene_edit->isDirty(),
+          playDirtyChoiceForHost(g_runtime_global_context.isHeadless()));
       if (decision.needs_prompt) {
         if (m_presentation) {
           m_presentation->showPlayDirtySceneDialog();

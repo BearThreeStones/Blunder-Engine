@@ -27,8 +27,16 @@ The editor SHALL allow at most one Play Process at a time. Starting Play while a
 - **WHEN** Play is requested while a Player is already running
 - **THEN** the existing Player is stopped before a new Player is started
 
+### Requirement: Headless Editor Play session
+A Headless Editor SHALL run a Play session (spawn Player, pause, resume, stop, Play step, Play frame) on the Play control channel without UiHost or Slint Play controls. A Headless Editor SHALL spawn a Headless Player.
+
+#### Scenario: Headless Play without editor chrome
+- **WHEN** a Headless Editor starts Play and preflight succeeds
+- **THEN** a Headless Player process is spawned
+- **AND** the editor session becomes Starting/Playing without an editor OS window
+
 ### Requirement: Dirty scene prompt before Play
-When Play is requested and the active scene document is dirty, the editor SHALL prompt: save then Play, Play using the last saved asset, or cancel. It SHALL NOT silently auto-save or silently play without indication when dirty.
+When Play is requested on a windowed Editor and the active scene document is dirty, the editor SHALL prompt: save then Play, Play using the last saved asset, or cancel. It SHALL NOT silently auto-save or silently play without indication when dirty. A Headless Editor SHALL NOT show that prompt; Play SHALL use the last saved Play entry asset (same as the windowed "play last saved" choice). Live Capture remains the Live document.
 
 #### Scenario: Save and Play
 - **WHEN** the author chooses Save and Play on a dirty scene
@@ -37,6 +45,11 @@ When Play is requested and the active scene document is dirty, the editor SHALL 
 #### Scenario: Cancel dirty prompt
 - **WHEN** the author chooses Cancel on the dirty prompt
 - **THEN** Play does not start and the editor remains Stopped
+
+#### Scenario: Headless Play uses last saved
+- **WHEN** a Headless Editor starts Play while the Live document is dirty
+- **THEN** no dirty-scene prompt is shown
+- **AND** the Player loads the last saved Play entry asset
 
 ### Requirement: Scripts build when dirty before Play
 Before spawning the Player, the editor SHALL build Project Scripts when sources are newer than the last successful scripts output; otherwise it SHALL reuse `.blunder/scripts_bin`. A failed build SHALL keep the editor Stopped and SHALL report an Error-grade Issue with code `scripts.build_failed` rather than a parallel stringly error type. This build SHALL NOT be Diagnose.

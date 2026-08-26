@@ -13,6 +13,7 @@
 #include "runtime/platform/input/gameplay_input.h"
 #include "runtime/function/global/engine_host_mode.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/scene_thumbnail/scene_still.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
@@ -216,20 +217,25 @@ void BlunderEngine::processSdlEvent(const SDL_Event& event) {
 
 void BlunderEngine::startEngine(const std::filesystem::path& project_root,
                                 EngineHostMode host_mode) {
-  startEngine(project_root, host_mode, {});
+  startEngine(project_root, host_mode, {}, false);
 }
 
 void BlunderEngine::startEngine(const std::filesystem::path& project_root,
                                 EngineHostMode host_mode,
-                                const eastl::string& play_scene) {
-  g_runtime_global_context.startSystems(project_root, host_mode, play_scene);
+                                const eastl::string& play_scene, bool headless) {
+  g_runtime_global_context.startSystems(project_root, host_mode, play_scene,
+                                        headless);
 
-  g_runtime_global_context.m_window_system->setEventCallback(
-      [](Event& e) { onEvent(e); });
+  if (g_runtime_global_context.m_window_system) {
+    g_runtime_global_context.m_window_system->setEventCallback(
+        [](Event& e) { onEvent(e); });
+  }
 
 #if defined(_WIN32)
-  SDL_SetWindowsMessageHook(win32ModalResizeMessageHook, this);
-  LOG_INFO("[BlunderEngine] Win32 modal resize message hook installed");
+  if (g_runtime_global_context.m_window_system) {
+    SDL_SetWindowsMessageHook(win32ModalResizeMessageHook, this);
+    LOG_INFO("[BlunderEngine] Win32 modal resize message hook installed");
+  }
 #endif
 
   LOG_INFO("engine start");
@@ -339,11 +345,19 @@ void BlunderEngine::pushOverlay(Layer* overlay) {
 void BlunderEngine::run() {
   eastl::shared_ptr<WindowSystem> window_system =
       g_runtime_global_context.m_window_system;
-  ASSERT(window_system);
+  if (!g_runtime_global_context.isHeadless()) {
+    ASSERT(window_system);
+  }
 
   m_frame_timer.reset();
 
-  while (!window_system->shouldClose()) {
+  while (true) {
+    if (g_runtime_global_context.isQuitRequested()) {
+      break;
+    }
+    if (window_system && window_system->shouldClose()) {
+      break;
+    }
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       processSdlEvent(event);
@@ -520,7 +534,9 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     title += " - ";
     title += std::to_string(getFPS()).c_str();
     title += " FPS";
-    g_runtime_global_context.m_window_system->setTitle(title.c_str());
+    if (g_runtime_global_context.m_window_system) {
+      g_runtime_global_context.m_window_system->setTitle(title.c_str());
+    }
   }
 
   // Smoke / automated exit: BLUNDER_PLAYER_MAX_FRAMES=N leaves after N frames
@@ -540,8 +556,12 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     }
   }
 
-  const bool should_window_close =
-      g_runtime_global_context.m_window_system->shouldClose();
+  bool should_window_close = g_runtime_global_context.isQuitRequested();
+  if (g_runtime_global_context.m_window_system) {
+    should_window_close =
+        should_window_close ||
+        g_runtime_global_context.m_window_system->shouldClose();
+  }
 
   return !should_window_close;
 }
@@ -587,10 +607,16 @@ bool BlunderEngine::rendererTick(float delta_time) {
     }
   }
   if (target_w == 0 || target_h == 0) {
-    eastl::array<int, 2> drawable =
-        g_runtime_global_context.m_window_system->getDrawableSize();
-    target_w = static_cast<uint32_t>(drawable[0] > 0 ? drawable[0] : 1);
-    target_h = static_cast<uint32_t>(drawable[1] > 0 ? drawable[1] : 1);
+    if (g_runtime_global_context.m_window_system) {
+      eastl::array<int, 2> drawable =
+          g_runtime_global_context.m_window_system->getDrawableSize();
+      target_w = static_cast<uint32_t>(drawable[0] > 0 ? drawable[0] : 1);
+      target_h = static_cast<uint32_t>(drawable[1] > 0 ? drawable[1] : 1);
+    } else {
+      const SceneStillExtent cap = captureStillExtent();
+      target_w = cap.width;
+      target_h = cap.height;
+    }
   }
   // Guard against degenerate sizes during transient layouts (folded panels,
   // window minimised, etc.) to avoid creating tiny render targets that get

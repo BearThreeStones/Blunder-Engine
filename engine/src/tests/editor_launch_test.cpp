@@ -49,6 +49,7 @@ int main() {
         static_cast<int>(argv.size()), argv.data(), false, fs::path{});
     expect_true("explicit root ok", opts.ok);
     expect_true("root path set", opts.project_root == fs::path("C:/Games/Demo"));
+    expect_true("windowed by default", !opts.headless);
   }
 
   {
@@ -72,6 +73,27 @@ int main() {
     expect_true("cli root wins over debug", opts.ok);
     expect_true("cli root used",
                 opts.project_root == fs::path("C:/Games/Demo"));
+  }
+
+  {
+    std::vector<std::string> args = {"engine_editor", "--project-root",
+                                     "C:/Games/Demo", "--headless"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("headless with root ok", opts.ok);
+    expect_true("headless flag", opts.headless);
+    expect_true("headless root", opts.project_root == fs::path("C:/Games/Demo"));
+  }
+
+  {
+    std::vector<std::string> args = {"engine_editor", "--headless"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), true,
+        fs::path("E:/Dev/Blunder-Engine"));
+    expect_true("headless debug compiled root ok", opts.ok);
+    expect_true("headless debug flag", opts.headless);
   }
 
   if (g_failures != 0) {

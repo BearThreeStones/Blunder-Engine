@@ -34,6 +34,9 @@ struct FakeSession {
   uint32_t last_step_ticks{0};
   int step_sends{0};
   int frame_sends{0};
+  int polls_until_frame{0};
+  bool frame_queued{false};
+  Blunder::PlayIpcFrameRecord queued_frame{};
   Blunder::PlaySpawnArgs last_spawn{};
   Blunder::PlayIpcEndpoint endpoint{};
 };
@@ -98,10 +101,25 @@ Blunder::PlaySessionHooks makeFakeHooks(FakeSession& fake) {
     frame.height = 9;
     frame.encoding = "rgba8";
     frame.rgba.assign(16u * 9u * 4u, 3);
-    fake.pending_frames.push_back(std::move(frame));
+    if (fake.polls_until_frame == 0) {
+      fake.pending_frames.push_back(std::move(frame));
+    } else {
+      fake.frame_queued = true;
+      fake.queued_frame = std::move(frame);
+    }
     return true;
   };
   hooks.ipc_poll_frames = [&]() {
+    if (fake.polls_until_frame > 0) {
+      --fake.polls_until_frame;
+      return std::vector<PlayIpcFrameRecord>{};
+    }
+    if (fake.frame_queued) {
+      fake.frame_queued = false;
+      std::vector<PlayIpcFrameRecord> out;
+      out.push_back(std::move(fake.queued_frame));
+      return out;
+    }
     std::vector<PlayIpcFrameRecord> out;
     out.swap(fake.pending_frames);
     return out;
@@ -135,6 +153,18 @@ int main() {
   }
 
   {
+    PlaySpawnArgs args;
+    args.exe = "engine_player";
+    args.project_root = "C:/Games/Demo";
+    args.scene = "assets/Scenes/root.scene.asset";
+    args.play_ipc = "127.0.0.1:5555";
+    args.headless = true;
+    const auto argv = buildPlayerSpawnArgv(args);
+    expect_true("headless argv size", argv.size() == 8);
+    expect_true("headless argv flag", argv[7] == "--headless");
+  }
+
+  {
     FakeSession fake;
     PlaySessionController ctrl(makeFakeHooks(fake));
     expect_true("starts stopped", ctrl.state() == PlaySessionState::Stopped);
@@ -152,6 +182,7 @@ int main() {
     expect_true("spawned once", fake.spawn_count == 1);
     expect_true("spawn scene", fake.last_spawn.scene == req.scene);
     expect_true("spawn ipc", fake.last_spawn.play_ipc == "127.0.0.1:4242");
+    expect_true("windowed spawn", !fake.last_spawn.headless);
     expect_true("pause disabled while starting", !ctrl.pauseEnabled());
 
     ctrl.poll();
@@ -370,6 +401,35 @@ int main() {
     expect_true("frame not square",
                 ctrl.lastPlayFrame().width != ctrl.lastPlayFrame().height);
     expect_true("frame send once", fake.frame_sends == 1);
+  }
+
+  {
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    req.headless = true;
+    expect_true("headless play", ctrl.play(req));
+    expect_true("spawn headless", fake.last_spawn.headless);
+  }
+
+  {
+    FakeSession fake;
+    fake.polls_until_frame = 2;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play for wait frame", ctrl.play(req));
+    ctrl.poll();
+    expect_true("pause for wait frame", ctrl.pause());
+    expect_true("one-shot empty while delayed", !ctrl.requestPlayFrame());
+    fake.polls_until_frame = 2;
+    fake.frame_queued = false;
+    expect_true("wait on poll", ctrl.waitForPlayFrame(1000));
+    expect_true("waited frame 16:9", ctrl.lastPlayFrame().width == 16 &&
+                                         ctrl.lastPlayFrame().height == 9);
   }
 
   consoleViewSettings() = ConsoleViewSettings{};

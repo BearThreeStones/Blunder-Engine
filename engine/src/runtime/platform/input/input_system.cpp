@@ -95,7 +95,9 @@ void InputSystem::pollKeyboardState() {
   if (alt_key_pressed && !m_alt_key_was_pressed) {
     eastl::shared_ptr<WindowSystem> window_system =
         g_runtime_global_context.m_window_system;
-    window_system->setFocusMode(!window_system->getFocusMode());
+    if (window_system) {
+      window_system->setFocusMode(!window_system->getFocusMode());
+    }
   }
   m_alt_key_was_pressed = alt_key_pressed;
 }
@@ -112,7 +114,8 @@ void InputSystem::pollMouseState() {
   }
 
   // Only track delta when in focus mode (cursor captured)
-  if (g_runtime_global_context.m_window_system->getFocusMode()) {
+  if (g_runtime_global_context.m_window_system &&
+      g_runtime_global_context.m_window_system->getFocusMode()) {
     m_cursor_delta_x = static_cast<int>(m_last_cursor_x - current_x);
     m_cursor_delta_y = static_cast<int>(m_last_cursor_y - current_y);
   }
@@ -127,6 +130,9 @@ void InputSystem::clear() {
 }
 
 void InputSystem::calculateCursorDeltaAngles() {
+  if (!g_runtime_global_context.m_window_system) {
+    return;
+  }
   eastl::array<int, 2> window_size =
       g_runtime_global_context.m_window_system->getWindowSize();
 
@@ -154,6 +160,10 @@ void InputSystem::tick() {
   // Update invalid flag based on window focus
   eastl::shared_ptr<WindowSystem> window_system =
       g_runtime_global_context.m_window_system;
+  if (!window_system) {
+    m_game_command |= (unsigned int)GameCommand::invalid;
+    return;
+  }
   if (window_system->getFocusMode()) {
     m_game_command &=
         (k_complement_control_command ^ (unsigned int)GameCommand::invalid);

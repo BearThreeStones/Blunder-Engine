@@ -104,8 +104,6 @@ bool hasDeviceExtension(VkPhysicalDevice physical_device, const char* name) {
 }  // namespace
 
 void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
-  ASSERT(info.window_system);
-
   m_window_system = info.window_system;
 #ifdef NDEBUG // 非调试模式
   m_enable_validation = false;
@@ -113,10 +111,8 @@ void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
   m_enable_validation = info.enable_validation;
 #endif
 
-  // Headless mode: Slint Skia owns presentation on the window's HWND. The
-  // engine's Vulkan context only renders to off-screen images and reads
-  // them back to CPU; we no longer need a surface, swapchain, or present
-  // queue here.
+  // Headless: no VkSurfaceKHR / swapchain. Windowed: Slint Skia owns HWND
+  // present; the engine still renders off-screen.
   LOG_INFO("[VulkanContext::initialize] creating Vulkan instance");
   createInstance();
   LOG_INFO("[VulkanContext::initialize] setting up debug messenger");
@@ -341,16 +337,17 @@ void VulkanContext::createInstance() {
       "VK_KHR_get_physical_device_properties2";
   constexpr const char* k_surface_caps2_extension =
       "VK_KHR_get_surface_capabilities2";
-  if (hasInstanceExtension(k_surface_extension)) {
+  const bool want_surface = m_window_system != nullptr;
+  if (want_surface && hasInstanceExtension(k_surface_extension)) {
     instance_extensions.push_back(k_surface_extension);
   }
-  if (hasInstanceExtension(k_win32_surface_extension)) {
+  if (want_surface && hasInstanceExtension(k_win32_surface_extension)) {
     instance_extensions.push_back(k_win32_surface_extension);
   }
   if (hasInstanceExtension(k_phys_props2_extension)) {
     instance_extensions.push_back(k_phys_props2_extension);
   }
-  if (hasInstanceExtension(k_surface_caps2_extension)) {
+  if (want_surface && hasInstanceExtension(k_surface_caps2_extension)) {
     instance_extensions.push_back(k_surface_caps2_extension);
   }
 
@@ -587,7 +584,8 @@ void VulkanContext::createLogicalDevice() {
   // swapchain (the engine renders off-screen and never presents itself).
   eastl::vector<const char*> device_extensions;
   constexpr const char* k_swapchain_extension = "VK_KHR_swapchain";
-  if (hasDeviceExtension(m_physical_device, k_swapchain_extension)) {
+  if (m_window_system != nullptr &&
+      hasDeviceExtension(m_physical_device, k_swapchain_extension)) {
     device_extensions.push_back(k_swapchain_extension);
   }
   create_info.enabledExtensionCount =

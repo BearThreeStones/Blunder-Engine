@@ -29,7 +29,8 @@ class BlunderEngine {
                        std::filesystem::path{},
                    EngineHostMode host_mode = EngineHostMode::Editor);
   void startEngine(const std::filesystem::path& project_root,
-                   EngineHostMode host_mode, const eastl::string& play_scene);
+                   EngineHostMode host_mode, const eastl::string& play_scene,
+                   bool headless = false);
   void shutdownEngine();
 
   /// Editor path uses startup scene env/default. Player passes CLI `--scene`.

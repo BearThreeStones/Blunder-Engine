@@ -7,6 +7,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "runtime/engine.h"
+#include "runtime/function/global/engine_host_mode.h"
 #include "runtime/project/editor_launch.h"
 
 namespace {
@@ -43,7 +44,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
 
     g_engine = new Blunder::BlunderEngine();
     *appstate = g_engine;
-    g_engine->startEngine(launch.project_root);
+    g_engine->startEngine(launch.project_root, Blunder::EngineHostMode::Editor,
+                          {}, launch.headless);
     g_engine->initialize();
     return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {

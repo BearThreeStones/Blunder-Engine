@@ -9,6 +9,7 @@ namespace Blunder {
 struct EditorSessionLaunch {
   bool ok{false};
   std::filesystem::path project_root;
+  bool headless{false};
   eastl::string error;
 };
 

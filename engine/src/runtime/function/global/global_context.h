@@ -56,11 +56,16 @@ class RuntimeGlobalContext {
   void startSystems(
       const std::filesystem::path& project_root = std::filesystem::path{},
       EngineHostMode host_mode = EngineHostMode::Editor,
-      const eastl::string& play_scene = {});
+      const eastl::string& play_scene = {}, bool headless = false);
   // destroy all global systems
   void shutdownSystems();
 
   EngineHostMode hostMode() const { return m_host_mode; }
+  bool isHeadless() const { return m_headless; }
+
+  /// Headless Player Stop / process-exit path (no OS window to close).
+  void requestQuit() { m_quit_requested = true; }
+  bool isQuitRequested() const { return m_quit_requested; }
 
   /// Player Pause: skip Behaviour Tick while keeping render/orbit alive.
   bool isPlayPaused() const { return m_play_paused; }
@@ -150,6 +155,9 @@ class RuntimeGlobalContext {
 
  private:
   EngineHostMode m_host_mode{EngineHostMode::Editor};
+  bool m_headless{false};
+  bool m_headless_sdl_owned{false};
+  bool m_quit_requested{false};
   bool m_play_paused{false};
   bool m_content_browser_input_focus{false};
   bool m_inline_rename_active{false};

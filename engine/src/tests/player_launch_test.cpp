@@ -65,6 +65,7 @@ int main() {
     expect_true("scene set",
                 opts.scene == "assets/Scenes/main.scene.asset");
     expect_true("play-ipc empty by default", opts.play_ipc.empty());
+    expect_true("windowed by default", !opts.headless);
   }
 
   {
@@ -95,6 +96,19 @@ int main() {
     expect_true("scene before root",
                 opts.scene == "assets/Scenes/main.scene.asset");
     expect_true("ipc last", opts.play_ipc == "pipe:play");
+  }
+
+  {
+    std::vector<std::string> args = {
+        "engine_player", "--project-root", "C:/Games/Demo", "--scene",
+        "assets/Scenes/main.scene.asset", "--headless"};
+    auto argv = makeArgv(args);
+    const PlayerLaunch opts =
+        parsePlayerLaunch(static_cast<int>(argv.size()), argv.data());
+    expect_true("headless player ok", opts.ok);
+    expect_true("headless player flag", opts.headless);
+    expect_true("headless still has scene",
+                opts.scene == "assets/Scenes/main.scene.asset");
   }
 
   if (g_failures != 0) {

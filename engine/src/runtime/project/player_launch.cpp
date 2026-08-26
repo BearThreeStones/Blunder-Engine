@@ -10,6 +10,7 @@ PlayerLaunch parsePlayerLaunch(int argc, char** argv) {
   std::filesystem::path project_root;
   std::string scene;
   std::string play_ipc;
+  bool headless = false;
 
   for (int i = 1; i < argc; ++i) {
     const char* arg = argv[i];
@@ -34,6 +35,10 @@ PlayerLaunch parsePlayerLaunch(int argc, char** argv) {
       }
       continue;
     }
+    if (std::strcmp(arg, "--headless") == 0) {
+      headless = true;
+      continue;
+    }
   }
 
   if (project_root.empty()) {
@@ -55,6 +60,7 @@ PlayerLaunch parsePlayerLaunch(int argc, char** argv) {
   options.project_root = std::move(project_root);
   options.scene = std::move(scene);
   options.play_ipc = std::move(play_ipc);
+  options.headless = headless;
   return options;
 }
 

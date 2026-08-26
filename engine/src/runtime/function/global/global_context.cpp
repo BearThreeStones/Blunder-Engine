@@ -2,6 +2,8 @@
 
 #include <cstdlib>
 
+#include <SDL3/SDL.h>
+
 #include "runtime/core/base/macro.h"
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/core/log/console_ring.h"
@@ -182,9 +184,14 @@ RuntimeGlobalContext g_runtime_global_context;
 
 void RuntimeGlobalContext::startSystems(
     const std::filesystem::path& project_root, EngineHostMode host_mode,
-    const eastl::string& play_scene) {
+    const eastl::string& play_scene, bool headless) {
   m_host_mode = host_mode;
+  m_headless = headless;
+  m_headless_sdl_owned = false;
+  m_quit_requested = false;
   const bool player_host = host_mode == EngineHostMode::Player;
+  const bool create_os_window = hostCreatesOsWindow(headless);
+  const bool mount_editor_shell = hostMountsEditorShell(host_mode, headless);
   m_play_paused = false;
 
   m_memory_system.initialize();
@@ -317,12 +324,20 @@ void RuntimeGlobalContext::startSystems(
   // m_world_manager = eastl::make_shared<WorldManager>();
   // m_world_manager->initialize();
 
-  m_window_system = eastl::make_shared<WindowSystem>();
-  WindowCreateInfo window_create_info;
-  if (player_host) {
-    window_create_info.title = "Blunder Player";
+  if (create_os_window) {
+    m_window_system = eastl::make_shared<WindowSystem>();
+    WindowCreateInfo window_create_info;
+    if (player_host) {
+      window_create_info.title = "Blunder Player";
+    }
+    m_window_system->initialize(window_create_info);
+  } else if (!SDL_WasInit(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+      LOG_FATAL("[RuntimeGlobalContext] Headless SDL_Init failed: {}",
+                SDL_GetError());
+    }
+    m_headless_sdl_owned = true;
   }
-  m_window_system->initialize(window_create_info);
 
   m_render_system = eastl::make_shared<RenderSystem>();
   RenderSystemInitInfo render_init_info;
@@ -342,14 +357,26 @@ void RuntimeGlobalContext::startSystems(
     }
   }
 
-  if (player_host) {
-    // Player: window + engine loop without editor Slint shell / dock.
-    LOG_INFO(
-        "[RuntimeGlobalContext] Player host mode �?skipping Slint editor "
-        "shell");
+  if (!mount_editor_shell) {
+    if (player_host) {
+      LOG_INFO(
+          "[RuntimeGlobalContext] Player host mode — skipping Slint editor "
+          "shell");
+    } else {
+      LOG_INFO(
+          "[RuntimeGlobalContext] Headless Editor — skipping window, Slint, "
+          "UiHost, viewport sink/bridge");
+    }
     m_render_system->initializeBackend(render_init_info);
     m_render_system->initialize(render_init_info);
     wireMeshPreviewThumbnails(*this);
+    if (hostMountsPlaySession(host_mode)) {
+      m_play_session = eastl::make_unique<PlaySessionController>();
+      m_animation_preview = eastl::make_unique<AnimationPreviewController>();
+      m_animation_sync_cine_preview =
+          eastl::make_unique<AnimationSyncCinePreviewController>();
+      m_placement_preview = eastl::make_unique<PlacementPreviewController>();
+    }
   } else {
     m_ui_host = eastl::make_shared<UiHost>();
 
@@ -498,6 +525,13 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   m_window_system.reset();
+
+  if (m_headless_sdl_owned) {
+    SDL_Quit();
+    m_headless_sdl_owned = false;
+  }
+  m_headless = false;
+  m_quit_requested = false;
 
   // m_world_manager->clear();
   // m_world_manager.reset();
