@@ -27,7 +27,7 @@
 
 - [x] 5.1 Content Browser chrome (toolbar, search, tree, grid/Details, thumbnails) uses Editor controls; IA, Pull, virtual paths unchanged; selected thumb uses accent outline
 - [x] 5.2 History panel chrome uses Editor controls; filters/rows/grouping unchanged
-- [x] 5.3 Viewport tool strips (transform, projection, animation preview) stay overlays; floating Toolbar look; checked tool tints with accent
+- [x] 5.3 Viewport tool strips (transform, projection) stay overlays; floating Toolbar look; checked tool tints with accent. Edit animation preview lives in the Animation dock, not as a viewport overlay.
 - [x] 5.4 Project Manager: Godot layout kept; list rows as hairline cards with accent selection; New Project / Open accent primaries; remaining `std-widgets` removed
 
 ## 6. Inspector and Hierarchy interiors

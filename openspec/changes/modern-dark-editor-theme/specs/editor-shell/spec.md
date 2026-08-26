@@ -19,7 +19,7 @@ The Editor Session window SHALL have an Application Bar on Base 1, about 48px ta
 - **AND** hovering Save fills the ghost control
 
 ### Requirement: Viewport tool strips stay overlays
-Transform tools, projection toggle, and animation preview SHALL remain Slint overlays on the editor viewport. They SHALL use Editor controls and a floating Toolbar treatment (translucent Base 3, hairline, 10px radius, accent on the checked tool). They SHALL NOT move onto the Application Bar or become a Scene window Toolbar in this pass.
+Transform tools and the projection toggle SHALL remain Slint overlays on the editor viewport. They SHALL use Editor controls and a floating Toolbar treatment (translucent Base 3, hairline, 10px radius, accent on the checked tool). They SHALL NOT move onto the Application Bar or become a Scene window Toolbar in this pass. Edit animation preview lives in the Animation dock panel, not as a viewport overlay.
 
 #### Scenario: Transform tools overlay the viewport
 - **WHEN** the Scene viewport is visible
