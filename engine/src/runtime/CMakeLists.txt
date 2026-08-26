@@ -170,6 +170,8 @@ add_library(engine_runtime STATIC
     "project/play_preflight.cpp"
     "project/authorship_issue.h"
     "project/play_step.h"
+    "project/play_frame.h"
+    "project/play_frame.cpp"
     "project/play_diagnose.h"
     "project/play_diagnose.cpp"
     "project/project_list.h"

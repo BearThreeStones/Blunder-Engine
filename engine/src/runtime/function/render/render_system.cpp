@@ -73,6 +73,7 @@
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
 #include "runtime/function/render/vulkan_backend/vulkan_offscreen_target.h"
 #include "runtime/function/render/vulkan_backend/vulkan_render_backend.h"
+#include <vk_mem_alloc.h>
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset/material_asset.h"

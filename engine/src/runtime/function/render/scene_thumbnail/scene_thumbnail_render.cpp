@@ -1,5 +1,8 @@
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
 
+#include "EASTL/shared_ptr.h"
+#include "EASTL/vector.h"
+
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/scene_thumbnail/capture.h"
 #include "runtime/function/global/global_context.h"

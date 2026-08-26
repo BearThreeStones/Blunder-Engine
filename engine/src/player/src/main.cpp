@@ -1,6 +1,9 @@
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <memory>
+
+#include "EASTL/vector.h"
 
 #include <SDL3/SDL.h>
 #define SDL_MAIN_USE_CALLBACKS
@@ -11,7 +14,9 @@
 #include "runtime/function/global/engine_host_mode.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/project/play_frame.h"
 #include "runtime/project/play_ipc.h"
+#include "runtime/project/play_step.h"
 #include "runtime/project/player_launch.h"
 
 namespace {
@@ -19,10 +24,12 @@ namespace {
 Blunder::BlunderEngine* g_engine = nullptr;
 Blunder::PlayerLaunch g_launch{};
 std::unique_ptr<Blunder::PlayIpcClient> g_play_ipc;
+uint32_t g_pending_step_ticks = 0;
+bool g_pending_play_frame = false;
 
-void handlePlayIpcCommand(Blunder::PlayIpcCommand command) {
+void handlePlayIpcCommand(Blunder::PlayIpcHostCommand command) {
   using Blunder::PlayIpcCommand;
-  switch (command) {
+  switch (command.command) {
     case PlayIpcCommand::Pause:
       Blunder::g_runtime_global_context.setPlayPaused(true);
       break;
@@ -34,10 +41,40 @@ void handlePlayIpcCommand(Blunder::PlayIpcCommand command) {
         Blunder::g_runtime_global_context.m_window_system->requestClose();
       }
       break;
+    case PlayIpcCommand::Step:
+      if (!Blunder::g_runtime_global_context.isPlayPaused()) {
+        if (g_play_ipc) {
+          g_play_ipc->sendError(Blunder::k_request_play_step_requires_pause);
+        }
+        break;
+      }
+      g_pending_step_ticks = command.step_ticks;
+      break;
+    case PlayIpcCommand::Frame:
+      g_pending_play_frame = true;
+      break;
     case PlayIpcCommand::Unknown:
     default:
       break;
   }
+}
+
+void sendPlayFrame() {
+  if (!g_play_ipc) {
+    return;
+  }
+  eastl::vector<uint8_t> rgba;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  if (!Blunder::capturePlayProcessFrame(rgba, width, height)) {
+    return;
+  }
+  Blunder::PlayIpcFrameRecord rec;
+  rec.width = width;
+  rec.height = height;
+  rec.encoding = "rgba8";
+  rec.rgba.assign(rgba.begin(), rgba.end());
+  g_play_ipc->sendFrame(rec);
 }
 
 bool connectPlayIpc(const Blunder::PlayIpcEndpoint& endpoint) {
@@ -134,9 +171,25 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         g_play_ipc->sendLog(rec);
       }
     }
-    const float delta_time = engine->calculateDeltaTime();
-    if (!engine->tickOneFrame(delta_time)) {
-      return SDL_APP_SUCCESS;
+    if (g_pending_step_ticks > 0) {
+      const uint32_t ticks = g_pending_step_ticks;
+      g_pending_step_ticks = 0;
+      if (Blunder::g_runtime_global_context.isPlayPaused()) {
+        Blunder::g_runtime_global_context.setPlayPaused(false);
+        Blunder::applyPlayStep(true, ticks, [&](float dt) {
+          (void)engine->tickOneFrame(dt);
+        });
+        Blunder::g_runtime_global_context.setPlayPaused(true);
+      }
+    } else {
+      const float delta_time = engine->calculateDeltaTime();
+      if (!engine->tickOneFrame(delta_time)) {
+        return SDL_APP_SUCCESS;
+      }
+    }
+    if (g_pending_play_frame) {
+      g_pending_play_frame = false;
+      sendPlayFrame();
     }
     return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {

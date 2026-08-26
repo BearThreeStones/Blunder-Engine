@@ -8,6 +8,7 @@
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/project/play_frame.h"
 #include "runtime/project/play_step.h"
 
 #include <cmath>
@@ -91,6 +92,14 @@ int main() {
     expect_true("paused step tick count", ticks == 3);
     expect_true("paused step dt 1/60",
                 std::fabs(last_dt - k_play_step_dt) < 1e-6f);
+  }
+
+  {
+    eastl::vector<uint8_t> pixels;
+    uint32_t w = 0;
+    uint32_t h = 0;
+    expect_true("play frame without render system fails",
+                !capturePlayProcessFrame(pixels, w, h));
   }
 
   FakeStillGpu gpu;
