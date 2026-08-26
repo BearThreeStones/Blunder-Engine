@@ -48,6 +48,7 @@ int main() {
       "GuiClose.svg",
       "Pin.svg",
       "Search.svg",
+      "ImportCheck.svg",
       "Reload.svg",
       "Folder.svg",
       "GuiTreeArrowRight.svg",
@@ -112,6 +113,7 @@ int main() {
            "export component EditorIconInstance",
            "export component EditorIconUnlinked",
            "Search.svg",
+           "ImportCheck.svg",
            "Reload.svg",
            "Folder.svg",
            "GuiTreeArrowRight.svg",
@@ -162,6 +164,46 @@ int main() {
   // UTF-8 U+26D3 chains
   expect_true("inspector has no scale-link chain emoji",
               !contains(inspector, "\xE2\x9B\x93"));
+
+  const std::string controls = read_file(slint_dir / "editor_controls.slint");
+  expect_true("editor_controls readable", !controls.empty());
+  expect_true("search field uses EditorGlyphs.search",
+              contains(controls, "EditorGlyphs.search"));
+  expect_true("toggle uses EditorGlyphs.check",
+              contains(controls, "EditorGlyphs.check"));
+  expect_true("editor_icons has console-log glyph",
+              contains(editor_icons, "console-log") &&
+                  contains(editor_icons, "console_sev_log.svg"));
+  expect_true("editor_icons has console-warning glyph",
+              contains(editor_icons, "console-warning") &&
+                  contains(editor_icons, "console_sev_warning.svg"));
+  expect_true("editor_icons has console-error glyph",
+              contains(editor_icons, "console-error") &&
+                  contains(editor_icons, "console_sev_error.svg"));
+  expect_true("console_sev_log.svg exists",
+              fs::is_regular_file(slint_dir / "console_sev_log.svg"));
+  expect_true("console_sev_warning.svg exists",
+              fs::is_regular_file(slint_dir / "console_sev_warning.svg"));
+  expect_true("console_sev_error.svg exists",
+              fs::is_regular_file(slint_dir / "console_sev_error.svg"));
+
+  const std::string console = read_file(slint_dir / "console_panel.slint");
+  expect_true("console_panel readable", !console.empty());
+  expect_true("console_panel uses ConsoleSeverityIcon",
+              contains(console, "ConsoleSeverityIcon"));
+  expect_true("console_panel uses ConsoleFilterButton",
+              contains(console, "ConsoleFilterButton"));
+  expect_true("console_panel uses console-log glyph",
+              contains(console, "EditorGlyphs.console-log"));
+  expect_true("console_panel uses console-warning glyph",
+              contains(console, "EditorGlyphs.console-warning"));
+  expect_true("console_panel uses console-error glyph",
+              contains(console, "EditorGlyphs.console-error"));
+  // UTF-8: U+2315 telephone recorder (search stand-in), U+2713 check mark
+  expect_true("editor_controls has no search unicode",
+              !contains(controls, "\xE2\x8C\x95"));
+  expect_true("editor_controls has no check unicode",
+              !contains(controls, "\xE2\x9C\x93"));
 
   if (g_failures == 0) {
     std::printf("godot_editor_icons_test: all passed (%d svgs)\n", svg_count);

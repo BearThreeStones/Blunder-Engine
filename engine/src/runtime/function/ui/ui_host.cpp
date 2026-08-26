@@ -180,7 +180,8 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
               g_runtime_global_context.m_animation_preview.get()) {
         SceneInstance* scene =
             services.scene ? services.scene->getActiveInstance() : nullptr;
-        preview->bindSelection(scene, services.selection->getPrimarySelection());
+        preview->bindSelection(scene, services.selection->getPrimarySelection(),
+                               services.selection->getSelectedIds().size());
       }
       if (AnimationSyncCinePreviewController* sync_cine_preview =
               g_runtime_global_context.m_animation_sync_cine_preview.get()) {
@@ -555,10 +556,10 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       break;
     case UiEventKind::animPreviewEnterCine: {
-      AnimationSyncCinePreviewController* sync_cine_preview =
-          g_runtime_global_context.m_animation_sync_cine_preview.get();
-      if (sync_cine_preview != nullptr) {
-        sync_cine_preview->enterCine(false);
+      AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      if (preview != nullptr && preview->windowBound()) {
+        preview->enterCine();
       }
       if (services.render_system) {
         services.render_system->requestViewportRedraw();
@@ -566,10 +567,10 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       break;
     }
     case UiEventKind::animPreviewEndCine: {
-      AnimationSyncCinePreviewController* sync_cine_preview =
-          g_runtime_global_context.m_animation_sync_cine_preview.get();
-      if (sync_cine_preview != nullptr) {
-        sync_cine_preview->endCine();
+      AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get();
+      if (preview != nullptr) {
+        preview->endCine();
       }
       if (services.render_system) {
         services.render_system->requestViewportRedraw();

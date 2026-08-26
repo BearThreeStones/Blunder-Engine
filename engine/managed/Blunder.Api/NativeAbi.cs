@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v10 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v11 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -123,6 +123,7 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<int> cine_end;
     public delegate* unmanaged[Cdecl]<int*, int> cine_is_in_cine;
     public delegate* unmanaged[Cdecl]<int*, int> cine_is_gameplay_input_suppressed;
+    public delegate* unmanaged[Cdecl]<int, byte*, byte*, int> log;
 }
 
 /// <summary>

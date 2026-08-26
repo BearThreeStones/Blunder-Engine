@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Console v1 — mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --app-bar: #191B1F;
+      --window: #2A2D31;
+      --toolbar: #34383D;
+      --field: #1E2125;
+      --viewport: #1E2125;
+      --hairline: #3B3F45;
+      --window-text: #B8BFC6;
+      --text: #E8EBEF;
+      --muted: #98A0A8;
+      --icon: #B3BBC4;
+      --button: #3A3E44;
+      --button-hover: #454A51;
+      --button-pressed: #4E545C;
+      --accent: #4C8DFF;
+      --accent-text: #fff;
+      --accent-hover: #6CA2FF;
+      --accent-line: #4C8DFF73;
+      --accent-soft: #4C8DFF2B;
+      --accent-sel: #4C8DFF38;
+      --accent-sel-text: #85B2FF;
+      --warn: #E6B84D;
+      --error: #E25B5B;
+      --radius-ctl: 6px;
+      --radius-surface: 10px;
+      --line: 22px;
+      --font: 12px;
+      --font-sm: 11px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #111318;
+      color: var(--text);
+      font: var(--font)/1.3 Inter, system-ui, sans-serif;
+    }
+    button { font: inherit; color: inherit; }
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 48px 1fr;
+      min-height: 0;
+    }
+    .appbar {
+      background: var(--app-bar);
+      border-bottom: 1px solid var(--hairline);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 10px;
+    }
+    .appbar-left, .appbar-right {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .appbar-right { justify-content: flex-end; }
+    .ghost {
+      height: 22px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: var(--radius-ctl);
+      background: transparent;
+      color: var(--window-text);
+      cursor: pointer;
+    }
+    .ghost:hover { background: var(--button); color: var(--text); }
+    .play-cluster {
+      display: flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--hairline);
+      border-radius: 8px;
+      background: #15171b;
+    }
+    .play-cluster button {
+      width: 28px;
+      height: 26px;
+      border: 0;
+      border-radius: var(--radius-ctl);
+      background: transparent;
+      color: var(--icon);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+    .play-cluster button:hover { background: var(--button); }
+    .play-cluster button.play-on {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+    .play-cluster button:disabled { opacity: .4; cursor: default; }
+    .play-cluster svg { width: 14px; height: 14px; fill: currentColor; }
+    .badge-play {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: var(--font-sm);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 220px 1fr 260px;
+      grid-template-rows: 1fr 340px;
+      min-height: 0;
+    }
+    .dock {
+      background: var(--window);
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 0 1px var(--hairline);
+    }
+    .dock.bottom { grid-column: 1 / -1; }
+    .dock-tabs {
+      height: 28px;
+      padding: 3px 6px;
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      background: var(--app-bar);
+      border-bottom: 1px solid var(--hairline);
+    }
+    .pill {
+      height: 22px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: 500 var(--font)/22px Inter, sans-serif;
+      cursor: pointer;
+    }
+    .pill.active { background: var(--window); color: var(--text); }
+    .dock-body { flex: 1; min-height: 0; overflow: auto; }
+    .row {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      color: var(--window-text);
+    }
+    .row.selected {
+      background: var(--accent-sel);
+      color: var(--accent-sel-text);
+    }
+
+    .viewport-col { display: flex; flex-direction: column; min-width: 0; }
+    .viewport {
+      flex: 1;
+      background:
+        linear-gradient(#262a2e 1px, transparent 1px) 0 0 / 32px 32px,
+        linear-gradient(90deg, #262a2e 1px, transparent 1px) 0 0 / 32px 32px,
+        var(--viewport);
+      position: relative;
+    }
+    .gizmo-bar {
+      position: absolute;
+      left: 8px; top: 8px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px;
+      background: color-mix(in srgb, var(--toolbar) 88%, transparent);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-surface);
+      box-shadow: 0 6px 20px #0006;
+      color: var(--icon);
+      font-size: var(--font-sm);
+    }
+    .caption {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      color: var(--muted);
+      font-size: var(--font-sm);
+      background: #15171bcc;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-ctl);
+      padding: 4px 8px;
+    }
+
+    .insp { padding: 8px; }
+    .insp-h { font-weight: 600; font-size: 13px; margin: 8px 0 6px; }
+    .field-row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 6px;
+      align-items: center;
+      height: 22px;
+      margin-top: 4px;
+    }
+    .field-row label { color: var(--muted); }
+    .cell {
+      height: 22px;
+      background: var(--field);
+      border: 1px solid var(--hairline);
+      border-radius: 3px;
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+    }
+
+    .console {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      background: var(--window);
+    }
+    .console-toolbar {
+      height: 34px;
+      background: var(--toolbar);
+      border-bottom: 1px solid var(--hairline);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      flex-wrap: nowrap;
+    }
+    .tb {
+      height: 22px;
+      padding: 0 8px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-ctl);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .tb:hover { background: var(--button-hover); }
+    .tb.on {
+      background: var(--accent-soft);
+      border-color: var(--accent-line);
+      color: var(--accent-sel-text);
+    }
+    .tb .count {
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 4px;
+      background: var(--field);
+      color: var(--muted);
+      font-size: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tb.on .count { color: var(--accent-sel-text); background: #1a2434; }
+    .search {
+      margin-left: auto;
+      height: 22px;
+      width: 180px;
+      background: var(--field);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-ctl);
+      color: var(--text);
+      padding: 0 8px;
+      outline: none;
+    }
+    .search:focus { border-color: var(--accent-line); }
+    .search::placeholder { color: var(--muted); }
+
+    .console-split {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 96px;
+    }
+    .msg-list {
+      overflow: auto;
+      background: var(--field);
+    }
+    .msg {
+      display: grid;
+      grid-template-columns: 62px 16px 52px 1fr 28px;
+      gap: 8px;
+      align-items: center;
+      height: 22px;
+      padding: 0 10px;
+      cursor: pointer;
+      color: var(--text);
+      border-left: 2px solid transparent;
+    }
+    .msg:hover { background: #24282d; }
+    .msg.sel {
+      background: var(--accent-sel);
+      color: var(--accent-sel-text);
+    }
+    .msg.sev-warning { border-left-color: var(--warn); }
+    .msg.sev-error { border-left-color: var(--error); }
+    .msg .time { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .msg.sel .time { color: var(--accent-sel-text); opacity: .8; }
+    .msg .origin {
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: .02em;
+    }
+    .msg .text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .msg .n {
+      justify-self: end;
+      min-width: 18px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 8px;
+      background: var(--toolbar);
+      color: var(--muted);
+      font-size: 10px;
+      text-align: center;
+      display: none;
+    }
+    .msg .n.show { display: inline-flex; align-items: center; justify-content: center; }
+    .ico-sev { width: 14px; height: 14px; display: block; }
+    .detail {
+      background: var(--window);
+      border-top: 1px solid var(--hairline);
+      padding: 8px 12px;
+      overflow: auto;
+      font: 11px/1.45 "JetBrains Mono", ui-monospace, monospace;
+      color: var(--window-text);
+      white-space: pre-wrap;
+    }
+    .detail .head { color: var(--text); margin-bottom: 6px; font-family: Inter, sans-serif; }
+    .empty {
+      color: var(--muted);
+      padding: 16px 12px;
+    }
+    .browser-page { height: 100%; display: flex; flex-direction: column; }
+    .browser-inner { height: 28px; background: var(--app-bar); display: flex; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--hairline); }
+    .thumb-grid {
+      flex: 1;
+      padding: 10px;
+      display: flex;
+      gap: 12px;
+    }
+    .thumb {
+      width: 72px;
+      text-align: center;
+      color: var(--muted);
+      font-size: var(--font-sm);
+    }
+    .thumb .box {
+      width: 72px;
+      height: 72px;
+      border-radius: var(--radius-surface);
+      background: var(--field);
+      border: 1px solid var(--hairline);
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="appbar">
+      <div class="appbar-left">
+        <button class="ghost" type="button">Save</button>
+        <button class="ghost" type="button">Undo</button>
+      </div>
+      <div style="display:flex;align-items:center">
+        <div class="play-cluster" id="playCluster">
+          <button type="button" id="btnPlay" class="play-on" title="Play"></button>
+          <button type="button" id="btnPause" title="Pause"></button>
+          <button type="button" id="btnStop" title="Stop"></button>
+        </div>
+        <span class="badge-play" id="playLabel">Playing</span>
+      </div>
+      <div class="appbar-right">
+        <button class="ghost" type="button">View</button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="dock">
+        <div class="dock-tabs"><button class="pill active" type="button">Hierarchy</button></div>
+        <div class="dock-body">
+          <div class="row">Scene</div>
+          <div class="row" style="padding-left:18px">Main Camera</div>
+          <div class="row selected" style="padding-left:18px">Player</div>
+          <div class="row" style="padding-left:18px">Directional Light</div>
+        </div>
+      </aside>
+
+      <div class="viewport-col">
+        <div class="viewport">
+          <div class="gizmo-bar">Viewport · mockup · 不是引擎本体</div>
+        </div>
+      </div>
+
+      <aside class="dock">
+        <div class="dock-tabs"><button class="pill active" type="button">Inspector</button></div>
+        <div class="insp">
+          <div class="insp-h">Player</div>
+          <div class="field-row"><label>Position</label><div class="cell">0, 0, 0</div></div>
+          <div class="insp-h">PlayerMove</div>
+          <div class="field-row"><label>Speed</label><div class="cell">4.2</div></div>
+        </div>
+      </aside>
+
+      <section class="dock bottom">
+        <div class="dock-tabs">
+          <button class="pill" type="button" data-dock="browser" id="tabBrowser">Content Browser</button>
+          <button class="pill active" type="button" data-dock="console" id="tabConsole">Console</button>
+        </div>
+        <div class="dock-body" id="bottomBody"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const ICO = {
+      play: '<svg viewBox="0 0 14 14"><path d="M4 2.2v9.6L12 7z"/></svg>',
+      pause: '<svg viewBox="0 0 14 14"><path d="M3 2h3v10H3zm5 0h3v10H8z"/></svg>',
+      stop: '<svg viewBox="0 0 14 14"><rect x="3" y="3" width="8" height="8" rx="1"/></svg>',
+      log: '<svg class="ico-sev" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.2" fill="none" stroke="#B8BFC6" stroke-width="1.4"/><path d="M7 6.2v3.6" stroke="#B8BFC6" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="4.4" r=".7" fill="#B8BFC6"/></svg>',
+      warning: '<svg class="ico-sev" viewBox="0 0 14 14"><path d="M7 1.6 13 12.2H1z" fill="none" stroke="#E6B84D" stroke-width="1.3" stroke-linejoin="round"/><path d="M7 5.4v3.2" stroke="#E6B84D" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="10.1" r=".7" fill="#E6B84D"/></svg>',
+      error: '<svg class="ico-sev" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.2" fill="none" stroke="#E25B5B" stroke-width="1.4"/><path d="M5 5l4 4M9 5l-4 4" stroke="#E25B5B" stroke-width="1.4" stroke-linecap="round"/></svg>',
+    };
+
+    const STACK_LOG = `Blunder.Debug.Log (Blunder.Api)
+PlayerMove.Tick (Game.Scripts)
+Blunder.ScriptHost.OnTick`;
+    const STACK_WARN = `Blunder.Debug.LogWarning (Blunder.Api)
+PlayerMove.Tick (Game.Scripts)
+Blunder.ScriptHost.OnTick`;
+    const STACK_EX = `System.NullReferenceException: Object reference not set
+  at PlayerMove.Tick (Game.Scripts)
+  at Blunder.ScriptHost.OnTick`;
+
+    const RAW = [
+      { t: "21:04:01", sev: "log", origin: "Editor", text: "engine start", stack: "" },
+      { t: "21:04:01", sev: "log", origin: "Editor", text: "[BlunderEngine] Slint viewport ready: 1600x900", stack: "" },
+      { t: "21:04:08", sev: "log", origin: "Player", text: "hello", stack: STACK_LOG },
+      { t: "21:04:08", sev: "warning", origin: "Player", text: "clip missing", stack: STACK_WARN },
+      { t: "21:04:08", sev: "warning", origin: "Player", text: "clip missing", stack: STACK_WARN },
+      { t: "21:04:09", sev: "warning", origin: "Player", text: "clip missing", stack: STACK_WARN },
+      { t: "21:04:09", sev: "log", origin: "Editor", text: "[ContentBrowser] imported mesh Hero", stack: "" },
+      { t: "21:04:11", sev: "error", origin: "Player", text: "NullReferenceException: Object reference not set to an instance of an object", stack: STACK_EX },
+      { t: "21:04:12", sev: "error", origin: "Editor", text: "[Play] aborted: no Camera in entry scene", stack: "" },
+    ];
+
+    const state = {
+      dock: "console",
+      browserSub: "fs",
+      collapse: false,
+      clearOnPlay: true,
+      errorPause: false,
+      show: { log: true, warning: true, error: true },
+      search: "",
+      sel: 7,
+      play: "playing",
+      messages: RAW.map((m, i) => ({ ...m, id: i })),
+    };
+
+    document.getElementById("btnPlay").innerHTML = ICO.play;
+    document.getElementById("btnPause").innerHTML = ICO.pause;
+    document.getElementById("btnStop").innerHTML = ICO.stop;
+
+    function keyOf(m) {
+      return m.text + "|" + m.sev + "|" + m.stack + "|" + m.origin;
+    }
+
+    function counts() {
+      const c = { log: 0, warning: 0, error: 0 };
+      for (const m of state.messages) c[m.sev]++;
+      return c;
+    }
+
+    function visible() {
+      const q = state.search.trim().toLowerCase();
+      const filtered = state.messages.filter((m) => {
+        if (!state.show[m.sev]) return false;
+        if (q && !m.text.toLowerCase().includes(q)) return false;
+        return true;
+      });
+      if (!state.collapse) return filtered.map((m) => ({ ...m, n: 1 }));
+      const map = new Map();
+      for (const m of filtered) {
+        const k = keyOf(m);
+        const prev = map.get(k);
+        if (!prev) map.set(k, { ...m, n: 1 });
+        else {
+          prev.n += 1;
+          prev.t = m.t;
+        }
+      }
+      return [...map.values()];
+    }
+
+    function setPlay(mode) {
+      state.play = mode;
+      const play = document.getElementById("btnPlay");
+      const pause = document.getElementById("btnPause");
+      const stop = document.getElementById("btnStop");
+      const label = document.getElementById("playLabel");
+      play.classList.toggle("play-on", mode === "playing");
+      pause.classList.toggle("play-on", mode === "paused");
+      stop.disabled = mode === "stopped";
+      pause.disabled = mode === "stopped";
+      label.textContent = mode === "playing" ? "Playing" : mode === "paused" ? "Paused" : "Stopped";
+    }
+
+    function maybeErrorPause(msg) {
+      if (state.errorPause && msg.sev === "error" && msg.origin === "Player" && state.play === "playing") {
+        setPlay("paused");
+      }
+    }
+
+    function renderPlayButtons() {
+      document.getElementById("btnPlay").onclick = () => {
+        if (state.play === "stopped" && state.clearOnPlay) {
+          state.messages = [];
+          state.sel = -1;
+        }
+        setPlay("playing");
+        render();
+      };
+      document.getElementById("btnPause").onclick = () => {
+        if (state.play === "playing") setPlay("paused");
+        else if (state.play === "paused") setPlay("playing");
+      };
+      document.getElementById("btnStop").onclick = () => setPlay("stopped");
+    }
+
+    function renderBrowser() {
+      return `
+        <div class="browser-page">
+          <div class="browser-inner">
+            <button class="pill ${state.browserSub === "fs" ? "active" : ""}" data-sub="fs" type="button">File System</button>
+            <button class="pill ${state.browserSub === "hist" ? "active" : ""}" data-sub="hist" type="button">History</button>
+          </div>
+          ${state.browserSub === "fs" ? `
+            <div class="thumb-grid">
+              <div class="thumb"><div class="box"></div>Hero</div>
+              <div class="thumb"><div class="box"></div>Walk</div>
+            </div>` : `
+            <div class="msg-list">
+              <div class="row">Spawn Player</div>
+              <div class="row selected">Move Player</div>
+            </div>`}
+        </div>`;
+    }
+
+    function renderConsole() {
+      const c = counts();
+      const rows = visible();
+      const selMsg = rows.find((m) => m.id === state.sel) || rows[rows.length - 1];
+      if (selMsg) state.sel = selMsg.id;
+      const detail = selMsg
+        ? `<div class="head">${esc(selMsg.text)}</div>${esc(selMsg.stack || "(no Console stack — engine LOG_*)")}`
+        : `<span class="empty">No message selected</span>`;
+      const list = rows.length === 0
+        ? `<div class="empty">No messages match the Console filter.</div>`
+        : rows.map((m) => `
+            <div class="msg sev-${m.sev} ${m.id === state.sel ? "sel" : ""}" data-id="${m.id}">
+              <span class="time">${m.t}</span>
+              ${ICO[m.sev]}
+              <span class="origin">${m.origin}</span>
+              <span class="text">${esc(m.text)}</span>
+              <span class="n ${m.n > 1 ? "show" : ""}">${m.n}</span>
+            </div>`).join("");
+      return `
+        <div class="console">
+          <div class="console-toolbar">
+            <button class="tb" type="button" data-act="clear">Clear</button>
+            <button class="tb ${state.collapse ? "on" : ""}" type="button" data-act="collapse">Collapse</button>
+            <button class="tb ${state.clearOnPlay ? "on" : ""}" type="button" data-act="cop">Clear on Play</button>
+            <button class="tb ${state.errorPause ? "on" : ""}" type="button" data-act="ep">Error Pause</button>
+            <button class="tb ${state.show.log ? "on" : ""}" type="button" data-sev="log">${ICO.log} Log <span class="count">${c.log}</span></button>
+            <button class="tb ${state.show.warning ? "on" : ""}" type="button" data-sev="warning">${ICO.warning} Warning <span class="count">${c.warning}</span></button>
+            <button class="tb ${state.show.error ? "on" : ""}" type="button" data-sev="error">${ICO.error} Error <span class="count">${c.error}</span></button>
+            <input class="search" id="consoleSearch" placeholder="Search" value="${esc(state.search)}" />
+          </div>
+          <div class="console-split">
+            <div class="msg-list" id="msgList">${list}</div>
+            <div class="detail">${detail}</div>
+          </div>
+        </div>`;
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    function render() {
+      const body = document.getElementById("bottomBody");
+      document.getElementById("tabBrowser").classList.toggle("active", state.dock === "browser");
+      document.getElementById("tabConsole").classList.toggle("active", state.dock === "console");
+      body.innerHTML = state.dock === "console" ? renderConsole() : renderBrowser();
+      bindBottom();
+      const sel = document.querySelector(".msg.sel");
+      if (sel) sel.scrollIntoView({ block: "nearest" });
+    }
+
+    function bindBottom() {
+      document.querySelectorAll("[data-sub]").forEach((el) => {
+        el.onclick = () => { state.browserSub = el.dataset.sub; render(); };
+      });
+      document.querySelectorAll("[data-act]").forEach((el) => {
+        el.onclick = () => {
+          const a = el.dataset.act;
+          if (a === "clear") { state.messages = []; state.sel = -1; }
+          if (a === "collapse") state.collapse = !state.collapse;
+          if (a === "cop") state.clearOnPlay = !state.clearOnPlay;
+          if (a === "ep") state.errorPause = !state.errorPause;
+          render();
+        };
+      });
+      document.querySelectorAll("[data-sev]").forEach((el) => {
+        el.onclick = () => {
+          state.show[el.dataset.sev] = !state.show[el.dataset.sev];
+          render();
+        };
+      });
+      const search = document.getElementById("consoleSearch");
+      if (search) {
+        search.oninput = () => {
+          state.search = search.value;
+          const list = document.getElementById("msgList");
+          const detail = document.querySelector(".detail");
+          if (!list) return;
+          const rows = visible();
+          list.innerHTML = rows.length === 0
+            ? `<div class="empty">No messages match the Console filter.</div>`
+            : rows.map((m) => `
+                <div class="msg sev-${m.sev} ${m.id === state.sel ? "sel" : ""}" data-id="${m.id}">
+                  <span class="time">${m.t}</span>
+                  ${ICO[m.sev]}
+                  <span class="origin">${m.origin}</span>
+                  <span class="text">${esc(m.text)}</span>
+                  <span class="n ${m.n > 1 ? "show" : ""}">${m.n}</span>
+                </div>`).join("");
+          bindRows();
+          const selMsg = rows.find((m) => m.id === state.sel) || rows[rows.length - 1];
+          if (detail && selMsg) {
+            detail.innerHTML = `<div class="head">${esc(selMsg.text)}</div>${esc(selMsg.stack || "(no Console stack — engine LOG_*)")}`;
+          }
+        };
+      }
+      bindRows();
+    }
+
+    function bindRows() {
+      document.querySelectorAll(".msg").forEach((el) => {
+        el.onclick = () => {
+          const msg = state.messages.find((m) => m.id === Number(el.dataset.id));
+          state.sel = Number(el.dataset.id);
+          if (msg) maybeErrorPause(msg);
+          render();
+        };
+      });
+    }
+
+    document.getElementById("tabBrowser").onclick = () => { state.dock = "browser"; render(); };
+    document.getElementById("tabConsole").onclick = () => { state.dock = "console"; render(); };
+
+    renderPlayButtons();
+    setPlay("playing");
+    render();
+  </script>
+</body>
+</html>

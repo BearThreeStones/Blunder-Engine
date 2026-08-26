@@ -4,6 +4,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/layer/layer_stack.h"
+#include "runtime/core/log/console_ring.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/engine.h"
@@ -194,6 +195,8 @@ void RuntimeGlobalContext::startSystems(
   // m_config_manager->initialize(config_file_path);
 
   m_logger_system = eastl::make_shared<LogSystem>();
+  // Player: Console Messages flush to the editor over Play IPC.
+  ConsoleRing::instance().setForwardEnabled(player_host);
 
   // FileSystem must be live before any system that touches disk (asset
   // loading, shader compilation, configs, ...).

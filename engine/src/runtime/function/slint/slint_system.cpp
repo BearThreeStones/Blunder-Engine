@@ -7,6 +7,7 @@
 #include "project_manager.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -31,6 +32,7 @@
 #include "EASTL/utility.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/log/console_ring.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
@@ -913,6 +915,26 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::animPreviewParamsEdited));
         }));
+    component->on_anim_preview_timescale_pressed([this]() {
+      if (AnimationPreviewController* preview =
+              g_runtime_global_context.m_animation_preview.get()) {
+        m_anim_timescale_before = preview->timeScale();
+        m_anim_timescale_dragging = true;
+      }
+    });
+    component->on_anim_preview_timescale_edited([this]() {
+      applyAnimationPreviewLiveTimeScale();
+    });
+    component->on_anim_preview_seeked([this](float seconds) {
+      applyAnimationPreviewSeek(seconds);
+    });
+    component->on_anim_preview_fire_target_changed(
+        [this](const slint::SharedString& name) {
+          if (AnimationPreviewController* preview =
+                  g_runtime_global_context.m_animation_preview.get()) {
+            preview->setFireTarget(eastl::string(name.data()));
+          }
+        });
     component->on_anim_preview_sync_fire_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::animPreviewSyncFire));
@@ -1389,6 +1411,76 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_history_filter_changed([this]() { syncHistoryPanel(); });
     component->on_history_entry_clicked([this](int stack, int index) {
       jumpHistory(stack, index);
+    });
+    component->on_console_clear_clicked([this]() {
+      ConsoleRing::instance().clear();
+      syncConsolePanel();
+    });
+    component->on_console_collapse_toggled([this]() {
+      if (m_window_component) {
+        consoleViewSettings().collapse =
+            m_window_component->operator->()->get_console_collapse();
+      }
+      syncConsolePanel();
+    });
+    component->on_console_clear_on_play_toggled([this]() {
+      if (!m_window_component) {
+        return;
+      }
+      auto& ui = *m_window_component->operator->();
+      const bool enabled = ui.get_console_clear_on_play();
+      consoleViewSettings().clear_on_play = enabled;
+      if (PlaySessionController* session =
+              g_runtime_global_context.m_play_session.get()) {
+        session->setClearOnPlay(enabled);
+      }
+    });
+    component->on_console_error_pause_toggled([this]() {
+      if (!m_window_component) {
+        return;
+      }
+      auto& ui = *m_window_component->operator->();
+      const bool enabled = ui.get_console_error_pause();
+      consoleViewSettings().error_pause = enabled;
+      if (PlaySessionController* session =
+              g_runtime_global_context.m_play_session.get()) {
+        session->setErrorPause(enabled);
+      }
+    });
+    component->on_console_filter_changed([this]() {
+      if (m_window_component) {
+        auto& ui = *m_window_component->operator->();
+        consoleViewSettings().show_log = ui.get_console_filter_log();
+        consoleViewSettings().show_warning = ui.get_console_filter_warning();
+        consoleViewSettings().show_error = ui.get_console_filter_error();
+      }
+      syncConsolePanel();
+    });
+    component->on_console_search_edited([this]() {
+      if (m_window_component) {
+        consoleViewSettings().search =
+            m_window_component->operator->()->get_console_search_text().data();
+      }
+      syncConsolePanel();
+    });
+    component->on_console_row_selected([this](int index) {
+      if (!m_window_component) {
+        return;
+      }
+      auto& ui = *m_window_component->operator->();
+      ui.set_console_selected_index(index);
+      consoleViewSettings().selected = index;
+      const auto rows = ui.get_console_rows();
+      if (!rows || index < 0 ||
+          static_cast<std::size_t>(index) >= rows->row_count()) {
+        ui.set_console_detail_text(slint::SharedString());
+        ui.set_console_detail_stack(slint::SharedString());
+        return;
+      }
+      const ConsoleRow row =
+          rows->row_data(static_cast<std::size_t>(index)).value();
+      ui.set_console_detail_text(row.text);
+      ui.set_console_detail_stack(row.stack);
     });
     component->on_browser_delete_confirmed([this]() {
       hideBrowserDeleteDialog();
@@ -3500,41 +3592,111 @@ void SlintSystem::applyInspectorTransform() {
   }
 }
 
-void SlintSystem::applyAnimationPreviewParams() {
+void SlintSystem::syncAnimationWindowFromPreview() {
   if (!m_window_component) {
     return;
   }
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr) {
+    return;
+  }
+  auto& ui = *m_window_component->operator->();
+  const bool bound = preview->windowBound();
+  ui.set_anim_preview_enabled(bound);
+  ui.set_anim_preview_playing(preview->isPlaying());
+  ui.set_anim_preview_pause_enabled(preview->pauseEnabled());
+  ui.set_anim_preview_stop_enabled(preview->stopEnabled());
+  ui.set_anim_preview_paused(preview->isPaused());
+  ui.set_anim_preview_looping(preview->isLooping());
+  if (!m_anim_timescale_dragging) {
+    ui.set_anim_preview_time_scale(preview->timeScale());
+  }
+  char scale_text[16];
+  std::snprintf(scale_text, sizeof(scale_text), "%.2f",
+                static_cast<double>(preview->timeScale()));
+  ui.set_anim_preview_time_scale_text(slint::SharedString(scale_text));
+  ui.set_anim_preview_playhead(preview->playbackPosition());
+  ui.set_anim_preview_clip_length(preview->clipLength());
+  ui.set_anim_preview_clip_name(slint::SharedString(preview->rulerClipName().c_str()));
+  ui.set_anim_preview_clock_text(slint::SharedString(preview->clockReadout().c_str()));
+  auto fire_model = std::make_shared<slint::VectorModel<slint::SharedString>>();
+  for (const eastl::string& name : preview->fireClipNames()) {
+    fire_model->push_back(slint::SharedString(name.c_str()));
+  }
+  ui.set_anim_preview_fire_clips(fire_model);
+  ui.set_anim_preview_fire_target(slint::SharedString(preview->fireTarget().c_str()));
+  ui.set_anim_preview_in_cine(preview->isInCine());
+  ui.set_anim_preview_input_suppressed(preview->isInputSuppressed());
+  ui.set_anim_preview_enter_cine_enabled(bound && !preview->isInCine());
+  ui.set_anim_preview_end_cine_enabled(bound && preview->isInCine());
+}
 
+void SlintSystem::applyAnimationPreviewLiveTimeScale() {
+  if (!m_window_component) {
+    return;
+  }
   AnimationPreviewController* preview =
       g_runtime_global_context.m_animation_preview.get();
   if (preview == nullptr || !preview->hasTarget()) {
     return;
   }
+  preview->setTimeScale(
+      m_window_component->operator->()->get_anim_preview_time_scale());
+}
+
+void SlintSystem::commitAnimationPreviewTimeScale() {
+  applyAnimationPreviewParams();
+}
+
+void SlintSystem::applyAnimationPreviewSeek(const float seconds) {
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr || !preview->windowBound()) {
+    return;
+  }
+  preview->seekPlayback(seconds);
+  if (const auto services = lockServices(); services && services->render_system) {
+    services->render_system->requestViewportRedraw();
+  }
+}
+
+void SlintSystem::applyAnimationPreviewParams() {
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr || !preview->hasTarget()) {
+    m_anim_timescale_dragging = false;
+    return;
+  }
 
   try {
-    ScopedDispatchGuard guard(m_slint_dispatch_depth);
-    auto& ui = *m_window_component;
-
-    preview->setTimeScale(ui->get_anim_preview_time_scale());
-    preview->setBlendWeight(ui->get_anim_preview_blend_weight());
-    preview->setFadeSeconds(ui->get_anim_preview_fade_seconds());
-
-    const slint::SharedString slot0 = ui->get_anim_preview_slot0();
-    const slint::SharedString slot1 = ui->get_anim_preview_slot1();
-    if (!slot0.empty()) {
-      preview->setSlot(0, eastl::string(slot0.data()));
+    if (m_window_component) {
+      preview->setTimeScale(
+          m_window_component->operator->()->get_anim_preview_time_scale());
     }
-    if (!slot1.empty()) {
-      preview->setSlot(1, eastl::string(slot1.data()));
+    const float after = preview->timeScale();
+    m_anim_timescale_dragging = false;
+    if (std::fabs(after - m_anim_timescale_before) < 1.0e-4f) {
+      return;
     }
 
-    if (const auto services = lockServices()) {
-      if (services->editor_scene_edit) {
-        services->editor_scene_edit->markDirty();
-      }
-      if (services->render_system) {
-        services->render_system->requestViewportRedraw();
-      }
+    const auto services = lockServices();
+    SceneInstance* scene =
+        services && services->scene ? services->scene->getActiveInstance()
+                                    : nullptr;
+    EntityId entity_id = k_invalid_entity_id;
+    if (services && services->selection &&
+        services->selection->getSelectedIds().size() == 1) {
+      entity_id = services->selection->getPrimarySelection();
+    }
+    if (scene != nullptr && isValid(entity_id)) {
+      const SelectionSnapshot snap = currentSelectionSnapshot();
+      pushDocumentCommand(makeSetAnimationPlayerTimeScaleCommand(
+          scene, entity_id, m_anim_timescale_before, after, snap, snap));
+    }
+    m_anim_timescale_before = after;
+    if (services && services->render_system) {
+      services->render_system->requestViewportRedraw();
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyAnimationPreviewParams] {}", e.what());
@@ -3544,38 +3706,16 @@ void SlintSystem::applyAnimationPreviewParams() {
 }
 
 void SlintSystem::fireAnimationSyncPreview() {
-  if (!m_window_component) {
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr || !preview->windowBound()) {
     return;
   }
-
-  AnimationSyncCinePreviewController* sync_cine_preview =
-      g_runtime_global_context.m_animation_sync_cine_preview.get();
-  if (sync_cine_preview == nullptr || !sync_cine_preview->hasMembers()) {
+  if (!preview->fire()) {
     return;
   }
-
-  try {
-    ScopedDispatchGuard guard(m_slint_dispatch_depth);
-    auto& ui = *m_window_component;
-
-    const slint::SharedString slot0 = ui->get_anim_preview_slot0();
-    if (slot0.empty()) {
-      return;
-    }
-
-    if (!sync_cine_preview->fireSameName(eastl::string(slot0.data()))) {
-      return;
-    }
-
-    if (const auto services = lockServices()) {
-      if (services->render_system) {
-        services->render_system->requestViewportRedraw();
-      }
-    }
-  } catch (const std::exception& e) {
-    LOG_ERROR("[SlintSystem::fireAnimationSyncPreview] {}", e.what());
-  } catch (...) {
-    LOG_ERROR("[SlintSystem::fireAnimationSyncPreview] unknown exception");
+  if (const auto services = lockServices(); services && services->render_system) {
+    services->render_system->requestViewportRedraw();
   }
 }
 
@@ -4192,7 +4332,8 @@ void SlintSystem::applyHierarchyContextSelect(int entity_id) {
           g_runtime_global_context.m_animation_preview.get()) {
     SceneInstance* scene =
         services->scene ? services->scene->getActiveInstance() : nullptr;
-    preview->bindSelection(scene, services->selection->getPrimarySelection());
+    preview->bindSelection(scene, services->selection->getPrimarySelection(),
+                           services->selection->getSelectedIds().size());
   }
 
   patchHierarchySelectionHighlight(id);
@@ -5303,6 +5444,7 @@ void SlintSystem::syncTransformToolbarFromEngine() {
       ui->set_edit_can_redo(history != nullptr && history->canRedo());
     }
     syncHistoryPanel();
+    syncConsolePanel();
     if (PlaySessionController* session =
             g_runtime_global_context.m_play_session.get()) {
       session->poll();
@@ -5319,41 +5461,11 @@ void SlintSystem::syncTransformToolbarFromEngine() {
             g_runtime_global_context.m_scene_system->getActiveInstance();
         if (g_runtime_global_context.m_editor_selection->isDirty()) {
           const EntityId selection =
-              g_runtime_global_context.m_editor_selection->getSelection();
-          preview->bindSelection(scene, selection);
-          if (scene != nullptr && isValid(selection)) {
-            Object* object = scene->findBoundObject(selection);
-            if (object == nullptr) {
-              object = scene->ensureBoundObject(selection);
-            }
-            if (object != nullptr && object->hasAnimationPlayer()) {
-              wireAnimationPlayerAssetResolver(*object->getAnimationPlayer());
-            }
-          }
-          g_runtime_global_context.m_editor_selection->clearDirty();
-          ui->set_anim_preview_time_scale(preview->timeScale());
-          ui->set_anim_preview_blend_weight(preview->blendWeight());
-          ui->set_anim_preview_fade_seconds(preview->fadeSeconds());
-          ui->set_anim_preview_slot0(
-              slint::SharedString(preview->slotClipName(0).c_str()));
-          ui->set_anim_preview_slot1(
-              slint::SharedString(preview->slotClipName(1).c_str()));
-        }
-      }
-      ui->set_anim_preview_enabled(preview->playEnabled());
-      ui->set_anim_preview_pause_enabled(preview->pauseEnabled());
-      ui->set_anim_preview_stop_enabled(preview->stopEnabled());
-      ui->set_anim_preview_paused(preview->isPaused());
-      ui->set_anim_preview_looping(preview->isLooping());
-    }
-    if (AnimationSyncCinePreviewController* sync_cine_preview =
-            g_runtime_global_context.m_animation_sync_cine_preview.get()) {
-      if (g_runtime_global_context.m_editor_selection &&
-          g_runtime_global_context.m_scene_system) {
-        SceneInstance* scene =
-            g_runtime_global_context.m_scene_system->getActiveInstance();
-        if (g_runtime_global_context.m_editor_selection->isDirty()) {
-          eastl::vector<Object*> objects;
+              g_runtime_global_context.m_editor_selection->getPrimarySelection();
+          const size_t selected_count =
+              g_runtime_global_context.m_editor_selection->getSelectedIds().size();
+          preview->bindSelection(scene, selection, selected_count);
+          eastl::vector<Object*> sync_objects;
           if (scene != nullptr) {
             for (EntityId entity_id :
                  g_runtime_global_context.m_editor_selection->getSelectedIds()) {
@@ -5366,21 +5478,18 @@ void SlintSystem::syncTransformToolbarFromEngine() {
               }
               if (object != nullptr && object->hasAnimationPlayer()) {
                 wireAnimationPlayerAssetResolver(*object->getAnimationPlayer());
-                objects.push_back(object);
+                sync_objects.push_back(object);
               }
             }
           }
-          sync_cine_preview->bindObjects(objects);
+          if (AnimationSyncCinePreviewController* sync_cine_preview =
+                  g_runtime_global_context.m_animation_sync_cine_preview.get()) {
+            sync_cine_preview->bindObjects(sync_objects);
+          }
+          g_runtime_global_context.m_editor_selection->clearDirty();
         }
       }
-      ui->set_anim_preview_in_cine(sync_cine_preview->isInCine());
-      ui->set_anim_preview_input_suppressed(
-          sync_cine_preview->isGameplayInputSuppressed());
-      const bool sync_fire_enabled =
-          sync_cine_preview->hasMembers() && sync_cine_preview->memberCount() >= 2;
-      ui->set_anim_preview_sync_fire_enabled(sync_fire_enabled);
-      ui->set_anim_preview_enter_cine_enabled(!sync_cine_preview->isInCine());
-      ui->set_anim_preview_end_cine_enabled(sync_cine_preview->isInCine());
+      syncAnimationWindowFromPreview();
     }
   } catch (...) {
   }
@@ -6281,6 +6390,7 @@ void SlintSystem::syncContentBrowser() {
       }
     }
     syncHistoryPanel();
+    syncConsolePanel();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::syncContentBrowser] {}", e.what());
   } catch (...) {
@@ -7409,12 +7519,26 @@ void SlintSystem::seedDockingWorkspace() {
       m_dock_manager.createWidget("Content Browser", DockPanelKind::content_browser);
   m_dock_manager.dockWidget(center_id, DockSlot::bottom, content);
 
-  auto console = m_dock_manager.createWidget("Console", DockPanelKind::custom);
+  auto console = m_dock_manager.createWidget("Console", DockPanelKind::console);
   if (const auto content_container = content->ownerContainer()) {
     m_dock_manager.dockWidget(content_container->id(), DockSlot::center, console);
   }
 
+  ensureAnimationDockWidget();
+
   m_docking_model_dirty = true;
+}
+
+void SlintSystem::ensureAnimationDockWidget() {
+  if (m_dock_manager.findWidgetByPanelKind(DockPanelKind::animation)) {
+    return;
+  }
+  auto animation = m_dock_manager.createWidget("Animation", DockPanelKind::animation);
+  m_dock_manager.dockToRoot(animation, DockSlot::bottom);
+  if (const std::shared_ptr<DockNode>& root = m_dock_manager.root();
+      root && root->isSplit()) {
+    root->setSplitRatio(0.86f);
+  }
 }
 
 void SlintSystem::syncDockingWorkspace() {
@@ -8094,6 +8218,62 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         }
         break;
       }
+      case DockPanelKind::animation: {
+        snapshot.anim_preview_enabled = main.get_anim_preview_enabled();
+        snapshot.anim_preview_playing = main.get_anim_preview_playing();
+        snapshot.anim_preview_pause_enabled = main.get_anim_preview_pause_enabled();
+        snapshot.anim_preview_stop_enabled = main.get_anim_preview_stop_enabled();
+        snapshot.anim_preview_paused = main.get_anim_preview_paused();
+        snapshot.anim_preview_looping = main.get_anim_preview_looping();
+        snapshot.anim_preview_time_scale = main.get_anim_preview_time_scale();
+        snapshot.anim_preview_time_scale_text =
+            main.get_anim_preview_time_scale_text().data();
+        snapshot.anim_preview_playhead = main.get_anim_preview_playhead();
+        snapshot.anim_preview_clip_length = main.get_anim_preview_clip_length();
+        snapshot.anim_preview_clip_name = main.get_anim_preview_clip_name().data();
+        snapshot.anim_preview_clock_text = main.get_anim_preview_clock_text().data();
+        snapshot.anim_preview_fire_target = main.get_anim_preview_fire_target().data();
+        snapshot.anim_preview_in_cine = main.get_anim_preview_in_cine();
+        snapshot.anim_preview_input_suppressed =
+            main.get_anim_preview_input_suppressed();
+        if (const auto clips = main.get_anim_preview_fire_clips()) {
+          for (std::size_t i = 0; i < clips->row_count(); ++i) {
+            snapshot.anim_preview_fire_clips.push_back(
+                clips->row_data(i).value().data());
+          }
+        }
+        break;
+      }
+      case DockPanelKind::console: {
+        if (const auto rows = main.get_console_rows()) {
+          for (std::size_t i = 0; i < rows->row_count(); ++i) {
+            const ConsoleRow row = rows->row_data(i).value();
+            NativeFloatConsoleRow copy{};
+            copy.time = row.time.data();
+            copy.severity = row.severity;
+            copy.text = row.text.data();
+            copy.stack = row.stack.data();
+            copy.origin = row.origin;
+            copy.count = row.count;
+            copy.ring_index = row.ring_index;
+            snapshot.console_rows.push_back(eastl::move(copy));
+          }
+        }
+        snapshot.console_selected_index = main.get_console_selected_index();
+        snapshot.console_detail_text = main.get_console_detail_text().data();
+        snapshot.console_detail_stack = main.get_console_detail_stack().data();
+        snapshot.console_collapse = main.get_console_collapse();
+        snapshot.console_clear_on_play = main.get_console_clear_on_play();
+        snapshot.console_error_pause = main.get_console_error_pause();
+        snapshot.console_filter_log = main.get_console_filter_log();
+        snapshot.console_filter_warning = main.get_console_filter_warning();
+        snapshot.console_filter_error = main.get_console_filter_error();
+        snapshot.console_count_log = main.get_console_count_log();
+        snapshot.console_count_warning = main.get_console_count_warning();
+        snapshot.console_count_error = main.get_console_count_error();
+        snapshot.console_search_text = main.get_console_search_text().data();
+        break;
+      }
       default:
         break;
     }
@@ -8415,9 +8595,68 @@ void SlintSystem::wireNativeFloatingCallbacks() {
     }
     m_history_panel_filter_scene = !scene;
     syncHistoryPanel();
+    syncConsolePanel();
   };
   callbacks.on_history_entry_clicked = [this](int stack, int index) {
     jumpHistory(stack, index);
+  };
+  callbacks.on_console_clear_clicked = [this]() {
+    ConsoleRing::instance().clear();
+    syncConsolePanel();
+  };
+  callbacks.on_console_collapse_toggled = [this](bool collapse) {
+    consoleViewSettings().collapse = collapse;
+    if (m_window_component) {
+      m_window_component->operator->()->set_console_collapse(collapse);
+    }
+    syncConsolePanel();
+  };
+  callbacks.on_console_clear_on_play_toggled = [this](bool enabled) {
+    consoleViewSettings().clear_on_play = enabled;
+    if (m_window_component) {
+      m_window_component->operator->()->set_console_clear_on_play(enabled);
+    }
+    if (PlaySessionController* session =
+            g_runtime_global_context.m_play_session.get()) {
+      session->setClearOnPlay(enabled);
+    }
+  };
+  callbacks.on_console_error_pause_toggled = [this](bool enabled) {
+    consoleViewSettings().error_pause = enabled;
+    if (m_window_component) {
+      m_window_component->operator->()->set_console_error_pause(enabled);
+    }
+    if (PlaySessionController* session =
+            g_runtime_global_context.m_play_session.get()) {
+      session->setErrorPause(enabled);
+    }
+  };
+  callbacks.on_console_filter_changed = [this](bool log, bool warning,
+                                               bool error) {
+    consoleViewSettings().show_log = log;
+    consoleViewSettings().show_warning = warning;
+    consoleViewSettings().show_error = error;
+    if (m_window_component) {
+      auto& ui = *m_window_component->operator->();
+      ui.set_console_filter_log(log);
+      ui.set_console_filter_warning(warning);
+      ui.set_console_filter_error(error);
+    }
+    syncConsolePanel();
+  };
+  callbacks.on_console_search_edited = [this](const slint::SharedString& text) {
+    consoleViewSettings().search = text.data();
+    if (m_window_component) {
+      m_window_component->operator->()->set_console_search_text(text);
+    }
+    syncConsolePanel();
+  };
+  callbacks.on_console_row_selected = [this](int index) {
+    if (m_window_component) {
+      m_window_component->operator->()->set_console_selected_index(index);
+    }
+    consoleViewSettings().selected = index;
+    syncConsolePanel();
   };
   callbacks.on_browser_inline_rename_commit =
       [this](const slint::SharedString& name) {
@@ -8471,6 +8710,58 @@ void SlintSystem::wireNativeFloatingCallbacks() {
         host.enqueue(UiEvent::withPath(UiEventKind::browserPathSegmentClicked,
                                      eastl::string(path.data())));
       });
+  callbacks.on_anim_preview_play_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewPlay));
+      });
+  callbacks.on_anim_preview_pause_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewPause));
+      });
+  callbacks.on_anim_preview_stop_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewStop));
+      });
+  callbacks.on_anim_preview_loop_toggled = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewLoopToggle));
+      });
+  callbacks.on_anim_preview_params_edited = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewParamsEdited));
+      });
+  callbacks.on_anim_preview_timescale_pressed = [this]() {
+    if (AnimationPreviewController* preview =
+            g_runtime_global_context.m_animation_preview.get()) {
+      m_anim_timescale_before = preview->timeScale();
+      m_anim_timescale_dragging = true;
+    }
+  };
+  callbacks.on_anim_preview_timescale_edited = [this]() {
+    applyAnimationPreviewLiveTimeScale();
+  };
+  callbacks.on_anim_preview_sync_fire_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewSyncFire));
+      });
+  callbacks.on_anim_preview_enter_cine_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewEnterCine));
+      });
+  callbacks.on_anim_preview_end_cine_requested = UiCallbackBinder::bind(
+      m_ui_host, [](UiHost& host) {
+        host.enqueue(UiEvent::simple(UiEventKind::animPreviewEndCine));
+      });
+  callbacks.on_anim_preview_seeked = [this](float seconds) {
+    applyAnimationPreviewSeek(seconds);
+  };
+  callbacks.on_anim_preview_fire_target_changed =
+      [this](const slint::SharedString& name) {
+        if (AnimationPreviewController* preview =
+                g_runtime_global_context.m_animation_preview.get()) {
+          preview->setFireTarget(eastl::string(name.data()));
+        }
+      };
   m_floating_host.setCallbacks(eastl::move(callbacks));
 }
 

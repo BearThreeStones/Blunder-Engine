@@ -143,6 +143,7 @@ class DockManager final {
 
   std::shared_ptr<DockNode> findNode(DockId node_id) const;
   std::shared_ptr<DockWidget> findWidget(DockId widget_id) const;
+  std::shared_ptr<DockWidget> findWidgetByPanelKind(DockPanelKind panel_kind) const;
 
  private:
   DockId nextId() { return m_next_id++; }

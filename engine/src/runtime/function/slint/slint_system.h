@@ -516,7 +516,12 @@ class SlintSystem final : public IEditorUiPresentation {
   void cacheLayoutRects();
   void cacheViewportLogicalRectOnly();
   void seedDockingWorkspace();
+  void ensureAnimationDockWidget();
   void syncDockingWorkspace();
+  void applyAnimationPreviewLiveTimeScale();
+  void commitAnimationPreviewTimeScale();
+  void applyAnimationPreviewSeek(float seconds);
+  void syncAnimationWindowFromPreview();
   void syncNativeFloatingWindows(const DockLayoutModel& model);
   void wireNativeFloatingCallbacks();
   void tickAutoHideHover();
@@ -548,6 +553,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void commitBrowserInlineRename(const eastl::string& new_name);
   void cancelBrowserInlineRename();
   void syncHistoryPanel();
+  void syncConsolePanel();
   void jumpHistory(int stack, int index);
   void applyPendingBrowserDelete();
   void finishPendingBrowserDeleteAfterDirty(bool save_first);
@@ -617,6 +623,12 @@ class SlintSystem final : public IEditorUiPresentation {
   size_t m_history_panel_global_cursor{static_cast<size_t>(-1)};
   bool m_history_panel_filter_scene{false};
   bool m_history_panel_filter_global{false};
+  uint64_t m_console_panel_generation{static_cast<uint64_t>(-1)};
+  bool m_console_panel_collapse{false};
+  bool m_console_panel_filter_log{true};
+  bool m_console_panel_filter_warning{true};
+  bool m_console_panel_filter_error{true};
+  eastl::string m_console_panel_search;
   bool m_scene_indicator_initialized{false};
   eastl::string m_synced_scene_path;
   bool m_synced_scene_dirty{false};
@@ -739,6 +751,8 @@ class SlintSystem final : public IEditorUiPresentation {
 
   eastl::vector<AttachmentPreviewCardState> m_preview_cards;
   bool m_applying_preview_sync{false};
+  float m_anim_timescale_before{1.0f};
+  bool m_anim_timescale_dragging{false};
 };
 
 }  // namespace Blunder

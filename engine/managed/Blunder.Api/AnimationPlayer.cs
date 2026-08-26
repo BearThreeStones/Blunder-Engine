@@ -219,22 +219,29 @@ public sealed class AnimationPlayer
     [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
     static unsafe void OnPoseAppliedNative(ulong objectId, void* userdata)
     {
-        if (userdata == null)
+        try
         {
-            return;
-        }
+            if (userdata == null)
+            {
+                return;
+            }
 
-        GCHandle handle = GCHandle.FromIntPtr((IntPtr)userdata);
-        if (handle.Target is not AnimationPlayer player)
+            GCHandle handle = GCHandle.FromIntPtr((IntPtr)userdata);
+            if (handle.Target is not AnimationPlayer player)
+            {
+                return;
+            }
+
+            if (player._owner.Id != objectId)
+            {
+                return;
+            }
+
+            player._poseApplied?.Invoke();
+        }
+        catch (Exception ex)
         {
-            return;
+            Debug.LogErrorCaptured(ex.ToString(), ex.StackTrace);
         }
-
-        if (player._owner.Id != objectId)
-        {
-            return;
-        }
-
-        player._poseApplied?.Invoke();
     }
 }

@@ -108,6 +108,16 @@ struct NativeFloatHistoryRow {
   bool is_group{false};
 };
 
+struct NativeFloatConsoleRow {
+  eastl::string time;
+  int severity{0};
+  eastl::string text;
+  eastl::string stack;
+  int origin{0};
+  int count{1};
+  int ring_index{0};
+};
+
 struct NativeFloatPanelSnapshot {
   DockPanelKind panel_kind{DockPanelKind::custom};
   eastl::vector<NativeFloatHierarchyRow> hierarchy_rows;
@@ -226,6 +236,36 @@ struct NativeFloatPanelSnapshot {
   bool history_filter_global{true};
   eastl::string browser_inline_rename_path;
   eastl::string browser_inline_rename_buffer;
+  bool anim_preview_enabled{false};
+  bool anim_preview_playing{false};
+  bool anim_preview_pause_enabled{false};
+  bool anim_preview_stop_enabled{false};
+  bool anim_preview_paused{false};
+  bool anim_preview_looping{false};
+  float anim_preview_time_scale{1.0f};
+  eastl::string anim_preview_time_scale_text;
+  float anim_preview_playhead{0.0f};
+  float anim_preview_clip_length{1.0f};
+  eastl::string anim_preview_clip_name;
+  eastl::string anim_preview_clock_text;
+  eastl::vector<eastl::string> anim_preview_fire_clips;
+  eastl::string anim_preview_fire_target;
+  bool anim_preview_in_cine{false};
+  bool anim_preview_input_suppressed{false};
+  eastl::vector<NativeFloatConsoleRow> console_rows;
+  int console_selected_index{-1};
+  eastl::string console_detail_text;
+  eastl::string console_detail_stack;
+  bool console_collapse{false};
+  bool console_clear_on_play{true};
+  bool console_error_pause{false};
+  bool console_filter_log{true};
+  bool console_filter_warning{true};
+  bool console_filter_error{true};
+  int console_count_log{0};
+  int console_count_warning{0};
+  int console_count_error{0};
+  eastl::string console_search_text;
 };
 
 class DockFloatingWindowHost final {
@@ -307,8 +347,27 @@ class DockFloatingWindowHost final {
     std::function<void(int)> on_browser_sort_clicked;
     std::function<void(bool, bool)> on_history_filter_changed;
     std::function<void(int, int)> on_history_entry_clicked;
+    std::function<void()> on_console_clear_clicked;
+    std::function<void(bool)> on_console_collapse_toggled;
+    std::function<void(bool)> on_console_clear_on_play_toggled;
+    std::function<void(bool)> on_console_error_pause_toggled;
+    std::function<void(bool, bool, bool)> on_console_filter_changed;
+    std::function<void(const slint::SharedString&)> on_console_search_edited;
+    std::function<void(int)> on_console_row_selected;
     std::function<void(const slint::SharedString&)> on_browser_inline_rename_commit;
     std::function<void()> on_browser_inline_rename_cancel;
+    std::function<void()> on_anim_preview_play_requested;
+    std::function<void()> on_anim_preview_pause_requested;
+    std::function<void()> on_anim_preview_stop_requested;
+    std::function<void()> on_anim_preview_loop_toggled;
+    std::function<void()> on_anim_preview_params_edited;
+    std::function<void()> on_anim_preview_timescale_pressed;
+    std::function<void()> on_anim_preview_timescale_edited;
+    std::function<void()> on_anim_preview_sync_fire_requested;
+    std::function<void()> on_anim_preview_enter_cine_requested;
+    std::function<void()> on_anim_preview_end_cine_requested;
+    std::function<void(float)> on_anim_preview_seeked;
+    std::function<void(const slint::SharedString&)> on_anim_preview_fire_target_changed;
   };
 
   void setCallbacks(Callbacks callbacks) { m_callbacks = eastl::move(callbacks); }

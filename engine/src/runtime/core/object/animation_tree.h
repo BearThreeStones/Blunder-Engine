@@ -158,6 +158,14 @@ class AnimationTree {
   /// OneShot: insert a clip over the base graph, then return when finished.
   bool requestOneShot(const eastl::string& clip_name);
   bool isOneShotActive() const { return m_oneshot_active; }
+  const eastl::string& getOneShotClipName() const { return m_oneshot_clip_name; }
+  void clearOneShot();
+
+  /// Edit Animation Window ruler: insert clip while OneShot occupies, else base dominant.
+  float rulerPosition() const;
+  float rulerLength() const;
+  eastl::string rulerClipName() const;
+  void seekRuler(float seconds);
   /// Authored OneShot clip slot (scene embed); does not start playback.
   bool setOneShotSlotClip(const eastl::string& clip_name);
   const eastl::string& getOneShotSlotClip() const { return m_oneshot_slot_clip; }

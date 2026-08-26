@@ -8,7 +8,15 @@
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/editor/animation_preview_controller.h"
+#include "runtime/core/log/log_system.h"
+#include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/editor_commands.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/entity_id.h"
 
+#include "EASTL/shared_ptr.h"
 #include "EASTL/unique_ptr.h"
 
 #include <cmath>
@@ -276,6 +284,236 @@ void test_loop_toggle() {
 
   ObjectDB::clear();
   LifecycleDispatch::clear();
+}
+
+void ensureLogger() {
+  using namespace Blunder;
+  if (!g_runtime_global_context.m_logger_system) {
+    g_runtime_global_context.m_logger_system = eastl::make_shared<LogSystem>();
+  }
+}
+
+void test_tree_window_bind_enable_disable() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* tree_object = makeTreePreviewObject(nullptr);
+  Object* player_object = makePreviewObject(nullptr);
+  AnimationPreviewController controller;
+  controller.bindObject(tree_object, "walk");
+  expect_true("tree window bound", controller.windowBound());
+  expect_true("tree play enabled", controller.playEnabled());
+
+  controller.bindObject(player_object, "walk");
+  expect_true("player-only not window bound", !controller.windowBound());
+  controller.clearTarget();
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_tree_stop_and_rebind() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* first = makeTreePreviewObject(nullptr);
+  Object* second = makeTreePreviewObject(nullptr);
+  AnimationTree* first_tree = first->getAnimationTree();
+  expect_true("first tree", first_tree != nullptr);
+  first_tree->start("Locomotion");
+  first_tree->setActive(true);
+
+  AnimationPreviewController controller;
+  controller.bindObject(first, "walk");
+  expect_true("play first", controller.play());
+  expect_true("fire", controller.requestOneShot("walk"));
+  controller.enterCine();
+  expect_true("cine on", controller.isInCine());
+  expect_true("oneshot on", first_tree->isOneShotActive());
+
+  controller.stop();
+  expect_true("stopped", controller.state() == AnimationPreviewState::Stopped);
+  expect_true("seek 0", float_near(controller.playbackPosition(), 0.0f));
+  expect_true("fire cleared", !first_tree->isOneShotActive());
+  expect_true("cine ended", !controller.isInCine());
+  expect_true("tree stays active", first_tree->isActive());
+
+  controller.bindObject(first, "walk");
+  controller.play();
+  controller.requestOneShot("walk");
+  controller.enterCine();
+  controller.bindSelection(nullptr, k_invalid_entity_id, 0);
+  expect_true("unbind stopped",
+              controller.state() == AnimationPreviewState::Stopped);
+  expect_true("unbind cine off", !controller.isInCine());
+  expect_true("unbind fire cleared", !first_tree->isOneShotActive());
+
+  controller.bindObject(second, "walk");
+  expect_true("second bound", controller.windowBound());
+  controller.clearTarget();
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  ensureLogger();
+  Scene scene;
+  scene.setGuid("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+  SceneEntityDefinition dog_a;
+  dog_a.name = "DogA";
+  dog_a.has_skeleton = true;
+  dog_a.has_animation_tree = true;
+  dog_a.animation_player_clips.push_back({"walk", eastl::string(kWalkGuid)});
+  SceneEntityDefinition dog_b = dog_a;
+  dog_b.name = "DogB";
+  scene.getEntities().push_back(eastl::move(dog_a));
+  scene.getEntities().push_back(eastl::move(dog_b));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  const EntityId id_a = instance.findEntityByName("DogA");
+  const EntityId id_b = instance.findEntityByName("DogB");
+  expect_true("dog A", isValid(id_a));
+  expect_true("dog B", isValid(id_b));
+  Object* object_a = instance.findBoundObject(id_a);
+  expect_true("object A", object_a != nullptr && object_a->hasAnimationTree());
+  AnimationTree* tree_a = object_a->getAnimationTree();
+
+  controller.bindSelection(&instance, id_a, 1);
+  expect_true("select A", controller.windowBound());
+  expect_true("play A", controller.play());
+  expect_true("fire A", controller.requestOneShot("walk"));
+  controller.enterCine();
+  expect_true("cine A", controller.isInCine());
+  expect_true("oneshot A", tree_a != nullptr && tree_a->isOneShotActive());
+
+  controller.bindSelection(&instance, id_b, 1);
+  expect_true("select B", controller.windowBound());
+  expect_true("rebind halted A oneshot",
+              tree_a != nullptr && !tree_a->isOneShotActive());
+  expect_true("rebind ended cine", !controller.isInCine());
+  expect_true("rebind stopped",
+              controller.state() == AnimationPreviewState::Stopped);
+  controller.clearTarget();
+}
+
+void test_session_loop_off_pauses_last_frame() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* object = makeTreePreviewObject(nullptr);
+  AnimationTree* tree = object->getAnimationTree();
+  tree->start("Locomotion");
+  tree->setActive(true);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  controller.setLoop(false);
+  expect_true("play", controller.play());
+  controller.tick(2.0f);
+  expect_true("paused at end", controller.isPaused());
+  expect_true("last frame",
+              float_near(controller.playbackPosition(), 1.0f, 1.0e-3f));
+
+  expect_true("play from last frame", controller.play());
+  expect_true("restarted at 0",
+              float_near(controller.playbackPosition(), 0.0f, 1.0e-3f));
+  expect_true("playing again", controller.isPlaying());
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_fire_hard_cut_and_enter_cine_does_not_fire() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* object = makeTreePreviewObject(nullptr);
+  AnimationTree* tree = object->getAnimationTree();
+  tree->start("Locomotion");
+  tree->setActive(true);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  controller.setFireTarget("walk");
+  expect_true("fire walk", controller.fire());
+  expect_true("oneshot walk", tree->isOneShotActive());
+  expect_true("oneshot name walk", tree->getOneShotClipName() == "walk");
+
+  controller.setFireTarget("idle");
+  expect_true("hard-cut idle", controller.fire());
+  expect_true("oneshot idle", tree->getOneShotClipName() == "idle");
+
+  tree->clearOneShot();
+  controller.enterCine();
+  expect_true("cine on", controller.isInCine());
+  expect_true("enter did not fire", !tree->isOneShotActive());
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
+void test_timescale_command_dirties_play_does_not() {
+  using namespace Blunder;
+
+  ensureLogger();
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Scene scene;
+  scene.setGuid("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+  SceneEntityDefinition entity;
+  entity.name = "Dog";
+  entity.has_skeleton = true;
+  entity.has_animation_tree = true;
+  entity.animation_player_clips.push_back({"walk", eastl::string(kWalkGuid)});
+  SceneEntityDefinition camera;
+  camera.name = "Camera";
+  scene.getEntities().push_back(eastl::move(entity));
+  scene.getEntities().push_back(eastl::move(camera));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  const EntityId dog_id = instance.findEntityByName("Dog");
+  const EntityId camera_id = instance.findEntityByName("Camera");
+  expect_true("dog entity", isValid(dog_id));
+  expect_true("camera entity", isValid(camera_id));
+  Object* object = instance.findBoundObject(dog_id);
+  expect_true("bound object", object != nullptr);
+  expect_true("has tree", object != nullptr && object->hasAnimationTree());
+
+  AnimationPreviewController controller;
+  controller.bindSelection(&instance, dog_id, 1);
+  expect_true("window bound", controller.windowBound());
+  controller.bindSelection(&instance, dog_id, 2);
+  expect_true("multi unbound", !controller.windowBound());
+  controller.bindSelection(&instance, camera_id, 1);
+  expect_true("camera unbound", !controller.windowBound());
+  controller.bindSelection(&instance, dog_id, 1);
+  expect_true("rebound dog", controller.windowBound());
+
+  DocumentHistory history;
+  history.markSaveBaseline();
+  expect_true("play starts", controller.play());
+  expect_true("play does not dirty", !history.isDirtyRelativeToSave());
+
+  const float before = controller.timeScale();
+  controller.setTimeScale(0.5f);
+  expect_true("live scale not a command", !history.isDirtyRelativeToSave());
+  SelectionSnapshot snap;
+  snap.primary = dog_id;
+  history.push(makeSetAnimationPlayerTimeScaleCommand(&instance, dog_id, before,
+                                                      0.5f, snap, snap));
+  expect_true("timescale command dirties", history.isDirtyRelativeToSave());
+  expect_true("can undo timescale", history.canUndo());
+  controller.clearTarget();
 }
 
 void test_preview_scrub_paths_skip_behaviour_tick() {
@@ -691,11 +929,21 @@ int main() {
   test_play_uses_fade_duration();
   test_set_slot_updates_player();
   test_loop_toggle();
+  test_tree_window_bind_enable_disable();
+  test_tree_stop_and_rebind();
+  test_session_loop_off_pauses_last_frame();
+  test_fire_hard_cut_and_enter_cine_does_not_fire();
+  test_timescale_command_dirties_play_does_not();
+
+  Blunder::ObjectDB::clear();
+  Blunder::LifecycleDispatch::clear();
+  Blunder::g_runtime_global_context.m_logger_system.reset();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;
   }
   std::printf("animation_preview_controller_test: all passed\n");
+  std::fflush(stdout);
   return 0;
 }

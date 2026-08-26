@@ -149,6 +149,32 @@ class SetAnimationPlayerClipBindingsCommand final : public IEditorCommand {
   }
 };
 
+class SetAnimationPlayerTimeScaleCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  float before_scale{1.0f};
+  float after_scale{1.0f};
+
+  eastl::string label() const override { return eastl::string("TimeScale"); }
+
+  void undo() override { apply(before_scale); }
+
+  void redo() override { apply(after_scale); }
+
+ private:
+  void apply(float scale) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    Object* object = scene->ensureBoundObject(entity_id);
+    if (object == nullptr || !object->hasAnimationPlayer()) {
+      return;
+    }
+    object->getAnimationPlayer()->setTimeScale(scale);
+  }
+};
+
 class AlignCameraToViewCommand final : public IEditorCommand {
  public:
   SceneInstance* scene{nullptr};
@@ -579,6 +605,19 @@ eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
   command->entity_id = entity_id;
   command->before_bindings = eastl::move(before_bindings);
   command->after_bindings = eastl::move(after_bindings);
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerTimeScaleCommand(
+    SceneInstance* scene, EntityId entity_id, float before_scale, float after_scale,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetAnimationPlayerTimeScaleCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_scale = before_scale;
+  command->after_scale = after_scale;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   return command;

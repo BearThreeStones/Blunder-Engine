@@ -1,6 +1,8 @@
 #include "runtime/project/play_session_controller.h"
 
+#include "runtime/core/log/console_ring.h"
 #include "runtime/project/play_preflight.h"
+#include "runtime/project/play_step.h"
 
 #include <chrono>
 #include <functional>
@@ -323,6 +325,13 @@ PlaySessionHooks PlaySessionController::makeDefaultHooks() {
   hooks.ipc_send = [runtime](PlayIpcCommand command) {
     return runtime->host->sendCommand(command);
   };
+  hooks.ipc_poll_logs = [runtime]() { return runtime->host->pollLogs(); };
+  hooks.ipc_send_step = [runtime](uint32_t ticks) {
+    return runtime->host->sendStep(ticks);
+  };
+  hooks.ipc_send_frame = [runtime]() { return runtime->host->sendFrameRequest(); };
+  hooks.ipc_poll_frames = [runtime]() { return runtime->host->pollFrames(); };
+  hooks.ipc_poll_errors = [runtime]() { return runtime->host->pollErrors(); };
   hooks.ipc_close = [runtime]() { runtime->host->close(); };
   // Project-aware Scripts dirty/build hooks are installed by UiHost before Play.
   return hooks;
@@ -360,6 +369,22 @@ void PlaySessionController::setLastIssues(eastl::vector<Issue> issues) {
   }
 }
 
+bool PlaySessionController::clearOnPlay() const {
+  return consoleViewSettings().clear_on_play;
+}
+
+void PlaySessionController::setClearOnPlay(bool value) {
+  consoleViewSettings().clear_on_play = value;
+}
+
+bool PlaySessionController::errorPause() const {
+  return consoleViewSettings().error_pause;
+}
+
+void PlaySessionController::setErrorPause(bool value) {
+  consoleViewSettings().error_pause = value;
+}
+
 void PlaySessionController::setScriptsPreflight(
     std::function<bool()> is_dirty,
     std::function<bool(std::string& error)> build) {
@@ -383,6 +408,7 @@ void PlaySessionController::resetToStopped() {
   m_ipc_connected = false;
   m_endpoint = {};
   m_has_starting_deadline = false;
+  m_last_play_frame = {};
 }
 
 void PlaySessionController::onProcessGone() {
@@ -433,6 +459,10 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
       m_state = PlaySessionState::Stopped;
       return false;
     }
+  }
+
+  if (consoleViewSettings().clear_on_play) {
+    ConsoleRing::instance().clear();
   }
 
   const std::filesystem::path exe = m_hooks.resolve_player();
@@ -511,6 +541,81 @@ bool PlaySessionController::stop() {
   return true;
 }
 
+bool PlaySessionController::step(uint32_t ticks) {
+  m_last_request_failure.clear();
+  if (m_state != PlaySessionState::Paused || !m_ready) {
+    m_last_request_failure = k_request_play_step_requires_pause;
+    return false;
+  }
+  if (!m_hooks.ipc_send_step || !m_hooks.ipc_send_step(ticks)) {
+    m_last_error = "failed to send step";
+    return false;
+  }
+  return true;
+}
+
+bool PlaySessionController::requestPlayFrame() {
+  if (!m_ready || (m_state != PlaySessionState::Playing &&
+                   m_state != PlaySessionState::Paused)) {
+    return false;
+  }
+  if (!m_hooks.ipc_send_frame || !m_hooks.ipc_send_frame()) {
+    m_last_error = "failed to send frame";
+    return false;
+  }
+  ingestPlayFrames();
+  return m_last_play_frame.width != 0 && m_last_play_frame.height != 0;
+}
+
+void PlaySessionController::ingestPlayLogs() {
+  if (!m_ready || !m_hooks.ipc_poll_logs) {
+    return;
+  }
+  std::vector<PlayIpcLogRecord> records = m_hooks.ipc_poll_logs();
+  bool saw_play_error = false;
+  for (PlayIpcLogRecord& record : records) {
+    ConsoleSeverity severity = ConsoleSeverity::Log;
+    if (record.sev == "warning") {
+      severity = ConsoleSeverity::Warning;
+    } else if (record.sev == "error") {
+      severity = ConsoleSeverity::Error;
+      saw_play_error = true;
+    }
+    ConsoleMessage message;
+    message.severity = severity;
+    message.origin = ConsoleOrigin::PlayProcess;
+    message.text = std::move(record.text);
+    message.stack = std::move(record.stack);
+    message.unix_ms = record.ms;
+    ConsoleRing::instance().append(std::move(message));
+  }
+  if (saw_play_error && consoleViewSettings().error_pause &&
+      m_state == PlaySessionState::Playing) {
+    (void)pause();
+  }
+}
+
+void PlaySessionController::ingestPlayFrames() {
+  if (!m_ready) {
+    return;
+  }
+  if (m_hooks.ipc_poll_errors) {
+    std::vector<PlayIpcErrorRecord> errors = m_hooks.ipc_poll_errors();
+    for (PlayIpcErrorRecord& error : errors) {
+      if (!error.code.empty()) {
+        m_last_request_failure = error.code;
+      }
+    }
+  }
+  if (!m_hooks.ipc_poll_frames) {
+    return;
+  }
+  std::vector<PlayIpcFrameRecord> frames = m_hooks.ipc_poll_frames();
+  if (!frames.empty()) {
+    m_last_play_frame = std::move(frames.back());
+  }
+}
+
 void PlaySessionController::poll() {
   if (m_state == PlaySessionState::Stopped) {
     return;
@@ -518,6 +623,13 @@ void PlaySessionController::poll() {
 
   if (m_hooks.is_process_running && !m_hooks.is_process_running()) {
     onProcessGone();
+    return;
+  }
+
+  if (m_state == PlaySessionState::Playing ||
+      m_state == PlaySessionState::Paused) {
+    ingestPlayLogs();
+    ingestPlayFrames();
     return;
   }
 
@@ -545,6 +657,9 @@ void PlaySessionController::poll() {
     m_has_starting_deadline = false;
     m_state = PlaySessionState::Playing;
   }
+
+  ingestPlayLogs();
+  ingestPlayFrames();
 }
 
 }  // namespace Blunder

@@ -57,9 +57,12 @@ add_library(engine_runtime STATIC
     "platform/window/child_window_registry.cpp"
     "function/slint/slint_system.h"
     "function/slint/slint_system.cpp"
+    "function/slint/slint_console_panel.cpp"
     "function/slint/slint_attachment_preview.cpp"
     "core/log/log_access.h"
     "core/log/log_access.cpp"
+    "core/log/console_ring.h"
+    "core/log/console_ring.cpp"
     "core/log/log_system.h"
     "core/log/log_system.cpp"
     "core/base/high_precision_timer.h"
@@ -166,6 +169,7 @@ add_library(engine_runtime STATIC
     "project/play_preflight.h"
     "project/play_preflight.cpp"
     "project/authorship_issue.h"
+    "project/play_step.h"
     "project/play_diagnose.h"
     "project/play_diagnose.cpp"
     "project/project_list.h"
@@ -351,12 +355,15 @@ slint_target_sources(engine_runtime
     "function/slint/viewport_projection_toggle.slint"
     "function/slint/editor_window.slint"
     "function/slint/transform_toolbar.slint"
-    "function/slint/animation_preview_toolbar.slint"
+    "function/slint/animation_window_panel.slint"
     "function/slint/animation_tree_canvas_panel.slint"
     "function/slint/camera_preview_panel.slint"
+    "function/slint/console_panel.slint"
 )
 
 # Generated editor_window.cpp is ~10MB; Debug+PCH on that TU trips MSVC C1060.
+# slint_system.cpp is also huge (includes editor_window.h); MSVC has dropped
+# later member bodies from that TU (syncConsolePanel became UNDEF).
 if(MSVC)
     set_source_files_properties(
         "${CMAKE_CURRENT_BINARY_DIR}/slint_generated_editor_window_1.cpp"
@@ -364,6 +371,17 @@ if(MSVC)
             SKIP_PRECOMPILE_HEADERS ON
             COMPILE_OPTIONS "/Zm400;/bigobj"
             VS_SETTINGS "DebugInformationFormat=None"
+    )
+    set_source_files_properties(
+        "function/slint/slint_system.cpp"
+        "function/slint/slint_console_panel.cpp"
+        PROPERTIES
+            COMPILE_OPTIONS "/Zm400;/bigobj"
+    )
+    set_source_files_properties(
+        "function/slint/slint_console_panel.cpp"
+        PROPERTIES
+            SKIP_PRECOMPILE_HEADERS ON
     )
 endif()
 

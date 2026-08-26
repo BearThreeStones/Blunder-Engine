@@ -56,8 +56,55 @@ int main() {
               parsePlayIpcCommandLine("resume") == PlayIpcCommand::Resume);
   expect_true("cmd stop",
               parsePlayIpcCommandLine("stop") == PlayIpcCommand::Stop);
+  expect_true("cmd frame",
+              parsePlayIpcCommandLine("frame") == PlayIpcCommand::Frame);
   expect_true("cmd trim",
               parsePlayIpcCommandLine("  pause\r") == PlayIpcCommand::Pause);
+  expect_true("cmd unknown stays unknown",
+              parsePlayIpcCommandLine("nope") == PlayIpcCommand::Unknown);
+  expect_true("cmd step without n unknown",
+              parsePlayIpcCommandLine("step") == PlayIpcCommand::Unknown);
+  {
+    const PlayIpcHostCommand step = parsePlayIpcHostCommandLine("step 30");
+    expect_true("cmd step", step.command == PlayIpcCommand::Step);
+    expect_true("cmd step ticks", step.step_ticks == 30);
+  }
+
+  {
+    PlayIpcLogRecord rec;
+    rec.sev = "warning";
+    rec.text = "hello \"play\"";
+    rec.stack = "a\nb";
+    rec.ms = 1700000000123;
+    PlayIpcLogRecord parsed;
+    expect_true("ndjson roundtrip parse",
+                parsePlayIpcLogLine(formatPlayIpcLogLine(rec), parsed));
+    expect_true("ndjson sev", parsed.sev == "warning");
+    expect_true("ndjson text", parsed.text == rec.text);
+    expect_true("ndjson stack", parsed.stack == "a\nb");
+    expect_true("ndjson ms", parsed.ms == rec.ms);
+    expect_true("bare pause is not a log",
+                !parsePlayIpcLogLine("pause", parsed));
+  }
+
+  {
+    PlayIpcFrameRecord rec;
+    rec.width = 16;
+    rec.height = 9;
+    rec.encoding = "rgba8";
+    rec.rgba.assign(16u * 9u * 4u, 7);
+    PlayIpcFrameRecord parsed;
+    expect_true("frame ndjson parse",
+                parsePlayIpcFrameLine(formatPlayIpcFrameLine(rec), parsed));
+    expect_true("frame width", parsed.width == 16);
+    expect_true("frame height", parsed.height == 9);
+    expect_true("frame encoding", parsed.encoding == "rgba8");
+    expect_true("frame rgba", parsed.rgba == rec.rgba);
+    expect_true("frame is 16:9", parsed.width != parsed.height);
+    expect_true("log line is not a frame",
+                !parsePlayIpcFrameLine(formatPlayIpcLogLine(PlayIpcLogRecord{}),
+                                      parsed));
+  }
 
   PlayIpcServer host;
   expect_true("listen ephemeral", host.listen(0));
@@ -73,12 +120,12 @@ int main() {
     expect_true("listen rejects non-loopback", !reject.listen(bad));
   }
 
-  std::vector<PlayIpcCommand> received;
+  std::vector<PlayIpcHostCommand> received;
   PlayIpcClient agent;
   expect_true("agent connect",
               agent.connect("127.0.0.1", host.boundPort()));
   agent.setCommandHandler(
-      [&](PlayIpcCommand cmd) { received.push_back(cmd); });
+      [&](PlayIpcHostCommand cmd) { received.push_back(cmd); });
   expect_true("agent announce ready", agent.announceReady());
 
   const auto deadline =
@@ -97,24 +144,125 @@ int main() {
   expect_true("send pause", host.sendCommand(PlayIpcCommand::Pause));
   expect_true("send resume", host.sendCommand(PlayIpcCommand::Resume));
   expect_true("send stop", host.sendCommand(PlayIpcCommand::Stop));
+  expect_true("send step", host.sendStep(12));
+  expect_true("send frame request", host.sendFrameRequest());
+  expect_true("unknown line ignored by send? host still ready",
+              host.isPeerReady());
 
   const auto cmd_deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (received.size() < 3 &&
+  while (received.size() < 5 &&
          std::chrono::steady_clock::now() < cmd_deadline) {
     agent.poll();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  expect_true("received 3 commands", received.size() == 3);
-  if (received.size() >= 3) {
-    expect_true("got pause", received[0] == PlayIpcCommand::Pause);
-    expect_true("got resume", received[1] == PlayIpcCommand::Resume);
-    expect_true("got stop", received[2] == PlayIpcCommand::Stop);
+  expect_true("received 5 commands", received.size() == 5);
+  if (received.size() >= 5) {
+    expect_true("got pause", received[0].command == PlayIpcCommand::Pause);
+    expect_true("got resume", received[1].command == PlayIpcCommand::Resume);
+    expect_true("got stop", received[2].command == PlayIpcCommand::Stop);
+    expect_true("got step", received[3].command == PlayIpcCommand::Step);
+    expect_true("got step n", received[3].step_ticks == 12);
+    expect_true("got frame", received[4].command == PlayIpcCommand::Frame);
   }
+
+  expect_true("send unknown line ignored", host.sendLine("bogus-verb"));
+  agent.poll();
+  expect_true("unknown not dispatched", received.size() == 5);
 
   agent.close();
   host.close();
+
+  // Log after ready is ingested; log before ready is discarded.
+  {
+    PlayIpcServer log_host;
+    expect_true("log host listen", log_host.listen(0));
+    PlayIpcClient log_agent;
+    expect_true("log agent connect",
+                log_agent.connect("127.0.0.1", log_host.boundPort()));
+
+    PlayIpcLogRecord early;
+    early.sev = "log";
+    early.text = "before-ready";
+    early.ms = 1;
+    expect_true("send pre-ready noise",
+                log_agent.sendRawLine(formatPlayIpcLogLine(early)));
+
+    expect_true("log announce ready", log_agent.announceReady());
+    const auto ready_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    bool log_ready = false;
+    while (std::chrono::steady_clock::now() < ready_deadline) {
+      if (log_host.waitPeerReady(50)) {
+        log_ready = true;
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("log host ready", log_ready);
+    expect_true("no pre-ready log ingested", log_host.pollLogs().empty());
+
+    PlayIpcLogRecord sent;
+    sent.sev = "warning";
+    sent.text = "hello-play";
+    sent.stack = "stack\nline";
+    sent.ms = 12345;
+    expect_true("send log after ready", log_agent.sendLog(sent));
+
+    const auto ingest_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    std::vector<PlayIpcLogRecord> ingested;
+    while (ingested.empty() &&
+           std::chrono::steady_clock::now() < ingest_deadline) {
+      ingested = log_host.pollLogs();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("ingested one log", ingested.size() == 1);
+    if (!ingested.empty()) {
+      expect_true("log sev warning", ingested[0].sev == "warning");
+      expect_true("log text", ingested[0].text == "hello-play");
+      expect_true("log stack", ingested[0].stack == "stack\nline");
+      expect_true("log ms", ingested[0].ms == 12345);
+    }
+
+    expect_true("send pause after log",
+                log_host.sendCommand(PlayIpcCommand::Pause));
+    std::vector<PlayIpcHostCommand> after_log;
+    log_agent.setCommandHandler(
+        [&](PlayIpcHostCommand cmd) { after_log.push_back(cmd); });
+    const auto pause_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (after_log.empty() &&
+           std::chrono::steady_clock::now() < pause_deadline) {
+      log_agent.poll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("pause after log", !after_log.empty() &&
+                                       after_log[0].command == PlayIpcCommand::Pause);
+
+    PlayIpcFrameRecord sent_frame;
+    sent_frame.width = 16;
+    sent_frame.height = 9;
+    sent_frame.rgba.assign(16u * 9u * 4u, 9);
+    expect_true("send frame after ready", log_agent.sendFrame(sent_frame));
+    const auto frame_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    std::vector<PlayIpcFrameRecord> frames;
+    while (frames.empty() &&
+           std::chrono::steady_clock::now() < frame_deadline) {
+      frames = log_host.pollFrames();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("ingested one frame", frames.size() == 1);
+    if (!frames.empty()) {
+      expect_true("frame 16:9", frames[0].width == 16 && frames[0].height == 9);
+      expect_true("frame pixels", frames[0].rgba == sent_frame.rgba);
+    }
+
+    log_agent.close();
+    log_host.close();
+  }
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

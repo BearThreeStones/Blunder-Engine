@@ -12,7 +12,8 @@ import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { AttachmentPreviewCard, AttachmentPreviewCardRow } from "attachment_preview_card.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
-import { AnimationPreviewToolbar } from "animation_preview_toolbar.slint";
+import { AnimationWindowPanel } from "animation_window_panel.slint";
+import { ConsolePanel, ConsoleRow } from "console_panel.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
 import { InspectorPanel, BehaviourRow, SkeletonModifierRow, AnimationClipRow, AnimationClipPickerRow } from "inspector_panel.slint";
 import { AnimationTreeCanvasPanel, AnimationTreeCanvasNodeRow, AnimationTreeCanvasEdgeRow } from "animation_tree_canvas_panel.slint";
@@ -119,6 +120,28 @@ export component MainEditorWindow inherits Window {
     callback browser-sort-clicked(int);
     callback history-filter-changed();
     callback history-entry-clicked(int, int);
+
+    in-out property <[ConsoleRow]> console-rows: [];
+    in-out property <int> console-selected-index: -1;
+    in-out property <string> console-detail-text: "";
+    in-out property <string> console-detail-stack: "";
+    in-out property <bool> console-collapse: false;
+    in-out property <bool> console-clear-on-play: true;
+    in-out property <bool> console-error-pause: false;
+    in-out property <bool> console-filter-log: true;
+    in-out property <bool> console-filter-warning: true;
+    in-out property <bool> console-filter-error: true;
+    in property <int> console-count-log: 0;
+    in property <int> console-count-warning: 0;
+    in property <int> console-count-error: 0;
+    in-out property <string> console-search-text: "";
+    callback console-clear-clicked();
+    callback console-collapse-toggled();
+    callback console-clear-on-play-toggled();
+    callback console-error-pause-toggled();
+    callback console-filter-changed();
+    callback console-search-edited();
+    callback console-row-selected(int);
     in-out property <string> browser-inline-rename-path: "";
     in-out property <string> browser-inline-rename-buffer: "";
     callback browser-inline-rename-commit(string);
@@ -294,22 +317,29 @@ export component MainEditorWindow inherits Window {
     callback anim-preview-stop-requested();
     callback anim-preview-loop-toggled();
     callback anim-preview-params-edited();
+    callback anim-preview-timescale-pressed();
+    callback anim-preview-timescale-edited();
     callback anim-preview-sync-fire-requested();
     callback anim-preview-enter-cine-requested();
     callback anim-preview-end-cine-requested();
+    callback anim-preview-seeked(float);
+    callback anim-preview-fire-target-changed(string);
     in property <bool> anim-preview-enabled: false;
+    in property <bool> anim-preview-playing: false;
     in property <bool> anim-preview-pause-enabled: false;
     in property <bool> anim-preview-stop-enabled: false;
     in property <bool> anim-preview-paused: false;
     in property <bool> anim-preview-looping: false;
     in-out property <float> anim-preview-time-scale: 1.0;
-    in-out property <float> anim-preview-blend-weight: 0.0;
-    in-out property <float> anim-preview-fade-seconds: 0.0;
-    in-out property <string> anim-preview-slot0: "";
-    in-out property <string> anim-preview-slot1: "";
+    in property <string> anim-preview-time-scale-text: "1.00";
+    in property <float> anim-preview-playhead: 0.0;
+    in property <float> anim-preview-clip-length: 1.0;
+    in property <string> anim-preview-clip-name: "";
+    in property <string> anim-preview-clock-text: "";
+    in property <[string]> anim-preview-fire-clips: [];
+    in-out property <string> anim-preview-fire-target: "";
     in property <bool> anim-preview-in-cine: false;
     in property <bool> anim-preview-input-suppressed: false;
-    in property <bool> anim-preview-sync-fire-enabled: false;
     in property <bool> anim-preview-enter-cine-enabled: false;
     in property <bool> anim-preview-end-cine-enabled: false;
 
@@ -569,32 +599,6 @@ export component MainEditorWindow inherits Window {
                             gizmo-space-toggled => {
                                 root.gizmo-space-toggled();
                             }
-                        }
-
-                        AnimationPreviewToolbar {
-                            preview-enabled: root.anim-preview-enabled;
-                            preview-pause-enabled: root.anim-preview-pause-enabled;
-                            preview-stop-enabled: root.anim-preview-stop-enabled;
-                            preview-paused: root.anim-preview-paused;
-                            preview-looping: root.anim-preview-looping;
-                            preview-time-scale <=> root.anim-preview-time-scale;
-                            preview-blend-weight <=> root.anim-preview-blend-weight;
-                            preview-fade-seconds <=> root.anim-preview-fade-seconds;
-                            preview-slot0 <=> root.anim-preview-slot0;
-                            preview-slot1 <=> root.anim-preview-slot1;
-                            preview-in-cine: root.anim-preview-in-cine;
-                            preview-input-suppressed: root.anim-preview-input-suppressed;
-                            preview-sync-fire-enabled: root.anim-preview-sync-fire-enabled;
-                            preview-enter-cine-enabled: root.anim-preview-enter-cine-enabled;
-                            preview-end-cine-enabled: root.anim-preview-end-cine-enabled;
-                            preview-play-requested => { root.anim-preview-play-requested(); }
-                            preview-pause-requested => { root.anim-preview-pause-requested(); }
-                            preview-stop-requested => { root.anim-preview-stop-requested(); }
-                            preview-loop-toggled => { root.anim-preview-loop-toggled(); }
-                            preview-params-edited => { root.anim-preview-params-edited(); }
-                            preview-sync-fire-requested => { root.anim-preview-sync-fire-requested(); }
-                            preview-enter-cine-requested => { root.anim-preview-enter-cine-requested(); }
-                            preview-end-cine-requested => { root.anim-preview-end-cine-requested(); }
                         }
 
                         AnimationTreeCanvasPanel {
@@ -860,6 +864,65 @@ export component MainEditorWindow inherits Window {
                         open-anim-tree-canvas-requested => {
                             root.anim-tree-canvas-open-from-selection-requested();
                         }
+                    }
+
+                    if tile.active-panel-kind == 5: AnimationWindowPanel {
+                        width: 100%;
+                        height: 100%;
+                        bound: root.anim-preview-enabled;
+                        playing: root.anim-preview-playing;
+                        paused: root.anim-preview-paused;
+                        pause-enabled: root.anim-preview-pause-enabled;
+                        stop-enabled: root.anim-preview-stop-enabled;
+                        looping: root.anim-preview-looping;
+                        time-scale <=> root.anim-preview-time-scale;
+                        time-scale-text: root.anim-preview-time-scale-text;
+                        playhead: root.anim-preview-playhead;
+                        clip-length: root.anim-preview-clip-length;
+                        clip-name: root.anim-preview-clip-name;
+                        clock-text: root.anim-preview-clock-text;
+                        fire-clips: root.anim-preview-fire-clips;
+                        fire-target <=> root.anim-preview-fire-target;
+                        in-cine: root.anim-preview-in-cine;
+                        input-suppressed: root.anim-preview-input-suppressed;
+                        play-requested => { root.anim-preview-play-requested(); }
+                        pause-requested => { root.anim-preview-pause-requested(); }
+                        stop-requested => { root.anim-preview-stop-requested(); }
+                        loop-toggled => { root.anim-preview-loop-toggled(); }
+                        fire-requested => { root.anim-preview-sync-fire-requested(); }
+                        enter-cine-requested => { root.anim-preview-enter-cine-requested(); }
+                        end-cine-requested => { root.anim-preview-end-cine-requested(); }
+                        timescale-pressed => { root.anim-preview-timescale-pressed(); }
+                        timescale-edited => { root.anim-preview-timescale-edited(); }
+                        timescale-committed => { root.anim-preview-params-edited(); }
+                        seeked(t) => { root.anim-preview-seeked(t); }
+                        fire-target-changed(name) => { root.anim-preview-fire-target-changed(name); }
+                    }
+
+                    if tile.active-panel-kind == 6: ConsolePanel {
+                        width: 100%;
+                        height: 100%;
+                        rows <=> root.console-rows;
+                        selected-index <=> root.console-selected-index;
+                        detail-text <=> root.console-detail-text;
+                        detail-stack <=> root.console-detail-stack;
+                        collapse <=> root.console-collapse;
+                        clear-on-play <=> root.console-clear-on-play;
+                        error-pause <=> root.console-error-pause;
+                        filter-log <=> root.console-filter-log;
+                        filter-warning <=> root.console-filter-warning;
+                        filter-error <=> root.console-filter-error;
+                        count-log: root.console-count-log;
+                        count-warning: root.console-count-warning;
+                        count-error: root.console-count-error;
+                        search-text <=> root.console-search-text;
+                        clear-clicked => { root.console-clear-clicked(); }
+                        collapse-toggled => { root.console-collapse-toggled(); }
+                        clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
+                        error-pause-toggled => { root.console-error-pause-toggled(); }
+                        filter-changed => { root.console-filter-changed(); }
+                        search-edited => { root.console-search-edited(); }
+                        row-selected(i) => { root.console-row-selected(i); }
                     }
 
                     if tile.active-panel-kind == 0: Text {
@@ -1244,6 +1307,32 @@ export component MainEditorWindow inherits Window {
                         open-anim-tree-canvas-requested => {
                             root.anim-tree-canvas-open-from-selection-requested();
                         }
+                    }
+
+                    if overlay.panel-kind == 6: ConsolePanel {
+                        width: 100%;
+                        height: 100%;
+                        rows <=> root.console-rows;
+                        selected-index <=> root.console-selected-index;
+                        detail-text <=> root.console-detail-text;
+                        detail-stack <=> root.console-detail-stack;
+                        collapse <=> root.console-collapse;
+                        clear-on-play <=> root.console-clear-on-play;
+                        error-pause <=> root.console-error-pause;
+                        filter-log <=> root.console-filter-log;
+                        filter-warning <=> root.console-filter-warning;
+                        filter-error <=> root.console-filter-error;
+                        count-log: root.console-count-log;
+                        count-warning: root.console-count-warning;
+                        count-error: root.console-count-error;
+                        search-text <=> root.console-search-text;
+                        clear-clicked => { root.console-clear-clicked(); }
+                        collapse-toggled => { root.console-collapse-toggled(); }
+                        clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
+                        error-pause-toggled => { root.console-error-pause-toggled(); }
+                        filter-changed => { root.console-filter-changed(); }
+                        search-edited => { root.console-search-edited(); }
+                        row-selected(i) => { root.console-row-selected(i); }
                     }
                 }
             }

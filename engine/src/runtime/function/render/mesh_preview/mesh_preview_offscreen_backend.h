@@ -10,6 +10,7 @@
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/preview_render_target_owner.h"
+#include "runtime/function/render/scene_thumbnail/i_scene_still_gpu.h"
 
 namespace Blunder {
 
@@ -33,7 +34,8 @@ class SceneInstance;
 
 /// Owns the dedicated Mesh Preview RT, forward draw path, and CPU readback.
 /// Separate from RenderSystem's Camera Preview and main viewport targets.
-class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend {
+class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
+                                          public ISceneStillGpuBackend {
  public:
   static constexpr PreviewRenderTargetOwner k_render_target_owner =
       PreviewRenderTargetOwner::MeshPreview;
@@ -57,7 +59,7 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend {
                           const MeshPreviewCameraFrame& framing,
                           const MeshPreviewStudioLights& lights, uint32_t width,
                           uint32_t height, eastl::vector<uint8_t>& out_rgba,
-                          const SceneInstance* lighting_scene = nullptr);
+                          const SceneInstance* lighting_scene = nullptr) override;
 
   const rhi::IOffscreenRenderTarget* offscreenTarget() const {
     return m_offscreen.get();

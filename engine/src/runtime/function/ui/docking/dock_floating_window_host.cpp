@@ -488,6 +488,59 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
           toSharedString(snapshot.browser_inline_rename_buffer));
       break;
     }
+    case DockPanelKind::animation: {
+      ui.set_anim_preview_enabled(snapshot.anim_preview_enabled);
+      ui.set_anim_preview_playing(snapshot.anim_preview_playing);
+      ui.set_anim_preview_pause_enabled(snapshot.anim_preview_pause_enabled);
+      ui.set_anim_preview_stop_enabled(snapshot.anim_preview_stop_enabled);
+      ui.set_anim_preview_paused(snapshot.anim_preview_paused);
+      ui.set_anim_preview_looping(snapshot.anim_preview_looping);
+      ui.set_anim_preview_time_scale(snapshot.anim_preview_time_scale);
+      ui.set_anim_preview_time_scale_text(
+          toSharedString(snapshot.anim_preview_time_scale_text));
+      ui.set_anim_preview_playhead(snapshot.anim_preview_playhead);
+      ui.set_anim_preview_clip_length(snapshot.anim_preview_clip_length);
+      ui.set_anim_preview_clip_name(toSharedString(snapshot.anim_preview_clip_name));
+      ui.set_anim_preview_clock_text(toSharedString(snapshot.anim_preview_clock_text));
+      auto fire_model = std::make_shared<slint::VectorModel<slint::SharedString>>();
+      for (const eastl::string& name : snapshot.anim_preview_fire_clips) {
+        fire_model->push_back(toSharedString(name));
+      }
+      ui.set_anim_preview_fire_clips(fire_model);
+      ui.set_anim_preview_fire_target(toSharedString(snapshot.anim_preview_fire_target));
+      ui.set_anim_preview_in_cine(snapshot.anim_preview_in_cine);
+      ui.set_anim_preview_input_suppressed(snapshot.anim_preview_input_suppressed);
+      break;
+    }
+    case DockPanelKind::console: {
+      auto model = std::make_shared<slint::VectorModel<ConsoleRow>>();
+      for (const NativeFloatConsoleRow& row : snapshot.console_rows) {
+        ConsoleRow slint_row{};
+        slint_row.time = toSharedString(row.time);
+        slint_row.severity = row.severity;
+        slint_row.text = toSharedString(row.text);
+        slint_row.stack = toSharedString(row.stack);
+        slint_row.origin = row.origin;
+        slint_row.count = row.count;
+        slint_row.ring_index = row.ring_index;
+        model->push_back(slint_row);
+      }
+      ui.set_console_rows(model);
+      ui.set_console_selected_index(snapshot.console_selected_index);
+      ui.set_console_detail_text(toSharedString(snapshot.console_detail_text));
+      ui.set_console_detail_stack(toSharedString(snapshot.console_detail_stack));
+      ui.set_console_collapse(snapshot.console_collapse);
+      ui.set_console_clear_on_play(snapshot.console_clear_on_play);
+      ui.set_console_error_pause(snapshot.console_error_pause);
+      ui.set_console_filter_log(snapshot.console_filter_log);
+      ui.set_console_filter_warning(snapshot.console_filter_warning);
+      ui.set_console_filter_error(snapshot.console_filter_error);
+      ui.set_console_count_log(snapshot.console_count_log);
+      ui.set_console_count_warning(snapshot.console_count_warning);
+      ui.set_console_count_error(snapshot.console_count_error);
+      ui.set_console_search_text(toSharedString(snapshot.console_search_text));
+      break;
+    }
     default:
       break;
   }
@@ -875,6 +928,46 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_history_entry_clicked(stack, index);
       }
     });
+    component->on_console_clear_clicked([this]() {
+      if (m_callbacks.on_console_clear_clicked) {
+        m_callbacks.on_console_clear_clicked();
+      }
+    });
+    component->on_console_collapse_toggled([this, component]() {
+      if (m_callbacks.on_console_collapse_toggled) {
+        m_callbacks.on_console_collapse_toggled(component->get_console_collapse());
+      }
+    });
+    component->on_console_clear_on_play_toggled([this, component]() {
+      if (m_callbacks.on_console_clear_on_play_toggled) {
+        m_callbacks.on_console_clear_on_play_toggled(
+            component->get_console_clear_on_play());
+      }
+    });
+    component->on_console_error_pause_toggled([this, component]() {
+      if (m_callbacks.on_console_error_pause_toggled) {
+        m_callbacks.on_console_error_pause_toggled(
+            component->get_console_error_pause());
+      }
+    });
+    component->on_console_filter_changed([this, component]() {
+      if (m_callbacks.on_console_filter_changed) {
+        m_callbacks.on_console_filter_changed(
+            component->get_console_filter_log(),
+            component->get_console_filter_warning(),
+            component->get_console_filter_error());
+      }
+    });
+    component->on_console_search_edited([this, component]() {
+      if (m_callbacks.on_console_search_edited) {
+        m_callbacks.on_console_search_edited(component->get_console_search_text());
+      }
+    });
+    component->on_console_row_selected([this](int index) {
+      if (m_callbacks.on_console_row_selected) {
+        m_callbacks.on_console_row_selected(index);
+      }
+    });
     component->on_browser_inline_rename_commit(
         [this](const slint::SharedString& name) {
           if (m_callbacks.on_browser_inline_rename_commit) {
@@ -886,6 +979,67 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_browser_inline_rename_cancel();
       }
     });
+    component->on_anim_preview_play_requested([this]() {
+      if (m_callbacks.on_anim_preview_play_requested) {
+        m_callbacks.on_anim_preview_play_requested();
+      }
+    });
+    component->on_anim_preview_pause_requested([this]() {
+      if (m_callbacks.on_anim_preview_pause_requested) {
+        m_callbacks.on_anim_preview_pause_requested();
+      }
+    });
+    component->on_anim_preview_stop_requested([this]() {
+      if (m_callbacks.on_anim_preview_stop_requested) {
+        m_callbacks.on_anim_preview_stop_requested();
+      }
+    });
+    component->on_anim_preview_loop_toggled([this]() {
+      if (m_callbacks.on_anim_preview_loop_toggled) {
+        m_callbacks.on_anim_preview_loop_toggled();
+      }
+    });
+    component->on_anim_preview_params_edited([this]() {
+      if (m_callbacks.on_anim_preview_params_edited) {
+        m_callbacks.on_anim_preview_params_edited();
+      }
+    });
+    component->on_anim_preview_timescale_pressed([this]() {
+      if (m_callbacks.on_anim_preview_timescale_pressed) {
+        m_callbacks.on_anim_preview_timescale_pressed();
+      }
+    });
+    component->on_anim_preview_timescale_edited([this]() {
+      if (m_callbacks.on_anim_preview_timescale_edited) {
+        m_callbacks.on_anim_preview_timescale_edited();
+      }
+    });
+    component->on_anim_preview_sync_fire_requested([this]() {
+      if (m_callbacks.on_anim_preview_sync_fire_requested) {
+        m_callbacks.on_anim_preview_sync_fire_requested();
+      }
+    });
+    component->on_anim_preview_enter_cine_requested([this]() {
+      if (m_callbacks.on_anim_preview_enter_cine_requested) {
+        m_callbacks.on_anim_preview_enter_cine_requested();
+      }
+    });
+    component->on_anim_preview_end_cine_requested([this]() {
+      if (m_callbacks.on_anim_preview_end_cine_requested) {
+        m_callbacks.on_anim_preview_end_cine_requested();
+      }
+    });
+    component->on_anim_preview_seeked([this](float seconds) {
+      if (m_callbacks.on_anim_preview_seeked) {
+        m_callbacks.on_anim_preview_seeked(seconds);
+      }
+    });
+    component->on_anim_preview_fire_target_changed(
+        [this](const slint::SharedString& name) {
+          if (m_callbacks.on_anim_preview_fire_target_changed) {
+            m_callbacks.on_anim_preview_fire_target_changed(name);
+          }
+        });
     component->on_browser_grid_select(
         [this](const slint::SharedString& path, bool ctrl, bool shift) {
           if (m_callbacks.on_browser_grid_select) {

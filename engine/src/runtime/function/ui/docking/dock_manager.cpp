@@ -909,6 +909,53 @@ std::shared_ptr<DockWidget> DockManager::findWidget(DockId widget_id) const {
   return nullptr;
 }
 
+namespace {
+
+std::shared_ptr<DockWidget> findWidgetByPanelKindRecursive(
+    const std::shared_ptr<DockNode>& node, DockPanelKind panel_kind) {
+  if (!node) {
+    return nullptr;
+  }
+  if (node->isContainer()) {
+    for (const auto& widget : node->widgets()) {
+      if (widget && widget->panelKind() == panel_kind) {
+        return widget;
+      }
+    }
+    return nullptr;
+  }
+  if (node->isSplit()) {
+    if (auto found = findWidgetByPanelKindRecursive(node->first(), panel_kind)) {
+      return found;
+    }
+    return findWidgetByPanelKindRecursive(node->second(), panel_kind);
+  }
+  if (node->isFloating()) {
+    return findWidgetByPanelKindRecursive(node->floatingContent(), panel_kind);
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+std::shared_ptr<DockWidget> DockManager::findWidgetByPanelKind(
+    DockPanelKind panel_kind) const {
+  if (auto found = findWidgetByPanelKindRecursive(m_root, panel_kind)) {
+    return found;
+  }
+  for (const auto& floating_node : m_floating_nodes) {
+    if (auto found = findWidgetByPanelKindRecursive(floating_node, panel_kind)) {
+      return found;
+    }
+  }
+  for (const DockAutoHideEntry& entry : m_auto_hide_entries) {
+    if (entry.widget && entry.widget->panelKind() == panel_kind) {
+      return entry.widget;
+    }
+  }
+  return nullptr;
+}
+
 void DockManager::insertSplit(const std::shared_ptr<DockNode>& target, DockSlot slot,
                               const std::shared_ptr<DockNode>& new_container) {
   const SplitDirection direction =

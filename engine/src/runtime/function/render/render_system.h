@@ -170,6 +170,9 @@ class RenderSystem final {
   rhi::IOffscreenRenderTarget* getOffscreenTarget() const {
     return m_offscreen.get();
   }
+  /// CPU readback of the current Play-rule / viewport color target.
+  bool readbackOffscreenRgba(eastl::vector<uint8_t>& out_rgba, uint32_t& out_width,
+                             uint32_t& out_height);
   bool isVulkanBackend() const;
   OverlaySystem* getOverlaySystem() const { return m_overlay_system.get(); }
 
@@ -279,6 +282,10 @@ class RenderSystem final {
   uint32_t m_camera_preview_readback_w{0};
   uint32_t m_camera_preview_readback_h{0};
   bool m_camera_preview_image_cleared{true};
+
+  eastl::unique_ptr<VulkanBuffer> m_play_frame_staging;
+  uint32_t m_play_frame_staging_w{0};
+  uint32_t m_play_frame_staging_h{0};
 };
 
 }  // namespace Blunder

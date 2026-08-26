@@ -43,6 +43,10 @@ eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
     eastl::vector<AnimationPlayer::ClipBinding> after_bindings,
     SelectionSnapshot selection_before, SelectionSnapshot selection_after);
 
+eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerTimeScaleCommand(
+    SceneInstance* scene, EntityId entity_id, float before_scale, float after_scale,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
 eastl::unique_ptr<IEditorCommand> makeAlignCameraToViewCommand(
     SceneInstance* scene, EntityId entity_id, const Vec3& before_position,
     const Quat& before_rotation, const Vec3& before_scale,

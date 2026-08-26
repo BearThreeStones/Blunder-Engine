@@ -10,6 +10,8 @@ export component EditorButton inherits Rectangle {
     in property <bool> primary: false;
     in property <bool> ghost: false;
     in property <bool> checked: false;
+    /// When false, keep the image's baked colors (Console severity glyphs).
+    in property <bool> colorize-icon: true;
     callback clicked();
 
     private property <bool> icon-only: root.text == "" && root.icon.width > 0;
@@ -44,14 +46,30 @@ export component EditorButton inherits Rectangle {
             spacing: 4px;
             vertical-stretch: 0;
 
-            if root.icon.width > 0: Image {
+            if root.icon.width > 0: Rectangle {
                 width: 14px;
                 height: 14px;
-                source: root.icon;
-                colorize: !root.enabled ? EditorTheme.muted
-                    : (root.primary || root.checked) ? EditorTheme.accent-text
-                    : EditorTheme.icon;
-                image-fit: contain;
+                vertical-stretch: 0;
+
+                if root.colorize-icon: Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: !root.enabled ? EditorTheme.muted
+                        : (root.primary || root.checked) ? EditorTheme.accent-text
+                        : EditorTheme.icon;
+                    image-fit: contain;
+                }
+                if !root.colorize-icon: Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    image-fit: contain;
+                }
             }
 
             if root.text != "": Text {
@@ -247,11 +265,12 @@ export component EditorSearchField inherits Rectangle {
         spacing: 6px;
         alignment: center;
 
-        Text {
-            text: "⌕";
-            color: EditorTheme.icon;
-            font-size: EditorTheme.font;
-            vertical-alignment: center;
+        Image {
+            width: 12px;
+            height: 12px;
+            source: EditorGlyphs.search;
+            colorize: EditorTheme.icon;
+            image-fit: contain;
         }
 
         input := TextInput {
@@ -288,12 +307,14 @@ export component EditorToggle inherits Rectangle {
             border-width: 1px;
             border-color: root.checked ? EditorTheme.accent : EditorTheme.hairline;
             background: root.checked ? EditorTheme.accent : EditorTheme.field;
-            if root.checked: Text {
-                text: "✓";
-                color: EditorTheme.accent-text;
-                font-size: 10px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            if root.checked: Image {
+                width: 12px;
+                height: 12px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: EditorGlyphs.check;
+                colorize: EditorTheme.accent-text;
+                image-fit: contain;
             }
         }
 
@@ -322,7 +343,9 @@ export component EditorSlider inherits Rectangle {
     in property <float> minimum: 0;
     in property <float> maximum: 1;
     in property <bool> enabled: true;
+    callback pressed();
     callback edited();
+    callback committed();
 
     height: EditorTheme.line;
     min-width: 64px;
@@ -389,12 +412,14 @@ export component EditorSlider inherits Rectangle {
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
                 root.dragging = true;
+                root.pressed();
                 root.value = Math.max(root.minimum, Math.min(root.maximum,
                     root.minimum + self.mouse-x / root.width * root.span));
                 root.edited();
             }
             if (event.kind == PointerEventKind.up) {
                 root.dragging = false;
+                root.committed();
             }
         }
     }
@@ -610,6 +635,64 @@ export component EditorCompactField inherits Rectangle {
         color: EditorTheme.muted;
         font-size: EditorTheme.font-sm;
         vertical-alignment: center;
+    }
+}
+
+/// Thin vertical overlay for editor Flickables (Unity-dark chrome, 10px gutter).
+export component EditorVerticalScrollBar inherits Rectangle {
+    in property <length> viewport-height: 0px;
+    in property <length> page-size: 0px;
+    in-out property <length> viewport-y: 0px;
+
+    width: 10px;
+    background: transparent;
+    clip: true;
+
+    private property <length> overflow: max(0px, root.viewport-height - root.page-size);
+    private property <length> thumb-travel: max(1px, root.height - thumb.height);
+
+    visible: root.overflow > 0px;
+
+    thumb := Rectangle {
+        x: 2px;
+        width: 6px;
+        y: root.overflow <= 0px ? 0px
+            : root.thumb-travel * min(1.0, max(0.0, (-root.viewport-y / root.overflow)));
+        height: root.overflow <= 0px ? 0px
+            : max(16px, min(root.height, root.page-size * root.height / max(root.viewport-height, 1px)));
+        border-radius: 3px;
+        background: ta.has-hover || ta.pressed ? #565D66 : #4A5058;
+    }
+
+    ta := TouchArea {
+        property <length> press-value: 0px;
+        property <length> press-y: 0px;
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                if (self.mouse-y < thumb.y || self.mouse-y > thumb.y + thumb.height) {
+                    root.viewport-y = -max(0px, min(root.overflow,
+                        (self.mouse-y - thumb.height / 2) * root.overflow / root.thumb-travel));
+                }
+                self.press-value = -root.viewport-y;
+                self.press-y = self.mouse-y;
+            }
+        }
+
+        moved => {
+            if (self.pressed && root.overflow > 0px) {
+                root.viewport-y = -max(0px, min(root.overflow,
+                    self.press-value + (self.mouse-y - self.press-y) * (root.overflow / root.thumb-travel)));
+            }
+        }
+
+        scroll-event(event) => {
+            if (event.delta-y != 0 && root.overflow > 0px) {
+                root.viewport-y = max(-root.overflow, min(0px, root.viewport-y + event.delta-y));
+                return accept;
+            }
+            reject
+        }
     }
 }
 

@@ -1,7 +1,8 @@
+#include "runtime/core/log/console_ring.h"
+#include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/engine_c_abi.h"
 #include "runtime/core/reflection/lifecycle.h"
-#include "runtime/core/object/object_db.h"
 
 #include <cstdio>
 
@@ -26,7 +27,23 @@ int main() {
   ObjectDB::clear();
   ClassDB::initialize();
 
-  expect_true("abi version", blunder_engine_abi_version() == 9);
+  expect_true("abi version >= 11", blunder_engine_abi_version() >= 11);
+  expect_true("abi version matches header",
+              blunder_engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
+
+  ConsoleRing::instance().clear();
+  expect_true(
+      "blunder_log warning",
+      blunder_log(BLUNDER_LOG_SEVERITY_WARNING, "clip missing", nullptr) ==
+          BLUNDER_ENGINE_OK);
+  const auto logged = ConsoleRing::instance().snapshot();
+  expect_true("log row present", logged.size() == 1);
+  if (!logged.empty()) {
+    expect_true("log severity warning",
+                logged[0].severity == ConsoleSeverity::Warning);
+    expect_true("log text", logged[0].text == "clip missing");
+    expect_true("log stack empty", logged[0].stack.empty());
+  }
 
   const BlunderObjectId id = blunder_object_create();
   expect_true("create", blunder_object_is_valid(id) == 1);

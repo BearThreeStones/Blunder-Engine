@@ -664,6 +664,59 @@ endif()
 add_test(NAME object_message_dotnet_test
          COMMAND object_message_dotnet_test)
 
+# Lifecycle exception catch: Tick/OnMessage throw → Error, siblings continue.
+add_executable(lifecycle_exception_dotnet_test
+    "lifecycle_exception_dotnet_test.cpp"
+)
+
+target_link_libraries(lifecycle_exception_dotnet_test
+    PRIVATE
+        blunder_engine_c_static
+)
+
+target_compile_definitions(lifecycle_exception_dotnet_test
+    PRIVATE
+        "BLUNDER_SCRIPT_HOST_DIR=R\"(${CMAKE_BINARY_DIR}/bin/$<CONFIG>)\""
+        "BLUNDER_DOTNET_HOST_GAME_DLL=R\"(${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll)\""
+)
+
+if(MSVC)
+    target_compile_options(lifecycle_exception_dotnet_test PRIVATE /Zc:preprocessor)
+endif()
+
+if(BLUNDER_DOTNET_EXE)
+    add_custom_command(TARGET lifecycle_exception_dotnet_test PRE_BUILD
+        COMMAND "${BLUNDER_DOTNET_EXE}" build "${BLUNDER_DOTNET_HOST_GAME_CSPROJ}"
+                -c $<CONFIG> --nologo
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${BLUNDER_DOTNET_HOST_GAME_STAGE}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_DOTNET_HOST_GAME_OUT}/DotnetHostGame.dll"
+                "${BLUNDER_DOTNET_HOST_GAME_STAGE}/DotnetHostGame.dll"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Building DotnetHostGame fixture for lifecycle_exception_dotnet_test"
+        VERBATIM
+    )
+endif()
+
+if(BLUNDER_HAS_NETHOST AND WIN32)
+    add_custom_command(TARGET lifecycle_exception_dotnet_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${BLUNDER_NETHOST_DIR}/nethost.dll"
+                "$<TARGET_FILE_DIR:lifecycle_exception_dotnet_test>/nethost.dll"
+        VERBATIM
+    )
+endif()
+
+if(TARGET blunder_script_host)
+    add_dependencies(lifecycle_exception_dotnet_test blunder_script_host)
+endif()
+if(TARGET blunder_api)
+    add_dependencies(lifecycle_exception_dotnet_test blunder_api)
+endif()
+
+add_test(NAME lifecycle_exception_dotnet_test
+         COMMAND lifecycle_exception_dotnet_test)
+
 add_executable(editor_history_test
     "editor_history_test.cpp"
 )
@@ -778,6 +831,30 @@ target_precompile_headers(authorship_contract_test
 
 add_test(NAME authorship_contract_test
          COMMAND authorship_contract_test)
+
+add_executable(host_observation_test
+    "host_observation_test.cpp"
+)
+
+target_link_libraries(host_observation_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(host_observation_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(host_observation_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(host_observation_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME host_observation_test
+         COMMAND host_observation_test)
 
 add_executable(hierarchy_create_test
     "hierarchy_create_test.cpp"
@@ -1201,6 +1278,22 @@ target_precompile_headers(thumbnail_generation_queue_test
 
 add_test(NAME thumbnail_generation_queue_test
          COMMAND thumbnail_generation_queue_test)
+
+add_executable(console_ring_test
+    "console_ring_test.cpp"
+    "../runtime/core/log/console_ring.cpp"
+)
+
+target_include_directories(console_ring_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(console_ring_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME console_ring_test
+         COMMAND console_ring_test)
 
 add_executable(play_ipc_test
     "play_ipc_test.cpp"
@@ -2152,6 +2245,7 @@ target_link_libraries(animation_preview_controller_test
 
 target_include_directories(animation_preview_controller_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 
 if(MSVC)

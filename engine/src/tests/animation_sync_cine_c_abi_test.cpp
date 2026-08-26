@@ -54,8 +54,9 @@ int main() {
   animationSyncGroupService().clearAll();
   cineSegmentService().resetForTests();
 
-  expect_true("abi version >= 8", blunder_engine_abi_version() >= 8);
-  expect_true("abi version is 9", blunder_engine_abi_version() == 9);
+  expect_true("abi version >= 11", blunder_engine_abi_version() >= 11);
+  expect_true("abi version matches header",
+              blunder_engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);

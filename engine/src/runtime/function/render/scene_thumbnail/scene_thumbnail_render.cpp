@@ -1,6 +1,7 @@
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/render/scene_thumbnail/capture.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
@@ -131,11 +132,11 @@ MeshPreviewCameraFrame meshPreviewFrameFromPlayCamera(
 
 void SceneThumbnailRenderService::initialize(
     AssetManager* asset_manager, FileSystem* file_system,
-    MeshPreviewOffscreenBackend* backend) {
+    ISceneStillGpuBackend* backend) {
   m_asset_manager = asset_manager;
   m_file_system = file_system;
   m_backend = backend;
-  m_is_initialized = asset_manager != nullptr && backend != nullptr;
+  m_is_initialized = backend != nullptr;
 }
 
 void SceneThumbnailRenderService::shutdown() {
@@ -147,6 +148,16 @@ void SceneThumbnailRenderService::shutdown() {
 
 SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
     const SceneThumbnailRenderRequest& request) {
+  SceneStillRequest still{};
+  still.scene_virtual_path = request.scene_virtual_path;
+  still.width = request.width;
+  still.height = request.height;
+  still.require_mesh = true;
+  return renderSceneStill(still);
+}
+
+SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneStill(
+    const SceneStillRequest& request) {
   SceneThumbnailRenderResult result{};
   result.width = request.width;
   result.height = request.height;
@@ -154,18 +165,27 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
     result.error = "SceneThumbnailRenderService not initialized";
     return result;
   }
-  if (request.scene_virtual_path.empty() || request.width == 0 ||
-      request.height == 0) {
+  if (request.width == 0 || request.height == 0) {
     result.error = "Invalid scene thumbnail request";
     return result;
   }
 
   eastl::vector<eastl::shared_ptr<SceneInstance>> keep_alive;
-  const eastl::shared_ptr<SceneInstance> root = instantiateScene(
-      m_asset_manager, request.scene_virtual_path, keep_alive);
-  if (!root) {
-    result.error = "Failed to load scene asset";
-    return result;
+  SceneInstance* root = request.live_instance;
+  if (root == nullptr) {
+    if (m_asset_manager == nullptr || request.scene_virtual_path.empty()) {
+      result.error = "Failed to load scene asset";
+      result.failure_code = k_request_capture_scene_unreadable;
+      return result;
+    }
+    const eastl::shared_ptr<SceneInstance> loaded = instantiateScene(
+        m_asset_manager, request.scene_virtual_path, keep_alive);
+    if (!loaded) {
+      result.error = "Failed to load scene asset";
+      result.failure_code = k_request_capture_scene_unreadable;
+      return result;
+    }
+    root = loaded.get();
   }
 
   root->tick(0.0f);
@@ -174,6 +194,7 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
   const ResolvedPlayCamera camera = resolvePlayCameraFromScene(*root, aspect);
   if (!camera.ok) {
     result.error = "No camera in scene";
+    result.failure_code = k_request_capture_no_camera;
     return result;
   }
 
@@ -183,14 +204,21 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
     result.error = "Invalid camera framing";
     return result;
   }
+  result.framing = framing;
 
   eastl::vector<MeshPreviewSubmeshDraw> draws;
-  for (eastl::shared_ptr<SceneInstance>& instance : keep_alive) {
-    if (instance) {
-      collectDrawsFromInstance(*m_asset_manager, *instance, draws);
+  if (m_asset_manager != nullptr) {
+    if (request.live_instance != nullptr) {
+      collectDrawsFromInstance(*m_asset_manager, *root, draws);
+    } else {
+      for (eastl::shared_ptr<SceneInstance>& instance : keep_alive) {
+        if (instance) {
+          collectDrawsFromInstance(*m_asset_manager, *instance, draws);
+        }
+      }
     }
   }
-  if (draws.empty()) {
+  if (request.require_mesh && draws.empty()) {
     result.error = "No mesh renderers in scene";
     return result;
   }
@@ -198,7 +226,7 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneAsset(
   const MeshPreviewStudioLights lights = defaultMeshPreviewStudioLights();
 
   if (!m_backend->renderSubmeshDraws(draws, framing, lights, request.width,
-                                     request.height, result.rgba, root.get())) {
+                                     request.height, result.rgba, root)) {
     result.error = "GPU scene thumbnail render failed";
     result.rgba.clear();
     return result;

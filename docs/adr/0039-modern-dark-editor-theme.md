@@ -19,4 +19,4 @@ We are neither a Unity clone nor a Godot clone: Editor Icons stay Godot SVGs rec
 
 ## Consequences
 
-Static preview: `docs/previews/editor-theme-unity-dark.html` — Modern skin is the default; the earlier Unity Dark palette remains behind a toggle for comparison only, not as a shipped theme. A future reader who sees modern dark chrome next to Godot value cells and Godot glyphs should not "fix" them into numeric fields or a Unity icon set. Glossary: `CONTEXT.md` (Editor chrome).
+Static preview: `docs/previews/editor-theme-unity-dark.html` — Modern skin is the default; the earlier Unity Dark palette remains behind a toggle for comparison only, not as a shipped theme. A future reader who sees modern dark chrome next to Godot value cells and Godot glyphs should not "fix" them into numeric fields or a Unity icon set. Icon-versus-text on chrome actions is [ADR 0042](0042-icon-first-chrome-labels.md), not this palette decision. Glossary: `CONTEXT.md` (Editor chrome).

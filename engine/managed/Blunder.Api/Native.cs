@@ -122,7 +122,8 @@ internal static unsafe class Native
         abi.cine_enter != null &&
         abi.cine_end != null &&
         abi.cine_is_in_cine != null &&
-        abi.cine_is_gameplay_input_suppressed != null;
+        abi.cine_is_gameplay_input_suppressed != null &&
+        abi.log != null;
 
     static void EnsureRegistered()
     {
@@ -1010,6 +1011,18 @@ internal static unsafe class Native
         int rc = s_abi.cine_is_gameplay_input_suppressed(&value);
         suppressed = value;
         return rc;
+    }
+
+    public static int blunder_log(int severity, string text, string? stack)
+    {
+        EnsureRegistered();
+        byte[] textUtf8 = ToUtf8(text ?? "");
+        byte[] stackUtf8 = ToUtf8(stack ?? "");
+        fixed (byte* textPtr = textUtf8)
+        fixed (byte* stackPtr = stackUtf8)
+        {
+            return s_abi.log(severity, textPtr, stack == null ? null : stackPtr);
+        }
     }
 
     static byte[] ToUtf8(string value)

@@ -1,0 +1,366 @@
+import {
+    EditorTheme,
+    EditorButton,
+    EditorToggle,
+    EditorSearchField,
+    EditorVerticalScrollBar,
+} from "editor_controls.slint";
+import { EditorGlyphs } from "editor_icons.slint";
+
+export struct ConsoleRow {
+    time: string,
+    origin: int,
+    severity: int,
+    text: string,
+    stack: string,
+    count: int,
+    ring-index: int,
+}
+
+component ConsoleSeverityIcon inherits Rectangle {
+    in property <int> severity: 0;
+
+    width: 16px;
+    height: 100%;
+
+    Image {
+        width: 14px;
+        height: 14px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.severity == 2 ? EditorGlyphs.console-error
+            : (root.severity == 1 ? EditorGlyphs.console-warning
+                : EditorGlyphs.console-log);
+        image-fit: contain;
+    }
+}
+
+component ConsoleFilterButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label: "";
+    in property <int> count: 0;
+    in property <bool> checked: false;
+    callback clicked();
+
+    height: EditorTheme.line;
+    vertical-stretch: 0;
+    horizontal-stretch: 0;
+    border-radius: EditorTheme.radius-ctl;
+    border-width: 1px;
+    border-color: root.checked ? EditorTheme.accent-line : EditorTheme.hairline;
+    background: root.checked ? EditorTheme.accent-soft
+        : (ta.has-hover ? EditorTheme.button-hover : EditorTheme.button);
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 5px;
+        alignment: center;
+
+        Rectangle {
+            width: 14px;
+            height: 14px;
+            y: (parent.height - self.height) / 2;
+            Image {
+                width: 14px;
+                height: 14px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: root.icon;
+                image-fit: contain;
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.checked ? EditorTheme.accent-sel-text : EditorTheme.button-text;
+            font-size: EditorTheme.font;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            min-width: 16px;
+            height: 16px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: root.checked ? #1a2434 : EditorTheme.field;
+            HorizontalLayout {
+                padding-left: 4px;
+                padding-right: 4px;
+                alignment: center;
+                Text {
+                    text: root.count;
+                    color: root.checked ? EditorTheme.accent-sel-text : EditorTheme.muted;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+
+    ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component ConsolePanel {
+    in-out property <[ConsoleRow]> rows: [];
+    in-out property <int> selected-index: -1;
+    in-out property <bool> collapse: false;
+    in-out property <bool> clear-on-play: true;
+    in-out property <bool> error-pause: false;
+    in-out property <bool> filter-log: true;
+    in-out property <bool> filter-warning: true;
+    in-out property <bool> filter-error: true;
+    in-out property <string> search-text: "";
+    in property <int> count-log: 0;
+    in property <int> count-warning: 0;
+    in property <int> count-error: 0;
+    in-out property <string> detail-text: "";
+    in-out property <string> detail-stack: "";
+
+    callback clear-clicked();
+    callback collapse-toggled();
+    callback clear-on-play-toggled();
+    callback error-pause-toggled();
+    callback filter-changed();
+    callback search-edited();
+    callback row-selected(int);
+
+    min-height: 120px;
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    Rectangle {
+        background: EditorTheme.window;
+        border-color: EditorTheme.hairline;
+        border-width: 1px;
+
+        VerticalLayout {
+            spacing: 0px;
+            padding: 0px;
+
+            Rectangle {
+                height: 34px;
+                background: EditorTheme.toolbar;
+
+                HorizontalLayout {
+                    padding: 6px;
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 6px;
+                    alignment: stretch;
+
+                    EditorButton {
+                        text: "Clear";
+                        clicked => { root.clear-clicked(); }
+                    }
+                    EditorButton {
+                        text: "Collapse";
+                        checked: root.collapse;
+                        clicked => {
+                            root.collapse = !root.collapse;
+                            root.collapse-toggled();
+                        }
+                    }
+                    EditorToggle {
+                        text: "Clear on Play";
+                        checked <=> root.clear-on-play;
+                        toggled => { root.clear-on-play-toggled(); }
+                    }
+                    EditorToggle {
+                        text: "Error Pause";
+                        checked <=> root.error-pause;
+                        toggled => { root.error-pause-toggled(); }
+                    }
+                    ConsoleFilterButton {
+                        icon: EditorGlyphs.console-log;
+                        label: "Log";
+                        count: root.count-log;
+                        checked: root.filter-log;
+                        clicked => {
+                            root.filter-log = !root.filter-log;
+                            root.filter-changed();
+                        }
+                    }
+                    ConsoleFilterButton {
+                        icon: EditorGlyphs.console-warning;
+                        label: "Warning";
+                        count: root.count-warning;
+                        checked: root.filter-warning;
+                        clicked => {
+                            root.filter-warning = !root.filter-warning;
+                            root.filter-changed();
+                        }
+                    }
+                    ConsoleFilterButton {
+                        icon: EditorGlyphs.console-error;
+                        label: "Error";
+                        count: root.count-error;
+                        checked: root.filter-error;
+                        clicked => {
+                            root.filter-error = !root.filter-error;
+                            root.filter-changed();
+                        }
+                    }
+                    EditorSearchField {
+                        horizontal-stretch: 1;
+                        text <=> root.search-text;
+                        placeholder: "Search";
+                        edited => { root.search-edited(); }
+                        accepted => { root.search-edited(); }
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: EditorTheme.field;
+                clip: true;
+
+                list-flick := Flickable {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width - (self.viewport-height > self.height ? 10px : 0px);
+                    height: 100%;
+                    viewport-width: self.width;
+                    viewport-height: msg-list.preferred-height;
+                    interactive: true;
+
+                    msg-list := VerticalLayout {
+                        alignment: start;
+                        spacing: 0px;
+                        width: parent.width;
+
+                        for row[i] in root.rows: Rectangle {
+                            height: 22px;
+                            width: parent.width;
+                            background: i == root.selected-index ? EditorTheme.accent-sel-fill
+                                : (row-ta.has-hover ? EditorTheme.tab-hover : transparent);
+
+                            Rectangle {
+                                x: 0px;
+                                width: 2px;
+                                height: 100%;
+                                background: row.severity == 2 ? #E25B5B
+                                    : (row.severity == 1 ? #E6B84D : transparent);
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                spacing: 8px;
+                                alignment: stretch;
+
+                                Text {
+                                    text: row.time;
+                                    color: EditorTheme.muted;
+                                    font-size: EditorTheme.font-sm;
+                                    vertical-alignment: center;
+                                    width: 58px;
+                                }
+                                ConsoleSeverityIcon {
+                                    severity: row.severity;
+                                }
+                                Text {
+                                    text: row.origin == 1 ? "Player" : "Editor";
+                                    color: EditorTheme.muted;
+                                    font-size: EditorTheme.font-sm;
+                                    vertical-alignment: center;
+                                    width: 44px;
+                                }
+                                Text {
+                                    text: row.text;
+                                    color: i == root.selected-index ? EditorTheme.accent-sel-text
+                                        : EditorTheme.default-text;
+                                    font-size: EditorTheme.font;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                                if row.count > 1: Rectangle {
+                                    width: 28px;
+                                    height: 16px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 8px;
+                                    background: EditorTheme.toolbar;
+                                    Text {
+                                        width: 100%;
+                                        height: 100%;
+                                        text: row.count;
+                                        color: EditorTheme.muted;
+                                        font-size: 10px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            row-ta := TouchArea {
+                                clicked => { root.row-selected(i); }
+                            }
+                        }
+                    }
+                }
+
+                EditorVerticalScrollBar {
+                    x: parent.width - self.width;
+                    y: 0px;
+                    height: 100%;
+                    viewport-height: list-flick.viewport-height;
+                    page-size: list-flick.height;
+                    viewport-y <=> list-flick.viewport-y;
+                }
+
+                if root.rows.length == 0: Text {
+                    x: 12px;
+                    y: 16px;
+                    text: "No Console Messages";
+                    color: EditorTheme.muted;
+                    font-size: EditorTheme.font;
+                }
+            }
+
+            Rectangle { height: 1px; background: EditorTheme.hairline; }
+
+            Rectangle {
+                height: 96px;
+                background: EditorTheme.window;
+                clip: true;
+
+                Flickable {
+                    width: 100%;
+                    height: 100%;
+                    viewport-width: self.width;
+                    viewport-height: detail-col.preferred-height;
+
+                    detail-col := VerticalLayout {
+                        padding: 8px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 6px;
+                        alignment: start;
+                        width: parent.width;
+
+                        Text {
+                            text: root.detail-text;
+                            color: EditorTheme.default-text;
+                            font-size: EditorTheme.font-sm;
+                            wrap: word-wrap;
+                            width: parent.width;
+                        }
+                        if root.detail-stack != "": Text {
+                            text: root.detail-stack;
+                            color: EditorTheme.window-text;
+                            font-size: EditorTheme.font-sm;
+                            wrap: word-wrap;
+                            width: parent.width;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

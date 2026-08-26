@@ -1,5 +1,6 @@
 #include "runtime/core/reflection/engine_c_abi.h"
 
+#include "runtime/core/log/console_ring.h"
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
@@ -1245,6 +1246,29 @@ int blunder_cine_is_gameplay_input_suppressed(int* out_value) {
   return BLUNDER_ENGINE_OK;
 }
 
+int blunder_log(int severity, const char* text, const char* stack) {
+  if (text == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  ConsoleSeverity console_sev = ConsoleSeverity::Log;
+  switch (severity) {
+    case BLUNDER_LOG_SEVERITY_LOG:
+      console_sev = ConsoleSeverity::Log;
+      break;
+    case BLUNDER_LOG_SEVERITY_WARNING:
+      console_sev = ConsoleSeverity::Warning;
+      break;
+    case BLUNDER_LOG_SEVERITY_ERROR:
+      console_sev = ConsoleSeverity::Error;
+      break;
+    default:
+      return BLUNDER_ENGINE_ERROR;
+  }
+  ConsoleRing::instance().append(console_sev, consoleOriginForHost(), text,
+                                 stack != nullptr ? stack : "");
+  return BLUNDER_ENGINE_OK;
+}
+
 void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   if (out == nullptr) {
     return;
@@ -1362,6 +1386,7 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->cine_is_in_cine = &blunder_cine_is_in_cine;
   out->cine_is_gameplay_input_suppressed =
       &blunder_cine_is_gameplay_input_suppressed;
+  out->log = &blunder_log;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -1533,6 +1558,7 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
   BLUNDER_NATIVE_ABI_LOAD(cine_is_in_cine, "blunder_cine_is_in_cine");
   BLUNDER_NATIVE_ABI_LOAD(cine_is_gameplay_input_suppressed,
                           "blunder_cine_is_gameplay_input_suppressed");
+  BLUNDER_NATIVE_ABI_LOAD(log, "blunder_log");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

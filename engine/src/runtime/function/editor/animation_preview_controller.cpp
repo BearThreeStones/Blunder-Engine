@@ -11,6 +11,8 @@
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/function/script/animation_frame.h"
 
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace Blunder {
@@ -33,7 +35,14 @@ AnimationTree* treeFor(Object* object) {
 
 }  // namespace
 
+bool AnimationPreviewController::windowBound() const {
+  return hasTarget() && hasTree();
+}
+
 bool AnimationPreviewController::playEnabled() const {
+  if (hasTree()) {
+    return true;
+  }
   const AnimationPlayer* player = playerFor(m_target_object);
   return player != nullptr && player->getClipMapEntryCount() > 0;
 }
@@ -47,19 +56,38 @@ bool AnimationPreviewController::stopEnabled() const {
   return m_state != AnimationPreviewState::Stopped;
 }
 
-bool AnimationPreviewController::isLooping() const {
-  const AnimationPlayer* player = playerFor(m_target_object);
-  return player != nullptr && player->isLooping();
-}
+bool AnimationPreviewController::isLooping() const { return m_session_loop; }
 
 float AnimationPreviewController::playbackPosition() const {
+  if (const AnimationTree* tree = treeFor(m_target_object)) {
+    return tree->rulerPosition();
+  }
   const AnimationPlayer* player = playerFor(m_target_object);
   return player != nullptr ? player->getPlaybackPosition() : 0.0f;
 }
 
 float AnimationPreviewController::clipLength() const {
+  if (const AnimationTree* tree = treeFor(m_target_object)) {
+    return tree->rulerLength();
+  }
   const AnimationPlayer* player = playerFor(m_target_object);
   return player != nullptr ? player->getClipLength() : 0.0f;
+}
+
+eastl::string AnimationPreviewController::rulerClipName() const {
+  if (const AnimationTree* tree = treeFor(m_target_object)) {
+    return tree->rulerClipName();
+  }
+  const AnimationPlayer* player = playerFor(m_target_object);
+  return player != nullptr ? player->getCurrentClipName() : eastl::string();
+}
+
+eastl::string AnimationPreviewController::clockReadout() const {
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "%s  %.2f / %.2f", rulerClipName().c_str(),
+                static_cast<double>(playbackPosition()),
+                static_cast<double>(clipLength()));
+  return eastl::string(buf);
 }
 
 float AnimationPreviewController::timeScale() const {
@@ -81,11 +109,44 @@ const eastl::string& AnimationPreviewController::slotClipName(int slot_index) co
   return player->getSlotClipName(slot_index);
 }
 
-void AnimationPreviewController::bindObject(Object* object,
-                                            const eastl::string& default_clip_name) {
-  m_target_object = nullptr;
+void AnimationPreviewController::haltBoundSession() { stop(); }
+
+void AnimationPreviewController::resetSessionChrome() {
   m_default_clip_name.clear();
   m_fade_seconds = 0.0f;
+  m_fire_target.clear();
+  m_in_cine = false;
+  m_input_suppressed = false;
+}
+
+void AnimationPreviewController::defaultFireTargetFromBindings() {
+  const eastl::vector<eastl::string> names = fireClipNames();
+  if (names.empty()) {
+    m_fire_target.clear();
+    return;
+  }
+  for (const eastl::string& name : names) {
+    if (name == m_fire_target) {
+      return;
+    }
+  }
+  m_fire_target = names.front();
+}
+
+bool AnimationPreviewController::atRulerEnd() const {
+  const float length = clipLength();
+  return length > 0.0f && playbackPosition() >= length - 1.0e-3f;
+}
+
+void AnimationPreviewController::bindObject(Object* object,
+                                            const eastl::string& default_clip_name) {
+  if (object == m_target_object) {
+    m_default_clip_name = default_clip_name;
+    return;
+  }
+
+  m_target_object = nullptr;
+  resetSessionChrome();
   m_state = AnimationPreviewState::Stopped;
 
   if (object == nullptr || !object->hasAnimationPlayer()) {
@@ -94,16 +155,27 @@ void AnimationPreviewController::bindObject(Object* object,
 
   m_target_object = object;
   m_default_clip_name = default_clip_name;
+  defaultFireTargetFromBindings();
 }
 
 void AnimationPreviewController::clearTarget() {
-  stop();
+  haltBoundSession();
   m_target_object = nullptr;
-  m_default_clip_name.clear();
-  m_fade_seconds = 0.0f;
+  resetSessionChrome();
 }
 
 bool AnimationPreviewController::play(const eastl::string& clip_name) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    if (!tree->isActive()) {
+      tree->setActive(true);
+    }
+    if (m_state == AnimationPreviewState::Paused && atRulerEnd()) {
+      tree->seekRuler(0.0f);
+    }
+    m_state = AnimationPreviewState::Playing;
+    return true;
+  }
+
   AnimationPlayer* player = playerFor(m_target_object);
   if (player == nullptr) {
     return false;
@@ -150,21 +222,33 @@ bool AnimationPreviewController::resume() {
 }
 
 void AnimationPreviewController::stop() {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->clearOneShot();
+    tree->seekRuler(0.0f);
+    endCine();
+    m_state = AnimationPreviewState::Stopped;
+    return;
+  }
   if (AnimationPlayer* player = playerFor(m_target_object)) {
     player->stop();
   }
+  endCine();
   m_state = AnimationPreviewState::Stopped;
 }
 
-void AnimationPreviewController::toggleLoop() {
-  if (AnimationPlayer* player = playerFor(m_target_object)) {
-    player->setLoop(!player->isLooping());
-  }
-}
+void AnimationPreviewController::toggleLoop() { setLoop(!m_session_loop); }
 
 void AnimationPreviewController::setLoop(const bool loop) {
+  m_session_loop = loop;
+}
+
+void AnimationPreviewController::seekPlayback(const float seconds) {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->seekRuler(seconds);
+    return;
+  }
   if (AnimationPlayer* player = playerFor(m_target_object)) {
-    player->setLoop(loop);
+    player->seekPlayback(seconds);
   }
 }
 
@@ -282,6 +366,45 @@ bool AnimationPreviewController::requestOneShot(const eastl::string& clip_name) 
     return false;
   }
   return tree->requestOneShot(clip_name);
+}
+
+eastl::vector<eastl::string> AnimationPreviewController::fireClipNames() const {
+  eastl::vector<eastl::string> names;
+  const AnimationPlayer* player = playerFor(m_target_object);
+  if (player == nullptr) {
+    return names;
+  }
+  const eastl::vector<AnimationPlayer::ClipBinding> bindings =
+      player->getClipBindings();
+  names.reserve(bindings.size());
+  for (const AnimationPlayer::ClipBinding& binding : bindings) {
+    names.push_back(binding.name);
+  }
+  return names;
+}
+
+void AnimationPreviewController::setFireTarget(const eastl::string& clip_name) {
+  m_fire_target = clip_name;
+}
+
+bool AnimationPreviewController::fire() {
+  if (m_fire_target.empty()) {
+    defaultFireTargetFromBindings();
+  }
+  if (m_fire_target.empty()) {
+    return false;
+  }
+  return requestOneShot(m_fire_target);
+}
+
+void AnimationPreviewController::enterCine() {
+  m_in_cine = true;
+  m_input_suppressed = true;
+}
+
+void AnimationPreviewController::endCine() {
+  m_in_cine = false;
+  m_input_suppressed = false;
 }
 
 void AnimationPreviewController::setAdd2Weight(const float weight) {
@@ -508,6 +631,39 @@ void AnimationPreviewController::tick(const float delta_time) {
   if (m_state != AnimationPreviewState::Playing || m_target_object == nullptr) {
     return;
   }
+
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree != nullptr) {
+    const float length = clipLength();
+    const float position = playbackPosition();
+    const float scale = timeScale();
+    const eastl::string oneshot_name = tree->getOneShotClipName();
+    const bool oneshot_before = tree->isOneShotActive();
+    if (length > 0.0f) {
+      if (!m_session_loop &&
+          position + delta_time * scale >= length - 1.0e-6f) {
+        seekPlayback(length);
+        pause();
+        return;
+      }
+    }
+    tickObjectAnimationPreviewFrame(m_target_object, delta_time);
+    if (m_session_loop) {
+      if (oneshot_before && !tree->isOneShotActive() &&
+          !oneshot_name.empty()) {
+        tree->requestOneShot(oneshot_name);
+      } else {
+        const float wrapped_length = clipLength();
+        const float wrapped_position = playbackPosition();
+        if (wrapped_length > 0.0f && wrapped_position >= wrapped_length) {
+          const float wrapped = std::fmod(wrapped_position, wrapped_length);
+          seekPlayback(wrapped < 0.0f ? wrapped + wrapped_length : wrapped);
+        }
+      }
+    }
+    return;
+  }
+
   tickObjectAnimationPreviewFrame(m_target_object, delta_time);
 }
 

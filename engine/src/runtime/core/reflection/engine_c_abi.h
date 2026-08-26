@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 10
+#define BLUNDER_ENGINE_C_ABI_VERSION 11
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -245,6 +245,17 @@ BLUNDER_ENGINE_C_API int blunder_cine_end(void);
 BLUNDER_ENGINE_C_API int blunder_cine_is_in_cine(int* out_value);
 BLUNDER_ENGINE_C_API int blunder_cine_is_gameplay_input_suppressed(int* out_value);
 
+/// Console severity for `blunder_log` (Log / Warning / Error).
+enum BlunderLogSeverity {
+  BLUNDER_LOG_SEVERITY_LOG = 0,
+  BLUNDER_LOG_SEVERITY_WARNING = 1,
+  BLUNDER_LOG_SEVERITY_ERROR = 2,
+};
+
+/// Append a Console Message (UTF-8 text; optional UTF-8 stack, may be null).
+BLUNDER_ENGINE_C_API int blunder_log(int severity, const char* text,
+                                     const char* stack);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
@@ -403,6 +414,7 @@ typedef struct BlunderNativeAbi {
   int (*cine_end)(void);
   int (*cine_is_in_cine)(int* out_value);
   int (*cine_is_gameplay_input_suppressed)(int* out_value);
+  int (*log)(int severity, const char* text, const char* stack);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).

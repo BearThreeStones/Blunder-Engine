@@ -50,6 +50,12 @@ struct PlaySessionHooks {
   std::function<bool(int timeout_ms)> ipc_wait_ready;
   std::function<bool(PlayIpcCommand)> ipc_send;
   std::function<void()> ipc_close;
+  /// After handshake: drain Player NDJSON logs. Unset skips ingest (tests).
+  std::function<std::vector<PlayIpcLogRecord>()> ipc_poll_logs;
+  std::function<bool(uint32_t ticks)> ipc_send_step;
+  std::function<bool()> ipc_send_frame;
+  std::function<std::vector<PlayIpcFrameRecord>()> ipc_poll_frames;
+  std::function<std::vector<PlayIpcErrorRecord>()> ipc_poll_errors;
   /// Optional Scripts dirty gate (run before spawn). When unset, gate is skipped.
   std::function<bool()> is_scripts_dirty;
   std::function<bool(std::string& error)> build_scripts;
@@ -76,7 +82,9 @@ class PlaySessionController final {
 
   const PlayIpcEndpoint& endpoint() const { return m_endpoint; }
   const std::string& lastError() const { return m_last_error; }
+  const std::string& lastRequestFailure() const { return m_last_request_failure; }
   const eastl::vector<Issue>& lastIssues() const { return m_last_issues; }
+  const PlayIpcFrameRecord& lastPlayFrame() const { return m_last_play_frame; }
 
   /// Surface a non-session error (e.g. Save and Play save failure) without
   /// starting Play.
@@ -88,10 +96,17 @@ class PlaySessionController final {
   void setScriptsPreflight(std::function<bool()> is_dirty,
                            std::function<bool(std::string& error)> build);
 
+  bool clearOnPlay() const;
+  void setClearOnPlay(bool value);
+  bool errorPause() const;
+  void setErrorPause(bool value);
+
   bool play(const PlaySessionRequest& request);
   bool pause();
   bool resume();
   bool stop();
+  bool step(uint32_t ticks);
+  bool requestPlayFrame();
   void poll();
 
   static PlaySessionHooks makeDefaultHooks();
@@ -100,6 +115,8 @@ class PlaySessionController final {
   void resetToStopped();
   void onProcessGone();
   void failStarting(std::string error);
+  void ingestPlayLogs();
+  void ingestPlayFrames();
   std::chrono::steady_clock::time_point now() const;
 
   PlaySessionHooks m_hooks;
@@ -108,6 +125,8 @@ class PlaySessionController final {
   bool m_ipc_connected{false};
   PlayIpcEndpoint m_endpoint;
   std::string m_last_error;
+  std::string m_last_request_failure;
+  PlayIpcFrameRecord m_last_play_frame;
   eastl::vector<Issue> m_last_issues;
   bool m_has_starting_deadline{false};
   std::chrono::steady_clock::time_point m_starting_deadline{};

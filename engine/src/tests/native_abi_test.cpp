@@ -213,6 +213,7 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.cine_is_in_cine != nullptr);
   expect_true((std::string(label) + ": cine_is_gameplay_input_suppressed").c_str(),
               abi.cine_is_gameplay_input_suppressed != nullptr);
+  expect_true((std::string(label) + ": log").c_str(), abi.log != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -232,7 +233,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 10", BLUNDER_ENGINE_C_ABI_VERSION >= 10);
+  expect_true("abi version >= 11", BLUNDER_ENGINE_C_ABI_VERSION >= 11);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

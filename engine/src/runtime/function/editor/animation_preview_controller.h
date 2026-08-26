@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EASTL/string.h"
+#include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/object_id.h"
@@ -18,7 +19,8 @@ enum class AnimationPreviewState : uint8_t {
   Paused,
 };
 
-/// Edit Mode AnimationPlayer preview — no DotNetHost / Behaviour Tick.
+/// Edit Mode animation preview — no DotNetHost / Behaviour Tick.
+/// Window path binds an AnimationTree. Player helpers remain for Phase 2 tests.
 class AnimationPreviewController final {
  public:
   bool hasTarget() const { return m_target_object != nullptr; }
@@ -29,10 +31,14 @@ class AnimationPreviewController final {
   bool stopEnabled() const;
   bool isLooping() const;
   bool isPaused() const { return m_state == AnimationPreviewState::Paused; }
+  bool isPlaying() const { return m_state == AnimationPreviewState::Playing; }
+  bool windowBound() const;
 
   const eastl::string& defaultClipName() const { return m_default_clip_name; }
   float playbackPosition() const;
   float clipLength() const;
+  eastl::string rulerClipName() const;
+  eastl::string clockReadout() const;
 
   float timeScale() const;
   float blendWeight() const;
@@ -49,6 +55,8 @@ class AnimationPreviewController final {
 
   void bindObject(Object* object, const eastl::string& default_clip_name = {});
   void bindSelection(SceneInstance* scene, EntityId entity_id);
+  void bindSelection(SceneInstance* scene, EntityId entity_id,
+                     size_t selected_count);
   void clearTarget();
 
   bool play(const eastl::string& clip_name = {});
@@ -57,6 +65,8 @@ class AnimationPreviewController final {
   void stop();
   void toggleLoop();
   void setLoop(bool loop);
+
+  void seekPlayback(float seconds);
 
   void setTimeScale(float scale);
   void setBlendWeight(float weight);
@@ -71,6 +81,16 @@ class AnimationPreviewController final {
   bool requestOneShot(const eastl::string& clip_name);
   void setAdd2Weight(float weight);
   bool setAdd2ClipName(const eastl::string& name);
+
+  eastl::vector<eastl::string> fireClipNames() const;
+  const eastl::string& fireTarget() const { return m_fire_target; }
+  void setFireTarget(const eastl::string& clip_name);
+  bool fire();
+
+  bool isInCine() const { return m_in_cine; }
+  bool isInputSuppressed() const { return m_input_suppressed; }
+  void enterCine();
+  void endCine();
 
   void setAssetGuid(const eastl::string& guid);
   bool applyTreeTopology(const AnimationTreeTopologyData& topology);
@@ -99,10 +119,19 @@ class AnimationPreviewController final {
   void resampleBoundSkeleton();
 
  private:
+  void haltBoundSession();
+  void resetSessionChrome();
+  bool atRulerEnd() const;
+  void defaultFireTargetFromBindings();
+
   Object* m_target_object{nullptr};
   eastl::string m_default_clip_name;
   float m_fade_seconds{0.0f};
   AnimationPreviewState m_state{AnimationPreviewState::Stopped};
+  bool m_session_loop{false};
+  eastl::string m_fire_target;
+  bool m_in_cine{false};
+  bool m_input_suppressed{false};
 };
 
 }  // namespace Blunder

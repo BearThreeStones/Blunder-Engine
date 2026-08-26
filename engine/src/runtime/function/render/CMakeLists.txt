@@ -167,6 +167,11 @@ set(RENDER_SOURCES
     "function/render/mesh_preview/mesh_preview_offscreen_backend.cpp"
     "function/render/mesh_preview/mesh_preview_render.h"
     "function/render/mesh_preview/mesh_preview_render.cpp"
+    "function/render/scene_thumbnail/i_scene_still_gpu.h"
+    "function/render/scene_thumbnail/scene_still.h"
+    "function/render/scene_thumbnail/scene_still.cpp"
+    "function/render/scene_thumbnail/capture.h"
+    "function/render/scene_thumbnail/capture.cpp"
     "function/render/scene_thumbnail/scene_thumbnail_render.h"
     "function/render/scene_thumbnail/scene_thumbnail_render.cpp"
 )

@@ -1,5 +1,7 @@
 #include "runtime/project/play_session_controller.h"
+#include "runtime/core/log/console_ring.h"
 #include "runtime/project/authorship_issue.h"
+#include "runtime/project/play_step.h"
 
 #include <chrono>
 #include <cstdio>
@@ -27,6 +29,11 @@ struct FakeSession {
   bool connect_ok{true};
   bool wait_ready_ok{true};
   std::vector<Blunder::PlayIpcCommand> sent;
+  std::vector<Blunder::PlayIpcLogRecord> pending_logs;
+  std::vector<Blunder::PlayIpcFrameRecord> pending_frames;
+  uint32_t last_step_ticks{0};
+  int step_sends{0};
+  int frame_sends{0};
   Blunder::PlaySpawnArgs last_spawn{};
   Blunder::PlayIpcEndpoint endpoint{};
 };
@@ -73,6 +80,31 @@ Blunder::PlaySessionHooks makeFakeHooks(FakeSession& fake) {
   hooks.ipc_send = [&](PlayIpcCommand cmd) {
     fake.sent.push_back(cmd);
     return true;
+  };
+  hooks.ipc_poll_logs = [&]() {
+    std::vector<PlayIpcLogRecord> out;
+    out.swap(fake.pending_logs);
+    return out;
+  };
+  hooks.ipc_send_step = [&](uint32_t ticks) {
+    ++fake.step_sends;
+    fake.last_step_ticks = ticks;
+    return true;
+  };
+  hooks.ipc_send_frame = [&]() {
+    ++fake.frame_sends;
+    PlayIpcFrameRecord frame;
+    frame.width = 16;
+    frame.height = 9;
+    frame.encoding = "rgba8";
+    frame.rgba.assign(16u * 9u * 4u, 3);
+    fake.pending_frames.push_back(std::move(frame));
+    return true;
+  };
+  hooks.ipc_poll_frames = [&]() {
+    std::vector<PlayIpcFrameRecord> out;
+    out.swap(fake.pending_frames);
+    return out;
   };
   hooks.ipc_close = [&]() {
     fake.connected = false;
@@ -251,6 +283,97 @@ int main() {
                 issueListHasCode(ctrl.lastIssues(),
                                  k_issue_scripts_build_failed));
   }
+
+  {
+    consoleViewSettings() = ConsoleViewSettings{};
+    ConsoleRing::instance().clear();
+    ConsoleRing::instance().append(ConsoleSeverity::Log,
+                                   ConsoleOrigin::EditorSession, "keep-me");
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    expect_true("clear on play default", consoleViewSettings().clear_on_play);
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play clears ring", ctrl.play(req));
+    expect_true("ring cleared on play", ConsoleRing::instance().size() == 0);
+
+    consoleViewSettings().clear_on_play = false;
+    ConsoleRing::instance().append(ConsoleSeverity::Log,
+                                   ConsoleOrigin::EditorSession, "stay");
+    expect_true("play again without clear", ctrl.play(req));
+    expect_true("ring kept when clear off", ConsoleRing::instance().size() == 1);
+  }
+
+  {
+    consoleViewSettings() = ConsoleViewSettings{};
+    consoleViewSettings().clear_on_play = false;
+    consoleViewSettings().error_pause = true;
+    ConsoleRing::instance().clear();
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play for error pause", ctrl.play(req));
+    ctrl.poll();
+    expect_true("playing before play error",
+                ctrl.state() == PlaySessionState::Playing);
+
+    PlayIpcLogRecord err;
+    err.sev = "error";
+    err.text = "play-error";
+    fake.pending_logs.push_back(err);
+    ctrl.poll();
+    expect_true("error pause paused", ctrl.state() == PlaySessionState::Paused);
+    expect_true("error pause sent pause",
+                !fake.sent.empty() && fake.sent.back() == PlayIpcCommand::Pause);
+    expect_true("play error ingested", ConsoleRing::instance().size() >= 1);
+    const auto snap = ConsoleRing::instance().snapshot();
+    expect_true("play origin", !snap.empty() &&
+                                   snap.back().origin == ConsoleOrigin::PlayProcess);
+
+    ConsoleRing::instance().clear();
+    ctrl.resume();
+    expect_true("resumed", ctrl.state() == PlaySessionState::Playing);
+    ConsoleRing::instance().append(ConsoleSeverity::Error,
+                                   ConsoleOrigin::EditorSession, "editor-err");
+    ctrl.poll();
+    expect_true("editor error does not pause",
+                ctrl.state() == PlaySessionState::Playing);
+
+    expect_true("stop keeps ring", ctrl.stop());
+    expect_true("ring after stop", ConsoleRing::instance().size() == 1);
+  }
+
+  {
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play for step", ctrl.play(req));
+    ctrl.poll();
+    expect_true("playing rejects step", !ctrl.step(30));
+    expect_true("step requires pause code",
+                ctrl.lastRequestFailure() == k_request_play_step_requires_pause);
+    expect_true("playing step not sent", fake.step_sends == 0);
+    expect_true("pause for step", ctrl.pause());
+    expect_true("paused step ok", ctrl.step(30));
+    expect_true("stays paused after step",
+                ctrl.state() == PlaySessionState::Paused);
+    expect_true("step sent once", fake.step_sends == 1);
+    expect_true("step ticks 30", fake.last_step_ticks == 30);
+    expect_true("frame after step", ctrl.requestPlayFrame());
+    expect_true("frame 16:9", ctrl.lastPlayFrame().width == 16 &&
+                                  ctrl.lastPlayFrame().height == 9);
+    expect_true("frame not square",
+                ctrl.lastPlayFrame().width != ctrl.lastPlayFrame().height);
+    expect_true("frame send once", fake.frame_sends == 1);
+  }
+
+  consoleViewSettings() = ConsoleViewSettings{};
+  ConsoleRing::instance().clear();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

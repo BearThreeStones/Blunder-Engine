@@ -81,7 +81,9 @@ int main() {
   ClassDB::initialize();
   animationSyncGroupService().clearAll();
 
-  expect_true("abi version is 10", blunder_engine_abi_version() == 10);
+  expect_true("abi version >= 11", blunder_engine_abi_version() >= 11);
+  expect_true("abi version matches header",
+              blunder_engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);

@@ -37,6 +37,8 @@ enum class DockPanelKind : uint8_t {
   hierarchy,
   inspector,
   content_browser,
+  animation,
+  console,
 };
 
 enum class DockDragState : uint8_t {

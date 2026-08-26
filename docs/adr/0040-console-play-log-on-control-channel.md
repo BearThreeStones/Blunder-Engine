@@ -1,0 +1,3 @@
+# Play log forwarding rides the Play control channel
+
+The editor Console lists diagnostics from both the Editor Session and the Play Process. Because Play is a separate process, Player messages must be forwarded. They travel on the existing local **Play control channel** (loopback line protocol): session commands still go editor → Player; Console Messages (severity, text, origin, optional Console stack) go Player → editor on that same connection. Rejected: a second log-only socket (duplicate handshake and session lifetime) and capturing Player stdout/stderr (conflicts with `LOG_DEBUG` staying off the Console and with `System.Console.WriteLine` not being a Console Message).

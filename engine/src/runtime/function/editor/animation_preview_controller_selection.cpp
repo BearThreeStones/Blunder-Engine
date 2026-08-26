@@ -7,12 +7,14 @@ namespace Blunder {
 
 void AnimationPreviewController::bindSelection(SceneInstance* scene,
                                              EntityId entity_id) {
-  m_target_object = nullptr;
-  m_default_clip_name.clear();
-  m_fade_seconds = 0.0f;
-  m_state = AnimationPreviewState::Stopped;
+  bindSelection(scene, entity_id, isValid(entity_id) ? 1 : 0);
+}
 
-  if (scene == nullptr || !isValid(entity_id)) {
+void AnimationPreviewController::bindSelection(SceneInstance* scene,
+                                             EntityId entity_id,
+                                             size_t selected_count) {
+  if (scene == nullptr || selected_count != 1 || !isValid(entity_id)) {
+    clearTarget();
     return;
   }
 
@@ -20,10 +22,14 @@ void AnimationPreviewController::bindSelection(SceneInstance* scene,
   if (object == nullptr) {
     object = scene->ensureBoundObject(entity_id);
   }
-  if (object == nullptr || !object->hasAnimationPlayer()) {
+  if (object == nullptr || !object->hasAnimationTree()) {
+    clearTarget();
     return;
   }
 
+  if (object != m_target_object && m_target_object != nullptr) {
+    haltBoundSession();
+  }
   bindObject(object, scene->getDefaultAnimationClipName(entity_id));
 }
 

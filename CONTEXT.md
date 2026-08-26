@@ -19,8 +19,12 @@ A process-lifetime first-party object that owns a capability (for example Render
 _Avoid_: Plugin, treating Layer as a System, treating Behaviour as a System, mid-session unload of a System, Cordis component
 
 **Host composition**:
-Which Systems start in a given process. Today that is Editor Session versus Player (`EngineHostMode`). Changing composition means starting a new process, not remounting Systems in a live session.
-_Avoid_: Cordis profile / bundle / patch YAML as the first composition format, hot-swapping Host composition inside a live process, treating Play Mode as a Host composition (Play Mode is a session; Player is the host)
+Which Systems start in a given process. Today that is Editor Session versus Player (`EngineHostMode`). Changing composition means starting a new process, not remounting Systems in a live session. No OS window (**Headless**) is not a third composition.
+_Avoid_: Cordis profile / bundle / patch YAML as the first composition format, hot-swapping Host composition inside a live process, treating Play Mode as a Host composition (Play Mode is a session; Player is the host); `EngineHostMode::Headless` as a third host
+
+**Headless**:
+An Editor Session or Player running with no OS window. Still Editor or Player `EngineHostMode`, not a third mode. Headless Editor mounts Authorship System and Play Session; it does not mount Slint, UiHost, or the viewport sink/bridge. Headless Player still does not mount Authorship System. Windowed Player close is **Player window close**; Headless Player ends via Stop or process exit.
+_Avoid_: A Headless host mode beside Editor and Player; `engine_agent` as a third process kind; treating no-window as a different Authorship contract; calling an orphan-after-close Player Headless; requiring Slint for Capture; a Headless-only observation API
 
 **Seam**:
 A declared extension point beside the Privileged core with three roles: a definition (the interface), providers (implementations), and at least one consumer (the System that uses them). One role alone is not a Seam. Adding a first-party capability means designing all three. The first Seam to cut is the **SkeletonModifier type catalog**; Import codec is the second. Editor Command and Add… Unique attachments are not Seams.
@@ -36,7 +40,7 @@ _Avoid_: Putting Editor-only authorship Systems here as the lasting path, treati
 
 **Registered System**:
 A System that at least one shipped Host composition omits. Editor-only authorship belongs here — Content Browser, Selection, Hierarchy, Scene Edit, Document History, Viewport Pick, Placement Preview, Animation Preview, Play Session, thumbnail/preview render services, Asset Import, UiHost, Slint, viewport sink/bridge, Authorship System. Player must not create them. Mounted at process boot via a registry; callers tolerate absence. Still process-lifetime — not a Plugin and not a Seam registration.
-_Avoid_: Plugin, unloading a Registered System while the process runs, conflating Registered System with Seam registration, creating Content Browser or Import inside the Player, Cordis ctx keys for the Privileged core
+_Avoid_: Plugin, unloading a Registered System while the process runs, conflating Registered System with Seam registration, creating Content Browser or Import inside the Player, Cordis ctx keys for the Privileged core; requiring Slint, UiHost, or the viewport sink in a Headless Editor
 
 ### Reflection & scripting
 
@@ -49,7 +53,7 @@ The in-process CoreCLR host (`nethost` / hostfxr) that loads Project C# assembli
 _Avoid_: Mono as the product host, out-of-process `dotnet` IPC as the shipping model, bundling ALC hot reload into the first host slice, direct P/Invoke of C++ member layouts; treating an editor-process host as required for Play Mode
 
 **Engine API assembly**:
-The generated managed library (working name `Blunder.Api`) produced from the API Blueprint. Project game assemblies reference it; for the .NET host MVP it ships beside the editor/runtime and is referenced by path from the Create `.csproj` template. Default target framework is `net10.0` (current .NET LTS). A NuGet package may be added later for distribution without changing the Blueprint → generator source of truth.
+The generated managed library (working name `Blunder.Api`) produced from the API Blueprint. Project game assemblies reference it; for the .NET host MVP it ships beside the editor/runtime and is referenced by path from the Create `.csproj` template. Default target framework is `net10.0` (current .NET LTS). A NuGet package may be added later for distribution without changing the Blueprint → generator source of truth. Gameplay diagnostics go through the **Debug API**, not `System.Console`.
 _Avoid_: Hand-written C# stubs as source of truth, copying generated binding sources into every Project, scraping C++ headers from C#, requiring NuGet for the first host slice, defaulting new Projects to net8/net9 as the product TFM
 
 **ClassDB**:
@@ -105,11 +109,11 @@ Writing a spatial (or other ECS-backed) property on an Object that has no Entity
 _Avoid_: Shadow TRS on Object separate from Transform, requiring a pre-existing Entity before any transform edit
 
 **Lifecycle dispatch**:
-Engine-owned callbacks such as Ready/Tick implemented by Behaviours. For each Object, the engine invokes each Behaviour's Script Peer in that Object's Behaviour list order (one call per Behaviour instance via PtrCall) — not a single call per Object and not per-instance native function pointers on the Object.
-_Avoid_: Per-Object TickDelegate fields, one lifecycle call per Object with manual C# fan-out as the only path, global per-type batching that ignores per-Object list order, unmanaged C# doing its own full world walk as the only tick path
+Engine-owned callbacks such as Ready/Tick implemented by Behaviours. For each Object, the engine invokes each Behaviour's Script Peer in that Object's Behaviour list order (one call per Behaviour instance via PtrCall) — not a single call per Object and not per-instance native function pointers on the Object. A **Lifecycle exception** does not skip the rest of that Object's Behaviour list.
+_Avoid_: Per-Object TickDelegate fields, one lifecycle call per Object with manual C# fan-out as the only path, global per-type batching that ignores per-Object list order, unmanaged C# doing its own full world walk as the only tick path; letting OnMessage or PoseApplied bypass the Lifecycle exception rule
 
 **Message**:
-A directed gameplay communication addressed to an Object by ObjectId. Identified by a MessageId and carrying a small Variant argument bag of at most four arguments. Authors send via a global Message facade (`Message.Send` / `Message.Register`), not via Object instance methods as the primary API. Delivery is synchronous by default and fans out to every Behaviour on that Object in list order; each Behaviour may handle or ignore it (no consume/stop-propagation). During Send, the engine snapshots that Object's Behaviour list and skips destroyed/tombstoned peers; deeper reentrancy safety is by convention, not a full deferred-mutation transaction. The engine receive path for Behaviours is a single entry (`OnMessage`); per-name handler methods are optional authoring sugar later, not the MVP bridge contract. The MVP Send surface is C# (Behaviour-to-Object); native/C++ Send uses the same delivery path but ships later. Used only for cross-Object notifications and commands — not for queries/reads (those use the Object property surface or sibling Behaviour access), not for Lifecycle dispatch, and not as a substitute for ordinary property get/set.
+A directed gameplay communication addressed to an Object by ObjectId. Identified by a MessageId and carrying a small Variant argument bag of at most four arguments. Authors send via a global Message facade (`Message.Send` / `Message.Register`), not via Object instance methods as the primary API. Delivery is synchronous by default and fans out to every Behaviour on that Object in list order; each Behaviour may handle or ignore it (no consume/stop-propagation). During Send, the engine snapshots that Object's Behaviour list and skips destroyed/tombstoned peers; deeper reentrancy safety is by convention, not a full deferred-mutation transaction. The engine receive path for Behaviours is a single entry (`OnMessage`); per-name handler methods are optional authoring sugar later, not the MVP bridge contract. The MVP Send surface is C# (Behaviour-to-Object); native/C++ Send uses the same delivery path but ships later. Used only for cross-Object notifications and commands — not for queries/reads (those use the Object property surface or sibling Behaviour access), not for Lifecycle dispatch, and not as a substitute for ordinary property get/set. A **Lifecycle exception** in one receiver aborts that `OnMessage` only; later Behaviours in the snapshot still receive the Message.
 _Avoid_: Signal (subscription / emit-to-unknown-listeners) as this primitive, SendMessage-to-BehaviourId as the primary address, routing Ready/Tick/Draw through Message, GETPOS-style query Messages as the product pattern, Win32-style raw int/pointer parameter pairs as the product ABI, default deferred/queued delivery, Handled-stops-siblings as the default fan-out rule, requiring Handler-time Destroy to be deferred as the MVP rule, requiring named `OnDamage`-style methods as the only receive path for MVP, unbounded Variant arrays as the Message payload, requiring physics/native systems to Send in the Message MVP, Object.Send as the primary product API
 
 **MessageId**:
@@ -310,8 +314,8 @@ The standalone `project_manager` executable that lists, creates, imports, and op
 _Avoid_: Manager as a mode of `engine_editor`, Unity Hub multi-editor-version management, an in-editor dock that assumes a Project is already loaded
 
 **Editor Session**:
-A full editor run bound to exactly one open Project (its project root). Started by launching `engine_editor` with that Project's path (typically `--project-root`); not the Project Manager app.
-_Avoid_: Multi-project tabs in one process for v1, hot-swapping project root inside a live session (deferred)
+A full editor run bound to exactly one open Project (its project root). Started by launching `engine_editor` with that Project's path (typically `--project-root`); not the Project Manager app. It may be **Headless** (no OS window) and is still Editor.
+_Avoid_: Multi-project tabs in one process for v1, hot-swapping project root inside a live session (deferred); requiring a visible window for Capture or Diagnose
 
 **Project Open**:
 Leaving Project Manager by spawning sibling `engine_editor` with the chosen Project root (CLI such as `--project-root`), which starts an Editor Session. v1 does not re-initialize a live process onto a new root.
@@ -376,19 +380,19 @@ Three stacked backgrounds, darkest first: Application Bar (Base 1, `#191B1F`), W
 _Avoid_: A single flat editor background; near-black panel surfaces (`#1B1E22` and below) that make the editor read as a void; Unity's lighter 2022 grays (`#383838` window family); bevels as the depth cue
 
 **Application Bar**:
-The Editor Shell strip at the top of the Editor Session window (~48px). It is Base 1, darker than Window. Layout: Save / Undo (and Redo / Save As) on the left as ghost buttons (fill on hover only); Play / Pause / Stop as a centered segmented cluster whose Play uses the **Editor accent**; View on the right. Not a native File/Edit menu rewrite.
-_Avoid_: Top toolbar; treating a window Toolbar as the Application Bar; moving Save/Undo into menus as part of this Shell pass; leaving Play in the left-aligned button row; giving every App Bar button a filled background; moving Move/Rotate/Scale onto this bar as part of this Shell pass
+The Editor Shell strip at the top of the Editor Session window (~48px). It is Base 1, darker than Window. Layout: **Save / Undo / Redo** on the left as ghost **Editor Icon** buttons (fill on hover only); Play / Pause / Stop as a centered segmented **Editor Icon** cluster whose Play uses the **Editor accent**; **View** and **Save As…** stay word buttons on the right / left as authored. Not a native File/Edit menu rewrite. Icon-versus-text: [ADR 0042](docs/adr/0042-icon-first-chrome-labels.md).
+_Avoid_: Top toolbar; treating a window Toolbar as the Application Bar; moving Save/Undo into menus as part of this Shell pass; leaving Play in the left-aligned button row; giving every App Bar button a filled background; moving Move/Rotate/Scale onto this bar as part of this Shell pass; word faces on Save/Undo/Redo or the Play cluster once those Godot glyphs are wired
 
 **Viewport tool strip**:
-Slint overlay bars on the editor viewport (transform tools, projection toggle, animation preview). They stay overlays in this pass. They read as floating: translucent Base 3 fill, hairline, 10px radius, soft shadow, and **Editor accent** on the checked tool. Distinct from **Editor Overlay** (3D draw) and from Application Bar / a Scene Window Toolbar.
-_Avoid_: Relocating these strips under the Scene tab as a Window Toolbar in this pass; treating them as Editor Overlays; opaque bevelled bars flush against the viewport
+Slint overlay bars on the editor viewport (transform tools, projection toggle). They stay overlays in this pass. They read as floating: translucent Base 3 fill, hairline, 10px radius, soft shadow, and **Editor accent** on the checked tool. Transform **Move / Rotate / Scale** and the global/local space toggle are **Editor Icon**-only (**Icon-first chrome**). Distinct from **Editor Overlay** (3D draw) and from Application Bar / a Scene Window Toolbar. The overlay **animation preview** toolbar is replaced by the **Animation Window**.
+_Avoid_: Relocating these strips under the Scene tab as a Window Toolbar in this pass; treating them as Editor Overlays; opaque bevelled bars flush against the viewport; word faces on Move/Rotate/Scale
 
 **Editor modal**:
 Authored Slint dialogs (Import Mesh, dirty Play/Open, Detection reimport, Browser Delete, Project Manager Create/Import) use Editor Theme modal chrome — 14px radius, no titlebar divider, blurred dim layer, actions bottom-right with the confirming action as the **Editor accent** primary — plus Editor controls. Copy and button sets stay as authored. Not native OS dialogs for these flows.
 _Avoid_: Mixing OS DisplayDialog chrome with Editor Theme for the same flows; more than one accent primary per dialog; redesigning import or dirty-scene workflows as part of this Shell pass
 
 **Panel interior**:
-The content inside a docked or floating window frame (Hierarchy rows, Inspector sections, Content Browser grid, History list). The Editor Shell is the frame around it, not this content.
+The content inside a docked or floating window frame (Hierarchy rows, Inspector sections, Content Browser grid, History list, Console list). The Editor Shell is the frame around it, not this content.
 _Avoid_: Treating the dock tab well as interior; calling the whole panel including tabs the interior
 
 **Interior freeze (Hierarchy)**:
@@ -414,8 +418,12 @@ _Avoid_: Dropping Editor Object Field chrome into Inspector; GUID/path string as
 ### Editor icons
 
 **Editor Icon**:
-A themed vector glyph used for editor chrome and panel affordances (dock close/pin, Application Bar, browser search/refresh/folder, tree/breadcrumb arrows, Inspector scale-link). Sourced from Godot's `editor/icons` SVG set and shown through dedicated Slint icon components. Fill follows Editor Theme; the default chrome icon color is theme icon gray (`#B3BBC4`), and a checked tool tints its icon with the **Editor accent**. This Shell pass does not switch the source set to Unity's Editor Icon Library.
+A themed vector glyph used for editor chrome and panel affordances (dock close/pin, Application Bar, browser search/refresh/folder, tree/breadcrumb arrows, Inspector scale-link, viewport transform tools, Animation Window transport). Sourced from Godot's `editor/icons` SVG set and shown through dedicated Slint icon components. Fill follows Editor Theme; the default chrome icon color is theme icon gray (`#B3BBC4`), and a checked tool tints its icon with the **Editor accent**. This Shell pass does not switch the source set to Unity's Editor Icon Library.
 _Avoid_: Emoji or Unicode text as the source for those affordances; one-off hand-drawn geometry once a Godot glyph is adopted for the same control; replacing the Godot SVG set with Unity PNG icons as part of this Shell pass
+
+**Icon-first chrome**:
+Action controls that have a dedicated Godot editor glyph are **Editor Icon**-only; the English name is the tooltip and accessible name, not a visible label on the button. Text stays for panel identity (dock tab titles — a leading icon does not replace the title), entity and Asset display names, Inspector property labels and Foldout titles, dialog/menu copy (**View**, **Save As…**, **Add…**), status word badges (**CINE**, **Inp**), and Clip Binding logical names. The Animation Window TimeScale slider may use the Time glyph as chrome; the Inspector TimeScale row keeps the word. Decision: [ADR 0042](docs/adr/0042-icon-first-chrome-labels.md).
+_Avoid_: Replacing property labels or object names with glyphs; inventing non-Godot geometry once a Godot SVG exists; making dock tab titles icon-only; word faces on Save/Undo/Redo, Play/Pause/Stop, Move/Rotate/Scale, Loop, Fire, or Enter/End CINE once those glyphs are wired
 
 **Scale-link icons**:
 The Inspector Scale link toggle uses Godot's linked/unlinked chain pair: linked (proportion locked) and unlinked (axes independent) — the same pair Godot's vector property linker uses (`Instance` / `Unlinked`).
@@ -560,8 +568,8 @@ The separate OS process that runs Play Mode for the open Project. It owns the li
 _Avoid_: Second editor window in the same process as the product Play boundary; treating env-gated in-editor DotNetHost as Play Mode
 
 **Player**:
-The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI. In the Player, only Gameplay Input (plus system window chrome such as close) is accepted; authorship input (Editor Camera, Editor Overlays / gizmos, viewport pick, Editor Commands) is off.
-_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play; treating Player as a second editor viewport
+The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI. It may be **Headless** (no OS window) and is still Player. In a windowed Player, only Gameplay Input (plus system window chrome such as close) is accepted; authorship input (Editor Camera, Editor Overlays / gizmos, viewport pick, Editor Commands) is off. Headless Player has no window chrome; session control is the Play control channel.
+_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play; treating Player as a second editor viewport; mounting Authorship System in the Player because it is Headless
 
 **Editor Overlay**:
 Authorship-only viewport chrome that is drawn and hit-tested in the editor viewport — ground grid, Transform gizmo, Navigate gizmo, selection outline, world axes, origins, wireframe, Camera Gizmo (scene Camera Component visualization), Light Gizmo (scene Light Component visualization), and similar tools. The Player never shows or interacts with Editor Overlays in Play Mode (including while Play Pause is active). The editor viewport keeps Editor Overlays while a Play Session runs.
@@ -577,7 +585,7 @@ _Avoid_: Billboard light icons as the product gizmo; Player light widgets; FOV-s
 
 **Camera Preview**:
 An authorship-only floating panel over the editor viewport that shows a live view through a selected scene **Camera Component** (pose + FOV + near/far). It is Slint chrome plus a dedicated preview image, not an OverlaySystem draw into the main viewport offscreen, and never appears in the Player.
-_Avoid_: Game View dock; Play window; Editor Camera widget; baking the PiP into `viewport-image`; using Camera Preview to preview a Mesh Asset (that is **Mesh Preview**); using Camera Preview as **Attachment property preview**; opening Camera Preview via Alt+LMB on the Hierarchy Camera icon
+_Avoid_: Game View dock; Play window; Editor Camera widget; baking the PiP into `viewport-image`; using Camera Preview to preview a Mesh Asset (that is **Mesh Preview**); using Camera Preview as **Attachment property preview**; opening Camera Preview via Alt+LMB on the Hierarchy Camera icon; using Camera Preview as v1 Capture
 
 **Mesh Preview Render**:
 The shared authorship render path that draws a **Mesh Asset** (Final preferred when fresh, otherwise Fast Path Intermediate) with automatic bounds framing into a dedicated offscreen target — not the main viewport offscreen and not the **Camera Preview** target. Lights are fixed **Studio lighting**. Surfaces use each primitive’s MaterialAsset, or **Mesh shading defaults**. A **Mesh material override** applies only to the Mesh Asset’s one MaterialAsset (glTF: first primitive); extra primitives stay Import-built. SSAO is off. It does not read **Editor shading overrides**. It produces still frames for **Content Browser Thumbnails** and live frames for **Mesh Preview**. Skinned meshes use bind-pose (or equivalent rest) stills in the first slice; it does not play AnimationPlayer clips for thumbnails.
@@ -635,8 +643,13 @@ _Avoid_: Treating a path change as opening a different document; clearing Docume
 Clearing Scene Asset references to GUIDs removed by Asset Delete or Delete Folder. The detach is payload of that same Global Command — on-disk Scene Assets and the live SceneInstance when the open scene is affected. It is not a Document Command. An affected open scene becomes dirty. Undo of that Global Command restores the references. Decision: [ADR 0038](docs/adr/0038-delete-scene-detach-global-command.md).
 _Avoid_: A second Document History command for the detach; leaving the live document pointing at a deleted GUID; using viewport Ctrl+Z to undo a Browser delete
 
+**Scene still**:
+One dedicated-offscreen frame of a scene through the Play-rule camera, with no Editor Overlays. Aspect is a parameter of this still: **Scene Thumbnail Render** is square; **Capture** is 16:9 with a capped longest edge. **Scene Thumbnail Render** is the On-disk cache product. **Capture** is the Host-observation product: Live document uses the live SceneInstance; On-disk instantiates.
+_Avoid_: Main viewport RT; Camera Preview RT; Mesh Preview Render; two lighting or camera rules for Thumbnail vs Capture; using the live window size as Capture aspect
+
 **Scene Thumbnail Render**:
-The authorship-only still path that, for an on-disk **Scene Asset**, temporarily instantiates that scene, resolves a camera with the Play rule (Main Camera, else first stable Camera), draws one frame at square aspect into a **dedicated** offscreen target (not the main viewport, not **Camera Preview**, not **Mesh Preview Render**), and CPU-readback writes the **Content Browser Thumbnail** cache. No Editor Overlays. Skinned content stays bind/rest pose (no AnimationPlayer sampling in this slice). Prefer **Light Components** when present; otherwise fall back to **Studio lighting**. Surfaces use each mesh’s MaterialAsset, or **Mesh shading defaults**. SSAO is off. It does not read **Editor shading overrides**. Cache invalidation uses the scene file mtime plus a fingerprint of direct Mesh Asset References on that scene. On failure (no camera, render error, etc.) show a Scene placeholder. Does not recurse nested scenes — **Child Scene** composition is out of product.
+The authorship-only still path that, for an on-disk **Scene Asset**, temporarily instantiates that scene, resolves a camera with the Play rule (Main Camera, else first stable Camera), draws one frame at square aspect into a **dedicated** offscreen target (not the main viewport, not **Camera Preview**, not **Mesh Preview Render**), and CPU-readback writes the **Content Browser Thumbnail** cache. No Editor Overlays. Skinned content stays bind/rest pose (no AnimationPlayer sampling in this slice). Prefer **Light Components** when present; otherwise fall back to **Studio lighting**. Surfaces use each mesh’s MaterialAsset, or **Mesh shading defaults**. SSAO is off. It does not read **Editor shading overrides**. Cache invalidation uses the scene file mtime plus a fingerprint of direct Mesh Asset References on that scene. On failure (no camera, render error, etc.) show a Scene placeholder. Does not recurse nested scenes — **Child Scene** composition is out of product. **Capture** shares this still path (Live document uses the live SceneInstance; On-disk still instantiates) and does not write the Thumbnail cache.
+_Avoid_: Borrowing the Camera Preview or main viewport RT for Browser scene thumbs; first-mesh-only proxy as the product Scene thumbnail; sampling AnimationPlayer clips for scene thumbs in this slice; square thumbs that use the live editor viewport aspect; requiring authored cover images for v1; treating recursive nested-scene instantiation as required for thumbs; using a live dirty editor SceneInstance as the Scene thumbnail cache source; treating Capture as a cache write
 _Avoid_: Borrowing the Camera Preview or main viewport RT for Browser scene thumbs; first-mesh-only proxy as the product Scene thumbnail; sampling AnimationPlayer clips for scene thumbs in this slice; square thumbs that use the live editor viewport aspect; requiring authored cover images for v1; treating recursive nested-scene instantiation as required for thumbs
 
 **Mesh Preview**:
@@ -820,20 +833,28 @@ The editor exposes Play, Pause, and Stop for the Play session. Play starts (or r
 _Avoid_: Play-only toggle with no Pause; Pause that exits Play Mode; Stop that leaves the Player process running
 
 **Play Pause**:
-While paused, the Player skips gameplay Behaviour Tick (and other gameplay simulation time) but keeps the process and window alive so the author can still view the frozen world through the resolved scene Camera. Resume continues Tick from the paused world state. Pause does not enable Editor Camera orbit or other authorship input in the Player.
-_Avoid_: Pause that tears down the Player; Pause that freezes rendering as the only definition; Pause as a synonym for Stop; Pause-time Editor Camera orbit in the Player window
+While paused, the Player skips realtime gameplay Behaviour Tick (and other gameplay simulation time) but keeps the process and window alive so the author can still view the frozen world through the resolved scene Camera. **Play step** is the way to advance that frozen world. Resume continues realtime Tick from the paused world state. Pause does not enable Editor Camera orbit or other authorship input in the Player.
+_Avoid_: Pause that tears down the Player; Pause that freezes rendering as the only definition; Pause as a synonym for Stop; Pause-time Editor Camera orbit in the Player window; treating Pause as blocking Play step
 
 **Play camera preflight**:
 Before spawning the Player, the editor runs Diagnose (Play rule set) on the Play entry as it will be loaded (after dirty-prompt save rules) and requires at least one valid Camera Component. Error-grade Issues keep the session in Edit Mode. This is not a separate stringly error type beside Issue.
 _Avoid_: Starting Player with no Camera and relying on a black screen; auto-injecting a Camera at Play time; a parallel preflight error that is not an Issue
 
 **Play control channel**:
-A local IPC link between the editor and the single Play Process used to send session commands (at least pause, resume, and stop). Process exit is also treated as leaving Play Mode. It is not a networked multiplayer protocol.
-_Avoid_: Editor Pause with no way to reach the Player; Stop that only kills without a graceful command path; designing the first channel as internet-facing RPC
+A local IPC link between the editor and the single Play Process. Editor → Player carries session commands (at least pause, resume, stop, **Play step**, and a **Play frame** request). Player → editor carries **Play log forwarding** (Console Messages) on the same connection, and Play frames. Process exit is also treated as leaving Play Mode. It is not a networked multiplayer protocol. Decision: [ADR 0040](docs/adr/0040-console-play-log-on-control-channel.md).
+_Avoid_: Editor Pause with no way to reach the Player; Stop that only kills without a graceful command path; designing the first channel as internet-facing RPC; treating the Player OS terminal as the author's diagnostic surface; a second Play-session socket just for logs or frames; capturing Player stdout as the Console feed; Query of the Play Process world as an Authorship Subject
+
+**Play frame**:
+A still of the Play Process world through the Play-rule camera. Host observation, not Capture, not a Scene still, not Query. It shows the ticking (or paused) Player simulation, including AnimationPlayer and gameplay. Same 16:9 capped-longest-edge product aspect as Capture, different world. Rides the Play control channel.
+_Avoid_: HWND scrape; calling this Capture; Query of the Player; a second Play socket; Editor Camera in the Player
+
+**Play step**:
+A Play control channel request, legal only while **Play Pause**. It advances the paused Play Process by N gameplay Ticks at fixed dt 1/60, stays paused, then a **Play frame** can follow. Unpaused Play stays realtime. v1 Play observation is Play step + Play frame. Not an Op, not Query, not Diagnose. Play dump is not this slice.
+_Avoid_: Sleep-as-step; stepping while Playing; variable dt; an Authorship Op that ticks the Player; a second Play socket; treating `BLUNDER_PLAYER_MAX_FRAMES` as this
 
 **Player window close**:
-Closing the Player's OS window ends the Play Process and therefore ends Play Mode (same outcome as Stop).
-_Avoid_: Closing the window while leaving a headless Player running; tray-minimize as the v1 close behavior
+On a windowed Player, closing the OS window ends the Play Process and therefore ends Play Mode (same outcome as Stop). A **Headless** Player has no OS window; ending it is Stop on the Play control channel or process exit.
+_Avoid_: Closing a windowed Player's window while leaving the process simulating; tray-minimize as the v1 close behavior; treating Headless as this orphan-after-close case
 
 **Edit during Play**:
 While a Play session is running, the author may keep editing the Project in the editor. Those edits do not appear in the live Player until a later Play (after save/build rules). Play Mode does not lock the authorship document.
@@ -849,11 +870,11 @@ _Avoid_: An Op type registry as a Seam; Message; GameCommand; pushing Op onto Hi
 
 **Query**:
 A read-only request on the machine authorship contract. It does not push Editor History.
-_Avoid_: Disguising a Query as an Editor Command; using Message for editor reads; treating a Query as an undoable unit
+_Avoid_: Disguising a Query as an Editor Command; using Message for editor reads; treating a Query as an undoable unit; returning pixels; dumping the Play Process world
 
 **Diagnose**:
 A read-only request on the machine authorship contract whose result is a list of Issues, not a world snapshot. It does not push Editor History.
-_Avoid_: Treating Diagnose as a Query projection; making validate an Op; using Console Message or a log line as the Diagnose result contract; Message; compiling Scripts or Cooking as Diagnose
+_Avoid_: Treating Diagnose as a Query projection; making validate an Op; using Console Message or a log line as the Diagnose result contract; Message; compiling Scripts or Cooking as Diagnose; returning a screenshot; using Diagnose as an event stream
 
 **Issue**:
 One Diagnose result: a stable code, a severity, an optional Authorship Address, and an explanation. It is not a Console Message, not an Editor Command, and not a log line.
@@ -885,7 +906,7 @@ _Avoid_: A silent default that mixes dirty editor state with saved files; a thir
 
 **Authorship contract**:
 The first-party Query / Op / Diagnose contract for reading and changing a Project. GUI, CLI, and MCP are adapters. Not a Seam, not Message, and not the C-ABI bridge. Decision record: [ADR 0041](docs/adr/0041-authorship-contract.md).
-_Avoid_: Agent API as the product name; Editor Command type registry; MCP as the domain name; exposing this contract from the Player
+_Avoid_: Agent API as the product name; Editor Command type registry; MCP as the domain name; exposing this contract from the Player; a fourth Observe intent; putting screenshots or Play dumps on this contract
 
 **Authorship System**:
 The Registered System that hosts the Authorship contract in an Editor Session. It routes Op to Editor Commands and Live Query / Diagnose against the Live document. Player does not mount it. On-disk Diagnose reuses the same rule code from a tool without mounting this System in the Player.
@@ -894,6 +915,18 @@ _Avoid_: Context System; Privileged core; Seam; mounting this in the Player; a s
 **Authorship contract v1**:
 The first slice of the Authorship contract: Query of the scene's entity names and of one entity (name, parent name, local TRS) by Authorship Address; one Op that sets local transform; Diagnose of the Play rule set (missing Camera; Scripts dirty or missing output). Not the full Editor Command catalog.
 _Avoid_: Diagnose-only; Query/Op with no Command path; Import, Cook, or Play-start as this slice; exposing EntityId
+
+**Host observation**:
+Stills a Host can emit for machines, plus Play step. Not Query, not Op, not Diagnose, and not a fourth Authorship intent. Editor stills are **Capture** (a Scene still). Play Process v1 observation is **Play step** plus **Play frame** on the Play control channel. Diagnostic utterances stay **Console Messages** (Player origin via Play log forwarding). There is no Host event stream beside Console. Decision record: [ADR 0043](docs/adr/0043-host-observation.md).
+_Avoid_: Observe as an Authorship intent; Query of the Player simulation; Message; Diagnose that returns PNG; scraping the OS or Slint window composite; calling Play frame Capture; a Host event bus or NDJSON log beside Console
+
+**Host observation v1**:
+Capture, Play step, and Play frame. Play dump is out. **Headless** uses this same observation; no OS window is not a different API.
+_Avoid_: Shipping Headless as a second observation protocol; Play dump in this slice; HWND Capture
+
+**Capture**:
+A 16:9 **Scene still** (capped longest edge) returned as Host observation, not written to the Thumbnail cache. Play-rule camera, no Editor Overlays. No Camera is failure — not an Editor Camera fallback. Not Query, not a Content Browser Thumbnail, not the OS window, not Camera Preview's selected camera, not a **Play frame**.
+_Avoid_: HWND screenshot; Query kind=image; Editor Camera fallback; Gizmos in the frame; writing the Thumbnail cache as this; using the Camera Preview selection; scraping the main viewport offscreen; square Capture; live window aspect; calling a Play Process still Capture
 
 **Document History**:
 The scene-scoped Editor History for one open editable document — for v1, the active scene (`activeScenePath` / active `SceneInstance`). Opening another scene replaces or clears that history. It is not Global History and does not hold editor-preference commands.
@@ -978,6 +1011,84 @@ _Avoid_: Per-entity UI prefs, disk-persisted Inspector toggles
 **Transform section chrome**:
 Godot-like Transform layout and controls: AxisNumberField (axis-colored cells, scrub, rotation under-slider), Scale-link, and Euler / Absolute·Delta layout. The Inspector panel surface fill and default window text follow Editor Theme Window. The Transform header may use an Editor controls Foldout; the vector cells themselves are not Editor controls Numeric Fields.
 _Avoid_: Godot theme skin as a second palette; replacing AxisNumberField or Camera FOV rows with Unity Numeric Field; restyle entire Inspector as Unity component inspectors
+
+### Console
+
+**Console**:
+The editor's diagnostic message list — a docked authorship panel of **Console Messages** from the **Editor Session** and from the **Play Process**. It is a viewer, not a command prompt, not an in-game overlay, not History Panel, and not the OS terminal. Default home: sibling tab to Content Browser in the same bottom dock group (not an inner tab of History).
+_Avoid_: Command REPL; Unreal-style command line on this panel; tilde overlay in the Player; cloning this as History Panel; treating Win32 AllocConsole as the product Console; a Player-only or editor-only second log panel as the product surface; nesting Console inside FilesystemHistoryHost; requiring a floating Console as the default; AllocConsole as the Editor Session or Player product path
+
+**Console Message**:
+One listed diagnostic utterance in the Console. Produced in the Editor Session or in the Play Process. Not an Editor Command and not a History Panel row.
+_Avoid_: Undo unit; History entry; treating stdout bytes as the authored list identity; a second Host event stream for spawn, cook fail, or Play crash
+
+**Console origin**:
+Whether a Console Message was produced in the Editor Session process or in the Play Process. The Console is one list; origin is an attribute of the message.
+_Avoid_: Two dock panels for the two processes; hiding Player messages in the OS terminal instead of tagging origin
+
+**Play log forwarding**:
+Play Process diagnostics appear in the editor Console over the **Play control channel**. The author does not use the Player OS terminal as the diagnostic surface. Stop does not imply the Player rows vanish (clear is a separate gesture). Decision: [ADR 0040](docs/adr/0040-console-play-log-on-control-channel.md).
+_Avoid_: Play logs only on the Player console window; requiring a networked log service; dropping Player rows automatically on Stop as the product default; a second log socket; stdout capture as the feed
+
+**Attached terminal**:
+An OS stdout/stderr stream already present when the process starts (cmd, IDE). LogSystem may write there, including `debug`. Editor Session and Player do not `AllocConsole`. Not the product Console. Without an attached terminal, `LOG_DEBUG` has no author-facing surface.
+_Avoid_: AllocConsole for engine_editor or engine_player as the product path; treating the black system window as Console; requiring an attached terminal to see Log/Warning/Error
+
+**Console severity**:
+The author-facing grade of a Console Message: **Log**, **Warning**, or **Error**. The Console filter uses these three. Distinct from LogSystem's five `LogLevel` values (`debug` / `info` / `warn` / `error` / `fatal`).
+_Avoid_: A five-chip Console filter; a separate Fatal chip; calling Console severity `LogLevel`; treating `debug` as a Console severity
+
+**Console severity map**:
+How `LOG_*` becomes a Console Message: `info` → Log; `warn` → Warning; `error` and `fatal` → Error. `debug` does not create a Console Message (OS terminal only). `fatal` still throws as today; the Console row is Error.
+_Avoid_: Showing `LOG_DEBUG` in the Console as the product default; mapping `fatal` to a fourth grade; dropping `LOG_INFO` from the Console; mapping `Debug.Log` to `LOG_DEBUG`
+
+**Debug API**:
+The C# author API on `Blunder.Api` (`Debug.Log` / `LogWarning` / `LogError`) that writes Console Messages: Log, Warning, and Error. Each call takes a string (plus Console stack). It runs where the .NET script host runs (Play Process; env-gated editor host). Not `System.Console`, not `LOG_DEBUG`, and not Debug Project. No context Object / Ping in this slice.
+_Avoid_: Mapping `Debug.Log` to `LOG_DEBUG` (which is excluded from the Console); requiring Edit Mode script host for logging; treating `Console.WriteLine` as a Console Message; naming this API Console; conflating this with Debug Project; `Debug.Log(message, object)` Ping of the editor Hierarchy; selecting an authorship entity from a Play Process ObjectId
+
+**Console stack**:
+The call stack captured with a **Debug API** Console Message. Shown in **Console detail** when that message is selected. `LOG_*` messages have no Console stack in this slice. Not an IDE jump.
+_Avoid_: Requiring stacks on engine `LOG_*` for this slice; double-click-opens-IDE as this slice; putting the full stack in the list row as the only view
+
+**Console detail**:
+The Console region that shows the selected Console Message's full text and its Console stack (empty stack area for `LOG_*` rows). Distinct from the message list.
+_Avoid_: A separate Stack panel; hiding the body once a stack exists
+
+**Lifecycle exception**:
+An exception that escapes an engine-invoked C# entry on a Behaviour — **Ready**, **Tick**, **OnMessage**, and host-invoked callbacks of the same class (including **PoseApplied** subscribers). The engine records it as an Error Console Message with Console stack, aborts that invocation, continues other Behaviours / remaining Message receivers, and does not end the Play Process. Auto-Stop / Error Pause is not this term.
+_Avoid_: Killing the Player on the first script throw as the product default; swallowing with no Console Message; auto-Stop on exception as this slice; catching only Ready/Tick while OnMessage or PoseApplied can still kill the process
+
+**Console collapse**:
+A Console toolbar toggle. When on, Console Messages that share a **Collapse key** appear as one list row with a count. Default off. Distinct from discarding messages (Clear) and from a consecutive-only fold.
+_Avoid_: Adjacent-only merge as this feature; Collapse on by default; treating Collapse as deleting the underlying messages
+
+**Collapse key**:
+The identity used by Console collapse: message text + Console severity + Console stack (empty for `LOG_*`) + Console origin. Two messages with different origins do not collapse together.
+_Avoid_: Collapsing Editor Session and Play Process rows into one; ignoring stack so two call sites with the same string merge
+
+**Console clear**:
+The author gesture that removes every Console Message from the Console (both origins). Not an Editor Command (not undoable). Distinct from Stop and from Console collapse.
+_Avoid_: Clear that drops only Play Process rows; undoable Clear; treating Stop as Clear
+
+**Clear on Play**:
+A Console toolbar toggle. When on, starting a Play session performs Console clear. Default on. Stop does not clear. When off, rows from earlier in the Editor Session remain.
+_Avoid_: Clearing on Stop as this toggle; default off so every Play starts on a dirty list; a second toggle that clears only Player rows
+
+**Error Pause**:
+A Console toolbar toggle. When on, an Error Console Message with Play Process origin issues **Play Pause**. Default off. Editor Session origin Errors do not pause the Player. Distinct from Lifecycle exception (which does not pause by itself) and from Stop.
+_Avoid_: Pausing the Player because an editor-origin Error was logged; default on; treating Error Pause as Stop; pausing on Warning
+
+**Console capacity**:
+The Console keeps a ring of at most **10000** Console Messages (pre-collapse emits). Pushing past the limit drops the oldest. Not a memory-byte budget.
+_Avoid_: Unbounded growth; using the History stack limit of 100 as this cap; counting collapsed rows instead of emits
+
+**Console filter**:
+The Console toolbar's three Console severity toggles (Log, Warning, Error) plus a text search. Toggles default all on. Search is case-insensitive and matches message text; a row shows when its severity toggle is on and (if the search is non-empty) the text matches. Counts on the toggles are how many Console Messages of that severity sit in the ring (pre-collapse), not the visible row count.
+_Avoid_: Filters off by default so the list looks empty; search that requires regex as the only mode; counting collapsed rows as the badge
+
+**Console time**:
+The local wall-clock time of a Console Message, shown on the list row as `HH:mm:ss`. A collapsed row shows the time of the latest emit that shares that Collapse key. The list is oldest-at-top, newest-at-bottom (same order as History Panel).
+_Avoid_: Relative-to-Play time as this slice; hiding time unless the detail pane is open; newest-first ordering
 
 ### Asset pipeline
 
@@ -1173,9 +1284,13 @@ _Avoid_: Equating every Crossfade with OneShot, requiring AnimationPlayer fade a
 The always-present OneShot insert on every AnimationTree. Sync Group Fire and script **RequestOneShot** play a clip there, then return to the current base (empty graph: rest). A new Fire or RequestOneShot **hard-cuts** the slot: the new clip replaces the in-flight insert immediately (Fire seek still applies); the old insert is dropped. No queue. Occupied slot does not fail the new request. Authors do not place this slot. Distinct from an authored **OneShot** node.
 _Avoid_: Fire as Travel, empty-graph Fire failing solely because no OneShot node exists, RequestOneShot targeting only authored OneShot nodes, queuing Fire-slot clips, failing a Fire because the slot is already playing, a second clip map on AnimationPlayer or on a StateMachine node
 
+**Animation Window**:
+Persistent docked chrome for **Edit animation preview** on the current single selection's **AnimationTree**. Transport and timeline scrub advance that tree; the ruler is the **base dominant clip** clock (insert clip while Fire/OneShot occupies). The dock stays open when unbound (no selection, multi-select, or no Tree) with transport and timeline disabled. Changing Hierarchy selection **Stop**s the previously bound tree (ruler to 0, clear Fire slot, halt transport, **End CINE**) then binds the new single Tree selection or the empty state; an unbound previous tree does not keep preview-advancing. **Stop** itself also **End**s CINE. The **End** control exits CINE only (clears in-CINE and input-suppression marks) without seeking or clearing Fire slot. **Enter** is the CINE session mark only — it does not Fire a clip. Window **Loop** is Edit preview wrap of the current ruler clip while Playing; with Loop off, reaching the end Pauses on the last frame and leaves the tree active. **Stop** seeks the ruler to 0, clears the **Fire slot** insert, **End**s CINE, and leaves the tree active. **Play** activates an inactive tree before advancing; Play from last-frame Pause starts again at 0. Loop is not a durable flag on **AnimationClip** and not AnimationPlayer loop. v1 also shows the clock source's logical name, **TimeScale** (the same AnimationTree field as Inspector — dual-track, document-dirty; the only Animation Window control on **Document History**), Edit **CINE** enter-end plus in-CINE and input-suppression marks, and a **Fire target** dropdown of that tree's existing Clip Binding logical names. Transport **Play / Pause / Stop / Loop**, **Fire**, and **Enter / End CINE** follow **Icon-first chrome**. Transport, playhead, Loop, Fire slot occupancy, and CINE marks are session preview and do not dirty the document. Window **Fire** inserts on that tree's **Fire slot**; it is not Sync Group `fireSameName`. The dropdown picks the Fire instruction only — it does not retarget the playhead, Travel, or author bindings. v1 timeline is a ruler and playhead only — no bone/method track rows and no key diamonds. Replaces the overlay preview toolbar. Defaults to a bottom dock under the viewport (Godot Animation-panel rhythm) as its own dock panel kind; authors may retile it. Clip Binding authorship, Travel/BlendSpace/Add2, **AnimationTree Canvas**, and multi-object Sync Group Edit stay elsewhere.
+_Avoid_: AnimationPlayer as host; S0/S1/BW/Fd; Canvas inside this window; keyframe/track authorship; Clip Binding rows in this window; Travel/BlendSpace/Add2 in this window; Camera Preview pin; Godot auto-reveal/hide; a second overlay toolbar; a playhead tied to a picked Clip Binding while another clip is dominant; window Fire as Sync Group fireSameName; a Sync member list in this window; Loop as an AnimationClip Asset field; AnimationPlayer.m_loop as the preview wrap; Stop deactivating the tree; read-only track lanes or key diamonds on the v1 ruler; a preview-only TimeScale that is not the Tree field; keeping v1 as a viewport overlay instead of a bottom dock; putting transport/playhead/Loop/Fire/CINE on Document History; continuing preview on a tree after selection leaves it; leaving CINE marks on after Stop or rebind; Enter CINE as a Fire
+
 **Edit animation preview**:
-Authorship-viewport pose preview without Behaviour Tick. Always through the co-located **AnimationTree** (Travel / Start, **Fire slot**, named BlendSpace drives, TimeScale). No AnimationPlayer-only clip scrub. No Tree, or Tree inactive, means preview fails — same as Play.
-_Avoid_: Edit toolbar Play/Stop on AnimationPlayer, bypassing the tree to scrub a Clip Binding onto the Skeleton, treating Edit preview as Camera Preview
+Authorship-viewport pose preview without Behaviour Tick. Chrome is the **Animation Window**. Always through the co-located **AnimationTree** (Travel / Start, **Fire slot**, named BlendSpace drives, TimeScale). No AnimationPlayer-only clip scrub. No Tree, or Tree inactive, means preview fails — same as Play.
+_Avoid_: Edit toolbar Play/Stop on AnimationPlayer, bypassing the tree to scrub a Clip Binding onto the Skeleton, treating Edit preview as Camera Preview, a second overlay toolbar beside the Animation Window
 
 **Add2**:
 A Phase 4 **AnimationTree** additive layer that combines an additive clip/pose onto the **base** pose. Additive deltas are relative to **bind/rest**. Used for DogWalk-style turn / bark overlays on locomotion. Not a third Phase 2 sample slot and not BlendSpace.

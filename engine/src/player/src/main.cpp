@@ -6,6 +6,7 @@
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 
+#include "runtime/core/log/console_ring.h"
 #include "runtime/engine.h"
 #include "runtime/function/global/engine_host_mode.h"
 #include "runtime/function/global/global_context.h"
@@ -112,6 +113,26 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
   try {
     if (g_play_ipc) {
       g_play_ipc->poll();
+      for (Blunder::ConsoleMessage& msg :
+           Blunder::ConsoleRing::instance().takePendingForward()) {
+        Blunder::PlayIpcLogRecord rec;
+        switch (msg.severity) {
+          case Blunder::ConsoleSeverity::Warning:
+            rec.sev = "warning";
+            break;
+          case Blunder::ConsoleSeverity::Error:
+            rec.sev = "error";
+            break;
+          case Blunder::ConsoleSeverity::Log:
+          default:
+            rec.sev = "log";
+            break;
+        }
+        rec.text = std::move(msg.text);
+        rec.stack = std::move(msg.stack);
+        rec.ms = msg.unix_ms;
+        g_play_ipc->sendLog(rec);
+      }
     }
     const float delta_time = engine->calculateDeltaTime();
     if (!engine->tickOneFrame(delta_time)) {

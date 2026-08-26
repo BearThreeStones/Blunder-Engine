@@ -839,6 +839,85 @@ bool AnimationTree::requestOneShot(const eastl::string& clip_name) {
   return true;
 }
 
+void AnimationTree::clearOneShot() {
+  m_oneshot_active = false;
+  m_oneshot_clip_name.clear();
+  m_oneshot_time = 0.0f;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
+float AnimationTree::rulerPosition() const {
+  return getDominantBasePlaybackPosition();
+}
+
+float AnimationTree::rulerLength() const {
+  return getDominantBaseClipLength();
+}
+
+eastl::string AnimationTree::rulerClipName() const {
+  if (m_oneshot_active && !m_oneshot_clip_name.empty()) {
+    return m_oneshot_clip_name;
+  }
+
+  if (!m_base_blend_space_2d_node.empty()) {
+    const auto space_it = m_blend_spaces_2d.find(m_base_blend_space_2d_node);
+    if (space_it != m_blend_spaces_2d.end() && !space_it->second.empty()) {
+      const BlendSpace2DParam param =
+          getBlendSpace2DParam(m_base_blend_space_2d_node);
+      const BlendSpace2DBlend blend =
+          resolveBlendSpace2D(space_it->second, param.x, param.y);
+      if (blend.point_count > 0) {
+        const int dominant = dominantBlendSpace2DIndex(blend);
+        if (dominant >= 0 &&
+            static_cast<size_t>(dominant) < space_it->second.size()) {
+          return space_it->second[static_cast<size_t>(dominant)].clip_name;
+        }
+      }
+    }
+  }
+
+  if (!m_base_blend_space_node.empty()) {
+    const auto space_it = m_blend_spaces.find(m_base_blend_space_node);
+    if (space_it != m_blend_spaces.end() && !space_it->second.empty()) {
+      const float scalar = getBlendSpaceScalar(m_base_blend_space_node);
+      const BlendSpaceNeighbor neighbors =
+          findBlendSpaceNeighbors(space_it->second, scalar);
+      if (neighbors.left != nullptr) {
+        const BlendSpace1DPoint* dominant = neighbors.left;
+        if (neighbors.right != nullptr && neighbors.left != neighbors.right &&
+            neighbors.blend_weight > 0.5f) {
+          dominant = neighbors.right;
+        }
+        return dominant->clip_name;
+      }
+    }
+  }
+
+  return m_sample_clip_name;
+}
+
+void AnimationTree::seekRuler(float seconds) {
+  const float length = rulerLength();
+  float clamped = seconds;
+  if (clamped < 0.0f) {
+    clamped = 0.0f;
+  }
+  if (length > 0.0f && clamped > length) {
+    clamped = length;
+  }
+  if (m_oneshot_active) {
+    m_oneshot_time = clamped;
+  } else {
+    m_sample_time = clamped;
+  }
+  resetMethodDispatchClock(clamped);
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
 bool AnimationTree::setOneShotSlotClip(const eastl::string& clip_name) {
   if (clip_name.empty()) {
     m_oneshot_slot_clip.clear();

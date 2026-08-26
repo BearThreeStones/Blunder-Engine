@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Animation Window v1 — mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --app-bar: #191B1F;
+      --window: #2A2D31;
+      --toolbar: #34383D;
+      --field: #1E2125;
+      --viewport: #1E2125;
+      --hairline: #3B3F45;
+      --window-text: #B8BFC6;
+      --text: #E8EBEF;
+      --muted: #98A0A8;
+      --icon: #B3BBC4;
+      --button: #3A3E44;
+      --button-hover: #454A51;
+      --button-pressed: #4E545C;
+      --accent: #4C8DFF;
+      --accent-text: #fff;
+      --accent-hover: #6CA2FF;
+      --accent-line: #4C8DFF73;
+      --accent-soft: #4C8DFF2B;
+      --accent-sel: #4C8DFF38;
+      --accent-sel-text: #85B2FF;
+      --cine: #6a3d9a;
+      --cine-line: #b06aff;
+      --inp: #9a3d3d;
+      --inp-line: #ff6a6a;
+      --radius-ctl: 6px;
+      --radius-surface: 10px;
+      --line: 22px;
+      --line-lg: 26px;
+      --font: 12px;
+      --font-sm: 11px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #111318;
+      color: var(--text);
+      font: var(--font)/1.3 Inter, system-ui, sans-serif;
+      user-select: none;
+    }
+
+    .shell {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 48px 1fr 128px;
+      min-height: 0;
+    }
+
+    .appbar {
+      background: var(--app-bar);
+      border-bottom: 1px solid var(--hairline);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 10px;
+    }
+    .appbar-left, .appbar-right { display: flex; gap: 4px; align-items: center; }
+    .appbar-right { justify-content: flex-end; }
+    .appbar-title {
+      color: var(--muted);
+      font-size: var(--font-sm);
+      letter-spacing: 0.02em;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 220px 1fr 260px;
+      min-height: 0;
+    }
+
+    .dock {
+      background: var(--window);
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 0 1px var(--hairline);
+    }
+    .dock-tabs {
+      height: 28px;
+      padding: 3px 6px;
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      background: var(--app-bar);
+      border-bottom: 1px solid var(--hairline);
+    }
+    .pill {
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font: 500 var(--font)/22px Inter, sans-serif;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .pill svg {
+      width: 12px;
+      height: 12px;
+      fill: currentColor;
+      display: block;
+      flex: 0 0 12px;
+    }
+    .pill.active { background: var(--window); color: var(--text); }
+    .row.child { padding-left: 22px; }
+    .dock-body { flex: 1; overflow: auto; padding: 6px; }
+
+    .row {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+      border-radius: 0;
+      color: var(--window-text);
+      cursor: pointer;
+    }
+    .row.selected {
+      background: var(--accent-sel);
+      color: var(--accent-sel-text);
+    }
+    .row .gutter {
+      color: var(--muted);
+      width: 10px;
+      height: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 10px;
+    }
+    .row .gutter svg {
+      width: 10px;
+      height: 10px;
+      fill: none;
+      stroke: currentColor;
+    }
+    .row .ico {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 14px;
+      fill: currentColor;
+      display: block;
+    }
+    .insp-h .gutter {
+      width: 10px; height: 10px; display: inline-flex;
+    }
+    .insp-h .gutter svg {
+      width: 10px; height: 10px; fill: none; stroke: currentColor;
+    }
+    .insp-h .ico {
+      width: 14px; height: 14px; fill: currentColor; display: block;
+    }
+    .hint { color: var(--muted); font-size: var(--font-sm); padding: 8px 6px; }
+
+    .viewport-col { display: flex; flex-direction: column; min-width: 0; }
+    .viewport {
+      flex: 1;
+      background:
+        linear-gradient(#262a2e 1px, transparent 1px) 0 0 / 32px 32px,
+        linear-gradient(90deg, #262a2e 1px, transparent 1px) 0 0 / 32px 32px,
+        var(--viewport);
+      position: relative;
+      min-height: 0;
+    }
+    .gizmo-bar {
+      position: absolute;
+      left: 8px; top: 8px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px;
+      background: color-mix(in srgb, var(--toolbar) 88%, transparent);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-surface);
+      box-shadow: 0 8px 24px #0006;
+    }
+    .gizmo-bar .gap { width: 6px; flex: 0 0 6px; }
+    .gizmo-bar button.ctl {
+      width: 28px;
+      height: 24px;
+      min-width: 28px;
+      max-width: 28px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--icon);
+    }
+    .gizmo-bar button.ctl.checked,
+    .gizmo-bar button.ctl.primary { color: var(--accent-text); }
+    .gizmo-bar svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+      fill: currentColor;
+    }
+    .gizmo-bar svg[hidden] { display: none; }
+    .gizmo-bar svg.stroke {
+      fill: none;
+      stroke: currentColor;
+    }
+    .figure {
+      position: absolute;
+      left: 50%; top: 54%;
+      transform: translate(-50%, -50%);
+      width: 72px; height: 140px;
+      opacity: 0.92;
+    }
+    .figure .head {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: #6d7380; margin: 0 auto 6px;
+    }
+    .figure .body {
+      width: 36px; height: 54px; border-radius: 8px;
+      background: #8a909c; margin: 0 auto;
+    }
+    .figure .leg {
+      position: absolute; bottom: 0; width: 12px; height: 48px;
+      background: #6d7380; border-radius: 4px;
+    }
+    .figure .leg.l { left: 20px; }
+    .figure .leg.r { right: 20px; }
+    .figure.playing .leg.l { animation: stepL 0.48s ease-in-out infinite; }
+    .figure.playing .leg.r { animation: stepR 0.48s ease-in-out infinite; }
+    .figure.fire .body { background: #c9a06a; }
+    .figure.cine .head { box-shadow: 0 0 0 2px var(--cine-line); }
+    @keyframes stepL { 50% { transform: translateY(-8px); } }
+    @keyframes stepR { 0%,100% { transform: translateY(-8px); } 50% { transform: none; } }
+
+    .insp-block { margin-bottom: 10px; }
+    .insp-h {
+      color: var(--text); font-size: 13px; font-weight: 600;
+      display: flex; gap: 6px; align-items: center; height: 22px;
+    }
+    .field-row {
+      display: grid; grid-template-columns: 88px 1fr;
+      gap: 6px; align-items: center; height: 22px; margin-top: 4px;
+    }
+    .field-row label { color: var(--muted); }
+    .cell {
+      height: 22px; background: var(--field); border: 1px solid var(--hairline);
+      border-radius: 3px; color: var(--text); padding: 0 6px;
+      display: flex; align-items: center;
+    }
+
+    .anim {
+      background: var(--window);
+      border-top: 1px solid var(--hairline);
+      box-shadow: 0 -4px 12px #0003;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .anim-tabs {
+      height: 26px;
+      background: var(--app-bar);
+      border-bottom: 1px solid var(--hairline);
+      display: flex;
+      align-items: center;
+      padding: 2px 6px;
+      gap: 4px;
+    }
+    .anim-body {
+      flex: 1;
+      padding: 6px 8px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+    .anim-body.disabled { opacity: 0.45; pointer-events: none; }
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+      min-height: var(--line-lg);
+    }
+    .spacer { width: 8px; }
+    .grow { flex: 1; }
+
+    button.ctl {
+      height: var(--line);
+      min-width: 28px;
+      padding: 0 10px;
+      border-radius: var(--radius-ctl);
+      border: 1px solid var(--hairline);
+      background: var(--button);
+      color: var(--text);
+      font: 500 var(--font)/var(--line) Inter, sans-serif;
+      cursor: pointer;
+    }
+    button.ctl:hover { background: var(--button-hover); }
+    button.ctl:active { background: var(--button-pressed); }
+    button.ctl:disabled { opacity: 0.45; cursor: default; }
+    button.ctl.primary {
+      background: var(--accent);
+      border-color: var(--accent-line);
+      color: var(--accent-text);
+    }
+    button.ctl.primary:hover { background: var(--accent-hover); }
+    button.ctl.checked {
+      background: var(--accent);
+      border-color: var(--accent-line);
+      color: var(--accent-text);
+    }
+    button.ctl.ghost {
+      background: transparent;
+      border-color: transparent;
+      color: var(--window-text);
+    }
+    button.ctl.ghost:hover { background: var(--button); border-color: var(--hairline); }
+    button.ctl.ghost.icon { color: var(--icon); }
+    button.ctl.icon {
+      width: var(--line);
+      min-width: var(--line);
+      max-width: var(--line);
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--icon);
+    }
+    button.ctl.icon.primary,
+    button.ctl.icon.checked { color: var(--accent-text); }
+    button.ctl.icon svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+      fill: currentColor;
+    }
+    button.ctl.icon svg[hidden] { display: none; }
+    .seg {
+      height: var(--line-lg);
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-ctl);
+      background: var(--toolbar);
+    }
+
+    .badge {
+      height: 22px; padding: 0 8px; border-radius: var(--radius-ctl);
+      border: 1px solid var(--hairline); font-size: var(--font-sm);
+      display: none; align-items: center; font-weight: 600;
+    }
+    .badge.on { display: inline-flex; }
+    .badge.cine { background: var(--cine); border-color: var(--cine-line); color: #fff; }
+    .badge.inp { background: var(--inp); border-color: var(--inp-line); color: #fff; }
+
+    select.ctl, input.ctl {
+      height: var(--line);
+      border-radius: var(--radius-ctl);
+      border: 1px solid var(--hairline);
+      background: var(--field);
+      color: var(--text);
+      font: var(--font)/var(--line) Inter, sans-serif;
+      padding: 0 6px;
+    }
+    select.ctl:focus, input.ctl:focus { outline: none; border-color: var(--accent); }
+    label.meta { color: var(--muted); font-size: var(--font-sm); }
+
+    .ts {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .ts .time-ico {
+      width: 14px;
+      height: 14px;
+      display: block;
+      color: var(--muted);
+      flex: 0 0 14px;
+    }
+    .ts .val {
+      width: 36px; text-align: right; color: var(--window-text); font-variant-numeric: tabular-nums;
+    }
+
+    /* EditorSlider / Content Browser thumb-size: 1px track, 4px square thumb. */
+    .godot-slider {
+      position: relative;
+      width: 100px;
+      height: 22px;
+      cursor: pointer;
+      flex: 0 0 100px;
+    }
+    .godot-slider .gs-track,
+    .godot-slider .gs-fill {
+      position: absolute;
+      left: 0;
+      top: 50%;
+      height: 1px;
+      margin-top: -0.5px;
+      pointer-events: none;
+    }
+    .godot-slider .gs-track {
+      width: 100%;
+      background: #6a6a6a;
+    }
+    .godot-slider .gs-fill { background: #c8c8c8; }
+    .godot-slider .gs-thumb {
+      position: absolute;
+      top: 50%;
+      width: 4px;
+      height: 4px;
+      margin-top: -2px;
+      background: #f0f0f0;
+      border-radius: 0;
+      pointer-events: none;
+    }
+    .godot-slider .gs-ring {
+      position: absolute;
+      top: 50%;
+      width: 10px;
+      height: 10px;
+      margin-top: -5px;
+      border-radius: 50%;
+      background: transparent;
+      border: 1.5px solid #ffffff80;
+      pointer-events: none;
+      display: none;
+    }
+    .godot-slider:hover .gs-ring,
+    .godot-slider.dragging .gs-ring { display: block; }
+    .godot-slider.dragging .gs-ring { border-color: #fff; }
+    .godot-slider:hover .gs-thumb,
+    .godot-slider.dragging .gs-thumb { border-radius: 50%; }
+
+    .ruler {
+      height: 36px;
+      background: var(--field);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-ctl);
+      position: relative;
+      cursor: ew-resize;
+    }
+    .ticks { position: absolute; inset: 0; overflow: hidden; }
+    .tick {
+      position: absolute; top: 0; width: 1px; height: 100%;
+      background: var(--hairline);
+    }
+    .tick.major { background: #4a5058; }
+    .tick span {
+      position: absolute; top: 2px; left: 4px;
+      color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums;
+    }
+    .playhead {
+      position: absolute; top: 0; bottom: 0; width: 2px;
+      background: var(--accent);
+      box-shadow: 0 0 0 1px #4C8DFF40;
+      pointer-events: none;
+    }
+    .playhead::before {
+      content: "";
+      position: absolute; top: -1px; left: -5px;
+      border: 6px solid transparent;
+      border-top-color: var(--accent);
+    }
+    .clip-name {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      color: var(--text); font-weight: 600; font-size: var(--font-sm);
+      pointer-events: none;
+    }
+    .empty-msg {
+      color: var(--muted);
+      font-size: var(--font-sm);
+      padding: 18px 8px 0;
+    }
+
+    .note {
+      position: absolute; right: 12px; bottom: 12px;
+      max-width: 280px;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.4;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="appbar">
+      <div class="appbar-left">
+        <button class="ctl ghost icon" type="button" title="Save" aria-label="Save">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4l-3-3h-1v6H3zm1 0v5h3V1zm4 8a1 1 0 0 1 0 4 1 1 0 0 1 0-4z"/></svg>
+        </button>
+        <button class="ctl ghost icon" type="button" title="Undo" aria-label="Undo">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 9H1V2l2 2a3.875 5 30 0 1 9 11 3.5 5 10 0 0-6-8z"/></svg>
+        </button>
+        <button class="ctl ghost icon" type="button" title="Redo" aria-label="Redo">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 9h7V2l-2 2a6.927 8.938-30 0 0-9 11 4.364 6.234-10 0 1 6-8z"/></svg>
+        </button>
+      </div>
+      <div class="appbar-title">Animation Window v1 mockup — not engine chrome</div>
+      <div class="appbar-right">
+        <div class="seg" role="group" aria-label="Play session">
+          <button class="ctl icon primary" type="button" title="Play" aria-label="Play">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12a1 1 0 0 0 1.555.832l6-4a1 1 0 0 0 0-1.664l-6-4A1 1 0 0 0 4 4z"/></svg>
+          </button>
+          <button class="ctl icon" type="button" title="Pause" aria-label="Pause" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm6 0a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z"/></svg>
+          </button>
+          <button class="ctl icon" type="button" title="Stop" aria-label="Stop" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect width="10" height="10" x="3" y="3" rx="1"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="dock">
+        <div class="dock-tabs">
+          <span class="pill active">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m2 2v2h2v-2zm4 0v2h8v-2zm-4 5v2h2v-2zm4 0v2h8v-2zm-4 5v2h2v-2zm4 0v2h8v-2z"/></svg>
+            Hierarchy
+          </span>
+        </div>
+        <div class="dock-body">
+          <div class="row" data-id="scene">
+            <span class="gutter"></span>
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="m14.564 2-2.244.328.818 1.9 1.715-.25zm-4.223.615-1.978.29.818 1.902 1.979-.29zm-3.959.578-1.978.29.818 1.902 1.979-.29zm-3.957.578-1.714.25L1 6l2.244-.328zM1 7v6a2 2 0 0 0 2 2h12V7z"/></svg>
+            Scene
+          </div>
+          <div class="row selected" data-id="chocomel" data-tree="1">
+            <span class="gutter">
+              <svg viewBox="0 0 12 12" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m3 5 3 3 3-3"/></svg>
+            </span>
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.73 2A2 2 0 1 0 2 4.73v6.541A2 2 0 1 0 4.73 14h6.541A2 2 0 1 0 14 11.27V4.729A2 2 0 1 0 11.27 2Zm.683 2h5.857a2 2 0 0 0 .729.73v5.856L5.412 4zM3.999 5.414 10.584 12H4.727a2 2 0 0 0-.729-.73V5.414z"/></svg>
+            Chocomel
+          </div>
+          <div class="row child" data-id="camera">
+            <span class="gutter"></span>
+            <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2a3 3 0 0 0-3 2.777 3 3 0 1 0-3 5.047V12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1l3 2V7l-3 2V7.23A3 3 0 0 0 9 2z"/></svg>
+            Main Camera
+          </div>
+          <div class="row child" data-id="light">
+            <span class="gutter"></span>
+            <svg class="ico" viewBox="0 0 128 128" aria-hidden="true"><path fill-opacity=".3" d="M64 2a44 44 0 0 0-44 44 44 44 0 0 0 24 39.189v13.81a10.97 10.97 0 0 0 8 10.579v16.421h24v-16.421a10.97 10.97 0 0 0 8-10.579V85.142A44 44 0 0 0 108 46 44 44 0 0 0 64 2zm0 20a24 24 0 0 1 24 24 24 24 0 0 1-24 24 24 24 0 0 1-24-24 24 24 0 0 1 24-24z"/><path d="M64 6a40 40 0 0 0-40 40 40 40 0 0 0 24 36.607V98a8 8 0 0 0 8 8h16a8 8 0 0 0 8-8V82.637A40 40 0 0 0 104 46 40 40 0 0 0 64 6zm0 12a28 28 0 0 1 28 28 28 28 0 0 1-28 28 28 28 0 0 1-28-28 28 28 0 0 1 28-28zm-8 96v8h16v-8z"/></svg>
+            Directional Light
+          </div>
+          <p class="hint">Click Camera / Light → empty Animation Window. Click Chocomel → bind Tree.</p>
+        </div>
+      </aside>
+
+      <div class="viewport-col">
+        <div class="viewport">
+          <div class="gizmo-bar" role="toolbar" aria-label="Transform">
+            <button class="ctl checked" type="button" data-gizmo="1" title="Move" aria-label="Move">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2"/><path d="M8 1a1 1 0 0 0-.691.291l-2 2 1.414 1.414 1.293-1.293 1.293 1.293 1.414-1.414-2-2A1 1 0 0 0 8 1zM3.309 5.291l-2 2a1 1 0 0 0 0 1.414l2 2 1.414-1.414L3.43 7.998l1.293-1.293-1.414-1.414zm9.414 0-1.414 1.414 1.293 1.293-1.293 1.293 1.414 1.414 2-2a1 1 0 0 0 0-1.414l-2-2zm-6 6-1.414 1.414 2 2a1 1 0 0 0 1.414 0l2-2-1.414-1.414-1.293 1.293-1.293-1.293z"/></svg>
+            </button>
+            <button class="ctl" type="button" data-gizmo="2" title="Rotate" aria-label="Rotate">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2"/><path d="M8 1a7 7 0 0 0-4.982 11.998H1.911v2h4a1 1 0 0 0 .97-1.242l-1-4-1.94.486.28 1.121a5 5 0 1 1 7.223.168l1.416 1.416A7 7 0 0 0 8 1z"/></svg>
+            </button>
+            <button class="ctl" type="button" data-gizmo="3" title="Scale" aria-label="Scale">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2"/><path d="M9 1a1 1 0 0 0 0 2h2.586l-1.293 1.293 1.414 1.414L13 4.414V7a1 1 0 0 0 2 0V2a1 1 0 0 0-1-1zM3 9a1 1 0 0 0-2 0v5a1 1 0 0 0 1 1h5a1 1 0 0 0 0-2H4.414l1.293-1.293-1.414-1.414L3 11.586V9z"/></svg>
+            </button>
+            <span class="gap" aria-hidden="true"></span>
+            <button class="ctl" type="button" id="gizmo-space" title="Global Space" aria-label="Global Space">
+              <svg class="stroke ico-global" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke-width="2"/><path stroke-width="1.5" d="M2 8a6.5 2 0 0 0 12 0M8 2c-3 4-3 8 0 12M8 2c3 4 3 8 0 12"/></svg>
+              <svg class="ico-local" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M1.553 4.104A1 1 0 0 0 1 5v6a1 1 0 0 0 .553.895l6 3a1 1 0 0 0 .894 0l6-3A1 1 0 0 0 15 11V5a1 1 0 0 0-.553-.894l-6-3a1 1 0 0 0-.894 0zm6.447-1 3.764 1.882L8 6.868 4.236 4.986zm-5 3.5 4 2v3.766l-4-2z"/></svg>
+            </button>
+          </div>
+          <div class="figure" id="figure">
+            <div class="head"></div>
+            <div class="body"></div>
+            <div class="leg l"></div>
+            <div class="leg r"></div>
+          </div>
+          <div class="note">Viewport overlay preview toolbar is gone. Transform strip stays.</div>
+        </div>
+      </div>
+
+      <aside class="dock">
+        <div class="dock-tabs">
+          <span class="pill active">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-10a2 2 0 00-2-2zM3 3h2v2h-2zm4 0h6v2h-6zM3 7h2v2h-2zm4 0h6v2h-6zM3 11h2v2h-2zm4 0h6v2h-6z"/></svg>
+            Inspector
+          </span>
+        </div>
+        <div class="dock-body" id="inspector">
+          <div class="insp-block">
+            <div class="insp-h">
+              <svg class="ico" viewBox="0 0 12 12" aria-hidden="true" style="width:10px;height:10px;flex:0 0 10px;fill:none"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m3 5 3 3 3-3"/></svg>
+              <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1v14h1v-2h2v2h8v-2h2v2h1V1h-1v2h-2V1H4v2H2V1zm4 3h2v2h4v2H9v2h2v2H8a1 1 0 0 1-1-1V8H6a1 1 0 0 1-1-1zM2 5h2v2H2zm10 0h2v2h-2zM2 9h2v2H2zm10 0h2v2h-2z"/></svg>
+              AnimationTree
+            </div>
+            <div class="field-row"><label>TimeScale</label><div class="cell" id="insp-ts">1.00</div></div>
+            <div class="field-row"><label>Clip Bindings</label><div class="cell">Idle, Walk, Attack</div></div>
+          </div>
+          <p class="hint">Bindings stay here. Window TimeScale is the same field (dual-track, dirty).</p>
+        </div>
+      </aside>
+    </div>
+
+    <section class="anim" id="anim-dock">
+      <div class="anim-tabs">
+        <span class="pill active" title="Animation">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M12 14a2 2 0 0 0 2 2h1v-2h-.5a.5.5 0 0 1-.5-.5V8a6 6 0 1 0-2 4.465zM8 3a1 1 0 0 1 0 2 1 1 0 0 1 0-2zm3.441 2a1 1 0 0 1 0 2 1 1 0 0 1 0-2zM4.488 5a1 1 0 0 1 0 2 1 1 0 0 1 0-2zm.024 4a1 1 0 0 1 0 2 1 1 0 0 1 0-2zm6.904 0a1 1 0 0 1 0 2 1 1 0 0 1 0-2zM8 11a1 1 0 0 1 0 2 1 1 0 0 1 0-2z"/></svg>
+          Animation
+        </span>
+        <span class="pill">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1a2 2 0 0 0-2 2v7H1v3a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2V5h3V3a2 2 0 0 0-2-2z"/></svg>
+          Output
+        </span>
+      </div>
+      <div class="anim-body" id="anim-body">
+        <div class="transport">
+          <div class="seg" role="group" aria-label="Transport">
+            <button class="ctl icon primary" id="btn-play" type="button" title="Play" aria-label="Play">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12a1 1 0 0 0 1.555.832l6-4a1 1 0 0 0 0-1.664l-6-4A1 1 0 0 0 4 4z"/></svg>
+            </button>
+            <button class="ctl icon" id="btn-pause" type="button" disabled title="Pause" aria-label="Pause">
+              <svg class="ico-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm6 0a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1z"/></svg>
+              <svg class="ico-play" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M4 12a1 1 0 0 0 1.555.832l6-4a1 1 0 0 0 0-1.664l-6-4A1 1 0 0 0 4 4z"/></svg>
+            </button>
+            <button class="ctl icon" id="btn-stop" type="button" disabled title="Stop" aria-label="Stop">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect width="10" height="10" x="3" y="3" rx="1"/></svg>
+            </button>
+            <button class="ctl icon" id="btn-loop" type="button" title="Loop" aria-label="Loop">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v2H6a5 5 0 0 0-4 8l1.414-1.414A3 3 0 0 1 6 5h2v2l4-3-4-3zm6 4-1.414 1.414A3 3 0 0 1 10 11H8V9l-4 3 4 3v-2h2a5 5 0 0 0 4-8z"/></svg>
+            </button>
+          </div>
+          <span class="spacer"></span>
+          <span class="ts">
+            <span class="meta" title="TimeScale" aria-label="TimeScale">
+              <svg class="time-ico" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.25" d="M7 1.5h2m-1 0v2.875m0-1.25a5.625 5.625 0 0 0 0 11.25v-1.25m0 1.25a5.625 5.625 0 0 0 0-11.25m5.375 5.625h-1m-9.875 0h1m4.5 0 2-2"/><circle cx="8" cy="8.75" r="1" fill="currentColor"/></svg>
+            </span>
+            <div class="godot-slider" id="ts" role="slider" aria-label="TimeScale" aria-valuemin="0.1" aria-valuemax="2" aria-valuenow="1" tabindex="0">
+              <div class="gs-track"></div>
+              <div class="gs-fill"></div>
+              <div class="gs-ring"></div>
+              <div class="gs-thumb"></div>
+            </div>
+            <span class="val" id="ts-val">1.00</span>
+          </span>
+          <span class="grow"></span>
+          <span class="meta" id="clock-readout">Idle  0.00 / 2.00</span>
+        </div>
+        <div class="transport">
+          <select class="ctl" id="fire-target" aria-label="Fire target" title="Fire target">
+            <option value="Attack">Attack</option>
+            <option value="Walk">Walk</option>
+            <option value="Idle">Idle</option>
+          </select>
+          <button class="ctl icon" id="btn-fire" type="button" title="Fire" aria-label="Fire">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zm4.975 0A1 1 0 0 0 7 3.998v8a1 1 0 0 0 1.625.781l5-4a1 1 0 0 0 0-1.56l-5-4A1 1 0 0 0 7.975 3z"/></svg>
+          </button>
+          <span class="spacer"></span>
+          <button class="ctl icon" id="btn-enter" type="button" title="Enter CINE" aria-label="Enter CINE">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2a3 3 0 0 0-3 2.777 3 3 0 1 0-3 5.047V12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1l3 2V7l-3 2V7.23A3 3 0 0 0 9 2z"/></svg>
+          </button>
+          <button class="ctl icon" id="btn-end" type="button" title="End CINE" aria-label="End CINE">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.988 3c-.547.01-.987.451-.988.998v8a1 1 0 0 0 1.555.832l6-4a1 1 0 0 0 0-1.664l-6-4A1 1 0 0 0 2.988 3z"/><rect width="3.068" height="10.067" x="11.17" y="3.008" rx=".763"/></svg>
+          </button>
+          <span class="badge cine" id="badge-cine">CINE</span>
+          <span class="badge inp" id="badge-inp">Inp</span>
+        </div>
+        <div class="ruler" id="ruler" title="Scrub dominant-clip clock">
+          <div class="ticks" id="ticks"></div>
+          <div class="playhead" id="playhead"></div>
+          <div class="clip-name" id="clip-label">Idle</div>
+        </div>
+        <div class="empty-msg" id="empty" hidden>Select an Object with an AnimationTree</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const CLIPS = {
+      Idle: 2.0,
+      Walk: 1.2,
+      Attack: 0.6,
+    };
+
+    const state = {
+      bound: true,
+      transport: "stopped", // stopped | playing | paused
+      loop: false,
+      timeScale: 1,
+      t: 0,
+      base: "Idle",
+      fire: null, // { name, t, len }
+      cine: false,
+      inp: false,
+      dirty: false,
+      lastTsCommitted: 1,
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const figure = $("figure");
+
+    function clockClip() {
+      if (state.fire) return { name: state.fire.name, len: state.fire.len, t: state.fire.t };
+      return { name: state.base, len: CLIPS[state.base], t: state.t };
+    }
+
+    function setTransportButtons() {
+      const playing = state.transport === "playing";
+      const paused = state.transport === "paused";
+      $("btn-play").disabled = playing;
+      $("btn-pause").disabled = !(playing || paused);
+      const pauseBtn = $("btn-pause");
+      pauseBtn.querySelector(".ico-play").hidden = !paused;
+      pauseBtn.querySelector(".ico-pause").hidden = paused;
+      const pauseLabel = paused ? "Resume" : "Pause";
+      pauseBtn.title = pauseLabel;
+      pauseBtn.setAttribute("aria-label", pauseLabel);
+      $("btn-stop").disabled = state.transport === "stopped";
+      $("btn-loop").classList.toggle("checked", state.loop);
+      figure.classList.toggle("playing", playing && !state.fire);
+      figure.classList.toggle("fire", !!state.fire);
+      figure.classList.toggle("cine", state.cine);
+    }
+
+    function drawTicks(len) {
+      const ticks = $("ticks");
+      ticks.innerHTML = "";
+      const w = $("ruler").clientWidth || 1;
+      const step = len <= 1.2 ? 0.1 : 0.2;
+      for (let x = 0; x <= len + 1e-6; x += step) {
+        const el = document.createElement("div");
+        el.className = "tick" + (Math.round(x * 10) % 5 === 0 ? " major" : "");
+        el.style.left = (x / len) * w + "px";
+        if (Math.abs(x - Math.round(x * 2) / 2) < 1e-6) {
+          const lab = document.createElement("span");
+          lab.textContent = x.toFixed(1);
+          el.appendChild(lab);
+        }
+        ticks.appendChild(el);
+      }
+    }
+
+    function render() {
+      const bound = state.bound;
+      $("anim-body").classList.toggle("disabled", !bound);
+      $("empty").hidden = bound;
+      $("ruler").hidden = !bound;
+      $("clock-readout").hidden = !bound;
+      if (!bound) {
+        figure.classList.remove("playing", "fire", "cine");
+        return;
+      }
+      const c = clockClip();
+      drawTicks(c.len);
+      const w = $("ruler").clientWidth || 1;
+      $("playhead").style.left = (c.t / c.len) * w + "px";
+      $("clip-label").textContent = c.name;
+      $("clock-readout").textContent =
+        c.name + "  " + c.t.toFixed(2) + " / " + c.len.toFixed(2);
+      $("ts-val").textContent = state.timeScale.toFixed(2);
+      layoutGodotSlider();
+      $("insp-ts").textContent = state.timeScale.toFixed(2);
+      $("insp-ts").style.outline = state.dirty ? "1px solid var(--accent-line)" : "none";
+      $("badge-cine").classList.toggle("on", state.cine);
+      $("badge-inp").classList.toggle("on", state.inp);
+      setTransportButtons();
+    }
+
+    function stopPrevious() {
+      state.transport = "stopped";
+      state.t = 0;
+      state.fire = null;
+      state.cine = false;
+      state.inp = false;
+    }
+
+    function play() {
+      if (!state.bound) return;
+      const c = clockClip();
+      if (state.transport === "paused" && Math.abs(c.t - c.len) < 1e-3) {
+        if (state.fire) state.fire.t = 0;
+        else state.t = 0;
+      }
+      state.transport = "playing";
+      render();
+    }
+
+    $("btn-play").onclick = play;
+    $("btn-pause").onclick = () => {
+      if (state.transport === "paused") play();
+      else if (state.transport === "playing") {
+        state.transport = "paused";
+        render();
+      }
+    };
+    $("btn-stop").onclick = () => {
+      stopPrevious();
+      render();
+    };
+    $("btn-loop").onclick = () => {
+      state.loop = !state.loop;
+      render();
+    };
+    const TS_MIN = 0.1;
+    const TS_MAX = 2;
+    const TS_STEP = 0.05;
+    const tsEl = $("ts");
+    const tsFill = tsEl.querySelector(".gs-fill");
+    const tsThumb = tsEl.querySelector(".gs-thumb");
+    const tsRing = tsEl.querySelector(".gs-ring");
+
+    function layoutGodotSlider() {
+      const w = tsEl.clientWidth || 100;
+      const span = TS_MAX - TS_MIN;
+      const t = Math.max(0, Math.min(1, (state.timeScale - TS_MIN) / span));
+      const thumbSz = 4;
+      const ringSz = 10;
+      const thumbX = (w - thumbSz) * t;
+      tsFill.style.width = (w * t) + "px";
+      tsThumb.style.left = thumbX + "px";
+      tsRing.style.left = (thumbX + (thumbSz - ringSz) / 2) + "px";
+      tsEl.setAttribute("aria-valuenow", state.timeScale.toFixed(2));
+    }
+
+    function applyTimeScaleFromClientX(clientX, commit) {
+      const r = tsEl.getBoundingClientRect();
+      const u = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+      let v = TS_MIN + u * (TS_MAX - TS_MIN);
+      v = Math.round(v / TS_STEP) * TS_STEP;
+      v = Math.max(TS_MIN, Math.min(TS_MAX, v));
+      state.timeScale = v;
+      state.dirty = Math.abs(state.timeScale - state.lastTsCommitted) > 1e-6;
+      if (commit) {
+        state.lastTsCommitted = state.timeScale;
+        state.dirty = false;
+      }
+      render();
+    }
+
+    tsEl.addEventListener("pointerdown", (ev) => {
+      tsEl.setPointerCapture(ev.pointerId);
+      tsEl.classList.add("dragging");
+      applyTimeScaleFromClientX(ev.clientX, false);
+    });
+    tsEl.addEventListener("pointermove", (ev) => {
+      if (!tsEl.classList.contains("dragging")) return;
+      applyTimeScaleFromClientX(ev.clientX, false);
+    });
+    tsEl.addEventListener("pointerup", () => {
+      if (!tsEl.classList.contains("dragging")) return;
+      tsEl.classList.remove("dragging");
+      state.lastTsCommitted = state.timeScale;
+      state.dirty = false;
+      render();
+    });
+    tsEl.addEventListener("keydown", (ev) => {
+      let v = state.timeScale;
+      if (ev.key === "ArrowLeft" || ev.key === "ArrowDown") v -= TS_STEP;
+      else if (ev.key === "ArrowRight" || ev.key === "ArrowUp") v += TS_STEP;
+      else if (ev.key === "Home") v = TS_MIN;
+      else if (ev.key === "End") v = TS_MAX;
+      else return;
+      ev.preventDefault();
+      state.timeScale = Math.max(TS_MIN, Math.min(TS_MAX, Math.round(v / TS_STEP) * TS_STEP));
+      state.dirty = Math.abs(state.timeScale - state.lastTsCommitted) > 1e-6;
+      render();
+    });
+
+    document.querySelectorAll("[data-gizmo]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-gizmo]").forEach((b) => {
+          b.classList.toggle("checked", b === btn);
+        });
+      });
+    });
+    const spaceBtn = $("gizmo-space");
+    let spaceGlobal = true;
+    spaceBtn.addEventListener("click", () => {
+      spaceGlobal = !spaceGlobal;
+      spaceBtn.querySelector(".ico-global").hidden = !spaceGlobal;
+      spaceBtn.querySelector(".ico-local").hidden = spaceGlobal;
+      const label = spaceGlobal ? "Global Space" : "Local Space";
+      spaceBtn.title = label;
+      spaceBtn.setAttribute("aria-label", label);
+    });
+
+    $("btn-fire").onclick = () => {
+      const name = $("fire-target").value;
+      state.fire = { name, t: 0, len: CLIPS[name] };
+      if (state.transport === "stopped") state.transport = "playing";
+      render();
+    };
+    $("btn-enter").onclick = () => {
+      state.cine = true;
+      state.inp = true;
+      render();
+    };
+    $("btn-end").onclick = () => {
+      state.cine = false;
+      state.inp = false;
+      render();
+    };
+
+    document.querySelectorAll(".row[data-id]").forEach((row) => {
+      row.addEventListener("click", () => {
+        document.querySelectorAll(".row").forEach((r) => r.classList.remove("selected"));
+        row.classList.add("selected");
+        const hasTree = row.dataset.tree === "1";
+        stopPrevious();
+        state.bound = hasTree;
+        render();
+      });
+    });
+
+    const ruler = $("ruler");
+    function scrub(ev) {
+      if (!state.bound) return;
+      const r = ruler.getBoundingClientRect();
+      const u = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+      const c = clockClip();
+      const t = u * c.len;
+      if (state.fire) state.fire.t = t;
+      else state.t = t;
+      if (state.transport === "stopped") state.transport = "paused";
+      render();
+    }
+    ruler.addEventListener("pointerdown", (ev) => {
+      ruler.setPointerCapture(ev.pointerId);
+      scrub(ev);
+    });
+    ruler.addEventListener("pointermove", (ev) => {
+      if (ev.buttons) scrub(ev);
+    });
+
+    let last = performance.now();
+    function tick(now) {
+      const dt = (now - last) / 1000;
+      last = now;
+      if (state.bound && state.transport === "playing") {
+        const step = dt * state.timeScale;
+        if (state.fire) {
+          state.fire.t += step;
+          if (state.fire.t >= state.fire.len) {
+            state.fire = null;
+          }
+        } else {
+          state.t += step;
+          const len = CLIPS[state.base];
+          if (state.t >= len) {
+            if (state.loop) state.t = state.t % len;
+            else {
+              state.t = len;
+              state.transport = "paused";
+            }
+          }
+        }
+        render();
+      }
+      requestAnimationFrame(tick);
+    }
+    window.addEventListener("resize", render);
+    render();
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

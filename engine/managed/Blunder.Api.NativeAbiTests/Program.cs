@@ -55,11 +55,15 @@ static unsafe class Program
     static float s_lookAtTargetY;
     static float s_lookAtTargetZ = 1.0f;
 
+    static int s_lastLogSeverity = -1;
+    static string s_lastLogText = "";
+    static string s_lastLogStack = "";
+
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 79 * sizeof(nint),
-            "BlunderNativeAbi layout size is 79 pointers");
+            sizeof(BlunderNativeAbi) == 84 * sizeof(nint),
+            "BlunderNativeAbi layout size is 84 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -172,6 +176,7 @@ static unsafe class Program
         abi.cine_end = &StubCineEnd;
         abi.cine_is_in_cine = &StubCineIsInCine;
         abi.cine_is_gameplay_input_suppressed = &StubCineIsGameplayInputSuppressed;
+        abi.log = &StubLog;
 
         Native.Register(in abi);
 
@@ -185,6 +190,8 @@ static unsafe class Program
         Vec2 move = Input.GetMove();
         Expect(move.X == 0.3f && move.Y == -0.4f, "Input.GetMove via stub");
         Expect(Input.WasJumpPressed(), "Input.WasJumpPressed via stub");
+
+        RunDebugLogSmokeTests();
 
         BlunderNativeAbi incomplete = default;
         incomplete.engine_abi_version = &StubAbiVersion;
@@ -214,6 +221,17 @@ static unsafe class Program
 
         Console.Error.WriteLine($"Blunder.Api.NativeAbiTests: {s_failures} failure(s)");
         return 1;
+    }
+
+    static void RunDebugLogSmokeTests()
+    {
+        s_lastLogSeverity = -1;
+        s_lastLogText = "";
+        s_lastLogStack = "";
+        Blunder.Debug.Log("hello-console");
+        Expect(s_lastLogSeverity == Blunder.Debug.SeverityLog, "Debug.Log severity");
+        Expect(s_lastLogText == "hello-console", "Debug.Log text");
+        Expect(!string.IsNullOrEmpty(s_lastLogStack), "Debug.Log captured stack");
     }
 
     static void RunAnimationPlayerSmokeTests()
@@ -1397,6 +1415,15 @@ static unsafe class Program
         }
 
         *outValue = s_inputSuppressed;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubLog(int severity, byte* text, byte* stack)
+    {
+        s_lastLogSeverity = severity;
+        s_lastLogText = Utf8ToString(text);
+        s_lastLogStack = Utf8ToString(stack);
         return Native.Ok;
     }
 }

@@ -1210,6 +1210,79 @@ void RenderSystem::flushOffscreenResizeToTarget(uint32_t target_width,
   applyDeferredOffscreenResize();
 }
 
+bool RenderSystem::readbackOffscreenRgba(eastl::vector<uint8_t>& out_rgba,
+                                         uint32_t& out_width,
+                                         uint32_t& out_height) {
+  out_rgba.clear();
+  out_width = 0;
+  out_height = 0;
+  if (!isVulkanBackend() || !m_offscreen || !vkBackend(this)) {
+    return false;
+  }
+  VulkanContext* context = vkCtx(this);
+  VulkanAllocator* allocator = vkAlloc(this);
+  if (context == nullptr || allocator == nullptr) {
+    return false;
+  }
+  const rhi::Extent2D extent = m_offscreen->extent();
+  if (extent.width == 0 || extent.height == 0) {
+    return false;
+  }
+  const VkDeviceSize bytes =
+      static_cast<VkDeviceSize>(extent.width) * extent.height * 4u;
+  if (!m_play_frame_staging || m_play_frame_staging_w != extent.width ||
+      m_play_frame_staging_h != extent.height) {
+    if (m_play_frame_staging) {
+      m_play_frame_staging->destroy();
+    } else {
+      m_play_frame_staging = eastl::make_unique<VulkanBuffer>();
+    }
+    m_play_frame_staging->create(allocator, bytes,
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                 VMA_MEMORY_USAGE_GPU_TO_CPU);
+    m_play_frame_staging_w = extent.width;
+    m_play_frame_staging_h = extent.height;
+  }
+
+  VkCommandBuffer command_buffer = context->beginImmediateCommands();
+  vulkan_backend::VulkanCommandList command_list;
+  command_list.bind(context, command_buffer);
+  m_offscreen->transitionToCopySource(command_list);
+  OffscreenRenderTarget* native = vkOffscreenRt(this);
+  if (native == nullptr) {
+    context->endImmediateCommands(command_buffer);
+    return false;
+  }
+  VkBufferImageCopy copy_region{};
+  copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  copy_region.imageSubresource.mipLevel = 0;
+  copy_region.imageSubresource.baseArrayLayer = 0;
+  copy_region.imageSubresource.layerCount = 1;
+  copy_region.imageExtent = {extent.width, extent.height, 1};
+  vkCmdCopyImageToBuffer(command_buffer, native->getImage(),
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         m_play_frame_staging->getBuffer(), 1, &copy_region);
+  m_offscreen->transitionToShaderRead(command_list);
+  context->endImmediateCommands(command_buffer);
+
+  vmaInvalidateAllocation(allocator->getAllocator(),
+                          m_play_frame_staging->getAllocation(), 0, bytes);
+  void* mapped = nullptr;
+  if (vmaMapMemory(allocator->getAllocator(),
+                   m_play_frame_staging->getAllocation(),
+                   &mapped) != VK_SUCCESS ||
+      mapped == nullptr) {
+    return false;
+  }
+  out_rgba.resize(static_cast<size_t>(bytes));
+  std::memcpy(out_rgba.data(), mapped, static_cast<size_t>(bytes));
+  vmaUnmapMemory(allocator->getAllocator(),
+                 m_play_frame_staging->getAllocation());
+  out_width = extent.width;
+  out_height = extent.height;
+  return true;
+}
+
 void RenderSystem::shutdown() {
   if (!m_backend) {
     return;
@@ -1218,6 +1291,12 @@ void RenderSystem::shutdown() {
   if (isVulkanBackend()) {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
     resetZeroCopyPresentState();
+    if (m_play_frame_staging) {
+      m_play_frame_staging->destroy();
+      m_play_frame_staging.reset();
+    }
+    m_play_frame_staging_w = 0;
+    m_play_frame_staging_h = 0;
   }
 
   if (m_renderdoc_capture) {

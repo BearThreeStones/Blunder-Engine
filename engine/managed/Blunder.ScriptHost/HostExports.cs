@@ -545,10 +545,17 @@ public static class HostExports
             return;
         }
 
-        GCHandle handle = GCHandle.FromIntPtr(peer);
-        if (handle.Target is Behaviour behaviour)
+        try
         {
-            behaviour.Tick(deltaTime);
+            GCHandle handle = GCHandle.FromIntPtr(peer);
+            if (handle.Target is Behaviour behaviour)
+            {
+                behaviour.Tick(deltaTime);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogErrorCaptured(ex.ToString(), ex.StackTrace);
         }
     }
 
@@ -560,10 +567,17 @@ public static class HostExports
             return;
         }
 
-        GCHandle handle = GCHandle.FromIntPtr(peer);
-        if (handle.Target is Behaviour behaviour)
+        try
         {
-            behaviour.Ready();
+            GCHandle handle = GCHandle.FromIntPtr(peer);
+            if (handle.Target is Behaviour behaviour)
+            {
+                behaviour.Ready();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogErrorCaptured(ex.ToString(), ex.StackTrace);
         }
     }
 
@@ -575,25 +589,32 @@ public static class HostExports
             return;
         }
 
-        GCHandle handle = GCHandle.FromIntPtr((IntPtr)peer);
-        if (handle.Target is not Behaviour behaviour)
+        try
         {
-            return;
-        }
+            GCHandle handle = GCHandle.FromIntPtr((IntPtr)peer);
+            if (handle.Target is not Behaviour behaviour)
+            {
+                return;
+            }
 
-        if (argc <= 0 || args == null)
+            if (argc <= 0 || args == null)
+            {
+                behaviour.OnMessage(new MessageId(id), ReadOnlySpan<MessageArg>.Empty);
+                return;
+            }
+
+            Span<MessageArg> managed = stackalloc MessageArg[argc];
+            for (int i = 0; i < argc; ++i)
+            {
+                managed[i] = MessageArg.FromNative(in args[i]);
+            }
+
+            behaviour.OnMessage(new MessageId(id), managed);
+        }
+        catch (Exception ex)
         {
-            behaviour.OnMessage(new MessageId(id), ReadOnlySpan<MessageArg>.Empty);
-            return;
+            Debug.LogErrorCaptured(ex.ToString(), ex.StackTrace);
         }
-
-        Span<MessageArg> managed = stackalloc MessageArg[argc];
-        for (int i = 0; i < argc; ++i)
-        {
-            managed[i] = MessageArg.FromNative(in args[i]);
-        }
-
-        behaviour.OnMessage(new MessageId(id), managed);
     }
 
     static Type? ResolveBehaviourType(string typeName)
