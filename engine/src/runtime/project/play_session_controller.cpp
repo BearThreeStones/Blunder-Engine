@@ -347,6 +347,17 @@ bool PlaySessionController::pauseEnabled() const {
 
 void PlaySessionController::setLastError(std::string error) {
   m_last_error = std::move(error);
+  m_last_issues.clear();
+}
+
+void PlaySessionController::setLastIssues(eastl::vector<Issue> issues) {
+  m_last_issues = eastl::move(issues);
+  m_last_error.clear();
+  if (const Issue* error = firstErrorIssue(m_last_issues)) {
+    m_last_error = error->explanation.c_str();
+  } else if (!m_last_issues.empty()) {
+    m_last_error = m_last_issues.front().explanation.c_str();
+  }
 }
 
 void PlaySessionController::setScriptsPreflight(
@@ -377,6 +388,7 @@ void PlaySessionController::resetToStopped() {
 void PlaySessionController::onProcessGone() {
   resetToStopped();
   m_last_error.clear();
+  m_last_issues.clear();
 }
 
 void PlaySessionController::failStarting(std::string error) {
@@ -384,11 +396,12 @@ void PlaySessionController::failStarting(std::string error) {
     m_hooks.terminate_process();
   }
   resetToStopped();
-  m_last_error = std::move(error);
+  setLastError(std::move(error));
 }
 
 bool PlaySessionController::play(const PlaySessionRequest& request) {
   m_last_error.clear();
+  m_last_issues.clear();
   if (request.project_root.empty() || request.scene.empty()) {
     m_last_error = "project root and scene are required";
     return false;
@@ -409,8 +422,14 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
     gate.build = m_hooks.build_scripts;
     const PlayScriptsGateResult scripts = runPlayScriptsGate(gate);
     if (!scripts.ok) {
-      m_last_error =
-          scripts.error.empty() ? "scripts build failed" : scripts.error;
+      eastl::vector<Issue> issues;
+      Issue issue;
+      issue.code = k_issue_scripts_build_failed;
+      issue.severity = IssueSeverity::error;
+      issue.explanation = scripts.error.empty() ? "scripts build failed"
+                                                : scripts.error.c_str();
+      issues.push_back(eastl::move(issue));
+      setLastIssues(eastl::move(issues));
       m_state = PlaySessionState::Stopped;
       return false;
     }

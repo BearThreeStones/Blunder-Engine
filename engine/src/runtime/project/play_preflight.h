@@ -1,5 +1,9 @@
 #pragma once
 
+#include "EASTL/vector.h"
+
+#include "runtime/project/authorship_issue.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -33,6 +37,12 @@ PlayDirtySceneDecision decidePlayDirtyScene(
 /// Projects without a Scripts folder / csproj are treated as not dirty.
 bool areProjectScriptsDirty(const std::filesystem::path& project_root);
 
+/// True when `Scripts/` contains a `.csproj`.
+bool projectHasScriptsCsproj(const std::filesystem::path& project_root);
+
+/// True when `.blunder/scripts_bin` has a game assembly DLL (not Api/ScriptHost).
+bool projectHasGameAssemblyOutput(const std::filesystem::path& project_root);
+
 struct PlayScriptsGateHooks {
   std::function<bool()> is_dirty;
   std::function<bool(std::string& error)> build;
@@ -54,9 +64,11 @@ bool sceneAssetHasPlayCamera(const Scene& scene);
 struct PlayCameraGateResult {
   bool ok{false};
   std::string error;
+  eastl::vector<Issue> issues;
 };
 
 /// Fails closed when the play entry scene has no Camera component.
+/// Issues come from Play-rule Diagnose (`play.missing_camera`).
 PlayCameraGateResult runPlayCameraGate(const Scene& scene);
 
 }  // namespace Blunder

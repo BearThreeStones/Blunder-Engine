@@ -1,5 +1,6 @@
 #pragma once
 
+#include "runtime/project/authorship_issue.h"
 #include "runtime/project/play_ipc.h"
 
 #include <chrono>
@@ -8,6 +9,8 @@
 #include <functional>
 #include <string>
 #include <vector>
+
+#include "EASTL/vector.h"
 
 namespace Blunder {
 
@@ -73,10 +76,13 @@ class PlaySessionController final {
 
   const PlayIpcEndpoint& endpoint() const { return m_endpoint; }
   const std::string& lastError() const { return m_last_error; }
+  const eastl::vector<Issue>& lastIssues() const { return m_last_issues; }
 
   /// Surface a non-session error (e.g. Save and Play save failure) without
   /// starting Play.
   void setLastError(std::string error);
+
+  void setLastIssues(eastl::vector<Issue> issues);
 
   /// Install Scripts dirty/build hooks used by `play()` before spawn.
   void setScriptsPreflight(std::function<bool()> is_dirty,
@@ -102,6 +108,7 @@ class PlaySessionController final {
   bool m_ipc_connected{false};
   PlayIpcEndpoint m_endpoint;
   std::string m_last_error;
+  eastl::vector<Issue> m_last_issues;
   bool m_has_starting_deadline{false};
   std::chrono::steady_clock::time_point m_starting_deadline{};
 };

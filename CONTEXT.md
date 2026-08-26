@@ -35,7 +35,7 @@ A System looked up from the process-wide runtime context (`RuntimeGlobalContext`
 _Avoid_: Putting Editor-only authorship Systems here as the lasting path, treating every current GlobalContext field as a Context System, moving AssetCompiler to the registry while Player still cooks at boot
 
 **Registered System**:
-A System that at least one shipped Host composition omits. Editor-only authorship belongs here — Content Browser, Selection, Hierarchy, Scene Edit, Document History, Viewport Pick, Placement Preview, Animation Preview, Play Session, thumbnail/preview render services, Asset Import, UiHost, Slint, viewport sink/bridge. Player must not create them. Mounted at process boot via a registry; callers tolerate absence. Still process-lifetime — not a Plugin and not a Seam registration.
+A System that at least one shipped Host composition omits. Editor-only authorship belongs here — Content Browser, Selection, Hierarchy, Scene Edit, Document History, Viewport Pick, Placement Preview, Animation Preview, Play Session, thumbnail/preview render services, Asset Import, UiHost, Slint, viewport sink/bridge, Authorship System. Player must not create them. Mounted at process boot via a registry; callers tolerate absence. Still process-lifetime — not a Plugin and not a Seam registration.
 _Avoid_: Plugin, unloading a Registered System while the process runs, conflating Registered System with Seam registration, creating Content Browser or Import inside the Player, Cordis ctx keys for the Privileged core
 
 ### Reflection & scripting
@@ -800,8 +800,8 @@ When Play is requested and the active scene document is dirty, the editor asks h
 _Avoid_: Always auto-save on Play with no prompt; blocking Play with save-only and no choice; playing the on-disk asset with no indication when the editor view is dirty
 
 **Play Scripts build**:
-Before starting the Player, the editor builds the Project `Scripts/` output when those sources (or their build inputs) are newer than the last successful scripts output — otherwise it reuses `.blunder/scripts_bin`. A failed build keeps the session in Edit Mode and does not start Play Mode.
-_Avoid_: Building Scripts on every Play with no dirtiness check; requiring the Player process to run `dotnet build`; starting Play against a stale missing assembly with no build attempt when Scripts are dirty
+Before starting the Player, the editor builds the Project `Scripts/` output when those sources (or their build inputs) are newer than the last successful scripts output — otherwise it reuses `.blunder/scripts_bin`. This build is not Diagnose and not an Op. A failed build keeps the session in Edit Mode and reports Error-grade Issues; Diagnose may report Scripts dirty or missing output without compiling.
+_Avoid_: Building Scripts on every Play with no dirtiness check; requiring the Player process to run `dotnet build`; starting Play against a stale missing assembly with no build attempt when Scripts are dirty; treating the build itself as Diagnose or as an Editor Command
 
 **Play live sync (deferred)**:
 Pushing authorship or Scripts changes into a running Play Process without ending the session is out of the first Play Mode UI slice. Authors Stop and Play again to pick up saved scene and rebuilt Scripts.
@@ -824,8 +824,8 @@ While paused, the Player skips gameplay Behaviour Tick (and other gameplay simul
 _Avoid_: Pause that tears down the Player; Pause that freezes rendering as the only definition; Pause as a synonym for Stop; Pause-time Editor Camera orbit in the Player window
 
 **Play camera preflight**:
-Before spawning the Player, the editor verifies the Play entry scene (as it will be loaded — after dirty-prompt save rules) contains at least one valid Camera Component. Failure keeps the session in Edit Mode and surfaces an error (same class of gate as a failed Scripts build).
-_Avoid_: Starting Player with no Camera and relying on a black screen; auto-injecting a Camera at Play time
+Before spawning the Player, the editor runs Diagnose (Play rule set) on the Play entry as it will be loaded (after dirty-prompt save rules) and requires at least one valid Camera Component. Error-grade Issues keep the session in Edit Mode. This is not a separate stringly error type beside Issue.
+_Avoid_: Starting Player with no Camera and relying on a black screen; auto-injecting a Camera at Play time; a parallel preflight error that is not an Issue
 
 **Play control channel**:
 A local IPC link between the editor and the single Play Process used to send session commands (at least pause, resume, and stop). Process exit is also treated as leaving Play Mode. It is not a networked multiplayer protocol.
@@ -841,7 +841,59 @@ _Avoid_: Freezing the editor for the whole Play session as the v1 rule; implying
 
 **Editor Command**:
 A single reversible unit on Editor History (Document or Global). It exposes undo and redo. Continuous interactions (e.g. a Translate Modal Session) become one Command at confirm — not one Command per pointer move. New Commands are new types pushed onto History — not a Seam type catalog.
-_Avoid_: Per-frame history entries, full-scene snapshot as the default history unit, an Editor Command type registry / palette as the first composition Seam
+_Avoid_: Per-frame history entries, full-scene snapshot as the default history unit, an Editor Command type registry / palette as the first composition Seam; treating an Editor Command as the machine-facing request (that request is an Op)
+
+**Op**:
+A single mutating request on the machine authorship contract. One Op commits as exactly one Editor Command on Document History or Global History. It is not the Command itself, not a Query, and not a Message.
+_Avoid_: An Op type registry as a Seam; Message; GameCommand; pushing Op onto History as a second undo unit; mutating the document without a Command; batching several Commands under one Op in v1
+
+**Query**:
+A read-only request on the machine authorship contract. It does not push Editor History.
+_Avoid_: Disguising a Query as an Editor Command; using Message for editor reads; treating a Query as an undoable unit
+
+**Diagnose**:
+A read-only request on the machine authorship contract whose result is a list of Issues, not a world snapshot. It does not push Editor History.
+_Avoid_: Treating Diagnose as a Query projection; making validate an Op; using Console Message or a log line as the Diagnose result contract; Message; compiling Scripts or Cooking as Diagnose
+
+**Issue**:
+One Diagnose result: a stable code, a severity, an optional Authorship Address, and an explanation. It is not a Console Message, not an Editor Command, and not a log line.
+_Avoid_: Scraping Console text as the machine result; stringly-typed errors with no code; EntityId as the Issue target; treating a Console Message as an Issue; using Issue for a failed Query or Op
+
+**Issue severity**:
+The grade on an Issue: Log, Warning, or Error. Same three names as Console severity; not Console Message and not LogLevel.
+_Avoid_: A second severity vocabulary; calling this LogLevel; treating a Warning as a Play blocker
+
+**Request failure**:
+A stable code when a Query or Op cannot be carried out (unknown Authorship Address, no Live document, Op aimed at an On-disk Project). It is not an Issue and does not push Editor History.
+_Avoid_: Reporting request errors as Diagnose Issues; a successful no-op on unknown address; using Console Message as this result
+
+**Authorship Address**:
+The public target of Query, Op, and Diagnose. For a scene entity it is that entity's scene-unique name — the same string the Scene Asset already persists. For an Asset it is the Asset Reference (GUID). It is not EntityId and not ObjectId in this slice.
+_Avoid_: EntityId on the machine contract; ObjectId as a durable scene address before it is persisted on the scene; virtual path as Asset identity; hierarchy path as entity identity
+
+**Live document**:
+The open editable document in an Editor Session (v1: the active scene, including unsaved edits). Op always mutates this.
+_Avoid_: The Play Process world; treating the last-saved Scene Asset as this when the editor is dirty
+
+**On-disk Project**:
+The Project as stored on disk (Scene Assets, descriptors, Scripts), independent of an Editor Session. Op may not target this.
+_Avoid_: Reading dirty editor buffers as this; requiring the editor UI to Diagnose an On-disk Project
+
+**Authorship Subject**:
+The world a Query or Diagnose is evaluated against: the Live document or the On-disk Project. Every Query and Diagnose states this explicitly. Op has no subject choice.
+_Avoid_: A silent default that mixes dirty editor state with saved files; a third unnamed world; treating Player simulation as an Authorship Subject
+
+**Authorship contract**:
+The first-party Query / Op / Diagnose contract for reading and changing a Project. GUI, CLI, and MCP are adapters. Not a Seam, not Message, and not the C-ABI bridge. Decision record: [ADR 0041](docs/adr/0041-authorship-contract.md).
+_Avoid_: Agent API as the product name; Editor Command type registry; MCP as the domain name; exposing this contract from the Player
+
+**Authorship System**:
+The Registered System that hosts the Authorship contract in an Editor Session. It routes Op to Editor Commands and Live Query / Diagnose against the Live document. Player does not mount it. On-disk Diagnose reuses the same rule code from a tool without mounting this System in the Player.
+_Avoid_: Context System; Privileged core; Seam; mounting this in the Player; a second mutation path that bypasses Editor Commands
+
+**Authorship contract v1**:
+The first slice of the Authorship contract: Query of the scene's entity names and of one entity (name, parent name, local TRS) by Authorship Address; one Op that sets local transform; Diagnose of the Play rule set (missing Camera; Scripts dirty or missing output). Not the full Editor Command catalog.
+_Avoid_: Diagnose-only; Query/Op with no Command path; Import, Cook, or Play-start as this slice; exposing EntityId
 
 **Document History**:
 The scene-scoped Editor History for one open editable document — for v1, the active scene (`activeScenePath` / active `SceneInstance`). Opening another scene replaces or clears that history. It is not Global History and does not hold editor-preference commands.
@@ -876,8 +928,8 @@ How a Document History (or Global History) entry appears relative to the stack c
 _Avoid_: Hiding the redo tail, identical styling for applied and redo rows with selection as the only cue, newest-first ordering for this panel
 
 **Command target (v1)**:
-Editor Commands address scene entities by `EntityId` within the active `SceneInstance`, matching current selection/gizmo/Inspector paths. ObjectId targeting is deferred until scene editing is Object-backed.
-_Avoid_: Requiring ObjectId for the first undo milestone, dual-ID on every Command
+Editor Commands address scene entities by `EntityId` within the active `SceneInstance`, matching current selection/gizmo/Inspector paths. ObjectId targeting is deferred until scene editing is Object-backed. The machine contract does not use this as its public target; it uses Authorship Address and translates to EntityId when pushing a Command.
+_Avoid_: Requiring ObjectId for the first undo milestone, dual-ID on every Command, exposing EntityId on Query / Op / Diagnose
 
 **Editor History MVP commands**:
 v1 Commands cover (1) entity transform commits (gizmo drag end, Translate Modal confirm, Inspector TRS commit) and (2) entity spawn/delete. Reparent and broader Outliner hierarchy edits stay out of this milestone unless they fall out of spawn/delete.

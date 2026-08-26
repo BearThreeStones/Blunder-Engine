@@ -755,6 +755,30 @@ target_precompile_headers(editor_commands_test
 add_test(NAME editor_commands_test
          COMMAND editor_commands_test)
 
+add_executable(authorship_contract_test
+    "authorship_contract_test.cpp"
+)
+
+target_link_libraries(authorship_contract_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(authorship_contract_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(authorship_contract_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(authorship_contract_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME authorship_contract_test
+         COMMAND authorship_contract_test)
+
 add_executable(hierarchy_create_test
     "hierarchy_create_test.cpp"
 )

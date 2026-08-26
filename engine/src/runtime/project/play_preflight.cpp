@@ -7,6 +7,7 @@
 #include <string>
 
 #include "runtime/function/scene/scene.h"
+#include "runtime/project/play_diagnose.h"
 
 namespace Blunder {
 namespace {
@@ -99,6 +100,19 @@ PlayDirtySceneDecision decidePlayDirtyScene(
   return decision;
 }
 
+bool projectHasScriptsCsproj(const fs::path& project_root) {
+  return hasScriptsCsproj(project_root);
+}
+
+bool projectHasGameAssemblyOutput(const fs::path& project_root) {
+  if (project_root.empty()) {
+    return false;
+  }
+  const fs::path out_dir = project_root / ".blunder" / "scripts_bin";
+  return maxWriteTimeUnder(out_dir, isScriptsOutputDll) !=
+         fs::file_time_type::min();
+}
+
 bool areProjectScriptsDirty(const fs::path& project_root) {
   if (project_root.empty() || !hasScriptsCsproj(project_root)) {
     return false;
@@ -160,11 +174,12 @@ bool sceneAssetHasPlayCamera(const Scene& scene) {
 
 PlayCameraGateResult runPlayCameraGate(const Scene& scene) {
   PlayCameraGateResult result;
-  if (sceneAssetHasPlayCamera(scene)) {
+  appendPlayCameraIssues(scene, result.issues);
+  if (result.issues.empty()) {
     result.ok = true;
     return result;
   }
-  result.error = "play entry scene has no Camera";
+  result.error = result.issues.front().explanation.c_str();
   return result;
 }
 

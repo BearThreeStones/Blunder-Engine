@@ -72,7 +72,7 @@ bool startPlaySession(PlaySessionController& session, FileSystem& fs,
   }
   const PlayCameraGateResult cam = runPlayCameraGate(scene_asset->getScene());
   if (!cam.ok) {
-    session.setLastError(cam.error);
+    session.setLastIssues(cam.issues);
     LOG_ERROR("[Play] aborted: {}", cam.error.c_str());
     return false;
   }

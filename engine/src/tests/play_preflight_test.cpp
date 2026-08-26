@@ -1,5 +1,6 @@
 #include "runtime/project/play_preflight.h"
 #include "runtime/project/play_session_controller.h"
+#include "runtime/project/play_diagnose.h"
 #include "runtime/function/scene/scene.h"
 
 #include <chrono>
@@ -95,6 +96,10 @@ int main() {
     expect_true("no camera gate fails", !blocked.ok);
     expect_true("no camera gate error",
                 blocked.error == "play entry scene has no Camera");
+    expect_true("no camera issue code",
+                issueListHasCode(blocked.issues, k_issue_play_missing_camera));
+    expect_true("no camera issue is error",
+                firstErrorIssue(blocked.issues) != nullptr);
   }
 
   {
@@ -161,6 +166,17 @@ int main() {
               "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n");
     writeText(project / "Scripts" / "Hello.cs", "class Hello {}\n");
     expect_true("missing dll means dirty", areProjectScriptsDirty(project));
+    {
+      Scene empty;
+      eastl::vector<Issue> issues;
+      diagnosePlayRuleSet(empty, project, issues);
+      expect_true("diagnose missing output warning",
+                  issueListHasCode(issues, k_issue_scripts_missing_output));
+      expect_true("diagnose missing output not dirty code",
+                  !issueListHasCode(issues, k_issue_scripts_dirty));
+      expect_true("diagnose missing camera too",
+                  issueListHasCode(issues, k_issue_play_missing_camera));
+    }
     fs::remove_all(project);
   }
 
@@ -172,6 +188,42 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     writeText(project / "Scripts" / "Hello.cs", "class Hello {}\n");
     expect_true("newer source means dirty", areProjectScriptsDirty(project));
+    {
+      Scene with_camera;
+      SceneEntityDefinition cam;
+      cam.name = "MainCamera";
+      cam.has_camera = true;
+      with_camera.getEntities().push_back(cam);
+      eastl::vector<Issue> issues;
+      diagnosePlayRuleSet(with_camera, project, issues);
+      expect_true("diagnose dirty warning",
+                  issueListHasCode(issues, k_issue_scripts_dirty));
+      expect_true("diagnose dirty not missing output",
+                  !issueListHasCode(issues, k_issue_scripts_missing_output));
+      expect_true("diagnose dirty no camera issue",
+                  !issueListHasCode(issues, k_issue_play_missing_camera));
+    }
+    {
+      int build_calls = 0;
+      PlayScriptsGateHooks unused;
+      unused.is_dirty = [&]() {
+        ++build_calls;
+        return true;
+      };
+      unused.build = [&](std::string&) {
+        ++build_calls;
+        return true;
+      };
+      Scene with_camera;
+      SceneEntityDefinition cam;
+      cam.name = "MainCamera";
+      cam.has_camera = true;
+      with_camera.getEntities().push_back(cam);
+      eastl::vector<Issue> issues;
+      diagnosePlayRuleSet(with_camera, project, issues);
+      expect_true("diagnose does not invoke build hooks", build_calls == 0);
+      (void)unused;
+    }
     fs::remove_all(project);
   }
 
@@ -246,6 +298,9 @@ int main() {
     expect_true("failed scripts gate built once", fake.build_count == 1);
     expect_true("failed scripts gate has error",
                 ctrl.lastError().find("dotnet") != std::string::npos);
+    expect_true("failed scripts issue code",
+                issueListHasCode(ctrl.lastIssues(),
+                                 k_issue_scripts_build_failed));
 
     fake.build_ok = true;
     expect_true("successful scripts gate plays", ctrl.play(req));

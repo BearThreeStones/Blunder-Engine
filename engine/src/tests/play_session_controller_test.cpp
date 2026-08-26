@@ -1,4 +1,5 @@
 #include "runtime/project/play_session_controller.h"
+#include "runtime/project/authorship_issue.h"
 
 #include <chrono>
 #include <cstdio>
@@ -228,6 +229,27 @@ int main() {
     expect_true("timeout terminated", fake.terminate_count >= 1);
     expect_true("timeout error set",
                 ctrl.lastError().find("timeout") != std::string::npos);
+  }
+
+  {
+    FakeSession fake;
+    auto hooks = makeFakeHooks(fake);
+    hooks.is_scripts_dirty = []() { return true; };
+    hooks.build_scripts = [](std::string& err) {
+      err = "dotnet build failed";
+      return false;
+    };
+    PlaySessionController ctrl(std::move(hooks));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("scripts fail no play", !ctrl.play(req));
+    expect_true("scripts fail stopped",
+                ctrl.state() == PlaySessionState::Stopped);
+    expect_true("scripts fail no spawn", fake.spawn_count == 0);
+    expect_true("scripts fail issue",
+                issueListHasCode(ctrl.lastIssues(),
+                                 k_issue_scripts_build_failed));
   }
 
   if (g_failures != 0) {

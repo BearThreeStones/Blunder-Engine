@@ -31,6 +31,7 @@ class ContentBrowserSystem;
 class EditorSelectionSystem;
 class HierarchySystem;
 class EditorSceneEditSystem;
+class AuthorshipSystem;
 class DocumentHistory;
 class ViewportPickSystem;
 class PlacementPreviewController;
@@ -120,6 +121,7 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<EditorSelectionSystem> m_editor_selection;
   eastl::shared_ptr<HierarchySystem> m_hierarchy;
   eastl::shared_ptr<EditorSceneEditSystem> m_editor_scene_edit;
+  eastl::shared_ptr<AuthorshipSystem> m_authorship;
   eastl::unique_ptr<PlacementPreviewController> m_placement_preview;
   eastl::shared_ptr<DocumentHistory> m_document_history;
   eastl::shared_ptr<DocumentHistory> m_global_history;

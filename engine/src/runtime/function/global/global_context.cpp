@@ -43,6 +43,7 @@
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/editor/document_history.h"
+#include "runtime/function/editor/authorship_system.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/project/play_session_controller.h"
 // #include "runtime/resource/config_manager/config_manager.h"
@@ -271,6 +272,12 @@ void RuntimeGlobalContext::startSystems(
         }
       });
   m_global_history = eastl::make_shared<DocumentHistory>();
+  if (authorshipSystemEnabled(host_mode)) {
+    m_authorship = eastl::make_shared<AuthorshipSystem>();
+    m_authorship->initialize(m_scene_system.get(), m_document_history.get(),
+                             m_file_system.get(), m_editor_selection.get(),
+                             m_editor_scene_edit.get());
+  }
   m_viewport_pick = eastl::make_shared<ViewportPickSystem>();
 
   m_thumbnail_generator = eastl::make_shared<ThumbnailGenerator>();
@@ -510,6 +517,7 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   m_viewport_pick.reset();
+  m_authorship.reset();
   m_global_history.reset();
   m_document_history.reset();
   m_editor_scene_edit.reset();
