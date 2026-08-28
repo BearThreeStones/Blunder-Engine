@@ -3043,10 +3043,12 @@ if(EXISTS "${PHYSICS_GOLDEN_REFERENCE_DUMP}")
              COMMAND physics_golden_suite --compare "${PHYSICS_GOLDEN_REFERENCE_DUMP}")
 endif()
 
-# GNU ld includes whole TUs from a static archive. engine_runtime's
-# global_context.cpp calls blunder_native_abi_fill_from_process, so any
-# executable that pulls that object needs the C-ABI. MSVC /Gy can drop the
-# unused call. Skip Approach A hosts that LoadLibrary SHARED only.
+# GNU ld is left-to-right on static archives and includes whole TUs.
+# global_context.cpp calls blunder_native_abi_fill_from_process, so the
+# C-ABI archive must appear *after* engine_runtime on the link line.
+# `PRIVATE blunder_engine_c_static` (PUBLIC engine_runtime) yields the
+# reverse order and leaves the symbol undefined. Repeat C-ABI at the end.
+# Skip Approach A hosts that LoadLibrary SHARED only.
 set(_blunder_c_abi_skip dotnet_host_test)
 get_property(_blunder_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_tgt IN LISTS _blunder_test_targets)
@@ -3064,17 +3066,13 @@ foreach(_tgt IN LISTS _blunder_test_targets)
   if(NOT _libs)
     continue()
   endif()
-  set(_needs_runtime FALSE)
-  set(_has_c_abi FALSE)
+  set(_repeat_c_abi FALSE)
   foreach(_lib IN LISTS _libs)
-    if(_lib STREQUAL "engine_runtime")
-      set(_needs_runtime TRUE)
-    endif()
-    if(_lib STREQUAL "blunder_engine_c_static")
-      set(_has_c_abi TRUE)
+    if(_lib STREQUAL "engine_runtime" OR _lib STREQUAL "blunder_engine_c_static")
+      set(_repeat_c_abi TRUE)
     endif()
   endforeach()
-  if(_needs_runtime AND NOT _has_c_abi)
+  if(_repeat_c_abi)
     target_link_libraries("${_tgt}" PRIVATE blunder_engine_c_static)
   endif()
 endforeach()
