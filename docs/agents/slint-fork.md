@@ -18,7 +18,7 @@ cd ../../..
 git submodule update --init engine/3rdparty/slint
 ```
 
-The parent repo pins a **commit**. Push that commit **and the matching upstream version tag** (`v1.16.1`) to `BearThreeStones/slint` before Merge CI or a fresh clone can fetch them. Merge CI checks out first-level submodules with full history (`fetch-depth: 0`). `engine/3rdparty/slint.cmake` requires `HEAD` to be based on that tag (detached pins are OK) and will fetch the tag from the fork or `slint-ui/slint` if the clone lacks it.
+Linux uses `cmake/slint_linux.cmake` (official C++ SDK tarball) and skips the submodule source build when `Slint::Slint` already exists. Windows still builds the fork from `engine/3rdparty/slint` so Skia Vulkan stays enabled.
 
 ## Clone Blunder Engine
 

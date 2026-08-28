@@ -21,8 +21,6 @@ concurrency:
 env:
   MERGE_CI_CTEST_REGEX: "^(classdb_test|variant_test|object_db_test|ptrcall_lifecycle_test)$"
   CMAKE_BUILD_PARALLEL_LEVEL: "2"
-  CARGO_BUILD_JOBS: "2"
-  CARGO_TERM_COLOR: always
 
 jobs:
   linux:
@@ -75,16 +73,11 @@ jobs:
             libibus-1.0-dev \
             libusb-1.0-0-dev
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache CMake FetchContent and Cargo
+      - name: Cache CMake FetchContent
         uses: actions/cache@v4
         with:
           path: |
             .cmake_deps
-            ~/.cargo/registry
-            ~/.cargo/git
           key: merge-ci-linux-${{ hashFiles('CMakeLists_linux.cmake', 'cmake/**/*.cmake', 'engine/3rdparty/slint.cmake', '.gitmodules') }}
           restore-keys: |
             merge-ci-linux-

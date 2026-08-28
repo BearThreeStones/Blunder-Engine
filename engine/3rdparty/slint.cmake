@@ -8,6 +8,13 @@ if(CMAKE_VERSION VERSION_LESS "3.21")
     )
 endif()
 
+# Linux wrapper (cmake/slint_linux.cmake) already find_package'd the official
+# C++ SDK. Importing the submodule crate would redefine Slint::Slint / slint_cpp-shared.
+if(TARGET Slint::Slint)
+    message(STATUS "[Slint] Slint::Slint already defined; skipping submodule source build")
+    return()
+endif()
+
 set(SLINT_VERSION "1.16.1" CACHE STRING "Slint version to build from source")
 set(SLINT_GIT_TAG "v${SLINT_VERSION}" CACHE STRING "Slint git tag or commit to fetch")
 include(FetchContent)
