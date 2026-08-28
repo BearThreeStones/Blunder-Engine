@@ -13,6 +13,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# SHARED blunder_engine_c links STATIC engine_runtime. ELF TLS/code in that
+# archive needs -fPIC (MSVC does not).
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.cmake_deps" CACHE PATH "Directory to store FetchContent data")
 include(cmake/compiler.cmake)
 include(cmake/blunder_outputs.cmake)
