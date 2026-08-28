@@ -44,4 +44,8 @@ find_package(Vulkan REQUIRED)
 include(cmake/slint_linux.cmake)
 include(cmake/slang_linux.cmake)
 
+# Root CTestTestfile.cmake so `ctest --test-dir build` sees engine/src/tests.
+# enable_testing() only under tests/ leaves the build-tree root with no tests.
+enable_testing()
+
 add_subdirectory(engine)
