@@ -104,6 +104,14 @@
 #include "runtime/function/ui/docking/dock_node.h"
 #include "runtime/platform/file_system/file_system.h"
 
+// Shared-Vulkan Skia helpers exist only on the Windows fork build. Linux Cloud
+// and Merge CI use the official C++ SDK tarball (cmake/slint_linux.cmake).
+#if defined(_WIN32) || defined(_WIN64)
+#define BLUNDER_SLINT_FORK_SKIA 1
+#else
+#define BLUNDER_SLINT_FORK_SKIA 0
+#endif
+
 namespace Blunder {
 namespace {
 
@@ -349,7 +357,27 @@ void SlintSystem::SlintWindowAdapter::ensureRenderer() {
         "device (CPU viewport readback)");
   }
 #else
-#  error "Slint SkiaRenderer integration is currently implemented for Win32 only"
+  SDL_PropertiesID props = SDL_GetWindowProperties(window);
+  void* display = SDL_GetPointerProperty(
+      props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+  const uint32_t x_window = static_cast<uint32_t>(
+      SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
+  const int screen = static_cast<int>(
+      SDL_GetNumberProperty(props, SDL_PROP_WINDOW_X11_SCREEN_NUMBER, 0));
+  if (!display || x_window == 0) {
+    LOG_ERROR("[SlintSystem] native X11 window is null");
+    return;
+  }
+  const slint::PhysicalSize phys = size();
+  slint::platform::NativeWindowHandle handle =
+      slint::platform::NativeWindowHandle::from_x11_xlib(x_window, 0, display,
+                                                         screen);
+  m_target_size = phys;
+  m_committed_size = phys;
+  m_renderer_size = phys;
+  m_renderer = std::make_unique<slint::platform::SkiaRenderer>(
+      handle, m_committed_size);
+  m_uses_shared_device = false;
 #endif
 }
 
@@ -517,7 +545,12 @@ void SlintSystem::SlintWindowAdapter::applyWindowLayoutNow(int override_logical_
        m_target_size.height != m_renderer_size.height);
   if (physical_size_changed) {
     if (m_renderer) {
+#if BLUNDER_SLINT_FORK_SKIA
       m_renderer->resize(m_target_size);
+#else
+      m_renderer.reset();
+      ensureRenderer();
+#endif
       if (m_owner) {
         m_owner->markFullSkiaRefresh();
       }
@@ -597,13 +630,17 @@ void SlintSystem::SlintWindowAdapter::markSkiaDirtyRegion(const float x, const f
       m_owner == nullptr || !m_owner->slintPartialCompositeEnabled()) {
     return;
   }
+#if BLUNDER_SLINT_FORK_SKIA
   m_renderer->mark_dirty_region(x, y, width, height);
+#endif
 }
 
 void SlintSystem::SlintWindowAdapter::forceSkiaFullRefresh() {
+#if BLUNDER_SLINT_FORK_SKIA
   if (m_renderer) {
     m_renderer->force_full_refresh();
   }
+#endif
 }
 
 void SlintSystem::SlintWindowAdapter::compositeFrame() {
@@ -639,7 +676,9 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
   const bool forced_full_refresh =
       m_owner && m_owner->consumePendingFullSkiaRefresh();
   if (forced_full_refresh) {
+#if BLUNDER_SLINT_FORK_SKIA
     m_renderer->force_full_refresh();
+#endif
   } else if (m_owner && m_owner->slintPartialCompositeEnabled()) {
     // Re-mark immediately before render — dirty state can be stale after layout.
     m_owner->markViewportDirtyRegion();
@@ -1852,6 +1891,14 @@ slint::Image SlintSystem::borrowedViewportImageForHandle(const uint64_t image,
                                                          const uint32_t layout,
                                                          const uint32_t width,
                                                          const uint32_t height) {
+#if !BLUNDER_SLINT_FORK_SKIA
+  (void)image;
+  (void)format;
+  (void)layout;
+  (void)width;
+  (void)height;
+  return {};
+#else
   for (BorrowedViewportImageCacheEntry& entry : m_borrowed_viewport_cache) {
     if (entry.vk_image == image && entry.width == width && entry.height == height) {
       return entry.image;
@@ -1873,6 +1920,7 @@ slint::Image SlintSystem::borrowedViewportImageForHandle(const uint64_t image,
   entry.image = slint::Image::create_from_borrowed_vulkan_texture(
       image, format, layout, slint::Size<uint32_t>{width, height});
   return entry.image;
+#endif
 }
 
 void SlintSystem::logViewportPresentPathOnce(const bool zero_copy_present) const {
