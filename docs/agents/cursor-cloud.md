@@ -31,7 +31,7 @@ export LD_LIBRARY_PATH="/workspace/.cmake_deps/slang_sdk-src/lib:/workspace/.cma
 
 - `EASTL_USER_DEFINED_ALLOCATOR` must be defined globally; without it, EASTL's inline allocator implementations conflict with the project's custom `eastl_allocator.cpp`.
 - `cmake/slint.cmake` and `cmake/slang.cmake` are Windows-only; the Linux build uses `cmake/slint_linux.cmake` and `cmake/slang_linux.cmake` (included by `CMakeLists_linux.cmake`). Linux does not source-build the Slint fork; it uses the SDK tarball.
-- `CMakeLists_linux.cmake` must include `cmake/blunder_outputs.cmake` (same helpers as the Windows root lists) so editor/player configure can call `blunder_set_debugger_working_directory`.
+- `CMakeLists_linux.cmake` must include `cmake/blunder_outputs.cmake` (same helpers as the Windows root lists) so editor/player configure can call `blunder_set_debugger_working_directory`. Enable `C` as well as `CXX` (`stb` / `cgltf` / SDL are C).
 - `engine/3rdparty/cgltf/` is header-only with no upstream CMakeLists.txt; a minimal one must exist for `add_subdirectory()` to work.
 - SDL3 on Linux requires `-DSDL_WAYLAND=OFF` (no Wayland compositor in the VM).
 - Vulkan validation errors about semaphores are expected with Mesa's software Vulkan driver (lavapipe); they do not affect functionality.
