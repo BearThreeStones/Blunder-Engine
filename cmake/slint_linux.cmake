@@ -39,3 +39,13 @@ endif()
 list(APPEND CMAKE_PREFIX_PATH "${_slint_install_dir}")
 find_package(Slint REQUIRED)
 message(STATUS "[Slint] Using SDK at: ${_slint_install_dir}")
+
+# Official Linux SDK libslint_cpp.so was built with linuxkms/libinput.
+# GNU ld does not automatically link those when linking our executables.
+if(UNIX AND NOT APPLE)
+    foreach(_blunder_slint_syslib IN ITEMS input udev)
+        find_library(_blunder_slint_${_blunder_slint_syslib} ${_blunder_slint_syslib} REQUIRED)
+        target_link_libraries(Slint::Slint INTERFACE
+            "${_blunder_slint_${_blunder_slint_syslib}}")
+    endforeach()
+endif()
