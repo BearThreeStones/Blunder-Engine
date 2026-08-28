@@ -217,56 +217,45 @@ if(_slint_existing_tag_result EQUAL 0 AND _slint_existing_tag STREQUAL "${SLINT_
 endif()
 
 if(NOT _slint_on_expected_tag)
-    execute_process(
-        COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" merge-base --is-ancestor
-            "${SLINT_GIT_TAG}" HEAD
-        RESULT_VARIABLE _slint_ancestor_result
-        ERROR_QUIET
+    set(_slint_ancestor_result 1)
+    set(_slint_tag_fetch_sources
+        "origin"
+        "https://github.com/slint-ui/slint.git"
     )
-    if(NOT _slint_ancestor_result EQUAL 0)
-        # Shallow or pin-only clones may lack the version tag.
+    foreach(_slint_try RANGE 0 2)
+        execute_process(
+            COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" merge-base --is-ancestor
+                "${SLINT_GIT_TAG}" HEAD
+            RESULT_VARIABLE _slint_ancestor_result
+            ERROR_QUIET
+        )
+        if(_slint_ancestor_result EQUAL 0)
+            break()
+        endif()
+        if(_slint_try GREATER_EQUAL 2)
+            break()
+        endif()
+        math(EXPR _slint_src_index "${_slint_try}")
+        list(GET _slint_tag_fetch_sources ${_slint_src_index} _slint_tag_src)
         execute_process(
             COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" fetch
-                --no-tags origin "refs/tags/${SLINT_GIT_TAG}:refs/tags/${SLINT_GIT_TAG}"
-            RESULT_VARIABLE _slint_fetch_tag_result
+                --no-tags "${_slint_tag_src}"
+                "refs/tags/${SLINT_GIT_TAG}:refs/tags/${SLINT_GIT_TAG}"
             ERROR_QUIET
         )
-        if(_slint_fetch_tag_result EQUAL 0)
-            execute_process(
-                COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" merge-base --is-ancestor
-                    "${SLINT_GIT_TAG}" HEAD
-                RESULT_VARIABLE _slint_ancestor_result
-                ERROR_QUIET
-            )
-        endif()
-    endif()
+    endforeach()
     if(_slint_ancestor_result EQUAL 0)
-        execute_process(
-            COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" rev-parse --abbrev-ref HEAD
-            OUTPUT_VARIABLE _slint_branch_name
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET
-        )
-        set(_slint_blunder_branch "blunder/v${SLINT_VERSION}")
-        if(_slint_branch_name STREQUAL _slint_blunder_branch)
-            set(_slint_on_expected_tag TRUE)
-            message(STATUS
-                "[Slint] Using Blunder fork branch ${_slint_branch_name} (based on ${SLINT_GIT_TAG})"
-            )
-        elseif(_slint_branch_name STREQUAL "HEAD")
-            # git submodule update / CI checkout leave a detached pin.
-            set(_slint_on_expected_tag TRUE)
-            message(STATUS
-                "[Slint] Using detached submodule HEAD based on ${SLINT_GIT_TAG}"
-            )
-        endif()
+        # Detached submodule pins (CI) and blunder/v* branches both pass this floor.
+        set(_slint_on_expected_tag TRUE)
+        message(STATUS "[Slint] Submodule HEAD is based on ${SLINT_GIT_TAG}")
     endif()
 endif()
 
 if(NOT _slint_on_expected_tag)
     message(FATAL_ERROR
-        "[Slint] Expected submodule ${_slint_source_dir} at tag ${SLINT_GIT_TAG} "
-        "or branch blunder/v${SLINT_VERSION} based on that tag.\n"
+        "[Slint] Expected submodule ${_slint_source_dir} at tag ${SLINT_GIT_TAG}, "
+        "fork branch blunder/v${SLINT_VERSION} based on that tag, "
+        "or a detached pin whose HEAD is based on that tag.\n"
         "  git -C ${_slint_source_dir} checkout blunder/v${SLINT_VERSION}"
     )
 endif()
