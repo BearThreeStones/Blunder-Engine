@@ -3,7 +3,10 @@ add_executable(asset_compiler
 )
 
 target_link_libraries(asset_compiler
-    PRIVATE engine_runtime cgltf
+    PRIVATE
+        engine_runtime
+        blunder_engine_c_static
+        cgltf
 )
 
 if(MSVC)
