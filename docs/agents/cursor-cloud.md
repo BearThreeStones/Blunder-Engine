@@ -46,7 +46,9 @@ clang-format --dry-run --Werror engine/src/runtime/**/*.cpp engine/src/runtime/*
 clang-tidy engine/src/runtime/engine.cpp -- -std=c++20 -Iengine/src -I...
 ```
 
-**No tests exist** — the only validation is a successful build + run.
+Linux validation is a successful configure + build. Run first-party tests from [testing.md](testing.md) when the binary dir is available; GPU-linked tests may be skipped on cloud images.
+
+**Merge CI** (GitHub Actions, not this VM) reuses the configure + build commands above, then runs the ClassDB Test run allowlist in [testing.md](testing.md#merge-ci). Cursor Cloud remains a development machine; it is not the merge gate. After the workflow exists, mark **`Merge CI / Linux`** as a required status check on `main`.
 
 ## See also
 

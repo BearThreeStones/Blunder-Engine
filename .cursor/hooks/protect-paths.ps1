@@ -1,24 +1,58 @@
-# Blocks writes to vendor, build, and cache directories.
+﻿# Blocks writes to vendor, build, and cache directories.
 # Whitelist: engine/3rdparty/slint/**
+# Read one JSON object from stdin (do not wait for EOF — Cursor may leave the pipe open).
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$inputText = [Console]::In.ReadToEnd()
+function Read-HookStdinObjectText {
+    $reader = [Console]::In
+    $sb = New-Object System.Text.StringBuilder
+    $depth = 0
+    $inString = $false
+    $escape = $false
+    $started = $false
+    while ($true) {
+        $code = $reader.Read()
+        if ($code -lt 0) { break }
+        $ch = [char]$code
+        [void]$sb.Append($ch)
+        if ($inString) {
+            if ($escape) { $escape = $false; continue }
+            if ($ch -eq [char]92) { $escape = $true; continue }
+            if ($ch -eq [char]34) { $inString = $false }
+            continue
+        }
+        if ($ch -eq [char]34) { $inString = $true; continue }
+        if ($ch -eq [char]123) { $depth++; $started = $true; continue }
+        if ($ch -eq [char]125) {
+            $depth--
+            if ($started -and $depth -eq 0) { break }
+        }
+    }
+    return $sb.ToString()
+}
+
+$inputText = Read-HookStdinObjectText
 if ([string]::IsNullOrWhiteSpace($inputText)) {
     Write-Output '{ "permission": "allow" }'
     exit 0
 }
 
 $payload = $inputText | ConvertFrom-Json
-$toolInput = $payload.tool_input
+$toolInput = $null
+if ($null -ne $payload -and $payload.PSObject.Properties.Name -contains 'tool_input') {
+    $toolInput = $payload.tool_input
+}
 
 $paths = @()
-foreach ($prop in @('path', 'file_path')) {
-    if ($toolInput.PSObject.Properties.Name -contains $prop) {
-        $value = $toolInput.$prop
-        if ($null -ne $value -and "$value" -ne '') {
-            $paths += [string]$value
+if ($null -ne $toolInput) {
+    foreach ($prop in @('path', 'file_path')) {
+        if ($toolInput.PSObject.Properties.Name -contains $prop) {
+            $value = $toolInput.$prop
+            if ($null -ne $value -and "$value" -ne '') {
+                $paths += [string]$value
+            }
         }
     }
 }
@@ -28,7 +62,7 @@ function Normalize-PathForMatch {
     if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
     $normalized = $Path -replace '\\', '/'
     $normalized = $normalized.TrimStart('.', '/')
-  if ($normalized -match '^[A-Za-z]:/') {
+    if ($normalized -match '^[A-Za-z]:/') {
         $parts = $normalized -split '/'
         $normalized = ($parts | Select-Object -Skip 1) -join '/'
     }

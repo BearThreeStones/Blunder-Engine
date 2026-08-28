@@ -68,7 +68,8 @@ Three layers — pick one primary tool per phase; do not run duplicate planning 
 | Build commands | [docs/agents/build.md](docs/agents/build.md) |
 | Directory structure | [docs/agents/structure.md](docs/agents/structure.md) |
 | Testing | [docs/agents/testing.md](docs/agents/testing.md) |
-| Cursor automation | [.cursor/skills/](.cursor/skills/), [.cursor/commands/](.cursor/commands/), [.cursor/mcp.json](.cursor/mcp.json) |
+| Agent environment | [CONTEXT.md](CONTEXT.md#agent-environment-repository), [.cursor/hooks/](.cursor/hooks/) |
+| Cursor automation | [.cursor/skills/](.cursor/skills/), [.cursor/commands/](.cursor/commands/), [.cursor/hooks.json](.cursor/hooks.json), [.cursor/mcp.json](.cursor/mcp.json) |
 
 ## Development
 
@@ -107,6 +108,7 @@ Three layers — pick one primary tool per phase; do not run duplicate planning 
 | Topic | Document |
 |-------|----------|
 | Cursor Cloud / Linux build | [docs/agents/cursor-cloud.md](docs/agents/cursor-cloud.md) |
+| Merge CI (GitHub Actions) | [docs/agents/testing.md](docs/agents/testing.md#merge-ci) |
 
 ## References & maintenance
 

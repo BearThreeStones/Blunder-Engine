@@ -25,6 +25,7 @@ x64/
 !.cursor/hooks/**
 !.cursor/hooks.json
 !.cursor/mcp.json
+# Session evidence for the Completion gate stays ignored — do not un-ignore .cursor/agent-environment/
 *.vcxproj.user
 *.VC.db
 *.opendb
@@ -63,7 +64,10 @@ CMakeUserPresets.json
 Thumbs.db
 
 .sisyphus
-.github
+# Merge CI workflows are tracked; ignore other GitHub metadata.
+.github/*
+!.github/workflows/
+!.github/workflows/**
 .understand-anything
 
 # Auto-downloaded SDK caches (managed by cmake/slint.cmake and cmake/slang.cmake)

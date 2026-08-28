@@ -4,6 +4,52 @@ Editor and runtime for a Z-up, glTF-aligned 3D engine with Blender-inspired view
 
 ## Language
 
+### Agent environment (repository)
+
+**Agent environment**:
+The repository-owned control plane around coding agents that edit this repo. Phase 1 is path protection, the Completion gate, and Default validation. Phase 2 is Failure promotion as a mechanism. Phase 3 is Merge CI. It is not a Host composition, not Authorship, and not part of a running engine process.
+_Avoid_: Harness (bare), project harness as the product name, DeepSeek Harness, Cordis, Agent Guard as the name of the whole environment, treating Cursor skills or slash commands as the environment itself, calling this an engineering harness, shipping clang-tidy or a failure ledger as Phase 3, treating Failure promotion as a reminder
+
+**Engineering harness**:
+A first-party automated test fixture or acceptance executable that exercises an engine slice without claiming product feel.
+_Avoid_: Calling Cursor hooks, AGENTS.md, or the Agent environment an engineering harness
+
+**Test run**:
+An observed Shell command that executes a first-party test (ctest, or invoking the test executable). Success or failure is recorded separately. Compiling a `*_test` CMake target is a build, not a Test run.
+_Avoid_: `cmake --build … --target *_test` as a Test run, claiming a build log as execution, Diagnose or Capture as a Test run, treating exit 0 as part of this term, treating a failing execution as "not a Test run"
+
+**Completion evidence**:
+Session-scoped proof taken only from successful Shell commands the Agent environment observed in this session (exit code 0), never from chat. Relevance is distinctive stems from the edited file basename (split on `_` / `-`, dropping generic segments such as `system` or `test`): at least one remaining stem must appear in that observed command string. There is no maintained file-to-test map. A successful command only covers edits that happened before that success. Later C++ edits need new evidence. The Agent environment does not run the tests itself. Whether a stem is covered by an existing first-party test is decided by matching that stem against names under `engine/src/tests/` (file names and executable names), not by an agent statement. If a stem matches an existing test name, Completion evidence for that edit is an observed Test run whose command contains the stem. If no existing test name contains the stem, Completion evidence for that edit is an observed first-party `engine_editor` (or equivalent) **build**. Promotion arming does not replace this proof.
+_Avoid_: Authorship Diagnose as this proof, Validate as an Authorship Op, LLM Judge scores, claiming “已验证” or “没有测试” in chat as the proof, treating Capture or a windowed editor smoke as the Phase 1 proof, counting an unrelated `*_test` as evidence, treating an earlier Test run as covering later edits, treating a test-target compile as evidence, a hand-maintained path→target table, a verbal no-test exemption, treating Promotion evidence as a substitute for this proof
+
+**Path protection**:
+The Agent environment rule that denies writes to vendor, build, and cache trees, with the Slint fork as the allowed exception. A deny result fails closed. If the hook process is canceled by the runner before it returns JSON, the write is not blocked.
+_Avoid_: Editing `engine/3rdparty/` except `engine/3rdparty/slint/`, treating Path protection as the Completion gate, treating a canceled hook process as a successful deny
+
+**Completion gate**:
+The Agent environment policy that will not treat a session as finished when this session edited first-party C++ under `engine/src/` (`.cpp` / `.h` / `.hpp`, including tests) and Completion evidence is missing. It does not arm for Slint, CMake, Markdown, content, or `engine/3rdparty/`. It is a stop follow-up, not Host composition and not Diagnose. Follow-ups are capped at two, or four when this session has Promotion arming. After those follow-ups the session may end; that end is not Completion evidence or Promotion evidence. Evidence recording and this gate fail open if their scripts crash. When this session has Promotion arming, the gate also requires Promotion evidence; arming does not waive Completion evidence.
+_Avoid_: `/validate` as the gate itself (that command is a map entry), remind-only postToolUse as the gate, the Agent environment executing CTest inside the stop hook, arming the gate on `.slint` or docs edits, unbounded stop follow-up loops, failing closed on evidence recording or the stop hook, treating Promotion arming as a waiver of Completion evidence
+
+**Default validation**:
+The documented procedure for producing Completion evidence: build with the CMake presets, run relevant first-party tests, re-cook when import or mesh/texture pipeline changed. It is a map entry (`/validate`, `docs/agents`), not the Completion gate and not an Authorship Op.
+_Avoid_: Making validate an Authorship Op, “no CTest suite yet” as current truth, treating a windowed editor smoke as a substitute for tests when a relevant executable exists, requiring Capture as Phase 1 Default validation
+
+**Failure promotion**:
+Turning a confirmed escaped defect into a first-party test. Phase 2 of the Agent environment; a mechanism, not a reminder. Confirmation is Promotion arming; done is Promotion evidence. An Agent environment hook may be added alongside; it does not close promotion.
+_Avoid_: A prompt paragraph as promotion, a failure-ledger product, adding a Golden Principle line instead of a test, treating Failure promotion as Phase 1, treating CI or clang-tidy as this promotion, inferring confirmation from chat, treating a hook edit as Promotion evidence
+
+**Promotion arming**:
+An explicit user command (`/promote` or equivalent) that the Agent environment observes by recording this session as armed. Chat does not arm; the agent cannot declare arming. The record is session state, not a failure ledger.
+_Avoid_: Inferring a bug report from conversation, Diagnose or Capture as the arming act, a standing failure ledger, treating Phase 1 Completion evidence as arming, treating an agent statement as arming, treating `/promote` as the Completion gate
+
+**Promotion evidence**:
+Session-scoped proof that Failure promotion happened: after Promotion arming, the source of that first-party test under `engine/src/tests/` was edited, then an observed failing Test run, then a later observed successful Test run of the same first-party test name (CTest name or test executable), not merely the same basename stem. One such pair satisfies Promotion evidence for that arming. Re-running an already-green test is not this proof. It is stricter than Completion evidence and applies only when this session is armed.
+_Avoid_: A green Test run with no preceding observed failure, compiling a `*_test` target, chat claiming TDD, treating Completion evidence as Promotion evidence, pairing an unrelated failure with a different test's success, treating two `hierarchy_*` tests as the same test because they share a stem, a RED-GREEN pair on a test whose source was not edited after arming, requiring a RED-GREEN pair for every test file touched while armed
+
+**Merge CI**:
+The Agent environment gate that runs at merge time (pull request or default branch), outside the coding session. Phase 3. The merge host is GitHub Actions. The job is the documented Linux configure and build, then Test runs of `classdb_test`, `variant_test`, `object_db_test`, and `ptrcall_lifecycle_test` (exact names). Cursor Cloud is a Linux development VM for agents, not this gate. It is not Completion evidence, not Failure promotion, not clang-tidy, and not a failure ledger.
+_Avoid_: Treating Merge CI as a substitute for the Completion gate, treating a clang-tidy job as Phase 3, a standing failure ledger, requiring GPU or windowed editor smoke in this phase, treating a Cursor Cloud agent VM as Merge CI, a Windows VS 2026 job as this phase, treating a Merge CI Test run as session Completion evidence
+
 ### Engine composition
 
 **Privileged core**:
@@ -305,6 +351,10 @@ _Avoid_: Solution, workspace (as the product term), treating the Blunder-Engine 
 The required marker at the Project root (`project.blunder`) that identifies the folder as a Blunder Project. Content is YAML; MVP fields are minimal — at least `name` (display name). Create/import/scan/open all key off this file; Create scaffolds `Assets/`, `Resources/`, and `.blunder/`, and from the .NET host MVP onward also scaffolds the Scripts root with a minimal game `.csproj` template. Engine/version keys may appear later but are not required or enforced in the MVP.
 _Avoid_: `project.godot`, JSON as the Project File format, relying only on folder layout, putting project identity only inside `.blunder/`, requiring engine-version gates in the first slice
 
+**Project display name**:
+The Project File `name`. It is the identity of the open Project in a windowed Editor Session: Application Bar wordmark and OS window title. It is not the Scene name and not the disk path.
+_Avoid_: Folder basename when a Project File name exists; treating the Hierarchy/scene title segment as the Project; putting the full root path in the wordmark or title as identity
+
 **Scripts root**:
 The Project folder `Scripts/` that holds C# gameplay sources and the game `.csproj`. It is not part of the `Assets/` / `Resources/` content pipeline; built assemblies are loaded by the .NET script host, not as Content Browser Assets. Project Create (from .NET host MVP onward) scaffolds this folder with a minimal `.csproj` template.
 _Avoid_: Storing gameplay `.cs` under `Assets/`, treating scripts as Intermediate Assets, putting the game project inside the engine repo as the product default, naming this root `Source/` (reserved for DCC Source Assets under `Resources/Source/`), leaving new Projects without a Scripts scaffold once the host ships
@@ -380,8 +430,8 @@ Three stacked backgrounds, darkest first: Application Bar (Base 1, `#191B1F`), W
 _Avoid_: A single flat editor background; near-black panel surfaces (`#1B1E22` and below) that make the editor read as a void; Unity's lighter 2022 grays (`#383838` window family); bevels as the depth cue
 
 **Application Bar**:
-The Editor Shell strip at the top of the Editor Session window (~48px). It is Base 1, darker than Window. Layout: **Save / Undo / Redo** on the left as ghost **Editor Icon** buttons (fill on hover only); Play / Pause / Stop as a centered segmented **Editor Icon** cluster whose Play uses the **Editor accent**; **View** and **Save As…** stay word buttons on the right / left as authored. Not a native File/Edit menu rewrite. Icon-versus-text: [ADR 0042](docs/adr/0042-icon-first-chrome-labels.md).
-_Avoid_: Top toolbar; treating a window Toolbar as the Application Bar; moving Save/Undo into menus as part of this Shell pass; leaving Play in the left-aligned button row; giving every App Bar button a filled background; moving Move/Rotate/Scale onto this bar as part of this Shell pass; word faces on Save/Undo/Redo or the Play cluster once those Godot glyphs are wired
+The Editor Shell strip at the top of the Editor Session window (~48px). It is Base 1, darker than Window. Layout: left **wordmark** (`Blunder Editor — {Project display name}`, no Scene, no dirty `*`); **Save / Undo / Redo** on the left as ghost **Editor Icon** buttons (fill on hover only); Play / Pause / Stop as a centered segmented **Editor Icon** cluster whose Play uses the **Editor accent**; **View** and **Save As…** stay word buttons on the right / left as authored. Not a native File/Edit menu rewrite. Icon-versus-text: [ADR 0042](docs/adr/0042-icon-first-chrome-labels.md).
+_Avoid_: Top toolbar; treating a window Toolbar as the Application Bar; moving Save/Undo into menus as part of this Shell pass; leaving Play in the left-aligned button row; giving every App Bar button a filled background; moving Move/Rotate/Scale onto this bar as part of this Shell pass; word faces on Save/Undo/Redo or the Play cluster once those Godot glyphs are wired; using the wordmark for Scene identity or Project switch/open-folder actions
 
 **Viewport tool strip**:
 Slint overlay bars on the editor viewport (transform tools, projection toggle). They stay overlays in this pass. They read as floating: translucent Base 3 fill, hairline, 10px radius, soft shadow, and **Editor accent** on the checked tool. Transform **Move / Rotate / Scale** and the global/local space toggle are **Editor Icon**-only (**Icon-first chrome**). Distinct from **Editor Overlay** (3D draw) and from Application Bar / a Scene Window Toolbar. The overlay **animation preview** toolbar is replaced by the **Animation Window**.

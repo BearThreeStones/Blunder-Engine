@@ -2,6 +2,10 @@
 
 First-party tests live under `engine/src/tests/` and are wired with CTest via `engine/src/tests/CMakeLists.txt`.
 
+The Agent environment Completion gate only counts an observed Test run (`ctest` or invoking the test executable). `cmake --build … --target *_test` is a build, not a Test run. Prefer `ctest … --output-on-failure` so success is visible in the command output.
+
+Failure promotion (`/promote`) additionally requires an observed failing Test run and then a passing Test run of the same test name, after that test's source under this directory was edited.
+
 ## Run
 
 ```powershell
@@ -135,10 +139,31 @@ Kernel handoff: Object Behaviour lists and the .NET host MVP are covered by ADR 
 | `placement_preview_test` | Ground placement, Content Browser drag cursor, Placement Preview visibility |
 | `spawn_mesh_primitives_test` | Viewport spawn expands every glTF primitive (not `loadMesh` first-primitive only) |
 
+## Merge CI
+
+Merge CI is the GitHub Actions gate at pull request and `main` push. It is not Completion evidence and not Failure promotion. The job is **`Merge CI / Linux`**.
+
+It reuses the Linux configure + full tree build from [cursor-cloud.md](cursor-cloud.md), then these Test runs only (exact CTest names):
+
+- `classdb_test`
+- `variant_test`
+- `object_db_test`
+- `ptrcall_lifecycle_test`
+
+```bash
+ctest --test-dir build --output-on-failure --no-tests=error \
+  -R "^(classdb_test|variant_test|object_db_test|ptrcall_lifecycle_test)$"
+```
+
+Do not use the long local `-R` list above in Merge CI. Do not add `dotnet_host`. Workflow: `.github/workflows/merge-ci.yml`. Expanding the allowlist means changing that regex and this section together.
+
+Mark **`Merge CI / Linux`** as a required status check on `main` in GitHub branch protection. The workflow cannot enable that by itself.
+
 ## See also
 
 - [cmake.md](cmake.md)
 - [build.md](build.md)
 - [golden-principles.md](../golden-principles.md)
 - [common-tasks.md](common-tasks.md)
+- [cursor-cloud.md](cursor-cloud.md)
 - `tools/reflection_export/README.md`

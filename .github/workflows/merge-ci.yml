@@ -1,0 +1,110 @@
+# Merge CI — Agent environment Phase 3.
+# Linux configure + full tree build (docs/agents/cursor-cloud.md), then the
+# no-GPU ClassDB Test run allowlist. Not Completion evidence. Not clang-tidy.
+# Required GitHub check name: "Merge CI / Linux"
+
+name: Merge CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: merge-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  MERGE_CI_CTEST_REGEX: "^(classdb_test|variant_test|object_db_test|ptrcall_lifecycle_test)$"
+  CMAKE_BUILD_PARALLEL_LEVEL: "2"
+  CARGO_BUILD_JOBS: "2"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build \
+            g++ \
+            gcc \
+            pkg-config \
+            python3 \
+            clang \
+            libclang-dev \
+            libvulkan-dev \
+            mesa-vulkan-drivers \
+            libssl-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxext-dev \
+            libxrandr-dev \
+            libxcursor-dev \
+            libxfixes-dev \
+            libxi-dev \
+            libxss-dev \
+            libxtst-dev \
+            libxkbcommon-dev \
+            libdrm-dev \
+            libgbm-dev \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libdbus-1-dev \
+            libudev-dev \
+            libasound2-dev \
+            libpulse-dev \
+            libibus-1.0-dev \
+            libusb-1.0-0-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache CMake FetchContent and Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cmake_deps
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: merge-ci-linux-${{ hashFiles('CMakeLists_linux.cmake', 'cmake/**/*.cmake', 'engine/3rdparty/slint.cmake', '.gitmodules') }}
+          restore-keys: |
+            merge-ci-linux-
+
+      - name: Configure (Linux)
+        run: |
+          set -euo pipefail
+          ln -sfn CMakeLists_linux.cmake CMakeLists.txt
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_C_COMPILER=gcc \
+            -DSDL_WAYLAND=OFF \
+            -DCMAKE_CXX_FLAGS="-DEASTL_USER_DEFINED_ALLOCATOR"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: ClassDB Test runs
+        run: |
+          set -euo pipefail
+          slang_lib_dirs="$(find "${GITHUB_WORKSPACE}/.cmake_deps" -name 'libslang.so' -printf '%h:' 2>/dev/null || true)"
+          slint_lib_dirs="$(find "${GITHUB_WORKSPACE}/.cmake_deps" "${GITHUB_WORKSPACE}/build" -name 'libslint_cpp.so' -printf '%h:' 2>/dev/null || true)"
+          export LD_LIBRARY_PATH="${slang_lib_dirs}${slint_lib_dirs}${GITHUB_WORKSPACE}/.cmake_deps/slint-sdk-1.16.1/install/lib:${LD_LIBRARY_PATH:-}"
+          ctest --test-dir build --output-on-failure --no-tests=error \
+            -R "${MERGE_CI_CTEST_REGEX}"

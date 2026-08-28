@@ -1,17 +1,49 @@
-{
+﻿{
   "version": 1,
   "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": ".cursor/hooks/record-arm.ps1",
+        "failClosed": false
+      }
+    ],
     "preToolUse": [
       {
         "command": ".cursor/hooks/protect-paths.ps1",
         "matcher": "Write|StrReplace|Delete",
+        "failClosed": false,
+        "timeout": 30
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/record-edit.ps1",
         "failClosed": false
       }
     ],
     "postToolUse": [
       {
-        "command": ".cursor/hooks/remind-validate.ps1",
-        "matcher": "Write|StrReplace"
+        "command": ".cursor/hooks/record-edit.ps1",
+        "matcher": "Write|StrReplace|Delete",
+        "failClosed": false
+      },
+      {
+        "command": ".cursor/hooks/record-shell.ps1",
+        "matcher": "Shell",
+        "failClosed": false
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": ".cursor/hooks/record-shell.ps1",
+        "failClosed": false
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/completion-gate.ps1",
+        "failClosed": false,
+        "loop_limit": 4
       }
     ]
   }

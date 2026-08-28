@@ -27,7 +27,7 @@
 8. **Respect the conceptual vs physical architecture map.** README “five layers” are design labels; `runtime/core/layer/` is an application lifecycle pattern, not those layers.  
    → [docs/design-docs/architecture.md](design-docs/architecture.md)
 
-9. **No fabricated test commands.** There is no first-party CTest suite yet. Validation is configure + build (+ run editor). When adding tests, use `engine/src/tests/` and CTest per `testing.md`.  
+9. **No fabricated test commands.** Default validation is configure + build + relevant first-party Test runs (`ctest` or the test executable). Compiling a `*_test` target is a build, not a Test run. Chat is not evidence. Add tests under `engine/src/tests/` per `testing.md`.  
    → [docs/agents/testing.md](agents/testing.md)
 
 10. **Prefer extending existing abstractions.** New render work goes through RHI / existing passes; new assets through `AssetManager` and cook pipeline; new UI through Slint + existing viewport sink. Avoid parallel one-off paths.

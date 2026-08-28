@@ -38,7 +38,7 @@ git submodule update --init engine/3rdparty/slint
 
 ## Default validation
 
-Configure and build with presets in [build.md](build.md), then run `engine_editor`. No first-party automated tests yet — see [testing.md](testing.md).
+Configure and build with presets in [build.md](build.md). Run relevant first-party tests per [testing.md](testing.md). If no existing test name matches the edited files, an `engine_editor` build is the documented fallback. Re-cook when import or mesh/texture pipeline changed. See [common-tasks.md](common-tasks.md#default-validation). Merge CI is the GitHub Actions Linux job at pull request / `main`; it is not session Completion evidence.
 
 ## Where to go next
 

@@ -23,7 +23,8 @@ C++20 game engine + editor. CMake, Vulkan offscreen render, Slint UI (fork), SDL
 | Add CMake target or runtime system | `docs/agents/cmake.md` | `structure.md`, `golden-principles.md` |
 | Slint submodule / UI renderer | `docs/agents/slint-fork.md` | `render-pipeline.md` |
 | New feature (multi-file) | `docs/design-docs/architecture.md` | `docs/exec-plans/README.md` |
-| Add tests (when introduced) | `docs/agents/testing.md` | `cmake.md` |
+| Add tests | `docs/agents/testing.md` | `cmake.md` |
+| Merge CI (GitHub Actions Linux) | `docs/agents/testing.md` | `cursor-cloud.md` |
 
 ## Golden principles (summary)
 
@@ -34,7 +35,7 @@ C++20 game engine + editor. CMake, Vulkan offscreen render, Slint UI (fork), SDL
 5. **CMake presets** are build truth (`vs2026-debug`, `vs2026-release`).
 6. **Match code style** before editing (`docs/agents/code-style.md`).
 7. **New systems** via `engine/src/runtime/function/<name>/` + `RuntimeGlobalContext`.
-8. **No fabricated test commands** — validate with build + `engine_editor`.
+8. **No fabricated test commands** — build + relevant Test runs (`ctest` or the test executable); chat is not evidence.
 9. **Extend existing abstractions** (RHI, AssetManager, viewport sink).
 10. **Re-cook** after import/mesh pipeline changes.
 11. **Minimize scope** — smallest correct diff.
@@ -46,10 +47,10 @@ Full list: `docs/golden-principles.md`.
 ## Default validation
 
 1. `cmake --build build/vs2026-debug --config Debug --target engine_editor`
-2. Run `engine_editor`; exercise affected UI/scene path.
+2. Run relevant tests (`ctest --test-dir build/vs2026-debug -C Debug -R <stem> --output-on-failure`). Compiling a `*_test` target is not a Test run. If no test name matches the edited basename stems, the `engine_editor` build is enough.
 3. If meshes/textures/import changed: re-cook per `CONTENT_LAYOUT.md`.
 
-Or use slash command `/validate`.
+Or use slash command `/validate`. The Completion gate only counts observed Shell success from this session. Escaped defects: `/promote`, then RED then GREEN on the same test name (does not replace Phase 1 evidence). Merge CI is the GitHub Actions Linux gate at merge time; it is not this session's Completion evidence.
 
 ## MCP setup (project: `.cursor/mcp.json`)
 
@@ -62,4 +63,4 @@ Or use slash command `/validate`.
 - [ ] Z-up / virtual paths / offscreen render invariants respected
 - [ ] Logging via `LOG_*` macros, not raw `printf`
 - [ ] Namespace `Blunder`, `m_` member prefix, 2-space indent
-- [ ] Build + run editor before claiming done
+- [ ] Build + relevant Test runs (or `engine_editor` build when no matching test name) before claiming done
