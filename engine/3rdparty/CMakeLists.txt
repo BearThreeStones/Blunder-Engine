@@ -31,6 +31,7 @@ unset(BLUNDER_BUILD_SHARED_LIBS_SAVED)
 
 # Assimp — Source Export (FBX/OBJ → Intermediate glTF). Static, no tools/tests.
 set(BLUNDER_BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
+set(BLUNDER_FIND_LIBRARY_SUFFIXES_SAVED "${CMAKE_FIND_LIBRARY_SUFFIXES}")
 set(BUILD_SHARED_LIBS OFF)
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
@@ -38,9 +39,16 @@ set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
 set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
+# Static assimp prepends .a to CMAKE_FIND_LIBRARY_SUFFIXES. On Linux that
+# makes FindZLIB pick non-PIC libz.a, which cannot go into libblunder_engine_c.so.
+if(UNIX)
+  set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(assimp)
 set(BUILD_SHARED_LIBS ${BLUNDER_BUILD_SHARED_LIBS_SAVED})
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${BLUNDER_FIND_LIBRARY_SUFFIXES_SAVED})
 unset(BLUNDER_BUILD_SHARED_LIBS_SAVED)
+unset(BLUNDER_FIND_LIBRARY_SUFFIXES_SAVED)
 
 # CGLTF - Header-only glTF loader
 # Instead of modifying the submodule, we generate the implementation file in the build directory
