@@ -3,15 +3,16 @@
 #include <cstdint>
 
 #include "EASTL/array.h"
+#include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
+#include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 
 namespace Blunder {
 
 class IViewportSink;
 class VulkanAllocator;
-class VulkanBuffer;
 class VulkanContext;
 class VulkanSync;
 
