@@ -15,6 +15,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(FETCHCONTENT_BASE_DIR "${CMAKE_SOURCE_DIR}/.cmake_deps" CACHE PATH "Directory to store FetchContent data")
 include(cmake/compiler.cmake)
+include(cmake/blunder_outputs.cmake)
 
 find_package(Vulkan REQUIRED)
 
