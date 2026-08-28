@@ -223,6 +223,23 @@ if(NOT _slint_on_expected_tag)
         RESULT_VARIABLE _slint_ancestor_result
         ERROR_QUIET
     )
+    if(NOT _slint_ancestor_result EQUAL 0)
+        # Shallow or pin-only clones may lack the version tag.
+        execute_process(
+            COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" fetch
+                --no-tags origin "refs/tags/${SLINT_GIT_TAG}:refs/tags/${SLINT_GIT_TAG}"
+            RESULT_VARIABLE _slint_fetch_tag_result
+            ERROR_QUIET
+        )
+        if(_slint_fetch_tag_result EQUAL 0)
+            execute_process(
+                COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" merge-base --is-ancestor
+                    "${SLINT_GIT_TAG}" HEAD
+                RESULT_VARIABLE _slint_ancestor_result
+                ERROR_QUIET
+            )
+        endif()
+    endif()
     if(_slint_ancestor_result EQUAL 0)
         execute_process(
             COMMAND "${SLINT_GIT_EXECUTABLE}" -C "${_slint_source_dir}" rev-parse --abbrev-ref HEAD
@@ -235,6 +252,12 @@ if(NOT _slint_on_expected_tag)
             set(_slint_on_expected_tag TRUE)
             message(STATUS
                 "[Slint] Using Blunder fork branch ${_slint_branch_name} (based on ${SLINT_GIT_TAG})"
+            )
+        elseif(_slint_branch_name STREQUAL "HEAD")
+            # git submodule update / CI checkout leave a detached pin.
+            set(_slint_on_expected_tag TRUE)
+            message(STATUS
+                "[Slint] Using detached submodule HEAD based on ${SLINT_GIT_TAG}"
             )
         endif()
     endif()
