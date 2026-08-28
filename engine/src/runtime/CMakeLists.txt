@@ -440,11 +440,11 @@ target_link_libraries(engine_runtime
         DetourTileCache
         Vulkan::Vulkan
         Slint::Slint
+        SDL3::SDL3
     PRIVATE
         cgltf
         assimp
         stb
-        SDL3::SDL3
         vma
         slang::slang
         yaml-cpp
