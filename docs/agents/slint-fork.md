@@ -18,6 +18,8 @@ cd ../../..
 git submodule update --init engine/3rdparty/slint
 ```
 
+The parent repo pins a **commit**. Push that commit to `BearThreeStones/slint` before Merge CI or a fresh clone can fetch it. Merge CI checks out first-level submodules with full history (`fetch-depth: 0`).
+
 ## Clone Blunder Engine
 
 ```bash

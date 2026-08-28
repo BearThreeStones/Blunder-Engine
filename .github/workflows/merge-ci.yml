@@ -34,7 +34,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # Full history so submodule SHAs are not limited to a depth-1 tip.
+          # First-level only: nested trees (e.g. ktx tests/cts) are not needed to build.
+          fetch-depth: 0
+          submodules: true
 
       - name: Install build packages
         run: |
