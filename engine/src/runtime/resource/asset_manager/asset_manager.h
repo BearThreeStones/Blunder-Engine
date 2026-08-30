@@ -12,6 +12,7 @@
 #include <cgltf.h>
 
 #include "runtime/resource/asset/asset.h"
+#include "runtime/resource/asset/asset_descriptor.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/scene_asset.h"
@@ -120,6 +121,9 @@ class AssetManager final {
                               GltfImportDocument& out_document);
   void closeGltfImportDocument(GltfImportDocument& document);
 
+  /// Successful openGltfImportDocument calls since initialize (parse, not cache hits).
+  size_t gltfDocumentOpenCount() const { return m_gltf_document_open_count; }
+
   /// Resolves a `.mesh.yaml` / `.mesh.asset` descriptor or glTF path to a glTF source path.
   bool resolveGltfSourcePath(const eastl::string& virtual_path,
                              eastl::string& out_gltf_source) const;
@@ -158,6 +162,10 @@ class AssetManager final {
   /// so live MeshRenderer / Mesh Preview pointers stay valid.
   void refreshMeshMaterialOverride(const eastl::string& descriptor_virtual_path);
 
+  /// Re-overlay `overlay` onto the cached MeshAsset without writing the descriptor.
+  void previewMeshMaterialOverride(const eastl::string& descriptor_virtual_path,
+                                   const MeshMaterialOverride& overlay);
+
  private:
   template <typename T>
   using Cache = eastl::unordered_map<eastl::string, eastl::weak_ptr<T>>;
@@ -179,6 +187,7 @@ class AssetManager final {
   Cache<SceneAsset> m_scene_cache;
   bool m_is_initialized{false};
   bool m_inside_cook_request{false};
+  size_t m_gltf_document_open_count{0};
 };
 
 }  // namespace Blunder

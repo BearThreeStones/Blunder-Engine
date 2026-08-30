@@ -35,6 +35,7 @@
 #include "runtime/function/ui/ui_events.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/transform_edit_viewport_notify.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 
 #include <glm/common.hpp>
@@ -491,7 +492,8 @@ void SlintSystem::applyPreviewTransform(int entity_id, int kind, int index,
 }
 
 void SlintSystem::applyPreviewCamera(int entity_id, int kind, int index, float fov,
-                                     float near_clip, float far_clip, bool is_main) {
+                                     float near_clip, float far_clip, bool is_main,
+                                     bool commit) {
   (void)kind;
   (void)index;
   if (!m_window_component || m_applying_preview_sync) {
@@ -508,15 +510,39 @@ void SlintSystem::applyPreviewCamera(int entity_id, int kind, int index, float f
   if (existing == nullptr) {
     return;
   }
-  const CameraComponent before = *existing;
-  CameraComponent after = before;
+  const CameraComponent current = *existing;
+  CameraComponent after = current;
   after.vertical_fov_degrees = fov;
   after.near_clip = near_clip;
   after.far_clip = far_clip;
   after.is_main = is_main;
-  if (after.vertical_fov_degrees == before.vertical_fov_degrees &&
-      after.near_clip == before.near_clip && after.far_clip == before.far_clip &&
-      after.is_main == before.is_main) {
+  const bool same = after.vertical_fov_degrees == current.vertical_fov_degrees &&
+                    after.near_clip == current.near_clip &&
+                    after.far_clip == current.far_clip && after.is_main == current.is_main;
+  if (same && !m_inspector_camera_edit_open) {
+    return;
+  }
+  if (!commit) {
+    if (!m_inspector_camera_edit_open) {
+      m_inspector_camera_edit_before = current;
+      m_inspector_camera_edit_open = true;
+    }
+    if (!same) {
+      if (after.is_main) {
+        clearOtherMainCamerasLocal(*scene, id);
+      }
+      scene->setCamera(id, after);
+      notifyViewportAfterInspectorTransformEdit(
+          services ? services->render_system.get() : nullptr, this);
+    }
+    return;
+  }
+  const CameraComponent command_before =
+      m_inspector_camera_edit_open ? m_inspector_camera_edit_before : current;
+  m_inspector_camera_edit_open = false;
+  if (after.vertical_fov_degrees == command_before.vertical_fov_degrees &&
+      after.near_clip == command_before.near_clip &&
+      after.far_clip == command_before.far_clip && after.is_main == command_before.is_main) {
     return;
   }
   if (after.is_main) {
@@ -524,15 +550,17 @@ void SlintSystem::applyPreviewCamera(int entity_id, int kind, int index, float f
   }
   scene->setCamera(id, after);
   pushDocumentCommand(makeSetCameraComponentCommand(
-      scene, id, before, after, currentSelectionSnapshot(),
+      scene, id, command_before, after, currentSelectionSnapshot(),
       currentSelectionSnapshot()));
+  notifyViewportAfterInspectorTransformEdit(
+      services ? services->render_system.get() : nullptr, this);
   syncInspectorCameraFromSelection();
 }
 
 void SlintSystem::applyPreviewLight(int entity_id, int kind, int index,
                                     int light_type, float color_r, float color_g,
                                     float color_b, float intensity, bool enabled,
-                                    float range) {
+                                    float range, bool commit) {
   (void)kind;
   (void)index;
   if (!m_window_component || m_applying_preview_sync) {
@@ -549,18 +577,46 @@ void SlintSystem::applyPreviewLight(int entity_id, int kind, int index,
   if (existing == nullptr) {
     return;
   }
-  const LightComponent before = *existing;
-  LightComponent after = before;
+  const LightComponent current = *existing;
+  LightComponent after = current;
   after.type = static_cast<LightType>(light_type);
   after.color = Vec3(color_r, color_g, color_b);
   after.intensity = intensity;
   after.enabled = enabled;
   after.range = range;
   sanitizeLightLocal(after);
+  const bool same = after.type == current.type && after.color == current.color &&
+                    after.intensity == current.intensity &&
+                    after.enabled == current.enabled && after.range == current.range;
+  if (same && !m_inspector_light_edit_open) {
+    return;
+  }
+  if (!commit) {
+    if (!m_inspector_light_edit_open) {
+      m_inspector_light_edit_before = current;
+      m_inspector_light_edit_open = true;
+    }
+    if (!same) {
+      scene->setLight(id, after);
+      notifyViewportAfterInspectorLightEdit(
+          services ? services->render_system.get() : nullptr, this);
+    }
+    return;
+  }
+  const LightComponent command_before =
+      m_inspector_light_edit_open ? m_inspector_light_edit_before : current;
+  m_inspector_light_edit_open = false;
+  if (after.type == command_before.type && after.color == command_before.color &&
+      after.intensity == command_before.intensity &&
+      after.enabled == command_before.enabled && after.range == command_before.range) {
+    return;
+  }
   scene->setLight(id, after);
   pushDocumentCommand(makeSetLightComponentCommand(
-      scene, id, before, after, currentSelectionSnapshot(),
+      scene, id, command_before, after, currentSelectionSnapshot(),
       currentSelectionSnapshot()));
+  notifyViewportAfterInspectorLightEdit(
+      services ? services->render_system.get() : nullptr, this);
   syncInspectorLightFromSelection();
 }
 
@@ -646,7 +702,7 @@ void SlintSystem::applyPreviewBehaviourProp(int entity_id, int kind, int index,
                                             int behaviour_id,
                                             const eastl::string& key,
                                             const eastl::string& text, float number,
-                                            bool bool_value) {
+                                            bool bool_value, bool commit) {
   (void)kind;
   (void)index;
   if (!m_window_component || key.empty()) {
@@ -706,26 +762,51 @@ void SlintSystem::applyPreviewBehaviourProp(int entity_id, int kind, int index,
       before = Variant(eastl::string{});
     }
   }
-  bool updated = false;
-  for (SceneBehaviourProperty& prop : bag) {
-    if (prop.key == key) {
-      prop.value = after;
-      updated = true;
-      break;
+  auto write_bag = [&]() {
+    bool updated = false;
+    for (SceneBehaviourProperty& prop : bag) {
+      if (prop.key == key) {
+        prop.value = after;
+        updated = true;
+        break;
+      }
     }
+    if (!updated) {
+      SceneBehaviourProperty prop;
+      prop.key = key;
+      prop.value = after;
+      bag.push_back(eastl::move(prop));
+    }
+    object->setBehaviourProperties(bid, bag);
+  };
+  if (!commit) {
+    if (!m_inspector_behaviour_edit_open ||
+        m_inspector_behaviour_edit_id != bid ||
+        m_inspector_behaviour_edit_key != key) {
+      m_inspector_behaviour_edit_open = true;
+      m_inspector_behaviour_edit_id = bid;
+      m_inspector_behaviour_edit_key = key;
+      m_inspector_behaviour_edit_before = before;
+    }
+    if (before != after) {
+      write_bag();
+    }
+    return;
   }
-  if (!updated) {
-    SceneBehaviourProperty prop;
-    prop.key = key;
-    prop.value = after;
-    bag.push_back(eastl::move(prop));
+  const Variant command_before =
+      (m_inspector_behaviour_edit_open && m_inspector_behaviour_edit_id == bid &&
+       m_inspector_behaviour_edit_key == key)
+          ? m_inspector_behaviour_edit_before
+          : before;
+  m_inspector_behaviour_edit_open = false;
+  if (before != after) {
+    write_bag();
   }
-  object->setBehaviourProperties(bid, bag);
-  if (before == after) {
+  if (command_before == after) {
     return;
   }
   pushDocumentCommand(makeSetBehaviourPropertyCommand(
-      scene, id, bid, key, before, after, currentSelectionSnapshot(),
+      scene, id, bid, key, command_before, after, currentSelectionSnapshot(),
       currentSelectionSnapshot()));
   syncInspectorBehavioursFromSelection();
   syncAttachmentPreviewCards();
@@ -798,7 +879,7 @@ void SlintSystem::applyPreviewModifierEnabled(int entity_id, int kind, int index
 void SlintSystem::applyPreviewModifierField(int entity_id, int kind, int index,
                                             const eastl::string& key,
                                             const eastl::string& text, float number,
-                                            bool bool_value) {
+                                            bool bool_value, bool commit) {
   (void)kind;
   if (key.empty()) {
     return;
@@ -838,10 +919,47 @@ void SlintSystem::applyPreviewModifierField(int entity_id, int kind, int index,
   } else {
     return;
   }
-  applySkeletonModifierFieldsOnObject(scene, object, static_cast<size_t>(index),
-                                      after_def);
+  const auto defs_equal = [](const SceneSkeletonModifierDef& a,
+                             const SceneSkeletonModifierDef& b) {
+    return a.type == b.type && a.enabled == b.enabled && a.bone_name == b.bone_name &&
+           a.open_amount == b.open_amount && a.attach_driven == b.attach_driven &&
+           a.target == b.target && a.child_entity_name == b.child_entity_name;
+  };
+  const size_t modifier_index = static_cast<size_t>(index);
+  if (defs_equal(before_def, after_def) && !m_inspector_modifier_edit_open) {
+    return;
+  }
+  if (!commit) {
+    if (!m_inspector_modifier_edit_open ||
+        m_inspector_modifier_edit_index != modifier_index ||
+        m_inspector_modifier_edit_key != key) {
+      m_inspector_modifier_edit_open = true;
+      m_inspector_modifier_edit_index = modifier_index;
+      m_inspector_modifier_edit_key = key;
+      m_inspector_modifier_edit_before = before_def;
+    }
+    if (!defs_equal(before_def, after_def)) {
+      applySkeletonModifierFieldsOnObject(scene, object, modifier_index, after_def);
+      notifyAnimationPreviewAfterSkeletonModifierEdit(
+          services && services->render_system ? services->render_system.get() : nullptr);
+    }
+    return;
+  }
+  const SceneSkeletonModifierDef command_before =
+      (m_inspector_modifier_edit_open &&
+       m_inspector_modifier_edit_index == modifier_index &&
+       m_inspector_modifier_edit_key == key)
+          ? m_inspector_modifier_edit_before
+          : before_def;
+  m_inspector_modifier_edit_open = false;
+  if (!defs_equal(before_def, after_def)) {
+    applySkeletonModifierFieldsOnObject(scene, object, modifier_index, after_def);
+  }
+  if (defs_equal(command_before, after_def)) {
+    return;
+  }
   pushDocumentCommand(makeSetSkeletonModifierDefCommand(
-      scene, id, static_cast<size_t>(index), before_def, after_def,
+      scene, id, modifier_index, command_before, after_def,
       currentSelectionSnapshot(), currentSelectionSnapshot()));
   syncInspectorSkeletonModifiersFromSelection();
   notifyAnimationPreviewAfterSkeletonModifierEdit(

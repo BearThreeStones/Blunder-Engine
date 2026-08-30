@@ -336,6 +336,12 @@ PlaySessionHooks PlaySessionController::makeDefaultHooks() {
   hooks.ipc_send_frame = [runtime]() { return runtime->host->sendFrameRequest(); };
   hooks.ipc_poll_frames = [runtime]() { return runtime->host->pollFrames(); };
   hooks.ipc_poll_errors = [runtime]() { return runtime->host->pollErrors(); };
+  hooks.ipc_poll_issues = [runtime]() { return runtime->host->pollIssues(); };
+  hooks.ipc_poll_reloads = [runtime]() { return runtime->host->pollReloads(); };
+  hooks.ipc_poll_poses = [runtime]() { return runtime->host->pollPoses(); };
+  hooks.ipc_send_patch = [runtime](const std::string& json) {
+    return runtime->host->sendPatch(json);
+  };
   hooks.ipc_close = [runtime]() { runtime->host->close(); };
   // Project-aware Scripts dirty/build hooks are installed by UiHost before Play.
   return hooks;
@@ -413,6 +419,9 @@ void PlaySessionController::resetToStopped() {
   m_endpoint = {};
   m_has_starting_deadline = false;
   m_last_play_frame = {};
+  m_play_entry_scene.clear();
+  m_play_entry_guid.clear();
+  m_pose_overlay.clear();
 }
 
 void PlaySessionController::onProcessGone() {
@@ -503,6 +512,9 @@ bool PlaySessionController::play(const PlaySessionRequest& request) {
   m_state = PlaySessionState::Starting;
   m_has_starting_deadline = true;
   m_starting_deadline = now() + m_hooks.starting_timeout;
+  m_play_entry_scene = request.scene;
+  m_play_entry_guid = request.scene_guid;
+  m_pose_overlay.clear();
   return true;
 }
 
@@ -543,6 +555,35 @@ bool PlaySessionController::stop() {
   }
   resetToStopped();
   m_last_error.clear();
+  return true;
+}
+
+bool PlaySessionController::reload() {
+  if (!reloadEnabled()) {
+    return false;
+  }
+  if (m_hooks.is_scripts_dirty && m_hooks.is_scripts_dirty()) {
+    Issue issue;
+    issue.code = k_issue_scripts_dirty;
+    issue.severity = IssueSeverity::warning;
+    issue.explanation = "scripts are dirty; Reload does not rebuild";
+    m_last_issues.push_back(eastl::move(issue));
+  }
+  if (!m_hooks.ipc_send || !m_hooks.ipc_send(PlayIpcCommand::Reload)) {
+    m_last_error = "failed to send reload";
+    return false;
+  }
+  return true;
+}
+
+bool PlaySessionController::sendPatch(const std::string& json) {
+  if (!reloadEnabled()) {
+    return false;
+  }
+  if (!m_hooks.ipc_send_patch || !m_hooks.ipc_send_patch(json)) {
+    m_last_error = "failed to send patch";
+    return false;
+  }
   return true;
 }
 
@@ -651,6 +692,67 @@ void PlaySessionController::ingestPlayFrames() {
   }
 }
 
+void PlaySessionController::ingestPlayIssues() {
+  if (!m_ready || !m_hooks.ipc_poll_issues) {
+    return;
+  }
+  std::vector<PlayIpcIssueRecord> records = m_hooks.ipc_poll_issues();
+  for (PlayIpcIssueRecord& record : records) {
+    Issue issue;
+    issue.code = record.code.c_str();
+    issue.address = record.address.c_str();
+    if (record.sev == "error") {
+      issue.severity = IssueSeverity::error;
+    } else if (record.sev == "warning") {
+      issue.severity = IssueSeverity::warning;
+    } else {
+      issue.severity = IssueSeverity::log;
+    }
+    m_last_issues.push_back(eastl::move(issue));
+  }
+}
+
+void PlaySessionController::ingestPlayReloads() {
+  if (!m_ready || !m_hooks.ipc_poll_reloads) {
+    return;
+  }
+  std::vector<PlayIpcReloadRecord> records = m_hooks.ipc_poll_reloads();
+  for (const PlayIpcReloadRecord& record : records) {
+    if (record.ok) {
+      m_pose_overlay.clear();
+    }
+  }
+}
+
+void PlaySessionController::ingestPlayPoses() {
+  if (!m_ready || !m_hooks.ipc_poll_poses) {
+    return;
+  }
+  std::vector<PlayIpcPosesRecord> records = m_hooks.ipc_poll_poses();
+  if (records.empty()) {
+    return;
+  }
+  m_pose_overlay.clear();
+  const PlayIpcPosesRecord& latest = records.back();
+  for (const PlayIpcPoseEntity& entity : latest.entities) {
+    if (entity.name.empty()) {
+      continue;
+    }
+    PlayPoseLocalTrs pose;
+    pose.t[0] = entity.t[0];
+    pose.t[1] = entity.t[1];
+    pose.t[2] = entity.t[2];
+    pose.r[0] = entity.r[0];
+    pose.r[1] = entity.r[1];
+    pose.r[2] = entity.r[2];
+    pose.r[3] = entity.r[3];
+    pose.s[0] = entity.s[0];
+    pose.s[1] = entity.s[1];
+    pose.s[2] = entity.s[2];
+    m_pose_overlay[eastl::string(entity.name.c_str())] = pose;
+  }
+}
+
 void PlaySessionController::poll() {
   if (m_state == PlaySessionState::Stopped) {
     return;
@@ -665,6 +767,9 @@ void PlaySessionController::poll() {
       m_state == PlaySessionState::Paused) {
     ingestPlayLogs();
     ingestPlayFrames();
+    ingestPlayIssues();
+    ingestPlayReloads();
+    ingestPlayPoses();
     return;
   }
 
@@ -695,6 +800,9 @@ void PlaySessionController::poll() {
 
   ingestPlayLogs();
   ingestPlayFrames();
+  ingestPlayIssues();
+  ingestPlayReloads();
+  ingestPlayPoses();
 }
 
 }  // namespace Blunder

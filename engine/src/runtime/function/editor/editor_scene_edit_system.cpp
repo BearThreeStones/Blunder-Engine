@@ -23,6 +23,7 @@
 #include "runtime/function/editor/hierarchy_system.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/project/editor_session_restore.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -138,18 +139,13 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
 
   SceneInstance* active = m_scene_system->getActiveInstance();
   if (active != nullptr && active->getSourcePath() == virtual_path) {
-    if (m_asset_manager) {
-      const eastl::shared_ptr<SceneAsset> scene_asset =
-          m_asset_manager->loadScene(virtual_path);
-      if (scene_asset &&
-          m_scene_system->needsMeshAttach(*active, scene_asset->getScene())) {
-        LOG_WARN(
-            "[EditorSceneEdit] reloading '{}' — scene file has mesh descriptors "
-            "but runtime instance has no mesh renderers",
-            virtual_path.c_str());
-        m_scene_system->unloadSceneInstance(active);
-        active = nullptr;
-      }
+    if (m_scene_system->needsMeshAttach(*active)) {
+      LOG_WARN(
+          "[EditorSceneEdit] reloading '{}' — scene file has mesh descriptors "
+          "but runtime instance has no mesh renderers",
+          virtual_path.c_str());
+      m_scene_system->unloadSceneInstance(active);
+      active = nullptr;
     }
     if (active != nullptr) {
       setActiveScenePath(virtual_path);
@@ -157,6 +153,7 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
         g_runtime_global_context.m_document_history->clear();
       }
       g_runtime_global_context.closeAttachmentPreviewCards();
+      rememberEditorSessionLiveScenePath(virtual_path);
       return true;
     }
   }
@@ -186,6 +183,7 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
   }
 
   LOG_INFO("[EditorSceneEdit] opened scene '{}'", virtual_path.c_str());
+  rememberEditorSessionLiveScenePath(virtual_path);
   return true;
 }
 

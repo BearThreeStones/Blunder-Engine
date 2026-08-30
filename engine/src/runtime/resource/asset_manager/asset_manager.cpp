@@ -422,6 +422,7 @@ void AssetManager::initialize(const AssetManagerInitInfo& info) {
   }
 
   m_file_system = info.file_system;
+  m_gltf_document_open_count = 0;
   m_is_initialized = true;
   LOG_INFO(
       "[AssetManager] initialized (assets: {}, resources: {})",
@@ -847,6 +848,7 @@ bool AssetManager::openGltfImportDocument(const eastl::string& virtual_path,
   out_document.absolute = resolved.absolute;
   out_document.canonical_key = resolved.canonical_key;
   out_document.data = data;
+  ++m_gltf_document_open_count;
   return true;
 }
 
@@ -1230,6 +1232,46 @@ void AssetManager::refreshMeshMaterialOverride(
       g_runtime_global_context.m_asset_registry.get();
   reapplyMeshMaterialOverride(*cached, import_source.get(),
                               descriptor.material_override, this, registry);
+}
+
+void AssetManager::previewMeshMaterialOverride(
+    const eastl::string& descriptor_virtual_path,
+    const MeshMaterialOverride& overlay) {
+  if (!m_is_initialized || descriptor_virtual_path.empty()) {
+    return;
+  }
+
+  const eastl::string key = canonicalKey(descriptor_virtual_path);
+  eastl::shared_ptr<MeshAsset> cached;
+  if (auto it = m_mesh_cache.find(key); it != m_mesh_cache.end()) {
+    cached = it->second.lock();
+  }
+  if (!cached) {
+    (void)loadMesh(descriptor_virtual_path);
+    if (auto it = m_mesh_cache.find(key); it != m_mesh_cache.end()) {
+      cached = it->second.lock();
+    }
+  }
+  if (!cached) {
+    return;
+  }
+
+  const ResolvedContentPath descriptor_path =
+      resolveContentPath(m_file_system, descriptor_virtual_path, false);
+  eastl::string yaml_text;
+  MeshAssetDescriptor descriptor{};
+  if (m_file_system->readText(descriptor_path.absolute, yaml_text)) {
+    (void)AssetYaml::parseMeshDescriptor(yaml_text, descriptor);
+  }
+
+  eastl::shared_ptr<MeshAsset> import_source;
+  if (!cached->isFromCookedFinal() && !descriptor.source.empty()) {
+    import_source = loadMesh(descriptor.source);
+  }
+  const AssetRegistry* registry =
+      g_runtime_global_context.m_asset_registry.get();
+  reapplyMeshMaterialOverride(*cached, import_source.get(), overlay, this,
+                              registry);
 }
 
 void AssetManager::invalidateSceneCache(const eastl::string& virtual_path_or_key) {

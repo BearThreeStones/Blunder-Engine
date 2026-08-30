@@ -2,6 +2,9 @@ import { EditorTheme, EditorButton, EditorModalPanel } from "editor_controls.sli
 
 export component PlayDirtySceneDialog inherits Rectangle {
     in property <bool> show-dialog: false;
+    in property <string> body-text: "Save before Play, play the last saved asset, or cancel.";
+    in property <string> save-button-text: "Save and Play";
+    in property <string> last-saved-button-text: "Play Last Saved";
 
     callback save-and-play();
     callback play-last-saved();
@@ -27,7 +30,7 @@ export component PlayDirtySceneDialog inherits Rectangle {
         }
 
         Text {
-            text: "Save before Play, play the last saved asset, or cancel.";
+            text: root.body-text;
             color: EditorTheme.window-text;
             font-size: EditorTheme.font;
             wrap: word-wrap;
@@ -41,11 +44,11 @@ export component PlayDirtySceneDialog inherits Rectangle {
                 clicked => { root.cancelled(); }
             }
             EditorButton {
-                text: "Play Last Saved";
+                text: root.last-saved-button-text;
                 clicked => { root.play-last-saved(); }
             }
             EditorButton {
-                text: "Save and Play";
+                text: root.save-button-text;
                 primary: true;
                 clicked => { root.save-and-play(); }
             }

@@ -47,6 +47,7 @@
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/authorship_system.h"
+#include "runtime/project/play_authorship_patch.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/project/play_session_controller.h"
 // #include "runtime/resource/config_manager/config_manager.h"
@@ -280,6 +281,10 @@ void RuntimeGlobalContext::startSystems(
         } else {
           g_runtime_global_context.m_editor_selection->clearSelection();
         }
+      });
+  m_document_history->setAfterMutationObserver(
+      [](const IEditorCommand& command) {
+        maybeSendPlayAuthorshipPatch(command);
       });
   m_global_history = eastl::make_shared<DocumentHistory>();
   if (authorshipSystemEnabled(host_mode)) {

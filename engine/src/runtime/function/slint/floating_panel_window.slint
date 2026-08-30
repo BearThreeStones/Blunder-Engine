@@ -186,14 +186,14 @@ export component FloatingPanelWindow inherits Window {
     callback inspector-add-behaviour(string);
     callback inspector-remove-behaviour(int);
     callback inspector-reorder-behaviour(int, int);
-    callback inspector-commit-behaviour-prop(int, string, string, float, bool);
+    callback inspector-commit-behaviour-prop(int, string, string, float, bool, bool);
     callback inspector-add-skeleton-modifier(string);
     callback inspector-remove-skeleton-modifier(int);
     callback inspector-reorder-skeleton-modifier(int, int);
     callback inspector-set-skeleton-modifier-enabled(int, bool);
-    callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool);
-    callback inspector-camera-edited();
-    callback inspector-light-edited();
+    callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool, bool);
+    callback inspector-camera-edited(bool);
+    callback inspector-light-edited(bool);
     callback inspector-add-unique-attachment(string);
     callback inspector-remove-unique-attachment(string);
     callback inspector-add-clip();
@@ -203,7 +203,8 @@ export component FloatingPanelWindow inherits Window {
     callback inspector-pick-clip-choice(string, string, string);
     callback inspector-activated();
     callback mesh-material-unlit-toggled(bool);
-    callback mesh-material-scalar-committed(int, float, float, float, float);
+    callback mesh-material-scalar-committed(int, float, float, float, float, bool);
+    callback color-hex-entered(int, string);
     callback mesh-material-reset-requested();
     callback mesh-slot-pick-requested(int);
     callback mesh-slot-clear-requested(int);
@@ -393,7 +394,8 @@ export component FloatingPanelWindow inherits Window {
                 mesh-slot-occlusion-assigned: root.mesh-slot-occlusion-assigned;
                 inspector-activated => { root.inspector-activated(); }
                 mesh-material-unlit-toggled(checked) => { root.mesh-material-unlit-toggled(checked); }
-                mesh-material-scalar-committed(id, a, b, c, d) => { root.mesh-material-scalar-committed(id, a, b, c, d); }
+                mesh-material-scalar-committed(id, a, b, c, d, commit) => { root.mesh-material-scalar-committed(id, a, b, c, d, commit); }
+                color-hex-entered(target, hex) => { root.color-hex-entered(target, hex); }
                 mesh-material-reset-requested => { root.mesh-material-reset-requested(); }
                 mesh-slot-pick-requested(slot) => { root.mesh-slot-pick-requested(slot); }
                 mesh-slot-clear-requested(slot) => { root.mesh-slot-clear-requested(slot); }
@@ -413,8 +415,8 @@ export component FloatingPanelWindow inherits Window {
                 add-behaviour(type) => { root.inspector-add-behaviour(type); }
                 remove-behaviour(id) => { root.inspector-remove-behaviour(id); }
                 reorder-behaviour(from, to) => { root.inspector-reorder-behaviour(from, to); }
-                commit-behaviour-prop(id, key, text, number, flag) => {
-                    root.inspector-commit-behaviour-prop(id, key, text, number, flag);
+                commit-behaviour-prop(id, key, text, number, flag, commit) => {
+                    root.inspector-commit-behaviour-prop(id, key, text, number, flag, commit);
                 }
                 skeleton-modifiers: root.inspector-skeleton-modifiers;
                 skeleton-modifier-type-choices: root.inspector-skeleton-modifier-type-choices;
@@ -425,8 +427,8 @@ export component FloatingPanelWindow inherits Window {
                 set-skeleton-modifier-enabled(index, enabled) => {
                     root.inspector-set-skeleton-modifier-enabled(index, enabled);
                 }
-                commit-skeleton-modifier-field(index, key, text, number, flag) => {
-                    root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag);
+                commit-skeleton-modifier-field(index, key, text, number, flag, commit) => {
+                    root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag, commit);
                 }
                 has-camera: root.inspector-has-camera;
                 camera-fov <=> root.inspector-camera-fov;
@@ -434,7 +436,7 @@ export component FloatingPanelWindow inherits Window {
                 camera-far <=> root.inspector-camera-far;
                 camera-is-main <=> root.inspector-camera-is-main;
                 camera-expanded <=> root.inspector-camera-expanded;
-                camera-edited => { root.inspector-camera-edited(); }
+                camera-edited(commit) => { root.inspector-camera-edited(commit); }
                 has-light: root.inspector-has-light;
                 light-type <=> root.inspector-light-type;
                 light-comp-color-r <=> root.inspector-light-color-r;
@@ -450,7 +452,7 @@ export component FloatingPanelWindow inherits Window {
                 light-height <=> root.inspector-light-height;
                 light-linking-text <=> root.inspector-light-linking-text;
                 light-expanded <=> root.inspector-light-expanded;
-                light-edited => { root.inspector-light-edited(); }
+                light-edited(commit) => { root.inspector-light-edited(commit); }
                 has-animation-player: root.inspector-has-animation-player;
                 animation-clips: root.inspector-animation-clips;
                 animation-player-expanded <=> root.inspector-animation-player-expanded;
@@ -476,9 +478,14 @@ export component FloatingPanelWindow inherits Window {
                 }
             }
 
-            if root.panel-kind == 4 : FilesystemHistoryHost {
+            if root.panel-kind == 4 || root.panel-kind == 6 : Rectangle {
                 width: 100%;
                 height: 100%;
+
+            FilesystemHistoryHost {
+                width: 100%;
+                height: 100%;
+                visible: root.panel-kind == 4;
                 tree-rows: root.browser-tree-rows;
                 grid-rows: root.browser-grid-rows;
                 path-segments: root.browser-path-segments;
@@ -497,8 +504,8 @@ export component FloatingPanelWindow inherits Window {
                 history-filter-scene <=> root.history-filter-scene;
                 history-filter-global <=> root.history-filter-global;
                 active-subtab <=> root.filesystem-history-subtab;
-                inline-rename-path <=> root.browser-inline-rename-path;
-                inline-rename-buffer <=> root.browser-inline-rename-buffer;
+                inline-rename-path: root.browser-inline-rename-path;
+                inline-rename-buffer: root.browser-inline-rename-buffer;
                 folder-selected(path) => { root.browser-folder-selected(path); }
                 folder-toggle(path) => { root.browser-folder-toggle(path); }
                 refresh-requested => { root.browser-refresh-requested(); }
@@ -520,6 +527,34 @@ export component FloatingPanelWindow inherits Window {
                 history-entry-clicked(stack, index) => { root.history-entry-clicked(stack, index); }
                 inline-rename-commit(name) => { root.browser-inline-rename-commit(name); }
                 inline-rename-cancel => { root.browser-inline-rename-cancel(); }
+            }
+
+            ConsolePanel {
+                width: 100%;
+                height: 100%;
+                visible: root.panel-kind == 6;
+                rows <=> root.console-rows;
+                selected-index <=> root.console-selected-index;
+                detail-text <=> root.console-detail-text;
+                detail-stack <=> root.console-detail-stack;
+                collapse <=> root.console-collapse;
+                clear-on-play <=> root.console-clear-on-play;
+                error-pause <=> root.console-error-pause;
+                filter-log <=> root.console-filter-log;
+                filter-warning <=> root.console-filter-warning;
+                filter-error <=> root.console-filter-error;
+                count-log: root.console-count-log;
+                count-warning: root.console-count-warning;
+                count-error: root.console-count-error;
+                search-text <=> root.console-search-text;
+                clear-clicked => { root.console-clear-clicked(); }
+                collapse-toggled => { root.console-collapse-toggled(); }
+                clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
+                error-pause-toggled => { root.console-error-pause-toggled(); }
+                filter-changed => { root.console-filter-changed(); }
+                search-edited => { root.console-search-edited(); }
+                row-selected(i) => { root.console-row-selected(i); }
+            }
             }
 
             if root.panel-kind == 5 : AnimationWindowPanel {
@@ -553,32 +588,6 @@ export component FloatingPanelWindow inherits Window {
                 timescale-committed => { root.anim-preview-params-edited(); }
                 seeked(t) => { root.anim-preview-seeked(t); }
                 fire-target-changed(name) => { root.anim-preview-fire-target-changed(name); }
-            }
-
-            if root.panel-kind == 6 : ConsolePanel {
-                width: 100%;
-                height: 100%;
-                rows <=> root.console-rows;
-                selected-index <=> root.console-selected-index;
-                detail-text <=> root.console-detail-text;
-                detail-stack <=> root.console-detail-stack;
-                collapse <=> root.console-collapse;
-                clear-on-play <=> root.console-clear-on-play;
-                error-pause <=> root.console-error-pause;
-                filter-log <=> root.console-filter-log;
-                filter-warning <=> root.console-filter-warning;
-                filter-error <=> root.console-filter-error;
-                count-log: root.console-count-log;
-                count-warning: root.console-count-warning;
-                count-error: root.console-count-error;
-                search-text <=> root.console-search-text;
-                clear-clicked => { root.console-clear-clicked(); }
-                collapse-toggled => { root.console-collapse-toggled(); }
-                clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
-                error-pause-toggled => { root.console-error-pause-toggled(); }
-                filter-changed => { root.console-filter-changed(); }
-                search-edited => { root.console-search-edited(); }
-                row-selected(i) => { root.console-row-selected(i); }
             }
 
             grip := Rectangle {

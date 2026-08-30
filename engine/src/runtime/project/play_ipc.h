@@ -13,12 +13,15 @@ enum class PlayIpcCommand : uint8_t {
   Stop,
   Step,
   Frame,
+  Reload,
+  Patch,
   Unknown,
 };
 
 struct PlayIpcHostCommand {
   PlayIpcCommand command{PlayIpcCommand::Unknown};
   uint32_t step_ticks{0};
+  std::string patch_json;
 };
 
 struct PlayIpcEndpoint {
@@ -49,6 +52,29 @@ struct PlayIpcErrorRecord {
   std::string code;
 };
 
+/// Player → editor Diagnose Issue on the Play control channel (NDJSON).
+/// Not a Console Message and not `kind:error` (request failure).
+struct PlayIpcIssueRecord {
+  std::string sev;
+  std::string code;
+  std::string address;
+};
+
+struct PlayIpcReloadRecord {
+  bool ok{false};
+};
+
+struct PlayIpcPoseEntity {
+  std::string name;
+  float t[3]{0.f, 0.f, 0.f};
+  float r[4]{0.f, 0.f, 0.f, 1.f};
+  float s[3]{1.f, 1.f, 1.f};
+};
+
+struct PlayIpcPosesRecord {
+  std::vector<PlayIpcPoseEntity> entities;
+};
+
 /// True for IPv4 loopback addresses (`127.0.0.0/8`).
 bool isPlayIpcLoopbackHost(const std::string& host);
 
@@ -69,9 +95,18 @@ std::string formatPlayIpcFrameLine(const PlayIpcFrameRecord& record);
 bool parsePlayIpcErrorLine(const std::string& line, PlayIpcErrorRecord& out);
 std::string formatPlayIpcErrorLine(const std::string& code);
 
+bool parsePlayIpcIssueLine(const std::string& line, PlayIpcIssueRecord& out);
+std::string formatPlayIpcIssueLine(const PlayIpcIssueRecord& record);
+
+bool parsePlayIpcReloadLine(const std::string& line, PlayIpcReloadRecord& out);
+std::string formatPlayIpcReloadLine(bool ok);
+
+bool parsePlayIpcPosesLine(const std::string& line, PlayIpcPosesRecord& out);
+std::string formatPlayIpcPosesLine(const PlayIpcPosesRecord& record);
+
 /// Editor-side control host: binds and **holds** the listen socket (eliminates
 /// ephemeral-port TOCTOU), accepts the Player, waits for `ready`, then sends
-/// `pause` / `resume` / `stop` / `step N` / `frame`.
+/// `pause` / `resume` / `stop` / `step N` / `frame` / `reload` / `patch <json>`.
 class PlayIpcServer {
  public:
   PlayIpcServer();
@@ -96,12 +131,17 @@ class PlayIpcServer {
   bool sendCommand(PlayIpcCommand command);
   bool sendStep(uint32_t ticks);
   bool sendFrameRequest();
+  bool sendReload();
+  bool sendPatch(const std::string& json);
   bool sendLine(const std::string& line);
 
   /// After `ready`: recv leftover + new bytes, parse NDJSON log records.
   std::vector<PlayIpcLogRecord> pollLogs();
   std::vector<PlayIpcFrameRecord> pollFrames();
   std::vector<PlayIpcErrorRecord> pollErrors();
+  std::vector<PlayIpcIssueRecord> pollIssues();
+  std::vector<PlayIpcReloadRecord> pollReloads();
+  std::vector<PlayIpcPosesRecord> pollPoses();
 
   void close();
 
@@ -118,10 +158,13 @@ class PlayIpcServer {
   std::vector<PlayIpcLogRecord> m_pending_logs;
   std::vector<PlayIpcFrameRecord> m_pending_frames;
   std::vector<PlayIpcErrorRecord> m_pending_errors;
+  std::vector<PlayIpcIssueRecord> m_pending_issues;
+  std::vector<PlayIpcReloadRecord> m_pending_reloads;
+  std::vector<PlayIpcPosesRecord> m_pending_poses;
 };
 
 /// Player-side control agent: connects to the editor host, announces `ready`,
-/// then receives pause/resume/stop/step/frame commands.
+/// then receives pause/resume/stop/step/frame/reload/patch commands.
 class PlayIpcClient {
  public:
   PlayIpcClient();
@@ -150,6 +193,10 @@ class PlayIpcClient {
 
   /// After `ready`: send one NDJSON request-failure record.
   bool sendError(const std::string& code);
+
+  bool sendIssue(const PlayIpcIssueRecord& record);
+  bool sendReloadAck(bool ok);
+  bool sendPoses(const PlayIpcPosesRecord& record);
 
   void setCommandHandler(std::function<void(PlayIpcHostCommand)> handler);
 

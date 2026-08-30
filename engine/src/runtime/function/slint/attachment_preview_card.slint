@@ -2,6 +2,9 @@ import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 import { EditorTheme, EditorButton, EditorToggle, EditorCompactField } from "editor_controls.slint";
 import { EditorGlyphs } from "editor_icons.slint";
 import { DockChromePinIcon } from "dock_chrome_icons.slint";
+import { AxisNumberField } from "axis_number_field.slint";
+import { InspectorScalarRow } from "inspector_scalar_row.slint";
+import { InspectorColorCell } from "inspector_color_cell.slint";
 
 // Local copy — do not import inspector_panel.slint (that inlines the whole Inspector
 // into editor_window's generated TU and trips MSVC C1060).
@@ -109,15 +112,16 @@ export component AttachmentPreviewCard inherits Rectangle {
     callback close-requested();
     callback focus-changed(bool);
     callback transform-edited(float, float, float, float, float, float, float, float, float);
-    callback camera-edited(float, float, float, bool);
-    callback light-edited(int, float, float, float, float, bool, float);
+    callback camera-edited(float, float, float, bool, bool);
+    callback light-edited(int, float, float, float, float, bool, float, bool);
+    callback color-hex-entered(string);
     callback unique-remove-requested();
     callback tree-canvas-requested();
     callback behaviour-remove-requested();
-    callback behaviour-prop-committed(int, string, string, float, bool);
+    callback behaviour-prop-committed(int, string, string, float, bool, bool);
     callback modifier-remove-requested();
     callback modifier-enabled-toggled(bool);
-    callback modifier-field-committed(string, string, float, bool);
+    callback modifier-field-committed(string, string, float, bool, bool);
 
     function emit-transform() {
         root.transform-edited(
@@ -125,16 +129,17 @@ export component AttachmentPreviewCard inherits Rectangle {
             root.card.rot-x, root.card.rot-y, root.card.rot-z,
             root.card.scale-x, root.card.scale-y, root.card.scale-z);
     }
-    function emit-camera() {
+    function emit-camera(commit: bool) {
         root.camera-edited(
             root.card.camera-fov, root.card.camera-near, root.card.camera-far,
-            root.card.camera-is-main);
+            root.card.camera-is-main, commit);
     }
-    function emit-light() {
+    function emit-light(commit: bool) {
         root.light-edited(
             root.card.light-type,
             root.card.light-color-r, root.card.light-color-g, root.card.light-color-b,
-            root.card.light-intensity, root.card.light-enabled, root.card.light-range);
+            root.card.light-intensity, root.card.light-enabled, root.card.light-range,
+            commit);
     }
 
     width: 280px;
@@ -265,72 +270,36 @@ export component AttachmentPreviewCard inherits Rectangle {
 
                 if root.card.kind == 2: VerticalBox {
                     spacing: 6px;
-                    HorizontalBox {
-                        spacing: 6px;
-                        Text { text: "FOV"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
-                        fov-input := EditorCompactField {
-                            horizontal-stretch: 1;
-                            text: "" + root.card.camera-fov;
-                            accepted => {
-                                root.card.camera-fov = self.text.to-float();
-                                root.emit-camera();
-                            }
-                            changed has-focus => {
-                                if self.has-focus {
-                                    root.focus-changed(true);
-                                } else {
-                                    root.card.camera-fov = self.text.to-float();
-                                    root.emit-camera();
-                                }
-                            }
-                        }
+                    InspectorScalarRow {
+                        label: "FOV";
+                        label-width: 72px;
+                        value <=> root.card.camera-fov;
+                        reset-value: 45.0;
+                        live-edited => { root.emit-camera(false); }
+                        committed => { root.emit-camera(true); }
                     }
-                    HorizontalBox {
-                        spacing: 6px;
-                        Text { text: "Near"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
-                        near-input := EditorCompactField {
-                            horizontal-stretch: 1;
-                            text: "" + root.card.camera-near;
-                            accepted => {
-                                root.card.camera-near = self.text.to-float();
-                                root.emit-camera();
-                            }
-                            changed has-focus => {
-                                if self.has-focus {
-                                    root.focus-changed(true);
-                                } else {
-                                    root.card.camera-near = self.text.to-float();
-                                    root.emit-camera();
-                                }
-                            }
-                        }
+                    InspectorScalarRow {
+                        label: "Near";
+                        label-width: 72px;
+                        value <=> root.card.camera-near;
+                        reset-value: 0.1;
+                        live-edited => { root.emit-camera(false); }
+                        committed => { root.emit-camera(true); }
                     }
-                    HorizontalBox {
-                        spacing: 6px;
-                        Text { text: "Far"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
-                        far-input := EditorCompactField {
-                            horizontal-stretch: 1;
-                            text: "" + root.card.camera-far;
-                            accepted => {
-                                root.card.camera-far = self.text.to-float();
-                                root.emit-camera();
-                            }
-                            changed has-focus => {
-                                if self.has-focus {
-                                    root.focus-changed(true);
-                                } else {
-                                    root.card.camera-far = self.text.to-float();
-                                    root.emit-camera();
-                                }
-                            }
-                        }
+                    InspectorScalarRow {
+                        label: "Far";
+                        label-width: 72px;
+                        value <=> root.card.camera-far;
+                        reset-value: 1000.0;
+                        live-edited => { root.emit-camera(false); }
+                        committed => { root.emit-camera(true); }
                     }
                     EditorToggle {
                         text: "Main Camera";
                         checked: root.card.camera-is-main;
                         toggled => {
                             root.card.camera-is-main = self.checked;
-                            root.emit-camera();
+                            root.emit-camera(true);
                         }
                     }
                     EditorButton {
@@ -348,7 +317,7 @@ export component AttachmentPreviewCard inherits Rectangle {
                             mouse-cursor: pointer;
                             clicked => {
                                 root.card.light-type = root.card.light-type >= 3 ? 0 : root.card.light-type + 1;
-                                root.emit-light();
+                                root.emit-light(true);
                             }
                             Text {
                                 text: root.card.light-type == 0 ? "Directional" : (root.card.light-type == 1 ? "Point" : (root.card.light-type == 2 ? "Spot" : "Area"));
@@ -358,57 +327,48 @@ export component AttachmentPreviewCard inherits Rectangle {
                             }
                         }
                     }
-                    HorizontalBox {
-                        spacing: 4px;
-                        PreviewFloatField { label: "r"; value <=> root.card.light-color-r; committed => { root.emit-light(); } focused => { root.focus-changed(true); } }
-                        PreviewFloatField { label: "g"; value <=> root.card.light-color-g; committed => { root.emit-light(); } focused => { root.focus-changed(true); } }
-                        PreviewFloatField { label: "b"; value <=> root.card.light-color-b; committed => { root.emit-light(); } focused => { root.focus-changed(true); } }
-                    }
-                    HorizontalBox {
-                        spacing: 6px;
-                        Text { text: "Intensity"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
-                        intensity-input := EditorCompactField {
-                            horizontal-stretch: 1;
-                            text: "" + root.card.light-intensity;
-                            accepted => {
-                                root.card.light-intensity = self.text.to-float();
-                                root.emit-light();
-                            }
-                            changed has-focus => {
-                                if self.has-focus {
-                                    root.focus-changed(true);
-                                } else {
-                                    root.card.light-intensity = self.text.to-float();
-                                    root.emit-light();
-                                }
-                            }
+                    preview-light-color := InspectorColorCell {
+                        label: "Color";
+                        label-width: 72px;
+                        r <=> root.card.light-color-r;
+                        g <=> root.card.light-color-g;
+                        b <=> root.card.light-color-b;
+                        enable-reset: true;
+                        reset-r: 1.0;
+                        reset-g: 1.0;
+                        reset-b: 1.0;
+                        live-edited => {
+                            root.card.light-color-r = preview-light-color.r;
+                            root.card.light-color-g = preview-light-color.g;
+                            root.card.light-color-b = preview-light-color.b;
+                            root.emit-light(false);
                         }
+                        committed => { root.emit-light(true); }
+                        hex-entered(t) => { root.color-hex-entered(t); }
+                    }
+                    InspectorScalarRow {
+                        label: "Intensity";
+                        label-width: 72px;
+                        value <=> root.card.light-intensity;
+                        reset-value: 1.0;
+                        live-edited => { root.emit-light(false); }
+                        committed => { root.emit-light(true); }
                     }
                     EditorToggle {
                         text: "Enabled";
                         checked: root.card.light-enabled;
                         toggled => {
                             root.card.light-enabled = self.checked;
-                            root.emit-light();
+                            root.emit-light(true);
                         }
                     }
-                    HorizontalBox {
-                        spacing: 6px;
-                        Text { text: "Range"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
-                        range-input := EditorCompactField {
-                            horizontal-stretch: 1;
-                            text: "" + root.card.light-range;
-                            accepted => {
-                                root.card.light-range = self.text.to-float();
-                                root.emit-light();
-                            }
-                            changed has-focus => {
-                                if !self.has-focus {
-                                    root.card.light-range = self.text.to-float();
-                                    root.emit-light();
-                                }
-                            }
-                        }
+                    InspectorScalarRow {
+                        label: "Range";
+                        label-width: 72px;
+                        value <=> root.card.light-range;
+                        reset-value: 10.0;
+                        live-edited => { root.emit-light(false); }
+                        committed => { root.emit-light(true); }
                     }
                     EditorButton {
                         text: "Remove";
@@ -456,35 +416,21 @@ export component AttachmentPreviewCard inherits Rectangle {
                             checked: prop.bool-value;
                             toggled => {
                                 root.behaviour-prop-committed(
-                                    root.card.behaviour-id, prop.key, "", 0.0, self.checked);
+                                    root.card.behaviour-id, prop.key, "", 0.0, self.checked, true);
                             }
                         }
-                        if prop.kind == "number": HorizontalBox {
-                            spacing: 6px;
-                            Text {
-                                text: prop.key;
-                                color: EditorTheme.muted;
-                                font-size: 11px;
-                                width: 72px;
-                                vertical-alignment: center;
+                        if prop.kind == "number": InspectorScalarRow {
+                            label: prop.key;
+                            label-width: 72px;
+                            value: prop.number-value;
+                            reset-value: 0.0;
+                            live-edited => {
+                                root.behaviour-prop-committed(
+                                    root.card.behaviour-id, prop.key, "", self.value, false, false);
                             }
-                            num-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + prop.number-value;
-                                accepted => {
-                                    root.behaviour-prop-committed(
-                                        root.card.behaviour-id, prop.key, self.text,
-                                        self.text.to-float(), false);
-                                }
-                                changed has-focus => {
-                                    if self.has-focus {
-                                        root.focus-changed(true);
-                                    } else {
-                                        root.behaviour-prop-committed(
-                                            root.card.behaviour-id, prop.key, self.text,
-                                            self.text.to-float(), false);
-                                    }
-                                }
+                            committed => {
+                                root.behaviour-prop-committed(
+                                    root.card.behaviour-id, prop.key, "", self.value, false, true);
                             }
                         }
                         if prop.kind == "string" || prop.kind == "clip_name": HorizontalBox {
@@ -501,14 +447,14 @@ export component AttachmentPreviewCard inherits Rectangle {
                                 text: prop.string-value;
                                 accepted => {
                                     root.behaviour-prop-committed(
-                                        root.card.behaviour-id, prop.key, self.text, 0.0, false);
+                                        root.card.behaviour-id, prop.key, self.text, 0.0, false, true);
                                 }
                                 changed has-focus => {
                                     if self.has-focus {
                                         root.focus-changed(true);
                                     } else {
                                         root.behaviour-prop-committed(
-                                            root.card.behaviour-id, prop.key, self.text, 0.0, false);
+                                            root.card.behaviour-id, prop.key, self.text, 0.0, false, true);
                                     }
                                 }
                             }
@@ -539,13 +485,13 @@ export component AttachmentPreviewCard inherits Rectangle {
                             horizontal-stretch: 1;
                             text: root.card.modifier-bone;
                             accepted => {
-                                root.modifier-field-committed("bone_name", self.text, 0.0, false);
+                                root.modifier-field-committed("bone_name", self.text, 0.0, false, true);
                             }
                             changed has-focus => {
                                 if self.has-focus {
                                     root.focus-changed(true);
                                 } else {
-                                    root.modifier-field-committed("bone_name", self.text, 0.0, false);
+                                    root.modifier-field-committed("bone_name", self.text, 0.0, false, true);
                                 }
                             }
                         }

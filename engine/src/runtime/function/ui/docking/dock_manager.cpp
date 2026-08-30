@@ -8,6 +8,7 @@
 #include "runtime/function/ui/docking/dock_auto_hide.h"
 #include "runtime/function/ui/docking/dock_floating.h"
 #include "runtime/function/ui/docking/dock_guide_hit.h"
+#include "runtime/function/ui/docking/dock_layout_snapshot.h"
 #include "runtime/function/ui/docking/dock_widget.h"
 
 namespace Blunder {
@@ -1408,6 +1409,223 @@ void DockManager::insertAutoHideEntryAt(DockAutoHideEntry entry, DockEdge edge,
   }
   m_auto_hide_entries.insert(m_auto_hide_entries.begin() + static_cast<ptrdiff_t>(insert_at),
                              entry);
+}
+
+void DockManager::clearWorkspace() {
+  m_drag.reset();
+  m_floating_interaction = {};
+  m_auto_hide_resize = {};
+  m_floating_nodes.clear();
+  m_auto_hide_entries.clear();
+  m_native_floating_ids.clear();
+  m_next_id = 1;
+  m_root = DockNode::makeContainer(nextId());
+}
+
+DockLayoutNodeSnapshot DockManager::captureNodeSnapshot(
+    const std::shared_ptr<DockNode>& node) const {
+  DockLayoutNodeSnapshot snap;
+  if (!node) {
+    return snap;
+  }
+  if (node->isSplit()) {
+    snap.kind = DockNodeKind::split;
+    snap.split_direction = node->splitDirection();
+    snap.split_ratio = node->splitRatio();
+    if (node->first()) {
+      snap.first = std::make_shared<DockLayoutNodeSnapshot>(
+          captureNodeSnapshot(node->first()));
+    }
+    if (node->second()) {
+      snap.second = std::make_shared<DockLayoutNodeSnapshot>(
+          captureNodeSnapshot(node->second()));
+    }
+    return snap;
+  }
+  snap.kind = DockNodeKind::container;
+  snap.active_index = node->activeIndex();
+  for (const auto& widget : node->widgets()) {
+    if (widget) {
+      snap.widgets.push_back(widget->panelKind());
+    }
+  }
+  return snap;
+}
+
+DockLayoutSnapshot DockManager::captureLayoutSnapshot() const {
+  DockLayoutSnapshot snap;
+  snap.root = captureNodeSnapshot(m_root);
+  for (const auto& floating : m_floating_nodes) {
+    if (!floating) {
+      continue;
+    }
+    DockFloatingSnapshot entry;
+    entry.rect = floating->floatingRect();
+    entry.native = isNativeFloating(floating->id());
+    if (floating->floatingContent()) {
+      entry.content = captureNodeSnapshot(floating->floatingContent());
+    }
+    snap.floating.push_back(entry);
+  }
+  for (const DockAutoHideEntry& entry : m_auto_hide_entries) {
+    if (!entry.widget) {
+      continue;
+    }
+    DockAutoHideSnapshot hide;
+    hide.kind = entry.widget->panelKind();
+    hide.edge = entry.edge;
+    hide.expanded = entry.expanded;
+    hide.expanded_span = entry.expanded_span;
+    snap.auto_hide.push_back(hide);
+  }
+  return snap;
+}
+
+std::shared_ptr<DockNode> DockManager::buildNodeFromSnapshot(
+    const DockLayoutNodeSnapshot& snap) {
+  if (snap.kind == DockNodeKind::split) {
+    if (!snap.first || !snap.second) {
+      return nullptr;
+    }
+    auto first = buildNodeFromSnapshot(*snap.first);
+    auto second = buildNodeFromSnapshot(*snap.second);
+    if (!first || !second) {
+      return nullptr;
+    }
+    return DockNode::makeSplit(nextId(), snap.split_direction, first, second,
+                               snap.split_ratio);
+  }
+  auto container = DockNode::makeContainer(nextId());
+  for (const DockPanelKind kind : snap.widgets) {
+    container->addWidget(createWidget(defaultDockPanelTitle(kind), kind));
+  }
+  container->setActiveIndex(snap.active_index);
+  return container;
+}
+
+void DockManager::addRestoredAutoHide(const std::shared_ptr<DockWidget>& widget,
+                                      DockEdge edge, bool expanded, float span) {
+  if (!widget) {
+    return;
+  }
+  DockAutoHideEntry entry{};
+  entry.widget_id = widget->id();
+  entry.widget = widget;
+  entry.edge = edge;
+  entry.expanded = false;
+  entry.expanded_span = span > 0.0f ? span : m_metrics.auto_hide_default_span;
+  widget->setAutoHideState(true, edge);
+  m_auto_hide_entries.push_back(entry);
+  if (expanded) {
+    expandAutoHide(widget->id());
+  }
+}
+
+bool DockManager::applyLayoutSnapshot(const DockLayoutSnapshot& snapshot) {
+  if (snapshot.root.kind == DockNodeKind::split &&
+      (!snapshot.root.first || !snapshot.root.second)) {
+    return false;
+  }
+  clearWorkspace();
+  auto built = buildNodeFromSnapshot(snapshot.root);
+  if (!built) {
+    return false;
+  }
+  m_root = std::move(built);
+  m_root->clearParent();
+  for (const DockFloatingSnapshot& floating : snapshot.floating) {
+    auto content = buildNodeFromSnapshot(floating.content);
+    if (!content) {
+      continue;
+    }
+    auto node = DockNode::makeFloating(nextId(), floating.rect, content);
+    m_floating_nodes.push_back(node);
+    if (floating.native &&
+        testFloatingFlag(m_floating_config, DockFloatingFlag::native_os_window)) {
+      m_native_floating_ids.insert(node->id());
+    }
+  }
+  for (const DockAutoHideSnapshot& hide : snapshot.auto_hide) {
+    if (findWidgetByPanelKind(hide.kind)) {
+      continue;
+    }
+    auto widget = createWidget(defaultDockPanelTitle(hide.kind), hide.kind);
+    if (!hasDockWidgetFeature(widget->features(), DockWidgetFeature::pinnable)) {
+      continue;
+    }
+    addRestoredAutoHide(widget, hide.edge, hide.expanded, hide.expanded_span);
+  }
+  return true;
+}
+
+void DockManager::injectMissingDefaultPanels() {
+  if (!findWidgetByPanelKind(DockPanelKind::viewport)) {
+    dockToRoot(createWidget(defaultDockPanelTitle(DockPanelKind::viewport),
+                            DockPanelKind::viewport),
+               DockSlot::center);
+  }
+
+  auto viewport_container = [this]() -> std::shared_ptr<DockNode> {
+    if (const auto viewport = findWidgetByPanelKind(DockPanelKind::viewport)) {
+      return viewport->ownerContainer();
+    }
+    return nullptr;
+  };
+
+  if (!findWidgetByPanelKind(DockPanelKind::hierarchy)) {
+    auto widget = createWidget(defaultDockPanelTitle(DockPanelKind::hierarchy),
+                               DockPanelKind::hierarchy);
+    if (const auto home = viewport_container()) {
+      dockWidget(home->id(), DockSlot::left, widget);
+    } else {
+      dockToRoot(widget, DockSlot::left);
+    }
+  }
+
+  if (!findWidgetByPanelKind(DockPanelKind::inspector)) {
+    auto widget = createWidget(defaultDockPanelTitle(DockPanelKind::inspector),
+                               DockPanelKind::inspector);
+    if (const auto home = viewport_container()) {
+      dockWidget(home->id(), DockSlot::right, widget);
+    } else {
+      dockToRoot(widget, DockSlot::right);
+    }
+  }
+
+  if (!findWidgetByPanelKind(DockPanelKind::content_browser)) {
+    auto widget = createWidget(defaultDockPanelTitle(DockPanelKind::content_browser),
+                               DockPanelKind::content_browser);
+    if (const auto home = viewport_container()) {
+      dockWidget(home->id(), DockSlot::bottom, widget);
+    } else {
+      dockToRoot(widget, DockSlot::bottom);
+    }
+  }
+
+  if (!findWidgetByPanelKind(DockPanelKind::console)) {
+    auto widget = createWidget(defaultDockPanelTitle(DockPanelKind::console),
+                               DockPanelKind::console);
+    if (const auto browser = findWidgetByPanelKind(DockPanelKind::content_browser)) {
+      if (const auto home = browser->ownerContainer()) {
+        dockWidget(home->id(), DockSlot::center, widget);
+      } else {
+        dockToRoot(widget, DockSlot::bottom);
+      }
+    } else if (const auto home = viewport_container()) {
+      dockWidget(home->id(), DockSlot::bottom, widget);
+    } else {
+      dockToRoot(widget, DockSlot::bottom);
+    }
+  }
+
+  if (!findWidgetByPanelKind(DockPanelKind::animation)) {
+    dockToRoot(createWidget(defaultDockPanelTitle(DockPanelKind::animation),
+                            DockPanelKind::animation),
+               DockSlot::bottom);
+    if (m_root && m_root->isSplit()) {
+      m_root->setSplitRatio(0.86f);
+    }
+  }
 }
 
 }

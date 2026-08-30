@@ -2,6 +2,7 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <string>
 
 #include "EASTL/vector.h"
 
@@ -13,9 +14,13 @@
 #include "runtime/engine.h"
 #include "runtime/function/global/engine_host_mode.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene_system.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/project/authorship_issue.h"
+#include "runtime/project/play_authorship_patch.h"
 #include "runtime/project/play_frame.h"
 #include "runtime/project/play_ipc.h"
+#include "runtime/project/play_pose_preview.h"
 #include "runtime/project/play_step.h"
 #include "runtime/project/player_launch.h"
 
@@ -26,6 +31,8 @@ Blunder::PlayerLaunch g_launch{};
 std::unique_ptr<Blunder::PlayIpcClient> g_play_ipc;
 uint32_t g_pending_step_ticks = 0;
 bool g_pending_play_frame = false;
+bool g_pending_reload = false;
+std::string g_pending_patch_json;
 
 void handlePlayIpcCommand(Blunder::PlayIpcHostCommand command) {
   using Blunder::PlayIpcCommand;
@@ -53,6 +60,12 @@ void handlePlayIpcCommand(Blunder::PlayIpcHostCommand command) {
       break;
     case PlayIpcCommand::Frame:
       g_pending_play_frame = true;
+      break;
+    case PlayIpcCommand::Reload:
+      g_pending_reload = true;
+      break;
+    case PlayIpcCommand::Patch:
+      g_pending_patch_json = command.patch_json;
       break;
     case PlayIpcCommand::Unknown:
     default:
@@ -173,6 +186,32 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         g_play_ipc->sendLog(rec);
       }
     }
+    if (g_pending_reload) {
+      g_pending_reload = false;
+      bool ok = false;
+      if (Blunder::SceneSystem* scenes =
+              Blunder::g_runtime_global_context.m_scene_system.get()) {
+        ok = scenes->reloadActiveFromDisk();
+      }
+      if (g_play_ipc) {
+        g_play_ipc->sendReloadAck(ok);
+      }
+    }
+    if (!g_pending_patch_json.empty()) {
+      const std::string json = std::move(g_pending_patch_json);
+      g_pending_patch_json.clear();
+      std::string unknown;
+      if (!Blunder::applyPlayAuthorshipPatchOnActiveScene(
+              Blunder::g_runtime_global_context.m_scene_system.get(), json,
+              &unknown) &&
+          !unknown.empty() && g_play_ipc) {
+        Blunder::PlayIpcIssueRecord issue;
+        issue.sev = "warning";
+        issue.code = Blunder::k_issue_play_patch_unknown_address;
+        issue.address = unknown;
+        g_play_ipc->sendIssue(issue);
+      }
+    }
     if (g_pending_step_ticks > 0) {
       const uint32_t ticks = g_pending_step_ticks;
       g_pending_step_ticks = 0;
@@ -192,6 +231,12 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     if (g_pending_play_frame) {
       g_pending_play_frame = false;
       sendPlayFrame();
+    }
+    if (g_play_ipc) {
+      Blunder::PlayIpcPosesRecord poses;
+      Blunder::collectPlayPosesFromActiveScene(
+          Blunder::g_runtime_global_context.m_scene_system.get(), poses);
+      g_play_ipc->sendPoses(poses);
     }
     return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {

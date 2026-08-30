@@ -25,6 +25,9 @@ class IEditorCommand {
 
   SelectionSnapshot selection_before{};
   SelectionSnapshot selection_after{};
+  /// When valid, this Command is a v1 Play authorship patch source.
+  EntityId play_v1_entity_id{k_invalid_entity_id};
+  bool isPlayV1Patchable() const { return isValid(play_v1_entity_id); }
 };
 
 /// Linear document-scoped undo/redo stack (Editor History for one open scene).
@@ -57,6 +60,10 @@ class DocumentHistory final {
   void setSelectionRestorer(
       eastl::function<void(const SelectionSnapshot&)> restorer);
 
+  /// Fired after a successful push / undo / redo (jumpTo uses undo/redo).
+  void setAfterMutationObserver(
+      eastl::function<void(const IEditorCommand&)> observer);
+
  private:
   void restoreSelection(const SelectionSnapshot& snapshot);
   void dropOldestIfNeeded();
@@ -66,6 +73,7 @@ class DocumentHistory final {
   size_t m_max_depth{k_default_max_depth};
   size_t m_save_baseline{0};
   eastl::function<void(const SelectionSnapshot&)> m_selection_restorer;
+  eastl::function<void(const IEditorCommand&)> m_after_mutation;
 };
 
 enum class EditorUndoScope : uint8_t {

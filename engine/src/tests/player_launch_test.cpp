@@ -123,6 +123,30 @@ int main() {
                 opts.error.find("engine_editor") != std::string::npos);
   }
 
+  {
+    const fs::path tmp =
+        fs::temp_directory_path() / "blunder_player_launch_spaced";
+    fs::remove_all(tmp);
+    const fs::path prefix = tmp / "Blunder";
+    const fs::path full = tmp / "Blunder Projects" / "Test";
+    fs::create_directories(prefix);
+    fs::create_directories(full);
+
+    std::vector<std::string> args = {
+        "engine_player", "--project-root", prefix.generic_string(),
+        "Projects/Test", "--scene", "assets/Scenes/main.scene.asset"};
+    auto argv = makeArgv(args);
+    const PlayerLaunch opts =
+        parsePlayerLaunch(static_cast<int>(argv.size()), argv.data());
+    expect_true("unquoted spaced player root ok", opts.ok);
+    expect_true("unquoted spaced player root joined",
+                fs::equivalent(opts.project_root, full));
+    expect_true("spaced player scene intact",
+                opts.scene == "assets/Scenes/main.scene.asset");
+
+    fs::remove_all(tmp);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

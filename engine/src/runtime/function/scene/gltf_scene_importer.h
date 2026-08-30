@@ -8,10 +8,12 @@
 #include "runtime/core/math/geometry.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
+#include "runtime/resource/asset_manager/asset_manager_gltf.h"
 
 namespace Blunder {
 
 class AssetManager;
+class Scene;
 class SceneInstance;
 
 /// Imports a glTF scene graph into a SceneInstance (one entity per mesh primitive).
@@ -34,6 +36,15 @@ class GltfSceneImporter final {
                                       const eastl::string& mesh_or_gltf_path,
                                       SceneInstance& scene_instance,
                                       EntityId parent_entity_id);
+
+  /// Same as importUnderEntity, but uses an already-open document (no parse/close).
+  static ImportResult importUnderOpenDocument(
+      AssetManager* asset_manager, GltfImportDocument& document,
+      SceneInstance& scene_instance, EntityId parent_entity_id);
+
+  /// Attaches each scene entity's mesh descriptor. Unique glTF sources are parsed once.
+  static void attachEntityMeshes(AssetManager* asset_manager,
+                                 SceneInstance& instance, const Scene& scene);
 };
 
 }  // namespace Blunder

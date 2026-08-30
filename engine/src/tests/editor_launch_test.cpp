@@ -160,6 +160,40 @@ int main() {
                 opts.failure_code == k_request_launch_adapter_conflict);
   }
 
+  {
+    const fs::path tmp =
+        fs::temp_directory_path() / "blunder_editor_launch_spaced";
+    fs::remove_all(tmp);
+    const fs::path prefix = tmp / "Blunder";
+    const fs::path full = tmp / "Blunder Projects" / "Test";
+    fs::create_directories(prefix);
+    fs::create_directories(full);
+
+    std::vector<std::string> args = {"engine_editor", "--project-root",
+                                     prefix.generic_string(),
+                                     "Projects/Test"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("unquoted spaced root ok", opts.ok);
+    expect_true("unquoted spaced root joined",
+                fs::equivalent(opts.project_root, full));
+
+    std::vector<std::string> capture_args = {
+        "engine_editor", "--project-root", prefix.generic_string(),
+        "Projects/Test", "capture", "--subject", "live"};
+    auto capture_argv = makeArgv(capture_args);
+    const EditorSessionLaunch capture_opts = resolveEditorSessionLaunch(
+        static_cast<int>(capture_argv.size()), capture_argv.data(), false,
+        fs::path{});
+    expect_true("spaced root plus capture ok", capture_opts.ok);
+    expect_true("spaced root plus capture joined",
+                fs::equivalent(capture_opts.project_root, full));
+    expect_true("capture verb not eaten", capture_opts.cli.verb == "capture");
+
+    fs::remove_all(tmp);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

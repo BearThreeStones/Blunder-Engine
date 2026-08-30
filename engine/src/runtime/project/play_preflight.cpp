@@ -5,6 +5,7 @@
 #include <functional>
 #include <system_error>
 #include <string>
+#include <string_view>
 
 #include "runtime/function/scene/scene.h"
 #include "runtime/project/play_diagnose.h"
@@ -98,6 +99,16 @@ PlayDirtySceneDecision decidePlayDirtyScene(
       break;
   }
   return decision;
+}
+
+bool isPlayEntryLiveDocument(std::string_view entry_path,
+                             std::string_view entry_guid,
+                             std::string_view live_path,
+                             std::string_view live_guid) {
+  if (!entry_guid.empty() && !live_guid.empty()) {
+    return entry_guid == live_guid;
+  }
+  return !entry_path.empty() && entry_path == live_path;
 }
 
 bool projectHasScriptsCsproj(const fs::path& project_root) {

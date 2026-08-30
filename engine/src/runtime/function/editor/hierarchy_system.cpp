@@ -1,5 +1,7 @@
 #include "runtime/function/editor/hierarchy_system.h"
 
+#include "EASTL/unordered_map.h"
+
 #include "runtime/function/editor/hierarchy_line.h"
 #include "runtime/function/editor/hierarchy_row_icons.h"
 #include "runtime/function/scene/entity.h"
@@ -16,82 +18,78 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
     return;
   }
 
-  if (m_expanded_entity_ids.empty()) {
-    scene_instance->forEachEntity([&](EntityId entity_id, const Entity& entity) {
-      if (entity.isTombstoned() || isValid(entity.getParentId())) {
-        return;
-      }
-      bool has_children = false;
-      scene_instance->forEachChild(entity_id, [&](EntityId, const Entity& child) {
-        if (!child.isTombstoned()) {
-          has_children = true;
-        }
-      });
-      if (has_children) {
-        m_expanded_entity_ids.insert(entity_id);
-      }
-    });
-  }
-
+  using ChildIndex =
+      eastl::unordered_map<EntityId, eastl::vector<EntityId>>;
+  ChildIndex children_by_parent;
   eastl::vector<EntityId> roots;
+  roots.reserve(scene_instance->getEntityCount());
+  m_tree_rows.reserve(scene_instance->getEntityCount());
   scene_instance->forEachEntity([&](EntityId entity_id, const Entity& entity) {
     if (entity.isTombstoned()) {
       return;
     }
     if (!isValid(entity.getParentId())) {
       roots.push_back(entity_id);
+    } else {
+      children_by_parent[entity.getParentId()].push_back(entity_id);
     }
   });
+
+  if (m_expanded_entity_ids.empty()) {
+    for (EntityId root : roots) {
+      const auto children = children_by_parent.find(root);
+      if (children != children_by_parent.end() && !children->second.empty()) {
+        m_expanded_entity_ids.insert(root);
+      }
+    }
+  }
+
+  const auto append_visible_subtree =
+      [&](const auto& append_self, EntityId entity_id, int32_t depth,
+          bool is_last_sibling, uint32_t ancestor_cont_mask) -> void {
+    const Entity* entity = scene_instance->getEntity(entity_id);
+    if (entity == nullptr || entity->isTombstoned()) {
+      return;
+    }
+
+    const auto children_it = children_by_parent.find(entity_id);
+    const bool has_children =
+        children_it != children_by_parent.end() && !children_it->second.empty();
+    const bool expanded = !has_children || isExpanded(entity_id);
+
+    EditorHierarchyTreeRow row;
+    row.entity_id = entity_id;
+    row.display_name = entity->getName();
+    row.depth = depth;
+    row.is_expanded = expanded;
+    row.has_children = has_children;
+    row.is_last_sibling = is_last_sibling;
+    row.ancestor_cont_mask = ancestor_cont_mask;
+    fillHierarchyRowIcons(*scene_instance, entity_id, row.icons);
+    m_tree_rows.push_back(eastl::move(row));
+
+    if (!has_children || !expanded) {
+      return;
+    }
+
+    const eastl::vector<EntityId>& children = children_it->second;
+    const int32_t child_count = static_cast<int32_t>(children.size());
+    for (int32_t i = 0; i < child_count; ++i) {
+      append_self(
+          append_self, children[static_cast<size_t>(i)], depth + 1,
+          isLastSibling(i, child_count),
+          childAncestorContMask(depth, is_last_sibling, ancestor_cont_mask));
+    }
+  };
 
   const int32_t root_count = static_cast<int32_t>(roots.size());
   for (int32_t i = 0; i < root_count; ++i) {
-    appendVisibleSubtree(scene_instance, roots[static_cast<size_t>(i)], 0,
-                         isLastSibling(i, root_count), 0);
+    append_visible_subtree(append_visible_subtree,
+                           roots[static_cast<size_t>(i)], 0,
+                           isLastSibling(i, root_count), 0);
   }
 
   m_dirty = false;
-}
-
-void HierarchySystem::appendVisibleSubtree(SceneInstance* scene_instance,
-                                           EntityId entity_id, int32_t depth,
-                                           bool is_last_sibling,
-                                           uint32_t ancestor_cont_mask) {
-  const Entity* entity = scene_instance->getEntity(entity_id);
-  if (entity == nullptr || entity->isTombstoned()) {
-    return;
-  }
-
-  eastl::vector<EntityId> children;
-  scene_instance->forEachChild(entity_id, [&](EntityId child_id, const Entity& child) {
-    if (!child.isTombstoned()) {
-      children.push_back(child_id);
-    }
-  });
-  const bool has_children = !children.empty();
-  const bool expanded = !has_children || isExpanded(entity_id);
-
-  EditorHierarchyTreeRow row;
-  row.entity_id = entity_id;
-  row.display_name = entity->getName();
-  row.depth = depth;
-  row.is_expanded = expanded;
-  row.has_children = has_children;
-  row.is_last_sibling = is_last_sibling;
-  row.ancestor_cont_mask = ancestor_cont_mask;
-  fillHierarchyRowIcons(*scene_instance, entity_id, row.icons);
-  m_tree_rows.push_back(eastl::move(row));
-
-  if (!has_children || !expanded) {
-    return;
-  }
-
-  const int32_t child_count = static_cast<int32_t>(children.size());
-  for (int32_t i = 0; i < child_count; ++i) {
-    appendVisibleSubtree(
-        scene_instance, children[static_cast<size_t>(i)], depth + 1,
-        isLastSibling(i, child_count),
-        childAncestorContMask(depth, is_last_sibling, ancestor_cont_mask));
-  }
 }
 
 void HierarchySystem::toggleExpanded(EntityId entity_id) {

@@ -12,14 +12,19 @@ export component AxisNumberField inherits Rectangle {
     in property <float> slider-max: 180.0;
     in property <bool> mixed: false;
     in property <float> scrub-sensitivity: 0.05;
+    in property <bool> show-axis-label: true;
 
     callback live-edited();
     callback text-committed(string);
     callback focus-changed(bool);
+    callback scrub-ended();
 
     private property <bool> scrubbing: false;
+    private property <bool> did-scrub: false;
+    private property <bool> shift-held: false;
     private property <float> scrub-start-x: 0;
     private property <float> scrub-start-value: 0;
+    private property <float> scrub-last-x: 0;
     private property <bool> editing: false;
     private property <string> draft: "";
     private property <bool> slider-dragging: false;
@@ -45,7 +50,7 @@ export component AxisNumberField inherits Rectangle {
             spacing: 4px;
             padding: 0px;
 
-            Text {
+            if root.show-axis-label: Text {
                 text: root.axis-label;
                 color: root.axis-color;
                 font-size: 11px;
@@ -87,8 +92,9 @@ export component AxisNumberField inherits Rectangle {
                     init => { self.focus(); }
                     accepted => {
                         root.editing = false;
-                        root.focus-changed(false);
+                        root.value = self.text.to-float();
                         root.text-committed(self.text);
+                        root.focus-changed(false);
                     }
                     key-pressed(event) => {
                         if (event.text == Key.Escape) {
@@ -105,26 +111,48 @@ export component AxisNumberField inherits Rectangle {
                     enabled: !root.editing;
                     mouse-cursor: ew-resize;
                     clicked => {
+                        if (root.did-scrub) {
+                            root.did-scrub = false;
+                            return;
+                        }
                         root.draft = root.mixed ? "" : "" + (Math.round(root.value * 1000) / 1000);
                         root.editing = true;
                         root.focus-changed(true);
                     }
                     moved => {
                         if (self.pressed) {
+                            root.scrub-last-x = self.mouse-x / 1px;
                             if (!root.scrubbing) {
                                 root.scrubbing = true;
-                                root.scrub-start-x = self.mouse-x / 1px;
+                                root.did-scrub = false;
+                                root.scrub-start-x = root.scrub-last-x;
                                 root.scrub-start-value = root.value;
                                 root.focus-changed(true);
+                                scrub-keys.focus();
                             }
-                            root.value = root.scrub-start-value
-                                + ((self.mouse-x / 1px) - root.scrub-start-x) * root.scrub-sensitivity;
-                            root.live-edited();
+                            if (Math.abs(root.scrub-last-x - root.scrub-start-x) >= 2.0) {
+                                root.did-scrub = true;
+                            }
+                            if (root.did-scrub) {
+                                root.value = root.scrub-start-value
+                                    + (root.scrub-last-x - root.scrub-start-x)
+                                        * root.scrub-sensitivity
+                                        * (root.shift-held ? 0.1 : 1.0);
+                                root.live-edited();
+                            }
                         }
                     }
                     pointer-event(event) => {
+                        if (root.scrubbing && event.modifiers.shift != root.shift-held) {
+                            root.scrub-start-x = root.scrub-last-x;
+                            root.scrub-start-value = root.value;
+                        }
+                        root.shift-held = event.modifiers.shift;
                         if (event.kind == PointerEventKind.up && root.scrubbing) {
                             root.scrubbing = false;
+                            if (root.did-scrub) {
+                                root.scrub-ended();
+                            }
                             root.focus-changed(false);
                         }
                     }
@@ -248,6 +276,40 @@ export component AxisNumberField inherits Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // Captures Shift press/release mid-scrub without requiring another mouse move.
+    scrub-keys := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => {
+            if (root.scrubbing && event.modifiers.shift != root.shift-held) {
+                root.scrub-start-x = root.scrub-last-x;
+                root.scrub-start-value = root.value;
+                root.shift-held = event.modifiers.shift;
+                return accept;
+            }
+            if (root.scrubbing) {
+                root.shift-held = event.modifiers.shift;
+                return accept;
+            }
+            return reject;
+        }
+        key-released(event) => {
+            if (root.scrubbing && event.modifiers.shift != root.shift-held) {
+                root.scrub-start-x = root.scrub-last-x;
+                root.scrub-start-value = root.value;
+                root.shift-held = event.modifiers.shift;
+                return accept;
+            }
+            if (root.scrubbing) {
+                root.shift-held = event.modifiers.shift;
+                return accept;
+            }
+            return reject;
         }
     }
 }

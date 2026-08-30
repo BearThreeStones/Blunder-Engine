@@ -43,6 +43,7 @@ enum class UiEventKind : uint8_t {
   play,
   playPause,
   playStop,
+  playReload,
   playDirtySaveAndPlay,
   playDirtyPlayLastSaved,
   playDirtyCancel,

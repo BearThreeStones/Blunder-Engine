@@ -700,6 +700,8 @@ export component EditorModalPanel inherits Rectangle {
     in property <length> panel-width: 420px;
 
     width: panel-width;
+    // Not in a layout: unset height defaults to 100% of the dim overlay.
+    height: content.preferred-height;
     background: EditorTheme.window;
     border-radius: EditorTheme.radius-modal;
     border-width: 1px;
@@ -707,9 +709,10 @@ export component EditorModalPanel inherits Rectangle {
     drop-shadow-blur: 28px;
     drop-shadow-color: #00000088;
 
-    VerticalLayout {
+    content := VerticalLayout {
         padding: 20px;
         spacing: 12px;
+        alignment: start;
         @children
     }
 }

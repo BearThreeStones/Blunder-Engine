@@ -66,7 +66,7 @@ class LogSystem final {
     }
   }
 
-  /// True when an OS console is already attached (no AllocConsole).
+  /// True when an OS console is attached (inherited, or AllocConsole on Win32).
   static bool hasAttachedTerminal();
 
   std::shared_ptr<spdlog::logger> m_logger;

@@ -1,6 +1,8 @@
 import { HorizontalBox, VerticalBox } from "std-widgets.slint";
 import { EditorTheme, EditorButton, EditorToggle, EditorSlider, EditorCompactField, EditorFoldout, InspectorObjectCell } from "editor_controls.slint";
 import { AxisNumberField } from "axis_number_field.slint";
+import { InspectorScalarRow } from "inspector_scalar_row.slint";
+import { InspectorColorCell } from "inspector_color_cell.slint";
 import {
     EditorGlyphs,
     EditorIconInstance,
@@ -152,7 +154,8 @@ export component InspectorPanel inherits Rectangle {
     in property <string> mesh-slot-occlusion-name: "";
     in property <bool> mesh-slot-occlusion-assigned: false;
     callback mesh-material-unlit-toggled(bool);
-    callback mesh-material-scalar-committed(int, float, float, float, float);
+    callback mesh-material-scalar-committed(int, float, float, float, float, bool);
+    callback color-hex-entered(int, string);
     callback mesh-material-reset-requested();
     callback mesh-slot-pick-requested(int);
     callback mesh-slot-clear-requested(int);
@@ -168,7 +171,7 @@ export component InspectorPanel inherits Rectangle {
     callback add-behaviour(string);
     callback remove-behaviour(int);
     callback reorder-behaviour(int, int);
-    callback commit-behaviour-prop(int, string, string, float, bool);
+    callback commit-behaviour-prop(int, string, string, float, bool, bool);
 
     in property <[SkeletonModifierRow]> skeleton-modifiers: [];
     in property <[string]> skeleton-modifier-type-choices: [];
@@ -177,7 +180,7 @@ export component InspectorPanel inherits Rectangle {
     callback remove-skeleton-modifier(int);
     callback reorder-skeleton-modifier(int, int);
     callback set-skeleton-modifier-enabled(int, bool);
-    callback commit-skeleton-modifier-field(int, string, string, float, bool);
+    callback commit-skeleton-modifier-field(int, string, string, float, bool, bool);
 
     in property <bool> has-camera: false;
     in-out property <float> camera-fov: 45.0;
@@ -185,7 +188,7 @@ export component InspectorPanel inherits Rectangle {
     in-out property <float> camera-far: 1000.0;
     in-out property <bool> camera-is-main: false;
     in-out property <bool> camera-expanded: true;
-    callback camera-edited();
+    callback camera-edited(bool);
 
     in property <bool> has-light: false;
     in-out property <int> light-type: 0;
@@ -202,7 +205,7 @@ export component InspectorPanel inherits Rectangle {
     in-out property <float> light-height: 1.0;
     in-out property <string> light-linking-text: "";
     in-out property <bool> light-expanded: true;
-    callback light-edited();
+    callback light-edited(bool);
 
     in property <bool> add-menu-enabled: false;
     in property <bool> has-skeleton: false;
@@ -426,49 +429,86 @@ export component InspectorPanel inherits Rectangle {
                                 root.mesh-material-unlit-toggled(self.checked);
                             }
                         }
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Base Color"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "r"; axis-color: #ff3352; value <=> root.mesh-base-color-r; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } } }
-                            AxisNumberField { axis-label: "g"; axis-color: #8bdc00; value <=> root.mesh-base-color-g; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } } }
-                            AxisNumberField { axis-label: "b"; axis-color: #2890ff; value <=> root.mesh-base-color-b; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } } }
-                            AxisNumberField { axis-label: "a"; axis-color: #c0c0c0; value <=> root.mesh-base-color-a; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a); } } }
+                        InspectorColorCell {
+                            label: "Base Color";
+                            r <=> root.mesh-base-color-r;
+                            g <=> root.mesh-base-color-g;
+                            b <=> root.mesh-base-color-b;
+                            a <=> root.mesh-base-color-a;
+                            show-alpha: true;
+                            enable-reset: false;
+                            live-edited => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a, false);
+                            }
+                            committed => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(0, root.mesh-base-color-r, root.mesh-base-color-g, root.mesh-base-color-b, root.mesh-base-color-a, true);
+                            }
+                            hex-entered(t) => { root.color-hex-entered(1, t); }
                         }
                         HorizontalBox {
                             spacing: 6px;
                             Text { text: "Metallic"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "m"; axis-color: #c0c0c0; value <=> root.mesh-metallic; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(1, root.mesh-metallic, 0.0, 0.0, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(1, root.mesh-metallic, 0.0, 0.0, 0.0); } } }
+                            AxisNumberField { axis-label: "m"; axis-color: #c0c0c0; value <=> root.mesh-metallic; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(1, root.mesh-metallic, 0.0, 0.0, 0.0, true); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(1, root.mesh-metallic, 0.0, 0.0, 0.0, true); } } }
                         }
                         HorizontalBox {
                             spacing: 6px;
                             Text { text: "Roughness"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "r"; axis-color: #c0c0c0; value <=> root.mesh-roughness; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(2, root.mesh-roughness, 0.0, 0.0, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(2, root.mesh-roughness, 0.0, 0.0, 0.0); } } }
+                            AxisNumberField { axis-label: "r"; axis-color: #c0c0c0; value <=> root.mesh-roughness; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(2, root.mesh-roughness, 0.0, 0.0, 0.0, true); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(2, root.mesh-roughness, 0.0, 0.0, 0.0, true); } } }
                         }
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Ambient"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "r"; axis-color: #ff3352; value <=> root.mesh-ambient-r; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0); } } }
-                            AxisNumberField { axis-label: "g"; axis-color: #8bdc00; value <=> root.mesh-ambient-g; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0); } } }
-                            AxisNumberField { axis-label: "b"; axis-color: #2890ff; value <=> root.mesh-ambient-b; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0); } } }
+                        InspectorColorCell {
+                            label: "Ambient";
+                            r <=> root.mesh-ambient-r;
+                            g <=> root.mesh-ambient-g;
+                            b <=> root.mesh-ambient-b;
+                            enable-reset: false;
+                            live-edited => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0, false);
+                            }
+                            committed => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(3, root.mesh-ambient-r, root.mesh-ambient-g, root.mesh-ambient-b, 0.0, true);
+                            }
+                            hex-entered(t) => { root.color-hex-entered(2, t); }
                         }
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Diffuse"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "r"; axis-color: #ff3352; value <=> root.mesh-diffuse-r; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0); } } }
-                            AxisNumberField { axis-label: "g"; axis-color: #8bdc00; value <=> root.mesh-diffuse-g; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0); } } }
-                            AxisNumberField { axis-label: "b"; axis-color: #2890ff; value <=> root.mesh-diffuse-b; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0); } } }
+                        InspectorColorCell {
+                            label: "Diffuse";
+                            r <=> root.mesh-diffuse-r;
+                            g <=> root.mesh-diffuse-g;
+                            b <=> root.mesh-diffuse-b;
+                            enable-reset: false;
+                            live-edited => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0, false);
+                            }
+                            committed => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(4, root.mesh-diffuse-r, root.mesh-diffuse-g, root.mesh-diffuse-b, 0.0, true);
+                            }
+                            hex-entered(t) => { root.color-hex-entered(3, t); }
                         }
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Specular"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "r"; axis-color: #ff3352; value <=> root.mesh-specular-r; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0); } } }
-                            AxisNumberField { axis-label: "g"; axis-color: #8bdc00; value <=> root.mesh-specular-g; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0); } } }
-                            AxisNumberField { axis-label: "b"; axis-color: #2890ff; value <=> root.mesh-specular-b; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0); } } }
+                        InspectorColorCell {
+                            label: "Specular";
+                            r <=> root.mesh-specular-r;
+                            g <=> root.mesh-specular-g;
+                            b <=> root.mesh-specular-b;
+                            enable-reset: false;
+                            live-edited => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0, false);
+                            }
+                            committed => {
+                                root.inspector-activated();
+                                root.mesh-material-scalar-committed(5, root.mesh-specular-r, root.mesh-specular-g, root.mesh-specular-b, 0.0, true);
+                            }
+                            hex-entered(t) => { root.color-hex-entered(4, t); }
                         }
                         HorizontalBox {
                             spacing: 6px;
                             Text { text: "Shininess"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField { axis-label: "s"; axis-color: #c0c0c0; value <=> root.mesh-shininess; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(6, root.mesh-shininess, 0.0, 0.0, 0.0); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(6, root.mesh-shininess, 0.0, 0.0, 0.0); } } }
+                            AxisNumberField { axis-label: "s"; axis-color: #c0c0c0; value <=> root.mesh-shininess; live-edited => { root.inspector-activated(); } text-committed(t) => { root.inspector-activated(); root.mesh-material-scalar-committed(6, root.mesh-shininess, 0.0, 0.0, 0.0, true); } focus-changed(focused) => { if focused { root.inspector-activated(); } else { root.mesh-material-scalar-committed(6, root.mesh-shininess, 0.0, 0.0, 0.0, true); } } }
                         }
                         InspectorObjectCell {
                             label: "Base Color";
@@ -1266,34 +1306,21 @@ export component InspectorPanel inherits Rectangle {
                                     checked: prop.bool-value;
                                     toggled => {
                                         root.commit-behaviour-prop(
-                                            behaviour.behaviour-id, prop.key, "", 0.0, self.checked);
+                                            behaviour.behaviour-id, prop.key, "", 0.0, self.checked, true);
                                     }
                                 }
                             }
-                            if prop.kind == "number": HorizontalBox {
-                                spacing: 6px;
-                                Text {
-                                    text: prop.key;
-                                    color: EditorTheme.muted;
-                                    font-size: 11px;
-                                    width: 96px;
-                                    vertical-alignment: center;
+                            if prop.kind == "number": InspectorScalarRow {
+                                label: prop.key;
+                                value: prop.number-value;
+                                reset-value: 0.0;
+                                live-edited => {
+                                    root.commit-behaviour-prop(
+                                        behaviour.behaviour-id, prop.key, "", self.value, false, false);
                                 }
-                                num-input := EditorCompactField {
-                                    horizontal-stretch: 1;
-                                    text: "" + prop.number-value;
-                                    accepted => {
-                                        root.commit-behaviour-prop(
-                                            behaviour.behaviour-id, prop.key, self.text,
-                                            self.text.to-float(), false);
-                                    }
-                                    changed has-focus => {
-                                        if (!self.has-focus) {
-                                            root.commit-behaviour-prop(
-                                                behaviour.behaviour-id, prop.key, self.text,
-                                                self.text.to-float(), false);
-                                        }
-                                    }
+                                committed => {
+                                    root.commit-behaviour-prop(
+                                        behaviour.behaviour-id, prop.key, "", self.value, false, true);
                                 }
                             }
                             if prop.kind == "string": HorizontalBox {
@@ -1310,12 +1337,12 @@ export component InspectorPanel inherits Rectangle {
                                     text: prop.string-value;
                                     accepted => {
                                         root.commit-behaviour-prop(
-                                            behaviour.behaviour-id, prop.key, self.text, 0.0, false);
+                                            behaviour.behaviour-id, prop.key, self.text, 0.0, false, true);
                                     }
                                     changed has-focus => {
                                         if (!self.has-focus) {
                                             root.commit-behaviour-prop(
-                                                behaviour.behaviour-id, prop.key, self.text, 0.0, false);
+                                                behaviour.behaviour-id, prop.key, self.text, 0.0, false, true);
                                         }
                                     }
                                 }
@@ -1373,7 +1400,7 @@ export component InspectorPanel inherits Rectangle {
                                         mouse-cursor: pointer;
                                         clicked => {
                                             root.commit-behaviour-prop(
-                                                behaviour.behaviour-id, prop.key, choice, 0.0, false);
+                                                behaviour.behaviour-id, prop.key, choice, 0.0, false, true);
                                             root.behaviour-clip-name-picker-id = -1;
                                             root.behaviour-clip-name-picker-key = "";
                                         }
@@ -1529,12 +1556,12 @@ export component InspectorPanel inherits Rectangle {
                                     text: modifier.bone-name;
                                     accepted => {
                                         root.commit-skeleton-modifier-field(
-                                            modifier.modifier-index, "bone_name", self.text, 0.0, false);
+                                            modifier.modifier-index, "bone_name", self.text, 0.0, false, true);
                                     }
                                     changed has-focus => {
                                         if (!self.has-focus) {
                                             root.commit-skeleton-modifier-field(
-                                                modifier.modifier-index, "bone_name", self.text, 0.0, false);
+                                                modifier.modifier-index, "bone_name", self.text, 0.0, false, true);
                                         }
                                     }
                                 }
@@ -1542,30 +1569,17 @@ export component InspectorPanel inherits Rectangle {
 
                             if !modifier.missing && modifier.type-name == "PaperMouth": VerticalBox {
                                 spacing: 4px;
-                                HorizontalBox {
-                                    spacing: 6px;
-                                    Text {
-                                        text: "Open Amount";
-                                        color: EditorTheme.muted;
-                                        font-size: 11px;
-                                        width: 96px;
-                                        vertical-alignment: center;
+                                InspectorScalarRow {
+                                    label: "Open Amount";
+                                    value: modifier.open-amount;
+                                    reset-value: 0.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "open_amount", "", self.value, false, false);
                                     }
-                                    open-input := EditorCompactField {
-                                        horizontal-stretch: 1;
-                                        text: "" + modifier.open-amount;
-                                        accepted => {
-                                            root.commit-skeleton-modifier-field(
-                                                modifier.modifier-index, "open_amount", self.text,
-                                                self.text.to-float(), false);
-                                        }
-                                        changed has-focus => {
-                                            if (!self.has-focus) {
-                                                root.commit-skeleton-modifier-field(
-                                                    modifier.modifier-index, "open_amount", self.text,
-                                                    self.text.to-float(), false);
-                                            }
-                                        }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "open_amount", "", self.value, false, true);
                                     }
                                 }
                                 EditorToggle {
@@ -1573,7 +1587,7 @@ export component InspectorPanel inherits Rectangle {
                                     checked: modifier.attach-driven;
                                     toggled => {
                                         root.commit-skeleton-modifier-field(
-                                            modifier.modifier-index, "attach_driven", "", 0.0, self.checked);
+                                            modifier.modifier-index, "attach_driven", "", 0.0, self.checked, true);
                                     }
                                 }
                             }
@@ -1592,12 +1606,12 @@ export component InspectorPanel inherits Rectangle {
                                     text: modifier.child-entity-name;
                                     accepted => {
                                         root.commit-skeleton-modifier-field(
-                                            modifier.modifier-index, "child_entity_name", self.text, 0.0, false);
+                                            modifier.modifier-index, "child_entity_name", self.text, 0.0, false, true);
                                     }
                                     changed has-focus => {
                                         if (!self.has-focus) {
                                             root.commit-skeleton-modifier-field(
-                                                modifier.modifier-index, "child_entity_name", self.text, 0.0, false);
+                                                modifier.modifier-index, "child_entity_name", self.text, 0.0, false, true);
                                         }
                                     }
                                 }
@@ -1605,82 +1619,43 @@ export component InspectorPanel inherits Rectangle {
 
                             if !modifier.missing && modifier.type-name == "SkeletonLookAtModifier": VerticalBox {
                                 spacing: 4px;
-                                HorizontalBox {
-                                    spacing: 6px;
-                                    Text {
-                                        text: "Target X";
-                                        color: EditorTheme.muted;
-                                        font-size: 11px;
-                                        width: 96px;
-                                        vertical-alignment: center;
+                                InspectorScalarRow {
+                                    label: "Target X";
+                                    value: modifier.target-x;
+                                    reset-value: 0.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "target_x", "", self.value, false, false);
                                     }
-                                    target-x-input := EditorCompactField {
-                                        horizontal-stretch: 1;
-                                        text: "" + modifier.target-x;
-                                        accepted => {
-                                            root.commit-skeleton-modifier-field(
-                                                modifier.modifier-index, "target_x", self.text,
-                                                self.text.to-float(), false);
-                                        }
-                                        changed has-focus => {
-                                            if (!self.has-focus) {
-                                                root.commit-skeleton-modifier-field(
-                                                    modifier.modifier-index, "target_x", self.text,
-                                                    self.text.to-float(), false);
-                                            }
-                                        }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "target_x", "", self.value, false, true);
                                     }
                                 }
-                                HorizontalBox {
-                                    spacing: 6px;
-                                    Text {
-                                        text: "Target Y";
-                                        color: EditorTheme.muted;
-                                        font-size: 11px;
-                                        width: 96px;
-                                        vertical-alignment: center;
+                                InspectorScalarRow {
+                                    label: "Target Y";
+                                    value: modifier.target-y;
+                                    reset-value: 0.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "target_y", "", self.value, false, false);
                                     }
-                                    target-y-input := EditorCompactField {
-                                        horizontal-stretch: 1;
-                                        text: "" + modifier.target-y;
-                                        accepted => {
-                                            root.commit-skeleton-modifier-field(
-                                                modifier.modifier-index, "target_y", self.text,
-                                                self.text.to-float(), false);
-                                        }
-                                        changed has-focus => {
-                                            if (!self.has-focus) {
-                                                root.commit-skeleton-modifier-field(
-                                                    modifier.modifier-index, "target_y", self.text,
-                                                    self.text.to-float(), false);
-                                            }
-                                        }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "target_y", "", self.value, false, true);
                                     }
                                 }
-                                HorizontalBox {
-                                    spacing: 6px;
-                                    Text {
-                                        text: "Target Z";
-                                        color: EditorTheme.muted;
-                                        font-size: 11px;
-                                        width: 96px;
-                                        vertical-alignment: center;
+                                InspectorScalarRow {
+                                    label: "Target Z";
+                                    value: modifier.target-z;
+                                    reset-value: 1.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "target_z", "", self.value, false, false);
                                     }
-                                    target-z-input := EditorCompactField {
-                                        horizontal-stretch: 1;
-                                        text: "" + modifier.target-z;
-                                        accepted => {
-                                            root.commit-skeleton-modifier-field(
-                                                modifier.modifier-index, "target_z", self.text,
-                                                self.text.to-float(), false);
-                                        }
-                                        changed has-focus => {
-                                            if (!self.has-focus) {
-                                                root.commit-skeleton-modifier-field(
-                                                    modifier.modifier-index, "target_z", self.text,
-                                                    self.text.to-float(), false);
-                                            }
-                                        }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "target_z", "", self.value, false, true);
                                     }
                                 }
                             }
@@ -1712,79 +1687,28 @@ export component InspectorPanel inherits Rectangle {
                     if root.has-selection && !root.multi-edit-visible && root.has-camera: VerticalBox {
                         spacing: 6px;
 
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text {
-                                text: "FOV";
-                                color: EditorTheme.muted;
-                                font-size: 11px;
-                                width: 96px;
-                                vertical-alignment: center;
-                            }
-                            fov-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.camera-fov;
-                                accepted => {
-                                    root.camera-fov = self.text.to-float();
-                                    root.camera-edited();
-                                }
-                                changed has-focus => {
-                                    if (!self.has-focus) {
-                                        root.camera-fov = self.text.to-float();
-                                        root.camera-edited();
-                                    }
-                                }
-                            }
+                        InspectorScalarRow {
+                            label: "FOV";
+                            value <=> root.camera-fov;
+                            reset-value: 45.0;
+                            live-edited => { root.camera-edited(false); }
+                            committed => { root.camera-edited(true); }
                         }
 
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text {
-                                text: "Near";
-                                color: EditorTheme.muted;
-                                font-size: 11px;
-                                width: 96px;
-                                vertical-alignment: center;
-                            }
-                            near-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.camera-near;
-                                accepted => {
-                                    root.camera-near = self.text.to-float();
-                                    root.camera-edited();
-                                }
-                                changed has-focus => {
-                                    if (!self.has-focus) {
-                                        root.camera-near = self.text.to-float();
-                                        root.camera-edited();
-                                    }
-                                }
-                            }
+                        InspectorScalarRow {
+                            label: "Near";
+                            value <=> root.camera-near;
+                            reset-value: 0.1;
+                            live-edited => { root.camera-edited(false); }
+                            committed => { root.camera-edited(true); }
                         }
 
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text {
-                                text: "Far";
-                                color: EditorTheme.muted;
-                                font-size: 11px;
-                                width: 96px;
-                                vertical-alignment: center;
-                            }
-                            far-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.camera-far;
-                                accepted => {
-                                    root.camera-far = self.text.to-float();
-                                    root.camera-edited();
-                                }
-                                changed has-focus => {
-                                    if (!self.has-focus) {
-                                        root.camera-far = self.text.to-float();
-                                        root.camera-edited();
-                                    }
-                                }
-                            }
+                        InspectorScalarRow {
+                            label: "Far";
+                            value <=> root.camera-far;
+                            reset-value: 1000.0;
+                            live-edited => { root.camera-edited(false); }
+                            committed => { root.camera-edited(true); }
                         }
 
                         EditorToggle {
@@ -1792,7 +1716,7 @@ export component InspectorPanel inherits Rectangle {
                             checked: root.camera-is-main;
                             toggled => {
                                 root.camera-is-main = self.checked;
-                                root.camera-edited();
+                                root.camera-edited(true);
                             }
                         }
                     }
@@ -1821,7 +1745,7 @@ export component InspectorPanel inherits Rectangle {
                                 mouse-cursor: pointer;
                                 clicked => {
                                     root.light-type = root.light-type >= 3 ? 0 : root.light-type + 1;
-                                    root.light-edited();
+                                    root.light-edited(true);
                                 }
                                 Text {
                                     text: root.light-type == 0 ? "Directional" : (root.light-type == 1 ? "Point" : (root.light-type == 2 ? "Spot" : "Area"));
@@ -1831,41 +1755,35 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
                         }
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Color"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            AxisNumberField {
-                                axis-label: "r"; axis-color: #ff3352;
-                                value <=> root.light-comp-color-r;
-                                live-edited => { root.light-edited(); }
+                        light-color-cell := InspectorColorCell {
+                            label: "Color";
+                            r <=> root.light-comp-color-r;
+                            g <=> root.light-comp-color-g;
+                            b <=> root.light-comp-color-b;
+                            enable-reset: true;
+                            reset-r: 1.0;
+                            reset-g: 1.0;
+                            reset-b: 1.0;
+                            live-edited => {
+                                root.light-comp-color-r = light-color-cell.r;
+                                root.light-comp-color-g = light-color-cell.g;
+                                root.light-comp-color-b = light-color-cell.b;
+                                root.light-edited(false);
                             }
-                            AxisNumberField {
-                                axis-label: "g"; axis-color: #8bdc00;
-                                value <=> root.light-comp-color-g;
-                                live-edited => { root.light-edited(); }
-                            }
-                            AxisNumberField {
-                                axis-label: "b"; axis-color: #2890ff;
-                                value <=> root.light-comp-color-b;
-                                live-edited => { root.light-edited(); }
-                            }
+                            committed => { root.light-edited(true); }
+                            hex-entered(t) => { root.color-hex-entered(0, t); }
                         }
-                        HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Intensity"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            intensity-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.light-intensity;
-                                accepted => { root.light-intensity = self.text.to-float(); root.light-edited(); }
-                                changed has-focus => {
-                                    if (!self.has-focus) { root.light-intensity = self.text.to-float(); root.light-edited(); }
-                                }
-                            }
+                        InspectorScalarRow {
+                            label: "Intensity";
+                            value <=> root.light-intensity;
+                            reset-value: 1.0;
+                            live-edited => { root.light-edited(false); }
+                            committed => { root.light-edited(true); }
                         }
                         EditorToggle {
                             text: "Enabled";
                             checked: root.light-enabled;
-                            toggled => { root.light-enabled = self.checked; root.light-edited(); }
+                            toggled => { root.light-enabled = self.checked; root.light-edited(true); }
                         }
                         HorizontalBox {
                             spacing: 6px;
@@ -1874,7 +1792,7 @@ export component InspectorPanel inherits Rectangle {
                                 mouse-cursor: pointer;
                                 clicked => {
                                     root.light-contribution = root.light-contribution >= 2 ? 0 : root.light-contribution + 1;
-                                    root.light-edited();
+                                    root.light-edited(true);
                                 }
                                 Text {
                                     text: root.light-contribution == 0 ? "Illuminate and shadows" : (root.light-contribution == 1 ? "Illuminate only" : "Shadows only");
@@ -1884,65 +1802,40 @@ export component InspectorPanel inherits Rectangle {
                                 }
                             }
                         }
-                        if root.light-type == 1 || root.light-type == 2: HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Range"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            range-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.light-range;
-                                accepted => { root.light-range = self.text.to-float(); root.light-edited(); }
-                                changed has-focus => {
-                                    if (!self.has-focus) { root.light-range = self.text.to-float(); root.light-edited(); }
-                                }
-                            }
+                        if root.light-type == 1 || root.light-type == 2: InspectorScalarRow {
+                            label: "Range";
+                            value <=> root.light-range;
+                            reset-value: 10.0;
+                            live-edited => { root.light-edited(false); }
+                            committed => { root.light-edited(true); }
                         }
-                        if root.light-type == 2: HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Inner"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            inner-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.light-inner-cone;
-                                accepted => { root.light-inner-cone = self.text.to-float(); root.light-edited(); }
-                                changed has-focus => {
-                                    if (!self.has-focus) { root.light-inner-cone = self.text.to-float(); root.light-edited(); }
-                                }
-                            }
+                        if root.light-type == 2: InspectorScalarRow {
+                            label: "Inner";
+                            value <=> root.light-inner-cone;
+                            reset-value: 0.0;
+                            live-edited => { root.light-edited(false); }
+                            committed => { root.light-edited(true); }
                         }
-                        if root.light-type == 2: HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Outer"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            outer-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.light-outer-cone;
-                                accepted => { root.light-outer-cone = self.text.to-float(); root.light-edited(); }
-                                changed has-focus => {
-                                    if (!self.has-focus) { root.light-outer-cone = self.text.to-float(); root.light-edited(); }
-                                }
-                            }
+                        if root.light-type == 2: InspectorScalarRow {
+                            label: "Outer";
+                            value <=> root.light-outer-cone;
+                            reset-value: 45.0;
+                            live-edited => { root.light-edited(false); }
+                            committed => { root.light-edited(true); }
                         }
-                        if root.light-type == 3: HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Width"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            width-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.light-width;
-                                accepted => { root.light-width = self.text.to-float(); root.light-edited(); }
-                                changed has-focus => {
-                                    if (!self.has-focus) { root.light-width = self.text.to-float(); root.light-edited(); }
-                                }
-                            }
+                        if root.light-type == 3: InspectorScalarRow {
+                            label: "Width";
+                            value <=> root.light-width;
+                            reset-value: 1.0;
+                            live-edited => { root.light-edited(false); }
+                            committed => { root.light-edited(true); }
                         }
-                        if root.light-type == 3: HorizontalBox {
-                            spacing: 6px;
-                            Text { text: "Height"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
-                            height-input := EditorCompactField {
-                                horizontal-stretch: 1;
-                                text: "" + root.light-height;
-                                accepted => { root.light-height = self.text.to-float(); root.light-edited(); }
-                                changed has-focus => {
-                                    if (!self.has-focus) { root.light-height = self.text.to-float(); root.light-edited(); }
-                                }
-                            }
+                        if root.light-type == 3: InspectorScalarRow {
+                            label: "Height";
+                            value <=> root.light-height;
+                            reset-value: 1.0;
+                            live-edited => { root.light-edited(false); }
+                            committed => { root.light-edited(true); }
                         }
                         HorizontalBox {
                             spacing: 6px;
@@ -1951,9 +1844,9 @@ export component InspectorPanel inherits Rectangle {
                                 horizontal-stretch: 1;
                                 text: root.light-linking-text;
                                 placeholder-text: "empty = all meshes";
-                                accepted => { root.light-linking-text = self.text; root.light-edited(); }
+                                accepted => { root.light-linking-text = self.text; root.light-edited(true); }
                                 changed has-focus => {
-                                    if (!self.has-focus) { root.light-linking-text = self.text; root.light-edited(); }
+                                    if (!self.has-focus) { root.light-linking-text = self.text; root.light-edited(true); }
                                 }
                             }
                         }

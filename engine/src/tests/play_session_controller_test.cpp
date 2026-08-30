@@ -3,6 +3,8 @@
 #include "runtime/project/authorship_issue.h"
 #include "runtime/project/play_step.h"
 
+#include "EASTL/string.h"
+
 #include <chrono>
 #include <cstdio>
 #include <string>
@@ -37,6 +39,11 @@ struct FakeSession {
   int polls_until_frame{0};
   bool frame_queued{false};
   Blunder::PlayIpcFrameRecord queued_frame{};
+  std::vector<Blunder::PlayIpcReloadRecord> pending_reloads;
+  std::vector<Blunder::PlayIpcIssueRecord> pending_issues;
+  std::vector<Blunder::PlayIpcPosesRecord> pending_poses;
+  std::vector<std::string> sent_patches;
+  int scripts_build_count{0};
   Blunder::PlaySpawnArgs last_spawn{};
   Blunder::PlayIpcEndpoint endpoint{};
 };
@@ -123,6 +130,25 @@ Blunder::PlaySessionHooks makeFakeHooks(FakeSession& fake) {
     std::vector<PlayIpcFrameRecord> out;
     out.swap(fake.pending_frames);
     return out;
+  };
+  hooks.ipc_poll_reloads = [&]() {
+    std::vector<PlayIpcReloadRecord> out;
+    out.swap(fake.pending_reloads);
+    return out;
+  };
+  hooks.ipc_poll_issues = [&]() {
+    std::vector<PlayIpcIssueRecord> out;
+    out.swap(fake.pending_issues);
+    return out;
+  };
+  hooks.ipc_poll_poses = [&]() {
+    std::vector<PlayIpcPosesRecord> out;
+    out.swap(fake.pending_poses);
+    return out;
+  };
+  hooks.ipc_send_patch = [&](const std::string& json) {
+    fake.sent_patches.push_back(json);
+    return true;
   };
   hooks.ipc_close = [&]() {
     fake.connected = false;
@@ -430,6 +456,132 @@ int main() {
     expect_true("wait on poll", ctrl.waitForPlayFrame(1000));
     expect_true("waited frame 16:9", ctrl.lastPlayFrame().width == 16 &&
                                          ctrl.lastPlayFrame().height == 9);
+  }
+
+  {
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "assets/Scenes/entry.scene.asset";
+    req.scene_guid = "guid-entry";
+    expect_true("play captures entry", ctrl.play(req));
+    expect_true("entry path captured",
+                ctrl.playEntryScene() == req.scene);
+    expect_true("entry guid captured",
+                ctrl.playEntryGuid() == req.scene_guid);
+    ctrl.poll();
+    expect_true("entry survives ready",
+                ctrl.playEntryGuid() == "guid-entry");
+    expect_true("reload while playing", ctrl.reload());
+    expect_true("reload no extra spawn", fake.spawn_count == 1);
+    expect_true("sent reload", !fake.sent.empty() &&
+                                   fake.sent.back() == PlayIpcCommand::Reload);
+    expect_true("still playing after reload send",
+                ctrl.state() == PlaySessionState::Playing);
+    expect_true("stop clears entry", ctrl.stop());
+    expect_true("entry cleared", ctrl.playEntryScene().empty());
+    expect_true("guid cleared", ctrl.playEntryGuid().empty());
+  }
+
+  {
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play before early reload", ctrl.play(req));
+    expect_true("reload rejected before ready", !ctrl.reload());
+    expect_true("no reload cmd", fake.sent.empty());
+  }
+
+  {
+    consoleViewSettings() = ConsoleViewSettings{};
+    consoleViewSettings().clear_on_play = false;
+    ConsoleRing::instance().clear();
+    ConsoleRing::instance().append(ConsoleSeverity::Log,
+                                   ConsoleOrigin::EditorSession, "keep-reload");
+    FakeSession fake;
+    auto hooks = makeFakeHooks(fake);
+    hooks.is_scripts_dirty = []() { return true; };
+    hooks.build_scripts = [&](std::string&) {
+      ++fake.scripts_build_count;
+      return true;
+    };
+    PlaySessionController ctrl(std::move(hooks));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play with scripts build", ctrl.play(req));
+    expect_true("scripts built on play", fake.scripts_build_count == 1);
+    ctrl.poll();
+    const size_t ring_before = ConsoleRing::instance().size();
+    expect_true("reload with dirty scripts", ctrl.reload());
+    expect_true("reload skips scripts build", fake.scripts_build_count == 1);
+    expect_true("scripts.dirty warning",
+                issueListHasCode(ctrl.lastIssues(), k_issue_scripts_dirty));
+    expect_true("reload does not clear console",
+                ConsoleRing::instance().size() == ring_before);
+    expect_true("still playing after scripts warn",
+                ctrl.state() == PlaySessionState::Playing);
+  }
+
+  {
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play for reload fail ack", ctrl.play(req));
+    ctrl.poll();
+    expect_true("pause then reload", ctrl.pause());
+    expect_true("reload while paused", ctrl.reload());
+    expect_true("stays paused", ctrl.state() == PlaySessionState::Paused);
+    PlayIpcReloadRecord ack;
+    ack.ok = false;
+    fake.pending_reloads.push_back(ack);
+    ctrl.poll();
+    expect_true("fail ack keeps paused",
+                ctrl.state() == PlaySessionState::Paused);
+    expect_true("fail ack still ready", ctrl.isReady());
+  }
+
+  {
+    FakeSession fake;
+    PlaySessionController ctrl(makeFakeHooks(fake));
+    PlaySessionRequest req;
+    req.project_root = "C:/proj";
+    req.scene = "scene";
+    expect_true("play for patch", ctrl.play(req));
+    ctrl.poll();
+    expect_true("send patch", ctrl.sendPatch("{\"address\":\"Hero\"}"));
+    expect_true("patch sent", fake.sent_patches.size() == 1);
+    PlayIpcIssueRecord issue;
+    issue.sev = "warning";
+    issue.code = k_issue_play_patch_unknown_address;
+    issue.address = "Ghost";
+    fake.pending_issues.push_back(issue);
+    ctrl.poll();
+    expect_true("unknown address ingested",
+                issueListHasCode(ctrl.lastIssues(),
+                                 k_issue_play_patch_unknown_address));
+    expect_true("issue does not error-pause",
+                ctrl.state() == PlaySessionState::Playing);
+    PlayIpcPosesRecord poses;
+    PlayIpcPoseEntity hero;
+    hero.name = "Hero";
+    hero.t[0] = 3.f;
+    poses.entities.push_back(hero);
+    fake.pending_poses.push_back(poses);
+    ctrl.poll();
+    expect_true("pose ingested",
+                ctrl.poseOverlay().find(eastl::string("Hero")) !=
+                    ctrl.poseOverlay().end());
+    expect_true("pose t.x",
+                ctrl.poseOverlay().find(eastl::string("Hero"))->second.t[0] ==
+                    3.f);
+    expect_true("stop clears overlay", ctrl.stop());
+    expect_true("overlay empty after stop", ctrl.poseOverlay().empty());
   }
 
   consoleViewSettings() = ConsoleViewSettings{};

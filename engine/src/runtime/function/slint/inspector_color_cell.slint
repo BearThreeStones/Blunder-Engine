@@ -1,0 +1,154 @@
+import { EditorTheme } from "editor_theme.slint";
+import { EditorIconReloadSmall } from "editor_icons.slint";
+import { ColorPicker } from "color_picker.slint";
+
+/// Inspector property-field color row: label, optional Inspector field reset, swatch cell, Color picker popup.
+export component InspectorColorCell inherits Rectangle {
+    in property <string> label: "Color";
+    in-out property <float> r: 1.0;
+    in-out property <float> g: 1.0;
+    in-out property <float> b: 1.0;
+    in-out property <float> a: 1.0;
+    in property <bool> show-alpha: false;
+    in property <bool> enable-reset: false;
+    in property <float> reset-r: 1.0;
+    in property <float> reset-g: 1.0;
+    in property <float> reset-b: 1.0;
+    in property <float> reset-a: 1.0;
+    in property <length> label-width: 96px;
+
+    callback live-edited();
+    callback committed();
+    callback hex-entered(string);
+
+    private property <bool> picker-open: false;
+    private property <bool> show-reset: root.enable-reset && (
+        Math.abs(root.r - root.reset-r) > 0.0005
+        || Math.abs(root.g - root.reset-g) > 0.0005
+        || Math.abs(root.b - root.reset-b) > 0.0005
+        || (root.show-alpha && Math.abs(root.a - root.reset-a) > 0.0005));
+
+    height: EditorTheme.line;
+    vertical-stretch: 0;
+    background: transparent;
+
+    cell-fs := FocusScope {
+        height: EditorTheme.line;
+
+        changed has-focus => {
+            if (self.has-focus && root.picker-open) {
+                root.picker-open = false;
+                root.committed();
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: stretch;
+
+            Text {
+                text: root.label;
+                color: EditorTheme.muted;
+                font-size: 11px;
+                width: root.label-width;
+                vertical-alignment: center;
+            }
+
+            reset-slot := Rectangle {
+                width: 16px;
+                height: EditorTheme.line;
+                background: transparent;
+
+                if root.show-reset: TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.r = root.reset-r;
+                        root.g = root.reset-g;
+                        root.b = root.reset-b;
+                        root.a = root.reset-a;
+                        root.committed();
+                    }
+                    EditorIconReloadSmall {
+                        icon-size: 12px;
+                        icon-color: parent.has-hover ? EditorTheme.default-text : EditorTheme.icon;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+            }
+
+            swatch := Rectangle {
+                horizontal-stretch: 1;
+                height: EditorTheme.line;
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: EditorTheme.hairline;
+                background: EditorTheme.field;
+                clip: true;
+
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    background: #5a5a5a;
+                }
+                Rectangle {
+                    x: 8px;
+                    y: 8px;
+                    width: 8px;
+                    height: 8px;
+                    background: #5a5a5a;
+                }
+                Rectangle {
+                    x: 16px;
+                    y: 0px;
+                    width: 8px;
+                    height: 8px;
+                    background: #5a5a5a;
+                }
+                Rectangle {
+                    x: 0px;
+                    y: 16px;
+                    width: 8px;
+                    height: 8px;
+                    background: #5a5a5a;
+                }
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    background: rgb(root.r * 255, root.g * 255, root.b * 255).with-alpha(root.show-alpha ? root.a : 1.0);
+                }
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        cell-fs.focus();
+                        root.picker-open = true;
+                        picker.show();
+                    }
+                }
+            }
+        }
+
+        picker := PopupWindow {
+            x: -236px;
+            y: 0px;
+            width: 228px;
+            close-policy: close-on-click-outside;
+            forward-focus: picker-fs;
+
+            picker-fs := FocusScope {
+                ColorPicker {
+                    r <=> root.r;
+                    g <=> root.g;
+                    b <=> root.b;
+                    a <=> root.a;
+                    show-alpha: root.show-alpha;
+                    live-edited => { root.live-edited(); }
+                    hex-entered(t) => { root.hex-entered(t); }
+                }
+            }
+        }
+    }
+}

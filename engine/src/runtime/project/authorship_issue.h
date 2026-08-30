@@ -27,6 +27,8 @@ inline constexpr const char* k_issue_scripts_missing_output =
     "scripts.missing_output";
 inline constexpr const char* k_issue_scripts_build_failed =
     "scripts.build_failed";
+inline constexpr const char* k_issue_play_patch_unknown_address =
+    "play.patch_unknown_address";
 
 inline constexpr const char* k_request_address_unknown = "address.unknown";
 inline constexpr const char* k_request_subject_live_required =

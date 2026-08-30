@@ -51,7 +51,7 @@ export component CameraPreviewPanel inherits Rectangle {
     background: transparent;
     visible: root.preview-visible && !root.layout-drag-active;
 
-    if root.preview-visible && !root.layout-drag-active: panel := Rectangle {
+    panel := Rectangle {
         x: root.resolved-x;
         y: root.resolved-y;
         width: root.panel-w;

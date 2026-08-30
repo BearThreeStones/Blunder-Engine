@@ -71,6 +71,11 @@ fs::path makeTempProject() {
     std::ofstream out(root / "Assets" / "Meshes" / "note.txt", std::ios::binary);
     out << "cube\n";
   }
+  {
+    std::ofstream out(root / "Assets" / "Scenes" / "pick_test.scene.asset",
+                      std::ios::binary);
+    out << "{}\n";
+  }
   return root;
 }
 
@@ -309,6 +314,24 @@ int main() {
     browser_init.asset_registry = &registry;
     browser.initialize(browser_init);
     browser.refresh();
+
+    browser.beginInlineRename("assets/Scenes/pick_test.scene.asset");
+    expect_eq_string(
+        "closed scene file starts inline rename",
+        browser.pendingInlineRenamePath(),
+        "assets/Scenes/pick_test.scene.asset");
+    browser.beginInlineRename("assets/Scenes/pick_test.scene.asset");
+    expect_eq_string(
+        "F2-style beginInlineRename is idempotent on the same path",
+        browser.pendingInlineRenamePath(),
+        "assets/Scenes/pick_test.scene.asset");
+    browser.beginInlineRename("assets");
+    expect_true("F2 on Assets root clears pending rename",
+                browser.pendingInlineRenamePath().empty());
+    browser.beginInlineRename("assets/Scenes/pick_test.scene.asset");
+    browser.clearPendingInlineRename();
+    expect_true("clear pending inline rename",
+                browser.pendingInlineRenamePath().empty());
 
     const ContentBrowserMutateResult created =
         browser.createFolder("assets/");

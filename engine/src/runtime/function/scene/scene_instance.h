@@ -151,6 +151,7 @@ class SceneInstance final {
   eastl::unordered_map<EntityId, LightComponent> m_lights;
   /// Objects created for Behaviour-bearing entities; destroyed on clear().
   eastl::vector<ObjectId> m_bound_object_ids;
+  eastl::unordered_map<EntityId, ObjectId> m_bound_object_ids_by_entity;
   eastl::unordered_map<EntityId, eastl::string> m_default_animation_clip_names;
   AABB m_world_bounds{};
   bool m_has_world_bounds{false};

@@ -40,10 +40,6 @@ class HierarchySystem final {
   void markDirty() { m_dirty = true; }
 
  private:
-  void appendVisibleSubtree(SceneInstance* scene_instance, EntityId entity_id,
-                            int32_t depth, bool is_last_sibling,
-                            uint32_t ancestor_cont_mask);
-
   eastl::vector<EditorHierarchyTreeRow> m_tree_rows;
   eastl::hash_set<EntityId> m_expanded_entity_ids;
   bool m_dirty{true};

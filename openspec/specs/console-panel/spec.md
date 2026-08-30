@@ -3,9 +3,7 @@
 ## Purpose
 
 Editor Console: a docked diagnostic message list for the author, with severity filters, collapse, clear, and a bounded ring — not a command prompt, History Panel, or OS terminal.
-
 ## Requirements
-
 ### Requirement: Console dock sibling to Content Browser
 The editor SHALL provide a Console panel as a sibling tab to Content Browser in the same bottom dock group. It SHALL NOT be an inner tab of History. The default workspace SHALL include this Console tab (authors MAY later undock it).
 
@@ -63,7 +61,7 @@ The Console SHALL offer a Collapse toggle, default off. When on, messages that s
 - **THEN** the list shows two rows
 
 ### Requirement: Console clear and Clear on Play
-Console clear SHALL remove every Console Message (both origins) and SHALL NOT be an Editor Command. Clear on Play SHALL be a toggle, default on. When on, starting a Play session SHALL perform Console clear. Stop SHALL NOT clear.
+Console clear SHALL remove every Console Message (both origins) and SHALL NOT be an Editor Command. Clear on Play SHALL be a toggle, default on. When on, starting a Play session SHALL perform Console clear. Stop SHALL NOT clear. Play Reload SHALL NOT clear.
 
 #### Scenario: Manual clear empties both origins
 - **WHEN** the list has editor and Player rows and the author activates Clear
@@ -75,6 +73,10 @@ Console clear SHALL remove every Console Message (both origins) and SHALL NOT be
 
 #### Scenario: Stop does not clear
 - **WHEN** Player rows exist and the author Stops Play
+- **THEN** those rows remain
+
+#### Scenario: Reload does not clear
+- **WHEN** Clear on Play is on, Player rows exist, and Play Reload succeeds
 - **THEN** those rows remain
 
 ### Requirement: Error Pause
@@ -106,3 +108,4 @@ Editor Session and Player SHALL NOT allocate a new OS console window as the prod
 - **WHEN** the author launches `engine_editor` as a Windows GUI subsystem process with no inherited console
 - **THEN** the process does not create a new OS console window
 - **AND** Log-severity engine messages still appear in the Console panel
+

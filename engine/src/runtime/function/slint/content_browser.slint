@@ -116,9 +116,10 @@ export component ContentBrowser {
     in-out property <length> tree-pane-width: 200px;
     in property <bool> layout-drag-active: false;
     property <bool> view-menu-visible: false;
+    // Do not gate on inline-rename-path: MenuItem.activated starts rename, and
+    // disabling ContextMenuArea while its popup is still closing crashes Slint.
     property <bool> context-menus-enabled:
-        !root.drag-active && !root.layout-drag-active
-        && root.inline-rename-path == "";
+        !root.drag-active && !root.layout-drag-active;
 
     // --- Callbacks ---
     callback folder-selected(string);
@@ -697,6 +698,8 @@ export component ContentBrowser {
                                 }
 
                                 for tile[index] in root.grid-rows: Rectangle {
+                                    property <bool> renaming: tile.path == root.inline-rename-path;
+                                    property <string> rename-draft: "";
                                     x: root.details-view ? 0px
                                         : (Math.mod(index, Math.max(1, root.grid-cols))
                                            * root.cell-total-w + 4px);
@@ -745,21 +748,28 @@ export component ContentBrowser {
                                             }
                                         }
 
-                                        if tile.path == root.inline-rename-path: Rectangle {
+                                        Rectangle {
                                             height: 16px;
-                                            background: EditorTheme.field;
+                                            background: renaming ? EditorTheme.field : #00000000;
                                             border-radius: 3px;
-                                            border-width: 1px;
+                                            border-width: renaming ? 1px : 0px;
                                             border-color: EditorTheme.accent;
                                             rename-input := TextInput {
+                                                visible: renaming;
+                                                enabled: renaming;
                                                 x: 4px;
                                                 width: parent.width - 8px;
                                                 height: 100%;
-                                                text <=> root.inline-rename-buffer;
+                                                text <=> rename-draft;
                                                 color: EditorTheme.default-text;
                                                 font-size: 10px;
                                                 single-line: true;
-                                                init => { self.focus(); }
+                                                changed visible => {
+                                                    if (self.visible) {
+                                                        rename-draft = root.inline-rename-buffer;
+                                                        grid-rename-focus-timer.running = true;
+                                                    }
+                                                }
                                                 accepted => {
                                                     root.inline-rename-commit(self.text);
                                                 }
@@ -771,10 +781,17 @@ export component ContentBrowser {
                                                     return reject;
                                                 }
                                             }
-                                        }
-                                        if tile.path != root.inline-rename-path: Rectangle {
-                                            height: 16px;
+                                            grid-rename-focus-timer := Timer {
+                                                interval: 16ms;
+                                                running: false;
+                                                triggered => {
+                                                    rename-input.focus();
+                                                    rename-input.select-all();
+                                                    self.running = false;
+                                                }
+                                            }
                                             Text {
+                                                visible: !renaming;
                                                 text: tile.name;
                                                 color: EditorTheme.default-text;
                                                 font-size: 10px;
@@ -784,6 +801,7 @@ export component ContentBrowser {
                                                 height: 100%;
                                             }
                                             TouchArea {
+                                                visible: !renaming;
                                                 clicked => {
                                                     if (tile.selected) {
                                                         root.rename-requested(tile.path);
@@ -827,21 +845,28 @@ export component ContentBrowser {
                                             }
                                         }
 
-                                        if tile.path == root.inline-rename-path: Rectangle {
+                                        Rectangle {
                                             vertical-stretch: 1;
-                                            background: EditorTheme.field;
+                                            background: renaming ? EditorTheme.field : #00000000;
                                             border-radius: 3px;
-                                            border-width: 1px;
+                                            border-width: renaming ? 1px : 0px;
                                             border-color: EditorTheme.accent;
-                                            TextInput {
+                                            details-rename-input := TextInput {
+                                                visible: renaming;
+                                                enabled: renaming;
                                                 x: 4px;
                                                 width: parent.width - 8px;
                                                 height: 100%;
-                                                text <=> root.inline-rename-buffer;
+                                                text <=> rename-draft;
                                                 color: EditorTheme.default-text;
                                                 font-size: 11px;
                                                 single-line: true;
-                                                init => { self.focus(); }
+                                                changed visible => {
+                                                    if (self.visible) {
+                                                        rename-draft = root.inline-rename-buffer;
+                                                        details-rename-focus-timer.running = true;
+                                                    }
+                                                }
                                                 accepted => {
                                                     root.inline-rename-commit(self.text);
                                                 }
@@ -853,11 +878,17 @@ export component ContentBrowser {
                                                     return reject;
                                                 }
                                             }
-                                        }
-                                        if tile.path != root.inline-rename-path: Rectangle {
-                                            horizontal-stretch: 1;
-                                            vertical-stretch: 1;
+                                            details-rename-focus-timer := Timer {
+                                                interval: 16ms;
+                                                running: false;
+                                                triggered => {
+                                                    details-rename-input.focus();
+                                                    details-rename-input.select-all();
+                                                    self.running = false;
+                                                }
+                                            }
                                             Text {
+                                                visible: !renaming;
                                                 text: tile.name;
                                                 color: EditorTheme.default-text;
                                                 font-size: 11px;
@@ -867,6 +898,7 @@ export component ContentBrowser {
                                                 height: 100%;
                                             }
                                             TouchArea {
+                                                visible: !renaming;
                                                 clicked => {
                                                     if (tile.selected) {
                                                         root.rename-requested(tile.path);
@@ -907,6 +939,8 @@ export component ContentBrowser {
                                         y: 0px;
                                         width: parent.width;
                                         height: parent.height;
+                                        visible: !renaming;
+                                        enabled: !renaming;
                                         moved => {
                                             root.item-move(tile.path,
                                                 self.mouse-x / 1px, self.mouse-y / 1px);
@@ -946,7 +980,8 @@ export component ContentBrowser {
                                         show-delete: !tile.is-dir
                                             || (tile.path != "assets"
                                                 && tile.path != "assets/");
-                                        enabled: root.context-menus-enabled;
+                                        visible: !renaming;
+                                        enabled: root.context-menus-enabled && !renaming;
                                         new-folder(path) => { root.new-folder-requested(path); }
                                         new-scene(path) => { root.new-scene-requested(path); }
                                         open-scene(path) => { root.open-scene-requested(path); }

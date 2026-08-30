@@ -327,6 +327,34 @@ int main() {
     expect_true("successful scripts gate built again", fake.build_count == 2);
   }
 
+  {
+    expect_true("guid match is entry live",
+                isPlayEntryLiveDocument("a.scene.asset", "guid-a",
+                                        "other.scene.asset", "guid-a"));
+    expect_true("guid mismatch is not entry live",
+                !isPlayEntryLiveDocument("a.scene.asset", "guid-a",
+                                         "a.scene.asset", "guid-b"));
+    expect_true("path fallback when guids empty",
+                isPlayEntryLiveDocument("a.scene.asset", "", "a.scene.asset",
+                                        ""));
+    expect_true("other dirty scene is not entry live",
+                !isPlayEntryLiveDocument("entry.scene.asset", "guid-entry",
+                                         "other.scene.asset", "guid-other"));
+    const PlayDirtySceneDecision other_open = decidePlayDirtyScene(
+        false, playDirtyChoiceForHost(false));
+    expect_true("reload dirty skipped when other scene open",
+                other_open.proceed && !other_open.needs_prompt);
+    const PlayDirtySceneDecision entry_dirty = decidePlayDirtyScene(
+        true, playDirtyChoiceForHost(false));
+    expect_true("reload dirty prompts when entry live dirty",
+                entry_dirty.needs_prompt && !entry_dirty.proceed);
+    const PlayDirtySceneDecision headless_reload = decidePlayDirtyScene(
+        true, playDirtyChoiceForHost(true));
+    expect_true("headless reload last saved",
+                headless_reload.proceed && !headless_reload.save_first &&
+                    !headless_reload.needs_prompt);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

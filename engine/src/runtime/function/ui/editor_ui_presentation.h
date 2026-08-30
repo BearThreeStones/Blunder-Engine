@@ -20,6 +20,8 @@ class IEditorUiPresentation {
   virtual void setAssetInspectorSelection(const eastl::string& mesh_descriptor_path) = 0;
   virtual void clearAssetInspectorSelection() = 0;
   virtual void syncContentBrowser() = 0;
+  /// Sets inline-rename path/buffer without replacing the grid model.
+  virtual void syncBrowserInlineRename() = 0;
   virtual void applyInspectorTransform() = 0;
   virtual void applyAnimationPreviewParams() = 0;
   virtual void fireAnimationSyncPreview() = 0;
@@ -33,7 +35,7 @@ class IEditorUiPresentation {
 
   virtual void tickContentBrowserTreePointerPoll() = 0;
 
-  virtual void showPlayDirtySceneDialog() = 0;
+  virtual void showPlayDirtySceneDialog(bool reload_copy) = 0;
   virtual void hidePlayDirtySceneDialog() = 0;
 
   virtual void showOpenDirtySceneDialog() = 0;

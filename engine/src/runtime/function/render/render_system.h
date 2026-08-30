@@ -119,6 +119,7 @@ class RenderSystem final {
                                    const void* vertex_bytes,
                                    size_t vertex_byte_size, const uint32_t* indices,
                                    size_t index_count);
+  GpuMesh* findUploadedGpuMesh(const eastl::string& cache_key) const;
   GpuMesh* updateOrUploadSkinnedGpuMesh(const eastl::string& base_cache_key,
                                         const void* vertex_bytes,
                                         size_t vertex_byte_size,
@@ -223,7 +224,6 @@ class RenderSystem final {
   uint32_t m_current_frame{0};
   bool m_pending_scene_camera_focus{false};
   bool m_refocus_when_mesh_draws_ready{false};
-  ForwardGridPlane m_grid_plane{ForwardGridPlane::xy};
 
   uint32_t m_deferred_rt_width{0};
   uint32_t m_deferred_rt_height{0};
@@ -264,7 +264,6 @@ class RenderSystem final {
   void resizeCameraPreviewReadback(uint32_t width, uint32_t height);
   void clearCameraPreviewPresentation();
   void syncCameraPreviewSkipClear();
-  bool shouldForceViewportForCameraPreview() const;
   bool recordCameraPreviewPass(
       VkCommandBuffer command_buffer, const ForwardFrameState& main_frame_state,
       const eastl::vector<ForwardOpaqueDraw>& opaque_draws,

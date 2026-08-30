@@ -2,6 +2,7 @@
 
 #include "runtime/project/authorship_issue.h"
 #include "runtime/project/play_ipc.h"
+#include "runtime/project/play_pose_preview.h"
 
 #include <chrono>
 #include <cstdint>
@@ -24,6 +25,7 @@ enum class PlaySessionState : uint8_t {
 struct PlaySessionRequest {
   std::filesystem::path project_root;
   std::string scene;
+  std::string scene_guid;
   bool headless{false};
 };
 
@@ -58,6 +60,10 @@ struct PlaySessionHooks {
   std::function<bool()> ipc_send_frame;
   std::function<std::vector<PlayIpcFrameRecord>()> ipc_poll_frames;
   std::function<std::vector<PlayIpcErrorRecord>()> ipc_poll_errors;
+  std::function<std::vector<PlayIpcIssueRecord>()> ipc_poll_issues;
+  std::function<std::vector<PlayIpcReloadRecord>()> ipc_poll_reloads;
+  std::function<std::vector<PlayIpcPosesRecord>()> ipc_poll_poses;
+  std::function<bool(const std::string& json)> ipc_send_patch;
   /// Optional Scripts dirty gate (run before spawn). When unset, gate is skipped.
   std::function<bool()> is_scripts_dirty;
   std::function<bool(std::string& error)> build_scripts;
@@ -80,6 +86,7 @@ class PlaySessionController final {
   PlaySessionState state() const { return m_state; }
   bool isReady() const { return m_ready; }
   bool pauseEnabled() const;
+  bool reloadEnabled() const { return pauseEnabled(); }
   bool stopEnabled() const { return m_state != PlaySessionState::Stopped; }
 
   const PlayIpcEndpoint& endpoint() const { return m_endpoint; }
@@ -87,6 +94,9 @@ class PlaySessionController final {
   const std::string& lastRequestFailure() const { return m_last_request_failure; }
   const eastl::vector<Issue>& lastIssues() const { return m_last_issues; }
   const PlayIpcFrameRecord& lastPlayFrame() const { return m_last_play_frame; }
+  const std::string& playEntryScene() const { return m_play_entry_scene; }
+  const std::string& playEntryGuid() const { return m_play_entry_guid; }
+  const PlayPoseOverlayMap& poseOverlay() const { return m_pose_overlay; }
 
   /// Surface a non-session error (e.g. Save and Play save failure) without
   /// starting Play.
@@ -107,6 +117,8 @@ class PlaySessionController final {
   bool pause();
   bool resume();
   bool stop();
+  bool reload();
+  bool sendPatch(const std::string& json);
   bool step(uint32_t ticks);
   bool requestPlayFrame();
   /// Send Play frame then poll until a frame arrives or `timeout_ms` elapses.
@@ -123,6 +135,9 @@ class PlaySessionController final {
   void failStarting(std::string error);
   void ingestPlayLogs();
   void ingestPlayFrames();
+  void ingestPlayIssues();
+  void ingestPlayReloads();
+  void ingestPlayPoses();
   std::chrono::steady_clock::time_point now() const;
 
   PlaySessionHooks m_hooks;
@@ -134,6 +149,9 @@ class PlaySessionController final {
   std::string m_last_request_failure;
   PlayIpcFrameRecord m_last_play_frame;
   eastl::vector<Issue> m_last_issues;
+  std::string m_play_entry_scene;
+  std::string m_play_entry_guid;
+  PlayPoseOverlayMap m_pose_overlay;
   bool m_has_starting_deadline{false};
   std::chrono::steady_clock::time_point m_starting_deadline{};
 };

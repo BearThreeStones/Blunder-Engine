@@ -3,6 +3,7 @@
 #include <glm/vec2.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/function/ui/docking/dock_auto_hide.h"
 #include "runtime/function/ui/docking/dock_floating.h"
@@ -445,7 +446,9 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.date_text = toSharedString(row.date_text);
         grid_model->push_back(slint_row);
       }
-      ui.set_browser_grid_rows(grid_model);
+      if (!g_runtime_global_context.inlineRenameActive()) {
+        ui.set_browser_grid_rows(grid_model);
+      }
 
       auto path_model = std::make_shared<slint::VectorModel<BrowserPathSegment>>();
       for (const NativeFloatBrowserPathSegment& seg : snapshot.browser_path_segments) {
@@ -715,9 +718,15 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
       }
     });
     component->on_mesh_material_scalar_committed(
-        [this](int field, float a, float b, float c, float d) {
+        [this](int field, float a, float b, float c, float d, bool commit) {
           if (m_callbacks.on_mesh_material_scalar_committed) {
-            m_callbacks.on_mesh_material_scalar_committed(field, a, b, c, d);
+            m_callbacks.on_mesh_material_scalar_committed(field, a, b, c, d, commit);
+          }
+        });
+    component->on_color_hex_entered(
+        [this](int target, const slint::SharedString& hex) {
+          if (m_callbacks.on_color_hex_entered) {
+            m_callbacks.on_color_hex_entered(target, hex);
           }
         });
     component->on_mesh_material_reset_requested([this]() {
@@ -788,10 +797,10 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
     });
     component->on_inspector_commit_behaviour_prop(
         [this](int behaviour_id, const slint::SharedString& key,
-               const slint::SharedString& text, float number, bool flag) {
+               const slint::SharedString& text, float number, bool flag, bool commit) {
           if (m_callbacks.on_inspector_commit_behaviour_prop) {
             m_callbacks.on_inspector_commit_behaviour_prop(behaviour_id, key, text,
-                                                             number, flag);
+                                                             number, flag, commit);
           }
         });
     component->on_inspector_add_skeleton_modifier([this](const slint::SharedString& type) {
@@ -816,20 +825,20 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
     });
     component->on_inspector_commit_skeleton_modifier_field(
         [this](int modifier_index, const slint::SharedString& key,
-               const slint::SharedString& text, float number, bool flag) {
+               const slint::SharedString& text, float number, bool flag, bool commit) {
           if (m_callbacks.on_inspector_commit_skeleton_modifier_field) {
             m_callbacks.on_inspector_commit_skeleton_modifier_field(
-                modifier_index, key, text, number, flag);
+                modifier_index, key, text, number, flag, commit);
           }
         });
-    component->on_inspector_camera_edited([this]() {
+    component->on_inspector_camera_edited([this](bool commit) {
       if (m_callbacks.on_inspector_camera_edited) {
-        m_callbacks.on_inspector_camera_edited();
+        m_callbacks.on_inspector_camera_edited(commit);
       }
     });
-    component->on_inspector_light_edited([this]() {
+    component->on_inspector_light_edited([this](bool commit) {
       if (m_callbacks.on_inspector_light_edited) {
-        m_callbacks.on_inspector_light_edited();
+        m_callbacks.on_inspector_light_edited(commit);
       }
     });
     component->on_inspector_add_unique_attachment([this](const slint::SharedString& kind) {
@@ -1142,6 +1151,13 @@ void DockFloatingWindowHost::sync(DockManager& manager, const DockLayoutModel& m
     m_child_windows->move(entry->sdl_window, screen.x, screen.y);
     m_child_windows->resize(entry->sdl_window, static_cast<int>(frame.width),
                          static_cast<int>(frame.height));
+    if (widget->panelKind() != entry->panel_kind) {
+      if (auto* component = componentFor(entry->node_id); component && *component) {
+        (*component)->operator->()->set_panel_kind(static_cast<int>(widget->panelKind()));
+        (*component)->operator->()->set_title_text(toSharedString(widget->title()));
+      }
+      entry->panel_kind = widget->panelKind();
+    }
     syncTabs(manager, *entry);
   }
 

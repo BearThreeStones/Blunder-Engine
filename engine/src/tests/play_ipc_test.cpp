@@ -64,10 +64,22 @@ int main() {
               parsePlayIpcCommandLine("nope") == PlayIpcCommand::Unknown);
   expect_true("cmd step without n unknown",
               parsePlayIpcCommandLine("step") == PlayIpcCommand::Unknown);
+  expect_true("cmd reload",
+              parsePlayIpcCommandLine("reload") == PlayIpcCommand::Reload);
+  expect_true("cmd patch without json unknown",
+              parsePlayIpcCommandLine("patch") == PlayIpcCommand::Unknown);
+  expect_true("cmd patch empty object unknown? brace required",
+              parsePlayIpcCommandLine("patch x") == PlayIpcCommand::Unknown);
   {
     const PlayIpcHostCommand step = parsePlayIpcHostCommandLine("step 30");
     expect_true("cmd step", step.command == PlayIpcCommand::Step);
     expect_true("cmd step ticks", step.step_ticks == 30);
+  }
+  {
+    const PlayIpcHostCommand patch = parsePlayIpcHostCommandLine(
+        "patch {\"address\":\"Hero\"}");
+    expect_true("cmd patch", patch.command == PlayIpcCommand::Patch);
+    expect_true("cmd patch json", patch.patch_json == "{\"address\":\"Hero\"}");
   }
 
   {
@@ -104,6 +116,63 @@ int main() {
     expect_true("log line is not a frame",
                 !parsePlayIpcFrameLine(formatPlayIpcLogLine(PlayIpcLogRecord{}),
                                       parsed));
+  }
+
+  {
+    PlayIpcIssueRecord rec;
+    rec.sev = "warning";
+    rec.code = "play.patch_unknown_address";
+    rec.address = "Hero";
+    PlayIpcIssueRecord parsed;
+    expect_true("issue ndjson parse",
+                parsePlayIpcIssueLine(formatPlayIpcIssueLine(rec), parsed));
+    expect_true("issue sev", parsed.sev == "warning");
+    expect_true("issue code", parsed.code == rec.code);
+    expect_true("issue address", parsed.address == "Hero");
+    PlayIpcErrorRecord as_error;
+    expect_true("issue is not error kind",
+                !parsePlayIpcErrorLine(formatPlayIpcIssueLine(rec), as_error));
+  }
+
+  {
+    PlayIpcReloadRecord parsed;
+    expect_true("reload ok parse",
+                parsePlayIpcReloadLine(formatPlayIpcReloadLine(true), parsed));
+    expect_true("reload ok true", parsed.ok);
+    expect_true("reload fail parse",
+                parsePlayIpcReloadLine(formatPlayIpcReloadLine(false), parsed));
+    expect_true("reload ok false", !parsed.ok);
+    expect_true("issue is not reload",
+                !parsePlayIpcReloadLine(formatPlayIpcIssueLine(PlayIpcIssueRecord{}),
+                                       parsed));
+  }
+
+  {
+    PlayIpcPosesRecord rec;
+    PlayIpcPoseEntity hero;
+    hero.name = "Hero";
+    hero.t[0] = 1.f;
+    hero.t[1] = 2.f;
+    hero.t[2] = 3.f;
+    hero.r[3] = 1.f;
+    hero.s[0] = 1.f;
+    hero.s[1] = 1.f;
+    hero.s[2] = 1.f;
+    rec.entities.push_back(hero);
+    PlayIpcPosesRecord parsed;
+    expect_true("poses ndjson parse",
+                parsePlayIpcPosesLine(formatPlayIpcPosesLine(rec), parsed));
+    expect_true("poses count", parsed.entities.size() == 1);
+    if (!parsed.entities.empty()) {
+      expect_true("poses name", parsed.entities[0].name == "Hero");
+      expect_true("poses t0", parsed.entities[0].t[0] == 1.f);
+      expect_true("poses t1", parsed.entities[0].t[1] == 2.f);
+      expect_true("poses t2", parsed.entities[0].t[2] == 3.f);
+    }
+    expect_true("empty poses parse",
+                parsePlayIpcPosesLine(formatPlayIpcPosesLine(PlayIpcPosesRecord{}),
+                                     parsed) &&
+                    parsed.entities.empty());
   }
 
   PlayIpcServer host;
@@ -146,30 +215,38 @@ int main() {
   expect_true("send stop", host.sendCommand(PlayIpcCommand::Stop));
   expect_true("send step", host.sendStep(12));
   expect_true("send frame request", host.sendFrameRequest());
+  expect_true("send reload", host.sendReload());
+  expect_true("send patch", host.sendPatch("{\"address\":\"Hero\"}"));
+  expect_true("sendCommand rejects patch",
+              !host.sendCommand(PlayIpcCommand::Patch));
   expect_true("unknown line ignored by send? host still ready",
               host.isPeerReady());
 
   const auto cmd_deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (received.size() < 5 &&
+  while (received.size() < 7 &&
          std::chrono::steady_clock::now() < cmd_deadline) {
     agent.poll();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 
-  expect_true("received 5 commands", received.size() == 5);
-  if (received.size() >= 5) {
+  expect_true("received 7 commands", received.size() == 7);
+  if (received.size() >= 7) {
     expect_true("got pause", received[0].command == PlayIpcCommand::Pause);
     expect_true("got resume", received[1].command == PlayIpcCommand::Resume);
     expect_true("got stop", received[2].command == PlayIpcCommand::Stop);
     expect_true("got step", received[3].command == PlayIpcCommand::Step);
     expect_true("got step n", received[3].step_ticks == 12);
     expect_true("got frame", received[4].command == PlayIpcCommand::Frame);
+    expect_true("got reload", received[5].command == PlayIpcCommand::Reload);
+    expect_true("got patch", received[6].command == PlayIpcCommand::Patch);
+    expect_true("got patch json",
+                received[6].patch_json == "{\"address\":\"Hero\"}");
   }
 
   expect_true("send unknown line ignored", host.sendLine("bogus-verb"));
   agent.poll();
-  expect_true("unknown not dispatched", received.size() == 5);
+  expect_true("unknown not dispatched", received.size() == 7);
 
   agent.close();
   host.close();
@@ -258,6 +335,57 @@ int main() {
     if (!frames.empty()) {
       expect_true("frame 16:9", frames[0].width == 16 && frames[0].height == 9);
       expect_true("frame pixels", frames[0].rgba == sent_frame.rgba);
+    }
+
+    PlayIpcIssueRecord sent_issue;
+    sent_issue.sev = "warning";
+    sent_issue.code = "play.patch_unknown_address";
+    sent_issue.address = "Missing";
+    expect_true("send issue after ready", log_agent.sendIssue(sent_issue));
+    const auto issue_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    std::vector<PlayIpcIssueRecord> issues;
+    while (issues.empty() &&
+           std::chrono::steady_clock::now() < issue_deadline) {
+      issues = log_host.pollIssues();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("ingested one issue", issues.size() == 1);
+    if (!issues.empty()) {
+      expect_true("issue code wire",
+                  issues[0].code == "play.patch_unknown_address");
+      expect_true("issue not error poll", log_host.pollErrors().empty());
+    }
+
+    expect_true("send reload ack", log_agent.sendReloadAck(true));
+    const auto reload_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    std::vector<PlayIpcReloadRecord> reloads;
+    while (reloads.empty() &&
+           std::chrono::steady_clock::now() < reload_deadline) {
+      reloads = log_host.pollReloads();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("ingested one reload ack", reloads.size() == 1 && reloads[0].ok);
+
+    PlayIpcPosesRecord sent_poses;
+    PlayIpcPoseEntity pose;
+    pose.name = "Hero";
+    pose.t[0] = 4.f;
+    sent_poses.entities.push_back(pose);
+    expect_true("send poses after ready", log_agent.sendPoses(sent_poses));
+    const auto poses_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    std::vector<PlayIpcPosesRecord> poses;
+    while (poses.empty() &&
+           std::chrono::steady_clock::now() < poses_deadline) {
+      poses = log_host.pollPoses();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    expect_true("ingested one poses", poses.size() == 1);
+    if (!poses.empty() && !poses[0].entities.empty()) {
+      expect_true("poses name wire", poses[0].entities[0].name == "Hero");
+      expect_true("poses t wire", poses[0].entities[0].t[0] == 4.f);
     }
 
     log_agent.close();

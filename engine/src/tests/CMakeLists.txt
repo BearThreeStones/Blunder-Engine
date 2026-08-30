@@ -135,6 +135,102 @@ target_precompile_headers(spawn_mesh_primitives_test
 add_test(NAME spawn_mesh_primitives_test
          COMMAND spawn_mesh_primitives_test)
 
+add_executable(scene_mesh_attach_test
+    "scene_mesh_attach_test.cpp"
+)
+
+target_link_libraries(scene_mesh_attach_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(scene_mesh_attach_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(scene_mesh_attach_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(scene_mesh_attach_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME scene_mesh_attach_test
+         COMMAND scene_mesh_attach_test)
+
+add_executable(play_reload_scene_test
+    "play_reload_scene_test.cpp"
+)
+
+target_link_libraries(play_reload_scene_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(play_reload_scene_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(play_reload_scene_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(play_reload_scene_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME play_reload_scene_test
+         COMMAND play_reload_scene_test)
+
+add_executable(play_authorship_patch_test
+    "play_authorship_patch_test.cpp"
+)
+
+target_link_libraries(play_authorship_patch_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(play_authorship_patch_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(play_authorship_patch_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(play_authorship_patch_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME play_authorship_patch_test
+         COMMAND play_authorship_patch_test)
+
+add_executable(play_pose_preview_test
+    "play_pose_preview_test.cpp"
+)
+
+target_link_libraries(play_pose_preview_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(play_pose_preview_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(play_pose_preview_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(play_pose_preview_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME play_pose_preview_test
+         COMMAND play_pose_preview_test)
+
 add_executable(inspector_transform_ops_test
     "inspector_transform_ops_test.cpp"
 )
@@ -950,6 +1046,25 @@ target_precompile_headers(project_create_test
 add_test(NAME project_create_test
          COMMAND project_create_test)
 
+add_executable(active_scene_display_test
+    "active_scene_display_test.cpp"
+)
+
+target_link_libraries(active_scene_display_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(active_scene_display_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(active_scene_display_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME active_scene_display_test
+         COMMAND active_scene_display_test)
+
 add_executable(player_launch_test
     "player_launch_test.cpp"
     "../runtime/project/player_launch.cpp"
@@ -1145,6 +1260,31 @@ target_precompile_headers(light_eval_test
 add_test(NAME light_eval_test
          COMMAND light_eval_test)
 
+add_executable(inspector_light_viewport_notify_test
+    "inspector_light_viewport_notify_test.cpp"
+)
+
+target_link_libraries(inspector_light_viewport_notify_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(inspector_light_viewport_notify_test
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(inspector_light_viewport_notify_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(inspector_light_viewport_notify_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME inspector_light_viewport_notify_test
+         COMMAND inspector_light_viewport_notify_test)
+
 add_executable(camera_gizmo_math_test
     "camera_gizmo_math_test.cpp"
 )
@@ -1250,6 +1390,21 @@ endif()
 
 add_test(NAME camera_preview_rt_size_test
          COMMAND camera_preview_rt_size_test)
+
+add_executable(camera_preview_pacing_test
+    "camera_preview_pacing_test.cpp"
+)
+
+target_compile_definitions(camera_preview_pacing_test
+    PRIVATE "BLUNDER_REPO_ROOT=R\"(${CMAKE_SOURCE_DIR})\""
+)
+
+if(MSVC)
+    target_compile_options(camera_preview_pacing_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME camera_preview_pacing_test
+         COMMAND camera_preview_pacing_test)
 
 add_executable(mesh_preview_render_test
     "mesh_preview_render_test.cpp"
@@ -1440,6 +1595,56 @@ endif()
 
 add_test(NAME play_preflight_test
          COMMAND play_preflight_test)
+
+add_executable(dock_tab_activation_test
+    "dock_tab_activation_test.cpp"
+)
+
+target_link_libraries(dock_tab_activation_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(dock_tab_activation_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+target_compile_definitions(dock_tab_activation_test
+    PRIVATE "BLUNDER_REPO_ROOT=R\"(${CMAKE_SOURCE_DIR})\""
+)
+
+if(MSVC)
+    target_compile_options(dock_tab_activation_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(dock_tab_activation_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME dock_tab_activation_test
+         COMMAND dock_tab_activation_test)
+
+add_executable(editor_session_restore_test
+    "editor_session_restore_test.cpp"
+)
+
+target_link_libraries(editor_session_restore_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(editor_session_restore_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(editor_session_restore_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(editor_session_restore_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME editor_session_restore_test
+         COMMAND editor_session_restore_test)
 
 add_executable(godot_editor_icons_test
     "godot_editor_icons_test.cpp"

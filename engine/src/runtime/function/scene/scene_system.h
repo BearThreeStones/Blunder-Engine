@@ -28,6 +28,10 @@ class SceneSystem final {
   eastl::shared_ptr<SceneInstance> loadGltfScene(const eastl::string& virtual_path);
   void unloadSceneInstance(SceneInstance* instance);
 
+  /// Instantiate a fresh copy of the active scene from disk, then swap.
+  /// On failure the current active world stays. Does not rebuild Scripts.
+  bool reloadActiveFromDisk();
+
   void setActiveInstance(SceneInstance* instance);
   SceneInstance* getActiveInstance() const { return m_active_instance; }
 
@@ -39,6 +43,8 @@ class SceneSystem final {
 
   /// True when a scene file references meshes but the instance has no renderers yet.
   bool needsMeshAttach(const SceneInstance& instance, const Scene& scene) const;
+  /// True when live entities have mesh paths but no mesh renderers in their subtree.
+  bool needsMeshAttach(const SceneInstance& instance) const;
 
  private:
   eastl::shared_ptr<SceneInstance> instantiateScene(

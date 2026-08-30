@@ -54,7 +54,8 @@ struct EditorSessionLaunch {
 bool isMachineCliVerb(const char* arg);
 
 /// Resolves the Editor Session project root for `engine_editor`.
-/// Prefer `--project-root`; else Debug `compiled_project_root` when allowed
+/// Prefer `--project-root` (unquoted paths with spaces are rejoined while
+/// the joined path exists); else Debug `compiled_project_root` when allowed
 /// and this is not a CLI/MCP adapter launch.
 /// `--mcp` or a CLI verb implies Headless. Adapters require `--project-root`.
 EditorSessionLaunch resolveEditorSessionLaunch(

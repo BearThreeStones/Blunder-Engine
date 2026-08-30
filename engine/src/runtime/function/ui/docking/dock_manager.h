@@ -12,6 +12,7 @@
 #include "runtime/function/ui/docking/dock_drag_controller.h"
 #include "runtime/function/ui/docking/dock_floating.h"
 #include "runtime/function/ui/docking/dock_layout_model.h"
+#include "runtime/function/ui/docking/dock_layout_snapshot.h"
 #include "runtime/function/ui/docking/dock_node.h"
 #include "runtime/function/ui/docking/dock_types.h"
 
@@ -145,6 +146,11 @@ class DockManager final {
   std::shared_ptr<DockWidget> findWidget(DockId widget_id) const;
   std::shared_ptr<DockWidget> findWidgetByPanelKind(DockPanelKind panel_kind) const;
 
+  void clearWorkspace();
+  DockLayoutSnapshot captureLayoutSnapshot() const;
+  bool applyLayoutSnapshot(const DockLayoutSnapshot& snapshot);
+  void injectMissingDefaultPanels();
+
  private:
   DockId nextId() { return m_next_id++; }
 
@@ -206,6 +212,10 @@ class DockManager final {
   void removeFloatingNode(const std::shared_ptr<DockNode>& floating_node);
   std::shared_ptr<DockNode> makeFloatingFor(const std::shared_ptr<DockWidget>& widget,
                                             const glm::vec2& pointer);
+  DockLayoutNodeSnapshot captureNodeSnapshot(const std::shared_ptr<DockNode>& node) const;
+  std::shared_ptr<DockNode> buildNodeFromSnapshot(const DockLayoutNodeSnapshot& snap);
+  void addRestoredAutoHide(const std::shared_ptr<DockWidget>& widget, DockEdge edge,
+                           bool expanded, float span);
 
   DockId m_next_id{1};
   std::shared_ptr<DockNode> m_root;

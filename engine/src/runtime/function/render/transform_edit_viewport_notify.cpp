@@ -14,11 +14,17 @@ void notifyViewportAfterGizmoTransformEdit(RenderSystem* render_system) {
 void notifyViewportAfterInspectorTransformEdit(RenderSystem* render_system,
                                                SlintSystem* slint_system) {
   if (slint_system != nullptr) {
+    slint_system->noteViewportLiveAuthoring();
     slint_system->markViewportDirtyRegion();
   }
   if (render_system != nullptr) {
     render_system->requestViewportRedraw();
   }
+}
+
+void notifyViewportAfterInspectorLightEdit(RenderSystem* render_system,
+                                           SlintSystem* slint_system) {
+  notifyViewportAfterInspectorTransformEdit(render_system, slint_system);
 }
 
 }  // namespace Blunder

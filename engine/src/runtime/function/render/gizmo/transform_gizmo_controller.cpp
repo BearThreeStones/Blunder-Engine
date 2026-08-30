@@ -505,10 +505,9 @@ bool TransformGizmoController::onKeyPressed(Event& event, EditorCamera& camera) 
       }
     }
     if (key_event.getKeyCode() == SDLK_F2 &&
-        g_runtime_global_context.contentBrowserHasInputFocus() &&
         g_runtime_global_context.m_slint_system) {
       g_runtime_global_context.m_slint_system->requestBrowserInlineRename();
-      return true;
+      return g_runtime_global_context.inlineRenameActive();
     }
   }
 

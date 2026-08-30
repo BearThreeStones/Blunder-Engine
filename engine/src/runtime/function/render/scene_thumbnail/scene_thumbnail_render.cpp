@@ -5,15 +5,12 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/scene_thumbnail/capture.h"
-#include "runtime/function/global/global_context.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
 #include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/scene_instance.h"
-#include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
-#include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/platform/file_system/file_system.h"
 
 namespace Blunder {
@@ -21,32 +18,14 @@ namespace {
 
 void attachMeshesAndCameras(AssetManager* asset_manager, SceneInstance& instance,
                             const Scene& scene) {
-  if (asset_manager == nullptr) {
-    return;
-  }
+  GltfSceneImporter::attachEntityMeshes(asset_manager, instance, scene);
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
-    if (!definition.mesh_virtual_path.empty()) {
-      const EntityId entity_id = instance.findEntityByName(definition.name);
-      if (!isValid(entity_id)) {
-        continue;
-      }
-      eastl::string mesh_ref = definition.mesh_virtual_path;
-      if (isValidGuidFormat(mesh_ref) &&
-          g_runtime_global_context.m_asset_registry) {
-        const eastl::string path = asset_manager->resolveGuidPath(
-            mesh_ref, *g_runtime_global_context.m_asset_registry);
-        if (!path.empty()) {
-          mesh_ref = path;
-        }
-      }
-      (void)GltfSceneImporter::importUnderEntity(asset_manager, mesh_ref,
-                                                  instance, entity_id);
+    if (!definition.has_camera) {
+      continue;
     }
-    if (definition.has_camera) {
-      const EntityId entity_id = instance.findEntityByName(definition.name);
-      if (isValid(entity_id)) {
-        instance.setCamera(entity_id, definition.camera);
-      }
+    const EntityId entity_id = instance.findEntityByName(definition.name);
+    if (isValid(entity_id)) {
+      instance.setCamera(entity_id, definition.camera);
     }
   }
 }

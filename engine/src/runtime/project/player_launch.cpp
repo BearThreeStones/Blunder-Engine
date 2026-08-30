@@ -1,4 +1,5 @@
 #include "runtime/project/player_launch.h"
+#include "runtime/project/project_root_cli.h"
 
 #include <cstring>
 #include <utility>
@@ -18,9 +19,7 @@ PlayerLaunch parsePlayerLaunch(int argc, char** argv) {
       continue;
     }
     if (std::strcmp(arg, "--project-root") == 0) {
-      if (i + 1 < argc && argv[i + 1] != nullptr) {
-        project_root = argv[++i];
-      }
+      takeSpacedExistingPath(argc, argv, i, project_root, nullptr);
       continue;
     }
     if (std::strcmp(arg, "--scene") == 0) {

@@ -67,9 +67,12 @@ Prerequisite: **.NET 10 SDK + runtime** installed (set `DOTNET_ROOT` if CMake ca
 | Target | Focus |
 |--------|--------|
 | `play_pause_tick_gate_test` | Pause skips Behaviour Tick; Resume clears gate |
-| `play_ipc_test` | localhost TCP pause / resume / stop + `ready` |
-| `play_session_controller_test` | Stopped / Starting / Playing / Paused; spawn lifecycle; `--headless` argv; wait-on-poll Play frame |
-| `play_preflight_test` | Dirty-scene decisions + Scripts dirty build gate |
+| `play_ipc_test` | localhost TCP pause / resume / stop / reload / patch / issue / poses; one socket |
+| `play_session_controller_test` | Stopped / Starting / Playing / Paused; spawn lifecycle; `--headless` argv; wait-on-poll Play frame; Play Reload capture / no-spawn / Scripts-dirty-warn / no Console-clear; patch send; pose overlay ingest |
+| `play_preflight_test` | Dirty-scene decisions + Scripts dirty build gate; Play entry Live GUID vs other open scene |
+| `play_reload_scene_test` | Player Reload instantiate-then-swap; keep world on failure |
+| `play_authorship_patch_test` | v1 snapshot TRS; unknown address; Transform undo/redo observer; Spawn/delete not v1 |
+| `play_pose_preview_test` | Named poses only; overlay world matrix does not dirty History |
 
 ```powershell
 cmake --build build/vs2026-debug --config Debug --target editor_dotnet_host_test

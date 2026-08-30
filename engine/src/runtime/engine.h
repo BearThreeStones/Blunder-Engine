@@ -33,8 +33,10 @@ class BlunderEngine {
                    bool headless = false);
   void shutdownEngine();
 
-  /// Editor path uses startup scene env/default unless `use_startup_scene_when_empty`
-  /// is false (CLI/MCP with no `--scene`). Player passes CLI `--scene`.
+  /// Windowed Editor uses Editor Session restore for the Live scene unless
+  /// `--scene` (`play_scene`) is set. Headless / CLI / MCP skip restore.
+  /// `use_startup_scene_when_empty` is false for CLI/MCP with no `--scene`.
+  /// Player passes CLI `--scene`.
   void initialize(const eastl::string& play_scene = {},
                   bool use_startup_scene_when_empty = true);
   void clear();

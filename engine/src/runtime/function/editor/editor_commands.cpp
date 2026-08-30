@@ -547,6 +547,14 @@ class RemoveUniqueAttachmentCommand final : public IEditorCommand {
 
 }  // namespace
 
+namespace {
+
+void stampPlayV1(IEditorCommand& command, EntityId entity_id) {
+  command.play_v1_entity_id = entity_id;
+}
+
+}  // namespace
+
 eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
     SceneInstance* scene, EntityId entity_id, const Vec3& before_position,
     const Quat& before_rotation, const Vec3& before_scale,
@@ -564,6 +572,7 @@ eastl::unique_ptr<IEditorCommand> makeSetEntityTransformCommand(
   command->after_scale = after_scale;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -578,6 +587,7 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
   command->after_camera = after_camera;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -592,6 +602,7 @@ eastl::unique_ptr<IEditorCommand> makeSetLightComponentCommand(
   command->after_light = after_light;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -607,6 +618,7 @@ eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(
   command->after_bindings = eastl::move(after_bindings);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -620,6 +632,7 @@ eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerTimeScaleCommand(
   command->after_scale = after_scale;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -643,6 +656,7 @@ eastl::unique_ptr<IEditorCommand> makeAlignCameraToViewCommand(
   command->after_camera = after_camera;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -690,6 +704,7 @@ eastl::unique_ptr<IEditorCommand> makeAddBehaviourCommand(
   command->created_id = created_id;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -707,6 +722,7 @@ eastl::unique_ptr<IEditorCommand> makeRemoveBehaviourCommand(
   command->properties = eastl::move(properties);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -721,6 +737,7 @@ eastl::unique_ptr<IEditorCommand> makeReorderBehavioursCommand(
   command->to_index = to_index;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -737,6 +754,7 @@ eastl::unique_ptr<IEditorCommand> makeSetBehaviourPropertyCommand(
   command->after_value = eastl::move(after_value);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -751,6 +769,7 @@ eastl::unique_ptr<IEditorCommand> makeAddSkeletonModifierCommand(
   command->index_at_add = index_at_add;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -765,6 +784,7 @@ eastl::unique_ptr<IEditorCommand> makeRemoveSkeletonModifierCommand(
   command->snapshot = eastl::move(snapshot);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -779,6 +799,7 @@ eastl::unique_ptr<IEditorCommand> makeReorderSkeletonModifiersCommand(
   command->to_index = to_index;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -794,6 +815,7 @@ eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierEnabledCommand(
   command->after_enabled = after_enabled;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -809,6 +831,7 @@ eastl::unique_ptr<IEditorCommand> makeSetSkeletonModifierDefCommand(
   command->after_def = eastl::move(after_def);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -824,6 +847,7 @@ eastl::unique_ptr<IEditorCommand> makeAddUniqueAttachmentCommand(
   command->created = created;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 
@@ -839,6 +863,7 @@ eastl::unique_ptr<IEditorCommand> makeRemoveUniqueAttachmentCommand(
   command->snapshot = eastl::move(snapshot);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
   return command;
 }
 

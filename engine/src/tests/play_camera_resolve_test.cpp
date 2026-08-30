@@ -1,6 +1,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/scene/play_camera_resolve.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -28,6 +29,23 @@ void expect_near(const char* label, float actual, float expected) {
     std::fprintf(stderr, "FAIL %s (got %f want %f)\n", label, actual, expected);
     ++g_failures;
   }
+}
+
+bool mat4_finite(const Blunder::Mat4& m) {
+  for (int column = 0; column < 4; ++column) {
+    for (int row = 0; row < 4; ++row) {
+      if (!std::isfinite(m[column][row])) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+Blunder::Vec3 project_ndc(const Blunder::Mat4& view, const Blunder::Mat4& projection,
+                          const Blunder::Vec3& world) {
+  const Blunder::Vec4 clip = projection * view * Blunder::Vec4(world, 1.0f);
+  return Blunder::Vec3(clip) / clip.w;
 }
 
 }  // namespace
@@ -117,6 +135,36 @@ int main() {
     expect_true("scene no main -> ok", first_result.ok);
     expect_eq_entity("scene no main picks lowest entity id", first_result.entity_id,
                      cam_low);
+  }
+
+  {
+    PlayCameraResolveInput input{};
+    input.entity_id = 9;
+    input.world = Mat4(1.0f);
+    input.world[3] = Vec4(0.0f, 0.0f, 2.0f, 1.0f);
+    input.camera.near_clip = 0.1f;
+    input.camera.far_clip = 1000.0f;
+    const ResolvedPlayCamera result = resolvePlayCamera(&input, 1, 16.0f / 9.0f);
+    expect_true("look-down camera -> ok", result.ok);
+    expect_true("look-down view is finite", mat4_finite(result.view));
+    expect_true("look-down projection is finite", mat4_finite(result.projection));
+    expect_near("look-down forward x", result.forward.x, 0.0f);
+    expect_near("look-down forward y", result.forward.y, 0.0f);
+    expect_near("look-down forward z", result.forward.z, -1.0f);
+    const Vec3 origin_ndc =
+        project_ndc(result.view, result.projection, Vec3(0.0f));
+    expect_true("origin in front of look-down camera",
+                std::isfinite(origin_ndc.x) && std::isfinite(origin_ndc.y) &&
+                    std::isfinite(origin_ndc.z));
+    expect_true("origin ndc x in frustum", std::fabs(origin_ndc.x) < 1.0f);
+    expect_true("origin ndc y in frustum", std::fabs(origin_ndc.y) < 1.0f);
+    expect_true("origin uses vulkan 0-1 depth",
+                origin_ndc.z > 0.0f && origin_ndc.z < 1.0f);
+    Mat4 expected_proj = glm::perspectiveZO(
+        result.vertical_fov_radians, 16.0f / 9.0f, 0.1f, 1000.0f);
+    expected_proj[1][1] *= -1.0f;
+    expect_near("look-down projection matches perspectiveZO",
+                result.projection[2][2], expected_proj[2][2]);
   }
 
   if (g_failures != 0) {

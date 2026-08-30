@@ -1,0 +1,447 @@
+import { EditorTheme } from "editor_theme.slint";
+import { AxisNumberField } from "axis_number_field.slint";
+
+/// HSV wheel + value bar + RGB/HSV/Linear channels + Hex. No I, eyedropper, swatches, or copy.
+export component ColorPicker inherits Rectangle {
+    in-out property <float> r: 1.0;
+    in-out property <float> g: 1.0;
+    in-out property <float> b: 1.0;
+    in-out property <float> a: 1.0;
+    in property <bool> show-alpha: false;
+
+    callback live-edited();
+    callback hex-entered(string);
+
+    private property <int> mode: 0;
+    private property <bool> applying: false;
+    private property <float> hue: 0.0;
+    private property <float> sat: 0.0;
+    private property <float> val: 1.0;
+    private property <float> ui-0: 255.0;
+    private property <float> ui-1: 255.0;
+    private property <float> ui-2: 255.0;
+    private property <float> ui-a: 255.0;
+    private property <string> hex-draft: "ffffff";
+    private property <bool> wheel-dragging: false;
+    private property <bool> value-dragging: false;
+    private property <length> wheel-size: 132px;
+    private property <color> current-color: hsv(root.hue, root.sat, root.val, root.show-alpha ? root.a : 1.0);
+
+    width: 228px;
+    background: EditorTheme.window;
+    border-width: 1px;
+    border-color: EditorTheme.hairline;
+    border-radius: EditorTheme.radius-ctl;
+
+    function hex-nibble(n: int) -> string {
+        if (n <= 0) { return "0"; }
+        if (n == 1) { return "1"; }
+        if (n == 2) { return "2"; }
+        if (n == 3) { return "3"; }
+        if (n == 4) { return "4"; }
+        if (n == 5) { return "5"; }
+        if (n == 6) { return "6"; }
+        if (n == 7) { return "7"; }
+        if (n == 8) { return "8"; }
+        if (n == 9) { return "9"; }
+        if (n == 10) { return "a"; }
+        if (n == 11) { return "b"; }
+        if (n == 12) { return "c"; }
+        if (n == 13) { return "d"; }
+        if (n == 14) { return "e"; }
+        return "f";
+    }
+
+    function hex-byte(channel: float) -> string {
+        let i = Math.clamp(Math.round(channel * 255.0), 0.0, 255.0);
+        return root.hex-nibble(Math.floor(i / 16.0)) + root.hex-nibble(Math.mod(i, 16.0));
+    }
+
+    function refresh-hex() {
+        root.hex-draft = root.hex-byte(root.r) + root.hex-byte(root.g) + root.hex-byte(root.b);
+    }
+
+    function sync-hsv-from-rgb() {
+        let hsva = rgb(root.r * 255.0, root.g * 255.0, root.b * 255.0).to-hsv();
+        root.hue = hsva.hue;
+        root.sat = hsva.saturation;
+        root.val = hsva.value;
+    }
+
+    function fill-ui-channels() {
+        if (root.mode == 0) {
+            root.ui-0 = root.r * 255;
+            root.ui-1 = root.g * 255;
+            root.ui-2 = root.b * 255;
+            root.ui-a = root.a * 255;
+        } else if (root.mode == 1) {
+            root.ui-0 = root.hue;
+            root.ui-1 = root.sat * 100;
+            root.ui-2 = root.val * 100;
+            root.ui-a = root.a * 100;
+        } else {
+            root.ui-0 = root.r;
+            root.ui-1 = root.g;
+            root.ui-2 = root.b;
+            root.ui-a = root.a;
+        }
+        root.refresh-hex();
+    }
+
+    function apply-hsv() {
+        root.applying = true;
+        let packed = hsv(root.hue, root.sat, root.val, 1.0);
+        root.r = packed.red / 255.0;
+        root.g = packed.green / 255.0;
+        root.b = packed.blue / 255.0;
+        root.applying = false;
+        root.fill-ui-channels();
+        root.live-edited();
+    }
+
+    function apply-rgb() {
+        root.applying = true;
+        root.sync-hsv-from-rgb();
+        root.applying = false;
+        root.fill-ui-channels();
+        root.live-edited();
+    }
+
+    function read-ui-channels() {
+        if (root.mode == 0) {
+            root.r = Math.clamp(root.ui-0 / 255, 0, 1);
+            root.g = Math.clamp(root.ui-1 / 255, 0, 1);
+            root.b = Math.clamp(root.ui-2 / 255, 0, 1);
+            if (root.show-alpha) {
+                root.a = Math.clamp(root.ui-a / 255, 0, 1);
+            }
+            root.apply-rgb();
+        } else if (root.mode == 1) {
+            root.hue = Math.mod(root.ui-0 + 360, 360);
+            root.sat = Math.clamp(root.ui-1 / 100, 0, 1);
+            root.val = Math.clamp(root.ui-2 / 100, 0, 1);
+            if (root.show-alpha) {
+                root.a = Math.clamp(root.ui-a / 100, 0, 1);
+            }
+            root.apply-hsv();
+        } else {
+            root.r = Math.clamp(root.ui-0, 0, 1);
+            root.g = Math.clamp(root.ui-1, 0, 1);
+            root.b = Math.clamp(root.ui-2, 0, 1);
+            if (root.show-alpha) {
+                root.a = Math.clamp(root.ui-a, 0, 1);
+            }
+            root.apply-rgb();
+        }
+    }
+
+    function apply-wheel(px: length, py: length) {
+        let dxf = (px - root.wheel-size / 2) / 1px;
+        let dyf = (py - root.wheel-size / 2) / 1px;
+        let dist = Math.sqrt(dxf * dxf + dyf * dyf);
+        let radius = Math.max((root.wheel-size / 2) / 1px, 0.001);
+        root.sat = Math.clamp(dist / radius, 0, 1);
+        root.hue = Math.mod((Math.atan2(dxf, -dyf) / 1deg) + 360, 360);
+        root.apply-hsv();
+    }
+
+    init => {
+        root.sync-hsv-from-rgb();
+        root.fill-ui-channels();
+    }
+
+    changed r => {
+        if (!root.applying) {
+            root.sync-hsv-from-rgb();
+            root.fill-ui-channels();
+        }
+    }
+    changed g => {
+        if (!root.applying) {
+            root.sync-hsv-from-rgb();
+            root.fill-ui-channels();
+        }
+    }
+    changed b => {
+        if (!root.applying) {
+            root.sync-hsv-from-rgb();
+            root.fill-ui-channels();
+        }
+    }
+    changed mode => { root.fill-ui-channels(); }
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+
+            wheel := Rectangle {
+                width: root.wheel-size;
+                height: root.wheel-size;
+                border-radius: root.wheel-size / 2;
+                clip: true;
+                background: @conic-gradient(#f00 0deg, #ff0 60deg, #0f0 120deg, #0ff 180deg, #00f 240deg, #f0f 300deg, #f00 360deg);
+
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: parent.border-radius;
+                    background: @radial-gradient(circle, #ffffff 0%, #ffffff00 72%);
+                }
+                Rectangle {
+                    width: 100%;
+                    height: 100%;
+                    border-radius: parent.border-radius;
+                    background: #000000.with-alpha(1.0 - root.val);
+                }
+                wheel-cursor := Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    border-width: 1.5px;
+                    border-color: #ffffff;
+                    background: transparent;
+                    x: root.wheel-size / 2 + Math.sin(root.hue * 1deg) * root.sat * (root.wheel-size / 2 - 5px) - 5px;
+                    y: root.wheel-size / 2 - Math.cos(root.hue * 1deg) * root.sat * (root.wheel-size / 2 - 5px) - 5px;
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                            root.wheel-dragging = true;
+                            root.apply-wheel(self.mouse-x, self.mouse-y);
+                        }
+                        if (event.kind == PointerEventKind.up) {
+                            root.wheel-dragging = false;
+                        }
+                    }
+                    moved => {
+                        if (self.pressed && root.wheel-dragging) {
+                            root.apply-wheel(self.mouse-x, self.mouse-y);
+                        }
+                    }
+                }
+            }
+
+            value-bar := Rectangle {
+                width: 14px;
+                height: root.wheel-size;
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: EditorTheme.hairline;
+                background: @linear-gradient(180deg, hsv(root.hue, root.sat, 1.0, 1.0) 0%, #000000 100%);
+
+                Rectangle {
+                    width: 18px;
+                    height: 6px;
+                    x: -2px;
+                    y: (1.0 - root.val) * (parent.height - 6px);
+                    border-width: 1px;
+                    border-color: #ffffff;
+                    background: transparent;
+                }
+                TouchArea {
+                    mouse-cursor: ns-resize;
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                            root.value-dragging = true;
+                            root.val = 1.0 - Math.clamp(self.mouse-y / parent.height, 0, 1);
+                            root.apply-hsv();
+                        }
+                        if (event.kind == PointerEventKind.up) {
+                            root.value-dragging = false;
+                        }
+                    }
+                    moved => {
+                        if (self.pressed && root.value-dragging) {
+                            root.val = 1.0 - Math.clamp(self.mouse-y / parent.height, 0, 1);
+                            root.apply-hsv();
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 22px;
+            border-radius: 3px;
+            border-width: 1px;
+            border-color: EditorTheme.hairline;
+            background: root.current-color;
+        }
+
+        HorizontalLayout {
+            spacing: 4px;
+            height: 22px;
+
+            mode-rgb := Rectangle {
+                horizontal-stretch: 1;
+                border-radius: 3px;
+                background: root.mode == 0 ? EditorTheme.button-pressed : EditorTheme.button;
+                TouchArea {
+                    clicked => { root.mode = 0; }
+                    Text {
+                        text: "RGB";
+                        color: EditorTheme.default-text;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            mode-hsv := Rectangle {
+                horizontal-stretch: 1;
+                border-radius: 3px;
+                background: root.mode == 1 ? EditorTheme.button-pressed : EditorTheme.button;
+                TouchArea {
+                    clicked => { root.mode = 1; }
+                    Text {
+                        text: "HSV";
+                        color: EditorTheme.default-text;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+            mode-lin := Rectangle {
+                horizontal-stretch: 1;
+                border-radius: 3px;
+                background: root.mode == 2 ? EditorTheme.button-pressed : EditorTheme.button;
+                TouchArea {
+                    clicked => { root.mode = 2; }
+                    Text {
+                        text: "线性";
+                        color: EditorTheme.default-text;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            height: EditorTheme.line;
+            Text {
+                text: root.mode == 0 ? "R" : (root.mode == 1 ? "H" : "R");
+                color: EditorTheme.muted;
+                font-size: 11px;
+                width: 12px;
+                vertical-alignment: center;
+            }
+            AxisNumberField {
+                show-axis-label: false;
+                value <=> root.ui-0;
+                scrub-sensitivity: root.mode == 2 ? 0.005 : (root.mode == 1 ? 0.5 : 1.0);
+                live-edited => { root.read-ui-channels(); }
+                scrub-ended => { }
+                text-committed(t) => {
+                    root.ui-0 = t.to-float();
+                    root.read-ui-channels();
+                }
+                focus-changed(focused) => {
+                    if (!focused) { root.read-ui-channels(); }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            height: EditorTheme.line;
+            Text {
+                text: root.mode == 0 ? "G" : (root.mode == 1 ? "S" : "G");
+                color: EditorTheme.muted;
+                font-size: 11px;
+                width: 12px;
+                vertical-alignment: center;
+            }
+            AxisNumberField {
+                show-axis-label: false;
+                value <=> root.ui-1;
+                scrub-sensitivity: root.mode == 2 ? 0.005 : (root.mode == 1 ? 0.5 : 1.0);
+                live-edited => { root.read-ui-channels(); }
+                scrub-ended => { }
+                text-committed(t) => {
+                    root.ui-1 = t.to-float();
+                    root.read-ui-channels();
+                }
+                focus-changed(focused) => {
+                    if (!focused) { root.read-ui-channels(); }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            height: EditorTheme.line;
+            Text {
+                text: root.mode == 0 ? "B" : (root.mode == 1 ? "V" : "B");
+                color: EditorTheme.muted;
+                font-size: 11px;
+                width: 12px;
+                vertical-alignment: center;
+            }
+            AxisNumberField {
+                show-axis-label: false;
+                value <=> root.ui-2;
+                scrub-sensitivity: root.mode == 2 ? 0.005 : (root.mode == 1 ? 0.5 : 1.0);
+                live-edited => { root.read-ui-channels(); }
+                scrub-ended => { }
+                text-committed(t) => {
+                    root.ui-2 = t.to-float();
+                    root.read-ui-channels();
+                }
+                focus-changed(focused) => {
+                    if (!focused) { root.read-ui-channels(); }
+                }
+            }
+        }
+        if root.show-alpha: HorizontalLayout {
+            spacing: 6px;
+            height: EditorTheme.line;
+            Text {
+                text: "A";
+                color: EditorTheme.muted;
+                font-size: 11px;
+                width: 12px;
+                vertical-alignment: center;
+            }
+            AxisNumberField {
+                show-axis-label: false;
+                value <=> root.ui-a;
+                scrub-sensitivity: root.mode == 2 ? 0.005 : 1.0;
+                live-edited => { root.read-ui-channels(); }
+                scrub-ended => { }
+                text-committed(t) => {
+                    root.ui-a = t.to-float();
+                    root.read-ui-channels();
+                }
+                focus-changed(focused) => {
+                    if (!focused) { root.read-ui-channels(); }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 6px;
+            height: EditorTheme.line;
+            Text {
+                text: "Hex";
+                color: EditorTheme.muted;
+                font-size: 11px;
+                width: 28px;
+                vertical-alignment: center;
+            }
+            hex-input := TextInput {
+                horizontal-stretch: 1;
+                font-size: 11px;
+                color: EditorTheme.default-text;
+                text <=> root.hex-draft;
+                accepted => { root.hex-entered(self.text); }
+            }
+        }
+    }
+}

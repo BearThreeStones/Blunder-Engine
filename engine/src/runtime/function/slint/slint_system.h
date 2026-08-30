@@ -9,6 +9,7 @@
 
 #include "EASTL/array.h"
 #include "EASTL/functional.h"
+#include "EASTL/string.h"
 #include "EASTL/vector.h"
 
 #include "editor_window.h"
@@ -16,9 +17,13 @@
 
 #include "runtime/platform/window/child_window_registry.h"
 #include "runtime/core/object/behaviour_id.h"
+#include "runtime/core/reflection/variant.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/resource/asset/asset_descriptor.h"
+#include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/light_component.h"
+#include "runtime/function/scene/scene.h"
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_manager.h"
 #include "runtime/function/ui/editor_ui_presentation.h"
@@ -210,6 +215,10 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Clears a stale 3D readback (e.g. after viewport resize) before the next render upload.
   void applyPendingViewportInvalidate();
 
+  /// Marks Inspector/Attachment live edits as viewport-interactive so zero-copy
+  /// present uses the interactive composite cadence instead of the idle gap.
+  void noteViewportLiveAuthoring();
+
   /// Marks the central viewport logical rect dirty for partial Skia composite.
   void markViewportDirtyRegion();
   /// Forces the next Skia composite to repaint the full window.
@@ -244,7 +253,11 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncInspectorAssetMode();
   void onInspectorActivated();
   void commitMeshMaterialUnlit(bool unlit);
-  void commitMeshMaterialScalar(int field, float a, float b, float c, float d);
+  void applyMeshMaterialScalar(int field, float a, float b, float c, float d,
+                               bool commit);
+  void applyInspectorColorHex(int target, const slint::SharedString& hex);
+  void applyPreviewColorHex(int entity_id, int kind, int index,
+                            const slint::SharedString& hex);
   void commitMeshMaterialReset();
   void commitMeshSlotPick(int slot);
   void commitMeshSlotClear(int slot);
@@ -259,12 +272,14 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncInspectorBehavioursFromSelection();
   void syncInspectorSkeletonModifiersFromSelection();
   void syncContentBrowser() override;
+  void syncBrowserInlineRename() override;
+  void flushBrowserInlineRenameToSlint();
   void applyInspectorTransform() override;
   void applyAnimationPreviewParams() override;
   void fireAnimationSyncPreview() override;
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
-  void applyInspectorCamera();
-  void applyInspectorLight();
+  void applyInspectorCamera(bool commit);
+  void applyInspectorLight(bool commit);
   void applyInspectorAddUniqueAttachment(const eastl::string& kind_name);
   void applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name);
   void applyHierarchyCreateRequested(int parent_entity_id, const eastl::string& kind_name);
@@ -294,21 +309,21 @@ class SlintSystem final : public IEditorUiPresentation {
                              float rot_z, float scale_x, float scale_y,
                              float scale_z);
   void applyPreviewCamera(int entity_id, int kind, int index, float fov,
-                          float near_clip, float far_clip, bool is_main);
+                          float near_clip, float far_clip, bool is_main, bool commit);
   void applyPreviewLight(int entity_id, int kind, int index, int light_type,
                          float color_r, float color_g, float color_b,
-                         float intensity, bool enabled, float range);
+                         float intensity, bool enabled, float range, bool commit);
   void applyPreviewUniqueRemove(int entity_id, int kind, int index);
   void applyPreviewTreeCanvas(int entity_id);
   void applyPreviewBehaviourRemove(int entity_id, int kind, int index);
   void applyPreviewBehaviourProp(int entity_id, int kind, int index, int behaviour_id,
                                  const eastl::string& key, const eastl::string& text,
-                                 float number, bool bool_value);
+                                 float number, bool bool_value, bool commit);
   void applyPreviewModifierRemove(int entity_id, int kind, int index);
   void applyPreviewModifierEnabled(int entity_id, int kind, int index, bool enabled);
   void applyPreviewModifierField(int entity_id, int kind, int index,
                                  const eastl::string& key, const eastl::string& text,
-                                 float number, bool bool_value);
+                                 float number, bool bool_value, bool commit);
   void applyInspectorAddClipRow();
   void applyInspectorOpenClipPicker(int target_index);
   void applyInspectorPickClipChoice(const eastl::string& guid,
@@ -327,7 +342,8 @@ class SlintSystem final : public IEditorUiPresentation {
                                              const eastl::string& key,
                                              const eastl::string& kind,
                                              const eastl::string& text_value,
-                                             float number_value, bool bool_value);
+                                             float number_value, bool bool_value,
+                                             bool commit);
   void applyInspectorAddSkeletonModifier(const eastl::string& type_name);
   void applyInspectorRemoveSkeletonModifier(size_t modifier_index);
   void applyInspectorReorderSkeletonModifiers(size_t from_index, size_t to_index);
@@ -335,7 +351,8 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyInspectorSkeletonModifierFieldCommit(size_t modifier_index,
                                                  const eastl::string& key,
                                                  const eastl::string& text_value,
-                                                 float number_value, bool bool_value);
+                                                 float number_value, bool bool_value,
+                                                 bool commit);
   void refreshEditorScenePanels() override;
   void syncAnimationTreeCanvas() override;
   void syncTransformToolbarFromEngine();
@@ -345,7 +362,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncBlinnPhongFromMaterialSource() override;
   void tickContentBrowserTreePointerPoll() override;
 
-  void showPlayDirtySceneDialog() override;
+  void showPlayDirtySceneDialog(bool reload_copy) override;
   void hidePlayDirtySceneDialog() override;
   void showOpenDirtySceneDialog() override;
   void hideOpenDirtySceneDialog() override;
@@ -516,7 +533,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void cacheLayoutRects();
   void cacheViewportLogicalRectOnly();
   void seedDockingWorkspace();
-  void ensureAnimationDockWidget();
+  void noteDockLayoutSettled();
   void syncDockingWorkspace();
   void applyAnimationPreviewLiveTimeScale();
   void commitAnimationPreviewTimeScale();
@@ -617,6 +634,7 @@ class SlintSystem final : public IEditorUiPresentation {
   BrowserDeleteSet m_pending_browser_delete;
   bool m_pending_browser_delete_after_dirty{false};
   eastl::string m_synced_inline_rename_path;
+  bool m_defer_inline_rename_sync{false};
   size_t m_history_panel_doc_count{static_cast<size_t>(-1)};
   size_t m_history_panel_doc_cursor{static_cast<size_t>(-1)};
   size_t m_history_panel_global_count{static_cast<size_t>(-1)};
@@ -632,6 +650,7 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_scene_indicator_initialized{false};
   eastl::string m_synced_scene_path;
   bool m_synced_scene_dirty{false};
+  eastl::string m_synced_project_display_name;
   Uint32 m_open_import_dialog_event{0};
   bool m_tree_folder_handled_by_slint{false};
   bool m_hierarchy_handled_by_slint{false};
@@ -649,6 +668,20 @@ class SlintSystem final : public IEditorUiPresentation {
   int m_inspector_focused_field{-1};
   /// Last Transform field that triggered an edit (Absolute multi applies only this axis).
   int m_inspector_last_edited_field{-1};
+  bool m_inspector_camera_edit_open{false};
+  CameraComponent m_inspector_camera_edit_before{};
+  bool m_inspector_light_edit_open{false};
+  LightComponent m_inspector_light_edit_before{};
+  bool m_inspector_mesh_material_edit_open{false};
+  MeshAssetDescriptor m_inspector_mesh_material_edit_before{};
+  bool m_inspector_behaviour_edit_open{false};
+  BehaviourId m_inspector_behaviour_edit_id{k_invalid_behaviour_id};
+  eastl::string m_inspector_behaviour_edit_key;
+  Variant m_inspector_behaviour_edit_before;
+  bool m_inspector_modifier_edit_open{false};
+  size_t m_inspector_modifier_edit_index{0};
+  eastl::string m_inspector_modifier_edit_key;
+  SceneSkeletonModifierDef m_inspector_modifier_edit_before{};
   bool m_inspector_asset_mode{false};
   eastl::string m_inspector_asset_virtual_path;
   bool m_force_window_commit{false};

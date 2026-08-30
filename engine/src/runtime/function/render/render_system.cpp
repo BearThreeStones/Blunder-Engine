@@ -21,7 +21,6 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_keycode.h>
-#include <SDL3/SDL_scancode.h>
 #include <slang.h>
 
 #include <algorithm>
@@ -494,6 +493,17 @@ GpuMesh* RenderSystem::getOrUploadGpuMeshByKey(const eastl::string& cache_key,
   return uploaded_mesh_ptr;
 }
 
+GpuMesh* RenderSystem::findUploadedGpuMesh(const eastl::string& cache_key) const {
+  if (cache_key.empty()) {
+    return nullptr;
+  }
+  const auto it = m_gpu_meshes.find(cache_key);
+  if (it == m_gpu_meshes.end()) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
 GpuMesh* RenderSystem::updateOrUploadSkinnedGpuMesh(
     const eastl::string& base_cache_key, const void* vertex_bytes,
     size_t vertex_byte_size, const uint32_t* indices, size_t index_count) {
@@ -908,29 +918,6 @@ void RenderSystem::syncCameraPreviewSkipClear() {
   if (!cam.ok) {
     clearCameraPreviewPresentation();
   }
-}
-
-bool RenderSystem::shouldForceViewportForCameraPreview() const {
-  if (!editorOverlaysEnabled(g_runtime_global_context.hostMode())) {
-    return false;
-  }
-  if (!m_viewport_layout_source || !g_runtime_global_context.m_editor_selection ||
-      !g_runtime_global_context.m_scene_system) {
-    return false;
-  }
-  const auto* slint = static_cast<const SlintSystem*>(m_viewport_layout_source);
-  if (slint->isCameraPreviewCollapsed()) {
-    return false;
-  }
-  SceneInstance* scene = g_runtime_global_context.m_scene_system->getActiveInstance();
-  if (scene == nullptr) {
-    return false;
-  }
-  const EditorSelectionSystem& selection = *g_runtime_global_context.m_editor_selection;
-  const eastl::vector<EntityId> selected = selection.getSelectedIds();
-  const CameraPreviewTargetResult target = resolveCameraPreviewTarget(
-      *scene, selection.getPrimarySelection(), selected);
-  return target.ok;
 }
 
 bool RenderSystem::recordCameraPreviewPass(
@@ -1561,17 +1548,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     far_clip = 10.0f;
   }
 
-  const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
-  if (keyboard_state) {
-    if (keyboard_state[SDL_SCANCODE_1]) {
-      m_grid_plane = ForwardGridPlane::xy;
-    } else if (keyboard_state[SDL_SCANCODE_2]) {
-      m_grid_plane = ForwardGridPlane::xz;
-    } else if (keyboard_state[SDL_SCANCODE_3]) {
-      m_grid_plane = ForwardGridPlane::yz;
-    }
-  }
-
   ForwardFrameState frame_state{};
   frame_state.view = view;
   frame_state.projection = projection;
@@ -1584,7 +1560,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   frame_state.ortho_size = ortho_size;
   frame_state.projection_mode = projection_mode;
   frame_state.projection_transition_t = m_editor_camera ? m_editor_camera->getProjectionTransitionT() : 0.0f;
-  frame_state.grid_plane = m_grid_plane;
+  frame_state.grid_plane = ForwardGridPlane::xy;
   frame_state.viewport_width = offscreen_extent.width;
   frame_state.viewport_height = offscreen_extent.height;
   if (m_viewport_layout_source != nullptr) {
@@ -1645,9 +1621,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       !matricesNearlyEqual(projection, m_last_viewport_projection);
   const bool scene_changed =
       m_viewport_render_generation != m_last_rendered_viewport_generation;
-  if (shouldForceViewportForCameraPreview()) {
-    m_force_viewport_render = true;
-  }
   bool skip_camera_only_zero_copy = false;
   if (usesZeroCopyViewport() && m_viewport_layout_source != nullptr &&
       !m_force_viewport_render && !viewport_target_changed && !scene_changed &&

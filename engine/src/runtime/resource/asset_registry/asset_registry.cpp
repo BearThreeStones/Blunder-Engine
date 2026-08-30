@@ -264,6 +264,10 @@ bool AssetRegistry::ensureSceneAssetRegistered(
           ? normalized
           : (eastl::string("assets/") + normalized.c_str());
 
+  if (!findGuidForPath(virtual_path).empty()) {
+    return true;
+  }
+
   const fs::path absolute =
       resolveSceneAbsolutePath(m_file_system, virtual_path);
   eastl::string text;

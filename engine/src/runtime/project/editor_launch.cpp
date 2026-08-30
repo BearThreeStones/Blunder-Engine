@@ -1,4 +1,5 @@
 #include "runtime/project/editor_launch.h"
+#include "runtime/project/project_root_cli.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -76,10 +77,7 @@ EditorSessionLaunch resolveEditorSessionLaunch(
       continue;
     }
     if (eq(arg, "--project-root")) {
-      eastl::string value;
-      if (takeValue(argc, argv, i, value)) {
-        cli_root = value.c_str();
-      }
+      takeSpacedExistingPath(argc, argv, i, cli_root, isMachineCliVerb);
       continue;
     }
     if (eq(arg, "--headless")) {

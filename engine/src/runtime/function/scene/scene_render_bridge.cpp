@@ -1,4 +1,8 @@
 #include "runtime/function/scene/scene_render_bridge.h"
+#include "runtime/function/global/engine_host_mode.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/project/play_pose_preview.h"
+#include "runtime/project/play_session_controller.h"
 
 #include <cgltf.h>
 #include <filesystem>
@@ -137,6 +141,16 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
   eastl::vector<SkinnedMeshVertex> gpu_skinned_vertices_scratch;
   eastl::vector<glm::mat4> bone_palette_scratch;
 
+  const PlayPoseOverlayMap* overlay = nullptr;
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Editor) {
+    if (PlaySessionController* session =
+            g_runtime_global_context.m_play_session.get()) {
+      if (session->reloadEnabled() && !session->poseOverlay().empty()) {
+        overlay = &session->poseOverlay();
+      }
+    }
+  }
+
   scene_instance->forEachMeshRenderer(
       [&](EntityId entity_id, const MeshRendererComponent& renderer) {
         if (!renderer.mesh) {
@@ -144,7 +158,8 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
         }
 
         MeshRendererComponent draw_renderer = renderer;
-        draw_renderer.world_matrix = scene_instance->getWorldMatrix(entity_id);
+        draw_renderer.world_matrix =
+            worldMatrixWithPlayPoseOverlay(*scene_instance, entity_id, overlay);
 
         GpuMesh* gpu_mesh = nullptr;
         eastl::vector<glm::mat4> gpu_bone_palette;
@@ -154,12 +169,18 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
           Skeleton* skeleton = scene_instance->findSkeletonForEntity(entity_id);
           if (skeleton != nullptr) {
             if (shouldUseGpuSkinning(*renderer.mesh)) {
-              packSkinnedMeshVertices(*renderer.mesh, gpu_skinned_vertices_scratch);
-              gpu_mesh = render_system->getOrUploadGpuMeshByKey(
-                  cache_key + "#gpu_skinned", gpu_skinned_vertices_scratch.data(),
-                  gpu_skinned_vertices_scratch.size() * sizeof(SkinnedMeshVertex),
-                  renderer.mesh->getIndices().data(),
-                  renderer.mesh->getIndexCount());
+              const eastl::string skinned_key = cache_key + "#gpu_skinned";
+              gpu_mesh = render_system->findUploadedGpuMesh(skinned_key);
+              if (gpu_mesh == nullptr) {
+                packSkinnedMeshVertices(*renderer.mesh,
+                                        gpu_skinned_vertices_scratch);
+                gpu_mesh = render_system->getOrUploadGpuMeshByKey(
+                    skinned_key, gpu_skinned_vertices_scratch.data(),
+                    gpu_skinned_vertices_scratch.size() *
+                        sizeof(SkinnedMeshVertex),
+                    renderer.mesh->getIndices().data(),
+                    renderer.mesh->getIndexCount());
+              }
               buildGpuBonePalette(*skeleton, renderer.mesh->getSkinData(),
                                   bone_palette_scratch);
               gpu_bone_palette = bone_palette_scratch;

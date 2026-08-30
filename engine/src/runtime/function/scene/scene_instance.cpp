@@ -287,6 +287,7 @@ void SceneInstance::instantiate(const Scene& scene) {
       object->setName(definition.name);
       object->setEntityId(id);
       m_bound_object_ids.push_back(object_id);
+      m_bound_object_ids_by_entity[id] = object_id;
       if (definition.has_skeleton) {
         object->ensureSkeleton();
       }
@@ -427,6 +428,7 @@ void SceneInstance::clear() {
     ObjectDB::destroy(object_id);
   }
   m_bound_object_ids.clear();
+  m_bound_object_ids_by_entity.clear();
   m_default_animation_clip_names.clear();
 
   m_entities.clear();
@@ -649,16 +651,8 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
       }
     }
 
-    // Prefer SceneInstance-tracked ObjectIds over a process-global EntityId scan.
     const EntityId entity_id = indexToId(i);
-    Object* bound = nullptr;
-    for (ObjectId object_id : m_bound_object_ids) {
-      Object* candidate = ObjectDB::get(object_id);
-      if (candidate != nullptr && candidate->getEntityId() == entity_id) {
-        bound = candidate;
-        break;
-      }
-    }
+    Object* bound = findBoundObject(entity_id);
     if (bound != nullptr) {
       if (bound->hasSkeleton()) {
         definition.has_skeleton = true;
@@ -767,13 +761,15 @@ Object* SceneInstance::findBoundObject(EntityId entity_id) const {
   if (!isValid(entity_id)) {
     return nullptr;
   }
-  for (ObjectId object_id : m_bound_object_ids) {
-    Object* object = ObjectDB::get(object_id);
-    if (object != nullptr && object->getEntityId() == entity_id) {
-      return object;
-    }
+  const auto it = m_bound_object_ids_by_entity.find(entity_id);
+  if (it == m_bound_object_ids_by_entity.end()) {
+    return nullptr;
   }
-  return nullptr;
+  Object* object = ObjectDB::get(it->second);
+  if (object == nullptr || object->getEntityId() != entity_id) {
+    return nullptr;
+  }
+  return object;
 }
 
 Object* SceneInstance::ensureBoundObject(EntityId entity_id) {
@@ -798,15 +794,48 @@ Object* SceneInstance::ensureBoundObject(EntityId entity_id) {
   object->setName(entity->getName());
   object->setEntityId(entity_id);
   m_bound_object_ids.push_back(object_id);
+  m_bound_object_ids_by_entity[entity_id] = object_id;
   return object;
 }
 
 void SceneInstance::releaseBoundObject(EntityId entity_id) {
-  Object* object = findBoundObject(entity_id);
-  if (object == nullptr) {
+  const auto bound_it = m_bound_object_ids_by_entity.find(entity_id);
+  if (bound_it == m_bound_object_ids_by_entity.end()) {
     return;
   }
-  const ObjectId object_id = object->getId();
+  const ObjectId object_id = bound_it->second;
+
+  const auto detach_bound_descendants =
+      [&](const auto& detach_self, ObjectId parent_id) -> void {
+    Object* parent = ObjectDB::get(parent_id);
+    if (parent == nullptr) {
+      return;
+    }
+
+    eastl::vector<ObjectId> child_ids;
+    child_ids.reserve(parent->getChildCount());
+    for (size_t index = 0; index < parent->getChildCount(); ++index) {
+      child_ids.push_back(parent->getChildId(index));
+    }
+
+    for (ObjectId child_id : child_ids) {
+      Object* child = ObjectDB::get(child_id);
+      if (child == nullptr) {
+        continue;
+      }
+      const auto tracked_child =
+          m_bound_object_ids_by_entity.find(child->getEntityId());
+      if (tracked_child != m_bound_object_ids_by_entity.end() &&
+          tracked_child->second == child_id) {
+        child->setParent(nullptr);
+        continue;
+      }
+      detach_self(detach_self, child_id);
+    }
+  };
+  detach_bound_descendants(detach_bound_descendants, object_id);
+
+  m_bound_object_ids_by_entity.erase(bound_it);
   for (size_t index = 0; index < m_bound_object_ids.size(); ++index) {
     if (m_bound_object_ids[index] == object_id) {
       m_bound_object_ids.erase(m_bound_object_ids.begin() +

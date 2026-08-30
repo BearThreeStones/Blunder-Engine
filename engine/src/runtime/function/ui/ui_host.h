@@ -69,6 +69,7 @@ class UiHost final : public eastl::enable_shared_from_this<UiHost> {
   IEditorUiPresentation* m_presentation{nullptr};
   const MaterialAsset* m_blinn_phong_material_source{nullptr};
   eastl::string m_pending_open_scene_path;
+  bool m_play_dirty_for_reload{false};
 };
 
 }  // namespace Blunder

@@ -9,6 +9,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace Blunder {
 
@@ -39,6 +40,13 @@ inline std::optional<PlayDirtySceneChoice> playDirtyChoiceForHost(bool headless)
   }
   return std::nullopt;
 }
+
+/// True when the open Live document is this Play session's entry scene.
+/// Prefer Scene Asset GUID when both sides have one; otherwise compare paths.
+bool isPlayEntryLiveDocument(std::string_view entry_path,
+                             std::string_view entry_guid,
+                             std::string_view live_path,
+                             std::string_view live_guid);
 
 /// True when Scripts sources/csproj are newer than `.blunder/scripts_bin`
 /// outputs, or when sources exist but no game DLL output is present.

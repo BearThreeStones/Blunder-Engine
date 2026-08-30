@@ -37,6 +37,23 @@ export component EditorIconReload inherits Rectangle {
     }
 }
 
+export component EditorIconReloadSmall inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 12px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/ReloadSmall.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
 export component EditorIconFolder inherits Rectangle {
     in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
@@ -365,6 +382,7 @@ export global EditorGlyphs {
     out property <image> play: @image-url("../../../../3rdparty/godot-icons/Play.svg");
     out property <image> pause: @image-url("../../../../3rdparty/godot-icons/Pause.svg");
     out property <image> stop: @image-url("../../../../3rdparty/godot-icons/Stop.svg");
+    out property <image> reload: @image-url("../../../../3rdparty/godot-icons/Reload.svg");
     out property <image> tool-move: @image-url("../../../../3rdparty/godot-icons/ToolMove.svg");
     out property <image> tool-rotate: @image-url("../../../../3rdparty/godot-icons/ToolRotate.svg");
     out property <image> tool-scale: @image-url("../../../../3rdparty/godot-icons/ToolScale.svg");

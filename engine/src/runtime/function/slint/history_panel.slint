@@ -238,8 +238,8 @@ export component FilesystemHistoryHost {
                 details-view <=> root.details-view;
                 sort-column: root.sort-column;
                 sort-ascending: root.sort-ascending;
-                inline-rename-path <=> root.inline-rename-path;
-                inline-rename-buffer <=> root.inline-rename-buffer;
+                inline-rename-path: root.inline-rename-path;
+                inline-rename-buffer: root.inline-rename-buffer;
                 folder-selected(path) => { root.folder-selected(path); }
                 folder-toggle(path) => { root.folder-toggle(path); }
                 refresh-requested => { root.refresh-requested(); }

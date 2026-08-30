@@ -128,10 +128,30 @@ int main() {
     expect_near("far clip", result.far_clip, 500.0f);
     expect_true("projection y flip", result.projection[1][1] < 0.0f);
     Mat4 expected_proj =
-        glm::perspective(glm::radians(60.0f), aspect, 0.5f, 500.0f);
+        glm::perspectiveZO(glm::radians(60.0f), aspect, 0.5f, 500.0f);
     expected_proj[1][1] *= -1.0f;
     expect_near("projection y scale", result.projection[1][1],
                 expected_proj[1][1]);
+    expect_near("projection uses perspectiveZO", result.projection[2][2],
+                expected_proj[2][2]);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId cam_id =
+        scene.createEntity("LookDown", {0.0f, 0.0f, 2.0f}, {}, {});
+    CameraComponent cam{};
+    scene.setCamera(cam_id, cam);
+    scene.tick(0.0f);
+    const ResolvedPlayCamera result =
+        buildCameraPreviewMatrices(scene, cam_id, 16.0f / 9.0f);
+    expect_true("preview look-down -> ok", result.ok);
+    expect_near("preview look-down forward z", result.forward.z, -1.0f);
+    const Vec4 origin_clip =
+        result.projection * result.view * Vec4(0.0f, 0.0f, 0.0f, 1.0f);
+    const Vec3 origin_ndc = Vec3(origin_clip) / origin_clip.w;
+    expect_true("preview origin vulkan depth",
+                origin_ndc.z > 0.0f && origin_ndc.z < 1.0f);
   }
 
   {

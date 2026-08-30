@@ -9,6 +9,9 @@
 | [../../CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) | Assets / Resources virtual paths and cook pipeline |
 | [../adr/0012-pull-asset-pipeline.md](../adr/0012-pull-asset-pipeline.md) | Pull Asset Pipeline decision (three-tier + GUID refs) |
 | [../adr/0014-play-mode-separate-player-process.md](../adr/0014-play-mode-separate-player-process.md) | Play Mode via dedicated Player process + IPC |
+| [../adr/0047-play-reload.md](../adr/0047-play-reload.md) | Play Reload reinstantiates the captured On-disk Play entry |
+| [../adr/0048-play-authorship-patch.md](../adr/0048-play-authorship-patch.md) | Play authorship patch: sealed Live Commands by entity name |
+| [../adr/0049-standalone-play-preview-and-patch.md](../adr/0049-standalone-play-preview-and-patch.md) | Standalone Play + pose preview + patch; no product PIE |
 | [../../CONTEXT.md](../../CONTEXT.md#asset-pipeline) | Asset pipeline domain vocabulary |
 | [../../CONTEXT.md](../../CONTEXT.md#play) | Play Mode / Player domain vocabulary |
 

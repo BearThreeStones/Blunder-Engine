@@ -296,7 +296,8 @@ class DockFloatingWindowHost final {
     std::function<void(int entity_id, float mouse_x, float row_width)> on_hierarchy_icon_pressed;
     std::function<void()> on_inspector_activated;
     std::function<void(bool)> on_mesh_material_unlit_toggled;
-    std::function<void(int, float, float, float, float)> on_mesh_material_scalar_committed;
+    std::function<void(int, float, float, float, float, bool)> on_mesh_material_scalar_committed;
+    std::function<void(int, const slint::SharedString&)> on_color_hex_entered;
     std::function<void()> on_mesh_material_reset_requested;
     std::function<void(int)> on_mesh_slot_pick_requested;
     std::function<void(int)> on_mesh_slot_clear_requested;
@@ -310,16 +311,18 @@ class DockFloatingWindowHost final {
     std::function<void(const slint::SharedString&)> on_inspector_add_behaviour;
     std::function<void(int)> on_inspector_remove_behaviour;
     std::function<void(int, int)> on_inspector_reorder_behaviour;
-    std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
+    std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool,
+                       bool)>
         on_inspector_commit_behaviour_prop;
     std::function<void(const slint::SharedString&)> on_inspector_add_skeleton_modifier;
     std::function<void(int)> on_inspector_remove_skeleton_modifier;
     std::function<void(int, int)> on_inspector_reorder_skeleton_modifier;
     std::function<void(int, bool)> on_inspector_set_skeleton_modifier_enabled;
-    std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool)>
+    std::function<void(int, const slint::SharedString&, const slint::SharedString&, float, bool,
+                       bool)>
         on_inspector_commit_skeleton_modifier_field;
-    std::function<void()> on_inspector_camera_edited;
-    std::function<void()> on_inspector_light_edited;
+    std::function<void(bool)> on_inspector_camera_edited;
+    std::function<void(bool)> on_inspector_light_edited;
     std::function<void(const slint::SharedString&)> on_inspector_add_unique_attachment;
     std::function<void(const slint::SharedString&)> on_inspector_remove_unique_attachment;
     std::function<void()> on_inspector_add_clip;

@@ -59,6 +59,11 @@ bool startPlaySession(PlaySessionController& session, FileSystem& fs,
     LOG_ERROR("[Play] aborted: no active scene path");
     return false;
   }
+  if (AssetRegistry* registry =
+          g_runtime_global_context.m_asset_registry.get()) {
+    req.scene_guid =
+        registry->findGuidForPath(scene_edit.activeScenePath()).c_str();
+  }
 
   AssetManager* asset_manager = g_runtime_global_context.m_asset_manager.get();
   if (asset_manager == nullptr) {
@@ -85,6 +90,64 @@ bool startPlaySession(PlaySessionController& session, FileSystem& fs,
     return false;
   }
   return session.state() != PlaySessionState::Stopped;
+}
+
+eastl::string liveSceneGuid(const EditorSceneEditSystem& scene_edit) {
+  AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+  if (registry == nullptr) {
+    return {};
+  }
+  return registry->findGuidForPath(scene_edit.activeScenePath());
+}
+
+bool reloadPlaySession(PlaySessionController& session, FileSystem& fs,
+                       EditorSceneEditSystem& scene_edit, bool save_first) {
+  (void)fs;
+  if (!session.reloadEnabled()) {
+    return false;
+  }
+  if (save_first) {
+    if (!scene_edit.saveActiveScene()) {
+      session.setLastError("failed to save active scene before Reload");
+      return false;
+    }
+  }
+  const std::string& entry = session.playEntryScene();
+  if (entry.empty()) {
+    session.setLastError("play entry scene is not captured");
+    return false;
+  }
+  AssetManager* asset_manager = g_runtime_global_context.m_asset_manager.get();
+  if (asset_manager == nullptr) {
+    session.setLastError("asset manager unavailable");
+    return false;
+  }
+  const eastl::string path(entry.c_str());
+  asset_manager->invalidateSceneCache(path);
+  const auto scene_asset = asset_manager->loadScene(path);
+  if (!scene_asset) {
+    session.setLastError("could not load play entry scene for Reload");
+    return false;
+  }
+  const PlayCameraGateResult cam = runPlayCameraGate(scene_asset->getScene());
+  if (!cam.ok) {
+    session.setLastIssues(cam.issues);
+    LOG_ERROR("[Play] Reload aborted: {}", cam.error.c_str());
+    return false;
+  }
+  return session.reload();
+}
+
+bool playEntryLiveIsDirty(const PlaySessionController& session,
+                          const EditorSceneEditSystem& scene_edit) {
+  if (!scene_edit.isDirty()) {
+    return false;
+  }
+  const eastl::string live_guid = liveSceneGuid(scene_edit);
+  return isPlayEntryLiveDocument(session.playEntryScene(),
+                                 session.playEntryGuid(),
+                                 scene_edit.activeScenePath().c_str(),
+                                 live_guid.c_str());
 }
 
 }  // namespace
@@ -295,10 +358,11 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       g_runtime_global_context.setContentBrowserHasInputFocus(true);
       services.content_browser->beginInlineRename(event.path);
-      g_runtime_global_context.setInlineRenameActive(true);
-      m_panels.markDirty(EditorPanelDirty::content_browser);
-      if (m_presentation) {
-        m_presentation->syncContentBrowser();
+      const bool renaming =
+          !services.content_browser->pendingInlineRenamePath().empty();
+      g_runtime_global_context.setInlineRenameActive(renaming);
+      if (renaming && m_presentation) {
+        m_presentation->syncBrowserInlineRename();
       }
       break;
     }
@@ -399,8 +463,9 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
           services.editor_scene_edit->isDirty(),
           playDirtyChoiceForHost(g_runtime_global_context.isHeadless()));
       if (decision.needs_prompt) {
+        m_play_dirty_for_reload = false;
         if (m_presentation) {
-          m_presentation->showPlayDirtySceneDialog();
+          m_presentation->showPlayDirtySceneDialog(false);
         }
         break;
       }
@@ -424,11 +489,20 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       }
       if (decision.save_first) {
         if (!services.editor_scene_edit->saveActiveScene()) {
-          session->setLastError("failed to save active scene before Play");
+          session->setLastError(m_play_dirty_for_reload
+                                    ? "failed to save active scene before Reload"
+                                    : "failed to save active scene before Play");
+          m_play_dirty_for_reload = false;
           break;
         }
       }
-      (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      if (m_play_dirty_for_reload) {
+        (void)reloadPlaySession(*session, *fs, *services.editor_scene_edit,
+                                false);
+        m_play_dirty_for_reload = false;
+      } else {
+        (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      }
       break;
     }
     case UiEventKind::playDirtyPlayLastSaved: {
@@ -446,10 +520,17 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (!decision.proceed) {
         break;
       }
-      (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      if (m_play_dirty_for_reload) {
+        (void)reloadPlaySession(*session, *fs, *services.editor_scene_edit,
+                                false);
+        m_play_dirty_for_reload = false;
+      } else {
+        (void)startPlaySession(*session, *fs, *services.editor_scene_edit);
+      }
       break;
     }
     case UiEventKind::playDirtyCancel: {
+      m_play_dirty_for_reload = false;
       if (m_presentation) {
         m_presentation->hidePlayDirtySceneDialog();
       }
@@ -494,6 +575,30 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (session != nullptr) {
         session->stop();
       }
+      break;
+    }
+    case UiEventKind::playReload: {
+      PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get();
+      FileSystem* fs = g_runtime_global_context.m_file_system.get();
+      if (session == nullptr || fs == nullptr || !services.editor_scene_edit) {
+        break;
+      }
+      if (!session->reloadEnabled()) {
+        break;
+      }
+      const PlayDirtySceneDecision decision = decidePlayDirtyScene(
+          playEntryLiveIsDirty(*session, *services.editor_scene_edit),
+          playDirtyChoiceForHost(g_runtime_global_context.isHeadless()));
+      if (decision.needs_prompt) {
+        m_play_dirty_for_reload = true;
+        if (m_presentation) {
+          m_presentation->showPlayDirtySceneDialog(true);
+        }
+        break;
+      }
+      (void)reloadPlaySession(*session, *fs, *services.editor_scene_edit,
+                              decision.save_first);
       break;
     }
     case UiEventKind::animPreviewPlay: {

@@ -25,7 +25,9 @@
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/project/editor_session_restore.h"
 #include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
@@ -321,12 +323,31 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
   }
 
   if (g_runtime_global_context.m_scene_system) {
-    const eastl::string scene_path =
-        !play_scene.empty()
-            ? play_scene
-            : (use_startup_scene_when_empty
-                   ? eastl::string(resolveStartupScenePath())
-                   : eastl::string{});
+    eastl::string scene_path = play_scene;
+    if (scene_path.empty() &&
+        hostMountsEditorShell(g_runtime_global_context.hostMode(),
+                              g_runtime_global_context.isHeadless())) {
+      eastl::string remembered_guid;
+      eastl::string guid_path;
+      if (g_runtime_global_context.m_file_system) {
+        EditorSessionRestoreRecord record;
+        if (loadProjectEditorSessionRestore(*g_runtime_global_context.m_file_system,
+                                            record)) {
+          remembered_guid = record.last_live_guid;
+          guid_path = resolveGuidToScenePath(
+              g_runtime_global_context.m_asset_registry.get(), remembered_guid);
+        }
+      }
+      eastl::string env_startup;
+      if (const char* env = std::getenv("BLUNDER_STARTUP_SCENE");
+          env != nullptr && env[0] != '\0') {
+        env_startup = env;
+      }
+      scene_path = resolveWindowedLiveScenePath(
+          {}, remembered_guid, guid_path, env_startup, k_default_startup_scene_path);
+    } else if (scene_path.empty() && use_startup_scene_when_empty) {
+      scene_path = resolveStartupScenePath();
+    }
     if (!scene_path.empty()) {
       activateEditorScene(scene_path);
     }
@@ -525,7 +546,8 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   }
 #endif
 
-  if (!defer_heavy) {
+  if (!defer_heavy && !slint_system &&
+      g_runtime_global_context.m_window_system) {
     eastl::string title = "Blunder";
     if (g_runtime_global_context.m_editor_scene_edit) {
       const eastl::string& scene_path =
@@ -541,9 +563,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     title += " - ";
     title += std::to_string(getFPS()).c_str();
     title += " FPS";
-    if (g_runtime_global_context.m_window_system) {
-      g_runtime_global_context.m_window_system->setTitle(title.c_str());
-    }
+    g_runtime_global_context.m_window_system->setTitle(title.c_str());
   }
 
   // Smoke / automated exit: BLUNDER_PLAYER_MAX_FRAMES=N leaves after N frames

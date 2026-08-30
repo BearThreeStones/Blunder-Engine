@@ -9,10 +9,8 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/script/dotnet_host.h"
 #include "runtime/function/script/scene_behaviour_mount.h"
-#include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
-#include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
 
@@ -67,6 +65,19 @@ bool SceneSystem::needsMeshAttach(const SceneInstance& instance,
   return false;
 }
 
+bool SceneSystem::needsMeshAttach(const SceneInstance& instance) const {
+  bool needed = false;
+  instance.forEachEntity([&](EntityId id, const Entity& entity) {
+    if (needed || entity.isTombstoned() || entity.getMeshVirtualPath().empty()) {
+      return;
+    }
+    if (!entitySubtreeHasMeshRenderer(instance, id)) {
+      needed = true;
+    }
+  });
+  return needed;
+}
+
 void SceneSystem::initialize(const SceneSystemInitInfo& info) {
   m_asset_manager = info.asset_manager;
   m_is_initialized = m_asset_manager != nullptr;
@@ -106,47 +117,7 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
 
 void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
                                           const Scene& scene) {
-  if (!m_asset_manager) {
-    return;
-  }
-
-  for (const SceneEntityDefinition& definition : scene.getEntities()) {
-    if (definition.mesh_virtual_path.empty()) {
-      continue;
-    }
-
-    const EntityId entity_id = instance.findEntityByName(definition.name);
-    if (!isValid(entity_id)) {
-      LOG_WARN("[SceneSystem] mesh entity '{}' not found in scene '{}'",
-               definition.name.c_str(), instance.getSourcePath().c_str());
-      continue;
-    }
-
-    // Resolve mesh Asset Reference GUID → descriptor path via AssetManager helper.
-    eastl::string mesh_ref = definition.mesh_virtual_path;
-    if (isValidGuidFormat(mesh_ref) &&
-        g_runtime_global_context.m_asset_registry) {
-      const eastl::string path = m_asset_manager->resolveGuidPath(
-          mesh_ref, *g_runtime_global_context.m_asset_registry);
-      if (!path.empty()) {
-        mesh_ref = path;
-      }
-    }
-
-    const GltfSceneImporter::ImportResult import_result =
-        GltfSceneImporter::importUnderEntity(m_asset_manager, mesh_ref, instance,
-                                             entity_id);
-    if (!import_result.success) {
-      LOG_ERROR("[SceneSystem] failed to import mesh '{}' for entity '{}': {}",
-                mesh_ref.c_str(), definition.name.c_str(),
-                import_result.error_message.c_str());
-      continue;
-    }
-
-    LOG_INFO("[SceneSystem] attached {} mesh primitives to entity '{}' in '{}'",
-             import_result.mesh_primitive_count, definition.name.c_str(),
-             instance.getSourcePath().c_str());
-  }
+  GltfSceneImporter::attachEntityMeshes(m_asset_manager, instance, scene);
 }
 
 void SceneSystem::attachSceneEntityCameras(SceneInstance& instance,
@@ -183,10 +154,7 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadScene(
       continue;
     }
 
-    const eastl::shared_ptr<SceneAsset> existing_asset =
-        m_asset_manager->loadScene(virtual_path);
-    if (existing_asset &&
-        !needsMeshAttach(*existing, existing_asset->getScene())) {
+    if (!needsMeshAttach(*existing)) {
       LOG_WARN("[SceneSystem] scene '{}' already loaded, returning existing instance",
                virtual_path.c_str());
       return existing;
@@ -217,7 +185,6 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadScene(
   m_loaded_instances.push_back(root_instance);
   LOG_INFO("[SceneSystem] loaded scene '{}' (entities={})",
            virtual_path.c_str(), root_instance->getEntityCount());
-
   return root_instance;
 }
 
@@ -250,6 +217,44 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadGltfScene(
   LOG_INFO("[SceneSystem] loaded glTF '{}' (primitives={})",
            virtual_path.c_str(), import_result.mesh_primitive_count);
   return instance;
+}
+
+bool SceneSystem::reloadActiveFromDisk() {
+  if (!m_is_initialized || !m_asset_manager || m_active_instance == nullptr) {
+    LOG_ERROR("[SceneSystem] reloadActiveFromDisk with no active scene");
+    return false;
+  }
+
+  SceneInstance* old = m_active_instance;
+  const eastl::string path = old->getSourcePath();
+  if (path.empty()) {
+    LOG_ERROR("[SceneSystem] reloadActiveFromDisk: active scene has empty path");
+    return false;
+  }
+
+  m_asset_manager->invalidateSceneCache(path);
+  const eastl::shared_ptr<SceneAsset> scene_asset =
+      m_asset_manager->loadScene(path);
+  if (!scene_asset) {
+    LOG_ERROR("[SceneSystem] reloadActiveFromDisk: failed to load '{}'",
+              path.c_str());
+    return false;
+  }
+
+  const eastl::shared_ptr<SceneInstance> neu =
+      instantiateScene(scene_asset, path);
+  if (!neu) {
+    LOG_ERROR("[SceneSystem] reloadActiveFromDisk: instantiate failed for '{}'",
+              path.c_str());
+    return false;
+  }
+
+  m_loaded_instances.push_back(neu);
+  setActiveInstance(neu.get());
+  unloadSceneInstance(old);
+  LOG_INFO("[SceneSystem] reloaded scene '{}' (entities={})", path.c_str(),
+           neu->getEntityCount());
+  return true;
 }
 
 void SceneSystem::unloadSceneInstance(SceneInstance* instance) {

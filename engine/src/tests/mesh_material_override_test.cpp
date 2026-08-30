@@ -9,6 +9,7 @@
 
 #include "EASTL/unique_ptr.h"
 
+#include <cmath>
 #include <cstdio>
 
 #include <glm/vec3.hpp>
@@ -93,6 +94,40 @@ void applyBlinnPhongIgnoresEditorBag() {
               defaults.specular_color_and_shininess.w == 32.0f);
   expect_true("null material ka 0", defaults.ambient_color.x == 0.0f);
   expect_true("null material not unlit", defaults.material_flags.x == 0.0f);
+}
+
+void gltfSpecDefaultMetalWithoutMrMapShadesAsDielectric() {
+  using namespace Blunder;
+  Asset::Meta meta;
+  meta.virtual_path = "assets/Meshes/chocomel.mesh.yaml#mat";
+  MaterialAsset omitted_factors(
+      eastl::move(meta), glm::vec4(1.0f), AssetHandle{}, nullptr, nullptr, nullptr,
+      nullptr, glm::vec3(0.15f), glm::vec3(1.0f), glm::vec3(0.4f), 32.0f, 1.0f,
+      1.0f, cgltf_alpha_mode_opaque, 0.5f, false, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &omitted_factors, {}, frame, cgltf_alpha_mode_opaque,
+                         0.5f, false);
+  expect_true("omitted metal/rough without MR map is dielectric",
+              ubo.metallic_roughness_factors.x < 0.01f);
+  expect_true("omitted roughness stays 1",
+              ubo.metallic_roughness_factors.y > 0.99f);
+
+  Asset::Meta chrome_meta;
+  chrome_meta.virtual_path = "assets/Meshes/chrome.mesh.yaml#mat";
+  MaterialAsset chrome(eastl::move(chrome_meta), glm::vec4(1.0f), AssetHandle{},
+                       nullptr, nullptr, nullptr, nullptr, glm::vec3(0.0f),
+                       glm::vec3(1.0f), glm::vec3(1.0f), 256.0f, 1.0f, 0.2f,
+                       cgltf_alpha_mode_opaque, 0.5f, false, false);
+  ForwardMeshUniformData chrome_ubo{};
+  applyPbrToMeshUniforms(chrome_ubo, &chrome, {}, frame, cgltf_alpha_mode_opaque,
+                         0.5f, false);
+  expect_true("authored metal roughness is kept",
+              chrome_ubo.metallic_roughness_factors.x > 0.99f &&
+                  std::fabs(chrome_ubo.metallic_roughness_factors.y - 0.2f) <
+                      1e-4f);
 }
 
 void extraMaterialStaysImport() {
@@ -204,6 +239,7 @@ int main() {
   overlayScalarsAndClearSlot();
   extraMaterialStaysImport();
   applyBlinnPhongIgnoresEditorBag();
+  gltfSpecDefaultMetalWithoutMrMapShadesAsDielectric();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();
   if (g_failures != 0) {

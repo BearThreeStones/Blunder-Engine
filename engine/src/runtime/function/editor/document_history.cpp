@@ -36,6 +36,9 @@ void DocumentHistory::push(eastl::unique_ptr<IEditorCommand> command) {
   m_commands.push_back(eastl::move(command));
   m_cursor = m_commands.size();
   dropOldestIfNeeded();
+  if (m_after_mutation && m_cursor > 0) {
+    m_after_mutation(*m_commands[m_cursor - 1]);
+  }
 }
 
 bool DocumentHistory::canUndo() const { return m_cursor > 0; }
@@ -50,6 +53,9 @@ bool DocumentHistory::undo() {
   IEditorCommand* command = m_commands[m_cursor].get();
   command->undo();
   restoreSelection(command->selection_before);
+  if (m_after_mutation) {
+    m_after_mutation(*command);
+  }
   return true;
 }
 
@@ -61,6 +67,9 @@ bool DocumentHistory::redo() {
   command->redo();
   restoreSelection(command->selection_after);
   ++m_cursor;
+  if (m_after_mutation) {
+    m_after_mutation(*command);
+  }
   return true;
 }
 
@@ -113,6 +122,11 @@ bool DocumentHistory::isDirtyRelativeToSave() const {
 void DocumentHistory::setSelectionRestorer(
     eastl::function<void(const SelectionSnapshot&)> restorer) {
   m_selection_restorer = eastl::move(restorer);
+}
+
+void DocumentHistory::setAfterMutationObserver(
+    eastl::function<void(const IEditorCommand&)> observer) {
+  m_after_mutation = eastl::move(observer);
 }
 
 void DocumentHistory::restoreSelection(const SelectionSnapshot& snapshot) {

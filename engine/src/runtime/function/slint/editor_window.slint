@@ -24,6 +24,7 @@ import { DockChromeBar, DockChromeMetrics, DockSplittersLayer, DockGuidesLayer, 
 export component MainEditorWindow inherits Window {
     // Logical size comes only from C++ dispatch_resize_event (see SlintWindowAdapter).
     in-out property <string> window-title: "Blunder Editor";
+    in-out property <string> app-bar-wordmark: "Blunder Editor";
     title: root.window-title;
     background: EditorTheme.app-bar;
 
@@ -63,15 +64,16 @@ export component MainEditorWindow inherits Window {
     callback attachment-preview-close-requested(int, int, int);
     callback attachment-preview-focus-changed(bool);
     callback attachment-preview-transform-edited(int, int, int, float, float, float, float, float, float, float, float, float);
-    callback attachment-preview-camera-edited(int, int, int, float, float, float, bool);
-    callback attachment-preview-light-edited(int, int, int, int, float, float, float, float, bool, float);
+    callback attachment-preview-camera-edited(int, int, int, float, float, float, bool, bool);
+    callback attachment-preview-light-edited(int, int, int, int, float, float, float, float, bool, float, bool);
+    callback attachment-preview-color-hex-entered(int, int, int, string);
     callback attachment-preview-unique-remove(int, int, int);
     callback attachment-preview-tree-canvas(int, int, int);
     callback attachment-preview-behaviour-remove(int, int, int);
-    callback attachment-preview-behaviour-prop(int, int, int, int, string, string, float, bool);
+    callback attachment-preview-behaviour-prop(int, int, int, int, string, string, float, bool, bool);
     callback attachment-preview-modifier-remove(int, int, int);
     callback attachment-preview-modifier-enabled(int, int, int, bool);
-    callback attachment-preview-modifier-field(int, int, int, string, string, float, bool);
+    callback attachment-preview-modifier-field(int, int, int, string, string, float, bool, bool);
 
     in-out property <[BrowserTreeRow]> browser-tree-rows: [];
     in-out property <[BrowserGridRow]> browser-grid-rows: [];
@@ -268,7 +270,8 @@ export component MainEditorWindow inherits Window {
     in property <string> mesh-slot-occlusion-name: "";
     in property <bool> mesh-slot-occlusion-assigned: false;
     callback mesh-material-unlit-toggled(bool);
-    callback mesh-material-scalar-committed(int, float, float, float, float);
+    callback mesh-material-scalar-committed(int, float, float, float, float, bool);
+    callback color-hex-entered(int, string);
     callback mesh-material-reset-requested();
     callback mesh-slot-pick-requested(int);
     callback mesh-slot-clear-requested(int);
@@ -283,14 +286,14 @@ export component MainEditorWindow inherits Window {
     callback inspector-add-behaviour(string);
     callback inspector-remove-behaviour(int);
     callback inspector-reorder-behaviour(int, int);
-    callback inspector-commit-behaviour-prop(int, string, string, float, bool);
+    callback inspector-commit-behaviour-prop(int, string, string, float, bool, bool);
     callback inspector-add-skeleton-modifier(string);
     callback inspector-remove-skeleton-modifier(int);
     callback inspector-reorder-skeleton-modifier(int, int);
     callback inspector-set-skeleton-modifier-enabled(int, bool);
-    callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool);
-    callback inspector-camera-edited();
-    callback inspector-light-edited();
+    callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool, bool);
+    callback inspector-camera-edited(bool);
+    callback inspector-light-edited(bool);
     callback inspector-add-unique-attachment(string);
     callback inspector-remove-unique-attachment(string);
     callback inspector-add-clip();
@@ -308,8 +311,10 @@ export component MainEditorWindow inherits Window {
     callback play-requested();
     callback play-pause-requested();
     callback play-stop-requested();
+    callback play-reload-requested();
     in property <bool> play-pause-enabled: false;
     in property <bool> play-stop-enabled: false;
+    in property <bool> play-reload-enabled: false;
     in property <bool> play-session-paused: false;
 
     callback anim-preview-play-requested();
@@ -354,6 +359,9 @@ export component MainEditorWindow inherits Window {
     in property <bool> anim-tree-canvas-open-enabled: false;
 
     in-out property <bool> play-dirty-dialog-visible: false;
+    in property <string> play-dirty-body-text: "Save before Play, play the last saved asset, or cancel.";
+    in property <string> play-dirty-save-text: "Save and Play";
+    in property <string> play-dirty-last-saved-text: "Play Last Saved";
     in-out property <bool> open-dirty-dialog-visible: false;
     in-out property <bool> detection-reimport-dialog-visible: false;
     in-out property <int> detection-reimport-asset-count: 1;
@@ -481,7 +489,7 @@ export component MainEditorWindow inherits Window {
                     alignment: start;
 
                     Text {
-                        text: "Blunder Editor";
+                        text: root.app-bar-wordmark;
                         color: EditorTheme.default-text;
                         font-size: 16px;
                         vertical-alignment: center;
@@ -524,6 +532,11 @@ export component MainEditorWindow inherits Window {
                             icon: root.play-session-paused ? EditorGlyphs.play : EditorGlyphs.pause;
                             enabled: root.play-pause-enabled;
                             clicked => { root.play-pause-requested(); }
+                        }
+                        EditorButton {
+                            icon: EditorGlyphs.reload;
+                            enabled: root.play-reload-enabled;
+                            clicked => { root.play-reload-requested(); }
                         }
                         EditorButton {
                             icon: EditorGlyphs.stop;
@@ -652,9 +665,14 @@ export component MainEditorWindow inherits Window {
                         icon-pressed(id, mx, rw) => { root.hierarchy-icon-pressed(id, mx, rw); }
                     }
 
-                    if tile.active-panel-kind == 4: FilesystemHistoryHost {
+                    if tile.active-panel-kind == 4 || tile.active-panel-kind == 6: Rectangle {
                         width: 100%;
                         height: 100%;
+
+                    FilesystemHistoryHost {
+                        width: 100%;
+                        height: 100%;
+                        visible: tile.active-panel-kind == 4;
                         layout-drag-active: root.docking-drag-active;
                         tree-rows <=> root.browser-tree-rows;
                         grid-rows <=> root.browser-grid-rows;
@@ -677,8 +695,8 @@ export component MainEditorWindow inherits Window {
                         history-filter-scene <=> root.history-filter-scene;
                         history-filter-global <=> root.history-filter-global;
                         active-subtab <=> root.filesystem-history-subtab;
-                        inline-rename-path <=> root.browser-inline-rename-path;
-                        inline-rename-buffer <=> root.browser-inline-rename-buffer;
+                        inline-rename-path: root.browser-inline-rename-path;
+                        inline-rename-buffer: root.browser-inline-rename-buffer;
                         folder-selected(path) => { root.browser-folder-selected(path); }
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
@@ -700,6 +718,34 @@ export component MainEditorWindow inherits Window {
                         history-entry-clicked(stack, index) => { root.history-entry-clicked(stack, index); }
                         inline-rename-commit(name) => { root.browser-inline-rename-commit(name); }
                         inline-rename-cancel => { root.browser-inline-rename-cancel(); }
+                    }
+
+                    ConsolePanel {
+                        width: 100%;
+                        height: 100%;
+                        visible: tile.active-panel-kind == 6;
+                        rows <=> root.console-rows;
+                        selected-index <=> root.console-selected-index;
+                        detail-text <=> root.console-detail-text;
+                        detail-stack <=> root.console-detail-stack;
+                        collapse <=> root.console-collapse;
+                        clear-on-play <=> root.console-clear-on-play;
+                        error-pause <=> root.console-error-pause;
+                        filter-log <=> root.console-filter-log;
+                        filter-warning <=> root.console-filter-warning;
+                        filter-error <=> root.console-filter-error;
+                        count-log: root.console-count-log;
+                        count-warning: root.console-count-warning;
+                        count-error: root.console-count-error;
+                        search-text <=> root.console-search-text;
+                        clear-clicked => { root.console-clear-clicked(); }
+                        collapse-toggled => { root.console-collapse-toggled(); }
+                        clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
+                        error-pause-toggled => { root.console-error-pause-toggled(); }
+                        filter-changed => { root.console-filter-changed(); }
+                        search-edited => { root.console-search-edited(); }
+                        row-selected(i) => { root.console-row-selected(i); }
+                    }
                     }
 
                     if tile.active-panel-kind == 3: InspectorPanel {
@@ -772,7 +818,8 @@ export component MainEditorWindow inherits Window {
                         mesh-slot-occlusion-assigned: root.mesh-slot-occlusion-assigned;
                         inspector-activated => { root.inspector-activated(); }
                         mesh-material-unlit-toggled(checked) => { root.mesh-material-unlit-toggled(checked); }
-                        mesh-material-scalar-committed(id, a, b, c, d) => { root.mesh-material-scalar-committed(id, a, b, c, d); }
+                        mesh-material-scalar-committed(id, a, b, c, d, commit) => { root.mesh-material-scalar-committed(id, a, b, c, d, commit); }
+                        color-hex-entered(target, hex) => { root.color-hex-entered(target, hex); }
                         mesh-material-reset-requested => { root.mesh-material-reset-requested(); }
                         mesh-slot-pick-requested(slot) => { root.mesh-slot-pick-requested(slot); }
                         mesh-slot-clear-requested(slot) => { root.mesh-slot-clear-requested(slot); }
@@ -793,8 +840,8 @@ export component MainEditorWindow inherits Window {
                         add-behaviour(type) => { root.inspector-add-behaviour(type); }
                         remove-behaviour(id) => { root.inspector-remove-behaviour(id); }
                         reorder-behaviour(from, to) => { root.inspector-reorder-behaviour(from, to); }
-                        commit-behaviour-prop(id, key, text, number, flag) => {
-                            root.inspector-commit-behaviour-prop(id, key, text, number, flag);
+                        commit-behaviour-prop(id, key, text, number, flag, commit) => {
+                            root.inspector-commit-behaviour-prop(id, key, text, number, flag, commit);
                         }
                         skeleton-modifiers: root.inspector-skeleton-modifiers;
                         skeleton-modifier-type-choices: root.inspector-skeleton-modifier-type-choices;
@@ -805,8 +852,8 @@ export component MainEditorWindow inherits Window {
                         set-skeleton-modifier-enabled(index, enabled) => {
                             root.inspector-set-skeleton-modifier-enabled(index, enabled);
                         }
-                        commit-skeleton-modifier-field(index, key, text, number, flag) => {
-                            root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag);
+                        commit-skeleton-modifier-field(index, key, text, number, flag, commit) => {
+                            root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag, commit);
                         }
                         has-camera: root.inspector-has-camera;
                         camera-fov <=> root.inspector-camera-fov;
@@ -814,7 +861,7 @@ export component MainEditorWindow inherits Window {
                         camera-far <=> root.inspector-camera-far;
                         camera-is-main <=> root.inspector-camera-is-main;
                         camera-expanded <=> root.inspector-camera-expanded;
-                        camera-edited => { root.inspector-camera-edited(); }
+                        camera-edited(commit) => { root.inspector-camera-edited(commit); }
                         has-light: root.inspector-has-light;
                         light-type <=> root.inspector-light-type;
                         light-comp-color-r <=> root.inspector-light-color-r;
@@ -830,7 +877,7 @@ export component MainEditorWindow inherits Window {
                         light-height <=> root.inspector-light-height;
                         light-linking-text <=> root.inspector-light-linking-text;
                         light-expanded <=> root.inspector-light-expanded;
-                        light-edited => { root.inspector-light-edited(); }
+                        light-edited(commit) => { root.inspector-light-edited(commit); }
                         has-animation-player: root.inspector-has-animation-player;
                         animation-clips: root.inspector-animation-clips;
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
@@ -897,32 +944,6 @@ export component MainEditorWindow inherits Window {
                         timescale-committed => { root.anim-preview-params-edited(); }
                         seeked(t) => { root.anim-preview-seeked(t); }
                         fire-target-changed(name) => { root.anim-preview-fire-target-changed(name); }
-                    }
-
-                    if tile.active-panel-kind == 6: ConsolePanel {
-                        width: 100%;
-                        height: 100%;
-                        rows <=> root.console-rows;
-                        selected-index <=> root.console-selected-index;
-                        detail-text <=> root.console-detail-text;
-                        detail-stack <=> root.console-detail-stack;
-                        collapse <=> root.console-collapse;
-                        clear-on-play <=> root.console-clear-on-play;
-                        error-pause <=> root.console-error-pause;
-                        filter-log <=> root.console-filter-log;
-                        filter-warning <=> root.console-filter-warning;
-                        filter-error <=> root.console-filter-error;
-                        count-log: root.console-count-log;
-                        count-warning: root.console-count-warning;
-                        count-error: root.console-count-error;
-                        search-text <=> root.console-search-text;
-                        clear-clicked => { root.console-clear-clicked(); }
-                        collapse-toggled => { root.console-collapse-toggled(); }
-                        clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
-                        error-pause-toggled => { root.console-error-pause-toggled(); }
-                        filter-changed => { root.console-filter-changed(); }
-                        search-edited => { root.console-search-edited(); }
-                        row-selected(i) => { root.console-row-selected(i); }
                     }
 
                     if tile.active-panel-kind == 0: Text {
@@ -1095,9 +1116,14 @@ export component MainEditorWindow inherits Window {
                         icon-pressed(id, mx, rw) => { root.hierarchy-icon-pressed(id, mx, rw); }
                     }
 
-                    if overlay.panel-kind == 4: FilesystemHistoryHost {
+                    if overlay.panel-kind == 4 || overlay.panel-kind == 6: Rectangle {
                         width: 100%;
                         height: 100%;
+
+                    FilesystemHistoryHost {
+                        width: 100%;
+                        height: 100%;
+                        visible: overlay.panel-kind == 4;
                         layout-drag-active: root.docking-drag-active;
                         tree-rows <=> root.browser-tree-rows;
                         grid-rows <=> root.browser-grid-rows;
@@ -1120,8 +1146,8 @@ export component MainEditorWindow inherits Window {
                         history-filter-scene <=> root.history-filter-scene;
                         history-filter-global <=> root.history-filter-global;
                         active-subtab <=> root.filesystem-history-subtab;
-                        inline-rename-path <=> root.browser-inline-rename-path;
-                        inline-rename-buffer <=> root.browser-inline-rename-buffer;
+                        inline-rename-path: root.browser-inline-rename-path;
+                        inline-rename-buffer: root.browser-inline-rename-buffer;
                         folder-selected(path) => { root.browser-folder-selected(path); }
                         folder-toggle(path) => { root.browser-folder-toggle(path); }
                         refresh-requested => { root.browser-refresh-requested(); }
@@ -1143,6 +1169,34 @@ export component MainEditorWindow inherits Window {
                         history-entry-clicked(stack, index) => { root.history-entry-clicked(stack, index); }
                         inline-rename-commit(name) => { root.browser-inline-rename-commit(name); }
                         inline-rename-cancel => { root.browser-inline-rename-cancel(); }
+                    }
+
+                    ConsolePanel {
+                        width: 100%;
+                        height: 100%;
+                        visible: overlay.panel-kind == 6;
+                        rows <=> root.console-rows;
+                        selected-index <=> root.console-selected-index;
+                        detail-text <=> root.console-detail-text;
+                        detail-stack <=> root.console-detail-stack;
+                        collapse <=> root.console-collapse;
+                        clear-on-play <=> root.console-clear-on-play;
+                        error-pause <=> root.console-error-pause;
+                        filter-log <=> root.console-filter-log;
+                        filter-warning <=> root.console-filter-warning;
+                        filter-error <=> root.console-filter-error;
+                        count-log: root.console-count-log;
+                        count-warning: root.console-count-warning;
+                        count-error: root.console-count-error;
+                        search-text <=> root.console-search-text;
+                        clear-clicked => { root.console-clear-clicked(); }
+                        collapse-toggled => { root.console-collapse-toggled(); }
+                        clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
+                        error-pause-toggled => { root.console-error-pause-toggled(); }
+                        filter-changed => { root.console-filter-changed(); }
+                        search-edited => { root.console-search-edited(); }
+                        row-selected(i) => { root.console-row-selected(i); }
+                    }
                     }
 
                     if overlay.panel-kind == 3: InspectorPanel {
@@ -1215,7 +1269,8 @@ export component MainEditorWindow inherits Window {
                         mesh-slot-occlusion-assigned: root.mesh-slot-occlusion-assigned;
                         inspector-activated => { root.inspector-activated(); }
                         mesh-material-unlit-toggled(checked) => { root.mesh-material-unlit-toggled(checked); }
-                        mesh-material-scalar-committed(id, a, b, c, d) => { root.mesh-material-scalar-committed(id, a, b, c, d); }
+                        mesh-material-scalar-committed(id, a, b, c, d, commit) => { root.mesh-material-scalar-committed(id, a, b, c, d, commit); }
+                        color-hex-entered(target, hex) => { root.color-hex-entered(target, hex); }
                         mesh-material-reset-requested => { root.mesh-material-reset-requested(); }
                         mesh-slot-pick-requested(slot) => { root.mesh-slot-pick-requested(slot); }
                         mesh-slot-clear-requested(slot) => { root.mesh-slot-clear-requested(slot); }
@@ -1236,8 +1291,8 @@ export component MainEditorWindow inherits Window {
                         add-behaviour(type) => { root.inspector-add-behaviour(type); }
                         remove-behaviour(id) => { root.inspector-remove-behaviour(id); }
                         reorder-behaviour(from, to) => { root.inspector-reorder-behaviour(from, to); }
-                        commit-behaviour-prop(id, key, text, number, flag) => {
-                            root.inspector-commit-behaviour-prop(id, key, text, number, flag);
+                        commit-behaviour-prop(id, key, text, number, flag, commit) => {
+                            root.inspector-commit-behaviour-prop(id, key, text, number, flag, commit);
                         }
                         skeleton-modifiers: root.inspector-skeleton-modifiers;
                         skeleton-modifier-type-choices: root.inspector-skeleton-modifier-type-choices;
@@ -1248,8 +1303,8 @@ export component MainEditorWindow inherits Window {
                         set-skeleton-modifier-enabled(index, enabled) => {
                             root.inspector-set-skeleton-modifier-enabled(index, enabled);
                         }
-                        commit-skeleton-modifier-field(index, key, text, number, flag) => {
-                            root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag);
+                        commit-skeleton-modifier-field(index, key, text, number, flag, commit) => {
+                            root.inspector-commit-skeleton-modifier-field(index, key, text, number, flag, commit);
                         }
                         has-camera: root.inspector-has-camera;
                         camera-fov <=> root.inspector-camera-fov;
@@ -1257,7 +1312,7 @@ export component MainEditorWindow inherits Window {
                         camera-far <=> root.inspector-camera-far;
                         camera-is-main <=> root.inspector-camera-is-main;
                         camera-expanded <=> root.inspector-camera-expanded;
-                        camera-edited => { root.inspector-camera-edited(); }
+                        camera-edited(commit) => { root.inspector-camera-edited(commit); }
                         has-light: root.inspector-has-light;
                         light-type <=> root.inspector-light-type;
                         light-comp-color-r <=> root.inspector-light-color-r;
@@ -1273,7 +1328,7 @@ export component MainEditorWindow inherits Window {
                         light-height <=> root.inspector-light-height;
                         light-linking-text <=> root.inspector-light-linking-text;
                         light-expanded <=> root.inspector-light-expanded;
-                        light-edited => { root.inspector-light-edited(); }
+                        light-edited(commit) => { root.inspector-light-edited(commit); }
                         has-animation-player: root.inspector-has-animation-player;
                         animation-clips: root.inspector-animation-clips;
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
@@ -1308,32 +1363,6 @@ export component MainEditorWindow inherits Window {
                             root.anim-tree-canvas-open-from-selection-requested();
                         }
                     }
-
-                    if overlay.panel-kind == 6: ConsolePanel {
-                        width: 100%;
-                        height: 100%;
-                        rows <=> root.console-rows;
-                        selected-index <=> root.console-selected-index;
-                        detail-text <=> root.console-detail-text;
-                        detail-stack <=> root.console-detail-stack;
-                        collapse <=> root.console-collapse;
-                        clear-on-play <=> root.console-clear-on-play;
-                        error-pause <=> root.console-error-pause;
-                        filter-log <=> root.console-filter-log;
-                        filter-warning <=> root.console-filter-warning;
-                        filter-error <=> root.console-filter-error;
-                        count-log: root.console-count-log;
-                        count-warning: root.console-count-warning;
-                        count-error: root.console-count-error;
-                        search-text <=> root.console-search-text;
-                        clear-clicked => { root.console-clear-clicked(); }
-                        collapse-toggled => { root.console-collapse-toggled(); }
-                        clear-on-play-toggled => { root.console-clear-on-play-toggled(); }
-                        error-pause-toggled => { root.console-error-pause-toggled(); }
-                        filter-changed => { root.console-filter-changed(); }
-                        search-edited => { root.console-search-edited(); }
-                        row-selected(i) => { root.console-row-selected(i); }
-                    }
                 }
             }
 
@@ -1367,13 +1396,16 @@ export component MainEditorWindow inherits Window {
                 root.attachment-preview-transform-edited(
                     card.entity-id, card.kind, card.index, px, py, pz, rx, ry, rz, sx, sy, sz);
             }
-            camera-edited(fov, near, far, is-main) => {
+            camera-edited(fov, near, far, is-main, commit) => {
                 root.attachment-preview-camera-edited(
-                    card.entity-id, card.kind, card.index, fov, near, far, is-main);
+                    card.entity-id, card.kind, card.index, fov, near, far, is-main, commit);
             }
-            light-edited(light-type, r, g, b, intensity, enabled, range) => {
+            light-edited(light-type, r, g, b, intensity, enabled, range, commit) => {
                 root.attachment-preview-light-edited(
-                    card.entity-id, card.kind, card.index, light-type, r, g, b, intensity, enabled, range);
+                    card.entity-id, card.kind, card.index, light-type, r, g, b, intensity, enabled, range, commit);
+            }
+            color-hex-entered(hex) => {
+                root.attachment-preview-color-hex-entered(card.entity-id, card.kind, card.index, hex);
             }
             unique-remove-requested => {
                 root.attachment-preview-unique-remove(card.entity-id, card.kind, card.index);
@@ -1384,9 +1416,9 @@ export component MainEditorWindow inherits Window {
             behaviour-remove-requested => {
                 root.attachment-preview-behaviour-remove(card.entity-id, card.kind, card.index);
             }
-            behaviour-prop-committed(behaviour-id, key, text, number, bool-value) => {
+            behaviour-prop-committed(behaviour-id, key, text, number, bool-value, commit) => {
                 root.attachment-preview-behaviour-prop(
-                    card.entity-id, card.kind, card.index, behaviour-id, key, text, number, bool-value);
+                    card.entity-id, card.kind, card.index, behaviour-id, key, text, number, bool-value, commit);
             }
             modifier-remove-requested => {
                 root.attachment-preview-modifier-remove(card.entity-id, card.kind, card.index);
@@ -1394,9 +1426,9 @@ export component MainEditorWindow inherits Window {
             modifier-enabled-toggled(enabled) => {
                 root.attachment-preview-modifier-enabled(card.entity-id, card.kind, card.index, enabled);
             }
-            modifier-field-committed(key, text, number, bool-value) => {
+            modifier-field-committed(key, text, number, bool-value, commit) => {
                 root.attachment-preview-modifier-field(
-                    card.entity-id, card.kind, card.index, key, text, number, bool-value);
+                    card.entity-id, card.kind, card.index, key, text, number, bool-value, commit);
             }
         }
 
@@ -1431,6 +1463,9 @@ export component MainEditorWindow inherits Window {
             width: parent.width;
             height: parent.height;
             show-dialog: root.play-dirty-dialog-visible;
+            body-text: root.play-dirty-body-text;
+            save-button-text: root.play-dirty-save-text;
+            last-saved-button-text: root.play-dirty-last-saved-text;
             save-and-play => { root.play-dirty-save-and-play(); }
             play-last-saved => { root.play-dirty-play-last-saved(); }
             cancelled => { root.play-dirty-cancelled(); }

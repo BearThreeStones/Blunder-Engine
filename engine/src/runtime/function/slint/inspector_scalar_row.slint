@@ -1,0 +1,75 @@
+import { EditorTheme } from "editor_theme.slint";
+import { AxisNumberField } from "axis_number_field.slint";
+import { EditorIconReloadSmall } from "editor_icons.slint";
+
+/// Labeled Inspector property-field number row: label, Inspector field reset, AxisNumberField.
+/// Reset is visible only when the cell is not at reset-value. Click seals one Document Command.
+export component InspectorScalarRow inherits Rectangle {
+    in property <string> label: "";
+    in-out property <float> value: 0.0;
+    in property <float> reset-value: 0.0;
+    in property <length> label-width: 96px;
+    in property <float> scrub-sensitivity: 0.05;
+
+    callback live-edited();
+    callback committed();
+
+    private property <bool> show-reset: Math.abs(root.value - root.reset-value) > 0.0005;
+
+    height: EditorTheme.line;
+    vertical-stretch: 0;
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: stretch;
+
+        Text {
+            text: root.label;
+            color: EditorTheme.muted;
+            font-size: 11px;
+            width: root.label-width;
+            vertical-alignment: center;
+        }
+
+        reset-slot := Rectangle {
+            width: 16px;
+            height: EditorTheme.line;
+            background: transparent;
+
+            if root.show-reset: TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => {
+                    root.value = root.reset-value;
+                    root.committed();
+                }
+                EditorIconReloadSmall {
+                    icon-size: 12px;
+                    icon-color: parent.has-hover ? EditorTheme.default-text : EditorTheme.icon;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+
+        AxisNumberField {
+            show-axis-label: false;
+            value <=> root.value;
+            scrub-sensitivity: root.scrub-sensitivity;
+            horizontal-stretch: 1;
+            live-edited => { root.live-edited(); }
+            scrub-ended => { root.committed(); }
+            text-committed(t) => {
+                root.value = t.to-float();
+                root.committed();
+            }
+            focus-changed(focused) => {
+                if (!focused) {
+                    root.committed();
+                }
+            }
+        }
+    }
+}

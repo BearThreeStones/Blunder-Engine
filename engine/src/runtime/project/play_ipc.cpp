@@ -297,6 +297,124 @@ bool extractJsonNumberField(const std::string& json, const char* key,
   return true;
 }
 
+bool extractJsonBoolField(const std::string& json, const char* key, bool& out) {
+  const std::string needle = std::string("\"") + key + "\":";
+  const size_t start = json.find(needle);
+  if (start == std::string::npos) {
+    return false;
+  }
+  size_t i = start + needle.size();
+  while (i < json.size() &&
+         std::isspace(static_cast<unsigned char>(json[i]))) {
+    ++i;
+  }
+  if (json.compare(i, 4, "true") == 0) {
+    out = true;
+    return true;
+  }
+  if (json.compare(i, 5, "false") == 0) {
+    out = false;
+    return true;
+  }
+  return false;
+}
+
+bool extractJsonFloatArray(const std::string& json, const char* key, float* out,
+                           size_t count) {
+  if (out == nullptr || count == 0) {
+    return false;
+  }
+  const std::string needle = std::string("\"") + key + "\":";
+  const size_t start = json.find(needle);
+  if (start == std::string::npos) {
+    return false;
+  }
+  size_t i = start + needle.size();
+  while (i < json.size() &&
+         std::isspace(static_cast<unsigned char>(json[i]))) {
+    ++i;
+  }
+  if (i >= json.size() || json[i] != '[') {
+    return false;
+  }
+  ++i;
+  for (size_t n = 0; n < count; ++n) {
+    while (i < json.size() &&
+           (std::isspace(static_cast<unsigned char>(json[i])) ||
+            json[i] == ',')) {
+      ++i;
+    }
+    char* end = nullptr;
+    const float value = std::strtof(json.c_str() + i, &end);
+    if (end == json.c_str() + i) {
+      return false;
+    }
+    out[n] = value;
+    i = static_cast<size_t>(end - json.c_str());
+  }
+  return true;
+}
+
+bool extractJsonObjectAt(const std::string& json, size_t open, std::string& out,
+                         size_t& end) {
+  if (open >= json.size() || json[open] != '{') {
+    return false;
+  }
+  int depth = 0;
+  bool in_string = false;
+  bool escape = false;
+  for (size_t i = open; i < json.size(); ++i) {
+    const char ch = json[i];
+    if (in_string) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch == '\\') {
+        escape = true;
+        continue;
+      }
+      if (ch == '"') {
+        in_string = false;
+      }
+      continue;
+    }
+    if (ch == '"') {
+      in_string = true;
+      continue;
+    }
+    if (ch == '{') {
+      ++depth;
+    } else if (ch == '}') {
+      --depth;
+      if (depth == 0) {
+        out = json.substr(open, i - open + 1);
+        end = i + 1;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+void appendJsonFloat(std::ostringstream& oss, float value) {
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%.9g", static_cast<double>(value));
+  oss << buf;
+}
+
+void appendJsonFloatArray(std::ostringstream& oss, const float* values,
+                          size_t count) {
+  oss << '[';
+  for (size_t i = 0; i < count; ++i) {
+    if (i > 0) {
+      oss << ',';
+    }
+    appendJsonFloat(oss, values[i]);
+  }
+  oss << ']';
+}
+
 const char k_b64[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -488,6 +606,143 @@ bool parsePlayIpcErrorLine(const std::string& line, PlayIpcErrorRecord& out) {
   return true;
 }
 
+std::string formatPlayIpcIssueLine(const PlayIpcIssueRecord& record) {
+  std::string sev = isPlayIpcSev(record.sev) ? record.sev : "warning";
+  std::ostringstream oss;
+  oss << "{\"v\":1,\"kind\":\"issue\",\"sev\":\"" << jsonEscape(sev)
+      << "\",\"code\":\"" << jsonEscape(truncatePlayIpcField(record.code))
+      << "\",\"address\":\""
+      << jsonEscape(truncatePlayIpcField(record.address)) << "\"}";
+  return oss.str();
+}
+
+bool parsePlayIpcIssueLine(const std::string& line, PlayIpcIssueRecord& out) {
+  const std::string trimmed = trimAscii(line);
+  if (trimmed.empty() || trimmed.front() != '{') {
+    return false;
+  }
+  std::string kind;
+  if (!extractJsonStringField(trimmed, "kind", kind) || kind != "issue") {
+    return false;
+  }
+  std::string sev;
+  if (!extractJsonStringField(trimmed, "sev", sev) || !isPlayIpcSev(sev)) {
+    return false;
+  }
+  std::string code;
+  if (!extractJsonStringField(trimmed, "code", code) || code.empty()) {
+    return false;
+  }
+  std::string address;
+  (void)extractJsonStringField(trimmed, "address", address);
+  out.sev = std::move(sev);
+  out.code = std::move(code);
+  out.address = std::move(address);
+  return true;
+}
+
+std::string formatPlayIpcReloadLine(bool ok) {
+  return std::string("{\"v\":1,\"kind\":\"reload\",\"ok\":") +
+         (ok ? "true" : "false") + "}";
+}
+
+bool parsePlayIpcReloadLine(const std::string& line, PlayIpcReloadRecord& out) {
+  const std::string trimmed = trimAscii(line);
+  if (trimmed.empty() || trimmed.front() != '{') {
+    return false;
+  }
+  std::string kind;
+  if (!extractJsonStringField(trimmed, "kind", kind) || kind != "reload") {
+    return false;
+  }
+  bool ok = false;
+  if (!extractJsonBoolField(trimmed, "ok", ok)) {
+    return false;
+  }
+  out.ok = ok;
+  return true;
+}
+
+std::string formatPlayIpcPosesLine(const PlayIpcPosesRecord& record) {
+  std::ostringstream oss;
+  oss << "{\"v\":1,\"kind\":\"poses\",\"entities\":[";
+  for (size_t i = 0; i < record.entities.size(); ++i) {
+    if (i > 0) {
+      oss << ',';
+    }
+    const PlayIpcPoseEntity& entity = record.entities[i];
+    oss << "{\"name\":\"" << jsonEscape(truncatePlayIpcField(entity.name))
+        << "\",\"t\":";
+    appendJsonFloatArray(oss, entity.t, 3);
+    oss << ",\"r\":";
+    appendJsonFloatArray(oss, entity.r, 4);
+    oss << ",\"s\":";
+    appendJsonFloatArray(oss, entity.s, 3);
+    oss << '}';
+  }
+  oss << "]}";
+  return oss.str();
+}
+
+bool parsePlayIpcPosesLine(const std::string& line, PlayIpcPosesRecord& out) {
+  const std::string trimmed = trimAscii(line);
+  if (trimmed.empty() || trimmed.front() != '{') {
+    return false;
+  }
+  std::string kind;
+  if (!extractJsonStringField(trimmed, "kind", kind) || kind != "poses") {
+    return false;
+  }
+  const std::string needle = "\"entities\":";
+  const size_t field = trimmed.find(needle);
+  if (field == std::string::npos) {
+    return false;
+  }
+  size_t i = field + needle.size();
+  while (i < trimmed.size() &&
+         std::isspace(static_cast<unsigned char>(trimmed[i]))) {
+    ++i;
+  }
+  if (i >= trimmed.size() || trimmed[i] != '[') {
+    return false;
+  }
+  ++i;
+  PlayIpcPosesRecord parsed;
+  while (i < trimmed.size()) {
+    while (i < trimmed.size() &&
+           (std::isspace(static_cast<unsigned char>(trimmed[i])) ||
+            trimmed[i] == ',')) {
+      ++i;
+    }
+    if (i >= trimmed.size()) {
+      return false;
+    }
+    if (trimmed[i] == ']') {
+      out = std::move(parsed);
+      return true;
+    }
+    if (trimmed[i] != '{') {
+      return false;
+    }
+    std::string object;
+    size_t end = 0;
+    if (!extractJsonObjectAt(trimmed, i, object, end)) {
+      return false;
+    }
+    PlayIpcPoseEntity entity;
+    if (!extractJsonStringField(object, "name", entity.name) ||
+        entity.name.empty()) {
+      return false;
+    }
+    (void)extractJsonFloatArray(object, "t", entity.t, 3);
+    (void)extractJsonFloatArray(object, "r", entity.r, 4);
+    (void)extractJsonFloatArray(object, "s", entity.s, 3);
+    parsed.entities.push_back(std::move(entity));
+    i = end;
+  }
+  return false;
+}
+
 bool isPlayIpcLoopbackHost(const std::string& host) {
   if (host.empty()) {
     return false;
@@ -566,6 +821,10 @@ PlayIpcHostCommand parsePlayIpcHostCommandLine(const std::string& line) {
     out.command = PlayIpcCommand::Frame;
     return out;
   }
+  if (cmd == "reload") {
+    out.command = PlayIpcCommand::Reload;
+    return out;
+  }
   if (cmd.size() >= 6 && cmd.compare(0, 5, "step ") == 0) {
     char* end = nullptr;
     const unsigned long ticks = std::strtoul(cmd.c_str() + 5, &end, 10);
@@ -575,6 +834,15 @@ PlayIpcHostCommand parsePlayIpcHostCommandLine(const std::string& line) {
     out.command = PlayIpcCommand::Step;
     out.step_ticks = static_cast<uint32_t>(
         ticks > k_play_step_max_ticks ? k_play_step_max_ticks : ticks);
+    return out;
+  }
+  if (cmd.size() >= 7 && cmd.compare(0, 6, "patch ") == 0) {
+    const std::string json = trimAscii(cmd.substr(6));
+    if (json.empty() || json.front() != '{') {
+      return out;
+    }
+    out.command = PlayIpcCommand::Patch;
+    out.patch_json = json;
     return out;
   }
   return out;
@@ -596,6 +864,10 @@ const char* playIpcCommandName(PlayIpcCommand command) {
       return "step";
     case PlayIpcCommand::Frame:
       return "frame";
+    case PlayIpcCommand::Reload:
+      return "reload";
+    case PlayIpcCommand::Patch:
+      return "patch";
     case PlayIpcCommand::Unknown:
     default:
       return "unknown";
@@ -746,7 +1018,8 @@ bool PlayIpcServer::waitPeerReady(int timeout_ms) {
 }
 
 bool PlayIpcServer::sendCommand(PlayIpcCommand command) {
-  if (command == PlayIpcCommand::Unknown || command == PlayIpcCommand::Step) {
+  if (command == PlayIpcCommand::Unknown || command == PlayIpcCommand::Step ||
+      command == PlayIpcCommand::Patch) {
     return false;
   }
   return sendLine(playIpcCommandName(command));
@@ -763,6 +1036,16 @@ bool PlayIpcServer::sendStep(uint32_t ticks) {
 }
 
 bool PlayIpcServer::sendFrameRequest() { return sendCommand(PlayIpcCommand::Frame); }
+
+bool PlayIpcServer::sendReload() { return sendCommand(PlayIpcCommand::Reload); }
+
+bool PlayIpcServer::sendPatch(const std::string& json) {
+  const std::string trimmed = trimAscii(json);
+  if (trimmed.empty() || trimmed.front() != '{') {
+    return false;
+  }
+  return sendLine(std::string("patch ") + trimmed);
+}
 
 bool PlayIpcServer::sendLine(const std::string& line) {
   if (!m_ready) {
@@ -803,6 +1086,21 @@ void PlayIpcServer::drainInbound() {
       m_pending_errors.push_back(std::move(error));
       continue;
     }
+    PlayIpcIssueRecord issue;
+    if (parsePlayIpcIssueLine(line, issue)) {
+      m_pending_issues.push_back(std::move(issue));
+      continue;
+    }
+    PlayIpcReloadRecord reload;
+    if (parsePlayIpcReloadLine(line, reload)) {
+      m_pending_reloads.push_back(reload);
+      continue;
+    }
+    PlayIpcPosesRecord poses;
+    if (parsePlayIpcPosesLine(line, poses)) {
+      m_pending_poses.push_back(std::move(poses));
+      continue;
+    }
     PlayIpcLogRecord record;
     if (parsePlayIpcLogLine(line, record)) {
       m_pending_logs.push_back(std::move(record));
@@ -831,6 +1129,27 @@ std::vector<PlayIpcErrorRecord> PlayIpcServer::pollErrors() {
   return out;
 }
 
+std::vector<PlayIpcIssueRecord> PlayIpcServer::pollIssues() {
+  drainInbound();
+  std::vector<PlayIpcIssueRecord> out;
+  out.swap(m_pending_issues);
+  return out;
+}
+
+std::vector<PlayIpcReloadRecord> PlayIpcServer::pollReloads() {
+  drainInbound();
+  std::vector<PlayIpcReloadRecord> out;
+  out.swap(m_pending_reloads);
+  return out;
+}
+
+std::vector<PlayIpcPosesRecord> PlayIpcServer::pollPoses() {
+  drainInbound();
+  std::vector<PlayIpcPosesRecord> out;
+  out.swap(m_pending_poses);
+  return out;
+}
+
 void PlayIpcServer::close() {
   closeSocket(asSocket(m_client_fd));
   closeSocket(asSocket(m_listen_fd));
@@ -842,6 +1161,9 @@ void PlayIpcServer::close() {
   m_pending_logs.clear();
   m_pending_frames.clear();
   m_pending_errors.clear();
+  m_pending_issues.clear();
+  m_pending_reloads.clear();
+  m_pending_poses.clear();
 }
 
 PlayIpcClient::PlayIpcClient() = default;
@@ -970,6 +1292,27 @@ bool PlayIpcClient::sendError(const std::string& code) {
     return false;
   }
   return sendLine(formatPlayIpcErrorLine(code));
+}
+
+bool PlayIpcClient::sendIssue(const PlayIpcIssueRecord& record) {
+  if (!m_ready_sent) {
+    return false;
+  }
+  return sendLine(formatPlayIpcIssueLine(record));
+}
+
+bool PlayIpcClient::sendReloadAck(bool ok) {
+  if (!m_ready_sent) {
+    return false;
+  }
+  return sendLine(formatPlayIpcReloadLine(ok));
+}
+
+bool PlayIpcClient::sendPoses(const PlayIpcPosesRecord& record) {
+  if (!m_ready_sent) {
+    return false;
+  }
+  return sendLine(formatPlayIpcPosesLine(record));
 }
 
 void PlayIpcClient::processHostBuffer() {
