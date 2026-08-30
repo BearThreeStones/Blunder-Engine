@@ -65,6 +65,31 @@ void test_skeleton_hierarchy_rest_pose_reset() {
                         arm_rest.translation));
 }
 
+void test_parent_index_after_child_rebuilds_global() {
+  using namespace Blunder;
+
+  Skeleton skeleton;
+  const int child = skeleton.addBone("child", -1);
+  const int parent = skeleton.addBone("parent", -1);
+  expect_true("child before parent", child == 0 && parent == 1);
+
+  BoneTransform parent_rest;
+  parent_rest.translation = Vec3(1.0f, 0.0f, 0.0f);
+  skeleton.setBoneRestLocal(static_cast<size_t>(parent), parent_rest);
+
+  BoneTransform child_rest;
+  child_rest.translation = Vec3(0.0f, 2.0f, 0.0f);
+  skeleton.setBoneRestLocal(static_cast<size_t>(child), child_rest);
+  skeleton.setParentIndex(static_cast<size_t>(child), parent);
+  skeleton.resetPoseToRest();
+  skeleton.rebuildPoseBuffers();
+
+  const Vec3 child_world =
+      Vec3(skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(child))[3]);
+  expect_true("global uses later parent",
+              vec3_near(child_world, Vec3(1.0f, 2.0f, 0.0f)));
+}
+
 void test_inverse_bind_matrix() {
   using namespace Blunder;
 
@@ -74,6 +99,39 @@ void test_inverse_bind_matrix() {
   skeleton.setBoneInverseBind(static_cast<size_t>(bone), bind);
   expect_true("inverse bind round-trip",
               skeleton.getBoneInverseBind(static_cast<size_t>(bone)) == bind);
+}
+
+void test_rebuild_inverse_binds_makes_rest_palette_identity() {
+  using namespace Blunder;
+
+  Skeleton skeleton;
+  const int root = skeleton.addBone("root", -1);
+  const int child = skeleton.addBone("child", root);
+  BoneTransform root_rest;
+  root_rest.translation = Vec3(0.0f, 0.0f, 2.0f);
+  skeleton.setBoneRestLocal(static_cast<size_t>(root), root_rest);
+  BoneTransform child_rest;
+  child_rest.translation = Vec3(1.0f, 0.0f, 0.0f);
+  skeleton.setBoneRestLocal(static_cast<size_t>(child), child_rest);
+  skeleton.rebuildInverseBindsFromRest();
+  skeleton.resetPoseToRest();
+  skeleton.rebuildPoseBuffers();
+
+  const Mat4 root_skin =
+      skeleton.getBoneSkinMatrix(static_cast<size_t>(root));
+  const Mat4 child_skin =
+      skeleton.getBoneSkinMatrix(static_cast<size_t>(child));
+  const Mat4 identity(1.0f);
+  float root_off = 0.0f;
+  float child_off = 0.0f;
+  for (int c = 0; c < 4; ++c) {
+    for (int r = 0; r < 4; ++r) {
+      root_off += std::fabs(root_skin[c][r] - identity[c][r]);
+      child_off += std::fabs(child_skin[c][r] - identity[c][r]);
+    }
+  }
+  expect_true("root rest palette identity", root_off < 1.0e-4f);
+  expect_true("child rest palette identity", child_off < 1.0e-4f);
 }
 
 void test_object_hosts_skeleton() {
@@ -130,7 +188,9 @@ void test_classdb_skeleton_registration() {
 
 int main() {
   test_skeleton_hierarchy_rest_pose_reset();
+  test_parent_index_after_child_rebuilds_global();
   test_inverse_bind_matrix();
+  test_rebuild_inverse_binds_makes_rest_palette_identity();
   test_object_hosts_skeleton();
   test_classdb_skeleton_registration();
 

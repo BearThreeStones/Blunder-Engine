@@ -403,7 +403,7 @@ eastl::vector<PickOverlay::PickDraw> PickOverlay::collectPickableDraws(
       return;
     }
 
-    GpuMesh* gpu_mesh = render_system.getOrUploadGpuMesh(renderer.mesh.get());
+    GpuMesh* gpu_mesh = render_system.gpuMeshForEditorOverlay(renderer.mesh.get());
     if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
         gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
       return;

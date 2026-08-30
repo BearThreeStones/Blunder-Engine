@@ -607,7 +607,8 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (preview == nullptr) {
         break;
       }
-      if (!preview->play()) {
+      const bool started = preview->play();
+      if (!started) {
         break;
       }
       if (services.render_system) {

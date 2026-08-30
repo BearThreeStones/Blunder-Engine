@@ -429,6 +429,27 @@ void test_session_loop_off_pauses_last_frame() {
   LifecycleDispatch::clear();
 }
 
+void test_tree_play_starts_default_clip_play() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* object = makeTreePreviewObject(nullptr);
+  AnimationTree* tree = object->getAnimationTree();
+  tree->start("Locomotion");
+  tree->setActive(true);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  expect_true("play", controller.play());
+  expect_true("clip play override", tree->isClipPlayOverride());
+  expect_true("ruler walk", controller.rulerClipName() == "walk");
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+}
+
 void test_fire_hard_cut_and_enter_cine_does_not_fire() {
   using namespace Blunder;
 
@@ -995,6 +1016,7 @@ int main() {
   test_tree_window_bind_enable_disable();
   test_tree_stop_and_rebind();
   test_session_loop_off_pauses_last_frame();
+  test_tree_play_starts_default_clip_play();
   test_fire_hard_cut_and_enter_cine_does_not_fire();
   test_clip_play_stop_rebind_and_end_cine();
   test_timescale_command_dirties_play_does_not();

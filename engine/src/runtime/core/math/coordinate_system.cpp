@@ -30,6 +30,17 @@ Vec3 transformDirectionGltfToEngine(const Vec3& direction_gltf) {
   return basisGltfToEngine3() * direction_gltf;
 }
 
+Quat transformRotationGltfToEngine(const Quat& rotation_gltf) {
+  const Mat4 rotation_engine =
+      similarityGltfToEngine(glm::mat4_cast(rotation_gltf));
+  return glm::normalize(glm::quat_cast(Mat3(rotation_engine)));
+}
+
+Vec3 transformScaleGltfToEngine(const Vec3& scale_gltf) {
+  // C maps glTF +Y to engine +Z and glTF +Z to engine -Y; scale is unsigned.
+  return Vec3(scale_gltf.x, scale_gltf.z, scale_gltf.y);
+}
+
 Mat4 similarityGltfToEngine(const Mat4& matrix_gltf) {
   const Mat4 c = basisGltfToEngine();
   const Mat4 c_inv = glm::inverse(c);

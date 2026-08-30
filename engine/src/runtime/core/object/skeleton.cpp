@@ -1,5 +1,7 @@
 #include "runtime/core/object/skeleton.h"
 
+#include <glm/gtc/matrix_inverse.hpp>
+
 namespace Blunder {
 
 int Skeleton::addBone(eastl::string name, int parent_index) {
@@ -37,6 +39,18 @@ int Skeleton::getParentIndex(size_t index) const {
     return -1;
   }
   return m_bones[index].parent_index;
+}
+
+void Skeleton::setParentIndex(size_t index, int parent_index) {
+  if (index >= m_bones.size()) {
+    return;
+  }
+  if (parent_index >= static_cast<int>(m_bones.size()) ||
+      parent_index == static_cast<int>(index)) {
+    return;
+  }
+  m_bones[index].parent_index = parent_index;
+  invalidatePoseBuffers();
 }
 
 void Skeleton::setBoneRestLocal(size_t index, const BoneTransform& transform) {
@@ -83,6 +97,13 @@ Mat4 Skeleton::getBoneInverseBind(size_t index) const {
   return m_bones[index].inverse_bind;
 }
 
+void Skeleton::rebuildInverseBindsFromRest() {
+  for (size_t i = 0; i < m_bones.size(); ++i) {
+    m_bones[i].inverse_bind = glm::inverse(getBoneGlobalRestMatrix(i));
+  }
+  invalidatePoseBuffers();
+}
+
 Mat4 Skeleton::getBoneGlobalRestMatrix(size_t index) const {
   return computeGlobalMatrix(index, false);
 }
@@ -112,16 +133,11 @@ void Skeleton::rebuildPoseBuffers() {
   const size_t count = m_bones.size();
   m_global_pose_cache.resize(count);
   m_matrix_palette.resize(count);
+  // Parents may have a higher index than children (glTF skin joint order).
   for (size_t i = 0; i < count; ++i) {
-    const Bone& bone = m_bones[i];
-    const Mat4 local = boneTransformToMatrix(bone.pose_local);
-    if (bone.parent_index >= 0) {
-      m_global_pose_cache[i] =
-          m_global_pose_cache[static_cast<size_t>(bone.parent_index)] * local;
-    } else {
-      m_global_pose_cache[i] = local;
-    }
-    m_matrix_palette[i] = m_global_pose_cache[i] * bone.inverse_bind;
+    m_global_pose_cache[i] = computeGlobalMatrix(i, true);
+    m_matrix_palette[i] =
+        m_global_pose_cache[i] * m_bones[i].inverse_bind;
   }
   m_pose_buffers_valid = true;
 }

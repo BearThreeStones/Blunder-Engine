@@ -25,6 +25,7 @@
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
+#include "runtime/resource/asset/mesh_asset.h"
 
 namespace Blunder {
 
@@ -369,7 +370,7 @@ void OutlineOverlay::begin_sync(OverlayResources& /*res*/,
     if (!renderer.mesh) {
       return;
     }
-    GpuMesh* gpu_mesh = render_system->getOrUploadGpuMesh(renderer.mesh.get());
+    GpuMesh* gpu_mesh = render_system->gpuMeshForEditorOverlay(renderer.mesh.get());
     if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
         gpu_mesh->getIndexBuffer() == nullptr ||
         gpu_mesh->getIndexCount() == 0) {

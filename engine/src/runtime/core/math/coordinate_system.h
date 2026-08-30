@@ -27,6 +27,8 @@ Mat3 basisEngineToGltf3();
 
 Vec3 transformPointGltfToEngine(const Vec3& point_gltf);
 Vec3 transformDirectionGltfToEngine(const Vec3& direction_gltf);
+Quat transformRotationGltfToEngine(const Quat& rotation_gltf);
+Vec3 transformScaleGltfToEngine(const Vec3& scale_gltf);
 
 /// Converts a glTF node/world matrix: T_engine = C * T_gltf * C^-1.
 Mat4 similarityGltfToEngine(const Mat4& matrix_gltf);

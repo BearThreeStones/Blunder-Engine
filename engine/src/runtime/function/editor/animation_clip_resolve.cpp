@@ -1,5 +1,6 @@
 #include "runtime/function/editor/animation_clip_resolve.h"
 
+#include "runtime/core/math/coordinate_system.h"
 #include "runtime/core/object/animation_player.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -7,15 +8,23 @@
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
+#include <filesystem>
+
 namespace Blunder {
 
 namespace {
 
-eastl::string stripAssetsPrefix(eastl::string path) {
-  if (path.compare(0, 7, "assets/") == 0) {
-    path.erase(0, 7);
+std::filesystem::path resolveVirtualFile(FileSystem& file_system,
+                                         const eastl::string& virtual_path) {
+  if (virtual_path.compare(0, 7, "assets/") == 0) {
+    return file_system.resolveAsset(
+        std::filesystem::path(virtual_path.c_str() + 7));
   }
-  return path;
+  if (virtual_path.compare(0, 10, "resources/") == 0) {
+    return file_system.resolveResource(
+        std::filesystem::path(virtual_path.c_str() + 10));
+  }
+  return file_system.resolveAsset(std::filesystem::path(virtual_path.c_str()));
 }
 
 bool readTextAsset(const eastl::string& virtual_path, eastl::string& out_text) {
@@ -23,10 +32,38 @@ bool readTextAsset(const eastl::string& virtual_path, eastl::string& out_text) {
   if (file_system == nullptr || virtual_path.empty()) {
     return false;
   }
-  const eastl::string relative = stripAssetsPrefix(virtual_path);
-  const std::filesystem::path absolute =
-      file_system->resolveAsset(std::filesystem::path(relative.c_str()));
-  return file_system->readText(absolute, out_text);
+  return file_system->readText(resolveVirtualFile(*file_system, virtual_path),
+                               out_text);
+}
+
+void convertClipTracksGltfToEngine(AnimationClipData& clip) {
+  for (AnimationTrack& track : clip.tracks) {
+    for (AnimationKeyframe& key : track.keys) {
+      if (track.channel == AnimationChannel::Translation &&
+          key.value.size() >= 3) {
+        const Vec3 engine = transformPointGltfToEngine(
+            Vec3(key.value[0], key.value[1], key.value[2]));
+        key.value[0] = engine.x;
+        key.value[1] = engine.y;
+        key.value[2] = engine.z;
+      } else if (track.channel == AnimationChannel::Rotation &&
+                 key.value.size() >= 4) {
+        const Quat engine = transformRotationGltfToEngine(
+            Quat(key.value[3], key.value[0], key.value[1], key.value[2]));
+        key.value[0] = engine.x;
+        key.value[1] = engine.y;
+        key.value[2] = engine.z;
+        key.value[3] = engine.w;
+      } else if (track.channel == AnimationChannel::Scale &&
+                 key.value.size() >= 3) {
+        const Vec3 engine = transformScaleGltfToEngine(
+            Vec3(key.value[0], key.value[1], key.value[2]));
+        key.value[0] = engine.x;
+        key.value[1] = engine.y;
+        key.value[2] = engine.z;
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -63,7 +100,11 @@ bool resolveAnimationClipFromAssets(void* /*userdata*/, const eastl::string& gui
     return false;
   }
 
-  return AssetYaml::parseAnimationClipData(clip_yaml, out_clip);
+  const bool parsed = AssetYaml::parseAnimationClipData(clip_yaml, out_clip);
+  if (parsed) {
+    convertClipTracksGltfToEngine(out_clip);
+  }
+  return parsed;
 }
 
 void wireAnimationPlayerAssetResolver(AnimationPlayer& player) {

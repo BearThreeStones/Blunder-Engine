@@ -4,6 +4,7 @@
 #include "runtime/core/object/skeleton.h"
 #include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/skeleton_from_gltf.h"
 #include "runtime/platform/file_system/file_system.h"
@@ -194,6 +195,48 @@ int main() {
                     object->getSkeleton()->getBoneCount() == 0);
     expect_true("static no player",
                 object != nullptr && !object->hasAnimationPlayer());
+  }
+
+  {
+    Scene scene;
+    SceneEntityDefinition dog;
+    dog.name = "ReloadDog";
+    dog.has_skeleton = true;
+    dog.mesh_virtual_path = "resources/Models/skinned.gltf";
+    dog.animation_player_clips.push_back(
+        {"idle", "00000000-0000-0000-0000-000000000001"});
+    SceneEntityDefinition geo;
+    geo.name = "GeoChild";
+    geo.parent_name = "ReloadDog";
+    geo.has_skeleton = true;
+    scene.getEntities().push_back(eastl::move(dog));
+    scene.getEntities().push_back(eastl::move(geo));
+
+    SceneInstance instance;
+    instance.instantiate(scene);
+    const EntityId id = instance.findEntityByName("ReloadDog");
+    Object* object = instance.findBoundObject(id);
+    expect_true("reload bound object", object != nullptr && object->hasSkeleton());
+    expect_true(
+        "reload empty before hydrate",
+        object != nullptr && object->getSkeleton() != nullptr &&
+            object->getSkeleton()->getBoneCount() == 0);
+    expect_true("hydrate empty skeletons",
+                hydrateEmptySkeletonsFromEntityMeshes(&assets, instance));
+    const Skeleton* skeleton = object != nullptr ? object->getSkeleton() : nullptr;
+    expect_true("reload named hips",
+                skeleton != nullptr && skeleton->findBoneIndex("hips") >= 0);
+    expect_true("reload named spine",
+                skeleton != nullptr && skeleton->findBoneIndex("spine") >= 0);
+
+    const EntityId child_id = instance.findEntityByName("GeoChild");
+    Object* child = instance.findBoundObject(child_id);
+    expect_true("child empty skeleton",
+                child != nullptr && child->hasSkeleton() &&
+                    child->getSkeleton()->getBoneCount() == 0);
+    Skeleton* used = instance.findSkeletonForEntity(child_id);
+    expect_true("child skins from parent bones",
+                used != nullptr && used->findBoneIndex("hips") >= 0);
   }
 
   assets.shutdown();

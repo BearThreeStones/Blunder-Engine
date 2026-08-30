@@ -125,6 +125,8 @@ class RenderSystem final {
                                         size_t vertex_byte_size,
                                         const uint32_t* indices,
                                         size_t index_count);
+  /// CPU-skinned `#skinned` GPU mesh when present (same vertex layout as bind).
+  GpuMesh* gpuMeshForEditorOverlay(const MeshAsset* mesh_asset);
 
   /// Drop all uploaded GPU meshes (Editor Asset Hot Reload after Mesh Reimport).
   void invalidateAllGpuMeshes() { clearGpuMeshes(); }

@@ -847,11 +847,17 @@ void SceneInstance::releaseBoundObject(EntityId entity_id) {
 }
 
 Skeleton* SceneInstance::findSkeletonForEntity(EntityId entity_id) const {
+  Skeleton* empty_fallback = nullptr;
   EntityId current = entity_id;
   while (isValid(current)) {
     if (Object* object = findBoundObject(current)) {
-      if (object->hasSkeleton()) {
-        return object->getSkeleton();
+      if (Skeleton* skeleton = object->getSkeleton()) {
+        if (skeleton->getBoneCount() > 0) {
+          return skeleton;
+        }
+        if (empty_fallback == nullptr) {
+          empty_fallback = skeleton;
+        }
       }
     }
     const Entity* entity = getEntity(current);
@@ -860,7 +866,7 @@ Skeleton* SceneInstance::findSkeletonForEntity(EntityId entity_id) const {
     }
     current = entity->getParentId();
   }
-  return nullptr;
+  return empty_fallback;
 }
 
 EntityId SceneInstance::indexToId(size_t index) const {

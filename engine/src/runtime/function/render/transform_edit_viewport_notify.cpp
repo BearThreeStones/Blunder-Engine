@@ -27,4 +27,9 @@ void notifyViewportAfterInspectorLightEdit(RenderSystem* render_system,
   notifyViewportAfterInspectorTransformEdit(render_system, slint_system);
 }
 
+void notifyViewportAfterAnimationPreviewFrame(RenderSystem* render_system,
+                                              SlintSystem* slint_system) {
+  notifyViewportAfterInspectorTransformEdit(render_system, slint_system);
+}
+
 }  // namespace Blunder

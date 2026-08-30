@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -220,6 +221,19 @@ OffscreenRenderTarget* vkOffscreenRt(RenderSystem* self) {
   auto* target = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
       self->getOffscreenTarget());
   return target ? target->nativeTarget() : nullptr;
+}
+
+eastl::string gpuMeshCacheKey(const MeshAsset& mesh_asset) {
+  eastl::string cache_key = mesh_asset.getVirtualPath();
+  if (cache_key.empty()) {
+    const std::filesystem::path& absolute_path = mesh_asset.getAbsolutePath();
+    if (!absolute_path.empty()) {
+      cache_key = eastl::string(absolute_path.generic_string().c_str());
+    } else {
+      cache_key = "generated://render/anonymous_mesh";
+    }
+  }
+  return cache_key;
 }
 
 }  // namespace
@@ -446,17 +460,8 @@ GpuMesh* RenderSystem::getOrUploadGpuMesh(const MeshAsset* mesh_asset) {
     return nullptr;
   }
 
-  eastl::string cache_key = mesh_asset->getVirtualPath();
-  if (cache_key.empty()) {
-    const std::filesystem::path& absolute_path = mesh_asset->getAbsolutePath();
-    if (!absolute_path.empty()) {
-      cache_key = eastl::string(absolute_path.generic_string().c_str());
-    } else {
-      cache_key = "generated://render/anonymous_mesh";
-    }
-  }
-
-  return getOrUploadGpuMeshByKey(cache_key, mesh_asset->getVertexData(),
+  return getOrUploadGpuMeshByKey(gpuMeshCacheKey(*mesh_asset),
+                                 mesh_asset->getVertexData(),
                                  mesh_asset->getVertexByteSize(),
                                  mesh_asset->getIndices().data(),
                                  mesh_asset->getIndexCount());
@@ -526,6 +531,18 @@ GpuMesh* RenderSystem::updateOrUploadSkinnedGpuMesh(
 
   return getOrUploadGpuMeshByKey(cache_key, vertex_bytes, vertex_byte_size, indices,
                                index_count);
+}
+
+GpuMesh* RenderSystem::gpuMeshForEditorOverlay(const MeshAsset* mesh_asset) {
+  if (mesh_asset == nullptr) {
+    return nullptr;
+  }
+  eastl::string skinned_key = gpuMeshCacheKey(*mesh_asset);
+  skinned_key.append("#skinned");
+  if (GpuMesh* skinned = findUploadedGpuMesh(skinned_key)) {
+    return skinned;
+  }
+  return getOrUploadGpuMesh(mesh_asset);
 }
 
 bool RenderSystem::addOpaqueMeshDraw(

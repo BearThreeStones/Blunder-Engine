@@ -169,8 +169,15 @@ bool AnimationPreviewController::play(const eastl::string& clip_name) {
     if (!tree->isActive()) {
       tree->setActive(true);
     }
+    eastl::string resolved_name = clip_name;
+    if (resolved_name.empty()) {
+      resolved_name = m_default_clip_name;
+    }
     if (m_state == AnimationPreviewState::Paused && atRulerEnd()) {
       tree->seekRuler(0.0f);
+    }
+    if (!resolved_name.empty()) {
+      tree->clipPlay(resolved_name);
     }
     m_state = AnimationPreviewState::Playing;
     return true;

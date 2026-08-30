@@ -129,6 +129,7 @@ Left-click inside the editor viewport selects scene meshes via `ViewportPickSyst
 | Async delivery | `pollHybridPick` at **start** of `tickVulkan` (before viewport skip/render) |
 | Selection present | `onSelectionChanged` → `markViewportDirtyRegion()` + `requestViewportRedraw` |
 | Transform edit (gizmo / Inspector) | Gizmo `markSceneDirty()` → `notifyViewportAfterGizmoTransformEdit` / `requestViewportRedraw`; Inspector `applyInspectorTransform` → `notifyViewportAfterInspectorTransformEdit` (`markViewportDirtyRegion` + `requestViewportRedraw`) (static camera must not skip the offscreen pass) |
+| Animation preview / cine play | `notifyViewportAfterAnimationPreviewFrame` each tick while playing (`markViewportDirtyRegion` + `requestViewportRedraw`) so a static camera still presents skinned poses |
 | Piercing menu input | Menu visible → `shouldRouteMouseToInputLayers` false; menu row select suppresses matching left-release pick |
 
 **Selection modifiers:**

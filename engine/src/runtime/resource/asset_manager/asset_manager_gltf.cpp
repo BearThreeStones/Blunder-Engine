@@ -165,20 +165,21 @@ MeshSkinData buildMeshSkinData(const cgltf_primitive& primitive,
   skin_data.influences.resize(vertex_count);
   for (size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
     MeshSkinInfluence& influence = skin_data.influences[vertex_index];
+    cgltf_uint joint_values[4] = {0, 0, 0, 0};
+    if (!cgltf_accessor_read_uint(joints_accessor, vertex_index, joint_values,
+                                  4)) {
+      joint_values[0] = joint_values[1] = joint_values[2] = joint_values[3] = 0;
+    }
+    float weight_values[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    if (!cgltf_accessor_read_float(weights_accessor, vertex_index, weight_values,
+                                   4)) {
+      weight_values[0] = weight_values[1] = weight_values[2] =
+          weight_values[3] = 0.0f;
+    }
     for (int component = 0; component < 4; ++component) {
-      cgltf_uint joint_value = 0;
-      if (!cgltf_accessor_read_uint(joints_accessor, vertex_index, &joint_value,
-                                    component)) {
-        joint_value = 0;
-      }
-      influence.joint_indices[component] = static_cast<int>(joint_value);
-
-      float weight_value = 0.0f;
-      if (!cgltf_accessor_read_float(weights_accessor, vertex_index, &weight_value,
-                                     component)) {
-        weight_value = 0.0f;
-      }
-      influence.weights[component] = weight_value;
+      influence.joint_indices[component] =
+          static_cast<int>(joint_values[component]);
+      influence.weights[component] = weight_values[component];
     }
   }
 

@@ -31,6 +31,7 @@
 #include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
+#include "runtime/function/render/transform_edit_viewport_notify.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/script/animation_frame.h"
@@ -482,11 +483,33 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       g_runtime_global_context.m_scene_system->tick(delta_time);
       if (g_runtime_global_context.hostMode() == EngineHostMode::Editor &&
           g_runtime_global_context.m_animation_preview) {
-        g_runtime_global_context.m_animation_preview->tick(delta_time);
+        // Hitch / layout-defer frames report multi-second dt; a 0.5s idle clip
+        // would otherwise pause on the first real tick (non-looping preview).
+        constexpr float k_max_preview_dt = 1.0f / 15.0f;
+        const float preview_dt =
+            delta_time > k_max_preview_dt ? k_max_preview_dt : delta_time;
+        AnimationPreviewController* anim_preview =
+            g_runtime_global_context.m_animation_preview.get();
+        const bool preview_was_playing = anim_preview->isPlaying();
+        anim_preview->tick(preview_dt);
+        // Edit-mode viewport skips Vulkan when the camera is idle. Preview pose
+        // still advances; without a dirty mark the last presented frame freezes.
+        if (preview_was_playing || anim_preview->isPlaying()) {
+          notifyViewportAfterAnimationPreviewFrame(
+              g_runtime_global_context.m_render_system.get(),
+              g_runtime_global_context.m_slint_system.get());
+        }
       }
       if (g_runtime_global_context.hostMode() == EngineHostMode::Editor &&
           g_runtime_global_context.m_animation_sync_cine_preview) {
-        g_runtime_global_context.m_animation_sync_cine_preview->tick(delta_time);
+        AnimationSyncCinePreviewController* cine_preview =
+            g_runtime_global_context.m_animation_sync_cine_preview.get();
+        cine_preview->tick(delta_time);
+        if (cine_preview->isPlaying()) {
+          notifyViewportAfterAnimationPreviewFrame(
+              g_runtime_global_context.m_render_system.get(),
+              g_runtime_global_context.m_slint_system.get());
+        }
       }
       if (g_runtime_global_context.m_render_system) {
         SceneInstance* instance =

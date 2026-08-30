@@ -95,7 +95,11 @@ bool AnimationPlayer::resolveClip(const eastl::string& guid,
     return true;
   }
   if (m_resolver != nullptr) {
-    return m_resolver(m_resolver_userdata, guid, out_clip);
+    if (!m_resolver(m_resolver_userdata, guid, out_clip)) {
+      return false;
+    }
+    m_injected_clips[guid] = out_clip;
+    return true;
   }
   return false;
 }

@@ -9,13 +9,18 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/core/object/animation_tree.h"
+#include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_manager/asset_manager_gltf.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
 
 namespace Blunder {
 
@@ -64,19 +69,10 @@ void populateSkeletonFromSkin(cgltf_skin* skin, Skeleton& skeleton) {
       continue;
     }
 
-    int parent_bone_index = -1;
-    if (joint_node->parent != nullptr) {
-      for (cgltf_size parent_joint_index = 0;
-           parent_joint_index < skin->joints_count; ++parent_joint_index) {
-        if (skin->joints[parent_joint_index] == joint_node->parent) {
-          parent_bone_index = joint_to_bone_index[static_cast<size_t>(parent_joint_index)];
-          break;
-        }
-      }
-    }
-
+    // Always add as a root first. glTF skin.joints is not parent-before-child,
+    // so resolving parent_index in this pass would drop most of the hierarchy.
     const int bone_index =
-        skeleton.addBone(gltfNodeDisplayName(joint_node), parent_bone_index);
+        skeleton.addBone(gltfNodeDisplayName(joint_node), -1);
     if (bone_index < 0) {
       continue;
     }
@@ -91,22 +87,29 @@ void populateSkeletonFromSkin(cgltf_skin* skin, Skeleton& skeleton) {
     rest_local.rotation = local_rotation;
     rest_local.scale = local_scale;
     skeleton.setBoneRestLocal(static_cast<size_t>(bone_index), rest_local);
+  }
 
-    if (skin->inverse_bind_matrices != nullptr &&
-        joint_index < skin->inverse_bind_matrices->count) {
-      float inverse_bind_cgltf[16] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
-                                      0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f};
-      if (cgltf_accessor_read_float(skin->inverse_bind_matrices, joint_index,
-                                    inverse_bind_cgltf, 16)) {
-        Mat4 inverse_bind_gltf(1.0f);
-        std::memcpy(glm::value_ptr(inverse_bind_gltf), inverse_bind_cgltf,
-                    sizeof(cgltf_float) * 16);
-        skeleton.setBoneInverseBind(static_cast<size_t>(bone_index),
-                                    similarityGltfToEngine(inverse_bind_gltf));
+  for (cgltf_size joint_index = 0; joint_index < skin->joints_count; ++joint_index) {
+    cgltf_node* joint_node = skin->joints[joint_index];
+    const int bone_index = joint_to_bone_index[static_cast<size_t>(joint_index)];
+    if (joint_node == nullptr || joint_node->parent == nullptr || bone_index < 0) {
+      continue;
+    }
+    for (cgltf_size parent_joint_index = 0;
+         parent_joint_index < skin->joints_count; ++parent_joint_index) {
+      if (skin->joints[parent_joint_index] != joint_node->parent) {
+        continue;
       }
+      const int parent_bone =
+          joint_to_bone_index[static_cast<size_t>(parent_joint_index)];
+      if (parent_bone >= 0) {
+        skeleton.setParentIndex(static_cast<size_t>(bone_index), parent_bone);
+      }
+      break;
     }
   }
 
+  skeleton.rebuildInverseBindsFromRest();
   skeleton.resetPoseToRest();
   skeleton.rebuildPoseBuffers();
 }
@@ -129,17 +132,32 @@ cgltf_skin* findHydrationSkin(cgltf_data* data) {
   return nullptr;
 }
 
-eastl::string meshReferenceForEntity(SceneInstance& scene, EntityId entity_id) {
+eastl::string meshReferenceForEntity(AssetManager* asset_manager,
+                                     SceneInstance& scene, EntityId entity_id) {
+  eastl::string mesh_ref;
   if (Entity* entity = scene.getEntity(entity_id)) {
-    if (!entity->getMeshVirtualPath().empty()) {
-      return entity->getMeshVirtualPath();
+    mesh_ref = entity->getMeshVirtualPath();
+  }
+  if (isValidGuidFormat(mesh_ref) && asset_manager != nullptr) {
+    if (AssetRegistry* registry =
+            g_runtime_global_context.m_asset_registry.get()) {
+      const eastl::string path =
+          asset_manager->resolveGuidPath(mesh_ref, *registry);
+      if (!path.empty()) {
+        mesh_ref = path;
+      }
     }
   }
-  if (const MeshRendererComponent* renderer = scene.getMeshRenderer(entity_id);
-      renderer != nullptr && renderer->mesh) {
-    return renderer->mesh->getVirtualPath();
+  if (mesh_ref.empty() || isValidGuidFormat(mesh_ref)) {
+    if (const MeshRendererComponent* renderer = scene.getMeshRenderer(entity_id);
+        renderer != nullptr && renderer->mesh) {
+      const eastl::string renderer_path = renderer->mesh->getVirtualPath();
+      if (!renderer_path.empty()) {
+        return renderer_path;
+      }
+    }
   }
-  return {};
+  return mesh_ref;
 }
 
 }  // namespace
@@ -155,7 +173,8 @@ bool hydrateSkeletonFromEntityMesh(AssetManager* asset_manager,
     return false;
   }
 
-  const eastl::string mesh_ref = meshReferenceForEntity(scene, entity_id);
+  const eastl::string mesh_ref =
+      meshReferenceForEntity(asset_manager, scene, entity_id);
   if (mesh_ref.empty()) {
     LOG_WARN("[hydrateSkeletonFromEntityMesh] no mesh on entity; leaving empty Skeleton");
     return false;
@@ -192,6 +211,34 @@ bool hydrateSkeletonFromEntityMesh(AssetManager* asset_manager,
     return false;
   }
   return true;
+}
+
+bool hydrateEmptySkeletonsFromEntityMeshes(AssetManager* asset_manager,
+                                           SceneInstance& scene) {
+  bool ok = true;
+  scene.forEachEntity([&](EntityId entity_id, const Entity&) {
+    Object* object = scene.findBoundObject(entity_id);
+    if (object == nullptr || !object->hasSkeleton()) {
+      return;
+    }
+    if (!object->hasAnimationPlayer() && !object->hasAnimationTree()) {
+      return;
+    }
+    Skeleton* skeleton = object->getSkeleton();
+    if (skeleton == nullptr) {
+      return;
+    }
+    if (!hydrateSkeletonFromEntityMesh(asset_manager, scene, entity_id,
+                                       *skeleton)) {
+      ok = false;
+      return;
+    }
+    if (AnimationTree* tree = object->getAnimationTree();
+        tree != nullptr && tree->isActive()) {
+      tree->sampleBoundSkeleton();
+    }
+  });
+  return ok;
 }
 
 }  // namespace Blunder

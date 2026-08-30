@@ -11,6 +11,7 @@
 #include "runtime/function/script/scene_behaviour_mount.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/function/scene/skeleton_from_gltf.h"
 
 namespace Blunder {
 
@@ -111,6 +112,7 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
 
   attachSceneEntityMeshes(*instance, scene_asset->getScene());
   attachSceneEntityCameras(*instance, scene_asset->getScene());
+  hydrateEmptySkeletonsFromEntityMeshes(m_asset_manager, *instance);
 
   return instance;
 }

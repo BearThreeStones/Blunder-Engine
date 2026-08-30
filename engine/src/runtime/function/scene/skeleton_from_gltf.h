@@ -28,4 +28,9 @@ bool hydrateSkeletonFromEntityMesh(AssetManager* asset_manager,
                                    SceneInstance& scene, EntityId entity_id,
                                    Skeleton& skeleton);
 
+/// After mesh attach: fill empty Skeletons on Objects that have AnimationPlayer
+/// or AnimationTree. Returns false if any targeted hydrate failed.
+bool hydrateEmptySkeletonsFromEntityMeshes(AssetManager* asset_manager,
+                                           SceneInstance& scene);
+
 }  // namespace Blunder

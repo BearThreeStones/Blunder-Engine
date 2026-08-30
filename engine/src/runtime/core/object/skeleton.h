@@ -22,6 +22,7 @@ class Skeleton {
   int findBoneIndex(const eastl::string& name) const;
   const eastl::string& getBoneName(size_t index) const;
   int getParentIndex(size_t index) const;
+  void setParentIndex(size_t index, int parent_index);
 
   void setBoneRestLocal(size_t index, const BoneTransform& transform);
   BoneTransform getBoneRestLocal(size_t index) const;
@@ -31,6 +32,9 @@ class Skeleton {
 
   void setBoneInverseBind(size_t index, const Mat4& matrix);
   Mat4 getBoneInverseBind(size_t index) const;
+
+  /// IBM_i = inverse(global rest_i). Rest palette becomes identity.
+  void rebuildInverseBindsFromRest();
 
   Mat4 getBoneGlobalRestMatrix(size_t index) const;
   Mat4 getBoneGlobalPoseMatrix(size_t index) const;

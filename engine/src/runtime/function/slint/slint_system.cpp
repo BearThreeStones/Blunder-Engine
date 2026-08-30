@@ -2302,6 +2302,14 @@ void SlintSystem::updateViewportPacingTier() {
       signal = true;
     }
   }
+  if (g_runtime_global_context.m_animation_preview &&
+      g_runtime_global_context.m_animation_preview->isPlaying()) {
+    signal = true;
+  }
+  if (g_runtime_global_context.m_animation_sync_cine_preview &&
+      g_runtime_global_context.m_animation_sync_cine_preview->isPlaying()) {
+    signal = true;
+  }
 
   const uint64_t now_ns = SDL_GetTicksNS();
   const uint64_t hold_ns = editorViewportInteractiveHoldNs();
