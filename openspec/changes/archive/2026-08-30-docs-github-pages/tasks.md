@@ -11,4 +11,4 @@
 ## 3. Validation
 
 - [x] 3.1 Run `openspec validate docs-github-pages --strict`.
-- [ ] 3.2 Human acceptance: after merge + Pages source = GitHub Actions, walk `manual-checklist.md` on the live URL. (Not Agent QC.)
+- [x] 3.2 Human acceptance: after merge + Pages source = GitHub Actions, walk `manual-checklist.md` on the live URL. (Not Agent QC.)
