@@ -12,7 +12,7 @@
 | Content Browser / assets / cook | [CONTENT_LAYOUT.md](../../CONTENT_LAYOUT.md) | [structure.md](structure.md), [CONTEXT.md — Asset pipeline](../../CONTEXT.md#asset-pipeline), [ADR 0012](../adr/0012-pull-asset-pipeline.md) |
 | Add CMake target or runtime system | [cmake.md](cmake.md) | [structure.md](structure.md), [golden-principles.md](../golden-principles.md) |
 | Slint submodule / UI renderer | [slint-fork.md](slint-fork.md) | [render-pipeline.md](render-pipeline.md) |
-| New feature (multi-file) | [design-docs/architecture.md](../design-docs/architecture.md) | [exec-plans/README.md](../exec-plans/README.md), [AGENTS.md workflow routing](../../AGENTS.md#workflow-routing-openspec--superpowers--gstack), [golden-principles.md](../golden-principles.md) |
+| New feature (multi-file) | [design-docs/architecture.md](../design-docs/architecture.md) | [workflow.md](workflow.md), [AGENTS.md Default change path](../../AGENTS.md#default-change-path), [golden-principles.md](../golden-principles.md) |
 | Add tests | [testing.md](testing.md) | [cmake.md](cmake.md) |
 | Merge CI (GitHub Actions Linux) | [testing.md](testing.md#merge-ci) | [cursor-cloud.md](cursor-cloud.md) |
 
@@ -31,5 +31,6 @@ To turn a confirmed escaped defect into a test, invoke `/promote` (Promotion arm
 ## See also
 
 - [overview.md](overview.md)
+- [workflow.md](workflow.md)
 - [golden-principles.md](../golden-principles.md)
 - [MAINTENANCE.md](../MAINTENANCE.md)

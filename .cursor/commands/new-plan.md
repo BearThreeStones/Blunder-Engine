@@ -1,43 +1,10 @@
-# New execution plan
+# New change (Default change path)
 
-Create a multi-step execution plan for significant work (3+ subsystems or multiple sessions).
+Do **not** create `docs/exec-plans/` files. Working memory is an OpenSpec change. See [docs/agents/workflow.md](docs/agents/workflow.md) and [ADR 0050](docs/adr/0050-default-change-path.md).
 
 ## Steps
 
-1. Read [docs/exec-plans/README.md](docs/exec-plans/README.md).
-2. Create `docs/exec-plans/active/<short-name>.md` using this template:
-
-```markdown
-# <Title>
-
-**Status:** active
-**Started:** YYYY-MM-DD
-
-## Goal
-
-One paragraph: what done looks like.
-
-## Context
-
-- [Link to design doc or issue]
-- [golden-principles.md](../../golden-principles.md) items that apply
-
-## Tasks
-
-- [ ] Task 1
-- [ ] Task 2
-
-## Validation
-
-- [ ] `cmake --preset vs2026-debug` + build `engine_editor`
-- [ ] (feature-specific checks)
-
-## Notes
-
-Decisions and blockers during execution.
-```
-
-3. Replace `<short-name>` with a kebab-case slug (e.g. `viewport-perf-opt`).
-4. Link relevant docs from [docs/agents/common-tasks.md](docs/agents/common-tasks.md).
-
-When done, move to `docs/exec-plans/completed/` and set **Status:** done.
+1. **Small bugfix** — stop here. No OpenSpec, no Grill. Debug and make the smallest diff.
+2. **Agent-doc maintenance** (map, skills, glossary only; no engine behavior) — stop here. No OpenSpec. Edit the docs/skills.
+3. **Otherwise** this needs an OpenSpec change. **Grill first** (`grill-with-docs`). Do not `/opsx:propose` until the human confirmed 3–7 User stories.
+4. Then `/opsx:propose "<kebab-name>"`.

@@ -45,12 +45,15 @@ Configure and build with presets in [build.md](build.md). Run relevant first-par
 | Need | Doc |
 |------|-----|
 | Task-based routing | [common-tasks.md](common-tasks.md) |
+| Default change path | [workflow.md](workflow.md) |
+| Docs site | https://bearthreestones.github.io/Blunder-Engine/ |
 | Must-follow rules | [golden-principles.md](../golden-principles.md) |
 | Full doc index | [AGENTS.md](../../AGENTS.md) |
 | Architecture map | [design-docs/architecture.md](../design-docs/architecture.md) |
 
 ## See also
 
+- [workflow.md](workflow.md)
 - [structure.md](structure.md)
 - [build.md](build.md)
 - [golden-principles.md](../golden-principles.md)

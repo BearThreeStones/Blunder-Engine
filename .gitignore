@@ -64,10 +64,12 @@ CMakeUserPresets.json
 Thumbs.db
 
 .sisyphus
-# Merge CI workflows are tracked; ignore other GitHub metadata.
+# Merge CI workflows and Pages Jekyll config are tracked; ignore other GitHub metadata.
 .github/*
 !.github/workflows/
 !.github/workflows/**
+!.github/pages/
+!.github/pages/**
 .understand-anything
 
 # Auto-downloaded SDK caches (managed by cmake/slint.cmake and cmake/slang.cmake)

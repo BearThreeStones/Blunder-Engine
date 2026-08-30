@@ -19,7 +19,7 @@ cmake --preset vs2026-release
 cmake --build build/vs2026-release --config Release
 ```
 
-**AI agents:** see [AGENTS.md](AGENTS.md) for the documentation map and task routing.
+**AI agents:** see [AGENTS.md](AGENTS.md) for the documentation map. Rendered docs: https://bearthreestones.github.io/Blunder-Engine/
 
 The editor's Slint integration is source-built during CMake configure so the
 Skia Vulkan renderer can be enabled. The current viewport path still uses the

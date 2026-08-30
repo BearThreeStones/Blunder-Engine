@@ -1,0 +1,10 @@
+title: Blunder Engine
+url: https://bearthreestones.github.io
+baseurl: /Blunder-Engine
+theme: jekyll-theme-primer
+plugins:
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+relative_links:
+  enabled: true
+  collections: true

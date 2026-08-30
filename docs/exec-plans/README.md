@@ -1,67 +1,27 @@
-# Execution plans
+# Execution plans (historical)
 
-> Short-lived plans for multi-step agent or human work. Keeps task context in the repo instead of only in chat.
+> **Do not add files here.** Working memory for new work is an OpenSpec change (`openspec/changes/`). See [docs/agents/workflow.md](../agents/workflow.md) and [ADR 0050](../adr/0050-default-change-path.md).
 
-## Layout
+Existing files under [active/](active/) and [completed/](completed/) stay as history. Do not migrate them into OpenSpec unless a later change needs that content.
 
-| Folder | Purpose |
-|--------|---------|
-| [active/](active/) | Work in progress — one file per initiative |
-| [completed/](completed/) | Shipped or abandoned plans (archive) |
-
-## When to create a plan
-
-- Touches 3+ subsystems or many files
-- Spans multiple sessions or agents
-- Needs explicit validation steps beyond “build + run”
-
-Skip for single-file fixes; use [common-tasks.md](../agents/common-tasks.md) routing instead.
-
-## Template
-
-Copy into `active/<short-name>.md`:
+The old template (for reading historical files):
 
 ```markdown
 # <Title>
 
-**Status:** active | blocked | done  
-**Owner:** (optional)  
+**Status:** active | blocked | done
 **Started:** YYYY-MM-DD
 
 ## Goal
 
 One paragraph: what done looks like.
 
-## Context
-
-- [Link to design doc or issue]
-- [golden-principles.md](../golden-principles.md) items that apply
-
 ## Tasks
 
 - [ ] Task 1
-- [ ] Task 2
-
-## Validation
-
-- [ ] `cmake --preset vs2026-debug` + build `engine_editor`
-- [ ] (feature-specific checks)
-
-## Notes
-
-Decisions and blockers during execution.
 ```
-
-## Lifecycle
-
-1. Create under `active/` when starting significant work.
-2. Update tasks and notes as you go.
-3. On merge: set **Status:** done, move file to `completed/`.
-4. On cancel: move to `completed/` with reason, or delete if no lasting value.
-
-See [MAINTENANCE.md](../MAINTENANCE.md) for doc sync rules.
 
 ## See also
 
+- [workflow.md](../agents/workflow.md)
 - [common-tasks.md](../agents/common-tasks.md)
-- [design-docs/architecture.md](../design-docs/architecture.md)

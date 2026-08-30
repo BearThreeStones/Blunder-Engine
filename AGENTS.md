@@ -8,55 +8,20 @@
 2. [docs/agents/common-tasks.md](docs/agents/common-tasks.md) — pick docs by task
 3. [docs/golden-principles.md](docs/golden-principles.md) — must-follow rules
 
-## Workflow routing (OpenSpec + Superpowers + gstack)
+## Default change path
 
-Three layers — pick one primary tool per phase; do not run duplicate planning flows.
+Spine: Grill → OpenSpec → apply → Agent QC → Human acceptance → Adversarial review → archive.  
+Sequence and Change-path stop: [docs/agents/workflow.md](docs/agents/workflow.md). Decision: [ADR 0050](docs/adr/0050-default-change-path.md). Terms: [CONTEXT.md — Agent environment](CONTEXT.md#agent-environment-repository).
 
-| Layer | Tool | Role | Location |
-|-------|------|------|----------|
-| Spec | **OpenSpec** | What to build — proposal, design, tasks, archive | `openspec/`, `/opsx:*` in [.cursor/commands/](.cursor/commands/) |
-| Process | **Superpowers** | How to work — TDD, debugging, verification, parallel tasks | Cursor plugin (enabled in [.cursor/settings.json](.cursor/settings.json)) |
-| Review | **gstack** | Quality gates — role reviews, code review, QA, ship | Global `~/.cursor/skills/gstack-*` |
+| Kind | Path |
+|------|------|
+| Multi-file or product-facing | Grill (`grill-with-docs`), then `/opsx:propose` … `/opsx:archive` |
+| Small bugfix | Debug + smallest diff — no OpenSpec, no Grill, no Human acceptance |
+| Agent map / skills / glossary | Agent-doc maintenance — no OpenSpec |
 
-**Default flow (multi-file feature or optimization):**
+Do not add `docs/exec-plans/` or `docs/superpowers/plans/` files. Do not run `/office-hours`, `/plan-ceo-review`, or `/autoplan` as planning. Default review is gstack `/review` only.
 
-1. **Propose** — `/opsx:propose "<kebab-name>"` → `openspec/changes/<name>/`
-2. **Implement** — `/opsx:apply` (or follow `tasks.md`); use project skills ([blunder-engine](.cursor/skills/blunder-engine/), [viewport-perf](.cursor/skills/viewport-perf/) when relevant)
-3. **Verify** — `/validate` or [common-tasks validation](docs/agents/common-tasks.md#default-validation); Superpowers requires evidence before claiming done
-4. **Review** — gstack `/review` on the diff
-5. **Archive** — `/opsx:archive`; optional gstack `/ship` for PR
-
-**When to add gstack planning** (skip for narrow technical fixes):
-
-| Situation | gstack skill |
-|-----------|--------------|
-| Product direction unclear | `/office-hours` |
-| Scope or strategy challenge | `/plan-ceo-review` |
-| Architecture / eng trade-offs | `/plan-eng-review` |
-| UI / UX decisions | `/plan-design-review` |
-| Staging URL QA | `/qa` |
-| Web research | `/browse` (not Chrome MCP) |
-
-**When to lean on Superpowers** (usually automatic):
-
-| Situation | Superpowers skill |
-|-----------|-------------------|
-| Ambiguous requirements before propose | `brainstorming` |
-| Bug or unexpected behavior | `systematic-debugging` |
-| New behavior with tests | `test-driven-development` |
-| Independent parallel subtasks | `dispatching-parallel-agents` |
-| Before “done” / commit / PR | `verification-before-completion` |
-
-**Task-type shortcuts:**
-
-| Task type | Primary path | Usually skip |
-|-----------|--------------|--------------|
-| Technical optimization (e.g. viewport FPS) | OpenSpec propose → apply → archive | gstack `/office-hours`, `/plan-ceo-review` |
-| New product-facing feature | gstack `/office-hours` → OpenSpec propose | gstack `/autoplan` (overlaps OpenSpec) |
-| Small bugfix | Superpowers debugging → minimal diff | OpenSpec change folder |
-| Large milestone | `docs/exec-plans/` **or** OpenSpec — not both for the same work |
-
-**Doc ownership:** long-lived architecture stays in [docs/design-docs/](docs/design-docs/); active changes live in `openspec/changes/`; [docs/exec-plans/](docs/exec-plans/) for repo-wide milestones.
+**Doc ownership:** architecture in [docs/design-docs/](docs/design-docs/); Working memory in `openspec/changes/` (index: `openspec/changes/archive/`). Docs site: https://bearthreestones.github.io/Blunder-Engine/ ([ADR 0051](docs/adr/0051-docs-github-pages.md)).
 
 ## Getting started
 
@@ -64,7 +29,7 @@ Three layers — pick one primary tool per phase; do not run duplicate planning 
 |-------|----------|
 | Project overview | [docs/agents/overview.md](docs/agents/overview.md) |
 | Task routing | [docs/agents/common-tasks.md](docs/agents/common-tasks.md) |
-| AI workflow (OpenSpec / Superpowers / gstack) | [Workflow routing](#workflow-routing-openspec--superpowers--gstack) below |
+| AI workflow | [docs/agents/workflow.md](docs/agents/workflow.md), [ADR 0050](docs/adr/0050-default-change-path.md) |
 | Build commands | [docs/agents/build.md](docs/agents/build.md) |
 | Directory structure | [docs/agents/structure.md](docs/agents/structure.md) |
 | Testing | [docs/agents/testing.md](docs/agents/testing.md) |
@@ -99,9 +64,9 @@ Three layers — pick one primary tool per phase; do not run duplicate planning 
 
 | Topic | Document |
 |-------|----------|
-| Exec plan template & usage | [docs/exec-plans/README.md](docs/exec-plans/README.md) |
-| In-progress plans | [docs/exec-plans/active/](docs/exec-plans/active/) |
-| Completed plans | [docs/exec-plans/completed/](docs/exec-plans/completed/) |
+| OpenSpec changes (Working memory) | [openspec/changes/](openspec/changes/) |
+| Archive index | [openspec/changes/archive/](openspec/changes/archive/) |
+| Historical plans (do not add) | [docs/exec-plans/](docs/exec-plans/), [docs/superpowers/plans/](docs/superpowers/plans/) |
 
 ## Environments
 

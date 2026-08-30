@@ -35,7 +35,8 @@
 11. **Re-cook after import-axis or mesh pipeline changes.** Delete `.blunder/cooked/` or run `asset_compiler --force` so runtime does not serve stale `.meshbin` / `.texbin`.  
    → [CONTENT_LAYOUT.md](../CONTENT_LAYOUT.md)
 
-12. **Versioned docs are the source of truth.** Invariants, architecture decisions, and task context belong in repo Markdown (`docs/`, `AGENTS.md`, `CONTENT_LAYOUT.md`). Do not rely on PR descriptions or chat as the only record.
+12. **Versioned docs are the source of truth.** Invariants, architecture decisions, and task context belong in repo Markdown (`docs/`, `AGENTS.md`, `CONTENT_LAYOUT.md`). GitHub Pages publishes that same source (https://bearthreestones.github.io/Blunder-Engine/); unpublished Markdown is not the full Doc deliverable. Do not rely on PR descriptions or chat as the only record.  
+   → [docs/agents/workflow.md](agents/workflow.md), [CONTEXT.md — Agent environment](../CONTEXT.md#agent-environment-repository), [ADR 0051](adr/0051-docs-github-pages.md)
 
 13. **Minimize scope.** Smallest correct diff; do not refactor unrelated code or add speculative helpers.
 

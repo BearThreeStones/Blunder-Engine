@@ -11,7 +11,7 @@
 | [../adr/0014-play-mode-separate-player-process.md](../adr/0014-play-mode-separate-player-process.md) | Play Mode via dedicated Player process + IPC |
 | [../adr/0047-play-reload.md](../adr/0047-play-reload.md) | Play Reload reinstantiates the captured On-disk Play entry |
 | [../adr/0048-play-authorship-patch.md](../adr/0048-play-authorship-patch.md) | Play authorship patch: sealed Live Commands by entity name |
-| [../adr/0049-standalone-play-preview-and-patch.md](../adr/0049-standalone-play-preview-and-patch.md) | Standalone Play + pose preview + patch; no product PIE |
+| [../adr/0051-docs-github-pages.md](../adr/0051-docs-github-pages.md) | Docs site: GitHub Pages + Jekyll same-shape tree |
 | [../../CONTEXT.md](../../CONTEXT.md#asset-pipeline) | Asset pipeline domain vocabulary |
 | [../../CONTEXT.md](../../CONTEXT.md#play) | Play Mode / Player domain vocabulary |
 

@@ -1,5 +1,3 @@
-# Active execution plans
+# Active execution plans (historical)
 
-Place in-progress plan files here (see [../README.md](../README.md) for the template).
-
-When finished, move the file to [../completed/](../completed/).
+**Do not add files here.** New work uses Grill + OpenSpec. See [../README.md](../README.md) and [docs/agents/workflow.md](../../agents/workflow.md).

@@ -20,6 +20,13 @@ When ready to implement, run /opsx:apply
 
 **Input**: The argument after `/opsx:propose` is the change name (kebab-case), OR a description of what the user wants to build.
 
+**Blunder overlay** (see [docs/agents/workflow.md](../../docs/agents/workflow.md), [ADR 0050](../../docs/adr/0050-default-change-path.md))
+
+- **Change-path stop — Grill:** If this conversation has no finished Grill (human has not confirmed 3–7 User stories), **stop**. Tell the human to run `grill-with-docs` first. Do not create the change. Do not invent “already grilled.” Do not skip Grill to keep momentum. Same-conversation Grill may continue into this command.
+- **User stories:** When writing `proposal.md`, include a **User stories** section (3–7 scene-shaped wishes, not WHEN/THEN). Specs stay WHEN/THEN for the agent.
+- **Checklist:** After artifacts exist, write `manual-checklist.md` in the change folder with one row per User story, **Status: Not run**. Do not add a “Human confirmed” checkbox to the proposal.
+- Small bugfix and Agent-doc maintenance do not use this command.
+
 **Steps**
 
 1. **If no input provided, ask what they want to build**
@@ -78,7 +85,11 @@ When ready to implement, run /opsx:apply
       - Use **AskUserQuestion tool** to clarify
       - Then continue with creation
 
-5. **Show final status**
+5. **Draft Human acceptance checklist**
+
+   Write `manual-checklist.md` in the change folder: one row per User story, **Status: Not run**. Do not mark stories passed.
+
+6. **Show final status**
    ```bash
    openspec status --change "<name>"
    ```
@@ -87,9 +98,10 @@ When ready to implement, run /opsx:apply
 
 After completing all artifacts, summarize:
 - Change name and location
+- User stories in `proposal.md` (3–7) and `manual-checklist.md` (Not run)
 - List of artifacts created with brief descriptions
-- What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run `/opsx:apply` to start implementing."
+- What's ready: "All artifacts created! Ready for `/opsx:apply`."
+- Do not claim Human acceptance.
 
 **Artifact Creation Guidelines**
 
@@ -104,6 +116,7 @@ After completing all artifacts, summarize:
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
 - Always read dependency artifacts before creating a new one
-- If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
+- If Grill is missing, stop and ask — never invent Grill or User stories to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify each artifact file exists after writing before proceeding to next
+- `proposal.md` must contain 3–7 User stories before claiming propose is done

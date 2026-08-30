@@ -53,7 +53,17 @@ Archive a completed change in the experimental workflow.
 
    **If no tasks file exists:** Proceed without task-related warning.
 
-4. **Assess delta spec sync state**
+4. **Change-path stop — Human acceptance** (see `docs/agents/workflow.md`)
+
+   Ask whether the human has walked the User stories (windowed editor, or Headless when the story is a no-window path).
+
+   - If they have **not** confirmed, **stop**. Do not archive. Do not declare Human acceptance.
+   - If they confirm they walked the stories, continue.
+   - Incomplete `manual-checklist.md` checkboxes are not a substitute for that confirmation; they are the walking aid.
+   - Do not require `session-log.md`. Do not create stray `PLAN.md` outside the change folder. Optional `notes.md` only for rejected approaches that must outlive chat.
+   - If a decision will still matter in six months and is not already an ADR / CONTEXT term, write or update one.
+
+5. **Assess delta spec sync state**
 
    Use `artifactPaths.specs.existingOutputPaths` from status JSON to check for delta specs. If none exist, proceed without sync prompt.
 
@@ -68,7 +78,7 @@ Archive a completed change in the experimental workflow.
 
    If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
 
-5. **Perform the archive**
+6. **Perform the archive**
 
    Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
    ```bash
@@ -85,7 +95,7 @@ Archive a completed change in the experimental workflow.
    mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
    ```
 
-6. **Display summary**
+7. **Display summary**
 
    Show archive completion summary including:
    - Change name
@@ -110,7 +120,8 @@ All artifacts complete. All tasks complete.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (openspec status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- Don't block archive on incomplete artifacts/tasks warnings — inform and confirm
+- **Do** block archive when Human acceptance is unconfirmed — stop and ask; never invent it
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)

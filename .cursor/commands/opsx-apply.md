@@ -45,14 +45,14 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using `/opsx:continue`
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `state: "all_done"`: remind Human acceptance, then gstack `/review`, then `/opsx:archive`. Do not declare Human acceptance.
    - Otherwise: proceed to implementation
 
 4. **Read context files**
 
    Read every file path listed under `contextFiles` from the apply instructions output.
    The files depend on the schema being used:
-   - **spec-driven**: proposal, specs, design, tasks
+   - spec-driven: proposal, specs, design, tasks, plus `manual-checklist.md` when present
    - Other schemas: follow the contextFiles from CLI output
 
 5. **Show current progress**
@@ -83,7 +83,7 @@ Implement tasks from an OpenSpec change.
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - If all done: remind Human acceptance → `/review` → `/opsx:archive`. Do not self-accept.
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -114,7 +114,7 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with `/opsx:archive`.
+All tasks complete. Next: Human acceptance (walk the User stories), then gstack `/review`, then `/opsx:archive`. Do not treat this as Human acceptance.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -146,6 +146,8 @@ What would you like to do?
 - Update task checkbox immediately after completing each task
 - Pause on errors, blockers, or unclear requirements - don't guess
 - Use contextFiles from CLI output, don't assume specific file names
+- If `proposal.md` has User stories and `manual-checklist.md` is missing, write it (Status: Not run). Never tick stories as passed.
+- Do not claim Human acceptance. Chat is not walking a User story.
 
 **Fluid Workflow Integration**
 

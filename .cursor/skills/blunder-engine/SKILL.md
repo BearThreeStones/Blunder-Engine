@@ -10,6 +10,8 @@ description: >-
 
 C++20 game engine + editor. CMake, Vulkan offscreen render, Slint UI (fork), SDL3, Slang.
 
+Multi-file work follows the **Default change path** (`docs/agents/workflow.md`, ADR 0050): Grill → OpenSpec → apply → Agent QC → Human acceptance → `/review` → archive. Small bugfix skips OpenSpec. Do not add `docs/exec-plans/` or Superpowers plan files.
+
 ## Task routing
 
 | Task | Read first | Also useful |
@@ -22,7 +24,7 @@ C++20 game engine + editor. CMake, Vulkan offscreen render, Slint UI (fork), SDL
 | Content Browser / assets / cook | `CONTENT_LAYOUT.md` | `structure.md` |
 | Add CMake target or runtime system | `docs/agents/cmake.md` | `structure.md`, `golden-principles.md` |
 | Slint submodule / UI renderer | `docs/agents/slint-fork.md` | `render-pipeline.md` |
-| New feature (multi-file) | `docs/design-docs/architecture.md` | `docs/exec-plans/README.md` |
+| New feature (multi-file) | `docs/design-docs/architecture.md` | `docs/agents/workflow.md`, `AGENTS.md` |
 | Add tests | `docs/agents/testing.md` | `cmake.md` |
 | Merge CI (GitHub Actions Linux) | `docs/agents/testing.md` | `cursor-cloud.md` |
 
@@ -63,4 +65,5 @@ Or use slash command `/validate`. The Completion gate only counts observed Shell
 - [ ] Z-up / virtual paths / offscreen render invariants respected
 - [ ] Logging via `LOG_*` macros, not raw `printf`
 - [ ] Namespace `Blunder`, `m_` member prefix, 2-space indent
-- [ ] Build + relevant Test runs (or `engine_editor` build when no matching test name) before claiming done
+- [ ] Build + relevant Test runs (or `engine_editor` build when no matching test name) before claiming Agent QC done
+- [ ] Do not claim Human acceptance; do not skip Grill on an OpenSpec change

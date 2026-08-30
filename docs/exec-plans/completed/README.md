@@ -1,3 +1,3 @@
-# Completed execution plans
+# Completed execution plans (historical)
 
-Archive shipped or cancelled plans from [../active/](../active/) for historical context.
+Archive of old exec-plans. **Do not add files.** New work archives under `openspec/changes/archive/`.
