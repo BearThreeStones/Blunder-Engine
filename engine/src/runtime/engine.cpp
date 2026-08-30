@@ -498,6 +498,10 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
           notifyViewportAfterAnimationPreviewFrame(
               g_runtime_global_context.m_render_system.get(),
               g_runtime_global_context.m_slint_system.get());
+          if (g_runtime_global_context.m_slint_system) {
+            g_runtime_global_context.m_slint_system
+                ->syncAnimationWindowPlaybackClock();
+          }
         }
       }
       if (g_runtime_global_context.hostMode() == EngineHostMode::Editor &&

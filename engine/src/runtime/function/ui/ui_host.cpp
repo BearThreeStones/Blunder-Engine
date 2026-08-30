@@ -16,6 +16,7 @@
 #include "runtime/function/editor/inspector_asset_ops.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/slint/slint_system.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_render_bridge.h"
 #include "runtime/function/scene/scene_system.h"
@@ -33,6 +34,12 @@
 
 namespace Blunder {
 namespace {
+
+void syncAnimPreviewWindowUi() {
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->syncAnimationWindowFromPreview();
+  }
+}
 
 void installScriptsPreflight(PlaySessionController& session,
                              const std::filesystem::path& project_root) {
@@ -614,6 +621,7 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (services.render_system) {
         services.render_system->requestViewportRedraw();
       }
+      syncAnimPreviewWindowUi();
       break;
     }
     case UiEventKind::animPreviewPause: {
@@ -630,6 +638,7 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (services.render_system) {
         services.render_system->requestViewportRedraw();
       }
+      syncAnimPreviewWindowUi();
       break;
     }
     case UiEventKind::animPreviewStop: {
@@ -642,6 +651,7 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
       if (services.render_system) {
         services.render_system->requestViewportRedraw();
       }
+      syncAnimPreviewWindowUi();
       break;
     }
     case UiEventKind::animPreviewLoopToggle: {
@@ -651,6 +661,7 @@ void UiHost::dispatch(const UiEvent& event, const UiContext::LockedServices& ser
         break;
       }
       preview->toggleLoop();
+      syncAnimPreviewWindowUi();
       break;
     }
     case UiEventKind::animPreviewParamsEdited:

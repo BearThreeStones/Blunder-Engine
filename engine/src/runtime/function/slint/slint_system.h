@@ -277,6 +277,8 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyInspectorTransform() override;
   void applyAnimationPreviewParams() override;
   void fireAnimationSyncPreview() override;
+  void syncAnimationWindowFromPreview();
+  void syncAnimationWindowPlaybackClock();
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
   void applyInspectorCamera(bool commit);
   void applyInspectorLight(bool commit);
@@ -538,7 +540,6 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyAnimationPreviewLiveTimeScale();
   void commitAnimationPreviewTimeScale();
   void applyAnimationPreviewSeek(float seconds);
-  void syncAnimationWindowFromPreview();
   void syncNativeFloatingWindows(const DockLayoutModel& model);
   void wireNativeFloatingCallbacks();
   void tickAutoHideHover();

@@ -3900,6 +3900,29 @@ void SlintSystem::syncAnimationWindowFromPreview() {
   ui.set_anim_preview_end_cine_enabled(bound && preview->isInCine());
 }
 
+void SlintSystem::syncAnimationWindowPlaybackClock() {
+  if (!m_window_component) {
+    return;
+  }
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr) {
+    return;
+  }
+  ScopedDispatchGuard guard(m_slint_dispatch_depth);
+  auto& ui = *m_window_component->operator->();
+  ui.set_anim_preview_playing(preview->isPlaying());
+  ui.set_anim_preview_paused(preview->isPaused());
+  ui.set_anim_preview_pause_enabled(preview->pauseEnabled());
+  ui.set_anim_preview_stop_enabled(preview->stopEnabled());
+  ui.set_anim_preview_playhead(preview->playbackPosition());
+  ui.set_anim_preview_clip_length(preview->clipLength());
+  ui.set_anim_preview_clip_name(
+      slint::SharedString(preview->rulerClipName().c_str()));
+  ui.set_anim_preview_clock_text(
+      slint::SharedString(preview->clockReadout().c_str()));
+}
+
 void SlintSystem::applyAnimationPreviewLiveTimeScale() {
   if (!m_window_component) {
     return;
