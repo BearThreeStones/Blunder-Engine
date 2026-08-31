@@ -77,6 +77,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     *appstate = g_engine;
     g_engine->startEngine(g_launch.project_root, Blunder::EngineHostMode::Editor,
                           {}, g_launch.headless);
+    if (Blunder::g_runtime_global_context.isQuitRequested()) {
+      return SDL_APP_SUCCESS;
+    }
     const bool use_startup =
         g_launch.adapter == Blunder::MachineAdapterKind::none;
     g_engine->initialize(g_launch.scene, use_startup);

@@ -71,6 +71,8 @@ class SlintSystem final : public IEditorUiPresentation {
 
   void initialize(const SlintSystemInitInfo& init_info);
   void shutdown();
+  /// Force one Shell composite so Startup cover can dismiss on first present.
+  void presentStartupShell();
 
   using ProjectManagerCallback = eastl::function<void()>;
   using ProjectManagerIntCallback = eastl::function<void(int)>;

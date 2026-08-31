@@ -296,6 +296,66 @@ void markFinalStaleForcesRecook() {
   fs::remove_all(project);
 }
 
+void cookHeartbeatStopsCookAllBeforeDescriptors() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuidA = "aaaaaaaa-0001-4000-8000-000000000001";
+  const char* kGuidB = "aaaaaaaa-0002-4000-8000-000000000002";
+
+  writeTextFile(project / "Resources" / "Models" / "triA.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Resources" / "Models" / "triB.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "triA.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuidA + "\n" +
+                    "source: resources/Models/triA.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+  writeTextFile(project / "Assets" / "Meshes" / "triB.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuidB + "\n" +
+                    "source: resources/Models/triB.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  int beats = 0;
+  compiler.setCookHeartbeat([&beats]() {
+    ++beats;
+    return false;
+  });
+  const AssetCompilerStats stopped = compiler.cookIfStale();
+  expect_true("heartbeat consulted before cookAll work", beats >= 1);
+  expect_true("false heartbeat cooks no meshes", stopped.meshes_cooked == 0);
+
+  compiler.setCookHeartbeat({});
+  const AssetCompilerStats resumed = compiler.cookIfStale();
+  expect_true("cleared heartbeat cooks staged meshes",
+              resumed.meshes_cooked >= 1);
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 void cookAssetForceRecooksFreshFinal() {
   using namespace Blunder;
   ensureLogger();
@@ -349,6 +409,7 @@ int main() {
   markFinalStaleDeletesTextureCookedArtifacts();
   cookAssetCooksRegisteredMeshAndSkipsWhenFresh();
   markFinalStaleForcesRecook();
+  cookHeartbeatStopsCookAllBeforeDescriptors();
   cookAssetForceRecooksFreshFinal();
 
   const int exit_code = g_failures != 0 ? 1 : 0;

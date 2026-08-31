@@ -100,6 +100,7 @@ void AssetCompilerService::shutdown() {
   m_asset_manager = nullptr;
   m_asset_registry = nullptr;
   m_asset_import = nullptr;
+  m_cook_heartbeat = {};
   m_is_initialized = false;
 }
 
@@ -130,10 +131,18 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
     return stats;
   }
 
+  if (m_cook_heartbeat && !m_cook_heartbeat()) {
+    return stats;
+  }
+
   m_asset_registry->rebuildFromScan();
   // Registry warm-up: Intermediate Upgrade is a no-op (ADR 0019).
   if (m_asset_import) {
     m_asset_import->upgradeLegacyMeshIntermediates();
+  }
+
+  if (m_cook_heartbeat && !m_cook_heartbeat()) {
+    return stats;
   }
 
   const fs::path asset_root = m_file_system->getAssetRoot();
@@ -141,6 +150,9 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
       m_file_system->listDirectoryRecursive(asset_root, asset_root, -1);
 
   for (const DirectoryEntry& entry : entries) {
+    if (m_cook_heartbeat && !m_cook_heartbeat()) {
+      break;
+    }
     if (entry.is_directory) {
       continue;
     }

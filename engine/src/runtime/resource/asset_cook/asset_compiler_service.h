@@ -2,6 +2,7 @@
 
 #include <cstdint>
 
+#include "EASTL/functional.h"
 #include "EASTL/string.h"
 
 #include "runtime/resource/asset_dependency/asset_dependency_graph.h"
@@ -28,6 +29,11 @@ class AssetCompilerService final {
 
   /// Optional: run Intermediate Upgrade after registry scan in cookAll.
   void setAssetImportService(AssetImportService* asset_import);
+
+  /// Optional boot pump. Return false to stop cookAll early (window closed).
+  void setCookHeartbeat(eastl::function<bool()> heartbeat) {
+    m_cook_heartbeat = eastl::move(heartbeat);
+  }
 
   AssetCompilerStats cookAll(bool force = false);
 
@@ -74,6 +80,7 @@ class AssetCompilerService final {
   AssetManager* m_asset_manager{nullptr};
   AssetRegistry* m_asset_registry{nullptr};
   AssetImportService* m_asset_import{nullptr};
+  eastl::function<bool()> m_cook_heartbeat;
   AssetDependencyGraph m_dependency_graph;
   uint32_t m_dependency_graph_rebuild_count{0};
   bool m_is_initialized{false};
