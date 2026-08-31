@@ -1065,6 +1065,25 @@ target_precompile_headers(active_scene_display_test
 add_test(NAME active_scene_display_test
          COMMAND active_scene_display_test)
 
+add_executable(startup_cover_test
+    "startup_cover_test.cpp"
+)
+
+target_link_libraries(startup_cover_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(startup_cover_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(startup_cover_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME startup_cover_test
+         COMMAND startup_cover_test)
+
 add_executable(player_launch_test
     "player_launch_test.cpp"
     "../runtime/project/player_launch.cpp"

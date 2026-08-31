@@ -43,6 +43,7 @@
 #include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/ui/startup_cover.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/align_camera_actions.h"
@@ -903,6 +904,13 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
             return;
             }
 
+            if (state == slint::RenderingState::AfterRendering) {
+              if (startupCoverIsActive()) {
+                startupCoverDismiss();
+              }
+              return;
+            }
+
             if (state == slint::RenderingState::RenderingTeardown) {
             LOG_INFO(
               "[SlintSystem] Slint rendering teardown for {}",
@@ -913,6 +921,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         "[SlintSystem::initialize] failed to install Slint rendering "
         "notifier: {}",
         static_cast<int>(*notifier_error));
+      startupCoverDismiss();
     }
     component->on_save_scene_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::saveScene)); }));
@@ -1887,6 +1896,22 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     if (m_window_system) {
       m_window_system->requestClose();
     }
+  }
+}
+
+void SlintSystem::presentStartupShell() {
+  if (m_project_manager_mode || !m_window_adapter) {
+    startupCoverDismiss();
+    return;
+  }
+  m_window_adapter->clearPresentSuppress();
+  for (int i = 0; i < 8 && startupCoverIsActive(); ++i) {
+    m_window_adapter->renderIfNeeded();
+  }
+  if (startupCoverIsActive()) {
+    LOG_WARN(
+        "[SlintSystem] Startup cover still active after present; dismissing");
+    startupCoverDismiss();
   }
 }
 

@@ -21,6 +21,8 @@
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/function/ui/editor_service_handles.h"
 #include "runtime/function/ui/ui_host.h"
+#include "runtime/function/ui/active_scene_display.h"
+#include "runtime/function/ui/startup_cover.h"
 #include "runtime/function/ui/viewport/slint_viewport_sink.h"
 #include "runtime/function/ui/viewport/ui_viewport_bridge.h"
 #include "runtime/core/layer/layer.h"
@@ -179,6 +181,17 @@ void wireMeshPreviewThumbnails(RuntimeGlobalContext& ctx) {
       ctx.m_scene_thumbnail_service.get());
 }
 
+bool abortStartupCoverBoot() {
+  if (!startupCoverIsActive()) {
+    return false;
+  }
+  if (startupCoverPump()) {
+    return false;
+  }
+  g_runtime_global_context.requestQuit();
+  return true;
+}
+
 }  // namespace
 
 RuntimeGlobalContext g_runtime_global_context;
@@ -213,11 +226,28 @@ void RuntimeGlobalContext::startSystems(
   fs_init.project_root = project_root;
   m_file_system->initialize(fs_init);
 
+  if (startupCoverShouldMount(host_mode, headless)) {
+    m_window_system = eastl::make_shared<WindowSystem>();
+    const eastl::string wordmark = formatApplicationBarWordmark(
+        projectDisplayNameFromRoot(project_root));
+    WindowCreateInfo window_create_info;
+    window_create_info.title = wordmark.c_str();
+    m_window_system->initialize(window_create_info);
+    startupCoverBegin(m_window_system.get(), wordmark);
+    startupCoverSetPhase(StartupCoverPhase::preparingEditor);
+    if (abortStartupCoverBoot()) {
+      return;
+    }
+  }
+
   // CoreCLR host: after logger + FileSystem only. Failure is non-fatal and
   // must not wait on Vulkan/Slint (see docs/agents/testing.md).
   // Player always starts the host so scene instantiate can mount Behaviours.
   // Editor starts only with BLUNDER_DOTNET_SCRIPTS (debug); product Play uses Player.
   tryStartDotNetHost(*this, player_host);
+  if (abortStartupCoverBoot()) {
+    return;
+  }
 
   m_asset_registry = eastl::make_shared<AssetRegistry>();
   m_asset_registry->initialize(m_file_system.get());
@@ -233,7 +263,22 @@ void RuntimeGlobalContext::startSystems(
   // Wire Pull Fast Path �?cookAsset before warm-up so load-time cook requests
   // work once systems start serving descriptors.
   m_asset_manager->setAssetCompiler(m_asset_compiler);
+  startupCoverSetPhase(StartupCoverPhase::cookingAssets);
+  if (abortStartupCoverBoot()) {
+    return;
+  }
+  m_asset_compiler->setCookHeartbeat([]() { return startupCoverPump(); });
   m_asset_compiler->cookIfStale();
+  m_asset_compiler->setCookHeartbeat({});
+  if (m_window_system && m_window_system->shouldClose()) {
+    requestQuit();
+    return;
+  }
+
+  startupCoverSetPhase(StartupCoverPhase::preparingEditor);
+  if (abortStartupCoverBoot()) {
+    return;
+  }
 
   m_asset_import = eastl::make_shared<AssetImportService>();
 
@@ -322,6 +367,9 @@ void RuntimeGlobalContext::startSystems(
   if (!player_host) {
     m_content_browser->startFileWatch();
   }
+  if (abortStartupCoverBoot()) {
+    return;
+  }
 
   // m_physics_manager = eastl::make_shared<PhysicsManager>();
   // m_physics_manager->initialize();
@@ -329,14 +377,14 @@ void RuntimeGlobalContext::startSystems(
   // m_world_manager = eastl::make_shared<WorldManager>();
   // m_world_manager->initialize();
 
-  if (create_os_window) {
+  if (create_os_window && !m_window_system) {
     m_window_system = eastl::make_shared<WindowSystem>();
     WindowCreateInfo window_create_info;
     if (player_host) {
       window_create_info.title = "Blunder Player";
     }
     m_window_system->initialize(window_create_info);
-  } else if (!SDL_WasInit(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+  } else if (!create_os_window && !SDL_WasInit(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
       LOG_FATAL("[RuntimeGlobalContext] Headless SDL_Init failed: {}",
                 SDL_GetError());
@@ -383,6 +431,10 @@ void RuntimeGlobalContext::startSystems(
       m_placement_preview = eastl::make_unique<PlacementPreviewController>();
     }
   } else {
+    startupCoverSetPhase(StartupCoverPhase::startingEditor);
+    if (abortStartupCoverBoot()) {
+      return;
+    }
     m_ui_host = eastl::make_shared<UiHost>();
 
     // Vulkan-unified UI: the engine creates its Vulkan device first and shares it
@@ -402,6 +454,9 @@ void RuntimeGlobalContext::startSystems(
 
     // 1) Create the engine Vulkan device/allocator/sync up front.
     m_render_system->initializeBackend(render_init_info);
+    if (abortStartupCoverBoot()) {
+      return;
+    }
 
     // 2) Initialize Slint with the engine's Vulkan handles so its Skia renderer
     //    composites on the shared device (enables a zero-copy 3D viewport).
@@ -417,6 +472,10 @@ void RuntimeGlobalContext::startSystems(
     }
     m_slint_system->initialize(slint_init_info);
     m_ui_host->setPresentation(m_slint_system.get());
+    m_slint_system->presentStartupShell();
+    if (abortStartupCoverBoot()) {
+      return;
+    }
 
     // 3) Finish render system init (offscreen target, pipelines, overlays, ...).
     m_render_system->initialize(render_init_info);
@@ -454,6 +513,7 @@ void RuntimeGlobalContext::startSystems(
 }
 
 void RuntimeGlobalContext::shutdownSystems() {
+  startupCoverDismiss();
   // Tear down Play session before UI/render so the child Player exits first.
   if (m_play_session) {
     m_play_session->stop();

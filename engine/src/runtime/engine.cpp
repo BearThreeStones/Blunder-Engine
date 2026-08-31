@@ -228,6 +228,10 @@ void BlunderEngine::startEngine(const std::filesystem::path& project_root,
                                 const eastl::string& play_scene, bool headless) {
   g_runtime_global_context.startSystems(project_root, host_mode, play_scene,
                                         headless);
+  if (g_runtime_global_context.isQuitRequested()) {
+    LOG_INFO("engine start aborted (window closed during Startup cover)");
+    return;
+  }
 
   if (g_runtime_global_context.m_window_system) {
     g_runtime_global_context.m_window_system->setEventCallback(

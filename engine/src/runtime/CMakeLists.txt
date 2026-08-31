@@ -26,6 +26,8 @@ add_library(engine_runtime STATIC
     "function/ui/ui_host.h"
     "function/ui/active_scene_display.cpp"
     "function/ui/active_scene_display.h"
+    "function/ui/startup_cover.cpp"
+    "function/ui/startup_cover.h"
     "function/ui/view_models/editor_panels_view_model.cpp"
     "function/ui/view_models/editor_panels_view_model.h"
     "function/ui/viewport/viewport_cpu_frame.h"
