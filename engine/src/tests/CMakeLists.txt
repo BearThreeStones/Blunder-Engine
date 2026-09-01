@@ -2557,6 +2557,30 @@ endif()
 add_test(NAME animation_preview_controller_test
          COMMAND animation_preview_controller_test)
 
+add_executable(animation_clip_anatomy_test
+    "animation_clip_anatomy_test.cpp"
+)
+
+target_link_libraries(animation_clip_anatomy_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(animation_clip_anatomy_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(animation_clip_anatomy_test PRIVATE /Zc:preprocessor)
+    # Same incremental-link / Debug-startup guard as animation_preview_controller_test.
+    set_target_properties(animation_clip_anatomy_test PROPERTIES
+        LINK_FLAGS "/INCREMENTAL:NO")
+endif()
+
+add_test(NAME animation_clip_anatomy_test
+         COMMAND animation_clip_anatomy_test)
+
 add_executable(animation_player_c_abi_test
     "animation_player_c_abi_test.cpp"
 )

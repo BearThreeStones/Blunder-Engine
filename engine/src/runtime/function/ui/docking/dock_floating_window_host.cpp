@@ -513,6 +513,27 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_anim_preview_fire_target(toSharedString(snapshot.anim_preview_fire_target));
       ui.set_anim_preview_in_cine(snapshot.anim_preview_in_cine);
       ui.set_anim_preview_input_suppressed(snapshot.anim_preview_input_suppressed);
+      ui.set_anim_preview_anatomy_filter(
+          toSharedString(snapshot.anim_preview_anatomy_filter));
+      auto anatomy_model = std::make_shared<slint::VectorModel<ClipAnatomyRow>>();
+      for (const NativeFloatClipAnatomyRow& row :
+           snapshot.anim_preview_anatomy_rows) {
+        ClipAnatomyRow slint_row{};
+        slint_row.is_group = row.is_group;
+        slint_row.bone = toSharedString(row.bone);
+        slint_row.label = toSharedString(row.label);
+        slint_row.channel = row.channel;
+        slint_row.collapsed = row.collapsed;
+        auto keys = std::make_shared<slint::VectorModel<ClipAnatomyKey>>();
+        for (const float time : row.key_times) {
+          ClipAnatomyKey key{};
+          key.time = time;
+          keys->push_back(key);
+        }
+        slint_row.keys = keys;
+        anatomy_model->push_back(slint_row);
+      }
+      ui.set_anim_preview_anatomy_rows(anatomy_model);
       break;
     }
     case DockPanelKind::console: {
@@ -1043,6 +1064,18 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
         m_callbacks.on_anim_preview_seeked(seconds);
       }
     });
+    component->on_anim_preview_anatomy_filter_changed(
+        [this](const slint::SharedString& query) {
+          if (m_callbacks.on_anim_preview_anatomy_filter_changed) {
+            m_callbacks.on_anim_preview_anatomy_filter_changed(query);
+          }
+        });
+    component->on_anim_preview_anatomy_group_toggled(
+        [this](const slint::SharedString& bone_name) {
+          if (m_callbacks.on_anim_preview_anatomy_group_toggled) {
+            m_callbacks.on_anim_preview_anatomy_group_toggled(bone_name);
+          }
+        });
     component->on_anim_preview_fire_target_changed(
         [this](const slint::SharedString& name) {
           if (m_callbacks.on_anim_preview_fire_target_changed) {
