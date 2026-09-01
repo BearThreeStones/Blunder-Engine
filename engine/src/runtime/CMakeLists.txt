@@ -34,6 +34,8 @@ add_library(engine_runtime STATIC
     "function/ui/viewport/i_viewport_sink.h"
     "function/ui/viewport/slint_viewport_sink.cpp"
     "function/ui/viewport/slint_viewport_sink.h"
+    "function/ui/viewport/sdl_viewport_sink.cpp"
+    "function/ui/viewport/sdl_viewport_sink.h"
     "function/ui/viewport/ui_viewport_bridge.cpp"
     "function/ui/viewport/ui_viewport_bridge.h"
     "function/ui/viewport/viewport_input_layer.cpp"
