@@ -273,16 +273,21 @@ float3 lightDirAndAtten(GpuSceneLight light, float3 worldPos, out float atten)
 float3 shadePbrLight(float3 L, float3 radiance, float3 normal, float3 viewDir,
                      float3 albedo, float metallic, float roughness, float ao)
 {
-    float ndotl = saturate(dot(normal, L));
-    float ndotv = saturate(dot(normal, viewDir));
+    // The mesh pipeline rasterizes both sides, so a two-sided material must
+    // shade its back faces with the mirrored normal. abs() does that without
+    // depending on the camera, unlike flipping the normal to face the viewer.
+    bool twoSided = ubo.pbrTextureFlags.w > 0.5;
     float3 halfDir = normalize(L + viewDir);
-    float ndoth = saturate(dot(normal, halfDir));
+    float ndotl = twoSided ? abs(dot(normal, L)) : saturate(dot(normal, L));
+    float ndotv = twoSided ? abs(dot(normal, viewDir)) : saturate(dot(normal, viewDir));
+    float ndoth = twoSided ? abs(dot(normal, halfDir)) : saturate(dot(normal, halfDir));
     float hdotv = saturate(dot(halfDir, viewDir));
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
     float d = distributionGGX(ndoth, roughness);
     float g = geometrySmith(ndotv, ndotl, roughness);
-    float3 specular = (d * g * fresnelSchlick(hdotv, f0)) / max(4.0 * ndotv * ndotl, 0.001);
-    float3 diffuse = (1.0 - specular) * (1.0 - metallic) * albedo / 3.14159265;
+    float3 f = fresnelSchlick(hdotv, f0);
+    float3 specular = (d * g * f) / max(4.0 * ndotv * ndotl, 0.001);
+    float3 diffuse = (1.0 - f) * (1.0 - metallic) * albedo / 3.14159265;
     return (diffuse + specular) * radiance * ndotl * ao;
 }
 
@@ -354,10 +359,6 @@ float4 fragmentMain(VertexOutput input) : SV_Target
 
     float3 normal = getNormalFromMap(input);
     float3 viewDir = normalize(ubo.cameraPosition.xyz - input.worldPos);
-    if (dot(normal, viewDir) < 0.0)
-    {
-        normal = -normal;
-    }
     float shadow = sampleShadowPCF(input.worldPos);
 
     float3 color = float3(0.0, 0.0, 0.0);

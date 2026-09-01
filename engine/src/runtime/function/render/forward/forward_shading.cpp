@@ -184,10 +184,20 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
 
   float metallic = 1.0f;
   float roughness = 1.0f;
+  bool has_metallic_roughness_texture = false;
   if (material != nullptr) {
     metallic = material->getMetallicFactor();
     roughness = material->getRoughnessFactor();
+    has_metallic_roughness_texture = material->hasMetallicRoughnessTexture();
     mesh_ubo.material_flags.x = material->isUnlit() ? 1.0f : 0.0f;
+  }
+
+  // glTF defaults both factors to 1.0 when omitted, so an unauthored material
+  // is indistinguishable from polished chrome. Metal has no diffuse lobe, and
+  // with no IBL that renders the mesh black outside the specular highlight.
+  if (!has_metallic_roughness_texture && metallic > 0.999f &&
+      roughness > 0.999f) {
+    metallic = 0.0f;
   }
 
   mesh_ubo.metallic_roughness_factors =
