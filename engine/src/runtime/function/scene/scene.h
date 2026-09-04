@@ -53,6 +53,8 @@ struct SceneEntityDefinition final {
   Quat rotation{glm::identity<Quat>()};
   Vec3 scale{1.0f, 1.0f, 1.0f};
   eastl::string parent_name;
+  /// Object Active (Unity activeSelf). Default on; omit from JSON when true.
+  bool active{true};
   /// Mesh Asset Reference: preferred GUID; may briefly hold a legacy
   /// `assets/...mesh.yaml` path until migration on load/save.
   eastl::string mesh_virtual_path;

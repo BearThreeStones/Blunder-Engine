@@ -323,6 +323,8 @@ add_library(engine_runtime STATIC
     "function/editor/inspector_add_ops.cpp"
     "function/editor/hierarchy_create_ops.h"
     "function/editor/hierarchy_create_ops.cpp"
+    "function/editor/object_active_ops.h"
+    "function/editor/object_active_ops.cpp"
     "function/editor/align_camera_actions.h"
     "function/editor/align_camera_actions.cpp"
     "function/editor/animation_clip_resolve.h"

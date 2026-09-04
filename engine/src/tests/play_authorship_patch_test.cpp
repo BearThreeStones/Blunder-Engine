@@ -109,6 +109,52 @@ int main() {
     expect_true("spawn mutation does not count v1", v1_fires == 4);
   }
 
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Hero", Vec3(0, 0, 0), glm::identity<Quat>(),
+                           Vec3(1));
+    scene.setObjectActive(id, false);
+    const std::string json = buildPlayAuthorshipPatchJson(scene, id);
+    expect_true("snapshot has active false",
+                json.find("\"active\":false") != std::string::npos);
+
+    SceneInstance other;
+    const EntityId other_id =
+        other.createEntity("Hero", Vec3(0, 0, 0), glm::identity<Quat>(),
+                           Vec3(1));
+    expect_true("other starts active", other.isObjectActive(other_id));
+    std::string unknown;
+    expect_true("apply active patch",
+                applyPlayAuthorshipPatchJson(other, json, &unknown));
+    expect_true("active copied off", !other.isObjectActive(other_id));
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId a =
+        scene.createEntity("A", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    const EntityId b =
+        scene.createEntity("B", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    eastl::vector<ObjectActiveEntry> entries;
+    ObjectActiveEntry ea;
+    ea.entity_id = a;
+    ea.before = true;
+    ea.after = false;
+    ObjectActiveEntry eb;
+    eb.entity_id = b;
+    eb.before = true;
+    eb.after = false;
+    entries.push_back(ea);
+    entries.push_back(eb);
+    auto command = makeSetObjectActiveCommand(
+        &scene, eastl::move(entries), SelectionSnapshot{a},
+        SelectionSnapshot{a});
+    expect_true("active command is v1", command->isPlayV1Patchable());
+    expect_true("active command lists both ids",
+                command->play_v1_entity_ids.size() == 2);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

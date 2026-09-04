@@ -395,6 +395,9 @@ eastl::vector<PickOverlay::PickDraw> PickOverlay::collectPickableDraws(
   eastl::vector<PickDraw> draws;
   scene.forEachMeshRenderer([&](EntityId entity_id,
                                 const MeshRendererComponent& renderer) {
+    if (!scene.isActiveInHierarchy(entity_id)) {
+      return;
+    }
     if (!renderer.mesh) {
       return;
     }

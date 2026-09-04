@@ -67,6 +67,7 @@
 #include "runtime/function/editor/hierarchy_create_ops.h"
 #include "runtime/function/editor/hierarchy_row_icons.h"
 #include "runtime/function/editor/hierarchy_system.h"
+#include "runtime/function/editor/object_active_ops.h"
 #include "runtime/function/editor/inspector_behaviour_ops.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/editor/inspector_asset_ops.h"
@@ -1128,6 +1129,32 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         [this](int entity_id, float mouse_x, float row_width) {
           handleHierarchyIconPressed(entity_id, mouse_x, row_width);
         });
+
+    component->on_hierarchy_active_checkbox_clicked([this](int entity_id) {
+      const auto services = lockServices();
+      if (!services || !services->scene) {
+        return;
+      }
+      commitHierarchyActiveCheckbox(services->scene->getActiveInstance(),
+                                    static_cast<EntityId>(entity_id));
+    });
+    component->on_hierarchy_active_toggle_requested([this]() {
+      if (g_runtime_global_context.inlineRenameActive()) {
+        return;
+      }
+      const auto services = lockServices();
+      if (!services || !services->scene) {
+        return;
+      }
+      commitHierarchyActiveToggle(services->scene->getActiveInstance());
+    });
+    component->on_inspector_object_active_toggled([this]() {
+      const auto services = lockServices();
+      if (!services || !services->scene) {
+        return;
+      }
+      commitInspectorActiveCheckbox(services->scene->getActiveInstance());
+    });
 
     component->on_attachment_preview_pin_toggled(
         [this](int entity_id, int kind, int index) {
@@ -2886,6 +2913,8 @@ void SlintSystem::syncHierarchy() {
       slint_row.has_children = row.has_children;
       slint_row.is_last_sibling = row.is_last_sibling;
       slint_row.ancestor_cont_mask = static_cast<int>(row.ancestor_cont_mask);
+      slint_row.object_active = row.object_active;
+      slint_row.active_in_hierarchy = row.active_in_hierarchy;
       slint_row.selected =
           selection != nullptr &&
           selection->isSelected(static_cast<EntityId>(row.entity_id));
@@ -2995,6 +3024,8 @@ void SlintSystem::syncInspectorAssetMode() {
     ui->set_inspector_asset_mode(true);
     ui->set_inspector_has_selection(false);
     ui->set_inspector_entity_name(slint::SharedString(""));
+    ui->set_inspector_object_active(true);
+    ui->set_inspector_object_active_mixed(false);
     ui->set_inspector_multi_edit_visible(false);
     ui->set_inspector_asset_display_name(
         slint::SharedString(identity.display_name.c_str()));
@@ -3522,6 +3553,8 @@ void SlintSystem::syncInspectorFromSelection() {
       ui->set_inspector_asset_mode(false);
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
+      ui->set_inspector_object_active(true);
+      ui->set_inspector_object_active_mixed(false);
       ui->set_inspector_multi_edit_visible(false);
       ui->set_mesh_material_section_visible(false);
       g_runtime_global_context.setInspectorAssetMode(false);
@@ -3544,6 +3577,8 @@ void SlintSystem::syncInspectorFromSelection() {
       ui->set_inspector_asset_mode(false);
       ui->set_inspector_has_selection(false);
       ui->set_inspector_entity_name(slint::SharedString(""));
+      ui->set_inspector_object_active(true);
+      ui->set_inspector_object_active_mixed(false);
       ui->set_inspector_multi_edit_visible(false);
       ui->set_mesh_material_section_visible(false);
       g_runtime_global_context.setInspectorAssetMode(false);
@@ -3576,6 +3611,17 @@ void SlintSystem::syncInspectorFromSelection() {
       ui->set_inspector_entity_name(
           slint::SharedString(primary->getName().c_str()));
     }
+    bool any_active = false;
+    bool any_inactive = false;
+    for (EntityId id : ids) {
+      if (scene->isObjectActive(id)) {
+        any_active = true;
+      } else {
+        any_inactive = true;
+      }
+    }
+    ui->set_inspector_object_active(any_active && !any_inactive);
+    ui->set_inspector_object_active_mixed(any_active && any_inactive);
     ui->set_inspector_multi_edit_visible(multi);
     ui->set_inspector_multi_edit_absolute(
         m_inspector_multi_edit_mode == InspectorMultiEditMode::absolute);
@@ -8435,6 +8481,8 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
             copy.selected = row.selected;
             copy.is_last_sibling = row.is_last_sibling;
             copy.ancestor_cont_mask = row.ancestor_cont_mask;
+            copy.object_active = row.object_active;
+            copy.active_in_hierarchy = row.active_in_hierarchy;
             if (row.icons) {
               for (std::size_t k = 0; k < row.icons->row_count(); ++k) {
                 const auto icon = row.icons->row_data(k);
@@ -8456,6 +8504,9 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
       case DockPanelKind::inspector:
         snapshot.inspector_has_selection = main.get_inspector_has_selection();
         snapshot.inspector_entity_name = main.get_inspector_entity_name().data();
+        snapshot.inspector_object_active = main.get_inspector_object_active();
+        snapshot.inspector_object_active_mixed =
+            main.get_inspector_object_active_mixed();
         snapshot.inspector_pos_x = main.get_inspector_pos_x();
         snapshot.inspector_pos_y = main.get_inspector_pos_y();
         snapshot.inspector_pos_z = main.get_inspector_pos_z();
@@ -8815,6 +8866,31 @@ void SlintSystem::wireNativeFloatingCallbacks() {
       [this](int entity_id, float mouse_x, float row_width) {
         handleHierarchyIconPressed(entity_id, mouse_x, row_width);
       };
+  callbacks.on_hierarchy_active_checkbox_clicked = [this](int entity_id) {
+    const auto services = lockServices();
+    if (!services || !services->scene) {
+      return;
+    }
+    commitHierarchyActiveCheckbox(services->scene->getActiveInstance(),
+                                  static_cast<EntityId>(entity_id));
+  };
+  callbacks.on_hierarchy_active_toggle_requested = [this]() {
+    if (g_runtime_global_context.inlineRenameActive()) {
+      return;
+    }
+    const auto services = lockServices();
+    if (!services || !services->scene) {
+      return;
+    }
+    commitHierarchyActiveToggle(services->scene->getActiveInstance());
+  };
+  callbacks.on_inspector_object_active_toggled = [this]() {
+    const auto services = lockServices();
+    if (!services || !services->scene) {
+      return;
+    }
+    commitInspectorActiveCheckbox(services->scene->getActiveInstance());
+  };
   callbacks.on_inspector_activated = [this]() { onInspectorActivated(); };
   callbacks.on_mesh_material_unlit_toggled = [this](bool checked) {
     commitMeshMaterialUnlit(checked);

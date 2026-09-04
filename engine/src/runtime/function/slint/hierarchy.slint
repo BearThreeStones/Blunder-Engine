@@ -1,4 +1,4 @@
-import { EditorTheme } from "editor_theme.slint";
+import { EditorTheme, ObjectActiveCheckbox } from "editor_controls.slint";
 import {
     EditorIconTreeArrowRight,
     EditorIconTreeArrowDown,
@@ -27,6 +27,8 @@ export struct HierarchyTreeRow {
     selected: bool,
     is-last-sibling: bool,
     ancestor-cont-mask: int,
+    object-active: bool,
+    active-in-hierarchy: bool,
     icons: [HierarchyRowIcon],
 }
 
@@ -102,6 +104,8 @@ export component HierarchyPanel {
     callback create-requested(int, string);
     callback delete-requested(int);
     callback icon-pressed(int, float, float);
+    callback active-checkbox-clicked(int);
+    callback active-toggle-requested();
 
     out property <length> hierarchy-origin-x: hierarchy-root.absolute-position.x;
     out property <length> hierarchy-origin-y: hierarchy-root.absolute-position.y;
@@ -117,6 +121,29 @@ export component HierarchyPanel {
         border-color: EditorTheme.hairline;
         border-width: 1px;
         vertical-stretch: 1;
+
+        hover-wrap := TouchArea {
+            width: 100%;
+            height: 100%;
+            mouse-cursor: default;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.move
+                    || event.kind == PointerEventKind.down) {
+                    hierarchy-keys.focus();
+                }
+            }
+
+        hierarchy-keys := FocusScope {
+            width: 100%;
+            height: 100%;
+            key-pressed(event) => {
+                if (hover-wrap.has-hover
+                    && (event.text == "a" || event.text == "A")) {
+                    root.active-toggle-requested();
+                    return accept;
+                }
+                return reject;
+            }
 
         VerticalLayout {
             padding: 8px;
@@ -221,11 +248,15 @@ export component HierarchyPanel {
                                 height: 100%;
 
                                 property <length> chevron-x: row.depth * 18px;
+                                property <length> checkbox-x: self.chevron-x + 18px + 4px;
 
                                 pointer-event(event) => {
                                     if (event.kind == PointerEventKind.down
                                         && event.button == PointerEventButton.left) {
-                                        if (row.has-children
+                                        if (self.mouse-x >= self.checkbox-x
+                                            && self.mouse-x < self.checkbox-x + 16px) {
+                                            root.active-checkbox-clicked(row.entity-id);
+                                        } else if (row.has-children
                                             && self.mouse-x >= self.chevron-x
                                             && self.mouse-x < self.chevron-x + 18px) {
                                             root.entity-toggle(row.entity-id);
@@ -278,9 +309,17 @@ export component HierarchyPanel {
 
                                     Rectangle { width: 4px; height: 22px; }
 
+                                    ObjectActiveCheckbox {
+                                        checked: row.object-active;
+                                        capture-clicks: false;
+                                    }
+
+                                    Rectangle { width: 4px; height: 22px; }
+
                                     Text {
                                         text: row.name;
-                                        color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.default-text;
+                                        color: !row.active-in-hierarchy ? EditorTheme.muted
+                                            : (row.selected ? EditorTheme.accent-sel-text : EditorTheme.default-text);
                                         font-size: 11px;
                                         vertical-alignment: center;
                                         horizontal-alignment: left;
@@ -379,6 +418,8 @@ export component HierarchyPanel {
                     }
                 }
             }
+        }
+        }
         }
     }
 }

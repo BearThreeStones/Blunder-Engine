@@ -82,8 +82,8 @@ class EditorCamera final {
   void setInteractionLocked(bool locked) { m_interaction_locked = locked; }
   bool isInteractionLocked() const { return m_interaction_locked; }
 
-  /// True while the user is actively manipulating the viewport (orbit/pan/look,
-  /// scroll zoom, or WASD fly with the cursor in the viewport).
+  /// True while the user is actively manipulating the viewport (orbit/pan/look
+  /// or scroll zoom). Does not include WASD fly; that is gated in onUpdate.
   bool isViewportInteracting() const;
 
  private:

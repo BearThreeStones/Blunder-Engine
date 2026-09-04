@@ -5,6 +5,7 @@
 #include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/editor/inspector_animation_player_ops.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
+#include "runtime/function/editor/object_active_ops.h"
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -545,6 +546,38 @@ class RemoveUniqueAttachmentCommand final : public IEditorCommand {
   }
 };
 
+class SetObjectActiveCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  eastl::vector<ObjectActiveEntry> entries;
+
+  void undo() override { apply(true); }
+  void redo() override { apply(false); }
+
+  eastl::string label() const override {
+    if (entries.size() == 1 && scene != nullptr) {
+      const Entity* entity = scene->getEntity(entries[0].entity_id);
+      const char* name =
+          entity != nullptr && !entity->getName().empty() ? entity->getName().c_str()
+                                                          : "Entity";
+      return entries[0].after ? eastl::string("Active ") + name
+                              : eastl::string("Inactive ") + name;
+    }
+    return eastl::string("Active");
+  }
+
+ private:
+  void apply(bool undo) {
+    if (scene == nullptr) {
+      return;
+    }
+    for (const ObjectActiveEntry& entry : entries) {
+      scene->setObjectActive(entry.entity_id, undo ? entry.before : entry.after);
+    }
+    refreshObjectActiveEditorUi(scene);
+  }
+};
+
 }  // namespace
 
 namespace {
@@ -864,6 +897,25 @@ eastl::unique_ptr<IEditorCommand> makeRemoveUniqueAttachmentCommand(
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   stampPlayV1(*command, entity_id);
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetObjectActiveCommand(
+    SceneInstance* scene, eastl::vector<ObjectActiveEntry> entries,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetObjectActiveCommand>();
+  command->scene = scene;
+  command->entries = eastl::move(entries);
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  if (!command->entries.empty()) {
+    stampPlayV1(*command, command->entries.front().entity_id);
+    command->play_v1_entity_ids.clear();
+    command->play_v1_entity_ids.reserve(command->entries.size());
+    for (const ObjectActiveEntry& entry : command->entries) {
+      command->play_v1_entity_ids.push_back(entry.entity_id);
+    }
+  }
   return command;
 }
 

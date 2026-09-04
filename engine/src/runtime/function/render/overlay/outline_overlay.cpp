@@ -367,6 +367,9 @@ void OutlineOverlay::begin_sync(OverlayResources& /*res*/,
 
   auto try_add_draw = [&](EntityId entity_id,
                           const MeshRendererComponent& renderer) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
     if (!renderer.mesh) {
       return;
     }

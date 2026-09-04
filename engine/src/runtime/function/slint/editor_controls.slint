@@ -338,6 +338,56 @@ export component EditorToggle inherits Rectangle {
     }
 }
 
+/// Compact Active checkbox. Does not flip `checked` itself — C++ owns the value.
+export component ObjectActiveCheckbox inherits Rectangle {
+    in property <bool> checked: false;
+    in property <bool> mixed: false;
+    in property <bool> enabled: true;
+    in property <bool> capture-clicks: true;
+    callback clicked();
+
+    width: 16px;
+    height: 22px;
+
+    Rectangle {
+        width: 12px;
+        height: 12px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 2px;
+        border-width: 1px;
+        border-color: root.checked && !root.mixed ? EditorTheme.accent : EditorTheme.hairline;
+        background: root.checked && !root.mixed ? EditorTheme.accent : EditorTheme.field;
+
+        if root.mixed: Rectangle {
+            width: 8px;
+            height: 2px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: EditorTheme.default-text;
+        }
+        if root.checked && !root.mixed: Image {
+            width: 10px;
+            height: 10px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: EditorGlyphs.check;
+            colorize: EditorTheme.accent-text;
+            image-fit: contain;
+        }
+    }
+
+    if root.capture-clicks: TouchArea {
+        width: 100%;
+        height: 100%;
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 export component EditorSlider inherits Rectangle {
     in-out property <float> value: 0;
     in property <float> minimum: 0;

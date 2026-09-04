@@ -31,6 +31,8 @@ struct EditorHierarchyTreeRow {
   bool has_children{false};
   bool is_last_sibling{false};
   uint32_t ancestor_cont_mask{0};
+  bool object_active{true};
+  bool active_in_hierarchy{true};
   eastl::vector<HierarchyRowIconSlot> icons;
 };
 

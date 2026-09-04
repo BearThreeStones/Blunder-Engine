@@ -87,6 +87,28 @@ bool extractJsonStringField(const std::string& json, const char* key,
   return false;
 }
 
+bool extractJsonBoolField(const std::string& json, const char* key, bool& out) {
+  const std::string needle = std::string("\"") + key + "\":";
+  const size_t start = json.find(needle);
+  if (start == std::string::npos) {
+    return false;
+  }
+  size_t i = start + needle.size();
+  while (i < json.size() &&
+         std::isspace(static_cast<unsigned char>(json[i]))) {
+    ++i;
+  }
+  if (i + 4 <= json.size() && json.compare(i, 4, "true") == 0) {
+    out = true;
+    return true;
+  }
+  if (i + 5 <= json.size() && json.compare(i, 5, "false") == 0) {
+    out = false;
+    return true;
+  }
+  return false;
+}
+
 bool extractJsonFloatArray(const std::string& json, const char* key, float* out,
                            size_t count) {
   if (out == nullptr || count == 0) {
@@ -156,7 +178,7 @@ std::string buildPlayAuthorshipPatchJson(const SceneInstance& scene,
   appendJsonFloatArray(oss, r_arr, 4);
   oss << ",\"s\":";
   appendJsonFloatArray(oss, s_arr, 3);
-  oss << "}}";
+  oss << "},\"active\":" << (entity->isActive() ? "true" : "false") << "}";
   return oss.str();
 }
 
@@ -192,6 +214,10 @@ bool applyPlayAuthorshipPatchJson(SceneInstance& scene, const std::string& json,
     entity->setRotation(Quat(r[3], r[0], r[1], r[2]));
     entity->setScale(Vec3(s[0], s[1], s[2]));
     scene.markTransformsDirty();
+  }
+  bool active = entity->isActive();
+  if (extractJsonBoolField(json, "active", active)) {
+    scene.setObjectActive(id, active);
   }
   return true;
 }
@@ -235,12 +261,19 @@ void maybeSendPlayAuthorshipPatch(const IEditorCommand& command) {
   if (scene == nullptr) {
     return;
   }
-  const std::string json =
-      buildPlayAuthorshipPatchJson(*scene, command.play_v1_entity_id);
-  if (json.empty()) {
+  auto send_one = [&](EntityId id) {
+    const std::string json = buildPlayAuthorshipPatchJson(*scene, id);
+    if (!json.empty()) {
+      (void)session->sendPatch(json);
+    }
+  };
+  if (!command.play_v1_entity_ids.empty()) {
+    for (EntityId id : command.play_v1_entity_ids) {
+      send_one(id);
+    }
     return;
   }
-  (void)session->sendPatch(json);
+  send_one(command.play_v1_entity_id);
 }
 
 }  // namespace Blunder

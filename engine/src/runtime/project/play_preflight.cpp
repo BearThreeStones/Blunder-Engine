@@ -175,8 +175,36 @@ PlayScriptsGateResult runPlayScriptsGate(const PlayScriptsGateHooks& hooks) {
 }
 
 bool sceneAssetHasPlayCamera(const Scene& scene) {
-  for (const SceneEntityDefinition& entity : scene.getEntities()) {
-    if (entity.has_camera) {
+  const eastl::vector<SceneEntityDefinition>& entities = scene.getEntities();
+  auto find_by_name = [&](const eastl::string& name) -> const SceneEntityDefinition* {
+    for (const SceneEntityDefinition& entity : entities) {
+      if (entity.name == name) {
+        return &entity;
+      }
+    }
+    return nullptr;
+  };
+  auto active_in_hierarchy = [&](const SceneEntityDefinition& entity) {
+    if (!entity.active) {
+      return false;
+    }
+    eastl::string parent_name = entity.parent_name;
+    size_t guard = 0;
+    while (!parent_name.empty() && guard < entities.size()) {
+      const SceneEntityDefinition* parent = find_by_name(parent_name);
+      if (parent == nullptr) {
+        break;
+      }
+      if (!parent->active) {
+        return false;
+      }
+      parent_name = parent->parent_name;
+      ++guard;
+    }
+    return true;
+  };
+  for (const SceneEntityDefinition& entity : entities) {
+    if (entity.has_camera && active_in_hierarchy(entity)) {
       return true;
     }
   }

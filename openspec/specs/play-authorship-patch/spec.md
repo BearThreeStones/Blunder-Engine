@@ -24,11 +24,15 @@ A Play authorship patch SHALL address the Play Process entity by Authorship Addr
 - **THEN** the Player applies that patch to the entity named `Hero` in the Play Process world
 
 ### Requirement: v1 patch catalog is authored data on existing entities
-v1 Play authorship patches SHALL cover authored data on entities that already exist in both the Live document and the Play Process world: Local Transform, Unique attachments, MeshRenderer, Behaviour bags, SkeletonModifiers, and animation-host fields. Spawn, delete, rename, reparent, and Global Commands SHALL NOT be v1 patches. Those Commands SHALL remain editor-only until Play Reload or a later Play. Uncommitted gizmo or field samples SHALL NOT become patches.
+v1 Play authorship patches SHALL cover authored data on entities that already exist in both the Live document and the Play Process world: Local Transform, Unique attachments, MeshRenderer, Object Active, Behaviour bags, SkeletonModifiers, and animation-host fields. Spawn, delete, rename, reparent, and Global Commands SHALL NOT be v1 patches. Those Commands SHALL remain editor-only until Play Reload or a later Play. Uncommitted gizmo or field samples SHALL NOT become patches.
 
 #### Scenario: Transform seal patches
 - **WHEN** the author seals a Local Transform Command on a Play-entry entity that exists in the Player
 - **THEN** the Player writes that Local Transform onto that entity
+
+#### Scenario: Object Active seal patches
+- **WHEN** the author seals an Object Active Command on a Play-entry entity that exists in the Player
+- **THEN** the Player writes that Object Active onto that entity
 
 #### Scenario: Spawn stays editor-only
 - **WHEN** the author seals a Spawn Command on the Play entry Live document while Playing
