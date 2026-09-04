@@ -150,6 +150,44 @@ int main() {
   }
 
   {
+    SceneInstance scene;
+    LightComponent first;
+    first.type = LightType::directional;
+    first.contribution = LightContribution::illuminateAndShadows;
+    const EntityId a = scene.createEntity("DirA", Vec3(0, 0, 8),
+                                          glm::identity<Quat>(), Vec3(1));
+    scene.setLight(a, first);
+    LightComponent second = first;
+    const EntityId b = scene.createEntity("DirB", Vec3(1, 0, 8),
+                                          glm::identity<Quat>(), Vec3(1));
+    scene.setLight(b, second);
+    scene.setObjectActive(a, false);
+    expect_true("inactive ignored for shadows",
+                pickDirectionalShadowCaster(scene) == b);
+
+    EvaluatedLight gathered[8];
+    const EntityId mesh =
+        scene.createEntity("M", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    scene.setMeshRenderer(mesh, MeshRendererComponent{});
+    expect_true("inactive ignored in gather",
+                gatherLightsForMesh(scene, mesh, gathered, 8) == 1 &&
+                    gathered[0].entity_id == b);
+
+    const EntityId parent = scene.createEntity(
+        "P", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    const EntityId child = scene.createEntity(
+        "ChildLight", Vec3(0, 0, 4), glm::identity<Quat>(), Vec3(1), parent);
+    LightComponent child_light;
+    child_light.type = LightType::point;
+    scene.setLight(child, child_light);
+    scene.setObjectActive(parent, false);
+    expect_true("child light stays locally on", scene.isObjectActive(child));
+    expect_true("inactive parent skips child light",
+                gatherLightsForMesh(scene, mesh, gathered, 8) == 1 &&
+                    gathered[0].entity_id == b);
+  }
+
+  {
     Scene scene;
     appendNewSceneStarterEntities(scene.getEntities());
     expect_true("new scene has two entities", scene.getEntities().size() == 2);

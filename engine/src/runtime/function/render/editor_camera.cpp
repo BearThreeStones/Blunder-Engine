@@ -98,18 +98,12 @@ void EditorCamera::onUpdate(float delta_time) {
     if (m_interaction_mode == InteractionMode::pan) {
       m_is_animating_params = false; // Interrupted by pan
       pan();
+      if (keyboard_state) {
+        applyKeyboardFlyMovement(delta_time, keyboard_state);
+      }
     } else if (keyboard_state &&
-               (m_interaction_mode == InteractionMode::free_look ||
-                isCursorInViewport())) {
-      bool user_active = (m_interaction_mode == InteractionMode::free_look);
-      if (keyboard_state[SDL_SCANCODE_W] || keyboard_state[SDL_SCANCODE_S] ||
-          keyboard_state[SDL_SCANCODE_A] || keyboard_state[SDL_SCANCODE_D] ||
-          keyboard_state[SDL_SCANCODE_Q] || keyboard_state[SDL_SCANCODE_E]) {
-        user_active = true;
-      }
-      if (user_active) {
-        m_is_animating_params = false; // Interrupted by movement
-      }
+               m_interaction_mode == InteractionMode::free_look) {
+      m_is_animating_params = false; // Interrupted by movement
       applyKeyboardFlyMovement(delta_time, keyboard_state);
     }
   }
@@ -314,16 +308,7 @@ bool EditorCamera::isViewportInteracting() const {
   if (m_viewport_scroll_signal) {
     return true;
   }
-  if (!isCursorInViewport()) {
-    return false;
-  }
-  const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
-  if (!keyboard_state) {
-    return false;
-  }
-  return keyboard_state[SDL_SCANCODE_W] || keyboard_state[SDL_SCANCODE_S] ||
-         keyboard_state[SDL_SCANCODE_A] || keyboard_state[SDL_SCANCODE_D] ||
-         keyboard_state[SDL_SCANCODE_Q] || keyboard_state[SDL_SCANCODE_E];
+  return false;
 }
 
 bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {

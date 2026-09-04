@@ -151,8 +151,11 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
     }
   }
 
-  scene_instance->forEachMeshRenderer(
+        scene_instance->forEachMeshRenderer(
       [&](EntityId entity_id, const MeshRendererComponent& renderer) {
+        if (!scene_instance->isActiveInHierarchy(entity_id)) {
+          return;
+        }
         if (!renderer.mesh) {
           return;
         }

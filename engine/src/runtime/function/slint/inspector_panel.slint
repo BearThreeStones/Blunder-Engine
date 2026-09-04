@@ -1,5 +1,5 @@
 import { HorizontalBox, VerticalBox } from "std-widgets.slint";
-import { EditorTheme, EditorButton, EditorToggle, EditorSlider, EditorCompactField, EditorFoldout, InspectorObjectCell } from "editor_controls.slint";
+import { EditorTheme, EditorButton, EditorToggle, EditorSlider, EditorCompactField, EditorFoldout, InspectorObjectCell, ObjectActiveCheckbox } from "editor_controls.slint";
 import { AxisNumberField } from "axis_number_field.slint";
 import { InspectorScalarRow } from "inspector_scalar_row.slint";
 import { InspectorColorCell } from "inspector_color_cell.slint";
@@ -66,6 +66,9 @@ export struct AnimationClipPickerRow {
 export component InspectorPanel inherits Rectangle {
     in property <bool> has-selection: false;
     in property <string> entity-name: "";
+    in property <bool> object-active: true;
+    in property <bool> object-active-mixed: false;
+    callback object-active-toggled();
     in-out property <float> pos-x;
     in-out property <float> pos-y;
     in-out property <float> pos-z;
@@ -565,10 +568,24 @@ export component InspectorPanel inherits Rectangle {
                     alignment: start;
                     vertical-stretch: 0;
 
-                    Text {
-                        text: root.has-selection ? root.entity-name : "No selection";
-                        color: EditorTheme.muted;
-                        font-size: 12px;
+                    HorizontalBox {
+                        spacing: 6px;
+                        alignment: start;
+
+                        if root.has-selection && !root.asset-mode: ObjectActiveCheckbox {
+                            checked: root.object-active;
+                            mixed: root.object-active-mixed;
+                            clicked => { root.object-active-toggled(); }
+                        }
+
+                        Text {
+                            text: root.has-selection ? root.entity-name : "No selection";
+                            color: EditorTheme.muted;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
                     }
 
                     if root.multi-edit-visible: HorizontalBox {

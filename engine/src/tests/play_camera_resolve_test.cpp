@@ -167,6 +167,48 @@ int main() {
                 result.projection[2][2], expected_proj[2][2]);
   }
 
+  {
+    SceneInstance scene;
+    const EntityId main_cam = scene.createEntity("Main Camera", {}, {}, {});
+    CameraComponent main{};
+    main.is_main = true;
+    scene.setCamera(main_cam, main);
+    const EntityId other = scene.createEntity("Cam", {}, {}, {});
+    CameraComponent other_cam{};
+    scene.setCamera(other, other_cam);
+    scene.setObjectActive(main_cam, false);
+    const ResolvedPlayCamera result =
+        resolvePlayCameraFromScene(scene, 16.0f / 9.0f);
+    expect_true("inactive main skipped", result.ok);
+    expect_eq_entity("picks remaining camera", result.entity_id, other);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId main_cam = scene.createEntity("Main Camera", {}, {}, {});
+    CameraComponent main{};
+    main.is_main = true;
+    scene.setCamera(main_cam, main);
+    scene.setObjectActive(main_cam, false);
+    const ResolvedPlayCamera result =
+        resolvePlayCameraFromScene(scene, 16.0f / 9.0f);
+    expect_true("all inactive cameras not ok", !result.ok);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId parent = scene.createEntity("P", {}, {}, {});
+    const EntityId main_cam =
+        scene.createEntity("Main Camera", {}, {}, {}, parent);
+    CameraComponent main{};
+    main.is_main = true;
+    scene.setCamera(main_cam, main);
+    scene.setObjectActive(parent, false);
+    const ResolvedPlayCamera result =
+        resolvePlayCameraFromScene(scene, 16.0f / 9.0f);
+    expect_true("inactive parent skips main", !result.ok);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

@@ -30,6 +30,10 @@ class Entity final {
   bool isEnabled() const { return m_enabled; }
   void setEnabled(bool enabled) { m_enabled = enabled; }
 
+  /// Object Active (Unity activeSelf). Distinct from tombstone `isEnabled`.
+  bool isActive() const { return m_active; }
+  void setActive(bool active) { m_active = active; }
+
   bool isTombstoned() const { return m_tombstoned; }
   void setTombstoned(bool tombstoned) { m_tombstoned = tombstoned; }
 
@@ -49,6 +53,7 @@ class Entity final {
   EntityId m_parent_id{k_invalid_entity_id};
   eastl::string m_mesh_virtual_path;
   bool m_enabled{true};
+  bool m_active{true};
   bool m_tombstoned{false};
 };
 

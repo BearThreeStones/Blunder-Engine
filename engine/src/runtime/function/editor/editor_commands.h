@@ -123,4 +123,14 @@ eastl::unique_ptr<IEditorCommand> makeRemoveUniqueAttachmentCommand(
     InspectorUniqueKind kind, InspectorUniqueRemoveSnapshot snapshot,
     SelectionSnapshot selection_before, SelectionSnapshot selection_after);
 
+struct ObjectActiveEntry {
+  EntityId entity_id{k_invalid_entity_id};
+  bool before{true};
+  bool after{true};
+};
+
+eastl::unique_ptr<IEditorCommand> makeSetObjectActiveCommand(
+    SceneInstance* scene, eastl::vector<ObjectActiveEntry> entries,
+    SelectionSnapshot selection_before, SelectionSnapshot selection_after);
+
 }  // namespace Blunder

@@ -547,6 +547,15 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       ObjectDB::forEach(
           [](Object* object, void* user) {
             const auto* args = static_cast<const TickArgs*>(user);
+            if (object != nullptr && object->hasEntity() &&
+                g_runtime_global_context.m_scene_system) {
+              SceneInstance* scene =
+                  g_runtime_global_context.m_scene_system->getActiveInstance();
+              if (scene != nullptr &&
+                  !scene->isActiveInHierarchy(object->getEntityId())) {
+                return;
+              }
+            }
             tickObjectAnimationPlayFrame(object, args->dt, args->paused);
           },
           &tick_args);

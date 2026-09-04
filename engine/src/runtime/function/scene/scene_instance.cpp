@@ -264,8 +264,9 @@ void SceneInstance::instantiate(const Scene& scene) {
     const EntityId id = createEntity(definition.name, definition.position,
                                      definition.rotation, definition.scale);
     ids.push_back(id);
-    if (!definition.mesh_virtual_path.empty()) {
-      if (Entity* entity = getEntity(id)) {
+    if (Entity* entity = getEntity(id)) {
+      entity->setActive(definition.active);
+      if (!definition.mesh_virtual_path.empty()) {
         entity->setMeshVirtualPath(definition.mesh_virtual_path);
       }
     }
@@ -286,6 +287,7 @@ void SceneInstance::instantiate(const Scene& scene) {
       }
       object->setName(definition.name);
       object->setEntityId(id);
+      object->setEnabled(definition.active);
       m_bound_object_ids.push_back(object_id);
       m_bound_object_ids_by_entity[id] = object_id;
       if (definition.has_skeleton) {
@@ -571,6 +573,39 @@ bool SceneInstance::restoreEntity(EntityId id) {
   return true;
 }
 
+bool SceneInstance::isObjectActive(EntityId id) const {
+  const Entity* entity = getEntity(id);
+  return entity != nullptr && entity->isActive();
+}
+
+void SceneInstance::setObjectActive(EntityId id, bool active) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return;
+  }
+  entity->setActive(active);
+  if (Object* object = findBoundObject(id)) {
+    object->setEnabled(active);
+  }
+}
+
+bool SceneInstance::isActiveInHierarchy(EntityId id) const {
+  EntityId current = id;
+  size_t depth = 0;
+  while (isValid(current)) {
+    const Entity* entity = getEntity(current);
+    if (entity == nullptr || entity->isTombstoned() || !entity->isActive()) {
+      return false;
+    }
+    current = entity->getParentId();
+    ++depth;
+    if (depth > m_entities.size()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool SceneInstance::isTombstoned(EntityId id) const {
   const Entity* entity = getEntity(id);
   return entity != nullptr && entity->isTombstoned();
@@ -641,6 +676,7 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
     definition.position = entity.getPosition();
     definition.rotation = entity.getRotation();
     definition.scale = entity.getScale();
+    definition.active = entity.isActive();
     definition.mesh_virtual_path = entity.getMeshVirtualPath();
 
     const EntityId parent_id = entity.getParentId();
@@ -793,6 +829,7 @@ Object* SceneInstance::ensureBoundObject(EntityId entity_id) {
   }
   object->setName(entity->getName());
   object->setEntityId(entity_id);
+  object->setEnabled(entity->isActive());
   m_bound_object_ids.push_back(object_id);
   m_bound_object_ids_by_entity[entity_id] = object_id;
   return object;

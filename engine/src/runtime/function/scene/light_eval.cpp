@@ -103,6 +103,9 @@ size_t gatherLightsForMesh(const SceneInstance& scene, EntityId mesh_id,
   };
   eastl::vector<Candidate> candidates;
   scene.forEachLight([&](EntityId id, const LightComponent& light) {
+    if (!scene.isActiveInHierarchy(id)) {
+      return;
+    }
     if (!lightIsEvaluationCandidate(light, mesh_id)) {
       return;
     }
@@ -126,6 +129,9 @@ EntityId pickDirectionalShadowCaster(const SceneInstance& scene) {
   };
   eastl::vector<Candidate> candidates;
   scene.forEachLight([&](EntityId id, const LightComponent& light) {
+    if (!scene.isActiveInHierarchy(id)) {
+      return;
+    }
     if (!light.enabled || light.type != LightType::directional) {
       return;
     }

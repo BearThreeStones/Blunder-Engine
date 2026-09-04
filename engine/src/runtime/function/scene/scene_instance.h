@@ -50,6 +50,11 @@ class SceneInstance final {
   /// True if this entity or any ancestor is tombstoned (hidden from document).
   bool isOmittedFromDocument(EntityId id) const;
 
+  bool isObjectActive(EntityId id) const;
+  void setObjectActive(EntityId id, bool active);
+  /// Object Active and every ancestor is Object Active, and not tombstoned.
+  bool isActiveInHierarchy(EntityId id) const;
+
   const Entity* getEntity(EntityId id) const;
   Entity* getEntity(EntityId id);
   EntityId findEntityByName(const eastl::string& name) const;
@@ -163,6 +168,9 @@ inline ResolvedPlayCamera resolvePlayCameraFromScene(const SceneInstance& scene,
                                                      float aspect) {
   eastl::vector<PlayCameraResolveInput> cams;
   scene.forEachEntity([&](EntityId id, const Entity&) {
+    if (!scene.isActiveInHierarchy(id)) {
+      return;
+    }
     const CameraComponent* cam = scene.getCamera(id);
     if (cam == nullptr) {
       return;
