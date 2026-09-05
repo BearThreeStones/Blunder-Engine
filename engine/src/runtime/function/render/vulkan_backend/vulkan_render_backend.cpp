@@ -34,6 +34,10 @@ VulkanRenderBackend::~VulkanRenderBackend() {
     m_sync->shutdown();
     m_sync.reset();
   }
+  if (m_context) {
+    m_context->destroyUploadedTextures();
+    m_context->flushRetiredSampledImages(true);
+  }
   if (m_allocator) {
     m_allocator->shutdown();
     m_allocator.reset();

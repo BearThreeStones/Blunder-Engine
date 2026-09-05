@@ -5,11 +5,16 @@
 #include <SDL3/SDL.h>
 
 #include "EASTL/set.h"
+#include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/slang/engine_gpu_cache.h"
+#include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/resource/asset/texture2d_asset.h"
+
+#include <vk_mem_alloc.h>
 
 namespace Blunder {
 
@@ -179,6 +184,8 @@ void VulkanContext::shutdown() {
     vkDeviceWaitIdle(m_device);
   }
 
+  flushRetiredSampledImages(true);
+
   savePipelineCache();
   destroyPipelineCache();
   m_bindless_table.shutdown();
@@ -219,6 +226,107 @@ void VulkanContext::shutdown() {
   m_physical_device_properties = {};
   m_sampler_anisotropy_enabled = false;
   m_window_system = nullptr;
+  m_uploaded_textures.clear();
+  m_retired_sampled_images.clear();
+  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+    m_in_flight_retire_seq[i] = 0;
+  }
+}
+
+VulkanTexture* VulkanContext::ensureUploadedTexture(
+    VulkanAllocator* allocator, const Texture2DAsset& asset) {
+  if (allocator == nullptr || m_device == VK_NULL_HANDLE) {
+    return nullptr;
+  }
+  const eastl::string key = gpuTextureCacheKey(asset);
+  if (auto it = m_uploaded_textures.find(key);
+      it != m_uploaded_textures.end()) {
+    return it->second.get();
+  }
+
+  auto uploaded_texture = eastl::make_unique<VulkanTexture>();
+  uploaded_texture->createFromTexture2DAsset(this, allocator, asset);
+  VulkanTexture* uploaded_texture_ptr = uploaded_texture.get();
+  m_uploaded_textures[key] = eastl::move(uploaded_texture);
+  LOG_INFO("[VulkanContext] texture uploaded {} ({}x{}, {} bytes)",
+           key.c_str(), asset.getWidth(), asset.getHeight(),
+           asset.getPixelByteSize());
+  return uploaded_texture_ptr;
+}
+
+void VulkanContext::destroyUploadedTextures() {
+  for (auto& [key, texture] : m_uploaded_textures) {
+    if (texture) {
+      texture->destroy();
+    }
+  }
+  m_uploaded_textures.clear();
+}
+
+void VulkanContext::destroyRetiredSampledImage(const RetiredSampledImage& image) {
+  if (m_device == VK_NULL_HANDLE) {
+    return;
+  }
+  if (image.sampler != VK_NULL_HANDLE) {
+    vkDestroySampler(m_device, image.sampler, nullptr);
+  }
+  if (image.view != VK_NULL_HANDLE) {
+    vkDestroyImageView(m_device, image.view, nullptr);
+  }
+  if (image.image != VK_NULL_HANDLE && image.allocator != nullptr) {
+    vmaDestroyImage(image.allocator->getAllocator(), image.image,
+                    static_cast<VmaAllocation>(image.allocation));
+  }
+}
+
+void VulkanContext::retireSampledImage(VkImage image, VkImageView view,
+                                       VkSampler sampler, void* allocation,
+                                       VulkanAllocator* allocator) {
+  if (image == VK_NULL_HANDLE && view == VK_NULL_HANDLE &&
+      sampler == VK_NULL_HANDLE) {
+    return;
+  }
+  RetiredSampledImage retired{};
+  retired.image = image;
+  retired.view = view;
+  retired.sampler = sampler;
+  retired.allocation = allocation;
+  retired.allocator = allocator;
+  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+    retired.required_seq[i] = m_in_flight_retire_seq[i] + 1;
+  }
+  m_retired_sampled_images.push_back(retired);
+}
+
+void VulkanContext::onInFlightFenceRetired(uint32_t slot) {
+  if (slot >= VulkanSync::k_max_frames_in_flight) {
+    return;
+  }
+  ++m_in_flight_retire_seq[slot];
+  flushRetiredSampledImages(false);
+}
+
+void VulkanContext::flushRetiredSampledImages(bool immediate) {
+  eastl::vector<RetiredSampledImage> kept;
+  kept.reserve(m_retired_sampled_images.size());
+  for (const RetiredSampledImage& image : m_retired_sampled_images) {
+    bool ready = immediate;
+    if (!ready) {
+      ready = true;
+      for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+        if (m_in_flight_retire_seq[i] < image.required_seq[i]) {
+          ready = false;
+          break;
+        }
+      }
+    }
+    if (ready) {
+      destroyRetiredSampledImage(image);
+    } else {
+      kept.push_back(image);
+    }
+  }
+  m_retired_sampled_images.swap(kept);
 }
 
 VkCommandBuffer VulkanContext::beginImmediateCommands() {

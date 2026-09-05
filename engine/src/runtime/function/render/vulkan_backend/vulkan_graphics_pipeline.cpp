@@ -41,6 +41,7 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
   for (uint32_t i = 0; i < k_max_expected_descriptor_bindings; ++i) {
     info.expected_descriptor_bindings[i] = desc.expected_descriptor_bindings[i];
     info.expected_descriptor_sets[i] = desc.expected_descriptor_sets[i];
+    info.expected_descriptor_kinds[i] = desc.expected_descriptor_kinds[i];
   }
   info.shared_descriptor_set_layout =
       static_cast<uintptr_t>(desc.shared_descriptor_set_layout);

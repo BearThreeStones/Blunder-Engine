@@ -44,9 +44,15 @@ void appendBinding(Blunder::ShaderResourceLayout& layout,
 bool layoutHasSequentialBindings(const Blunder::ShaderResourceLayout& layout,
                                  uint32_t count) {
   uint32_t expected[Blunder::k_max_expected_descriptor_bindings];
+  Blunder::ShaderDescriptorKind
+      kinds[Blunder::k_max_expected_descriptor_bindings]{};
   uint32_t expected_count = 0;
   Blunder::fillSequentialExpectedBindings(expected, &expected_count, count);
-  return Blunder::shaderResourceBindingsMatch(layout, expected, expected_count);
+  for (uint32_t i = 0; i < expected_count; ++i) {
+    kinds[i] = Blunder::ShaderDescriptorKind::UniformBuffer;
+  }
+  return Blunder::shaderResourceBindingsMatch(layout, expected, expected_count,
+                                              nullptr, kinds);
 }
 
 void dumpBindings(const char* label,
@@ -56,8 +62,9 @@ void dumpBindings(const char* label,
                          : layout.count;
   std::fprintf(stderr, "%s (count=%u):", label, layout.count);
   for (uint32_t i = 0; i < n; ++i) {
-    std::fprintf(stderr, " %u:%u", layout.bindings[i].set,
-                 layout.bindings[i].binding);
+    std::fprintf(stderr, " %u:%u/%u", layout.bindings[i].set,
+                 layout.bindings[i].binding,
+                 static_cast<unsigned>(layout.bindings[i].kind));
   }
   std::fprintf(stderr, "\n");
 }
@@ -65,10 +72,13 @@ void dumpBindings(const char* label,
 bool layoutMatchesPbr(const Blunder::ShaderResourceLayout& layout, bool skinned) {
   uint32_t expected[Blunder::k_max_expected_descriptor_bindings];
   uint32_t sets[Blunder::k_max_expected_descriptor_bindings];
+  Blunder::ShaderDescriptorKind
+      kinds[Blunder::k_max_expected_descriptor_bindings]{};
   uint32_t expected_count = 0;
-  Blunder::fillPbrMeshExpectedBindings(expected, sets, &expected_count, skinned);
+  Blunder::fillPbrMeshExpectedBindings(expected, sets, &expected_count, skinned,
+                                       kinds);
   return Blunder::shaderResourceBindingsMatch(layout, expected, expected_count,
-                                              sets);
+                                              sets, kinds);
 }
 
 }  // namespace
@@ -127,29 +137,51 @@ int main() {
     expect_true("compare helper nullptr expected_sets means all set 0",
                 !shaderResourceBindingsMatch(mixed_sets, mixed_bindings, 2,
                                              nullptr));
+    ShaderDescriptorKind mixed_kinds_ok[] = {
+        ShaderDescriptorKind::UniformBuffer, ShaderDescriptorKind::SampledImage};
+    ShaderDescriptorKind mixed_kinds_wrong[] = {
+        ShaderDescriptorKind::UniformBuffer, ShaderDescriptorKind::Sampler};
+    expect_true("compare helper honors expected_kinds",
+                shaderResourceBindingsMatch(mixed_sets, mixed_bindings, 2,
+                                            mixed_sets_ok, mixed_kinds_ok));
+    expect_true("compare helper fails when expected_kinds disagree",
+                !shaderResourceBindingsMatch(mixed_sets, mixed_bindings, 2,
+                                             mixed_sets_ok, mixed_kinds_wrong));
+    expect_true("compare helper nullptr expected_kinds skips kind",
+                shaderResourceBindingsMatch(mixed_sets, mixed_bindings, 2,
+                                            mixed_sets_ok, nullptr));
   }
 
   {
     uint32_t bindings[k_max_expected_descriptor_bindings];
     uint32_t sets[k_max_expected_descriptor_bindings];
+    ShaderDescriptorKind kinds[k_max_expected_descriptor_bindings]{};
     uint32_t count = 0;
-    fillPbrMeshExpectedBindings(bindings, sets, &count, false);
+    fillPbrMeshExpectedBindings(bindings, sets, &count, false, kinds);
     expect_true("unskinned pbr expected count",
                 count == k_pbr_descriptor_binding_count);
-    expect_true("unskinned pbr set0 ubo", sets[0] == 0 && bindings[0] == 0);
+    expect_true("unskinned pbr set0 ubo", sets[0] == 0 && bindings[0] == 0 &&
+                kinds[0] == ShaderDescriptorKind::UniformBuffer);
     expect_true("unskinned pbr set0 shadow image",
-                sets[1] == 0 && bindings[1] == 1);
+                sets[1] == 0 && bindings[1] == 1 &&
+                kinds[1] == ShaderDescriptorKind::SampledImage);
     expect_true("unskinned pbr set0 shadow sampler",
-                sets[2] == 0 && bindings[2] == 2);
-    expect_true("unskinned pbr set1 textures", sets[3] == 1 && bindings[3] == 0);
-    expect_true("unskinned pbr set1 samplers", sets[4] == 1 && bindings[4] == 1);
+                sets[2] == 0 && bindings[2] == 2 &&
+                kinds[2] == ShaderDescriptorKind::Sampler);
+    expect_true("unskinned pbr set1 textures", sets[3] == 1 && bindings[3] == 0 &&
+                kinds[3] == ShaderDescriptorKind::SampledImage);
+    expect_true("unskinned pbr set1 samplers", sets[4] == 1 && bindings[4] == 1 &&
+                kinds[4] == ShaderDescriptorKind::Sampler);
 
-    fillPbrMeshExpectedBindings(bindings, sets, &count, true);
+    fillPbrMeshExpectedBindings(bindings, sets, &count, true, kinds);
     expect_true("skinned pbr expected count",
                 count == k_skinned_pbr_descriptor_binding_count);
-    expect_true("skinned pbr bone ubo", sets[3] == 0 && bindings[3] == 3);
-    expect_true("skinned pbr set1 textures", sets[4] == 1 && bindings[4] == 0);
-    expect_true("skinned pbr set1 samplers", sets[5] == 1 && bindings[5] == 1);
+    expect_true("skinned pbr bone ubo", sets[3] == 0 && bindings[3] == 3 &&
+                kinds[3] == ShaderDescriptorKind::UniformBuffer);
+    expect_true("skinned pbr set1 textures", sets[4] == 1 && bindings[4] == 0 &&
+                kinds[4] == ShaderDescriptorKind::SampledImage);
+    expect_true("skinned pbr set1 samplers", sets[5] == 1 && bindings[5] == 1 &&
+                kinds[5] == ShaderDescriptorKind::Sampler);
   }
 
   SlangCompiler compiler;

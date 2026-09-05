@@ -72,7 +72,8 @@ void VulkanPipeline::initialize(VulkanContext* context,
   if (!shaderResourceBindingsMatch(
           program.layout, m_create_info.expected_descriptor_bindings,
           m_create_info.expected_descriptor_binding_count,
-          m_create_info.expected_descriptor_sets)) {
+          m_create_info.expected_descriptor_sets,
+          m_create_info.expected_descriptor_kinds)) {
     destroyPendingStages(m_context->getDevice(), program.stages);
     LOG_FATAL(
         "[VulkanPipeline] Shader resource layout does not match record-path "

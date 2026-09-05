@@ -29,6 +29,8 @@ struct VulkanPipelineCreateInfo {
   bool enable_skinned_vertex_input{false};
   uint32_t expected_descriptor_bindings[k_max_expected_descriptor_bindings]{0};
   uint32_t expected_descriptor_sets[k_max_expected_descriptor_bindings]{0};
+  ShaderDescriptorKind
+      expected_descriptor_kinds[k_max_expected_descriptor_bindings]{};
   uint32_t expected_descriptor_binding_count{1};
   uintptr_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};

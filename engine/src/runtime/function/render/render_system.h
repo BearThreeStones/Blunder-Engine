@@ -216,8 +216,6 @@ class RenderSystem final {
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;
   eastl::unique_ptr<SsaOPass> m_ssao_pass;
 
-  eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
-      m_uploaded_textures;
   eastl::unordered_map<eastl::string, eastl::unique_ptr<GpuMesh>> m_gpu_meshes;
   VulkanTexture* m_fallback_texture{nullptr};
   eastl::vector<OpaqueMeshDraw> m_opaque_mesh_draws;

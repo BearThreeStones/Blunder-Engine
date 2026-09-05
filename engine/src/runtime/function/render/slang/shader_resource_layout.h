@@ -33,17 +33,21 @@ constexpr uint32_t k_skinned_pbr_descriptor_binding_count = 6;
 constexpr uint32_t k_shadow_descriptor_binding_count = 1;
 constexpr uint32_t k_skinned_shadow_descriptor_binding_count = 2;
 
-/// True when extracted (set, binding) pairs equal expected pairs.
+/// True when extracted (set, binding[, kind]) tuples equal expected tuples.
 /// `expected_sets` nullptr means every expected binding is set 0.
+/// `expected_kinds` nullptr skips kind comparison.
 bool shaderResourceBindingsMatch(const ShaderResourceLayout& layout,
                                  const uint32_t* expected_bindings,
                                  uint32_t expected_count,
-                                 const uint32_t* expected_sets = nullptr);
+                                 const uint32_t* expected_sets = nullptr,
+                                 const ShaderDescriptorKind* expected_kinds =
+                                     nullptr);
 
 void fillSequentialExpectedBindings(uint32_t* bindings, uint32_t* count,
                                     uint32_t n);
 
 void fillPbrMeshExpectedBindings(uint32_t* bindings, uint32_t* sets,
-                                 uint32_t* count, bool skinned);
+                                 uint32_t* count, bool skinned,
+                                 ShaderDescriptorKind* kinds);
 
 }  // namespace Blunder

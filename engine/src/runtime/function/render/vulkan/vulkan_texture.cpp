@@ -7,6 +7,18 @@
 
 namespace Blunder {
 
+eastl::string gpuTextureCacheKey(const Texture2DAsset& asset) {
+  eastl::string key = asset.getVirtualPath();
+  if (!key.empty()) {
+    return key;
+  }
+  const std::filesystem::path& absolute_path = asset.getAbsolutePath();
+  if (!absolute_path.empty()) {
+    return eastl::string(absolute_path.generic_string().c_str());
+  }
+  return eastl::string("generated://gpu-texture/anonymous");
+}
+
 void VulkanTexture::createFromTexture2DAsset(VulkanContext* context,
                                              VulkanAllocator* allocator,
                                              const Texture2DAsset& asset) {
@@ -32,8 +44,19 @@ void VulkanTexture::createFromTexture2DAsset(VulkanContext* context,
 void VulkanTexture::destroy() {
   if (m_context != nullptr) {
     m_context->bindlessTextureTable().release(this);
+    VkImage image = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VulkanAllocator* allocator = nullptr;
+    if (m_image.releaseGpuHandles(image, view, sampler, allocation,
+                                  allocator)) {
+      m_context->retireSampledImage(image, view, sampler, allocation,
+                                    allocator);
+    }
+  } else {
+    m_image.destroy();
   }
-  m_image.destroy();
   m_allocator = nullptr;
   m_context = nullptr;
 }

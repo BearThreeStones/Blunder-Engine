@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "EASTL/string.h"
+
 #include "runtime/function/render/vulkan/vulkan_image.h"
 
 namespace Blunder {
@@ -9,6 +11,8 @@ namespace Blunder {
 class Texture2DAsset;
 class VulkanAllocator;
 class VulkanContext;
+
+eastl::string gpuTextureCacheKey(const Texture2DAsset& asset);
 
 class VulkanTexture final {
  public:

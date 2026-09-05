@@ -5,11 +5,18 @@
 #include <vulkan/vulkan.h>
 
 #include "EASTL/string.h"
+#include "EASTL/unique_ptr.h"
+#include "EASTL/unordered_map.h"
+#include "EASTL/vector.h"
 
 #include "runtime/function/render/vulkan/bindless_texture_table.h"
+#include "runtime/function/render/vulkan/vulkan_sync.h"
+#include "runtime/function/render/vulkan/vulkan_texture.h"
 
 namespace Blunder {
 
+class Texture2DAsset;
+class VulkanAllocator;
 class WindowSystem;
 
 struct VulkanContextCreateInfo {
@@ -53,7 +60,26 @@ class VulkanContext final {
 
   BindlessTextureTable& bindlessTextureTable() { return m_bindless_table; }
 
+  /// One GPU texture per asset identity on this device (viewport + Mesh Preview).
+  VulkanTexture* ensureUploadedTexture(VulkanAllocator* allocator,
+                                       const Texture2DAsset& asset);
+  void destroyUploadedTextures();
+
+  void retireSampledImage(VkImage image, VkImageView view, VkSampler sampler,
+                          void* allocation, VulkanAllocator* allocator);
+  void onInFlightFenceRetired(uint32_t slot);
+  void flushRetiredSampledImages(bool immediate);
+
  private:
+  struct RetiredSampledImage {
+    VkImage image{VK_NULL_HANDLE};
+    VkImageView view{VK_NULL_HANDLE};
+    VkSampler sampler{VK_NULL_HANDLE};
+    void* allocation{nullptr};
+    VulkanAllocator* allocator{nullptr};
+    uint32_t required_seq[VulkanSync::k_max_frames_in_flight]{};
+  };
+
   void createInstance();
   void setupDebugMessenger();
   void selectPhysicalDevice();
@@ -63,6 +89,7 @@ class VulkanContext final {
   void savePipelineCache();
   void destroyPipelineCache();
   void recreateEmptyPipelineCache();
+  void destroyRetiredSampledImage(const RetiredSampledImage& image);
 
   WindowSystem* m_window_system{nullptr};
   bool m_enable_validation{true};
@@ -84,6 +111,10 @@ class VulkanContext final {
   VkPipelineCache m_pipeline_cache{VK_NULL_HANDLE};
   eastl::string m_slang_build_tag;
   BindlessTextureTable m_bindless_table;
+  eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
+      m_uploaded_textures;
+  eastl::vector<RetiredSampledImage> m_retired_sampled_images;
+  uint32_t m_in_flight_retire_seq[VulkanSync::k_max_frames_in_flight]{};
 };
 
 }  // namespace Blunder
