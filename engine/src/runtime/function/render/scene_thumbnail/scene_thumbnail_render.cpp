@@ -7,14 +7,28 @@
 #include "runtime/function/render/scene_thumbnail/capture.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
+#include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/scene_instance.h"
-#include "runtime/function/scene/scene_system.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/platform/file_system/file_system.h"
 
 namespace Blunder {
 namespace {
+
+void attachMeshesAndCameras(AssetManager* asset_manager, SceneInstance& instance,
+                            const Scene& scene) {
+  GltfSceneImporter::attachEntityMeshes(asset_manager, instance, scene);
+  for (const SceneEntityDefinition& definition : scene.getEntities()) {
+    if (!definition.has_camera) {
+      continue;
+    }
+    const EntityId entity_id = instance.findEntityByName(definition.name);
+    if (isValid(entity_id)) {
+      instance.setCamera(entity_id, definition.camera);
+    }
+  }
+}
 
 eastl::shared_ptr<SceneInstance> instantiateScene(
     AssetManager* asset_manager, const eastl::string& virtual_path,
@@ -28,8 +42,7 @@ eastl::shared_ptr<SceneInstance> instantiateScene(
   auto instance = eastl::make_shared<SceneInstance>();
   instance->setSourcePath(virtual_path);
   instance->instantiate(scene_asset->getScene());
-  completeSceneDocumentInstantiate(asset_manager, *instance,
-                                   scene_asset->getScene());
+  attachMeshesAndCameras(asset_manager, *instance, scene_asset->getScene());
 
   keep_alive.push_back(instance);
   return instance;
