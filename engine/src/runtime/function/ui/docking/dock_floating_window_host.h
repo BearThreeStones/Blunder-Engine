@@ -29,6 +29,8 @@ struct NativeFloatHierarchyRow {
   bool selected{false};
   bool is_last_sibling{false};
   int ancestor_cont_mask{0};
+  bool object_active{true};
+  bool active_in_hierarchy{true};
   eastl::vector<int> icon_kinds;
   eastl::vector<int> icon_indices;
 };
@@ -134,6 +136,8 @@ struct NativeFloatPanelSnapshot {
   eastl::string hierarchy_scene_display_name;
   bool inspector_has_selection{false};
   eastl::string inspector_entity_name;
+  bool inspector_object_active{true};
+  bool inspector_object_active_mixed{false};
   float inspector_pos_x{0.0f};
   float inspector_pos_y{0.0f};
   float inspector_pos_z{0.0f};
@@ -305,6 +309,9 @@ class DockFloatingWindowHost final {
     std::function<void(int entity_id, const slint::SharedString& kind)> on_hierarchy_create_requested;
     std::function<void(int entity_id)> on_hierarchy_delete_requested;
     std::function<void(int entity_id, float mouse_x, float row_width)> on_hierarchy_icon_pressed;
+    std::function<void(int entity_id)> on_hierarchy_active_checkbox_clicked;
+    std::function<void()> on_hierarchy_active_toggle_requested;
+    std::function<void()> on_inspector_object_active_toggled;
     std::function<void()> on_inspector_activated;
     std::function<void(bool)> on_mesh_material_unlit_toggled;
     std::function<void(int, float, float, float, float, bool)> on_mesh_material_scalar_committed;

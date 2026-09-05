@@ -1035,6 +1035,11 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   }
   out_entity.name = eastl::move(name);
 
+  bool active = true;
+  if (parseBoolField(object_start, object_end, "\"active\"", active)) {
+    out_entity.active = active;
+  }
+
   parseVec3Field(object_start, object_end, "\"position\"", out_entity.position,
                  Vec3(0.0f));
   parseVec3Field(object_start, object_end, "\"scale\"", out_entity.scale,
@@ -1975,6 +1980,10 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
   appendFloat3(out, euler);
   out.append(",\n");
   out.append("      \"rotationMode\": \"euler_degrees\"");
+
+  if (!entity.active) {
+    out.append(",\n      \"active\": false");
+  }
 
   if (entity.scale.x != 1.0f || entity.scale.y != 1.0f || entity.scale.z != 1.0f) {
     out.append(",\n      \"scale\": ");

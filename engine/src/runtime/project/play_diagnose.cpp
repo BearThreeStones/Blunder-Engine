@@ -34,7 +34,7 @@ void appendPlayCameraIssues(const SceneInstance& scene,
                             eastl::vector<Issue>& out_issues) {
   bool has_camera = false;
   scene.forEachCamera([&](EntityId id, const CameraComponent&) {
-    if (!scene.isOmittedFromDocument(id)) {
+    if (!scene.isOmittedFromDocument(id) && scene.isActiveInHierarchy(id)) {
       has_camera = true;
     }
   });

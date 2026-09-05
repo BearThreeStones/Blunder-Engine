@@ -172,6 +172,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
         slint_row.selected = row.selected;
         slint_row.is_last_sibling = row.is_last_sibling;
         slint_row.ancestor_cont_mask = row.ancestor_cont_mask;
+        slint_row.object_active = row.object_active;
+        slint_row.active_in_hierarchy = row.active_in_hierarchy;
         auto icons = std::make_shared<slint::VectorModel<HierarchyRowIcon>>();
         const size_t icon_n = row.icon_kinds.size();
         for (size_t i = 0; i < icon_n; ++i) {
@@ -204,7 +206,9 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
               slint_row.has_children != row.has_children ||
               slint_row.selected != row.selected ||
               slint_row.is_last_sibling != row.is_last_sibling ||
-              slint_row.ancestor_cont_mask != row.ancestor_cont_mask) {
+              slint_row.ancestor_cont_mask != row.ancestor_cont_mask ||
+              slint_row.object_active != row.object_active ||
+              slint_row.active_in_hierarchy != row.active_in_hierarchy) {
             fill_row(slint_row, row);
             existing->set_row_data(i, slint_row);
           } else {
@@ -246,6 +250,8 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
     case DockPanelKind::inspector:
       ui.set_inspector_has_selection(snapshot.inspector_has_selection);
       ui.set_inspector_entity_name(toSharedString(snapshot.inspector_entity_name));
+      ui.set_inspector_object_active(snapshot.inspector_object_active);
+      ui.set_inspector_object_active_mixed(snapshot.inspector_object_active_mixed);
       ui.set_inspector_pos_x(snapshot.inspector_pos_x);
       ui.set_inspector_pos_y(snapshot.inspector_pos_y);
       ui.set_inspector_pos_z(snapshot.inspector_pos_z);
@@ -728,6 +734,21 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
             m_callbacks.on_hierarchy_icon_pressed(entity_id, mouse_x, row_width);
           }
         });
+    component->on_hierarchy_active_checkbox_clicked([this](int entity_id) {
+      if (m_callbacks.on_hierarchy_active_checkbox_clicked) {
+        m_callbacks.on_hierarchy_active_checkbox_clicked(entity_id);
+      }
+    });
+    component->on_hierarchy_active_toggle_requested([this]() {
+      if (m_callbacks.on_hierarchy_active_toggle_requested) {
+        m_callbacks.on_hierarchy_active_toggle_requested();
+      }
+    });
+    component->on_inspector_object_active_toggled([this]() {
+      if (m_callbacks.on_inspector_object_active_toggled) {
+        m_callbacks.on_inspector_object_active_toggled();
+      }
+    });
     component->on_inspector_activated([this]() {
       if (m_callbacks.on_inspector_activated) {
         m_callbacks.on_inspector_activated();

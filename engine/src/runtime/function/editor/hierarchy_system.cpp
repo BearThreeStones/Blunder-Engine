@@ -65,6 +65,8 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
     row.has_children = has_children;
     row.is_last_sibling = is_last_sibling;
     row.ancestor_cont_mask = ancestor_cont_mask;
+    row.object_active = scene_instance->isObjectActive(entity_id);
+    row.active_in_hierarchy = scene_instance->isActiveInHierarchy(entity_id);
     fillHierarchyRowIcons(*scene_instance, entity_id, row.icons);
     m_tree_rows.push_back(eastl::move(row));
 

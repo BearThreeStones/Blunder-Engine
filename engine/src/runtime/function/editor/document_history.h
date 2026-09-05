@@ -27,7 +27,11 @@ class IEditorCommand {
   SelectionSnapshot selection_after{};
   /// When valid, this Command is a v1 Play authorship patch source.
   EntityId play_v1_entity_id{k_invalid_entity_id};
-  bool isPlayV1Patchable() const { return isValid(play_v1_entity_id); }
+  /// Extra patch targets (Object Active multi-select). Empty → `play_v1_entity_id` only.
+  eastl::vector<EntityId> play_v1_entity_ids;
+  bool isPlayV1Patchable() const {
+    return isValid(play_v1_entity_id) || !play_v1_entity_ids.empty();
+  }
 };
 
 /// Linear document-scoped undo/redo stack (Editor History for one open scene).

@@ -1001,6 +1001,56 @@ target_precompile_headers(hierarchy_create_test
 add_test(NAME hierarchy_create_test
          COMMAND hierarchy_create_test)
 
+add_executable(object_active_test
+    "object_active_test.cpp"
+)
+
+target_link_libraries(object_active_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(object_active_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(object_active_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(object_active_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME object_active_test
+         COMMAND object_active_test)
+
+add_executable(editor_camera_fly_test
+    "editor_camera_fly_test.cpp"
+)
+
+target_link_libraries(editor_camera_fly_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(editor_camera_fly_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(editor_camera_fly_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(editor_camera_fly_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME editor_camera_fly_test
+         COMMAND editor_camera_fly_test)
+
 add_executable(shader_resource_layout_test
     "shader_resource_layout_test.cpp"
 )
@@ -1080,6 +1130,7 @@ add_test(NAME engine_gpu_cache_test
          WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 blunder_copy_runtime_dlls(engine_gpu_cache_test)
+
 
 add_executable(hierarchy_row_icons_test
     "hierarchy_row_icons_test.cpp"

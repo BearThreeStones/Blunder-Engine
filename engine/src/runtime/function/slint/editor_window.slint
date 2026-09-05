@@ -58,6 +58,8 @@ export component MainEditorWindow inherits Window {
     callback hierarchy-create-requested(int, string);
     callback hierarchy-delete-requested(int);
     callback hierarchy-icon-pressed(int, float, float);
+    callback hierarchy-active-checkbox-clicked(int);
+    callback hierarchy-active-toggle-requested();
 
     in-out property <[AttachmentPreviewCardRow]> attachment-preview-cards: [];
     callback attachment-preview-pin-toggled(int, int, int);
@@ -151,6 +153,9 @@ export component MainEditorWindow inherits Window {
 
     in property <string> inspector-entity-name: "";
     in property <bool> inspector-has-selection: false;
+    in property <bool> inspector-object-active: true;
+    in property <bool> inspector-object-active-mixed: false;
+    callback inspector-object-active-toggled();
     in-out property <float> inspector-pos-x: 0.0;
     in-out property <float> inspector-pos-y: 0.0;
     in-out property <float> inspector-pos-z: 0.0;
@@ -667,6 +672,8 @@ export component MainEditorWindow inherits Window {
                         create-requested(id, kind) => { root.hierarchy-create-requested(id, kind); }
                         delete-requested(id) => { root.hierarchy-delete-requested(id); }
                         icon-pressed(id, mx, rw) => { root.hierarchy-icon-pressed(id, mx, rw); }
+                        active-checkbox-clicked(id) => { root.hierarchy-active-checkbox-clicked(id); }
+                        active-toggle-requested => { root.hierarchy-active-toggle-requested(); }
                     }
 
                     if tile.active-panel-kind == 4 || tile.active-panel-kind == 6: Rectangle {
@@ -757,6 +764,9 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         has-selection: root.inspector-has-selection;
                         entity-name: root.inspector-entity-name;
+                        object-active: root.inspector-object-active;
+                        object-active-mixed: root.inspector-object-active-mixed;
+                        object-active-toggled => { root.inspector-object-active-toggled(); }
                         asset-mode: root.inspector-asset-mode;
                         asset-display-name: root.inspector-asset-display-name;
                         asset-guid: root.inspector-asset-guid;
@@ -1122,6 +1132,8 @@ export component MainEditorWindow inherits Window {
                         create-requested(id, kind) => { root.hierarchy-create-requested(id, kind); }
                         delete-requested(id) => { root.hierarchy-delete-requested(id); }
                         icon-pressed(id, mx, rw) => { root.hierarchy-icon-pressed(id, mx, rw); }
+                        active-checkbox-clicked(id) => { root.hierarchy-active-checkbox-clicked(id); }
+                        active-toggle-requested => { root.hierarchy-active-toggle-requested(); }
                     }
 
                     if overlay.panel-kind == 4 || overlay.panel-kind == 6: Rectangle {
@@ -1212,6 +1224,9 @@ export component MainEditorWindow inherits Window {
                         height: 100%;
                         has-selection: root.inspector-has-selection;
                         entity-name: root.inspector-entity-name;
+                        object-active: root.inspector-object-active;
+                        object-active-mixed: root.inspector-object-active-mixed;
+                        object-active-toggled => { root.inspector-object-active-toggled(); }
                         asset-mode: root.inspector-asset-mode;
                         asset-display-name: root.inspector-asset-display-name;
                         asset-guid: root.inspector-asset-guid;
