@@ -34,6 +34,8 @@ add_library(engine_runtime STATIC
     "function/ui/viewport/i_viewport_sink.h"
     "function/ui/viewport/slint_viewport_sink.cpp"
     "function/ui/viewport/slint_viewport_sink.h"
+    "function/ui/viewport/sdl_viewport_sink.cpp"
+    "function/ui/viewport/sdl_viewport_sink.h"
     "function/ui/viewport/ui_viewport_bridge.cpp"
     "function/ui/viewport/ui_viewport_bridge.h"
     "function/ui/viewport/viewport_input_layer.cpp"
@@ -327,6 +329,8 @@ add_library(engine_runtime STATIC
     "function/editor/object_active_ops.cpp"
     "function/editor/align_camera_actions.h"
     "function/editor/align_camera_actions.cpp"
+    "function/editor/animation_clip_anatomy.h"
+    "function/editor/animation_clip_anatomy.cpp"
     "function/editor/animation_clip_resolve.h"
     "function/editor/animation_clip_resolve.cpp"
     "function/editor/animation_preview_controller.h"
@@ -397,6 +401,7 @@ if(MSVC)
         "function/slint/slint_console_panel.cpp"
         PROPERTIES
             COMPILE_OPTIONS "/Zm400;/bigobj"
+            SKIP_PRECOMPILE_HEADERS ON
     )
     set_source_files_properties(
         "function/slint/slint_console_panel.cpp"

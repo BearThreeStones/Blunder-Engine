@@ -23,6 +23,7 @@
 #include "runtime/function/ui/ui_host.h"
 #include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/ui/startup_cover.h"
+#include "runtime/function/ui/viewport/sdl_viewport_sink.h"
 #include "runtime/function/ui/viewport/slint_viewport_sink.h"
 #include "runtime/function/ui/viewport/ui_viewport_bridge.h"
 #include "runtime/core/layer/layer.h"
@@ -415,6 +416,13 @@ void RuntimeGlobalContext::startSystems(
       LOG_INFO(
           "[RuntimeGlobalContext] Player host mode — skipping Slint editor "
           "shell");
+      if (m_window_system) {
+        m_viewport_sink =
+            eastl::make_unique<SdlViewportSink>(m_window_system.get());
+        m_viewport_bridge = eastl::make_unique<UIViewportBridge>();
+        render_init_info.viewport_bridge = m_viewport_bridge.get();
+        render_init_info.viewport_sink = m_viewport_sink.get();
+      }
     } else {
       LOG_INFO(
           "[RuntimeGlobalContext] Headless Editor — skipping window, Slint, "

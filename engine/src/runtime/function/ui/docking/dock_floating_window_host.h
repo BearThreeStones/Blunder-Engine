@@ -110,6 +110,15 @@ struct NativeFloatHistoryRow {
   bool is_group{false};
 };
 
+struct NativeFloatClipAnatomyRow {
+  bool is_group{false};
+  eastl::string bone;
+  eastl::string label;
+  int channel{0};
+  bool collapsed{false};
+  eastl::vector<float> key_times;
+};
+
 struct NativeFloatConsoleRow {
   eastl::string time;
   int severity{0};
@@ -256,6 +265,8 @@ struct NativeFloatPanelSnapshot {
   eastl::string anim_preview_fire_target;
   bool anim_preview_in_cine{false};
   bool anim_preview_input_suppressed{false};
+  eastl::vector<NativeFloatClipAnatomyRow> anim_preview_anatomy_rows;
+  eastl::string anim_preview_anatomy_filter;
   eastl::vector<NativeFloatConsoleRow> console_rows;
   int console_selected_index{-1};
   eastl::string console_detail_text;
@@ -378,6 +389,10 @@ class DockFloatingWindowHost final {
     std::function<void()> on_anim_preview_end_cine_requested;
     std::function<void(float)> on_anim_preview_seeked;
     std::function<void(const slint::SharedString&)> on_anim_preview_fire_target_changed;
+    std::function<void(const slint::SharedString&)>
+        on_anim_preview_anatomy_filter_changed;
+    std::function<void(const slint::SharedString&)>
+        on_anim_preview_anatomy_group_toggled;
   };
 
   void setCallbacks(Callbacks callbacks) { m_callbacks = eastl::move(callbacks); }

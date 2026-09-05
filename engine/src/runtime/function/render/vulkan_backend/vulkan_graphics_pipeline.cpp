@@ -4,6 +4,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/offscreen_render_target.h"
+#include "runtime/function/render/slang/shader_resource_layout.h"
 #include "runtime/function/render/slang/slang_compiler.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
@@ -31,17 +32,20 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
   info.enable_depth_bias = desc.enable_depth_bias;
   info.depth_bias_constant_factor = desc.depth_bias_constant_factor;
   info.depth_bias_slope_factor = desc.depth_bias_slope_factor;
-  info.enable_texture_sampling = desc.enable_texture_sampling;
-  info.enable_shadow_sampling = desc.enable_shadow_sampling;
-  info.enable_pbr_texture_sampling = desc.enable_pbr_texture_sampling;
   info.enable_skinned_vertex_input = desc.enable_skinned_vertex_input;
-  info.enable_bone_palette = desc.enable_bone_palette;
-  info.bone_palette_binding = desc.bone_palette_binding;
+  info.expected_descriptor_binding_count = desc.expected_descriptor_binding_count;
+  if (info.expected_descriptor_binding_count >
+      k_max_expected_descriptor_bindings) {
+    info.expected_descriptor_binding_count = k_max_expected_descriptor_bindings;
+  }
+  for (uint32_t i = 0; i < k_max_expected_descriptor_bindings; ++i) {
+    info.expected_descriptor_bindings[i] = desc.expected_descriptor_bindings[i];
+    info.expected_descriptor_sets[i] = desc.expected_descriptor_sets[i];
+    info.expected_descriptor_kinds[i] = desc.expected_descriptor_kinds[i];
+  }
   info.shared_descriptor_set_layout =
       static_cast<uintptr_t>(desc.shared_descriptor_set_layout);
   info.depth_only_subpass = desc.depth_only_subpass;
-  info.descriptor_stage_flags =
-      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
   info.depth_compare_op = desc.depth_compare_op == rhi::CompareOp::Less
                               ? VK_COMPARE_OP_LESS
                               : VK_COMPARE_OP_LESS_OR_EQUAL;

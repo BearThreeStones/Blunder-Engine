@@ -15,6 +15,7 @@ VulkanRenderBackend::VulkanRenderBackend(const rhi::RenderBackendInitInfo& init)
   VulkanContextCreateInfo context_info{};
   context_info.window_system = init.device_desc.window_system;
   context_info.enable_validation = init.device_desc.enable_validation;
+  context_info.slang_build_tag = m_slang_compiler->buildTag();
   m_context->initialize(context_info);
 
   m_allocator = eastl::make_shared<VulkanAllocator>();
@@ -32,6 +33,10 @@ VulkanRenderBackend::~VulkanRenderBackend() {
   if (m_sync) {
     m_sync->shutdown();
     m_sync.reset();
+  }
+  if (m_context) {
+    m_context->destroyUploadedTextures();
+    m_context->flushRetiredSampledImages(true);
   }
   if (m_allocator) {
     m_allocator->shutdown();

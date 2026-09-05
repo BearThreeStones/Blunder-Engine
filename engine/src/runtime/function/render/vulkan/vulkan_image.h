@@ -23,6 +23,9 @@ class VulkanImage final {
                                         VK_IMAGE_USAGE_TRANSFER_DST_BIT,
               VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT);
   void destroy();
+  bool releaseGpuHandles(VkImage& image, VkImageView& view, VkSampler& sampler,
+                         VmaAllocation& allocation,
+                         VulkanAllocator*& allocator);
 
   void uploadTexture2D(const Texture2DAsset& texture);
   void cmdTransitionLayout(VkCommandBuffer command_buffer,

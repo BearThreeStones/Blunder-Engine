@@ -5,6 +5,7 @@
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/core/object/object_id.h"
+#include "runtime/function/editor/animation_clip_anatomy.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/resource/asset/asset_descriptor.h"
 
@@ -59,6 +60,10 @@ class AnimationPreviewController final {
                      size_t selected_count);
   void clearTarget();
 
+  /// Clear Clip Play, seek 0, clear Fire, End CINE. Unbind and Play Session
+  /// start use this; window Stop does not.
+  void haltBoundSession();
+
   bool play(const eastl::string& clip_name = {});
   bool pause();
   bool resume();
@@ -83,9 +88,26 @@ class AnimationPreviewController final {
   bool setAdd2ClipName(const eastl::string& name);
 
   eastl::vector<eastl::string> fireClipNames() const;
-  const eastl::string& fireTarget() const { return m_fire_target; }
-  void setFireTarget(const eastl::string& clip_name);
+  const eastl::string& previewClip() const { return m_preview_clip; }
+  const eastl::string& fireTarget() const { return previewClip(); }
+  void setPreviewClip(const eastl::string& clip_name);
+  void setFireTarget(const eastl::string& clip_name) {
+    setPreviewClip(clip_name);
+  }
   bool fire();
+
+  /// Clip anatomy of the current ruler clip; rebuilt when that clip changes.
+  void refreshClipAnatomy();
+  const AnimationClipAnatomy& clipAnatomy() const { return m_anatomy; }
+  eastl::vector<AnimationAnatomyRow> anatomyRows() const;
+  /// Bumped whenever the rows change; lets the window skip identical rebuilds.
+  uint32_t anatomyRevision() const { return m_anatomy_revision; }
+  const eastl::string& anatomyFilter() const {
+    return m_anatomy_session.filter();
+  }
+  void setAnatomyFilter(const eastl::string& query);
+  void toggleAnatomyGroup(const eastl::string& bone_name);
+  bool isAnatomyGroupCollapsed(const eastl::string& bone_name) const;
 
   bool isInCine() const { return m_in_cine; }
   bool isInputSuppressed() const { return m_input_suppressed; }
@@ -119,17 +141,21 @@ class AnimationPreviewController final {
   void resampleBoundSkeleton();
 
  private:
-  void haltBoundSession();
   void resetSessionChrome();
   bool atRulerEnd() const;
-  void defaultFireTargetFromBindings();
+  void defaultPreviewClipFromBindings();
+  void applyPreviewClipPlay();
 
   Object* m_target_object{nullptr};
   eastl::string m_default_clip_name;
   float m_fade_seconds{0.0f};
   AnimationPreviewState m_state{AnimationPreviewState::Stopped};
   bool m_session_loop{false};
-  eastl::string m_fire_target;
+  eastl::string m_preview_clip;
+  AnimationAnatomySession m_anatomy_session;
+  AnimationClipAnatomy m_anatomy;
+  eastl::string m_anatomy_clip_guid;
+  uint32_t m_anatomy_revision{0};
   bool m_in_cine{false};
   bool m_input_suppressed{false};
 };

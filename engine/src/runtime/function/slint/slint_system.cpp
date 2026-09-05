@@ -987,10 +987,24 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     });
     component->on_anim_preview_fire_target_changed(
         [this](const slint::SharedString& name) {
+          applyAnimationPreviewClipChoice(name);
+        });
+    // Session chrome: filter and fold never reach Document History.
+    component->on_anim_preview_anatomy_filter_changed(
+        [this](const slint::SharedString& query) {
           if (AnimationPreviewController* preview =
                   g_runtime_global_context.m_animation_preview.get()) {
-            preview->setFireTarget(eastl::string(name.data()));
+            preview->setAnatomyFilter(eastl::string(query.data()));
           }
+          syncAnimationWindowClipAnatomy(false);
+        });
+    component->on_anim_preview_anatomy_group_toggled(
+        [this](const slint::SharedString& bone_name) {
+          if (AnimationPreviewController* preview =
+                  g_runtime_global_context.m_animation_preview.get()) {
+            preview->toggleAnatomyGroup(eastl::string(bone_name.data()));
+          }
+          syncAnimationWindowClipAnatomy(false);
         });
     component->on_anim_preview_sync_fire_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) {
@@ -3931,6 +3945,55 @@ void SlintSystem::applyInspectorTransform() {
   }
 }
 
+namespace {
+
+void fillFloatingAnimationSnapshot(MainEditorWindow& main,
+                                   NativeFloatPanelSnapshot& snapshot) {
+  snapshot.panel_kind = DockPanelKind::animation;
+  snapshot.anim_preview_enabled = main.get_anim_preview_enabled();
+  snapshot.anim_preview_playing = main.get_anim_preview_playing();
+  snapshot.anim_preview_pause_enabled = main.get_anim_preview_pause_enabled();
+  snapshot.anim_preview_stop_enabled = main.get_anim_preview_stop_enabled();
+  snapshot.anim_preview_paused = main.get_anim_preview_paused();
+  snapshot.anim_preview_looping = main.get_anim_preview_looping();
+  snapshot.anim_preview_time_scale = main.get_anim_preview_time_scale();
+  snapshot.anim_preview_time_scale_text =
+      main.get_anim_preview_time_scale_text().data();
+  snapshot.anim_preview_playhead = main.get_anim_preview_playhead();
+  snapshot.anim_preview_clip_length = main.get_anim_preview_clip_length();
+  snapshot.anim_preview_clip_name = main.get_anim_preview_clip_name().data();
+  snapshot.anim_preview_clock_text = main.get_anim_preview_clock_text().data();
+  snapshot.anim_preview_fire_target = main.get_anim_preview_fire_target().data();
+  snapshot.anim_preview_in_cine = main.get_anim_preview_in_cine();
+  snapshot.anim_preview_input_suppressed = main.get_anim_preview_input_suppressed();
+  if (const auto clips = main.get_anim_preview_fire_clips()) {
+    for (std::size_t i = 0; i < clips->row_count(); ++i) {
+      snapshot.anim_preview_fire_clips.push_back(clips->row_data(i).value().data());
+    }
+  }
+  snapshot.anim_preview_anatomy_filter =
+      main.get_anim_preview_anatomy_filter().data();
+  if (const auto anatomy = main.get_anim_preview_anatomy_rows()) {
+    for (std::size_t i = 0; i < anatomy->row_count(); ++i) {
+      const ClipAnatomyRow row = anatomy->row_data(i).value();
+      NativeFloatClipAnatomyRow copy{};
+      copy.is_group = row.is_group;
+      copy.bone = row.bone.data();
+      copy.label = row.label.data();
+      copy.channel = row.channel;
+      copy.collapsed = row.collapsed;
+      if (row.keys) {
+        for (std::size_t k = 0; k < row.keys->row_count(); ++k) {
+          copy.key_times.push_back(row.keys->row_data(k).value().time);
+        }
+      }
+      snapshot.anim_preview_anatomy_rows.push_back(eastl::move(copy));
+    }
+  }
+}
+
+}  // namespace
+
 void SlintSystem::syncAnimationWindowFromPreview() {
   if (!m_window_component) {
     return;
@@ -3969,6 +4032,51 @@ void SlintSystem::syncAnimationWindowFromPreview() {
   ui.set_anim_preview_input_suppressed(preview->isInputSuppressed());
   ui.set_anim_preview_enter_cine_enabled(bound && !preview->isInCine());
   ui.set_anim_preview_end_cine_enabled(bound && preview->isInCine());
+  ui.set_anim_preview_anatomy_filter(
+      slint::SharedString(preview->anatomyFilter().c_str()));
+  syncAnimationWindowClipAnatomy(false);
+  pushFloatingAnimationWindowFromMain();
+}
+
+void SlintSystem::syncAnimationWindowClipAnatomy(const bool force) {
+  if (!m_window_component) {
+    return;
+  }
+  AnimationPreviewController* preview =
+      g_runtime_global_context.m_animation_preview.get();
+  if (preview == nullptr) {
+    return;
+  }
+
+  preview->refreshClipAnatomy();
+  const uint32_t revision = preview->anatomyRevision();
+  if (!force && m_anim_anatomy_synced && revision == m_anim_anatomy_revision) {
+    return;
+  }
+
+  auto rows = std::make_shared<slint::VectorModel<ClipAnatomyRow>>();
+  if (preview->windowBound()) {
+    for (const AnimationAnatomyRow& source : preview->anatomyRows()) {
+      ClipAnatomyRow row{};
+      row.is_group = source.group;
+      row.bone = slint::SharedString(source.bone.c_str());
+      row.label = slint::SharedString(source.label.c_str());
+      row.channel = static_cast<int>(source.channel);
+      row.collapsed = source.collapsed;
+      auto keys = std::make_shared<slint::VectorModel<ClipAnatomyKey>>();
+      for (const float time : source.key_times) {
+        ClipAnatomyKey key{};
+        key.time = time;
+        keys->push_back(key);
+      }
+      row.keys = keys;
+      rows->push_back(row);
+    }
+  }
+  m_window_component->operator->()->set_anim_preview_anatomy_rows(rows);
+  m_anim_anatomy_revision = revision;
+  m_anim_anatomy_synced = true;
+  pushFloatingAnimationWindowFromMain();
 }
 
 void SlintSystem::syncAnimationWindowPlaybackClock() {
@@ -3992,6 +4100,8 @@ void SlintSystem::syncAnimationWindowPlaybackClock() {
       slint::SharedString(preview->rulerClipName().c_str()));
   ui.set_anim_preview_clock_text(
       slint::SharedString(preview->clockReadout().c_str()));
+  syncAnimationWindowClipAnatomy(false);
+  pushFloatingAnimationWindowFromMain();
 }
 
 void SlintSystem::applyAnimationPreviewLiveTimeScale() {
@@ -4020,6 +4130,36 @@ void SlintSystem::applyAnimationPreviewSeek(const float seconds) {
   preview->seekPlayback(seconds);
   if (const auto services = lockServices(); services && services->render_system) {
     services->render_system->requestViewportRedraw();
+  }
+}
+
+void SlintSystem::applyAnimationPreviewClipChoice(const slint::SharedString& name) {
+  if (AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get()) {
+    preview->setPreviewClip(eastl::string(name.data()));
+  }
+  syncAnimationWindowFromPreview();
+  notifyViewportAfterAnimationPreviewFrame(
+      g_runtime_global_context.m_render_system.get(), this);
+}
+
+void SlintSystem::pushFloatingAnimationWindowFromMain() {
+  if (!m_window_component) {
+    return;
+  }
+  MainEditorWindow& main = *m_window_component->operator->();
+  for (const std::shared_ptr<DockNode>& node : m_dock_manager.floatingNodes()) {
+    if (!node || !m_dock_manager.isNativeFloating(node->id())) {
+      continue;
+    }
+    const std::shared_ptr<DockWidget> widget =
+        node->floatingContent() ? node->floatingContent()->activeWidget() : nullptr;
+    if (!widget || widget->panelKind() != DockPanelKind::animation) {
+      continue;
+    }
+    NativeFloatPanelSnapshot snapshot;
+    fillFloatingAnimationSnapshot(main, snapshot);
+    m_floating_host.applyPanelSnapshot(node->id(), snapshot);
   }
 }
 
@@ -4076,9 +4216,9 @@ void SlintSystem::fireAnimationSyncPreview() {
   if (!preview->fire()) {
     return;
   }
-  if (const auto services = lockServices(); services && services->render_system) {
-    services->render_system->requestViewportRedraw();
-  }
+  syncAnimationWindowFromPreview();
+  notifyViewportAfterAnimationPreviewFrame(
+      g_runtime_global_context.m_render_system.get(), this);
 }
 
 void SlintSystem::syncInspectorBehavioursFromSelection() {
@@ -8721,32 +8861,9 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         }
         break;
       }
-      case DockPanelKind::animation: {
-        snapshot.anim_preview_enabled = main.get_anim_preview_enabled();
-        snapshot.anim_preview_playing = main.get_anim_preview_playing();
-        snapshot.anim_preview_pause_enabled = main.get_anim_preview_pause_enabled();
-        snapshot.anim_preview_stop_enabled = main.get_anim_preview_stop_enabled();
-        snapshot.anim_preview_paused = main.get_anim_preview_paused();
-        snapshot.anim_preview_looping = main.get_anim_preview_looping();
-        snapshot.anim_preview_time_scale = main.get_anim_preview_time_scale();
-        snapshot.anim_preview_time_scale_text =
-            main.get_anim_preview_time_scale_text().data();
-        snapshot.anim_preview_playhead = main.get_anim_preview_playhead();
-        snapshot.anim_preview_clip_length = main.get_anim_preview_clip_length();
-        snapshot.anim_preview_clip_name = main.get_anim_preview_clip_name().data();
-        snapshot.anim_preview_clock_text = main.get_anim_preview_clock_text().data();
-        snapshot.anim_preview_fire_target = main.get_anim_preview_fire_target().data();
-        snapshot.anim_preview_in_cine = main.get_anim_preview_in_cine();
-        snapshot.anim_preview_input_suppressed =
-            main.get_anim_preview_input_suppressed();
-        if (const auto clips = main.get_anim_preview_fire_clips()) {
-          for (std::size_t i = 0; i < clips->row_count(); ++i) {
-            snapshot.anim_preview_fire_clips.push_back(
-                clips->row_data(i).value().data());
-          }
-        }
+      case DockPanelKind::animation:
+        fillFloatingAnimationSnapshot(main, snapshot);
         break;
-      }
       case DockPanelKind::console: {
         if (const auto rows = main.get_console_rows()) {
           for (std::size_t i = 0; i < rows->row_count(); ++i) {
@@ -9294,10 +9411,24 @@ void SlintSystem::wireNativeFloatingCallbacks() {
   };
   callbacks.on_anim_preview_fire_target_changed =
       [this](const slint::SharedString& name) {
+        applyAnimationPreviewClipChoice(name);
+      };
+  // Session chrome: filter and fold never reach Document History.
+  callbacks.on_anim_preview_anatomy_filter_changed =
+      [this](const slint::SharedString& query) {
         if (AnimationPreviewController* preview =
                 g_runtime_global_context.m_animation_preview.get()) {
-          preview->setFireTarget(eastl::string(name.data()));
+          preview->setAnatomyFilter(eastl::string(query.data()));
         }
+        syncAnimationWindowClipAnatomy(false);
+      };
+  callbacks.on_anim_preview_anatomy_group_toggled =
+      [this](const slint::SharedString& bone_name) {
+        if (AnimationPreviewController* preview =
+                g_runtime_global_context.m_animation_preview.get()) {
+          preview->toggleAnatomyGroup(eastl::string(bone_name.data()));
+        }
+        syncAnimationWindowClipAnatomy(false);
       };
   m_floating_host.setCallbacks(eastl::move(callbacks));
 }

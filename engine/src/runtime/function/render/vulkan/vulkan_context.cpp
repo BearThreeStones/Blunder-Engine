@@ -5,10 +5,16 @@
 #include <SDL3/SDL.h>
 
 #include "EASTL/set.h"
+#include "EASTL/unique_ptr.h"
 #include "EASTL/vector.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/render/slang/engine_gpu_cache.h"
+#include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/resource/asset/texture2d_asset.h"
+
+#include <vk_mem_alloc.h>
 
 namespace Blunder {
 
@@ -101,6 +107,46 @@ bool hasDeviceExtension(VkPhysicalDevice physical_device, const char* name) {
   return false;
 }
 
+bool descriptorIndexingSupportsBindlessTable(VkPhysicalDevice device) {
+  if (!hasDeviceExtension(device, VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME)) {
+    return false;
+  }
+
+  VkPhysicalDeviceDescriptorIndexingFeatures indexing{};
+  indexing.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+  VkPhysicalDeviceVulkan11Features vulkan11{};
+  vulkan11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+  vulkan11.pNext = &indexing;
+  VkPhysicalDeviceFeatures2 features2{};
+  features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+  features2.pNext = &vulkan11;
+  vkGetPhysicalDeviceFeatures2(device, &features2);
+  if (!indexing.runtimeDescriptorArray ||
+      !indexing.shaderSampledImageArrayNonUniformIndexing ||
+      !indexing.descriptorBindingSampledImageUpdateAfterBind ||
+      !indexing.descriptorBindingPartiallyBound ||
+      !indexing.descriptorBindingUpdateUnusedWhilePending) {
+    return false;
+  }
+
+  VkPhysicalDeviceDescriptorIndexingProperties indexing_props{};
+  indexing_props.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
+  VkPhysicalDeviceProperties2 props2{};
+  props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+  props2.pNext = &indexing_props;
+  vkGetPhysicalDeviceProperties2(device, &props2);
+  constexpr uint32_t k_need = BindlessTextureIndexTable::k_capacity;
+  return indexing_props.maxPerStageDescriptorUpdateAfterBindSampledImages >=
+             k_need &&
+         indexing_props.maxPerStageDescriptorUpdateAfterBindSamplers >=
+             k_need &&
+         indexing_props.maxDescriptorSetUpdateAfterBindSampledImages >=
+             k_need &&
+         indexing_props.maxDescriptorSetUpdateAfterBindSamplers >= k_need;
+}
+
 }  // namespace
 
 void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
@@ -110,6 +156,10 @@ void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
 #else
   m_enable_validation = info.enable_validation;
 #endif
+  m_slang_build_tag =
+      (info.slang_build_tag != nullptr && info.slang_build_tag[0] != '\0')
+          ? info.slang_build_tag
+          : "unknown";
 
   // Headless: no VkSurfaceKHR / swapchain. Windowed: Slint Skia owns HWND
   // present; the engine still renders off-screen.
@@ -121,6 +171,8 @@ void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
   selectPhysicalDevice();
   LOG_INFO("[VulkanContext::initialize] creating logical device");
   createLogicalDevice();
+  m_bindless_table.initialize(m_device);
+  createPipelineCache();
 
   LOG_INFO("[VulkanContext::initialize] Vulkan context initialized");
 }
@@ -131,6 +183,12 @@ void VulkanContext::shutdown() {
   if (m_device != VK_NULL_HANDLE) {
     vkDeviceWaitIdle(m_device);
   }
+
+  flushRetiredSampledImages(true);
+
+  savePipelineCache();
+  destroyPipelineCache();
+  m_bindless_table.shutdown();
 
   if (m_device != VK_NULL_HANDLE &&
       m_immediate_command_pool != VK_NULL_HANDLE) {
@@ -168,6 +226,107 @@ void VulkanContext::shutdown() {
   m_physical_device_properties = {};
   m_sampler_anisotropy_enabled = false;
   m_window_system = nullptr;
+  m_uploaded_textures.clear();
+  m_retired_sampled_images.clear();
+  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+    m_in_flight_retire_seq[i] = 0;
+  }
+}
+
+VulkanTexture* VulkanContext::ensureUploadedTexture(
+    VulkanAllocator* allocator, const Texture2DAsset& asset) {
+  if (allocator == nullptr || m_device == VK_NULL_HANDLE) {
+    return nullptr;
+  }
+  const eastl::string key = gpuTextureCacheKey(asset);
+  if (auto it = m_uploaded_textures.find(key);
+      it != m_uploaded_textures.end()) {
+    return it->second.get();
+  }
+
+  auto uploaded_texture = eastl::make_unique<VulkanTexture>();
+  uploaded_texture->createFromTexture2DAsset(this, allocator, asset);
+  VulkanTexture* uploaded_texture_ptr = uploaded_texture.get();
+  m_uploaded_textures[key] = eastl::move(uploaded_texture);
+  LOG_INFO("[VulkanContext] texture uploaded {} ({}x{}, {} bytes)",
+           key.c_str(), asset.getWidth(), asset.getHeight(),
+           asset.getPixelByteSize());
+  return uploaded_texture_ptr;
+}
+
+void VulkanContext::destroyUploadedTextures() {
+  for (auto& [key, texture] : m_uploaded_textures) {
+    if (texture) {
+      texture->destroy();
+    }
+  }
+  m_uploaded_textures.clear();
+}
+
+void VulkanContext::destroyRetiredSampledImage(const RetiredSampledImage& image) {
+  if (m_device == VK_NULL_HANDLE) {
+    return;
+  }
+  if (image.sampler != VK_NULL_HANDLE) {
+    vkDestroySampler(m_device, image.sampler, nullptr);
+  }
+  if (image.view != VK_NULL_HANDLE) {
+    vkDestroyImageView(m_device, image.view, nullptr);
+  }
+  if (image.image != VK_NULL_HANDLE && image.allocator != nullptr) {
+    vmaDestroyImage(image.allocator->getAllocator(), image.image,
+                    static_cast<VmaAllocation>(image.allocation));
+  }
+}
+
+void VulkanContext::retireSampledImage(VkImage image, VkImageView view,
+                                       VkSampler sampler, void* allocation,
+                                       VulkanAllocator* allocator) {
+  if (image == VK_NULL_HANDLE && view == VK_NULL_HANDLE &&
+      sampler == VK_NULL_HANDLE) {
+    return;
+  }
+  RetiredSampledImage retired{};
+  retired.image = image;
+  retired.view = view;
+  retired.sampler = sampler;
+  retired.allocation = allocation;
+  retired.allocator = allocator;
+  for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+    retired.required_seq[i] = m_in_flight_retire_seq[i] + 1;
+  }
+  m_retired_sampled_images.push_back(retired);
+}
+
+void VulkanContext::onInFlightFenceRetired(uint32_t slot) {
+  if (slot >= VulkanSync::k_max_frames_in_flight) {
+    return;
+  }
+  ++m_in_flight_retire_seq[slot];
+  flushRetiredSampledImages(false);
+}
+
+void VulkanContext::flushRetiredSampledImages(bool immediate) {
+  eastl::vector<RetiredSampledImage> kept;
+  kept.reserve(m_retired_sampled_images.size());
+  for (const RetiredSampledImage& image : m_retired_sampled_images) {
+    bool ready = immediate;
+    if (!ready) {
+      ready = true;
+      for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
+        if (m_in_flight_retire_seq[i] < image.required_seq[i]) {
+          ready = false;
+          break;
+        }
+      }
+    }
+    if (ready) {
+      destroyRetiredSampledImage(image);
+    } else {
+      kept.push_back(image);
+    }
+  }
+  m_retired_sampled_images.swap(kept);
 }
 
 VkCommandBuffer VulkanContext::beginImmediateCommands() {
@@ -483,7 +642,8 @@ void VulkanContext::selectPhysicalDevice() {
     vkGetPhysicalDeviceMemoryProperties(device, &memory_properties);
 
     if (!device_features.geometryShader || !device_features.samplerAnisotropy ||
-        !vulkan11_features.shaderDrawParameters) {
+        !vulkan11_features.shaderDrawParameters ||
+        !descriptorIndexingSupportsBindlessTable(device)) {
       continue;
     }
 
@@ -556,16 +716,33 @@ void VulkanContext::createLogicalDevice() {
         "support shaderDrawParameters, but the current SPIR-V shaders require it");
   }
 
+  if (!descriptorIndexingSupportsBindlessTable(m_physical_device)) {
+    LOG_FATAL(
+        "[VulkanContext::createLogicalDevice] selected Vulkan device does not "
+        "support descriptor indexing required by the Bindless texture table");
+  }
+
   VkPhysicalDeviceFeatures enabled_features{};
   enabled_features.samplerAnisotropy =
       supported_features2.features.samplerAnisotropy;
   enabled_features.geometryShader = supported_features2.features.geometryShader;
-    m_sampler_anisotropy_enabled =
+  enabled_features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+  m_sampler_anisotropy_enabled =
       enabled_features.samplerAnisotropy == VK_TRUE;
+
+  VkPhysicalDeviceDescriptorIndexingFeatures enabled_indexing{};
+  enabled_indexing.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+  enabled_indexing.runtimeDescriptorArray = VK_TRUE;
+  enabled_indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+  enabled_indexing.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  enabled_indexing.descriptorBindingPartiallyBound = VK_TRUE;
+  enabled_indexing.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 
   VkPhysicalDeviceVulkan11Features enabled_vulkan11_features{};
   enabled_vulkan11_features.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+  enabled_vulkan11_features.pNext = &enabled_indexing;
   enabled_vulkan11_features.shaderDrawParameters = VK_TRUE;
 
   VkDeviceQueueCreateInfo queue_create_info{};
@@ -583,6 +760,7 @@ void VulkanContext::createLogicalDevice() {
   // VK_KHR_swapchain so the shared logical device can drive the Slint UI
   // swapchain (the engine renders off-screen and never presents itself).
   eastl::vector<const char*> device_extensions;
+  device_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
   constexpr const char* k_swapchain_extension = "VK_KHR_swapchain";
   if (m_window_system != nullptr &&
       hasDeviceExtension(m_physical_device, k_swapchain_extension)) {
@@ -626,6 +804,129 @@ void VulkanContext::createImmediateCommandPool() {
         "failed: {}",
         static_cast<int>(result));
   }
+}
+
+void VulkanContext::createPipelineCache() {
+  ASSERT(m_device != VK_NULL_HANDLE);
+
+  eastl::vector<uint8_t> blob = tryLoadPipelineCacheBlob(
+      m_physical_device_properties.pipelineCacheUUID,
+      m_slang_build_tag.c_str());
+
+  VkPipelineCacheCreateInfo info{};
+  info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+  if (!blob.empty()) {
+    info.initialDataSize = blob.size();
+    info.pInitialData = blob.data();
+  }
+
+  VkResult result =
+      vkCreatePipelineCache(m_device, &info, nullptr, &m_pipeline_cache);
+  if (result != VK_SUCCESS) {
+    LOG_WARN(
+        "[VulkanContext] vkCreatePipelineCache failed ({}); rebuilding empty "
+        "cache",
+        static_cast<int>(result));
+    deletePipelineCacheBlob(m_physical_device_properties.pipelineCacheUUID,
+                            m_slang_build_tag.c_str());
+    m_pipeline_cache = VK_NULL_HANDLE;
+    info.initialDataSize = 0;
+    info.pInitialData = nullptr;
+    result =
+        vkCreatePipelineCache(m_device, &info, nullptr, &m_pipeline_cache);
+    if (result != VK_SUCCESS) {
+      LOG_WARN("[VulkanContext] empty VkPipelineCache create failed ({})",
+               static_cast<int>(result));
+      m_pipeline_cache = VK_NULL_HANDLE;
+    }
+  } else if (!blob.empty()) {
+    LOG_INFO("[VulkanContext] loaded Pipeline cache ({} bytes)", blob.size());
+  }
+}
+
+void VulkanContext::savePipelineCache() {
+  if (m_device == VK_NULL_HANDLE || m_pipeline_cache == VK_NULL_HANDLE) {
+    return;
+  }
+  size_t size = 0;
+  VkResult result =
+      vkGetPipelineCacheData(m_device, m_pipeline_cache, &size, nullptr);
+  if (result != VK_SUCCESS) {
+    LOG_WARN("[VulkanContext] vkGetPipelineCacheData size query failed ({})",
+             static_cast<int>(result));
+    return;
+  }
+  if (size == 0) {
+    return;
+  }
+  eastl::vector<uint8_t> blob(size);
+  result =
+      vkGetPipelineCacheData(m_device, m_pipeline_cache, &size, blob.data());
+  if (result != VK_SUCCESS) {
+    LOG_WARN("[VulkanContext] vkGetPipelineCacheData failed ({})",
+             static_cast<int>(result));
+    return;
+  }
+  blob.resize(size);
+  tryStorePipelineCacheBlob(m_physical_device_properties.pipelineCacheUUID,
+                            m_slang_build_tag.c_str(), blob.data(),
+                            blob.size());
+}
+
+void VulkanContext::destroyPipelineCache() {
+  if (m_device != VK_NULL_HANDLE && m_pipeline_cache != VK_NULL_HANDLE) {
+    vkDestroyPipelineCache(m_device, m_pipeline_cache, nullptr);
+    m_pipeline_cache = VK_NULL_HANDLE;
+  }
+}
+
+void VulkanContext::recreateEmptyPipelineCache() {
+  destroyPipelineCache();
+  if (m_device == VK_NULL_HANDLE) {
+    return;
+  }
+  VkPipelineCacheCreateInfo info{};
+  info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+  const VkResult result =
+      vkCreatePipelineCache(m_device, &info, nullptr, &m_pipeline_cache);
+  if (result != VK_SUCCESS) {
+    LOG_WARN("[VulkanContext] empty VkPipelineCache recreate failed ({})",
+             static_cast<int>(result));
+    m_pipeline_cache = VK_NULL_HANDLE;
+  }
+}
+
+VkResult VulkanContext::createGraphicsPipelines(
+    uint32_t create_info_count,
+    const VkGraphicsPipelineCreateInfo* create_infos, VkPipeline* pipelines) {
+  ASSERT(m_device != VK_NULL_HANDLE);
+  ASSERT(create_infos);
+  ASSERT(pipelines);
+
+  VkResult result = vkCreateGraphicsPipelines(
+      m_device, m_pipeline_cache, create_info_count, create_infos, nullptr,
+      pipelines);
+  if (result != VK_SUCCESS && m_pipeline_cache != VK_NULL_HANDLE) {
+    LOG_WARN(
+        "[VulkanContext] vkCreateGraphicsPipelines failed ({}); retrying with "
+        "empty Pipeline cache",
+        static_cast<int>(result));
+    for (uint32_t i = 0; i < create_info_count; ++i) {
+      if (pipelines[i] != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, pipelines[i], nullptr);
+        pipelines[i] = VK_NULL_HANDLE;
+      }
+    }
+    recreateEmptyPipelineCache();
+    result = vkCreateGraphicsPipelines(m_device, m_pipeline_cache,
+                                       create_info_count, create_infos, nullptr,
+                                       pipelines);
+    if (result == VK_SUCCESS) {
+      deletePipelineCacheBlob(m_physical_device_properties.pipelineCacheUUID,
+                              m_slang_build_tag.c_str());
+    }
+  }
+  return result;
 }
 
 }  // namespace Blunder

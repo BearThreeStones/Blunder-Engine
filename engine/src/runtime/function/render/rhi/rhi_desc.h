@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/function/render/rhi/rhi_types.h"
+#include "runtime/function/render/slang/shader_resource_layout.h"
 
 namespace Blunder {
 
@@ -38,13 +39,12 @@ struct GraphicsPipelineDesc {
   bool enable_depth_bias{false};
   float depth_bias_constant_factor{0.0f};
   float depth_bias_slope_factor{0.0f};
-  bool enable_texture_sampling{false};
-  bool enable_shadow_sampling{false};
-  /// PBR: metallic-roughness, normal, occlusion (bindings 5-10 in pbr.slang).
-  bool enable_pbr_texture_sampling{false};
   bool enable_skinned_vertex_input{false};
-  bool enable_bone_palette{false};
-  uint32_t bone_palette_binding{11};
+  uint32_t expected_descriptor_bindings[k_max_expected_descriptor_bindings]{0};
+  uint32_t expected_descriptor_sets[k_max_expected_descriptor_bindings]{0};
+  ShaderDescriptorKind
+      expected_descriptor_kinds[k_max_expected_descriptor_bindings]{};
+  uint32_t expected_descriptor_binding_count{1};
   /// Non-zero: reuse an existing VkDescriptorSetLayout (opaque mesh layout).
   uint64_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
