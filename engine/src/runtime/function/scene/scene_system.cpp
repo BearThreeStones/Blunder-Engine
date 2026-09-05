@@ -110,20 +110,19 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
                          &scene_asset->getScene());
   }
 
-  attachSceneEntityMeshes(*instance, scene_asset->getScene());
-  attachSceneEntityCameras(*instance, scene_asset->getScene());
-  hydrateEmptySkeletonsFromEntityMeshes(m_asset_manager, *instance);
+  completeSceneDocumentInstantiate(m_asset_manager, *instance,
+                                   scene_asset->getScene());
 
   return instance;
 }
 
-void SceneSystem::attachSceneEntityMeshes(SceneInstance& instance,
-                                          const Scene& scene) {
-  GltfSceneImporter::attachEntityMeshes(m_asset_manager, instance, scene);
-}
+void completeSceneDocumentInstantiate(AssetManager* asset_manager,
+                                      SceneInstance& instance,
+                                      const Scene& scene) {
+  if (asset_manager != nullptr) {
+    GltfSceneImporter::attachEntityMeshes(asset_manager, instance, scene);
+  }
 
-void SceneSystem::attachSceneEntityCameras(SceneInstance& instance,
-                                           const Scene& scene) {
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if (!definition.has_camera) {
       continue;
@@ -131,14 +130,18 @@ void SceneSystem::attachSceneEntityCameras(SceneInstance& instance,
 
     const EntityId entity_id = instance.findEntityByName(definition.name);
     if (!isValid(entity_id)) {
-      LOG_WARN("[SceneSystem] camera entity '{}' not found in scene '{}'",
+      LOG_WARN("[SceneInstantiate] camera entity '{}' not found in scene '{}'",
                definition.name.c_str(), instance.getSourcePath().c_str());
       continue;
     }
 
     instance.setCamera(entity_id, definition.camera);
-    LOG_INFO("[SceneSystem] attached camera to entity '{}' in '{}'",
+    LOG_INFO("[SceneInstantiate] attached camera to entity '{}' in '{}'",
              definition.name.c_str(), instance.getSourcePath().c_str());
+  }
+
+  if (asset_manager != nullptr) {
+    hydrateEmptySkeletonsFromEntityMeshes(asset_manager, instance);
   }
 }
 
