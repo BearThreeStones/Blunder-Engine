@@ -53,7 +53,7 @@ eastl::vector<uint8_t> buildNoisePixels() {
 }
 
 VkPipeline createFullscreenPipeline(
-    VkDevice device, VkRenderPass render_pass,
+    VulkanContext* context, VkRenderPass render_pass,
     VkPipelineLayout pipeline_layout,
     const eastl::vector<VulkanShader::ShaderStage>& stages) {
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
@@ -127,8 +127,8 @@ VkPipeline createFullscreenPipeline(
   pipeline_info.subpass = 0;
 
   VkPipeline pipeline = VK_NULL_HANDLE;
-  const VkResult result = vkCreateGraphicsPipelines(
-      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+  const VkResult result =
+      context->createGraphicsPipelines(1, &pipeline_info, &pipeline);
   if (result != VK_SUCCESS) {
     LOG_FATAL("[SsaOPass] vkCreateGraphicsPipelines failed: {}",
               static_cast<int>(result));
@@ -625,7 +625,7 @@ void SsaOPass::createPipelines() {
     auto stages = VulkanShader::loadFromSlang(
         device, m_compiler, "engine/shaders/ssao_generate.slang", entries);
     m_generate_pipeline =
-        createFullscreenPipeline(device, m_ao_render_pass,
+        createFullscreenPipeline(m_context, m_ao_render_pass,
                                  m_generate_pipeline_layout, stages);
     for (auto& stage : stages) {
       VulkanShader::destroyShaderModule(device, &stage.module);
@@ -637,7 +637,7 @@ void SsaOPass::createPipelines() {
                                               "engine/shaders/ssao_apply.slang",
                                               entries);
     m_apply_pipeline = createFullscreenPipeline(
-        device, m_composite_render_pass, m_apply_pipeline_layout, stages);
+        m_context, m_composite_render_pass, m_apply_pipeline_layout, stages);
     for (auto& stage : stages) {
       VulkanShader::destroyShaderModule(device, &stage.module);
     }

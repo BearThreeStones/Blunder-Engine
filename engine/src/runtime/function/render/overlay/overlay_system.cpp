@@ -148,8 +148,13 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
     if (SceneInstance* scene =
             g_runtime_global_context.m_scene_system->getActiveInstance()) {
       m_state.has_selection = true;
-      m_state.selection_world = scene->getWorldMatrix(
-          g_runtime_global_context.m_editor_selection->getSelection());
+      const EntityId selected =
+          g_runtime_global_context.m_editor_selection->getSelection();
+      if (!scene->isActiveInHierarchy(selected)) {
+        m_state.has_selection = false;
+      } else {
+        m_state.selection_world = scene->getWorldMatrix(selected);
+      }
     }
   }
 

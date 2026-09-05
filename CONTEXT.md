@@ -132,6 +132,40 @@ _Avoid_: Putting Editor-only authorship Systems here as the lasting path, treati
 A System that at least one shipped Host composition omits. Editor-only authorship belongs here — Content Browser, Selection, Hierarchy, Scene Edit, Document History, Viewport Pick, Placement Preview, Animation Preview, Play Session, thumbnail/preview render services, Asset Import, UiHost, Slint, viewport sink/bridge, Authorship System. Player must not create them. Mounted at process boot via a registry; callers tolerate absence. Still process-lifetime — not a Plugin and not a Seam registration.
 _Avoid_: Plugin, unloading a Registered System while the process runs, conflating Registered System with Seam registration, creating Content Browser or Import inside the Player, Cordis ctx keys for the Privileged core; requiring Slint, UiHost, or the viewport sink in a Headless Editor
 
+### Rendering
+
+**Shader resource layout**:
+The GPU resource interface a compiled Engine shader declares: descriptor sets, bindings, and resource kinds. It is derived when that shader is compiled in-process. CPU pipeline objects are created from it; they do not author it. It is not a stored Asset. Distinct from the Reflection kernel and from pass/frame-graph ordering. A pipeline does not start unless that binding set is exactly the set its record path writes. Decision record: [ADR 0054](docs/adr/0054-slang-shader-resource-layout.md).
+_Avoid_: Shader reflection as a synonym of the Reflection kernel; treating frame-graph pass order as this layout; treating hand-written CPU binding tables as the authored interface; persisting the layout as project Cook output in this slice; a name-to-binding bind API in this slice; starting with a partially filled set
+
+**Pipeline layout**:
+The device object that instantiates a Shader resource layout for one graphics or compute pipeline so those resources can be bound. Not the forward render path and not pass scheduling.
+_Avoid_: Frame graph; “render pipeline” as this object; inventing a second layout description beside the shader
+
+**Engine shader**:
+A first-party Slang program the engine ships (under `engine/shaders/`). It is not an Asset, not on the Asset Dependency Graph, and not project Cook output.
+_Avoid_: Treating engine shaders as Content Browser Assets; shader edges on the Asset Dependency Graph; Cook as the way engine shaders reach the GPU
+
+**Shader bytecode cache**:
+Persisted SPIR-V from an Engine shader compile, stored with the Shader resource layout from that same compile, so a later process start can skip Slang when that shader is unchanged. It is not an Asset and not Cook output. Distinct from Pipeline cache.
+_Avoid_: Putting this in `.blunder/cooked/`; treating the blob as a Final Asset; re-parsing SPIR-V with SPIR-V-Reflect to recover layout; a name-to-binding bind API
+
+**Pipeline cache**:
+The reusable driver blob that speeds creating pipeline objects on a later process start for the same device. Distinct from Shader bytecode cache. It does not replace compiling Engine shaders when bytecode is stale.
+_Avoid_: Calling Slang’s in-process session this cache; treating viewport staging buffers as this; a second layout description
+
+**Engine GPU cache**:
+The user-level directory, outside any Project, that holds Shader bytecode cache and Pipeline cache. Editor and Player on that machine share it. On Windows this is `%LOCALAPPDATA%/Blunder/gpu-cache/` (not the `%APPDATA%` Project List). An absolute `BLUNDER_GPU_CACHE_DIR` replaces that root; a relative value is ignored. Distinct from the Project’s `.blunder/` store and from Cooked cache. A corrupt blob is discarded and rebuilt; it does not fail process start. A Shader resource layout that does not match the record path still fails start. Decision record: [ADR 0055](docs/adr/0055-engine-gpu-cache-user-level.md).
+_Avoid_: Storing these blobs under a Project; mixing them into `.blunder/cooked/`; a per-Project Engine shader recompile as the intended hit path; treating a binding-set mismatch as a cache miss
+
+**Bindless texture table**:
+A device-wide resident table of sampled images and samplers, one table per device, shared by every mesh shading path on that device (editor viewport, Mesh Preview, Camera Preview, Scene Thumbnail / Capture, Player in that process). A mesh draw selects entries by stable index (valid while that GPU texture remains loaded) instead of binding a new descriptor set for those textures. Per-draw constant buffers stay a normal set. The shadow map stays a dedicated comparison binding; it is not an entry in this table. A full table does not fail process start; extra textures use the fallback index. Overlay, SSAO, and pick do not use this table. Not GPU-driven rendering and not descriptor buffers. Decision record: [ADR 0056](docs/adr/0056-bindless-texture-table.md).
+_Avoid_: Putting mesh UBOs and bone palettes into this table in this slice; a fallback path that keeps per-draw texture sets; VK_EXT_descriptor_buffer as this table; folding SampleCmp shadow into this table; replacing PCF so shadow can share the color table; repacking the table from the draw list every frame; a second table per offscreen target
+
+**Forward mesh draw cap**:
+The maximum mesh draws the forward path records per list per frame. It is a limit of per-draw constant slots. The Bindless texture table does not raise it.
+_Avoid_: Treating bindless textures as unlimited draws; a second cap that counts unique textures as this limit
+
 ### Reflection & scripting
 
 **Gameplay scripting language**:
@@ -212,7 +246,7 @@ _Avoid_: Overloading ObjectId/BehaviourId, requiring every MessageId to be an en
 
 **Reflection kernel**:
 The first deliverable of the reflection system: ClassDB, Clang-driven export for a narrow set of types, PtrCall plus a small Variant path, API Blueprint, Object/`ObjectId`, projected property accessors, and a C-ABI skeleton — without shipping a .NET host, ALC hot reload, multi-Behaviour storage, or a full ECS rewrite of `SceneInstance`. The kernel Object retains a single Script Peer slot; multiple Behaviours arrive with the .NET host MVP (ADR 0011).
-_Avoid_: Treating C# hot reload, multi-Behaviour storage, or full ECS migration as part of the first reflection milestone
+_Avoid_: Treating C# hot reload, multi-Behaviour storage, or full ECS migration as part of the first reflection milestone; calling Shader resource layout extraction "reflection" as if it were this kernel
 
 **.NET host MVP**:
 The first script-host deliverable after the Reflection kernel: in-process CoreCLR, load one Project assembly, attach Behaviours to Objects, Ready/Tick per Behaviour list order — without ALC hot reload, without Behaviour scene serialization, and without Inspector Behaviour UX. The **DogWalk character slice** is written as C# Behaviours on this host, not as a throwaway C++ controller to migrate later. In development, the editor invokes `dotnet build` on the Scripts root (manually or before Play) and loads the output assembly; shipping builds use a separate publish/cook path. File-watcher auto-build is out of this slice.

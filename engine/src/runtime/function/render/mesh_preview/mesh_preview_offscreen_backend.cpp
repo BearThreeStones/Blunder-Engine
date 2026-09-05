@@ -21,7 +21,7 @@
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/i_render_backend.h"
 #include "runtime/function/render/rhi/i_render_device.h"
-#include "runtime/function/render/rhi/rhi_desc.h"
+#include "runtime/function/render/slang/shader_resource_layout.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
@@ -159,8 +159,16 @@ void MeshPreviewOffscreenBackend::shutdown() {
     }
   }
   m_gpu_meshes.clear();
+  for (auto& entry : m_uploaded_textures) {
+    if (entry.second) {
+      entry.second->destroy();
+    }
+  }
   m_uploaded_textures.clear();
-  m_fallback_texture_owner.reset();
+  if (m_fallback_texture_owner) {
+    m_fallback_texture_owner->destroy();
+    m_fallback_texture_owner.reset();
+  }
   m_fallback_texture = nullptr;
   if (m_readback_staging) {
     m_readback_staging->destroy();
@@ -243,9 +251,10 @@ bool MeshPreviewOffscreenBackend::ensureRenderPath(uint32_t width, uint32_t heig
   mesh_pipeline_desc.cull_mode = rhi::CullMode::None;
   mesh_pipeline_desc.enable_depth_test = true;
   mesh_pipeline_desc.enable_depth_write = true;
-  mesh_pipeline_desc.enable_texture_sampling = true;
-  mesh_pipeline_desc.enable_shadow_sampling = false;
-  mesh_pipeline_desc.enable_pbr_texture_sampling = true;
+  fillPbrMeshExpectedBindings(mesh_pipeline_desc.expected_descriptor_bindings,
+                              mesh_pipeline_desc.expected_descriptor_sets,
+                              &mesh_pipeline_desc.expected_descriptor_binding_count,
+                              false);
   m_mesh_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_mesh_pipeline->bind(context, backend->nativeSlangCompiler());
   m_mesh_pipeline->initialize(*m_offscreen, mesh_pipeline_desc);
@@ -264,8 +273,10 @@ bool MeshPreviewOffscreenBackend::ensureRenderPath(uint32_t width, uint32_t heig
   rhi::GraphicsPipelineDesc skinned_mesh_pipeline_desc = mesh_pipeline_desc;
   skinned_mesh_pipeline_desc.shader_path = "engine/shaders/pbr_skinned.slang";
   skinned_mesh_pipeline_desc.enable_skinned_vertex_input = true;
-  skinned_mesh_pipeline_desc.enable_bone_palette = true;
-  skinned_mesh_pipeline_desc.bone_palette_binding = 11;
+  fillPbrMeshExpectedBindings(
+      skinned_mesh_pipeline_desc.expected_descriptor_bindings,
+      skinned_mesh_pipeline_desc.expected_descriptor_sets,
+      &skinned_mesh_pipeline_desc.expected_descriptor_binding_count, true);
   m_skinned_mesh_pipeline =
       eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_skinned_mesh_pipeline->bind(context, backend->nativeSlangCompiler());

@@ -25,6 +25,7 @@ struct GlobalUniformData
     float4 shadowParams;
     float4 metallicRoughnessFactors;
     float4 pbrTextureFlags;
+    uint4 bindlessTextureIndices;
     float4 lightCount;
     GpuSceneLight lights[8];
 };
@@ -33,34 +34,10 @@ struct GlobalUniformData
 ConstantBuffer<GlobalUniformData> ubo;
 
 [[vk::binding(1, 0)]]
-Texture2D<float4> baseColorTexture;
-
-[[vk::binding(2, 0)]]
-SamplerState baseColorSampler;
-
-[[vk::binding(3, 0)]]
 Texture2D<float> shadowMap;
 
-[[vk::binding(4, 0)]]
+[[vk::binding(2, 0)]]
 SamplerComparisonState shadowSampler;
-
-[[vk::binding(5, 0)]]
-Texture2D<float4> metallicRoughnessTexture;
-
-[[vk::binding(6, 0)]]
-SamplerState metallicRoughnessSampler;
-
-[[vk::binding(7, 0)]]
-Texture2D<float4> normalTexture;
-
-[[vk::binding(8, 0)]]
-SamplerState normalSampler;
-
-[[vk::binding(9, 0)]]
-Texture2D<float4> occlusionTexture;
-
-[[vk::binding(10, 0)]]
-SamplerState occlusionSampler;
 
 static const uint kMaxSkinJoints = 128;
 
@@ -69,8 +46,14 @@ struct BonePaletteData
     float4x4 jointMatrices[kMaxSkinJoints];
 };
 
-[[vk::binding(11, 0)]]
+[[vk::binding(3, 0)]]
 ConstantBuffer<BonePaletteData> bonePalette;
+
+[[vk::binding(0, 1)]]
+Texture2D<float4> bindlessTextures[];
+
+[[vk::binding(1, 1)]]
+SamplerState bindlessSamplers[];
 
 struct VertexInput
 {
@@ -102,6 +85,12 @@ struct VertexOutput
     [[vk::location(4)]]
     float tangentSign;
 };
+
+float4 sampleBindless(uint index, float2 uv)
+{
+    uint i = NonUniformResourceIndex(index);
+    return bindlessTextures[i].Sample(bindlessSamplers[i], uv);
+}
 
 float4x4 blendSkinMatrix(float4 weights, int4 joints)
 {
@@ -205,7 +194,7 @@ float3 getNormalFromMap(VertexOutput input)
     tangent = normalize(tangent);
     float3 bitangent = normalize(cross(input.worldNormal, tangent)) * input.tangentSign;
     float3x3 tbn = float3x3(tangent, bitangent, normalize(input.worldNormal));
-    float3 mapNormal = normalTexture.Sample(normalSampler, input.uv).xyz * 2.0 - 1.0;
+    float3 mapNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv).xyz * 2.0 - 1.0;
     return normalize(mul(tbn, mapNormal));
 }
 
@@ -328,7 +317,7 @@ float3 shadeAreaLight(GpuSceneLight light, float3 worldPos, float3 normal, float
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    float4 baseSample = baseColorTexture.Sample(baseColorSampler, input.uv);
+    float4 baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
     float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
     float alpha = baseSample.a * ubo.baseColorFactor.a;
 
@@ -346,7 +335,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float roughness = ubo.metallicRoughnessFactors.y;
     if (ubo.pbrTextureFlags.x > 0.5)
     {
-        float4 mr = metallicRoughnessTexture.Sample(metallicRoughnessSampler, input.uv);
+        float4 mr = sampleBindless(ubo.bindlessTextureIndices.y, input.uv);
         roughness *= mr.g;
         metallic *= mr.b;
     }
@@ -354,7 +343,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float ao = 1.0;
     if (ubo.pbrTextureFlags.z > 0.5)
     {
-        ao = occlusionTexture.Sample(occlusionSampler, input.uv).r;
+        ao = sampleBindless(ubo.bindlessTextureIndices.w, input.uv).r;
     }
 
     float3 normal = getNormalFromMap(input);

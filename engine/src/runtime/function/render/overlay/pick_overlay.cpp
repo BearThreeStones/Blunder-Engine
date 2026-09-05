@@ -45,7 +45,8 @@ struct PickPrepassUniformData {
   float peel_epsilon{1e-4f};
 };
 
-VkPipeline createGraphicsPipeline(VkDevice device, VkRenderPass render_pass,
+VkPipeline createGraphicsPipeline(VulkanContext* context,
+                                  VkRenderPass render_pass,
                                   VkPipelineLayout pipeline_layout,
                                   const eastl::vector<VulkanShader::ShaderStage>& stages) {
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
@@ -130,8 +131,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, VkRenderPass render_pass,
 
   VkPipeline pipeline = VK_NULL_HANDLE;
   const VkResult result =
-      vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr,
-                                &pipeline);
+      context->createGraphicsPipelines(1, &pipeline_info, &pipeline);
   if (result != VK_SUCCESS) {
     LOG_FATAL("[PickOverlay] vkCreateGraphicsPipelines failed: {}",
               static_cast<int>(result));
@@ -375,7 +375,7 @@ void PickOverlay::createPipeline() {
   auto stages = VulkanShader::loadFromSlang(
       m_context->getDevice(), m_compiler, "engine/shaders/pick_prepass.slang",
       entries);
-  m_pipeline = createGraphicsPipeline(m_context->getDevice(),
+  m_pipeline = createGraphicsPipeline(m_context,
                                       m_targets->prepassRenderPass(),
                                       m_pipeline_layout, stages);
   for (auto& stage : stages) {
@@ -395,6 +395,9 @@ eastl::vector<PickOverlay::PickDraw> PickOverlay::collectPickableDraws(
   eastl::vector<PickDraw> draws;
   scene.forEachMeshRenderer([&](EntityId entity_id,
                                 const MeshRendererComponent& renderer) {
+    if (!scene.isActiveInHierarchy(entity_id)) {
+      return;
+    }
     if (!renderer.mesh) {
       return;
     }

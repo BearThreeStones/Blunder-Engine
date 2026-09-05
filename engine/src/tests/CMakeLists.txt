@@ -1001,6 +1001,86 @@ target_precompile_headers(hierarchy_create_test
 add_test(NAME hierarchy_create_test
          COMMAND hierarchy_create_test)
 
+add_executable(shader_resource_layout_test
+    "shader_resource_layout_test.cpp"
+)
+
+target_link_libraries(shader_resource_layout_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(shader_resource_layout_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(shader_resource_layout_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(shader_resource_layout_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME shader_resource_layout_test
+         COMMAND shader_resource_layout_test
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+blunder_copy_runtime_dlls(shader_resource_layout_test)
+
+add_executable(bindless_texture_table_test
+    "bindless_texture_table_test.cpp"
+)
+
+target_link_libraries(bindless_texture_table_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(bindless_texture_table_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(bindless_texture_table_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(bindless_texture_table_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME bindless_texture_table_test
+         COMMAND bindless_texture_table_test)
+
+blunder_copy_runtime_dlls(bindless_texture_table_test)
+
+add_executable(engine_gpu_cache_test
+    "engine_gpu_cache_test.cpp"
+)
+
+target_link_libraries(engine_gpu_cache_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(engine_gpu_cache_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(engine_gpu_cache_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(engine_gpu_cache_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME engine_gpu_cache_test
+         COMMAND engine_gpu_cache_test
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+blunder_copy_runtime_dlls(engine_gpu_cache_test)
+
 add_executable(hierarchy_row_icons_test
     "hierarchy_row_icons_test.cpp"
 )

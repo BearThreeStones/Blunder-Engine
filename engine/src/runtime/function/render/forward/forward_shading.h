@@ -2,6 +2,7 @@
 
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
+#include <glm/ext/vector_uint4.hpp>
 
 #include <cgltf.h>
 
@@ -49,6 +50,7 @@ struct ForwardMeshUniformData {
   glm::vec4 shadow_params{0.0f};
   glm::vec4 metallic_roughness_factors{1.0f, 1.0f, 0.5f, 0.0f};
   glm::vec4 pbr_texture_flags{0.0f};
+  glm::uvec4 bindless_texture_indices{0};
   glm::vec4 light_count{0.0f};
   GpuSceneLight lights[k_max_forward_scene_lights];
 };

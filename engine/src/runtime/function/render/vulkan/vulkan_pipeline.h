@@ -6,6 +6,9 @@
 
 #include "EASTL/vector.h"
 
+#include "runtime/function/render/slang/shader_resource_layout.h"
+#include "runtime/function/render/vulkan/vulkan_shader.h"
+
 namespace Blunder {
 
 class SlangCompiler;
@@ -23,16 +26,12 @@ struct VulkanPipelineCreateInfo {
   bool enable_depth_bias{false};
   float depth_bias_constant_factor{0.0f};
   float depth_bias_slope_factor{0.0f};
-  bool enable_texture_sampling{false};
-  bool enable_shadow_sampling{false};
-  bool enable_pbr_texture_sampling{false};
   bool enable_skinned_vertex_input{false};
-  /// Adds a joint-matrix UBO for GPU skinning (vertex stage).
-  bool enable_bone_palette{false};
-  uint32_t bone_palette_binding{11};
+  uint32_t expected_descriptor_bindings[k_max_expected_descriptor_bindings]{0};
+  uint32_t expected_descriptor_sets[k_max_expected_descriptor_bindings]{0};
+  uint32_t expected_descriptor_binding_count{1};
   uintptr_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
-  VkShaderStageFlags descriptor_stage_flags{VK_SHADER_STAGE_VERTEX_BIT};
 };
 
 /// 3D scene pipeline using basic.slang. The pipeline is built against an
@@ -54,14 +53,16 @@ class VulkanPipeline final {
   VkDescriptorSetLayout getDescriptorSetLayout() const {
     return m_descriptor_set_layout;
   }
+  bool usesBindlessTextureTable() const { return m_uses_bindless_texture_table; }
   VkCommandPool getCommandPool() const { return m_command_pool; }
   VkCommandBuffer getCommandBuffer(uint32_t frame_index) const {
     return m_command_buffers[frame_index];
   }
 
  private:
-  void createDescriptorSetLayout();
-  void createGraphicsPipeline();
+  void createDescriptorSetLayout(const ShaderResourceLayout& layout);
+  void createGraphicsPipeline(
+      eastl::vector<VulkanShader::ShaderStage>& shader_stages);
   void createCommandPool();
   void createCommandBuffers();
 
@@ -70,6 +71,7 @@ class VulkanPipeline final {
   VkRenderPass m_render_pass{VK_NULL_HANDLE};
   VulkanPipelineCreateInfo m_create_info{};
   bool m_owns_descriptor_set_layout{true};
+  bool m_uses_bindless_texture_table{false};
   VkDescriptorSetLayout m_descriptor_set_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_pipeline_layout{VK_NULL_HANDLE};
   VkPipeline m_graphics_pipeline{VK_NULL_HANDLE};

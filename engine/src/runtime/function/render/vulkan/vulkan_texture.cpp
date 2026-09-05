@@ -30,6 +30,9 @@ void VulkanTexture::createFromTexture2DAsset(VulkanContext* context,
 }
 
 void VulkanTexture::destroy() {
+  if (m_context != nullptr) {
+    m_context->bindlessTextureTable().release(this);
+  }
   m_image.destroy();
   m_allocator = nullptr;
   m_context = nullptr;

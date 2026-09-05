@@ -18,6 +18,7 @@
 #include "runtime/function/render/post/ssao_pass.h"
 #include "runtime/function/render/scene_thumbnail/scene_still.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
+#include "runtime/function/render/slang/shader_resource_layout.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_keycode.h>
@@ -318,9 +319,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   mesh_pipeline_desc.cull_mode = rhi::CullMode::None;
   mesh_pipeline_desc.enable_depth_test = true;
   mesh_pipeline_desc.enable_depth_write = true;
-  mesh_pipeline_desc.enable_texture_sampling = true;
-  mesh_pipeline_desc.enable_shadow_sampling = true;
-  mesh_pipeline_desc.enable_pbr_texture_sampling = true;
+  fillPbrMeshExpectedBindings(mesh_pipeline_desc.expected_descriptor_bindings,
+                              mesh_pipeline_desc.expected_descriptor_sets,
+                              &mesh_pipeline_desc.expected_descriptor_binding_count,
+                              false);
   m_mesh_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_mesh_pipeline->initialize(*m_offscreen, mesh_pipeline_desc);
@@ -339,8 +341,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   rhi::GraphicsPipelineDesc skinned_mesh_pipeline_desc = mesh_pipeline_desc;
   skinned_mesh_pipeline_desc.shader_path = "engine/shaders/pbr_skinned.slang";
   skinned_mesh_pipeline_desc.enable_skinned_vertex_input = true;
-  skinned_mesh_pipeline_desc.enable_bone_palette = true;
-  skinned_mesh_pipeline_desc.bone_palette_binding = 11;
+  fillPbrMeshExpectedBindings(
+      skinned_mesh_pipeline_desc.expected_descriptor_bindings,
+      skinned_mesh_pipeline_desc.expected_descriptor_sets,
+      &skinned_mesh_pipeline_desc.expected_descriptor_binding_count, true);
   m_skinned_mesh_pipeline =
       eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_skinned_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
@@ -371,6 +375,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   shadow_pipeline_desc.enable_depth_write = true;
   shadow_pipeline_desc.depth_compare_op = rhi::CompareOp::Less;
   shadow_pipeline_desc.depth_only_subpass = true;
+  fillSequentialExpectedBindings(
+      shadow_pipeline_desc.expected_descriptor_bindings,
+      &shadow_pipeline_desc.expected_descriptor_binding_count,
+      k_shadow_descriptor_binding_count);
   m_shadow_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_shadow_pipeline->initializeWithRenderPass(m_shadow_map->getRenderPass(),
@@ -381,13 +389,15 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
       "engine/shaders/shadow_depth_skinned.slang";
   skinned_shadow_pipeline_desc.enable_vertex_input = true;
   skinned_shadow_pipeline_desc.enable_skinned_vertex_input = true;
-  skinned_shadow_pipeline_desc.enable_bone_palette = true;
-  skinned_shadow_pipeline_desc.bone_palette_binding = 1;
   skinned_shadow_pipeline_desc.cull_mode = rhi::CullMode::Back;
   skinned_shadow_pipeline_desc.enable_depth_test = true;
   skinned_shadow_pipeline_desc.enable_depth_write = true;
   skinned_shadow_pipeline_desc.depth_compare_op = rhi::CompareOp::Less;
   skinned_shadow_pipeline_desc.depth_only_subpass = true;
+  fillSequentialExpectedBindings(
+      skinned_shadow_pipeline_desc.expected_descriptor_bindings,
+      &skinned_shadow_pipeline_desc.expected_descriptor_binding_count,
+      k_skinned_shadow_descriptor_binding_count);
   m_skinned_shadow_pipeline =
       eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_skinned_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());

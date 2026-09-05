@@ -13,7 +13,9 @@ class VulkanContext;
 class VulkanTexture final {
  public:
   VulkanTexture() = default;
-  ~VulkanTexture() = default;
+  ~VulkanTexture() { destroy(); }
+  VulkanTexture(const VulkanTexture&) = delete;
+  VulkanTexture& operator=(const VulkanTexture&) = delete;
 
   void createFromTexture2DAsset(VulkanContext* context,
                                 VulkanAllocator* allocator,

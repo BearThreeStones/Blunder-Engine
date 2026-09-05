@@ -4,6 +4,10 @@
 
 #include <vulkan/vulkan.h>
 
+#include "EASTL/string.h"
+
+#include "runtime/function/render/vulkan/bindless_texture_table.h"
+
 namespace Blunder {
 
 class WindowSystem;
@@ -11,6 +15,7 @@ class WindowSystem;
 struct VulkanContextCreateInfo {
   WindowSystem* window_system{nullptr};
   bool enable_validation{true};
+  const char* slang_build_tag{nullptr};
 };
 
 class VulkanContext final {
@@ -42,12 +47,22 @@ class VulkanContext final {
     return m_sampler_anisotropy_enabled;
   }
 
+  VkResult createGraphicsPipelines(
+      uint32_t create_info_count,
+      const VkGraphicsPipelineCreateInfo* create_infos, VkPipeline* pipelines);
+
+  BindlessTextureTable& bindlessTextureTable() { return m_bindless_table; }
+
  private:
   void createInstance();
   void setupDebugMessenger();
   void selectPhysicalDevice();
   void createLogicalDevice();
   void createImmediateCommandPool();
+  void createPipelineCache();
+  void savePipelineCache();
+  void destroyPipelineCache();
+  void recreateEmptyPipelineCache();
 
   WindowSystem* m_window_system{nullptr};
   bool m_enable_validation{true};
@@ -66,6 +81,9 @@ class VulkanContext final {
   uint32_t m_graphics_queue_family{0};
   uint32_t m_present_queue_family{0};
   uint32_t m_api_version{VK_API_VERSION_1_1};
+  VkPipelineCache m_pipeline_cache{VK_NULL_HANDLE};
+  eastl::string m_slang_build_tag;
+  BindlessTextureTable m_bindless_table;
 };
 
 }  // namespace Blunder

@@ -8,6 +8,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/render/slang/engine_gpu_cache.h"
 #include "runtime/platform/window/window_system.h"
 
 namespace Blunder {
@@ -101,6 +102,46 @@ bool hasDeviceExtension(VkPhysicalDevice physical_device, const char* name) {
   return false;
 }
 
+bool descriptorIndexingSupportsBindlessTable(VkPhysicalDevice device) {
+  if (!hasDeviceExtension(device, VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME)) {
+    return false;
+  }
+
+  VkPhysicalDeviceDescriptorIndexingFeatures indexing{};
+  indexing.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+  VkPhysicalDeviceVulkan11Features vulkan11{};
+  vulkan11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+  vulkan11.pNext = &indexing;
+  VkPhysicalDeviceFeatures2 features2{};
+  features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+  features2.pNext = &vulkan11;
+  vkGetPhysicalDeviceFeatures2(device, &features2);
+  if (!indexing.runtimeDescriptorArray ||
+      !indexing.shaderSampledImageArrayNonUniformIndexing ||
+      !indexing.descriptorBindingSampledImageUpdateAfterBind ||
+      !indexing.descriptorBindingPartiallyBound ||
+      !indexing.descriptorBindingUpdateUnusedWhilePending) {
+    return false;
+  }
+
+  VkPhysicalDeviceDescriptorIndexingProperties indexing_props{};
+  indexing_props.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
+  VkPhysicalDeviceProperties2 props2{};
+  props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+  props2.pNext = &indexing_props;
+  vkGetPhysicalDeviceProperties2(device, &props2);
+  constexpr uint32_t k_need = BindlessTextureIndexTable::k_capacity;
+  return indexing_props.maxPerStageDescriptorUpdateAfterBindSampledImages >=
+             k_need &&
+         indexing_props.maxPerStageDescriptorUpdateAfterBindSamplers >=
+             k_need &&
+         indexing_props.maxDescriptorSetUpdateAfterBindSampledImages >=
+             k_need &&
+         indexing_props.maxDescriptorSetUpdateAfterBindSamplers >= k_need;
+}
+
 }  // namespace
 
 void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
@@ -110,6 +151,10 @@ void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
 #else
   m_enable_validation = info.enable_validation;
 #endif
+  m_slang_build_tag =
+      (info.slang_build_tag != nullptr && info.slang_build_tag[0] != '\0')
+          ? info.slang_build_tag
+          : "unknown";
 
   // Headless: no VkSurfaceKHR / swapchain. Windowed: Slint Skia owns HWND
   // present; the engine still renders off-screen.
@@ -121,6 +166,8 @@ void VulkanContext::initialize(const VulkanContextCreateInfo& info) {
   selectPhysicalDevice();
   LOG_INFO("[VulkanContext::initialize] creating logical device");
   createLogicalDevice();
+  m_bindless_table.initialize(m_device);
+  createPipelineCache();
 
   LOG_INFO("[VulkanContext::initialize] Vulkan context initialized");
 }
@@ -131,6 +178,10 @@ void VulkanContext::shutdown() {
   if (m_device != VK_NULL_HANDLE) {
     vkDeviceWaitIdle(m_device);
   }
+
+  savePipelineCache();
+  destroyPipelineCache();
+  m_bindless_table.shutdown();
 
   if (m_device != VK_NULL_HANDLE &&
       m_immediate_command_pool != VK_NULL_HANDLE) {
@@ -483,7 +534,8 @@ void VulkanContext::selectPhysicalDevice() {
     vkGetPhysicalDeviceMemoryProperties(device, &memory_properties);
 
     if (!device_features.geometryShader || !device_features.samplerAnisotropy ||
-        !vulkan11_features.shaderDrawParameters) {
+        !vulkan11_features.shaderDrawParameters ||
+        !descriptorIndexingSupportsBindlessTable(device)) {
       continue;
     }
 
@@ -556,16 +608,33 @@ void VulkanContext::createLogicalDevice() {
         "support shaderDrawParameters, but the current SPIR-V shaders require it");
   }
 
+  if (!descriptorIndexingSupportsBindlessTable(m_physical_device)) {
+    LOG_FATAL(
+        "[VulkanContext::createLogicalDevice] selected Vulkan device does not "
+        "support descriptor indexing required by the Bindless texture table");
+  }
+
   VkPhysicalDeviceFeatures enabled_features{};
   enabled_features.samplerAnisotropy =
       supported_features2.features.samplerAnisotropy;
   enabled_features.geometryShader = supported_features2.features.geometryShader;
-    m_sampler_anisotropy_enabled =
+  enabled_features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+  m_sampler_anisotropy_enabled =
       enabled_features.samplerAnisotropy == VK_TRUE;
+
+  VkPhysicalDeviceDescriptorIndexingFeatures enabled_indexing{};
+  enabled_indexing.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+  enabled_indexing.runtimeDescriptorArray = VK_TRUE;
+  enabled_indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+  enabled_indexing.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  enabled_indexing.descriptorBindingPartiallyBound = VK_TRUE;
+  enabled_indexing.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 
   VkPhysicalDeviceVulkan11Features enabled_vulkan11_features{};
   enabled_vulkan11_features.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+  enabled_vulkan11_features.pNext = &enabled_indexing;
   enabled_vulkan11_features.shaderDrawParameters = VK_TRUE;
 
   VkDeviceQueueCreateInfo queue_create_info{};
@@ -583,6 +652,7 @@ void VulkanContext::createLogicalDevice() {
   // VK_KHR_swapchain so the shared logical device can drive the Slint UI
   // swapchain (the engine renders off-screen and never presents itself).
   eastl::vector<const char*> device_extensions;
+  device_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
   constexpr const char* k_swapchain_extension = "VK_KHR_swapchain";
   if (m_window_system != nullptr &&
       hasDeviceExtension(m_physical_device, k_swapchain_extension)) {
@@ -626,6 +696,129 @@ void VulkanContext::createImmediateCommandPool() {
         "failed: {}",
         static_cast<int>(result));
   }
+}
+
+void VulkanContext::createPipelineCache() {
+  ASSERT(m_device != VK_NULL_HANDLE);
+
+  eastl::vector<uint8_t> blob = tryLoadPipelineCacheBlob(
+      m_physical_device_properties.pipelineCacheUUID,
+      m_slang_build_tag.c_str());
+
+  VkPipelineCacheCreateInfo info{};
+  info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+  if (!blob.empty()) {
+    info.initialDataSize = blob.size();
+    info.pInitialData = blob.data();
+  }
+
+  VkResult result =
+      vkCreatePipelineCache(m_device, &info, nullptr, &m_pipeline_cache);
+  if (result != VK_SUCCESS) {
+    LOG_WARN(
+        "[VulkanContext] vkCreatePipelineCache failed ({}); rebuilding empty "
+        "cache",
+        static_cast<int>(result));
+    deletePipelineCacheBlob(m_physical_device_properties.pipelineCacheUUID,
+                            m_slang_build_tag.c_str());
+    m_pipeline_cache = VK_NULL_HANDLE;
+    info.initialDataSize = 0;
+    info.pInitialData = nullptr;
+    result =
+        vkCreatePipelineCache(m_device, &info, nullptr, &m_pipeline_cache);
+    if (result != VK_SUCCESS) {
+      LOG_WARN("[VulkanContext] empty VkPipelineCache create failed ({})",
+               static_cast<int>(result));
+      m_pipeline_cache = VK_NULL_HANDLE;
+    }
+  } else if (!blob.empty()) {
+    LOG_INFO("[VulkanContext] loaded Pipeline cache ({} bytes)", blob.size());
+  }
+}
+
+void VulkanContext::savePipelineCache() {
+  if (m_device == VK_NULL_HANDLE || m_pipeline_cache == VK_NULL_HANDLE) {
+    return;
+  }
+  size_t size = 0;
+  VkResult result =
+      vkGetPipelineCacheData(m_device, m_pipeline_cache, &size, nullptr);
+  if (result != VK_SUCCESS) {
+    LOG_WARN("[VulkanContext] vkGetPipelineCacheData size query failed ({})",
+             static_cast<int>(result));
+    return;
+  }
+  if (size == 0) {
+    return;
+  }
+  eastl::vector<uint8_t> blob(size);
+  result =
+      vkGetPipelineCacheData(m_device, m_pipeline_cache, &size, blob.data());
+  if (result != VK_SUCCESS) {
+    LOG_WARN("[VulkanContext] vkGetPipelineCacheData failed ({})",
+             static_cast<int>(result));
+    return;
+  }
+  blob.resize(size);
+  tryStorePipelineCacheBlob(m_physical_device_properties.pipelineCacheUUID,
+                            m_slang_build_tag.c_str(), blob.data(),
+                            blob.size());
+}
+
+void VulkanContext::destroyPipelineCache() {
+  if (m_device != VK_NULL_HANDLE && m_pipeline_cache != VK_NULL_HANDLE) {
+    vkDestroyPipelineCache(m_device, m_pipeline_cache, nullptr);
+    m_pipeline_cache = VK_NULL_HANDLE;
+  }
+}
+
+void VulkanContext::recreateEmptyPipelineCache() {
+  destroyPipelineCache();
+  if (m_device == VK_NULL_HANDLE) {
+    return;
+  }
+  VkPipelineCacheCreateInfo info{};
+  info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+  const VkResult result =
+      vkCreatePipelineCache(m_device, &info, nullptr, &m_pipeline_cache);
+  if (result != VK_SUCCESS) {
+    LOG_WARN("[VulkanContext] empty VkPipelineCache recreate failed ({})",
+             static_cast<int>(result));
+    m_pipeline_cache = VK_NULL_HANDLE;
+  }
+}
+
+VkResult VulkanContext::createGraphicsPipelines(
+    uint32_t create_info_count,
+    const VkGraphicsPipelineCreateInfo* create_infos, VkPipeline* pipelines) {
+  ASSERT(m_device != VK_NULL_HANDLE);
+  ASSERT(create_infos);
+  ASSERT(pipelines);
+
+  VkResult result = vkCreateGraphicsPipelines(
+      m_device, m_pipeline_cache, create_info_count, create_infos, nullptr,
+      pipelines);
+  if (result != VK_SUCCESS && m_pipeline_cache != VK_NULL_HANDLE) {
+    LOG_WARN(
+        "[VulkanContext] vkCreateGraphicsPipelines failed ({}); retrying with "
+        "empty Pipeline cache",
+        static_cast<int>(result));
+    for (uint32_t i = 0; i < create_info_count; ++i) {
+      if (pipelines[i] != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, pipelines[i], nullptr);
+        pipelines[i] = VK_NULL_HANDLE;
+      }
+    }
+    recreateEmptyPipelineCache();
+    result = vkCreateGraphicsPipelines(m_device, m_pipeline_cache,
+                                       create_info_count, create_infos, nullptr,
+                                       pipelines);
+    if (result == VK_SUCCESS) {
+      deletePipelineCacheBlob(m_physical_device_properties.pipelineCacheUUID,
+                              m_slang_build_tag.c_str());
+    }
+  }
+  return result;
 }
 
 }  // namespace Blunder

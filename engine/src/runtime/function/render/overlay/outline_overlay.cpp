@@ -60,7 +60,8 @@ bool isEntityOrDescendant(const SceneInstance& instance, EntityId root,
 }
 
 VkPipeline createGraphicsPipeline(
-    VkDevice device, VkRenderPass render_pass, VkPipelineLayout pipeline_layout,
+    VulkanContext* context, VkRenderPass render_pass,
+    VkPipelineLayout pipeline_layout,
     const eastl::vector<VulkanShader::ShaderStage>& stages,
     bool enable_blend, bool depth_test, bool depth_write,
     VkCullModeFlags cull_mode) {
@@ -152,8 +153,8 @@ VkPipeline createGraphicsPipeline(
   pipeline_info.subpass = 0;
 
   VkPipeline pipeline = VK_NULL_HANDLE;
-  const VkResult result = vkCreateGraphicsPipelines(
-      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+  const VkResult result =
+      context->createGraphicsPipelines(1, &pipeline_info, &pipeline);
   if (result != VK_SUCCESS) {
     LOG_FATAL("[OutlineOverlay] vkCreateGraphicsPipelines failed: {}",
               static_cast<int>(result));
@@ -162,7 +163,8 @@ VkPipeline createGraphicsPipeline(
 }
 
 VkPipeline createFullscreenPipeline(
-    VkDevice device, VkRenderPass render_pass, VkPipelineLayout pipeline_layout,
+    VulkanContext* context, VkRenderPass render_pass,
+    VkPipelineLayout pipeline_layout,
     const eastl::vector<VulkanShader::ShaderStage>& stages) {
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
   for (const VulkanShader::ShaderStage& stage : stages) {
@@ -241,8 +243,8 @@ VkPipeline createFullscreenPipeline(
   pipeline_info.subpass = 0;
 
   VkPipeline pipeline = VK_NULL_HANDLE;
-  const VkResult result = vkCreateGraphicsPipelines(
-      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+  const VkResult result =
+      context->createGraphicsPipelines(1, &pipeline_info, &pipeline);
   if (result != VK_SUCCESS) {
     LOG_FATAL("[OutlineOverlay] resolve vkCreateGraphicsPipelines failed: {}",
               static_cast<int>(result));
@@ -367,6 +369,9 @@ void OutlineOverlay::begin_sync(OverlayResources& /*res*/,
 
   auto try_add_draw = [&](EntityId entity_id,
                           const MeshRendererComponent& renderer) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
     if (!renderer.mesh) {
       return;
     }
@@ -619,7 +624,7 @@ void OutlineOverlay::createPrepassPipeline() {
       m_context->getDevice(), m_compiler, "engine/shaders/outline_prepass.slang",
       entries);
   m_prepass_pipeline = createGraphicsPipeline(
-      m_context->getDevice(), m_targets->prepassRenderPass(),
+      m_context, m_targets->prepassRenderPass(),
       m_prepass_pipeline_layout, stages, false, true, true,
       VK_CULL_MODE_NONE);
   for (auto& stage : stages) {
@@ -645,7 +650,7 @@ void OutlineOverlay::createResolvePipeline() {
       m_context->getDevice(), m_compiler, "engine/shaders/outline_resolve.slang",
       entries);
   m_resolve_pipeline =
-      createFullscreenPipeline(m_context->getDevice(), m_resolve_render_pass,
+      createFullscreenPipeline(m_context, m_resolve_render_pass,
                                m_resolve_pipeline_layout, stages);
   for (auto& stage : stages) {
     VulkanShader::destroyShaderModule(m_context->getDevice(), &stage.module);

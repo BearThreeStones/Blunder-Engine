@@ -302,6 +302,9 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
   }
 
   scene->forEachCamera([&](EntityId entity_id, const CameraComponent& camera) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
     if (m_next_draw_slot >= k_max_draws_per_frame) {
       return;
     }
@@ -414,6 +417,9 @@ std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
   float best_depth = -1e9f;
 
   scene->forEachCamera([&](EntityId entity_id, const CameraComponent& cam) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
     const float fov_rad = glm::radians(cam.vertical_fov_degrees);
     const CameraGizmoFrame frame =
         buildCameraGizmoFrameLocal(fov_rad, aspect, kCameraGizmoDisplayDistance);

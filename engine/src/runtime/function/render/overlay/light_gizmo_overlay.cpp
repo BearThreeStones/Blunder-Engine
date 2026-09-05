@@ -311,6 +311,9 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
       g_runtime_global_context.m_editor_selection.get();
 
   scene->forEachLight([&](EntityId entity_id, const LightComponent& light) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
     if (m_next_draw_slot >= k_max_draws_per_frame) {
       return;
     }
@@ -353,6 +356,9 @@ std::optional<OverlayGizmoPickHit> LightGizmoOverlay::hitTest(
   float best_depth = -1e9f;
 
   scene->forEachLight([&](EntityId entity_id, const LightComponent& light) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
     const LightGizmoShape shape = shapeFromLight(light);
     const glm::mat4 world = scene->getWorldMatrix(entity_id);
     const std::optional<float> hit_depth = hitTestLightGizmoViewportLocal(
