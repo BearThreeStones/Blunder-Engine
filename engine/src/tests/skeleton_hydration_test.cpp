@@ -6,9 +6,13 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/skeleton_from_gltf.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_registry/asset_registry.h"
+
+#include "EASTL/shared_ptr.h"
 
 #include <chrono>
 #include <cstdio>
@@ -49,6 +53,7 @@ fs::path makeTempProject() {
        std::to_string(static_cast<unsigned long long>(
            std::chrono::steady_clock::now().time_since_epoch().count())));
   fs::create_directories(root / "Assets" / "Meshes");
+  fs::create_directories(root / "Assets" / "Scenes");
   fs::create_directories(root / "Resources" / "Models");
   return root;
 }
@@ -134,6 +139,41 @@ constexpr char kStaticGltf[] = R"({
 }
 )";
 
+constexpr char kLoadSceneJson[] = R"({
+  "type": "Scene",
+  "guid": "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+  "entities": [
+    {
+      "name": "ReloadDog",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "mesh": "resources/Models/skinned.gltf",
+      "hasSkeleton": true,
+      "animationPlayer": {
+        "clips": { "idle": "00000000-0000-0000-0000-000000000001" }
+      }
+    },
+    {
+      "name": "GeoChild",
+      "parent": "ReloadDog",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "hasSkeleton": true
+    },
+    {
+      "name": "Cube",
+      "position": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "rotationMode": "euler_degrees",
+      "mesh": "resources/Models/static.gltf",
+      "hasSkeleton": true
+    }
+  ]
+}
+)";
+
 }  // namespace
 
 int main() {
@@ -144,6 +184,27 @@ int main() {
   const fs::path project = makeTempProject();
   writeTextFile(project / "Resources" / "Models" / "skinned.gltf", kSkinnedGltf);
   writeTextFile(project / "Resources" / "Models" / "static.gltf", kStaticGltf);
+  writeTextFile(project / "Assets" / "Scenes" / "hydrate_load.scene.asset",
+                kLoadSceneJson);
+
+  const char* kMeshGuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee42";
+  writeTextFile(project / "Assets" / "Meshes" / "skinned.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kMeshGuid + "\n" +
+                    "source: resources/Models/skinned.gltf\n" +
+                    "import:\n  materials: true\n  animations: false\n"
+                    "  scale: 1\n");
+  writeTextFile(project / "Assets" / "Scenes" / "hydrate_guid.scene.asset",
+                std::string("{\n  \"type\": \"Scene\",\n"
+                            "  \"guid\": \"cccccccc-dddd-4eee-8fff-000000000001\",\n"
+                            "  \"entities\": [\n"
+                            "    { \"name\": \"GuidDog\", \"position\": [0, 0, 0], "
+                            "\"rotation\": [0, 0, 0], \"rotationMode\": \"euler_degrees\", "
+                            "\"mesh\": \"") +
+                    kMeshGuid +
+                    "\", \"hasSkeleton\": true, "
+                    "\"animationPlayer\": { \"clips\": { \"idle\": "
+                    "\"00000000-0000-0000-0000-000000000001\" } } }\n"
+                    "  ]\n}\n");
 
   FileSystem file_system;
   FileSystemInitInfo fs_info;
@@ -237,6 +298,67 @@ int main() {
     Skeleton* used = instance.findSkeletonForEntity(child_id);
     expect_true("child skins from parent bones",
                 used != nullptr && used->findBoneIndex("hips") >= 0);
+  }
+
+  {
+    SceneSystem scene_system;
+    scene_system.initialize(SceneSystemInitInfo{&assets});
+    const eastl::shared_ptr<SceneInstance> loaded = scene_system.loadScene(
+        eastl::string("assets/Scenes/hydrate_load.scene.asset"));
+    expect_true("loadScene returns instance", loaded != nullptr);
+    if (loaded) {
+      Object* dog = loaded->findBoundObject(loaded->findEntityByName("ReloadDog"));
+      const Skeleton* dog_skeleton =
+          dog != nullptr ? dog->getSkeleton() : nullptr;
+      expect_true("loadScene named hips",
+                  dog_skeleton != nullptr && dog_skeleton->findBoneIndex("hips") >= 0);
+      expect_true(
+          "loadScene named spine",
+          dog_skeleton != nullptr && dog_skeleton->findBoneIndex("spine") >= 0);
+
+      Object* child =
+          loaded->findBoundObject(loaded->findEntityByName("GeoChild"));
+      expect_true("loadScene child empty skeleton",
+                  child != nullptr && child->hasSkeleton() &&
+                      child->getSkeleton()->getBoneCount() == 0);
+      Skeleton* used =
+          loaded->findSkeletonForEntity(loaded->findEntityByName("GeoChild"));
+      expect_true("loadScene child skins from parent",
+                  used != nullptr && used->findBoneIndex("hips") >= 0);
+
+      Object* cube = loaded->findBoundObject(loaded->findEntityByName("Cube"));
+      expect_true("loadScene cube empty skeleton",
+                  cube != nullptr && cube->hasSkeleton() &&
+                      cube->getSkeleton() != nullptr &&
+                      cube->getSkeleton()->getBoneCount() == 0);
+      expect_true("loadScene cube has no player",
+                  cube != nullptr && !cube->hasAnimationPlayer() &&
+                      !cube->hasAnimationTree());
+    }
+
+    auto registry = eastl::make_shared<AssetRegistry>();
+    registry->initialize(&file_system);
+    expect_true("register skinned mesh guid",
+                registry->registerAsset(eastl::string(kMeshGuid),
+                                        eastl::string("assets/Meshes/skinned.mesh.yaml")));
+    g_runtime_global_context.m_asset_registry = registry;
+
+    const eastl::shared_ptr<SceneInstance> guid_loaded = scene_system.loadScene(
+        eastl::string("assets/Scenes/hydrate_guid.scene.asset"));
+    expect_true("guid loadScene returns instance", guid_loaded != nullptr);
+    if (guid_loaded) {
+      Object* dog =
+          guid_loaded->findBoundObject(guid_loaded->findEntityByName("GuidDog"));
+      const Skeleton* skeleton = dog != nullptr ? dog->getSkeleton() : nullptr;
+      expect_true("guid loadScene named hips",
+                  skeleton != nullptr && skeleton->findBoneIndex("hips") >= 0);
+      expect_true("guid loadScene named spine",
+                  skeleton != nullptr && skeleton->findBoneIndex("spine") >= 0);
+    }
+
+    scene_system.shutdown();
+    g_runtime_global_context.m_asset_registry.reset();
+    registry->shutdown();
   }
 
   assets.shutdown();

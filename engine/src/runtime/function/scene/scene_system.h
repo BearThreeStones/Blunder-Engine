@@ -12,6 +12,12 @@ class AssetManager;
 class SceneAsset;
 class SceneInstance;
 
+/// Mesh attach, cameras, then empty-Skeleton hydrate. Shared by SceneSystem and
+/// Scene Thumbnail so every scene-document instantiate fills bones (ADR 0034).
+void completeSceneDocumentInstantiate(AssetManager* asset_manager,
+                                      SceneInstance& instance,
+                                      const Scene& scene);
+
 struct SceneSystemInitInfo {
   AssetManager* asset_manager{nullptr};
 };
@@ -50,9 +56,6 @@ class SceneSystem final {
   eastl::shared_ptr<SceneInstance> instantiateScene(
       const eastl::shared_ptr<SceneAsset>& scene_asset,
       const eastl::string& virtual_path);
-
-  void attachSceneEntityMeshes(SceneInstance& instance, const Scene& scene);
-  void attachSceneEntityCameras(SceneInstance& instance, const Scene& scene);
 
   AssetManager* m_asset_manager{nullptr};
   eastl::vector<eastl::shared_ptr<SceneInstance>> m_loaded_instances;
