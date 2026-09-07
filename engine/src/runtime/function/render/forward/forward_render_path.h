@@ -80,14 +80,6 @@ class ForwardRenderPath final {
                    uint32_t transparent_draw_count,
                    uint32_t frame_index);
 
-  void updateOpaqueTextureBindingsIfNeeded(uint32_t descriptor_index,
-                                           VkDevice device,
-                                           VkDescriptorSet descriptor_set,
-                                           VulkanTexture* base_color,
-                                           VulkanTexture* metallic_roughness,
-                                           VulkanTexture* normal_map,
-                                           VulkanTexture* occlusion);
-
  private:
   void bindViewportScissor(VkCommandBuffer cmd, uint32_t width, uint32_t height);
   void drawOpaqueList(VkCommandBuffer cmd, const ForwardFrameState& frame_state,
@@ -129,15 +121,6 @@ class ForwardRenderPath final {
   eastl::vector<uintptr_t> m_shadow_descriptor_sets;
   uintptr_t m_skinned_shadow_descriptor_pool{0};
   eastl::vector<uintptr_t> m_skinned_shadow_descriptor_sets;
-
-  struct OpaqueTextureBindingCache {
-    VulkanTexture* base_color{nullptr};
-    VulkanTexture* metallic_roughness{nullptr};
-    VulkanTexture* normal{nullptr};
-    VulkanTexture* occlusion{nullptr};
-    bool valid{false};
-  };
-  eastl::vector<OpaqueTextureBindingCache> m_opaque_texture_binding_cache;
 };
 
 }  // namespace Blunder

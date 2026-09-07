@@ -89,10 +89,7 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline>
       m_skinned_transparent_pipeline;
   VulkanTexture* m_fallback_texture{nullptr};
-  eastl::unique_ptr<VulkanTexture> m_fallback_texture_owner;
   eastl::unordered_map<eastl::string, eastl::unique_ptr<GpuMesh>> m_gpu_meshes;
-  eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
-      m_uploaded_textures;
   uint32_t m_width{0};
   uint32_t m_height{0};
   uint32_t m_pipeline_width{0};

@@ -9,6 +9,60 @@
 
 namespace Blunder {
 
+namespace {
+
+VulkanShader::ShaderStage createStageFromSpirv(
+    VkDevice device, const eastl::vector<uint8_t>& spirv_code,
+    VkShaderStageFlagBits stage_flags, const eastl::string& entry_point) {
+  ASSERT(spirv_code.size() % sizeof(uint32_t) == 0);
+
+  VkShaderModuleCreateInfo create_info{};
+  create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  create_info.codeSize = spirv_code.size();
+  create_info.pCode = reinterpret_cast<const uint32_t*>(spirv_code.data());
+
+  VkShaderModule shader_module = VK_NULL_HANDLE;
+  const VkResult vk_result =
+      vkCreateShaderModule(device, &create_info, nullptr, &shader_module);
+  if (vk_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[VulkanShader] vkCreateShaderModule failed for entry '{}': {}",
+        entry_point.c_str(), static_cast<int>(vk_result));
+  }
+
+  VulkanShader::ShaderStage stage;
+  stage.module = shader_module;
+  stage.stage_flags = stage_flags;
+  stage.entry_point = entry_point;
+  return stage;
+}
+
+}  // namespace
+
+VulkanShader::GraphicsProgram VulkanShader::loadGraphicsProgramFromSlang(
+    VkDevice device, SlangCompiler* compiler, const char* slang_path,
+    const char* vertex_entry, const char* fragment_entry) {
+  ASSERT(device != VK_NULL_HANDLE);
+  ASSERT(compiler);
+  ASSERT(slang_path);
+  ASSERT(vertex_entry);
+  ASSERT(fragment_entry);
+
+  const SlangCompiler::GraphicsProgramResult program =
+      compiler->compileGraphicsProgram(slang_path, vertex_entry, fragment_entry);
+
+  GraphicsProgram loaded;
+  loaded.layout = program.layout;
+  loaded.stages.reserve(2);
+  loaded.stages.push_back(createStageFromSpirv(
+      device, program.vertex.spirv_code, VK_SHADER_STAGE_VERTEX_BIT,
+      program.vertex.entry_point_name));
+  loaded.stages.push_back(createStageFromSpirv(
+      device, program.fragment.spirv_code, VK_SHADER_STAGE_FRAGMENT_BIT,
+      program.fragment.entry_point_name));
+  return loaded;
+}
+
 eastl::vector<VulkanShader::ShaderStage> VulkanShader::loadFromSlang(
     VkDevice device, SlangCompiler* compiler, const char* slang_path,
     const eastl::vector<EntryPointSpec>& entries) {
@@ -23,38 +77,9 @@ eastl::vector<VulkanShader::ShaderStage> VulkanShader::loadFromSlang(
   for (const EntryPointSpec& spec : entries) {
     SlangCompiler::ShaderResult result =
         compiler->compileShader(slang_path, spec.name, spec.slang_stage);
-
-    // SPIR-V 必须对齐到 uint32_t
-    ASSERT(result.spirv_code.size() % sizeof(uint32_t) == 0);
-
-    VkShaderModuleCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    create_info.codeSize = result.spirv_code.size();
-    create_info.pCode =
-        reinterpret_cast<const uint32_t*>(result.spirv_code.data());
-
-    VkShaderModule shader_module = VK_NULL_HANDLE;
-    const VkResult vk_result =
-        vkCreateShaderModule(device, &create_info, nullptr, &shader_module);
-    if (vk_result != VK_SUCCESS) {
-      // 清理已经创建的模块
-      // 将 SPIR-V 字节码编译并链接为 GPU
-      // 可执行的机器码的操作要等到图形管线创建时才会发生，
-      // 这意味着一旦管线创建完成就可以销毁着色器模块
-      for (ShaderStage& s : stages) {
-        destroyShaderModule(device, &s.module);
-      }
-      LOG_FATAL(
-          "[VulkanShader::loadFromSlang] vkCreateShaderModule failed for "
-          "entry '{}': {}",
-          spec.name, static_cast<int>(vk_result));
-    }
-
-    ShaderStage stage;
-    stage.module = shader_module;
-    stage.stage_flags = spec.stage_flags;
-    stage.entry_point = result.entry_point_name;
-    stages.push_back(eastl::move(stage));
+    stages.push_back(createStageFromSpirv(device, result.spirv_code,
+                                          spec.stage_flags,
+                                          result.entry_point_name));
   }
 
   return stages;

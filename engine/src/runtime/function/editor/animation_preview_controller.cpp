@@ -109,28 +109,124 @@ const eastl::string& AnimationPreviewController::slotClipName(int slot_index) co
   return player->getSlotClipName(slot_index);
 }
 
-void AnimationPreviewController::haltBoundSession() { stop(); }
+void AnimationPreviewController::haltBoundSession() {
+  if (AnimationTree* tree = treeFor(m_target_object)) {
+    tree->clearClipPlay();
+  }
+  stop();
+}
 
 void AnimationPreviewController::resetSessionChrome() {
   m_default_clip_name.clear();
   m_fade_seconds = 0.0f;
-  m_fire_target.clear();
+  m_preview_clip.clear();
   m_in_cine = false;
   m_input_suppressed = false;
+  m_anatomy_session = AnimationAnatomySession{};
+  m_anatomy = AnimationClipAnatomy{};
+  m_anatomy_clip_guid.clear();
+  ++m_anatomy_revision;
 }
 
-void AnimationPreviewController::defaultFireTargetFromBindings() {
-  const eastl::vector<eastl::string> names = fireClipNames();
-  if (names.empty()) {
-    m_fire_target.clear();
+void AnimationPreviewController::refreshClipAnatomy() {
+  const AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr) {
+    if (m_anatomy_session.syncRulerClipName(eastl::string()) ||
+        !m_anatomy.groups.empty()) {
+      ++m_anatomy_revision;
+    }
+    m_anatomy = AnimationClipAnatomy{};
+    m_anatomy_clip_guid.clear();
     return;
   }
-  for (const eastl::string& name : names) {
-    if (name == m_fire_target) {
-      return;
-    }
+
+  const eastl::string clip_name = tree->rulerClipName();
+  eastl::string clip_guid;
+  if (!tree->resolveClipGuid(clip_name, clip_guid)) {
+    clip_guid.clear();
   }
-  m_fire_target = names.front();
+
+  const bool clip_changed = m_anatomy_session.syncRulerClipName(clip_name);
+  // Empty GUID after a failed resolve must retry: name+empty==name+empty
+  // would otherwise skip forever and leave blank lanes after cook.
+  if (!clip_changed && clip_guid == m_anatomy_clip_guid &&
+      (clip_name.empty() || !m_anatomy_clip_guid.empty())) {
+    return;
+  }
+
+  AnimationClipData clip;
+  if (clip_name.empty() || !tree->resolveClipForName(clip_name, clip)) {
+    if (!m_anatomy.groups.empty() || !m_anatomy_clip_guid.empty()) {
+      ++m_anatomy_revision;
+    }
+    m_anatomy = AnimationClipAnatomy{};
+    // Do not latch a failed GUID: cook/resolver can succeed on a later tick.
+    m_anatomy_clip_guid.clear();
+    return;
+  }
+  m_anatomy_clip_guid = clip_guid;
+  ++m_anatomy_revision;
+  m_anatomy = buildClipAnatomy(clip);
+}
+
+eastl::vector<AnimationAnatomyRow> AnimationPreviewController::anatomyRows()
+    const {
+  return m_anatomy_session.buildRows(m_anatomy);
+}
+
+void AnimationPreviewController::setAnatomyFilter(const eastl::string& query) {
+  if (m_anatomy_session.filter() == query) {
+    return;
+  }
+  m_anatomy_session.setFilter(query);
+  ++m_anatomy_revision;
+}
+
+void AnimationPreviewController::toggleAnatomyGroup(
+    const eastl::string& bone_name) {
+  m_anatomy_session.toggleCollapsed(bone_name);
+  ++m_anatomy_revision;
+}
+
+bool AnimationPreviewController::isAnatomyGroupCollapsed(
+    const eastl::string& bone_name) const {
+  return m_anatomy_session.isCollapsed(bone_name);
+}
+
+void AnimationPreviewController::defaultPreviewClipFromBindings() {
+  const eastl::vector<eastl::string> names = fireClipNames();
+  if (names.empty()) {
+    m_preview_clip.clear();
+    return;
+  }
+  auto has_name = [&](const eastl::string& needle) {
+    for (const eastl::string& name : names) {
+      if (name == needle) {
+        return true;
+      }
+    }
+    return false;
+  };
+  if (has_name(m_default_clip_name)) {
+    m_preview_clip = m_default_clip_name;
+    return;
+  }
+  if (has_name(m_preview_clip)) {
+    return;
+  }
+  m_preview_clip = names.front();
+}
+
+void AnimationPreviewController::applyPreviewClipPlay() {
+  AnimationTree* tree = treeFor(m_target_object);
+  if (tree == nullptr || m_preview_clip.empty()) {
+    return;
+  }
+  if (!tree->isActive()) {
+    tree->setActive(true);
+  }
+  tree->clipPlay(m_preview_clip);
+  refreshClipAnatomy();
 }
 
 bool AnimationPreviewController::atRulerEnd() const {
@@ -145,6 +241,10 @@ void AnimationPreviewController::bindObject(Object* object,
     return;
   }
 
+  if (m_target_object != nullptr) {
+    haltBoundSession();
+  }
+
   m_target_object = nullptr;
   resetSessionChrome();
   m_state = AnimationPreviewState::Stopped;
@@ -155,7 +255,8 @@ void AnimationPreviewController::bindObject(Object* object,
 
   m_target_object = object;
   m_default_clip_name = default_clip_name;
-  defaultFireTargetFromBindings();
+  defaultPreviewClipFromBindings();
+  applyPreviewClipPlay();
 }
 
 void AnimationPreviewController::clearTarget() {
@@ -171,6 +272,9 @@ bool AnimationPreviewController::play(const eastl::string& clip_name) {
     }
     eastl::string resolved_name = clip_name;
     if (resolved_name.empty()) {
+      resolved_name = m_preview_clip;
+    }
+    if (resolved_name.empty()) {
       resolved_name = m_default_clip_name;
     }
     if (m_state == AnimationPreviewState::Paused && atRulerEnd()) {
@@ -180,6 +284,7 @@ bool AnimationPreviewController::play(const eastl::string& clip_name) {
       tree->clipPlay(resolved_name);
     }
     m_state = AnimationPreviewState::Playing;
+    refreshClipAnatomy();
     return true;
   }
 
@@ -231,7 +336,6 @@ bool AnimationPreviewController::resume() {
 void AnimationPreviewController::stop() {
   if (AnimationTree* tree = treeFor(m_target_object)) {
     tree->clearOneShot();
-    tree->clearClipPlay();
     tree->seekRuler(0.0f);
     endCine();
     m_state = AnimationPreviewState::Stopped;
@@ -391,18 +495,19 @@ eastl::vector<eastl::string> AnimationPreviewController::fireClipNames() const {
   return names;
 }
 
-void AnimationPreviewController::setFireTarget(const eastl::string& clip_name) {
-  m_fire_target = clip_name;
+void AnimationPreviewController::setPreviewClip(const eastl::string& clip_name) {
+  m_preview_clip = clip_name;
+  applyPreviewClipPlay();
 }
 
 bool AnimationPreviewController::fire() {
-  if (m_fire_target.empty()) {
-    defaultFireTargetFromBindings();
+  if (m_preview_clip.empty()) {
+    defaultPreviewClipFromBindings();
   }
-  if (m_fire_target.empty()) {
+  if (m_preview_clip.empty()) {
     return false;
   }
-  return requestOneShot(m_fire_target);
+  return requestOneShot(m_preview_clip);
 }
 
 void AnimationPreviewController::enterCine() {
@@ -647,13 +752,13 @@ void AnimationPreviewController::tick(const float delta_time) {
     const float scale = timeScale();
     const eastl::string oneshot_name = tree->getOneShotClipName();
     const bool oneshot_before = tree->isOneShotActive();
-    if (length > 0.0f) {
-      if (!m_session_loop &&
-          position + delta_time * scale >= length - 1.0e-6f) {
-        seekPlayback(length);
-        pause();
-        return;
-      }
+    // Loop-off Pause is for the Clip Play / graph ruler, not the Fire insert.
+    // Pausing on the insert would freeze OneShot so story 4 never ends.
+    if (length > 0.0f && !oneshot_before && !m_session_loop &&
+        position + delta_time * scale >= length - 1.0e-6f) {
+      seekPlayback(length);
+      pause();
+      return;
     }
     tickObjectAnimationPreviewFrame(m_target_object, delta_time);
     if (m_session_loop) {

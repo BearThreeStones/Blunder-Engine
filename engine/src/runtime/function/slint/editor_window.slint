@@ -12,7 +12,7 @@ import { HierarchyPanel, HierarchyTreeRow } from "hierarchy.slint";
 import { AttachmentPreviewCard, AttachmentPreviewCardRow } from "attachment_preview_card.slint";
 import { ViewportProjectionToggle } from "viewport_projection_toggle.slint";
 import { TransformToolbar } from "transform_toolbar.slint";
-import { AnimationWindowPanel } from "animation_window_panel.slint";
+import { AnimationWindowPanel, ClipAnatomyRow, ClipAnatomyKey } from "animation_window_panel.slint";
 import { ConsolePanel, ConsoleRow } from "console_panel.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
 import { InspectorPanel, BehaviourRow, SkeletonModifierRow, AnimationClipRow, AnimationClipPickerRow } from "inspector_panel.slint";
@@ -334,6 +334,8 @@ export component MainEditorWindow inherits Window {
     callback anim-preview-end-cine-requested();
     callback anim-preview-seeked(float);
     callback anim-preview-fire-target-changed(string);
+    callback anim-preview-anatomy-filter-changed(string);
+    callback anim-preview-anatomy-group-toggled(string);
     in property <bool> anim-preview-enabled: false;
     in property <bool> anim-preview-playing: false;
     in property <bool> anim-preview-pause-enabled: false;
@@ -352,6 +354,8 @@ export component MainEditorWindow inherits Window {
     in property <bool> anim-preview-input-suppressed: false;
     in property <bool> anim-preview-enter-cine-enabled: false;
     in property <bool> anim-preview-end-cine-enabled: false;
+    in property <[ClipAnatomyRow]> anim-preview-anatomy-rows: [];
+    in-out property <string> anim-preview-anatomy-filter: "";
 
     in property <bool> anim-tree-canvas-open: false;
     in property <string> anim-tree-canvas-guid: "";
@@ -942,6 +946,10 @@ export component MainEditorWindow inherits Window {
                         fire-target <=> root.anim-preview-fire-target;
                         in-cine: root.anim-preview-in-cine;
                         input-suppressed: root.anim-preview-input-suppressed;
+                        anatomy-rows: root.anim-preview-anatomy-rows;
+                        anatomy-filter <=> root.anim-preview-anatomy-filter;
+                        anatomy-filter-changed(q) => { root.anim-preview-anatomy-filter-changed(q); }
+                        anatomy-group-toggled(bone) => { root.anim-preview-anatomy-group-toggled(bone); }
                         play-requested => { root.anim-preview-play-requested(); }
                         pause-requested => { root.anim-preview-pause-requested(); }
                         stop-requested => { root.anim-preview-stop-requested(); }
@@ -1388,7 +1396,7 @@ export component MainEditorWindow inherits Window {
                 Text {
                     x: 10px;
                     vertical-alignment: center;
-                    text: "Hierarchy ? Content Browser ? Inspector";
+                    text: "Hierarchy — Content Browser — Inspector";
                     color: EditorTheme.muted;
                     font-size: EditorTheme.font;
                 }

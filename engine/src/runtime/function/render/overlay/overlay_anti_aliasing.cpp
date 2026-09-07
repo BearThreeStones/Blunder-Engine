@@ -30,7 +30,7 @@ struct OverlayAaUniformData {
   glm::vec2 pad{};
 };
 
-VkPipeline createAaPipeline(VkDevice device, VkRenderPass render_pass,
+VkPipeline createAaPipeline(VulkanContext* context, VkRenderPass render_pass,
                               VkPipelineLayout pipeline_layout,
                               const eastl::vector<VulkanShader::ShaderStage>& stages) {
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
@@ -103,8 +103,8 @@ VkPipeline createAaPipeline(VkDevice device, VkRenderPass render_pass,
   pipeline_info.subpass = 0;
 
   VkPipeline pipeline = VK_NULL_HANDLE;
-  const VkResult result = vkCreateGraphicsPipelines(
-      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &pipeline);
+  const VkResult result =
+      context->createGraphicsPipelines(1, &pipeline_info, &pipeline);
   if (result != VK_SUCCESS) {
     LOG_FATAL("[OverlayAntiAliasing] vkCreateGraphicsPipelines failed: {}",
               static_cast<int>(result));
@@ -532,7 +532,7 @@ void OverlayAntiAliasing::createPipeline() {
   auto stages = VulkanShader::loadFromSlang(
       m_context->getDevice(), m_compiler, "engine/shaders/overlay_aa.slang",
       entries);
-  m_pipeline = createAaPipeline(m_context->getDevice(), m_render_pass,
+  m_pipeline = createAaPipeline(m_context, m_render_pass,
                                 m_pipeline_layout, stages);
   for (auto& stage : stages) {
     VulkanShader::destroyShaderModule(m_context->getDevice(), &stage.module);

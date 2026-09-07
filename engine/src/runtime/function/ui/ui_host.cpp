@@ -90,6 +90,11 @@ bool startPlaySession(PlaySessionController& session, FileSystem& fs,
     return false;
   }
 
+  if (AnimationPreviewController* preview =
+          g_runtime_global_context.m_animation_preview.get()) {
+    preview->haltBoundSession();
+  }
+
   installScriptsPreflight(session, req.project_root);
   if (!session.play(req) && !session.lastError().empty()) {
     // Errors stay on the controller; toast surfacing is out of Task 5 scope.

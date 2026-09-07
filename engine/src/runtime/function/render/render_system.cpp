@@ -18,6 +18,7 @@
 #include "runtime/function/render/post/ssao_pass.h"
 #include "runtime/function/render/scene_thumbnail/scene_still.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
+#include "runtime/function/render/slang/shader_resource_layout.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_keycode.h>
@@ -318,9 +319,11 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   mesh_pipeline_desc.cull_mode = rhi::CullMode::None;
   mesh_pipeline_desc.enable_depth_test = true;
   mesh_pipeline_desc.enable_depth_write = true;
-  mesh_pipeline_desc.enable_texture_sampling = true;
-  mesh_pipeline_desc.enable_shadow_sampling = true;
-  mesh_pipeline_desc.enable_pbr_texture_sampling = true;
+  fillPbrMeshExpectedBindings(mesh_pipeline_desc.expected_descriptor_bindings,
+                              mesh_pipeline_desc.expected_descriptor_sets,
+                              &mesh_pipeline_desc.expected_descriptor_binding_count,
+                              false,
+                              mesh_pipeline_desc.expected_descriptor_kinds);
   m_mesh_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_mesh_pipeline->initialize(*m_offscreen, mesh_pipeline_desc);
@@ -339,8 +342,11 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   rhi::GraphicsPipelineDesc skinned_mesh_pipeline_desc = mesh_pipeline_desc;
   skinned_mesh_pipeline_desc.shader_path = "engine/shaders/pbr_skinned.slang";
   skinned_mesh_pipeline_desc.enable_skinned_vertex_input = true;
-  skinned_mesh_pipeline_desc.enable_bone_palette = true;
-  skinned_mesh_pipeline_desc.bone_palette_binding = 11;
+  fillPbrMeshExpectedBindings(
+      skinned_mesh_pipeline_desc.expected_descriptor_bindings,
+      skinned_mesh_pipeline_desc.expected_descriptor_sets,
+      &skinned_mesh_pipeline_desc.expected_descriptor_binding_count, true,
+      skinned_mesh_pipeline_desc.expected_descriptor_kinds);
   m_skinned_mesh_pipeline =
       eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_skinned_mesh_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
@@ -371,6 +377,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   shadow_pipeline_desc.enable_depth_write = true;
   shadow_pipeline_desc.depth_compare_op = rhi::CompareOp::Less;
   shadow_pipeline_desc.depth_only_subpass = true;
+  fillSequentialExpectedBindings(
+      shadow_pipeline_desc.expected_descriptor_bindings,
+      &shadow_pipeline_desc.expected_descriptor_binding_count,
+      k_shadow_descriptor_binding_count);
   m_shadow_pipeline = eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
   m_shadow_pipeline->initializeWithRenderPass(m_shadow_map->getRenderPass(),
@@ -381,13 +391,15 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
       "engine/shaders/shadow_depth_skinned.slang";
   skinned_shadow_pipeline_desc.enable_vertex_input = true;
   skinned_shadow_pipeline_desc.enable_skinned_vertex_input = true;
-  skinned_shadow_pipeline_desc.enable_bone_palette = true;
-  skinned_shadow_pipeline_desc.bone_palette_binding = 1;
   skinned_shadow_pipeline_desc.cull_mode = rhi::CullMode::Back;
   skinned_shadow_pipeline_desc.enable_depth_test = true;
   skinned_shadow_pipeline_desc.enable_depth_write = true;
   skinned_shadow_pipeline_desc.depth_compare_op = rhi::CompareOp::Less;
   skinned_shadow_pipeline_desc.depth_only_subpass = true;
+  fillSequentialExpectedBindings(
+      skinned_shadow_pipeline_desc.expected_descriptor_bindings,
+      &skinned_shadow_pipeline_desc.expected_descriptor_binding_count,
+      k_skinned_shadow_descriptor_binding_count);
   m_skinned_shadow_pipeline =
       eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
   m_skinned_shadow_pipeline->bind(vkCtx(this), vkBackend(this)->nativeSlangCompiler());
@@ -740,6 +752,7 @@ bool RenderSystem::tryBeginRecordingSlot(const uint32_t slot) {
   if (fence_status != VK_SUCCESS) {
     vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
   }
+  vkCtx(this)->onInFlightFenceRetired(slot);
   vkResetFences(device, 1, &fence);
   return true;
 }
@@ -1108,35 +1121,11 @@ void RenderSystem::tryPresentCameraPreview() {
 
 VulkanTexture* RenderSystem::ensureTextureUploaded(
     const Texture2DAsset* texture_asset) {
-  if (texture_asset == nullptr || !isVulkanBackend() || !vkAlloc(this)) {
+  if (texture_asset == nullptr || !isVulkanBackend() || !vkAlloc(this) ||
+      !vkCtx(this)) {
     return nullptr;
   }
-
-  eastl::string cache_key = texture_asset->getVirtualPath();
-  if (cache_key.empty()) {
-    const std::filesystem::path& absolute_path = texture_asset->getAbsolutePath();
-    if (!absolute_path.empty()) {
-      cache_key = eastl::string(absolute_path.generic_string().c_str());
-    } else {
-      cache_key = "generated://render/anonymous_texture";
-    }
-  }
-
-  if (auto it = m_uploaded_textures.find(cache_key);
-      it != m_uploaded_textures.end()) {
-    return it->second.get();
-  }
-
-  auto uploaded_texture = eastl::make_unique<VulkanTexture>();
-  uploaded_texture->createFromTexture2DAsset(vkCtx(this), vkAlloc(this),
-                                             *texture_asset);
-  VulkanTexture* uploaded_texture_ptr = uploaded_texture.get();
-  m_uploaded_textures[cache_key] = eastl::move(uploaded_texture);
-
-  LOG_INFO("[RenderSystem] texture uploaded {} ({}x{}, {} bytes)",
-           cache_key.c_str(), texture_asset->getWidth(),
-           texture_asset->getHeight(), texture_asset->getPixelByteSize());
-  return uploaded_texture_ptr;
+  return vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
 }
 
 void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
@@ -1315,13 +1304,7 @@ void RenderSystem::shutdown() {
     m_renderdoc_capture.reset();
   }
 
-  for (auto& [key, texture] : m_uploaded_textures) {
-    if (texture) {
-      texture->destroy();
-      texture.reset();
-    }
-  }
-  m_uploaded_textures.clear();
+  m_fallback_texture = nullptr;
 
   if (m_ssao_pass) {
     m_ssao_pass->shutdown();
@@ -1648,8 +1631,11 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         !static_cast<SlintSystem*>(m_viewport_layout_source)
              ->wouldScheduleViewportComposite();
   }
-  if (!m_force_viewport_render && !viewport_target_changed && !camera_changed &&
-      !scene_changed) {
+  // Player is a game view: idle skip is editor-only (static camera + generation).
+  // Behaviour TRS and CPU skin still update the draw list; without a record the
+  // last presented swapchain image stays frozen.
+  if (!host_is_player && !m_force_viewport_render && !viewport_target_changed &&
+      !camera_changed && !scene_changed) {
     pollViewportPresent();
     return;
   }

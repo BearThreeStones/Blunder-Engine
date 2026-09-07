@@ -55,6 +55,23 @@ function(blunder_copy_runtime_dlls target)
                 "$<TARGET_FILE_DIR:${target}>/"
             COMMENT "Copying slang.dll next to ${target}"
         )
+        get_filename_component(_slang_bin_dir "${SLANG_DLL_PATH}" DIRECTORY)
+        if(EXISTS "${_slang_bin_dir}/slang-compiler.dll")
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_slang_bin_dir}/slang-compiler.dll"
+                    "$<TARGET_FILE_DIR:${target}>/"
+                COMMENT "Copying slang-compiler.dll next to ${target}"
+            )
+        endif()
+        if(EXISTS "${_slang_bin_dir}/slang-glsl-module.dll")
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_slang_bin_dir}/slang-glsl-module.dll"
+                    "$<TARGET_FILE_DIR:${target}>/"
+                COMMENT "Copying slang-glsl-module.dll next to ${target}"
+            )
+        endif()
         if(SLANG_GLSLANG_DLL_PATH)
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different

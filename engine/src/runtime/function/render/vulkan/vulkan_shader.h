@@ -5,6 +5,8 @@
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
 
+#include "runtime/function/render/slang/shader_resource_layout.h"
+
 namespace Blunder {
 
 class SlangCompiler;
@@ -36,6 +38,20 @@ class VulkanShader final {
   static eastl::vector<ShaderStage> loadFromSlang(
       VkDevice device, SlangCompiler* compiler, const char* slang_path,
       const eastl::vector<EntryPointSpec>& entries);
+
+  struct GraphicsProgram {
+    eastl::vector<ShaderStage> stages;
+    ShaderResourceLayout layout;
+  };
+
+  /// Linked VS+FS: Shader resource layout and SPIR-V modules from one Slang link.
+  static GraphicsProgram loadGraphicsProgramFromSlang(VkDevice device,
+                                                      SlangCompiler* compiler,
+                                                      const char* slang_path,
+                                                      const char* vertex_entry =
+                                                          "vertexMain",
+                                                      const char* fragment_entry =
+                                                          "fragmentMain");
 
   /// 销毁 VkShaderModule（将句柄置为 VK_NULL_HANDLE）。
   static void destroyShaderModule(VkDevice device,

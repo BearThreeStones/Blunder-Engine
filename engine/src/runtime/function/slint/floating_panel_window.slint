@@ -4,7 +4,7 @@ import { InspectorPanel, BehaviourRow, SkeletonModifierRow, AnimationClipRow, An
 import { BrowserTreeRow, BrowserGridRow, BrowserPathSegment } from "content_browser.slint";
 import { FilesystemHistoryHost, HistoryRow } from "history_panel.slint";
 import { DockChromeBar, DockChromeMetrics, DockTab } from "docking_panel.slint";
-import { AnimationWindowPanel } from "animation_window_panel.slint";
+import { AnimationWindowPanel, ClipAnatomyRow, ClipAnatomyKey } from "animation_window_panel.slint";
 import { ConsolePanel, ConsoleRow } from "console_panel.slint";
 
 export component FloatingPanelWindow inherits Window {
@@ -254,6 +254,8 @@ export component FloatingPanelWindow inherits Window {
     in-out property <string> anim-preview-fire-target: "";
     in property <bool> anim-preview-in-cine: false;
     in property <bool> anim-preview-input-suppressed: false;
+    in property <[ClipAnatomyRow]> anim-preview-anatomy-rows: [];
+    in-out property <string> anim-preview-anatomy-filter: "";
     callback anim-preview-play-requested();
     callback anim-preview-pause-requested();
     callback anim-preview-stop-requested();
@@ -266,6 +268,8 @@ export component FloatingPanelWindow inherits Window {
     callback anim-preview-end-cine-requested();
     callback anim-preview-seeked(float);
     callback anim-preview-fire-target-changed(string);
+    callback anim-preview-anatomy-filter-changed(string);
+    callback anim-preview-anatomy-group-toggled(string);
 
     preferred-width: 320px;
     preferred-height: 240px;
@@ -586,6 +590,10 @@ export component FloatingPanelWindow inherits Window {
                 fire-target <=> root.anim-preview-fire-target;
                 in-cine: root.anim-preview-in-cine;
                 input-suppressed: root.anim-preview-input-suppressed;
+                anatomy-rows: root.anim-preview-anatomy-rows;
+                anatomy-filter <=> root.anim-preview-anatomy-filter;
+                anatomy-filter-changed(q) => { root.anim-preview-anatomy-filter-changed(q); }
+                anatomy-group-toggled(bone) => { root.anim-preview-anatomy-group-toggled(bone); }
                 play-requested => { root.anim-preview-play-requested(); }
                 pause-requested => { root.anim-preview-pause-requested(); }
                 stop-requested => { root.anim-preview-stop-requested(); }

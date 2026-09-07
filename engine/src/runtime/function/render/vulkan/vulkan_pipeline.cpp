@@ -1,18 +1,57 @@
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
 
-
-#include <slang.h>
-
 #include <cstddef>
+
+#include "EASTL/sort.h"
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/slang/slang_compiler.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
-#include "runtime/function/render/vulkan/vulkan_shader.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 
 namespace Blunder {
+
+namespace {
+
+VkDescriptorType vkDescriptorType(ShaderDescriptorKind kind) {
+  switch (kind) {
+    case ShaderDescriptorKind::UniformBuffer:
+      return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    case ShaderDescriptorKind::SampledImage:
+      return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    case ShaderDescriptorKind::Sampler:
+      return VK_DESCRIPTOR_TYPE_SAMPLER;
+  }
+  return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+}
+
+VkShaderStageFlags vkShaderStageFlags(uint32_t stage_mask) {
+  VkShaderStageFlags flags = 0;
+  if ((stage_mask & k_shader_stage_vertex) != 0) {
+    flags |= VK_SHADER_STAGE_VERTEX_BIT;
+  }
+  if ((stage_mask & k_shader_stage_fragment) != 0) {
+    flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+  }
+  if ((stage_mask & k_shader_stage_compute) != 0) {
+    flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+  }
+  if (flags == 0) {
+    flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  }
+  return flags;
+}
+
+void destroyPendingStages(VkDevice device,
+                          eastl::vector<VulkanShader::ShaderStage>& stages) {
+  for (VulkanShader::ShaderStage& stage : stages) {
+    VulkanShader::destroyShaderModule(device, &stage.module);
+  }
+  stages.clear();
+}
+
+}  // namespace
 
 void VulkanPipeline::initialize(VulkanContext* context,
                                 SlangCompiler* slang_compiler,
@@ -27,8 +66,29 @@ void VulkanPipeline::initialize(VulkanContext* context,
   m_render_pass = render_pass;
   m_create_info = create_info;
 
-  createDescriptorSetLayout();
-  createGraphicsPipeline();
+  VulkanShader::GraphicsProgram program =
+      VulkanShader::loadGraphicsProgramFromSlang(
+          m_context->getDevice(), m_slang_compiler, m_create_info.shader_path);
+  if (!shaderResourceBindingsMatch(
+          program.layout, m_create_info.expected_descriptor_bindings,
+          m_create_info.expected_descriptor_binding_count,
+          m_create_info.expected_descriptor_sets,
+          m_create_info.expected_descriptor_kinds)) {
+    destroyPendingStages(m_context->getDevice(), program.stages);
+    LOG_FATAL(
+        "[VulkanPipeline] Shader resource layout does not match record-path "
+        "bindings for '{}' (extracted {} bindings, expected {})",
+        m_create_info.shader_path, program.layout.count,
+        m_create_info.expected_descriptor_binding_count);
+  }
+
+  try {
+    createDescriptorSetLayout(program.layout);
+  } catch (...) {
+    destroyPendingStages(m_context->getDevice(), program.stages);
+    throw;
+  }
+  createGraphicsPipeline(program.stages);
   createCommandPool();
   createCommandBuffers();
 }
@@ -59,32 +119,25 @@ void VulkanPipeline::shutdown() {
   if (m_owns_descriptor_set_layout && m_descriptor_set_layout != VK_NULL_HANDLE) {
     vkDestroyDescriptorSetLayout(device, m_descriptor_set_layout, nullptr);
     m_descriptor_set_layout = VK_NULL_HANDLE;
+  } else {
+    m_descriptor_set_layout = VK_NULL_HANDLE;
   }
+  m_uses_bindless_texture_table = false;
 
   m_render_pass = VK_NULL_HANDLE;
   m_slang_compiler = nullptr;
   m_context = nullptr;
 }
 
-void VulkanPipeline::createGraphicsPipeline() {
+void VulkanPipeline::createGraphicsPipeline(
+    eastl::vector<VulkanShader::ShaderStage>& shader_stages) {
   ASSERT(m_context);
   ASSERT(m_slang_compiler);
   ASSERT(m_render_pass != VK_NULL_HANDLE);
 
   VkDevice device = m_context->getDevice();
 
-  eastl::vector<VulkanShader::EntryPointSpec> entries;
-  entries.push_back(
-      {"vertexMain", VK_SHADER_STAGE_VERTEX_BIT, SLANG_STAGE_VERTEX});
-  entries.push_back(
-      {"fragmentMain", VK_SHADER_STAGE_FRAGMENT_BIT, SLANG_STAGE_FRAGMENT});
-
-  eastl::vector<VulkanShader::ShaderStage> shader_stages =
-      VulkanShader::loadFromSlang(device, m_slang_compiler,
-                                  m_create_info.shader_path, entries);
-
   eastl::vector<VkPipelineShaderStageCreateInfo> stage_infos;
-  stage_infos.reserve(shader_stages.size());
   for (const VulkanShader::ShaderStage& stage : shader_stages) {
     VkPipelineShaderStageCreateInfo stage_info{};
     stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -195,10 +248,17 @@ void VulkanPipeline::createGraphicsPipeline() {
   depth_stencil.depthBoundsTestEnable = VK_FALSE;
   depth_stencil.stencilTestEnable = VK_FALSE;
 
+  VkDescriptorSetLayout set_layouts[2];
+  set_layouts[0] = m_descriptor_set_layout;
+  uint32_t set_layout_count = 1;
+  if (m_uses_bindless_texture_table) {
+    set_layouts[1] = m_context->bindlessTextureTable().descriptorSetLayout();
+    set_layout_count = 2;
+  }
   VkPipelineLayoutCreateInfo pipeline_layout_info{};
   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  pipeline_layout_info.setLayoutCount = 1;
-  pipeline_layout_info.pSetLayouts = &m_descriptor_set_layout;
+  pipeline_layout_info.setLayoutCount = set_layout_count;
+  pipeline_layout_info.pSetLayouts = set_layouts;
   const VkResult layout_result = vkCreatePipelineLayout(
       device, &pipeline_layout_info, nullptr, &m_pipeline_layout);
   if (layout_result != VK_SUCCESS) {
@@ -228,8 +288,8 @@ void VulkanPipeline::createGraphicsPipeline() {
   pipeline_info.renderPass = m_render_pass;
   pipeline_info.subpass = 0;
 
-  const VkResult pipeline_result = vkCreateGraphicsPipelines(
-      device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_graphics_pipeline);
+  const VkResult pipeline_result = m_context->createGraphicsPipelines(
+      1, &pipeline_info, &m_graphics_pipeline);
 
   for (VulkanShader::ShaderStage& stage : shader_stages) {
     VulkanShader::destroyShaderModule(device, &stage.module);
@@ -243,8 +303,21 @@ void VulkanPipeline::createGraphicsPipeline() {
   }
 }
 
-void VulkanPipeline::createDescriptorSetLayout() {
+void VulkanPipeline::createDescriptorSetLayout(
+    const ShaderResourceLayout& layout) {
   ASSERT(m_context);
+
+  m_uses_bindless_texture_table = false;
+  for (uint32_t i = 0; i < layout.count; ++i) {
+    if (layout.bindings[i].set == 1) {
+      m_uses_bindless_texture_table = true;
+    } else if (layout.bindings[i].set != 0) {
+      LOG_FATAL(
+          "[VulkanPipeline::createDescriptorSetLayout] extracted set {} is "
+          "not 0 or 1",
+          layout.bindings[i].set);
+    }
+  }
 
   if (m_create_info.shared_descriptor_set_layout != 0) {
     m_descriptor_set_layout = reinterpret_cast<VkDescriptorSetLayout>(
@@ -255,92 +328,41 @@ void VulkanPipeline::createDescriptorSetLayout() {
 
   m_owns_descriptor_set_layout = true;
 
+  if (layout.count > k_max_expected_descriptor_bindings) {
+    LOG_FATAL(
+        "[VulkanPipeline::createDescriptorSetLayout] extracted {} bindings, "
+        "max is {}",
+        layout.count, k_max_expected_descriptor_bindings);
+  }
+
+  ShaderResourceBinding ordered[k_max_expected_descriptor_bindings];
+  const uint32_t ordered_count = layout.count;
+  for (uint32_t i = 0; i < ordered_count; ++i) {
+    ordered[i] = layout.bindings[i];
+  }
+  eastl::sort(ordered, ordered + ordered_count,
+              [](const ShaderResourceBinding& a,
+                 const ShaderResourceBinding& b) {
+                if (a.set != b.set) {
+                  return a.set < b.set;
+                }
+                return a.binding < b.binding;
+              });
+
   eastl::vector<VkDescriptorSetLayoutBinding> bindings;
-  uint32_t binding_reserve = 1;
-  if (m_create_info.enable_texture_sampling) {
-    binding_reserve += 2;
-  }
-  if (m_create_info.enable_shadow_sampling) {
-    binding_reserve += 2;
-  }
-  if (m_create_info.enable_pbr_texture_sampling) {
-    binding_reserve += 6;
-  }
-  if (m_create_info.enable_bone_palette) {
-    binding_reserve += 1;
-  }
-  bindings.reserve(binding_reserve);
-
-  VkDescriptorSetLayoutBinding ubo_layout_binding{};
-  ubo_layout_binding.binding = 0;
-  ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  ubo_layout_binding.descriptorCount = 1;
-  ubo_layout_binding.stageFlags = m_create_info.descriptor_stage_flags;
-  ubo_layout_binding.pImmutableSamplers = nullptr;
-  bindings.push_back(ubo_layout_binding);
-
-  if (m_create_info.enable_texture_sampling) {
-    VkDescriptorSetLayoutBinding sampled_image_binding{};
-    sampled_image_binding.binding = 1;
-    sampled_image_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    sampled_image_binding.descriptorCount = 1;
-    sampled_image_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    sampled_image_binding.pImmutableSamplers = nullptr;
-    bindings.push_back(sampled_image_binding);
-
-    VkDescriptorSetLayoutBinding sampler_binding{};
-    sampler_binding.binding = 2;
-    sampler_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-    sampler_binding.descriptorCount = 1;
-    sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    sampler_binding.pImmutableSamplers = nullptr;
-    bindings.push_back(sampler_binding);
-  }
-
-  if (m_create_info.enable_shadow_sampling) {
-    VkDescriptorSetLayoutBinding shadow_image_binding{};
-    shadow_image_binding.binding = 3;
-    shadow_image_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    shadow_image_binding.descriptorCount = 1;
-    shadow_image_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bindings.push_back(shadow_image_binding);
-
-    VkDescriptorSetLayoutBinding shadow_sampler_binding{};
-    shadow_sampler_binding.binding = 4;
-    shadow_sampler_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-    shadow_sampler_binding.descriptorCount = 1;
-    shadow_sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bindings.push_back(shadow_sampler_binding);
-  }
-
-  if (m_create_info.enable_pbr_texture_sampling) {
-    for (uint32_t pair_index = 0; pair_index < 3; ++pair_index) {
-      const uint32_t texture_binding = 5 + pair_index * 2;
-      const uint32_t sampler_binding = 6 + pair_index * 2;
-
-      VkDescriptorSetLayoutBinding image_binding{};
-      image_binding.binding = texture_binding;
-      image_binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-      image_binding.descriptorCount = 1;
-      image_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-      bindings.push_back(image_binding);
-
-      VkDescriptorSetLayoutBinding sampler_binding_info{};
-      sampler_binding_info.binding = sampler_binding;
-      sampler_binding_info.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-      sampler_binding_info.descriptorCount = 1;
-      sampler_binding_info.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-      bindings.push_back(sampler_binding_info);
+  bindings.reserve(ordered_count);
+  for (uint32_t i = 0; i < ordered_count; ++i) {
+    const ShaderResourceBinding& resource = ordered[i];
+    if (resource.set != 0) {
+      continue;
     }
-  }
-
-  if (m_create_info.enable_bone_palette) {
-    VkDescriptorSetLayoutBinding bone_palette_binding{};
-    bone_palette_binding.binding = m_create_info.bone_palette_binding;
-    bone_palette_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bone_palette_binding.descriptorCount = 1;
-    bone_palette_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    bindings.push_back(bone_palette_binding);
+    VkDescriptorSetLayoutBinding layout_binding{};
+    layout_binding.binding = resource.binding;
+    layout_binding.descriptorType = vkDescriptorType(resource.kind);
+    layout_binding.descriptorCount = 1;
+    layout_binding.stageFlags = vkShaderStageFlags(resource.stage_mask);
+    layout_binding.pImmutableSamplers = nullptr;
+    bindings.push_back(layout_binding);
   }
 
   VkDescriptorSetLayoutCreateInfo layout_info{};

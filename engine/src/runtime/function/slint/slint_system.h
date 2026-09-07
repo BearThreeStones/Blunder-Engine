@@ -281,6 +281,12 @@ class SlintSystem final : public IEditorUiPresentation {
   void fireAnimationSyncPreview() override;
   void syncAnimationWindowFromPreview();
   void syncAnimationWindowPlaybackClock();
+  /// Push Clip anatomy rows when the ruler clip, filter, or fold changed.
+  void syncAnimationWindowClipAnatomy(bool force);
+  /// Copy Animation Window properties onto a floated Animation panel without
+  /// rebuilding dock layout (layout sync only runs on size / docking dirty).
+  void pushFloatingAnimationWindowFromMain();
+  void applyAnimationPreviewClipChoice(const slint::SharedString& name);
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
   void applyInspectorCamera(bool commit);
   void applyInspectorLight(bool commit);
@@ -789,6 +795,8 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_applying_preview_sync{false};
   float m_anim_timescale_before{1.0f};
   bool m_anim_timescale_dragging{false};
+  uint32_t m_anim_anatomy_revision{0};
+  bool m_anim_anatomy_synced{false};
 };
 
 }  // namespace Blunder

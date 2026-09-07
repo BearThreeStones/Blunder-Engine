@@ -142,6 +142,33 @@ void VulkanImage::destroy() {
   m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
+bool VulkanImage::releaseGpuHandles(VkImage& image, VkImageView& view,
+                                    VkSampler& sampler,
+                                    VmaAllocation& allocation,
+                                    VulkanAllocator*& allocator) {
+  image = m_image;
+  view = m_image_view;
+  sampler = m_sampler;
+  allocation = m_allocation;
+  allocator = m_allocator;
+  const bool had_gpu = m_image != VK_NULL_HANDLE ||
+                       m_image_view != VK_NULL_HANDLE ||
+                       m_sampler != VK_NULL_HANDLE;
+  m_image = VK_NULL_HANDLE;
+  m_image_view = VK_NULL_HANDLE;
+  m_sampler = VK_NULL_HANDLE;
+  m_allocation = VK_NULL_HANDLE;
+  m_context = nullptr;
+  m_allocator = nullptr;
+  m_width = 0;
+  m_height = 0;
+  m_format = VK_FORMAT_UNDEFINED;
+  m_usage = 0;
+  m_aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
+  m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+  return had_gpu;
+}
+
 void VulkanImage::uploadTexture2D(const Texture2DAsset& texture) {
   ASSERT(texture.getChannels() == 4u);
   uploadPixels(texture.getPixelData(), texture.getPixelByteSize(),

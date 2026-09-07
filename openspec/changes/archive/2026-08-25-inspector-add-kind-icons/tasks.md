@@ -12,4 +12,4 @@
 
 - [x] 3.1 Confirm CONTEXT **Add… kind icon** matches shipped placements (no extra glossary churn)
 - [x] 3.2 Build `engine_editor`
-- [ ] 3.3 Manual: mesh-only Add… shows six kind icons; Camera already present greys Camera icon; add Behaviour + missing type tints Script icon; Unique headers show icons; clip rows have none
+- [x] 3.3 Manual: mesh-only Add… shows six kind icons; Camera already present greys Camera icon; add Behaviour + missing type tints Script icon; Unique headers show icons; clip rows have none

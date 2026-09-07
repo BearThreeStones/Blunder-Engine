@@ -504,8 +504,9 @@ void test_clip_play_stop_rebind_and_end_cine() {
   expect_true("ruler still walk", controller.rulerClipName() == "walk");
 
   controller.stop();
-  expect_true("stop clears override", !tree->isClipPlayOverride());
+  expect_true("stop keeps override", tree->isClipPlayOverride());
 
+  controller.clearTarget();
   ObjectDB::clear();
   LifecycleDispatch::clear();
 
@@ -598,6 +599,109 @@ void test_timescale_command_dirties_play_does_not() {
   expect_true("timescale command dirties", history.isDirtyRelativeToSave());
   expect_true("can undo timescale", history.canUndo());
   controller.clearTarget();
+}
+
+void test_preview_clip_play_bind_stop_and_fire() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
+
+  Object* object = makeTreePreviewObject(nullptr);
+  AnimationTree* tree = object->getAnimationTree();
+  expect_true("tree", tree != nullptr);
+  tree->start("Locomotion");
+  tree->setActive(true);
+
+  AnimationPreviewController controller;
+  controller.bindObject(object, "walk");
+  expect_true("preview default walk", controller.previewClip() == "walk");
+  expect_true("bind clip play", tree->isClipPlayOverride());
+  expect_true("bind clip is walk", tree->getClipPlayClipName() == "walk");
+  expect_true("ruler walk at bind", controller.rulerClipName() == "walk");
+  expect_true("bind stays stopped",
+              controller.state() == AnimationPreviewState::Stopped);
+  expect_true("bind at 0",
+              float_near(controller.playbackPosition(), 0.0f, 1.0e-3f));
+
+  DocumentHistory history;
+  history.markSaveBaseline();
+  controller.setPreviewClip("idle");
+  expect_true("preview clip does not dirty", !history.isDirtyRelativeToSave());
+  expect_true("idle preview", controller.previewClip() == "idle");
+  expect_true("idle override", tree->getClipPlayClipName() == "idle");
+  expect_true("cut stays stopped",
+              controller.state() == AnimationPreviewState::Stopped);
+  expect_true("ruler idle", controller.rulerClipName() == "idle");
+
+  expect_true("play idle not walk", controller.play());
+  expect_true("playing", controller.isPlaying());
+  expect_true("play keeps idle", tree->getClipPlayClipName() == "idle");
+  expect_true("ruler idle playing", controller.rulerClipName() == "idle");
+
+  controller.tick(0.25f);
+  expect_true("advanced", controller.playbackPosition() > 0.1f);
+  controller.setPreviewClip("walk");
+  expect_true("playing hard-cut walk", tree->getClipPlayClipName() == "walk");
+  expect_true("playing cut at 0",
+              float_near(controller.playbackPosition(), 0.0f, 1.0e-3f));
+  expect_true("still playing", controller.isPlaying());
+
+  expect_true("pause", controller.pause());
+  controller.setPreviewClip("idle");
+  expect_true("pause stays paused", controller.isPaused());
+  expect_true("pause cut idle 0",
+              float_near(controller.playbackPosition(), 0.0f, 1.0e-3f));
+  expect_true("idle override paused", tree->getClipPlayClipName() == "idle");
+
+  controller.stop();
+  expect_true("stop keeps override", tree->isClipPlayOverride());
+  expect_true("stop idle", tree->getClipPlayClipName() == "idle");
+  expect_true("stop at 0",
+              float_near(controller.playbackPosition(), 0.0f, 1.0e-3f));
+  expect_true("stopped",
+              controller.state() == AnimationPreviewState::Stopped);
+
+  controller.setPreviewClip("walk");
+  expect_true("stopped cut walk", tree->getClipPlayClipName() == "walk");
+  expect_true("still stopped after cut",
+              controller.state() == AnimationPreviewState::Stopped);
+
+  expect_true("play for same-name", controller.play());
+  controller.tick(0.25f);
+  expect_true("same-name before cut", controller.playbackPosition() > 0.1f);
+  controller.setPreviewClip("walk");
+  expect_true("same-name hard-cut",
+              float_near(controller.playbackPosition(), 0.0f, 1.0e-3f));
+  expect_true("same-name still walk", tree->getClipPlayClipName() == "walk");
+  expect_true("same-name still playing", controller.isPlaying());
+
+  controller.setPreviewClip("idle");
+  expect_true("fire idle", controller.fire());
+  expect_true("oneshot idle", tree->isOneShotActive());
+  expect_true("oneshot name idle", tree->getOneShotClipName() == "idle");
+  expect_true("ruler fire idle", controller.rulerClipName() == "idle");
+  controller.setPreviewClip("walk");
+  expect_true("fire still occupies", tree->isOneShotActive());
+  expect_true("fire still idle", tree->getOneShotClipName() == "idle");
+  expect_true("base walk under fire", tree->getClipPlayClipName() == "walk");
+  expect_true("ruler still insert", controller.rulerClipName() == "idle");
+
+  controller.setLoop(false);
+  controller.tick(0.6f);
+  expect_true("fire still occupies mid-clip", tree->isOneShotActive());
+  expect_true("playing through fire", controller.isPlaying());
+  controller.tick(0.6f);
+  expect_true("fire ended loop off", !tree->isOneShotActive());
+  expect_true("ruler walk after fire", controller.rulerClipName() == "walk");
+
+  controller.haltBoundSession();
+  expect_true("halt clears override", !tree->isClipPlayOverride());
+  expect_true("halt stopped",
+              controller.state() == AnimationPreviewState::Stopped);
+
+  ObjectDB::clear();
+  LifecycleDispatch::clear();
 }
 
 void test_preview_scrub_paths_skip_behaviour_tick() {
@@ -865,6 +969,10 @@ void test_edit_blend_space2d_scrub_without_behaviour_tick() {
   controller.bindObject(object, "idle");
   expect_true("activate", controller.setTreeActive(true));
   controller.setBlendSpace2DParam("Locomotion2D", 0.5f, 0.0f);
+  // Bind Clip Plays Preview clip; this test samples BlendSpace2D, so drop the override
+  // after the 2D param is set (clear at default 0,0 is not a valid 2-point sample).
+  tree->clearClipPlay();
+  controller.setBlendSpace2DParam("Locomotion2D", 0.5f, 0.0f);
 
   float x = 0.0f;
   float y = 0.0f;
@@ -1020,6 +1128,7 @@ int main() {
   test_fire_hard_cut_and_enter_cine_does_not_fire();
   test_clip_play_stop_rebind_and_end_cine();
   test_timescale_command_dirties_play_does_not();
+  test_preview_clip_play_bind_stop_and_fire();
 
   Blunder::ObjectDB::clear();
   Blunder::LifecycleDispatch::clear();
