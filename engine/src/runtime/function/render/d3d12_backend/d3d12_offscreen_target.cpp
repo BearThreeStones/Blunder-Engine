@@ -110,7 +110,9 @@ void D3D12OffscreenTarget::createResources() {
 
 void D3D12OffscreenTarget::beginRenderPass(
     rhi::ICommandList& command_list, const rhi::ClearValue* clears,
-    uint32_t clear_count) {
+    uint32_t clear_count, rhi::SubpassContents contents) {
+  ASSERT(contents == rhi::SubpassContents::Inline);
+  (void)contents;
   auto& d3d_list = static_cast<D3D12CommandList&>(command_list);
   ID3D12GraphicsCommandList* cmd = d3d_list.nativeList();
   ASSERT(cmd);

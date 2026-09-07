@@ -3,6 +3,7 @@
 #include <vk_mem_alloc.h>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 
@@ -202,7 +203,8 @@ void ShadowMapTarget::destroyResources() {
   m_current_layout = VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
-void ShadowMapTarget::beginRenderPass(VkCommandBuffer cmd, float depth_clear) {
+void ShadowMapTarget::beginRenderPass(VkCommandBuffer cmd, float depth_clear,
+                                      rhi::SubpassContents contents) {
   ASSERT(m_framebuffer != VK_NULL_HANDLE);
 
   if (m_current_layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL &&
@@ -239,7 +241,8 @@ void ShadowMapTarget::beginRenderPass(VkCommandBuffer cmd, float depth_clear) {
   begin_info.clearValueCount = 1;
   begin_info.pClearValues = &clear_value;
 
-  vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &begin_info,
+                       SecondaryCommandBufferPool::toVkContents(contents));
   m_current_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 }
 

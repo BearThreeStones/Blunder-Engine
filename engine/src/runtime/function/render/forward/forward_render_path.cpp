@@ -15,6 +15,7 @@
 #include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/function/scene/gpu_skinning.h"
 #include "runtime/function/render/overlay/overlay_system.h"
+#include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/rhi_types.h"
 #include "runtime/function/render/viewport_style.h"
@@ -27,6 +28,8 @@
 #include "runtime/function/render/vulkan/vulkan_texture.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
+#include "runtime/function/render/vulkan_backend/vulkan_offscreen_target.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/resource/asset/material_asset.h"
 
 namespace Blunder {
@@ -799,17 +802,29 @@ void ForwardRenderPath::renderFrameTo(
     rhi::IOffscreenRenderTarget* target, VkCommandBuffer command_buffer,
     const ForwardFrameState& frame_state, const ForwardOpaqueDraw* opaque_draws,
     uint32_t opaque_draw_count, const ForwardOpaqueDraw* transparent_draws,
-    uint32_t transparent_draw_count, uint32_t frame_index, bool draw_overlays) {
+    uint32_t transparent_draw_count, uint32_t descriptor_frame,
+    bool draw_overlays, SecondaryStream secondary_stream,
+    uint32_t secondary_frame) {
   ASSERT(target);
+  ASSERT(m_vk_context);
   const rhi::Extent2D extent = target->extent();
   if (extent.width == 0 || extent.height == 0) {
     return;
   }
 
+  SecondaryCommandBufferPool& pool = m_vk_context->secondaryCommandBuffers();
+  ASSERT(pool.isAllocated());
+
   if (m_shadow_map != nullptr && frame_state.shadows_enabled) {
-    m_shadow_map->beginRenderPass(command_buffer);
-    drawShadowOpaqueList(command_buffer, frame_state, opaque_draws,
-                         opaque_draw_count, frame_index);
+    m_shadow_map->beginRenderPass(command_buffer, 1.0f,
+                                 rhi::SubpassContents::Secondary);
+    const VkCommandBuffer shadow_secondary = pool.begin(
+        secondary_stream, SecondaryPass::shadow, secondary_frame,
+        m_shadow_map->getRenderPass(), m_shadow_map->getFramebuffer());
+    drawShadowOpaqueList(shadow_secondary, frame_state, opaque_draws,
+                         opaque_draw_count, descriptor_frame);
+    pool.end(secondary_stream, SecondaryPass::shadow, secondary_frame);
+    SecondaryCommandBufferPool::execute(command_buffer, shadow_secondary);
     m_shadow_map->endRenderPass(command_buffer);
     m_shadow_map->cmdBarrierToShaderReadDepth(command_buffer);
   }
@@ -822,20 +837,42 @@ void ForwardRenderPath::renderFrameTo(
                      kViewportBackgroundRgb, 1.0f};
   clears[1].depth_stencil = {1.0f, 0};
 
-  target->beginRenderPass(command_list, clears, 2);
-  bindViewportScissor(command_buffer, extent.width, extent.height);
+  auto& vk_target = static_cast<vulkan_backend::VulkanOffscreenTarget&>(*target);
+  OffscreenRenderTarget* native_target = vk_target.nativeTarget();
+  ASSERT(native_target);
 
-  // Opaque (depth write ON), then depth-tested overlays (grid), then
-  // transparent (depth write OFF) so blend meshes composite over the grid.
-  drawOpaqueList(command_buffer, frame_state, opaque_draws, opaque_draw_count,
-                 frame_index);
+  target->beginRenderPass(command_list, clears, 2,
+                          rhi::SubpassContents::Secondary);
 
+  VkCommandBuffer forward_secondaries[3]{};
+  forward_secondaries[0] = pool.begin(
+      secondary_stream, SecondaryPass::forward_opaque, secondary_frame,
+      native_target->getRenderPass(), native_target->getFramebuffer());
+  bindViewportScissor(forward_secondaries[0], extent.width, extent.height);
+  drawOpaqueList(forward_secondaries[0], frame_state, opaque_draws,
+                 opaque_draw_count, descriptor_frame);
+  pool.end(secondary_stream, SecondaryPass::forward_opaque, secondary_frame);
+
+  forward_secondaries[1] = pool.begin(
+      secondary_stream, SecondaryPass::forward_scene_overlay, secondary_frame,
+      native_target->getRenderPass(), native_target->getFramebuffer());
+  bindViewportScissor(forward_secondaries[1], extent.width, extent.height);
   if (draw_overlays && m_overlay_system != nullptr) {
-    m_overlay_system->draw_scene_overlays(command_buffer);
+    m_overlay_system->draw_scene_overlays(forward_secondaries[1]);
   }
+  pool.end(secondary_stream, SecondaryPass::forward_scene_overlay,
+           secondary_frame);
 
-  drawTransparentList(command_buffer, frame_state, transparent_draws,
-                      transparent_draw_count, frame_index);
+  forward_secondaries[2] = pool.begin(
+      secondary_stream, SecondaryPass::forward_transparent, secondary_frame,
+      native_target->getRenderPass(), native_target->getFramebuffer());
+  bindViewportScissor(forward_secondaries[2], extent.width, extent.height);
+  drawTransparentList(forward_secondaries[2], frame_state, transparent_draws,
+                      transparent_draw_count, descriptor_frame);
+  pool.end(secondary_stream, SecondaryPass::forward_transparent,
+           secondary_frame);
+
+  SecondaryCommandBufferPool::execute(command_buffer, forward_secondaries, 3);
 
   target->endRenderPass(command_list);
   target->markPostRenderPassShaderRead();
@@ -850,7 +887,8 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
                                     uint32_t frame_index) {
   renderFrameTo(m_offscreen, command_buffer, frame_state, opaque_draws,
                 opaque_draw_count, transparent_draws, transparent_draw_count,
-                frame_index, /*draw_overlays=*/true);
+                frame_index, /*draw_overlays=*/true, SecondaryStream::viewport,
+                frame_index);
 }
 
 }  // namespace Blunder

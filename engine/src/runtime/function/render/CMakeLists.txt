@@ -62,6 +62,8 @@ set(RENDER_SOURCES
     "function/render/vulkan_backend/vulkan_shader_compiler.h"
     "function/render/vulkan/vulkan_context.cpp"
     "function/render/vulkan/vulkan_context.h"
+    "function/render/vulkan/secondary_command_buffer_pool.cpp"
+    "function/render/vulkan/secondary_command_buffer_pool.h"
     "function/render/vulkan/bindless_texture_table.cpp"
     "function/render/vulkan/bindless_texture_table.h"
     "function/render/vulkan/vulkan_allocator.cpp"

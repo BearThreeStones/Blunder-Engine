@@ -3,6 +3,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/overlay/overlay_line_targets.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 
 namespace Blunder {
@@ -118,7 +119,25 @@ void OverlayLinePass::resize(uint32_t width, uint32_t height) {
   }
 }
 
-void OverlayLinePass::begin(VkCommandBuffer cmd) {
+VkFramebuffer OverlayLinePass::framebuffer() const {
+  return m_targets ? m_targets->framebuffer() : VK_NULL_HANDLE;
+}
+
+void OverlayLinePass::bindViewportScissor(VkCommandBuffer cmd) {
+  ASSERT(m_targets);
+  const VkExtent2D extent = m_targets->extent();
+  VkViewport viewport{};
+  viewport.width = static_cast<float>(extent.width);
+  viewport.height = static_cast<float>(extent.height);
+  viewport.maxDepth = 1.0f;
+  vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+  VkRect2D scissor{};
+  scissor.extent = extent;
+  vkCmdSetScissor(cmd, 0, 1, &scissor);
+}
+
+void OverlayLinePass::begin(VkCommandBuffer cmd, rhi::SubpassContents contents) {
   ASSERT(m_offscreen && m_targets && m_render_pass != VK_NULL_HANDLE);
   const VkExtent2D extent = m_targets->extent();
 
@@ -133,17 +152,8 @@ void OverlayLinePass::begin(VkCommandBuffer cmd) {
   begin.renderArea.extent = extent;
   begin.clearValueCount = 2;
   begin.pClearValues = clears;
-  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
-
-  VkViewport viewport{};
-  viewport.width = static_cast<float>(extent.width);
-  viewport.height = static_cast<float>(extent.height);
-  viewport.maxDepth = 1.0f;
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-  VkRect2D scissor{};
-  scissor.extent = extent;
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
+  vkCmdBeginRenderPass(cmd, &begin,
+                       SecondaryCommandBufferPool::toVkContents(contents));
 }
 
 void OverlayLinePass::end(VkCommandBuffer cmd) {

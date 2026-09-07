@@ -21,6 +21,7 @@
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_shader.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -740,18 +741,23 @@ void OutlineOverlay::drawPrepass(VkCommandBuffer cmd, const OverlayState& state)
   begin.renderArea.extent = extent;
   begin.clearValueCount = 2;
   begin.pClearValues = clears;
-  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
+  SecondaryCommandBufferPool& pool = m_context->secondaryCommandBuffers();
+  const VkCommandBuffer secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::outline_prepass,
+      state.frame_index, begin.renderPass, begin.framebuffer);
 
   VkViewport viewport{};
   viewport.width = static_cast<float>(extent.width);
   viewport.height = static_cast<float>(extent.height);
   viewport.maxDepth = 1.0f;
   VkRect2D scissor{{0, 0}, extent};
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
+  vkCmdSetViewport(secondary, 0, 1, &viewport);
+  vkCmdSetScissor(secondary, 0, 1, &scissor);
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_prepass_pipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, m_prepass_pipeline);
+  vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_prepass_pipeline_layout, 0, 1,
                           &m_prepass_descriptor_set, 0, nullptr);
 
@@ -770,19 +776,22 @@ void OutlineOverlay::drawPrepass(VkCommandBuffer cmd, const OverlayState& state)
     GpuMesh* mesh = draw.gpu_mesh;
     VkBuffer vertex_buffers[] = {mesh->getVertexBuffer()->getBuffer()};
     VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer(cmd, mesh->getIndexBuffer()->getBuffer(), 0,
+    vkCmdBindVertexBuffers(secondary, 0, 1, vertex_buffers, offsets);
+    vkCmdBindIndexBuffer(secondary, mesh->getIndexBuffer()->getBuffer(), 0,
                          VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(cmd, mesh->getIndexCount(), 1, 0, 0, 0);
+    vkCmdDrawIndexed(secondary, mesh->getIndexCount(), 1, 0, 0, 0);
   }
 
+  pool.end(SecondaryStream::viewport, SecondaryPass::outline_prepass,
+           state.frame_index);
+  SecondaryCommandBufferPool::execute(cmd, secondary);
   vkCmdEndRenderPass(cmd);
   m_targets->cmdBarrierToShaderRead(cmd);
 }
 
 void OutlineOverlay::drawResolve(VkCommandBuffer cmd,
                                  OffscreenRenderTarget* offscreen,
-                                 const OverlayState& /*state*/) {
+                                 const OverlayState& state) {
   if (!enabled_ || m_resolve_pipeline == VK_NULL_HANDLE || offscreen == nullptr ||
       m_targets == nullptr) {
     return;
@@ -809,8 +818,13 @@ void OutlineOverlay::drawResolve(VkCommandBuffer cmd,
   begin.framebuffer = offscreen->getFramebuffer();
   begin.renderArea.extent = extent;
   begin.clearValueCount = 0;
-  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  SecondaryCommandBufferPool& pool = m_context->secondaryCommandBuffers();
+  const VkCommandBuffer secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::outline_resolve,
+      state.frame_index, begin.renderPass, begin.framebuffer);
 
   VkViewport viewport{};
   viewport.width = static_cast<float>(extent.width);
@@ -818,13 +832,16 @@ void OutlineOverlay::drawResolve(VkCommandBuffer cmd,
   viewport.maxDepth = 1.0f;
   VkRect2D scissor{{0, 0}, extent};
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_resolve_pipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, m_resolve_pipeline);
+  vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_resolve_pipeline_layout, 0, 1,
                           &m_resolve_descriptor_set, 0, nullptr);
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
-  vkCmdDraw(cmd, 3, 1, 0, 0);
+  vkCmdSetViewport(secondary, 0, 1, &viewport);
+  vkCmdSetScissor(secondary, 0, 1, &scissor);
+  vkCmdDraw(secondary, 3, 1, 0, 0);
+  pool.end(SecondaryStream::viewport, SecondaryPass::outline_resolve,
+           state.frame_index);
+  SecondaryCommandBufferPool::execute(cmd, secondary);
   vkCmdEndRenderPass(cmd);
 
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

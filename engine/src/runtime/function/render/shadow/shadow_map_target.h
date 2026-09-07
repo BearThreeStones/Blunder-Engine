@@ -5,6 +5,8 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
+#include "runtime/function/render/rhi/rhi_types.h"
+
 namespace Blunder {
 
 class VulkanAllocator;
@@ -21,7 +23,8 @@ class ShadowMapTarget final {
   void initialize(VulkanContext* context, VulkanAllocator* allocator);
   void shutdown();
 
-  void beginRenderPass(VkCommandBuffer cmd, float depth_clear = 1.0f);
+  void beginRenderPass(VkCommandBuffer cmd, float depth_clear = 1.0f,
+                       rhi::SubpassContents contents = rhi::SubpassContents::Inline);
   void endRenderPass(VkCommandBuffer cmd);
   void cmdBarrierToShaderReadDepth(VkCommandBuffer cmd);
 

@@ -308,6 +308,25 @@ target_precompile_headers(classdb_test
 add_test(NAME classdb_test
          COMMAND classdb_test)
 
+add_executable(secondary_command_buffer_test
+    "secondary_command_buffer_test.cpp"
+)
+
+target_link_libraries(secondary_command_buffer_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(secondary_command_buffer_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(secondary_command_buffer_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME secondary_command_buffer_test
+         COMMAND secondary_command_buffer_test)
+
 add_executable(skeleton_modifier_catalog_test
     "skeleton_modifier_catalog_test.cpp"
 )

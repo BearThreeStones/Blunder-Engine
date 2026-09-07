@@ -750,10 +750,18 @@ bool RenderSystem::tryBeginRecordingSlot(const uint32_t slot) {
     return false;
   }
   if (fence_status != VK_SUCCESS) {
-    vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
+    const VkResult wait_result =
+        vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
+    if (wait_result != VK_SUCCESS) {
+      return false;
+    }
   }
   vkCtx(this)->onInFlightFenceRetired(slot);
   vkResetFences(device, 1, &fence);
+  SecondaryCommandBufferPool& secondary_pool =
+      vkCtx(this)->secondaryCommandBuffers();
+  secondary_pool.resetFrame(SecondaryStream::viewport, slot);
+  secondary_pool.resetFrame(SecondaryStream::camera_preview, slot);
   return true;
 }
 
@@ -1070,7 +1078,8 @@ bool RenderSystem::recordCameraPreviewPass(
       opaque_draws.data(), static_cast<uint32_t>(opaque_draws.size()),
       preview_transparent_draws.data(),
       static_cast<uint32_t>(preview_transparent_draws.size()),
-      ForwardRenderPath::cameraPreviewDescriptorFrame(frame_index), false);
+      ForwardRenderPath::cameraPreviewDescriptorFrame(frame_index), false,
+      SecondaryStream::camera_preview, frame_index);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
@@ -1736,10 +1745,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
   }
 
-  if (m_overlay_system && m_overlay_system->hasActiveOutline()) {
-    m_overlay_system->draw_outline(command_buffer);
-  }
-
   if (m_overlay_system) {
     if (m_overlay_system->hasActiveOutline()) {
       m_overlay_system->draw_outline(command_buffer);
@@ -1754,7 +1759,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
 
   if (m_ssao_pass && frame_state.shading.ssao_enabled) {
     m_ssao_pass->apply(command_buffer, vkOffscreenRt(this), frame_state.shading,
-                       projection, near_clip, far_clip);
+                       projection, near_clip, far_clip, m_current_frame);
   }
 
   if (m_overlay_system) {

@@ -10,6 +10,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/function/render/vulkan/bindless_texture_table.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan/vulkan_texture.h"
 
@@ -59,6 +60,9 @@ class VulkanContext final {
       const VkGraphicsPipelineCreateInfo* create_infos, VkPipeline* pipelines);
 
   BindlessTextureTable& bindlessTextureTable() { return m_bindless_table; }
+  SecondaryCommandBufferPool& secondaryCommandBuffers() {
+    return m_secondary_command_buffers;
+  }
 
   /// One GPU texture per asset identity on this device (viewport + Mesh Preview).
   VulkanTexture* ensureUploadedTexture(VulkanAllocator* allocator,
@@ -111,6 +115,7 @@ class VulkanContext final {
   VkPipelineCache m_pipeline_cache{VK_NULL_HANDLE};
   eastl::string m_slang_build_tag;
   BindlessTextureTable m_bindless_table;
+  SecondaryCommandBufferPool m_secondary_command_buffers;
   eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
       m_uploaded_textures;
   eastl::vector<RetiredSampledImage> m_retired_sampled_images;

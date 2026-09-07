@@ -7,6 +7,7 @@
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_gpu_buffer.h"
 
@@ -57,7 +58,7 @@ rhi::PixelFormat VulkanOffscreenTarget::colorFormat() const {
 
 void VulkanOffscreenTarget::beginRenderPass(
     rhi::ICommandList& command_list, const rhi::ClearValue* clears,
-    uint32_t clear_count) {
+    uint32_t clear_count, rhi::SubpassContents contents) {
   ASSERT(m_target);
   auto& vk_list = static_cast<VulkanCommandList&>(command_list);
   VkCommandBuffer cmd = vk_list.vkCommandBuffer();
@@ -81,7 +82,8 @@ void VulkanOffscreenTarget::beginRenderPass(
   rp_info.clearValueCount = clear_count;
   rp_info.pClearValues = vk_clears;
 
-  vkCmdBeginRenderPass(cmd, &rp_info, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &rp_info,
+                       SecondaryCommandBufferPool::toVkContents(contents));
 }
 
 void VulkanOffscreenTarget::endRenderPass(rhi::ICommandList& command_list) {

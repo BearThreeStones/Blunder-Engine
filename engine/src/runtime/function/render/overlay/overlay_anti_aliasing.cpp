@@ -16,6 +16,7 @@
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/viewport_style.h"
 #include "runtime/function/render/vulkan/vulkan_shader.h"
 
@@ -589,16 +590,24 @@ void OverlayAntiAliasing::apply(VkCommandBuffer cmd,
   begin.renderArea.extent = {m_width, m_height};
   begin.clearValueCount = 2;
   begin.pClearValues = clears;
-  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  SecondaryCommandBufferPool& pool = m_context->secondaryCommandBuffers();
+  const VkCommandBuffer secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::overlay_aa, state.frame_index,
+      begin.renderPass, begin.framebuffer);
+
+  vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+  vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_pipeline_layout, 0, 1, &m_descriptor_set, 0,
                           nullptr);
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
-  vkCmdDraw(cmd, 3, 1, 0, 0);
+  vkCmdSetViewport(secondary, 0, 1, &viewport);
+  vkCmdSetScissor(secondary, 0, 1, &scissor);
+  vkCmdDraw(secondary, 3, 1, 0, 0);
+  pool.end(SecondaryStream::viewport, SecondaryPass::overlay_aa,
+           state.frame_index);
+  SecondaryCommandBufferPool::execute(cmd, secondary);
   vkCmdEndRenderPass(cmd);
 
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);

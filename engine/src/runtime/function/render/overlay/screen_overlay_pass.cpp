@@ -4,6 +4,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/offscreen_render_target.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 
 namespace Blunder {
@@ -117,7 +118,8 @@ void ScreenOverlayPass::shutdown() {
   m_vk_context = nullptr;
 }
 
-void ScreenOverlayPass::begin(VkCommandBuffer cmd) {
+void ScreenOverlayPass::begin(VkCommandBuffer cmd,
+                              rhi::SubpassContents contents) {
   ASSERT(m_offscreen_target);
   ASSERT(m_render_pass != VK_NULL_HANDLE);
 
@@ -129,7 +131,8 @@ void ScreenOverlayPass::begin(VkCommandBuffer cmd) {
   rp_begin.renderArea.offset = {0, 0};
   rp_begin.renderArea.extent = extent;
   rp_begin.clearValueCount = 0;
-  vkCmdBeginRenderPass(cmd, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &rp_begin,
+                       SecondaryCommandBufferPool::toVkContents(contents));
 }
 
 void ScreenOverlayPass::end(VkCommandBuffer cmd) {

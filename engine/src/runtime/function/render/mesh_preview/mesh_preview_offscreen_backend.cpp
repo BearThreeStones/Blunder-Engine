@@ -482,7 +482,8 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
   m_forward_path->renderFrameTo(
       m_offscreen.get(), command_buffer, frame_state, opaque_draws.data(),
       static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
-      static_cast<uint32_t>(transparent_draws.size()), 0u, false);
+      static_cast<uint32_t>(transparent_draws.size()), 0u, false,
+      SecondaryStream::immediate, 0u);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(context, command_buffer);
@@ -493,6 +494,7 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
   OffscreenRenderTarget* native_target = vk_target->nativeTarget();
   if (native_target == nullptr) {
     context->endImmediateCommands(command_buffer);
+    context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
     return false;
   }
 
@@ -507,6 +509,7 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
                          m_readback_staging->getBuffer(), 1, &copy_region);
   m_offscreen->transitionToShaderRead(command_list);
   context->endImmediateCommands(command_buffer);
+  context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
 
   const VkDeviceSize byte_count =
       static_cast<VkDeviceSize>(request.width) * request.height * 4u;
@@ -626,7 +629,8 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
   m_forward_path->renderFrameTo(
       m_offscreen.get(), command_buffer, frame_state, opaque_draws.data(),
       static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
-      static_cast<uint32_t>(transparent_draws.size()), 0u, false);
+      static_cast<uint32_t>(transparent_draws.size()), 0u, false,
+      SecondaryStream::immediate, 0u);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(context, command_buffer);
@@ -637,6 +641,7 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
   OffscreenRenderTarget* native_target = vk_target->nativeTarget();
   if (native_target == nullptr) {
     context->endImmediateCommands(command_buffer);
+    context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
     return false;
   }
 
@@ -651,6 +656,7 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
                          m_readback_staging->getBuffer(), 1, &copy_region);
   m_offscreen->transitionToShaderRead(command_list);
   context->endImmediateCommands(command_buffer);
+  context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
 
   const VkDeviceSize byte_count =
       static_cast<VkDeviceSize>(width) * height * 4u;

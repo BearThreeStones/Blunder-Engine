@@ -2,6 +2,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "runtime/function/render/rhi/rhi_types.h"
+
 namespace Blunder {
 
 class OffscreenRenderTarget;
@@ -17,7 +19,7 @@ class ScreenOverlayPass final {
   void initialize(VulkanContext* ctx, OffscreenRenderTarget* offscreen);
   void shutdown();
 
-  void begin(VkCommandBuffer cmd);
+  void begin(VkCommandBuffer cmd, rhi::SubpassContents contents);
   void end(VkCommandBuffer cmd);
 
   VkRenderPass renderPass() const { return m_render_pass; }

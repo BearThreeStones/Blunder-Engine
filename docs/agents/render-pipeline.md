@@ -12,16 +12,15 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    ├─ resize OffscreenRenderTarget if Slint reports a new central rect size
    ├─ assemble ForwardFrameState + opaque draw list (N mesh sources)
    └─► ForwardRenderPath::renderFrame
-         ├─ RHI beginRenderPass (color + depth clear) on offscreen RT
-         ├─ opaque draw list [0..N) (basic.slang, per-slot descriptors)
-         ├─ transparent meshes
-         ├─ scene overlays (axes, wireframe solids — depth-aware, main color)
+         ├─ shadow pass: PRIMARY begins SECONDARY contents, executes shadow draws
+         ├─ RHI beginRenderPass (color + depth clear) with SECONDARY contents
+         ├─ execute opaque secondary, scene-overlay secondary, transparent secondary
          ├─ RHI endRenderPass → SHADER_READ_ONLY
-   ├─ OverlaySystem::draw_outline (ID prepass + edge resolve → main color)
-   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT: grid lines → line_tx)
-   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang → main color)
-   ├─ SsaOPass::apply (composite AO onto main color)
-   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD: navigate gizmo)
+   ├─ OverlaySystem::draw_outline (ID prepass + edge resolve, each via secondary execute)
+   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT via secondary execute)
+   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang via secondary execute)
+   ├─ SsaOPass::apply (AO + composite via secondary execute; barriers stay on PRIMARY)
+   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD via secondary execute)
    ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
    ├─ RHI transitionToShaderRead
    ├─ submit (fence, no stall)

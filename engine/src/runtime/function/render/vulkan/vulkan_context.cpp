@@ -184,6 +184,8 @@ void VulkanContext::shutdown() {
     vkDeviceWaitIdle(m_device);
   }
 
+  m_secondary_command_buffers.shutdown();
+
   flushRetiredSampledImages(true);
 
   savePipelineCache();
@@ -785,6 +787,7 @@ void VulkanContext::createLogicalDevice() {
   m_present_queue = m_graphics_queue;
 
   createImmediateCommandPool();
+  m_secondary_command_buffers.initialize(this);
 }
 
 void VulkanContext::createImmediateCommandPool() {

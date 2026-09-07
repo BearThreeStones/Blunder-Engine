@@ -15,6 +15,7 @@
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_shader.h"
 #include "runtime/function/render/vulkan/vulkan_texture.h"
 #include "runtime/function/render/viewport_style.h"
@@ -817,7 +818,7 @@ void SsaOPass::uploadUniforms(const BlinnPhongEditorSettings& settings,
 void SsaOPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
                      const BlinnPhongEditorSettings& settings,
                      const glm::mat4& projection, float near_clip,
-                     float far_clip) {
+                     float far_clip, uint32_t secondary_frame) {
   if (!offscreen || !settings.ssao_enabled || !m_generate_pipeline ||
       m_width == 0 || m_height == 0) {
     return;
@@ -883,14 +884,22 @@ void SsaOPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
   ao_begin.renderArea.extent = {m_width, m_height};
   ao_begin.clearValueCount = 1;
   ao_begin.pClearValues = &ao_clear;
-  vkCmdBeginRenderPass(cmd, &ao_begin, VK_SUBPASS_CONTENTS_INLINE);
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_generate_pipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  vkCmdBeginRenderPass(cmd, &ao_begin,
+                       VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+  SecondaryCommandBufferPool& pool = m_context->secondaryCommandBuffers();
+  const VkCommandBuffer ao_secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::ssao_ao, secondary_frame,
+      ao_begin.renderPass, ao_begin.framebuffer);
+  vkCmdBindPipeline(ao_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_generate_pipeline);
+  vkCmdBindDescriptorSets(ao_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_generate_pipeline_layout, 0, 1,
                           &m_generate_descriptor_set, 0, nullptr);
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
-  vkCmdDraw(cmd, 3, 1, 0, 0);
+  vkCmdSetViewport(ao_secondary, 0, 1, &viewport);
+  vkCmdSetScissor(ao_secondary, 0, 1, &scissor);
+  vkCmdDraw(ao_secondary, 3, 1, 0, 0);
+  pool.end(SecondaryStream::viewport, SecondaryPass::ssao_ao, secondary_frame);
+  SecondaryCommandBufferPool::execute(cmd, ao_secondary);
   vkCmdEndRenderPass(cmd);
   m_ao_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -912,15 +921,23 @@ void SsaOPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
   composite_begin.renderArea.extent = {m_width, m_height};
   composite_begin.clearValueCount = 1;
   composite_begin.pClearValues = &composite_clear;
-  vkCmdBeginRenderPass(cmd, &composite_begin, VK_SUBPASS_CONTENTS_INLINE);
+  vkCmdBeginRenderPass(cmd, &composite_begin,
+                       VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_apply_pipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  const VkCommandBuffer composite_secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::ssao_composite, secondary_frame,
+      composite_begin.renderPass, composite_begin.framebuffer);
+  vkCmdBindPipeline(composite_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_apply_pipeline);
+  vkCmdBindDescriptorSets(composite_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_apply_pipeline_layout, 0, 1,
                           &m_apply_descriptor_set, 0, nullptr);
-  vkCmdSetViewport(cmd, 0, 1, &viewport);
-  vkCmdSetScissor(cmd, 0, 1, &scissor);
-  vkCmdDraw(cmd, 3, 1, 0, 0);
+  vkCmdSetViewport(composite_secondary, 0, 1, &viewport);
+  vkCmdSetScissor(composite_secondary, 0, 1, &scissor);
+  vkCmdDraw(composite_secondary, 3, 1, 0, 0);
+  pool.end(SecondaryStream::viewport, SecondaryPass::ssao_composite,
+           secondary_frame);
+  SecondaryCommandBufferPool::execute(cmd, composite_secondary);
   vkCmdEndRenderPass(cmd);
 
   offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
