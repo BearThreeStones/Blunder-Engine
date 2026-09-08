@@ -6,6 +6,7 @@
 
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
+#include "runtime/core/object/entity_store.h"
 #include "runtime/core/object/object_id.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/camera_component.h"
@@ -21,7 +22,7 @@ class Object;
 class Skeleton;
 
 /// Runtime container for entities spawned from a Scene asset (Stride SceneInstance).
-class SceneInstance final {
+class SceneInstance final : public IEntityStore {
  public:
   SceneInstance() = default;
   ~SceneInstance();
@@ -41,7 +42,12 @@ class SceneInstance final {
 
   EntityId createEntity(eastl::string name, const Vec3& position,
                         const Quat& rotation, const Vec3& scale,
-                        EntityId parent_id = k_invalid_entity_id);
+                        EntityId parent_id = k_invalid_entity_id) override;
+
+  bool getTransform(EntityId id, Vec3& out_position, Quat& out_rotation,
+                    Vec3& out_scale) const override;
+  bool setTransform(EntityId id, const Vec3& position, const Quat& rotation,
+                    const Vec3& scale) override;
 
   /// Soft-delete: keep EntityId stable; hide from editable document.
   bool softDeleteEntity(EntityId id);
@@ -62,7 +68,7 @@ class SceneInstance final {
   size_t getEntityCount() const { return m_entities.size(); }
   Mat4 getWorldMatrix(EntityId id) const;
 
-  void markTransformsDirty() { m_world_matrices_dirty = true; }
+  void markTransformsDirty() override { m_world_matrices_dirty = true; }
   bool isWorldMatricesDirty() const { return m_world_matrices_dirty; }
 
   EntityId getEntityIdAtIndex(size_t index) const;

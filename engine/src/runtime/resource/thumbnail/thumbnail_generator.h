@@ -78,6 +78,7 @@ class ThumbnailGenerator final {
   ThumbnailGenerationQueue m_queue;
   uint32_t m_thumbnail_size{128};
   bool m_is_initialized{false};
+  bool m_defer_thumbnail{false};
 };
 
 }  // namespace Blunder

@@ -41,6 +41,7 @@ struct SceneThumbnailRenderResult {
   uint32_t width{0};
   uint32_t height{0};
   MeshPreviewCameraFrame framing{};
+  bool textures_pending{false};
 };
 
 /// Temporary on-disk Scene Asset still (Play camera, square aspect for thumbs).

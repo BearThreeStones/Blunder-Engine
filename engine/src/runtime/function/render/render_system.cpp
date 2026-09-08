@@ -3,6 +3,7 @@
 #include <limits>
 
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/function/job/job_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
@@ -71,6 +72,7 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan/vulkan_pipeline.h"
 #include "runtime/function/render/vulkan/vulkan_texture.h"
+#include "runtime/function/render/texture_loader.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
 #include "runtime/function/render/vulkan_backend/vulkan_offscreen_target.h"
@@ -243,6 +245,22 @@ RenderSystem::RenderSystem() = default;
 
 RenderSystem::~RenderSystem() { shutdown(); }
 
+void RenderSystem::initializeTextureLoader() {
+  m_texture_loader = eastl::make_unique<TextureLoader>();
+  TextureLoader::InitInfo info;
+  info.job_system = g_runtime_global_context.m_job_system.get();
+  if (isVulkanBackend()) {
+    VulkanContext* context = vkCtx(this);
+    VulkanAllocator* allocator = vkAlloc(this);
+    if (context != nullptr && allocator != nullptr &&
+        context->getDevice() != VK_NULL_HANDLE) {
+      info.context = context;
+      info.allocator = allocator;
+    }
+  }
+  m_texture_loader->initialize(info);
+}
+
 bool RenderSystem::isVulkanBackend() const {
   return m_backend && m_backend->type() == rhi::RenderBackendType::Vulkan;
 }
@@ -306,9 +324,12 @@ void RenderSystem::initializeD3D12SkeletonPath(
   if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
     m_editor_camera->setInteractionLocked(true);
   }
+  initializeTextureLoader();
 }
 
 void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
+  initializeTextureLoader();
+
   rhi::OffscreenTargetDesc offscreen_desc{};
   defaultOffscreenExtent(info, offscreen_desc.width, offscreen_desc.height);
   m_offscreen = vkBackend(this)->device().createOffscreenTarget(offscreen_desc);
@@ -422,7 +443,8 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
                              k_smoke_texture_size, 4u,
                              buildSmokeCheckerboardPixels(k_smoke_texture_size,
                                                           k_smoke_texture_size));
-  m_fallback_texture = ensureTextureUploaded(&smoke_asset);
+  m_fallback_texture =
+      vkCtx(this)->ensureUploadedTexture(vkAlloc(this), smoke_asset);
 
   if (m_preview_settings_source != nullptr) {
     m_preview_settings_source->setBlinnPhongMaterialSource(m_inspector_material.get());
@@ -685,7 +707,6 @@ void RenderSystem::pollZeroCopyAndPresent() {
     return;
   }
 
-  VkDevice device = vkCtx(this)->getDevice();
   uint32_t best_slot = UINT32_MAX;
   uint64_t best_generation = 0;
   uint32_t best_width = 0;
@@ -698,8 +719,7 @@ void RenderSystem::pollZeroCopyAndPresent() {
       continue;
     }
 
-    VkFence fence = vkSync(this)->getInFlightFence(slot);
-    if (vkGetFenceStatus(device, fence) != VK_SUCCESS) {
+    if (!vkSync(this)->slotReached(slot)) {
       continue;
     }
 
@@ -743,21 +763,15 @@ bool RenderSystem::tryBeginRecordingSlot(const uint32_t slot) {
   if (!isVulkanBackend() || slot >= VulkanSync::k_max_frames_in_flight) {
     return false;
   }
-  VkDevice device = vkCtx(this)->getDevice();
-  VkFence fence = vkSync(this)->getInFlightFence(slot);
-  const VkResult fence_status = vkGetFenceStatus(device, fence);
-  if (fence_status == VK_NOT_READY) {
+  if (!vkSync(this)->slotReached(slot)) {
     return false;
   }
-  if (fence_status != VK_SUCCESS) {
-    const VkResult wait_result =
-        vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
-    if (wait_result != VK_SUCCESS) {
-      return false;
-    }
+  const VkResult wait_result =
+      vkSync(this)->waitSlot(slot, k_fence_wait_timeout_ns);
+  if (wait_result != VK_SUCCESS) {
+    return false;
   }
   vkCtx(this)->onInFlightFenceRetired(slot);
-  vkResetFences(device, 1, &fence);
   SecondaryCommandBufferPool& secondary_pool =
       vkCtx(this)->secondaryCommandBuffers();
   secondary_pool.resetFrame(SecondaryStream::viewport, slot);
@@ -1117,8 +1131,7 @@ void RenderSystem::tryPresentCameraPreview() {
     clearCameraPreviewPresentation();
     return;
   }
-  VkFence fence = vkSync(this)->getInFlightFence(m_camera_preview_readback_slot);
-  if (vkGetFenceStatus(vkCtx(this)->getDevice(), fence) != VK_SUCCESS) {
+  if (!vkSync(this)->slotReached(m_camera_preview_readback_slot)) {
     return;
   }
   static_cast<SlintSystem*>(m_viewport_layout_source)
@@ -1134,7 +1147,16 @@ VulkanTexture* RenderSystem::ensureTextureUploaded(
       !vkCtx(this)) {
     return nullptr;
   }
+  if (m_texture_loader) {
+    return m_texture_loader->request(texture_asset);
+  }
   return vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
+}
+
+void RenderSystem::dropInFlightTextures() {
+  if (m_texture_loader) {
+    m_texture_loader->dropScene();
+  }
 }
 
 void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
@@ -1297,6 +1319,10 @@ void RenderSystem::shutdown() {
     return;
   }
 
+  if (m_texture_loader) {
+    m_texture_loader->stopAndWaitCpu();
+  }
+
   if (isVulkanBackend()) {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
     resetZeroCopyPresentState();
@@ -1306,6 +1332,11 @@ void RenderSystem::shutdown() {
     }
     m_play_frame_staging_w = 0;
     m_play_frame_staging_h = 0;
+  }
+
+  if (m_texture_loader) {
+    m_texture_loader->shutdown();
+    m_texture_loader.reset();
   }
 
   if (m_renderdoc_capture) {
@@ -1384,6 +1415,12 @@ void RenderSystem::requestSceneCameraFocus() {
 
 void RenderSystem::tick(float delta_time, uint32_t target_width,
                         uint32_t target_height) {
+  if (m_texture_loader) {
+    m_texture_loader->tick();
+    if (m_texture_loader->consumeResidencyChanged()) {
+      m_defer_viewport_for_texture_residency = true;
+    }
+  }
   if (!m_backend || !m_offscreen) {
     return;
   }
@@ -1438,6 +1475,12 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   const VkExtent2D offscreen_extent{offscreen_extent_rhi.width,
                                     offscreen_extent_rhi.height};
   if (offscreen_extent.width == 0 || offscreen_extent.height == 0) {
+    return;
+  }
+  if (m_defer_viewport_for_texture_residency) {
+    m_defer_viewport_for_texture_residency = false;
+    requestViewportRedraw();
+    pollViewportPresent();
     return;
   }
   if (target_width > 0 && target_height > 0 &&
@@ -1724,9 +1767,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     append_forward_draw(mesh_draw, transparent_draws);
   }
 
-  VkFence in_flight_fence = vkSync(this)->getInFlightFence(m_current_frame);
-
   VkCommandBuffer command_buffer =
+      m_mesh_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
       m_mesh_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
   vkResetCommandBuffer(command_buffer, 0);
 
@@ -1769,7 +1811,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
 
-  // Zero-copy path uses the same async fence polling as CPU readback: submit
+  // Zero-copy path uses the same async timeline poll as CPU readback: submit
   // without blocking, present the newest completed frame via pollZeroCopyAndPresent().
   const bool zero_copy_viewport = usesZeroCopyViewport();
 
@@ -1809,8 +1851,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.commandBufferCount = 1;
   submit_info.pCommandBuffers = &command_buffer;
-  vkQueueSubmit(vkCtx(this)->getGraphicsQueue(), 1, &submit_info,
-                in_flight_fence);
+  const uint64_t timeline_value =
+      vkSync(this)->queueSubmit(vkCtx(this)->getGraphicsQueue(), submit_info);
+  vkSync(this)->setSlotValue(m_current_frame, timeline_value);
 
   if (preview_recorded) {
     m_camera_preview_readback_pending = true;
@@ -1826,10 +1869,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   } else if (m_viewport_bridge) {
     m_viewport_bridge->notifyGpuSubmitted(m_current_frame, offscreen_extent.width,
                                           offscreen_extent.height);
-    // Async readback: do NOT block on the fence here. pollAndPresent() uses
-    // vkGetFenceStatus (non-blocking) to check if any previous frame's staging
-    // copy has completed. The viewport displays ~1 frame behind the GPU, which
-    // eliminates the per-frame CPU stall and pipelines GPU/CPU work.
+    // Async readback: do NOT block on the timeline here. pollAndPresent() polls
+    // the slot value to check if any previous frame's staging copy has completed.
     pollViewportPresent();
   }
 

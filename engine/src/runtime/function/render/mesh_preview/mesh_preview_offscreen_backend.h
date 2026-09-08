@@ -77,6 +77,9 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
                               const eastl::string& cache_key);
   VulkanTexture* ensureTextureUploaded(const Texture2DAsset* texture_asset);
   VulkanTexture* getFallbackTexture();
+  bool lastMaterialTexturesPending() const override {
+    return m_last_textures_incomplete;
+  }
 
   rhi::IRenderBackend* m_render_backend{nullptr};
   AssetManager* m_asset_manager{nullptr};
@@ -95,6 +98,7 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
   uint32_t m_pipeline_width{0};
   uint32_t m_pipeline_height{0};
   uint32_t m_last_submitted_draw_count{0};
+  bool m_last_textures_incomplete{false};
 };
 
 }  // namespace Blunder

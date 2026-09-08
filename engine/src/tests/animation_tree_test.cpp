@@ -870,6 +870,49 @@ void test_state_machine_travel_blend_space_state_feeds_base_pose() {
                         Vec3(5.0f, 0.0f, 0.0f)));
 }
 
+void test_player_loop_wraps_blend_space_sample_time() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("idle", idle_guid);
+  player.injectClipData(idle_guid, idle);
+
+  tree.addBlendSpacePoint("Locomotion", "idle", 0.0f);
+  tree.setBlendSpaceScalar("Locomotion", 0.0f);
+  expect_true("register locomotion blend space state",
+              tree.setStateBlendSpace("Locomotion", "Locomotion"));
+  expect_true("activate tree", tree.setActive(true));
+  expect_true("start locomotion", tree.start("Locomotion"));
+
+  tree.advance(1.5f);
+  expect_true("loop off holds last frame",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+  expect_true("loop off sample time keeps growing",
+              tree.getSampleTime() > 1.0f);
+
+  tree.start("Locomotion");
+  player.setLoop(true);
+  tree.advance(1.5f);
+  expect_true("loop on wraps sample time",
+              float_near(tree.getSampleTime(), 0.5f));
+  expect_true("loop on samples wrapped pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+}
+
 void test_state_machine_start_resets_sample_time() {
   using namespace Blunder;
 
@@ -1728,6 +1771,7 @@ int main() {
   test_blend_space1d_base_then_add2_stacks();
   test_state_machine_travel_clip_state_feeds_base_pose();
   test_state_machine_travel_blend_space_state_feeds_base_pose();
+  test_player_loop_wraps_blend_space_sample_time();
   test_state_machine_start_resets_sample_time();
   test_state_machine_travel_unknown_state_fails();
   test_state_machine_travel_switches_clip_to_blend_space();

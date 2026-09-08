@@ -32,6 +32,8 @@
 #include "runtime/function/render/vulkan_backend/vulkan_offscreen_target.h"
 #include "runtime/function/render/vulkan_backend/vulkan_render_backend.h"
 #include "runtime/function/scene/gpu_skinning.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
@@ -345,6 +347,16 @@ VulkanTexture* MeshPreviewOffscreenBackend::ensureTextureUploaded(
   if (context == nullptr || allocator == nullptr) {
     return nullptr;
   }
+  if (g_runtime_global_context.m_render_system) {
+    VulkanTexture* uploaded =
+        g_runtime_global_context.m_render_system->ensureTextureUploaded(
+            texture_asset);
+    if (uploaded == nullptr &&
+        context->isAsyncTextureUploadPending(gpuTextureCacheKey(*texture_asset))) {
+      m_last_textures_incomplete = true;
+    }
+    return uploaded;
+  }
   return context->ensureUploadedTexture(allocator, *texture_asset);
 }
 
@@ -397,6 +409,7 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
 
   out_rgba.clear();
   m_last_submitted_draw_count = 0;
+  m_last_textures_incomplete = false;
   if (!framing.ok || !ensureResources(request.width, request.height) ||
       m_forward_path == nullptr) {
     return false;
@@ -537,6 +550,7 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
     eastl::vector<uint8_t>& out_rgba, const SceneInstance* lighting_scene) {
   out_rgba.clear();
   m_last_submitted_draw_count = 0;
+  m_last_textures_incomplete = false;
   if (!framing.ok || draws.empty() || !ensureResources(width, height) ||
       m_forward_path == nullptr) {
     return false;

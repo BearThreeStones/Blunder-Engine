@@ -30,7 +30,7 @@ export LD_LIBRARY_PATH="/workspace/.cmake_deps/slang_sdk-src/lib:/workspace/.cma
 ## Key gotchas
 
 - `EASTL_USER_DEFINED_ALLOCATOR` must be defined globally; without it, EASTL's inline allocator implementations conflict with the project's custom `eastl_allocator.cpp`.
-- `cmake/slint.cmake` and `cmake/slang.cmake` are Windows-only; the Linux build uses `cmake/slint_linux.cmake` and `cmake/slang_linux.cmake` (included by `CMakeLists_linux.cmake`). Linux does not source-build the Slint fork; it uses the SDK tarball. Editor Skia on Linux binds X11 through that SDK. Fork-only APIs (shared Vulkan, dirty regions, borrowed viewport textures) stay Windows-only.
+- `cmake/slint.cmake` and `cmake/slang.cmake` are Windows-only; the Linux build uses `cmake/slint_linux.cmake` and `cmake/slang_linux.cmake` (included by `CMakeLists_linux.cmake`). Linux does not source-build the Slint fork; it uses the SDK tarball. Editor Skia on Linux binds X11 through that SDK. Fork-only APIs (shared Vulkan, dirty regions, borrowed viewport textures) stay Windows-only. The SDK binary also needs `libinput` (linuxkms).
 - `CMAKE_POSITION_INDEPENDENT_CODE` is ON so `libblunder_engine_c.so` can link STATIC `engine_runtime`. Linux assimp builds bundled zlib instead of non-PIC `libz.a`.
 - `CMakeLists_linux.cmake` must include `cmake/blunder_outputs.cmake` (same helpers as the Windows root lists) so editor/player configure can call `blunder_set_debugger_working_directory`. Enable `C` as well as `CXX` (`stb` / `cgltf` / SDL are C).
 - `engine/3rdparty/cgltf/` is header-only with no upstream CMakeLists.txt; a minimal one must exist for `add_subdirectory()` to work.

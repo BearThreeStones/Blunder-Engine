@@ -109,10 +109,7 @@ void UIViewportBridge::waitForRecordingSlot(const uint32_t slot) {
     if (!m_context || !m_sync || slot >= k_frames_in_flight) {
       return;
     }
-    VkDevice device = m_context->getDevice();
-    VkFence fence = m_sync->getInFlightFence(slot);
-    vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
-    vkResetFences(device, 1, &fence);
+    m_sync->waitSlot(slot, k_fence_wait_timeout_ns);
   }
 }
 
@@ -120,17 +117,10 @@ bool UIViewportBridge::tryBeginRecordingSlot(const uint32_t slot) {
   if (!m_context || !m_sync || slot >= k_frames_in_flight) {
     return false;
   }
-  VkDevice device = m_context->getDevice();
-  VkFence fence = m_sync->getInFlightFence(slot);
-  const VkResult fence_status = vkGetFenceStatus(device, fence);
-  if (fence_status == VK_NOT_READY) {
+  if (!m_sync->slotReached(slot)) {
     return false;
   }
-  if (fence_status != VK_SUCCESS) {
-    vkWaitForFences(device, 1, &fence, VK_TRUE, k_fence_wait_timeout_ns);
-  }
-  vkResetFences(device, 1, &fence);
-  return true;
+  return m_sync->waitSlot(slot, k_fence_wait_timeout_ns) == VK_SUCCESS;
 }
 
 VulkanBuffer* UIViewportBridge::stagingBuffer(const uint32_t slot) {
@@ -161,9 +151,7 @@ void UIViewportBridge::tryMapSlot(const uint32_t slot) {
     return;
   }
 
-  VkFence fence = m_sync->getInFlightFence(slot);
-  const VkResult fence_status = vkGetFenceStatus(m_context->getDevice(), fence);
-  if (fence_status != VK_SUCCESS) {
+  if (!m_sync->slotReached(slot)) {
     return;
   }
 

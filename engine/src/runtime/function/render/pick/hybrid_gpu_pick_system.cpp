@@ -23,26 +23,11 @@ void HybridGpuPickSystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   if (m_context == nullptr) {
     return;
   }
-
-  VkFenceCreateInfo fence_info{};
-  fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-  fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-  const VkResult fence_result =
-      vkCreateFence(m_context->getDevice(), &fence_info, nullptr,
-                    &m_gpu_pass.fence);
-  if (fence_result != VK_SUCCESS) {
-    LOG_FATAL("[HybridGpuPickSystem] vkCreateFence failed: {}",
-              static_cast<int>(fence_result));
-  }
 }
 
 void HybridGpuPickSystem::shutdown() {
   cancelInFlight();
   m_broad_phase.shutdown();
-  if (m_context != nullptr && m_gpu_pass.fence != VK_NULL_HANDLE) {
-    vkDestroyFence(m_context->getDevice(), m_gpu_pass.fence, nullptr);
-    m_gpu_pass.fence = VK_NULL_HANDLE;
-  }
   m_pick_overlay = nullptr;
   m_context = nullptr;
   m_render_system = nullptr;
@@ -56,17 +41,14 @@ void HybridGpuPickSystem::resetGpuPass() {
     m_context->freeImmediateCommandBuffer(m_gpu_pass.command_buffer);
     m_gpu_pass.command_buffer = VK_NULL_HANDLE;
   }
-  if (m_gpu_pass.fence != VK_NULL_HANDLE) {
-    vkResetFences(m_context->getDevice(), 1, &m_gpu_pass.fence);
-  }
+  m_gpu_pass.timeline_value = 0;
   m_gpu_pass.active = false;
 }
 
 void HybridGpuPickSystem::cancelInFlight() {
-  if (m_context != nullptr && m_gpu_pass.fence != VK_NULL_HANDLE &&
-      m_gpu_pass.active) {
-    vkWaitForFences(m_context->getDevice(), 1, &m_gpu_pass.fence, VK_TRUE,
-                    UINT64_MAX);
+  if (m_context != nullptr && m_context->sync() != nullptr &&
+      m_gpu_pass.active && m_gpu_pass.timeline_value != 0) {
+    m_context->sync()->waitValue(m_gpu_pass.timeline_value, UINT64_MAX);
   }
   resetGpuPass();
   m_request_active = false;
@@ -152,8 +134,8 @@ void HybridGpuPickSystem::submitBroadPass(const Ray& ray, VkBuffer instance_buff
   m_gpu_pass.command_buffer = m_context->beginImmediateCommands();
   m_broad_phase.recordDispatch(m_gpu_pass.command_buffer, ray, instance_buffer,
                                instance_count);
-  m_context->submitImmediateCommandsNoWait(m_gpu_pass.command_buffer,
-                                           m_gpu_pass.fence);
+  m_gpu_pass.timeline_value = m_context->submitImmediateCommandsNoWait(
+      m_gpu_pass.command_buffer);
   m_gpu_pass.active = true;
 }
 
@@ -170,8 +152,8 @@ void HybridGpuPickSystem::submitNarrowPass() {
   m_pick_overlay->recordPixelPickPass(m_gpu_pass.command_buffer, m_pixel_x,
                                       m_pixel_y, m_narrow_draws, m_view,
                                       m_projection, *m_render_system);
-  m_context->submitImmediateCommandsNoWait(m_gpu_pass.command_buffer,
-                                           m_gpu_pass.fence);
+  m_gpu_pass.timeline_value = m_context->submitImmediateCommandsNoWait(
+      m_gpu_pass.command_buffer);
   m_gpu_pass.active = true;
 }
 
@@ -211,14 +193,8 @@ void HybridGpuPickSystem::poll(EditorCamera& /*camera*/, SceneInstance& scene,
     return;
   }
 
-  if (m_gpu_pass.active && m_gpu_pass.fence != VK_NULL_HANDLE) {
-    const VkResult fence_status =
-        vkGetFenceStatus(m_context->getDevice(), m_gpu_pass.fence);
-    if (fence_status == VK_NOT_READY) {
-      return;
-    }
-    if (fence_status != VK_SUCCESS) {
-      cancelInFlight();
+  if (m_gpu_pass.active && m_context->sync() != nullptr) {
+    if (!m_context->sync()->valueReached(m_gpu_pass.timeline_value)) {
       return;
     }
 

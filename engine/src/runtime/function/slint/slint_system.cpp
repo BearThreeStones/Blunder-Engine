@@ -2376,6 +2376,12 @@ void SlintSystem::updateViewportPacingTier() {
       g_runtime_global_context.m_animation_sync_cine_preview->isPlaying()) {
     signal = true;
   }
+  if (PlaySessionController* session =
+          g_runtime_global_context.m_play_session.get()) {
+    if (session->reloadEnabled() && !session->poseOverlay().empty()) {
+      signal = true;
+    }
+  }
 
   const uint64_t now_ns = SDL_GetTicksNS();
   const uint64_t hold_ns = editorViewportInteractiveHoldNs();
@@ -9714,6 +9720,13 @@ void SlintSystem::beginFrame() {
   if (PlaySessionController* session =
           g_runtime_global_context.m_play_session.get()) {
     session->poll();
+    if (session->reloadEnabled() && !session->poseOverlay().empty()) {
+      noteViewportLiveAuthoring();
+      markViewportDirtyRegion();
+      if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->requestViewportRedraw();
+      }
+    }
     if (m_window_component) {
       try {
         ScopedDispatchGuard guard(m_slint_dispatch_depth);

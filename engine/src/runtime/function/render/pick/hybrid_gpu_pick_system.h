@@ -59,7 +59,7 @@ class HybridGpuPickSystem final {
 
   PickFetchStatus tryFetch(PickResult& out);
 
-  /// Poll fence, advance broad/narrow passes, deliver completed picks to viewport system.
+  /// Poll timeline, advance broad/narrow passes, deliver completed picks to viewport system.
   void poll(EditorCamera& camera, SceneInstance& scene, RenderSystem& render_system,
             ViewportPickSystem& viewport_pick);
 
@@ -71,7 +71,7 @@ class HybridGpuPickSystem final {
   };
 
   struct GpuPickPass {
-    VkFence fence{VK_NULL_HANDLE};
+    uint64_t timeline_value{0};
     VkCommandBuffer command_buffer{VK_NULL_HANDLE};
     bool active{false};
   };

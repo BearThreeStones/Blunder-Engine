@@ -41,6 +41,23 @@ void VulkanTexture::createFromTexture2DAsset(VulkanContext* context,
   m_image.uploadTexture2D(asset);
 }
 
+void VulkanTexture::createEmpty(VulkanContext* context,
+                                VulkanAllocator* allocator, uint32_t width,
+                                uint32_t height) {
+  ASSERT(context);
+  ASSERT(allocator);
+  ASSERT(width > 0 && height > 0);
+
+  destroy();
+
+  m_context = context;
+  m_allocator = allocator;
+
+  m_image.create(m_context, m_allocator, width, height,
+                 VK_FORMAT_R8G8B8A8_UNORM,
+                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+}
+
 void VulkanTexture::destroy() {
   if (m_context != nullptr) {
     m_context->bindlessTextureTable().release(this);

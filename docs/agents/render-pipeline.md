@@ -200,22 +200,24 @@ Restore Sponza demo: set `BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset` 
   Release builds (validation off) get zero-copy automatically; in debug set
   `BLUNDER_VK_VALIDATION=0` to enable it.
 - The CPU readback path uses persistently mapped staging buffers and async
-  fence polling; `VulkanSync::k_max_frames_in_flight` staging buffers are
+  timeline polls; `VulkanSync::k_max_frames_in_flight` staging buffers are
   provisioned for double-buffering. The GPU copy runs on frame N; on frame
-  N+1, `tryMapSlot` polls `vkGetFenceStatus` and, if signaled, hands the
-  already-mapped pointer directly to Slint (no intermediate memcpy). The
-  viewport displays ~1 frame behind the GPU.
+  N+1, `tryMapSlot` polls the slot timeline value (`vkWaitSemaphores` with
+  timeout 0) and, if reached, hands the already-mapped pointer directly to
+  Slint (no intermediate memcpy). The viewport displays ~1 frame behind
+  the GPU. See [ADR 0060](../adr/0060-vulkan-timeline-semaphores.md).
 - **Zero-copy double-buffering:** `OffscreenRenderTarget` owns
   `k_buffer_count` (= `VulkanSync::k_max_frames_in_flight`, 2) independent
   color + depth + framebuffer sets. Each frame, `RenderSystem` sets
   `setActiveBufferIndex(m_current_frame)` before recording; the GPU writes
   buffer[slot] while `pollZeroCopyAndPresent()` presents
-  `getImage(completed_slot)` to Slint after the matching fence signals.
-  Slint rebinds automatically when the presented `VkImage` handle changes
-  (slot alternation or resize). This removes same-image write-after-read
-  pressure that previously relied on the render-pass EXTERNAL subpass
-  dependency. Viewport latency is ~1–2 frames. **Not in v1:** timeline
-  semaphore / Skia wait sync.
+  `getImage(completed_slot)` to Slint after the matching timeline value is
+  reached. Slint rebinds automatically when the presented `VkImage` handle
+  changes (slot alternation or resize). This removes same-image
+  write-after-read pressure that previously relied on the render-pass
+  EXTERNAL subpass dependency. Viewport latency is ~1–2 frames. **Not in
+  v1:** Skia wait sync on the timeline (Slint still presents about one
+  frame behind).
 - **Partial Skia composite (viewport-only repaint):** when the Slint fork's
   Vulkan partial-rendering path is enabled (default), orbit/interaction marks
   only the central viewport logical rect dirty via

@@ -308,6 +308,63 @@ target_precompile_headers(classdb_test
 add_test(NAME classdb_test
          COMMAND classdb_test)
 
+add_executable(job_system_test
+    "job_system_test.cpp"
+)
+
+target_link_libraries(job_system_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(job_system_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(job_system_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME job_system_test
+         COMMAND job_system_test)
+
+add_executable(frame_graph_test
+    "frame_graph_test.cpp"
+)
+
+target_link_libraries(frame_graph_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(frame_graph_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(frame_graph_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME frame_graph_test
+         COMMAND frame_graph_test)
+
+add_executable(texture_loader_test
+    "texture_loader_test.cpp"
+)
+
+target_link_libraries(texture_loader_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(texture_loader_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(texture_loader_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME texture_loader_test
+         COMMAND texture_loader_test)
+
 add_executable(secondary_command_buffer_test
     "secondary_command_buffer_test.cpp"
 )
@@ -326,6 +383,25 @@ target_precompile_headers(secondary_command_buffer_test
 
 add_test(NAME secondary_command_buffer_test
          COMMAND secondary_command_buffer_test)
+
+add_executable(timeline_semaphore_test
+    "timeline_semaphore_test.cpp"
+)
+
+target_link_libraries(timeline_semaphore_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(timeline_semaphore_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(timeline_semaphore_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME timeline_semaphore_test
+         COMMAND timeline_semaphore_test)
 
 add_executable(skeleton_modifier_catalog_test
     "skeleton_modifier_catalog_test.cpp"
@@ -1045,31 +1121,6 @@ target_precompile_headers(object_active_test
 add_test(NAME object_active_test
          COMMAND object_active_test)
 
-add_executable(editor_camera_fly_test
-    "editor_camera_fly_test.cpp"
-)
-
-target_link_libraries(editor_camera_fly_test
-    PRIVATE engine_runtime
-    PRIVATE blunder_engine_c_static
-)
-
-target_include_directories(editor_camera_fly_test
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
-    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
-)
-
-if(MSVC)
-    target_compile_options(editor_camera_fly_test PRIVATE /Zc:preprocessor)
-endif()
-
-target_precompile_headers(editor_camera_fly_test
-    REUSE_FROM engine_runtime
-)
-
-add_test(NAME editor_camera_fly_test
-         COMMAND editor_camera_fly_test)
-
 add_executable(shader_resource_layout_test
     "shader_resource_layout_test.cpp"
 )
@@ -1150,6 +1201,30 @@ add_test(NAME engine_gpu_cache_test
 
 blunder_copy_runtime_dlls(engine_gpu_cache_test)
 
+add_executable(editor_camera_fly_test
+    "editor_camera_fly_test.cpp"
+)
+
+target_link_libraries(editor_camera_fly_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(editor_camera_fly_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(editor_camera_fly_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(editor_camera_fly_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME editor_camera_fly_test
+         COMMAND editor_camera_fly_test)
 
 add_executable(hierarchy_row_icons_test
     "hierarchy_row_icons_test.cpp"

@@ -12,41 +12,42 @@ void GameplayInputState::reset() {
 }
 
 GameplayInputSnapshot GameplayInputState::sample(const GameplayInputKeys& keys) {
+  const bool cine_suppressed = cineSegmentService().isGameplayInputSuppressed();
   const bool authoritative = keys.player_host && keys.focused && !keys.paused &&
-                             !cineSegmentService().isGameplayInputSuppressed();
+                             !cine_suppressed;
 
   if (!authoritative) {
     m_space_was_down = keys.space;
     m_current = {};
-    return m_current;
+  } else {
+    float x = 0.f;
+    float y = 0.f;
+    if (keys.d) {
+      x += 1.f;
+    }
+    if (keys.a) {
+      x -= 1.f;
+    }
+    if (keys.w) {
+      y += 1.f;
+    }
+    if (keys.s) {
+      y -= 1.f;
+    }
+    const float len = std::sqrt(x * x + y * y);
+    if (len > 1.e-6f) {
+      x /= len;
+      y /= len;
+    }
+
+    const bool jump = keys.space && !m_space_was_down;
+    m_space_was_down = keys.space;
+
+    m_current.move_x = x;
+    m_current.move_y = y;
+    m_current.jump_pressed = jump;
   }
 
-  float x = 0.f;
-  float y = 0.f;
-  if (keys.d) {
-    x += 1.f;
-  }
-  if (keys.a) {
-    x -= 1.f;
-  }
-  if (keys.w) {
-    y += 1.f;
-  }
-  if (keys.s) {
-    y -= 1.f;
-  }
-  const float len = std::sqrt(x * x + y * y);
-  if (len > 1.e-6f) {
-    x /= len;
-    y /= len;
-  }
-
-  const bool jump = keys.space && !m_space_was_down;
-  m_space_was_down = keys.space;
-
-  m_current.move_x = x;
-  m_current.move_y = y;
-  m_current.jump_pressed = jump;
   return m_current;
 }
 

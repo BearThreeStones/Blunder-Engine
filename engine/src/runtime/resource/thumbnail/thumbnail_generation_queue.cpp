@@ -74,6 +74,7 @@ size_t ThumbnailGenerationQueue::findBestItemIndex() const {
 eastl::vector<ThumbnailQueueCompleted> ThumbnailGenerationQueue::tick(
     uint32_t max_items) {
   eastl::vector<ThumbnailQueueCompleted> completed;
+  eastl::vector<Item> deferred;
   if (m_generator == nullptr || max_items == 0) {
     return completed;
   }
@@ -87,8 +88,16 @@ eastl::vector<ThumbnailQueueCompleted> ThumbnailGenerationQueue::tick(
     ThumbnailQueueCompleted done{};
     done.virtual_path = item.entry.virtual_path;
     done.result = m_generator->ensureThumbnail(item.entry);
-    completed.push_back(done);
+    if (done.result.status == ThumbnailStatus::None) {
+      deferred.push_back(item);
+    } else {
+      completed.push_back(done);
+    }
     --max_items;
+  }
+
+  for (const Item& item : deferred) {
+    upsert(item.entry, item.priority);
   }
 
   return completed;

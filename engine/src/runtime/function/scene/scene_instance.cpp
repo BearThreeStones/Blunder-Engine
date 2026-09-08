@@ -252,7 +252,12 @@ void captureSkeletonModifiers(const SceneInstance& scene, const Object& object,
 
 }  // namespace
 
-SceneInstance::~SceneInstance() { clear(); }
+SceneInstance::~SceneInstance() {
+  if (ObjectDB::getEntityStore() == this) {
+    ObjectDB::setEntityStore(nullptr);
+  }
+  clear();
+}
 
 void SceneInstance::instantiate(const Scene& scene) {
   clear();
@@ -549,6 +554,31 @@ EntityId SceneInstance::createEntity(eastl::string name, const Vec3& position,
   m_world_matrices.resize(m_entities.size(), Mat4(1.0f));
   m_world_matrices_dirty = true;
   return id;
+}
+
+bool SceneInstance::getTransform(EntityId id, Vec3& out_position,
+                                 Quat& out_rotation, Vec3& out_scale) const {
+  const Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return false;
+  }
+  out_position = entity->getPosition();
+  out_rotation = entity->getRotation();
+  out_scale = entity->getScale();
+  return true;
+}
+
+bool SceneInstance::setTransform(EntityId id, const Vec3& position,
+                                 const Quat& rotation, const Vec3& scale) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return false;
+  }
+  entity->setPosition(position);
+  entity->setRotation(rotation);
+  entity->setScale(scale);
+  markTransformsDirty();
+  return true;
 }
 
 bool SceneInstance::softDeleteEntity(EntityId id) {

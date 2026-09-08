@@ -13,6 +13,8 @@ add_library(engine_runtime STATIC
     "function/global/global_context.cpp"
     "function/global/global_context.h"
     "function/global/engine_host_mode.h"
+    "function/job/job_system.cpp"
+    "function/job/job_system.h"
     "function/ui/ui_context.cpp"
     "function/ui/ui_context.h"
     "function/ui/ui_event_queue.cpp"

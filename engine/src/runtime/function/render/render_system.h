@@ -34,6 +34,7 @@ class ShadowMapTarget;
 class MaterialAsset;
 class MeshAsset;
 class Texture2DAsset;
+class TextureLoader;
 class VulkanBuffer;
 class VulkanPipeline;
 class VulkanTexture;
@@ -89,8 +90,8 @@ struct SharedVulkanHandles {
 ///      `ForwardRenderPath`,
 ///   2. transitions the off-screen color image and copies it into a host-visible
 ///      staging buffer,
-///   3. submits the command buffer with a fence and polls previous frames'
-///      fences asynchronously (no blocking stall), and
+///   3. submits the command buffer signaling a timeline value and polls
+///      previous slots asynchronously (no blocking stall), and
 ///   4. pushes the latest completed RGBA8 pixels into the viewport presenter.
 class RenderSystem final {
  public:
@@ -114,6 +115,8 @@ class RenderSystem final {
   void onEvent(Event& event);
 
   VulkanTexture* ensureTextureUploaded(const Texture2DAsset* texture_asset);
+  /// Scene drop: in-flight Texture Loader completions must not write dropped images.
+  void dropInFlightTextures();
   GpuMesh* getOrUploadGpuMesh(const MeshAsset* mesh_asset);
   GpuMesh* getOrUploadGpuMeshByKey(const eastl::string& cache_key,
                                    const void* vertex_bytes,
@@ -182,6 +185,7 @@ class RenderSystem final {
  private:
   void initializeVulkanPath(const RenderSystemInitInfo& info);
   void initializeD3D12SkeletonPath(const RenderSystemInitInfo& info);
+  void initializeTextureLoader();
   void tickVulkan(float delta_time, uint32_t target_width,
                   uint32_t target_height);
   void tickD3D12Skeleton(float delta_time, uint32_t target_width,
@@ -215,6 +219,7 @@ class RenderSystem final {
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;
   eastl::unique_ptr<SsaOPass> m_ssao_pass;
+  eastl::unique_ptr<TextureLoader> m_texture_loader;
 
   eastl::unordered_map<eastl::string, eastl::unique_ptr<GpuMesh>> m_gpu_meshes;
   VulkanTexture* m_fallback_texture{nullptr};
@@ -236,6 +241,7 @@ class RenderSystem final {
   uint32_t m_viewport_render_generation{0};
   uint32_t m_last_rendered_viewport_generation{0};
   bool m_force_viewport_render{true};
+  bool m_defer_viewport_for_texture_residency{false};
 
   struct ZeroCopyPresentSlot {
     uint32_t width{0};

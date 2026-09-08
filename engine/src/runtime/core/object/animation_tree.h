@@ -224,6 +224,8 @@ class AnimationTree {
   void notifyPlayerPoseApplied();
   float getDominantBasePlaybackPosition() const;
   float getDominantBaseClipLength() const;
+  /// Clip length of the StateMachine / BlendSpace base layer (not OneShot / Clip Play).
+  float getBaseLayerClipLength() const;
   bool resolveDominantBaseClip(AnimationClipData& out_clip) const;
   void dispatchDominantMethodKeysCrossed(float prev_time, float new_time);
   void resetMethodDispatchClock(float clock = 0.0f);

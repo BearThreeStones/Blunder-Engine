@@ -228,6 +228,7 @@ void VulkanContext::shutdown() {
   m_physical_device_properties = {};
   m_sampler_anisotropy_enabled = false;
   m_window_system = nullptr;
+  m_sync = nullptr;
   m_uploaded_textures.clear();
   m_retired_sampled_images.clear();
   for (uint32_t i = 0; i < VulkanSync::k_max_frames_in_flight; ++i) {
@@ -241,9 +242,11 @@ VulkanTexture* VulkanContext::ensureUploadedTexture(
     return nullptr;
   }
   const eastl::string key = gpuTextureCacheKey(asset);
-  if (auto it = m_uploaded_textures.find(key);
-      it != m_uploaded_textures.end()) {
-    return it->second.get();
+  if (VulkanTexture* existing = findUploadedTexture(key)) {
+    return existing;
+  }
+  if (m_async_pending_textures.find(key) != m_async_pending_textures.end()) {
+    return nullptr;
   }
 
   auto uploaded_texture = eastl::make_unique<VulkanTexture>();
@@ -256,6 +259,39 @@ VulkanTexture* VulkanContext::ensureUploadedTexture(
   return uploaded_texture_ptr;
 }
 
+VulkanTexture* VulkanContext::findUploadedTexture(const eastl::string& key) const {
+  auto it = m_uploaded_textures.find(key);
+  if (it == m_uploaded_textures.end()) {
+    return nullptr;
+  }
+  return it->second.get();
+}
+
+void VulkanContext::adoptUploadedTexture(
+    eastl::string key, eastl::unique_ptr<VulkanTexture> texture) {
+  if (key.empty() || !texture) {
+    return;
+  }
+  m_async_pending_textures.erase(key);
+  m_uploaded_textures[eastl::move(key)] = eastl::move(texture);
+}
+
+void VulkanContext::setAsyncTextureUploadPending(const eastl::string& key,
+                                                 bool pending) {
+  if (key.empty()) {
+    return;
+  }
+  if (pending) {
+    m_async_pending_textures.insert(key);
+  } else {
+    m_async_pending_textures.erase(key);
+  }
+}
+
+bool VulkanContext::isAsyncTextureUploadPending(const eastl::string& key) const {
+  return m_async_pending_textures.find(key) != m_async_pending_textures.end();
+}
+
 void VulkanContext::destroyUploadedTextures() {
   for (auto& [key, texture] : m_uploaded_textures) {
     if (texture) {
@@ -263,6 +299,7 @@ void VulkanContext::destroyUploadedTextures() {
     }
   }
   m_uploaded_textures.clear();
+  m_async_pending_textures.clear();
 }
 
 void VulkanContext::destroyRetiredSampledImage(const RetiredSampledImage& image) {
@@ -372,6 +409,7 @@ void VulkanContext::endImmediateCommands(VkCommandBuffer command_buffer) {
   ASSERT(m_device != VK_NULL_HANDLE);
   ASSERT(m_immediate_command_pool != VK_NULL_HANDLE);
   ASSERT(command_buffer != VK_NULL_HANDLE);
+  ASSERT(m_sync != nullptr);
 
   const VkResult end_result = vkEndCommandBuffer(command_buffer);
   if (end_result != VK_SUCCESS) {
@@ -382,55 +420,29 @@ void VulkanContext::endImmediateCommands(VkCommandBuffer command_buffer) {
         static_cast<int>(end_result));
   }
 
-  VkFenceCreateInfo fence_info{};
-  fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-
-  VkFence fence = VK_NULL_HANDLE;
-  const VkResult fence_result =
-      vkCreateFence(m_device, &fence_info, nullptr, &fence);
-  if (fence_result != VK_SUCCESS) {
-    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
-                         &command_buffer);
-    LOG_FATAL(
-        "[VulkanContext::endImmediateCommands] vkCreateFence failed: {}",
-        static_cast<int>(fence_result));
-  }
-
   VkSubmitInfo submit_info{};
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.commandBufferCount = 1;
   submit_info.pCommandBuffers = &command_buffer;
-
-  const VkResult submit_result =
-      vkQueueSubmit(m_graphics_queue, 1, &submit_info, fence);
-  if (submit_result != VK_SUCCESS) {
-    vkDestroyFence(m_device, fence, nullptr);
-    vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
-                         &command_buffer);
-    LOG_FATAL("[VulkanContext::endImmediateCommands] vkQueueSubmit failed: {}",
-              static_cast<int>(submit_result));
-  }
-
-  const VkResult wait_result =
-      vkWaitForFences(m_device, 1, &fence, VK_TRUE, UINT64_MAX);
+  const uint64_t value = m_sync->queueSubmit(m_graphics_queue, submit_info);
+  const VkResult wait_result = m_sync->waitValue(value, UINT64_MAX);
   if (wait_result != VK_SUCCESS) {
-    vkDestroyFence(m_device, fence, nullptr);
     vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
                          &command_buffer);
-    LOG_FATAL("[VulkanContext::endImmediateCommands] vkWaitForFences failed: {}",
-              static_cast<int>(wait_result));
+    LOG_FATAL(
+        "[VulkanContext::endImmediateCommands] wait timeline failed: {}",
+        static_cast<int>(wait_result));
   }
 
-  vkDestroyFence(m_device, fence, nullptr);
   vkFreeCommandBuffers(m_device, m_immediate_command_pool, 1,
                        &command_buffer);
 }
 
-void VulkanContext::submitImmediateCommandsNoWait(
-    VkCommandBuffer command_buffer, VkFence fence) {
+uint64_t VulkanContext::submitImmediateCommandsNoWait(
+    VkCommandBuffer command_buffer) {
   ASSERT(m_device != VK_NULL_HANDLE);
   ASSERT(command_buffer != VK_NULL_HANDLE);
-  ASSERT(fence != VK_NULL_HANDLE);
+  ASSERT(m_sync != nullptr);
 
   const VkResult end_result = vkEndCommandBuffer(command_buffer);
   if (end_result != VK_SUCCESS) {
@@ -444,15 +456,7 @@ void VulkanContext::submitImmediateCommandsNoWait(
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submit_info.commandBufferCount = 1;
   submit_info.pCommandBuffers = &command_buffer;
-
-  const VkResult submit_result =
-      vkQueueSubmit(m_graphics_queue, 1, &submit_info, fence);
-  if (submit_result != VK_SUCCESS) {
-    LOG_FATAL(
-        "[VulkanContext::submitImmediateCommandsNoWait] vkQueueSubmit failed: "
-        "{}",
-        static_cast<int>(submit_result));
-  }
+  return m_sync->queueSubmit(m_graphics_queue, submit_info);
 }
 
 void VulkanContext::freeImmediateCommandBuffer(VkCommandBuffer command_buffer) {
@@ -703,14 +707,25 @@ void VulkanContext::createLogicalDevice() {
   // family supports present on desktop GPUs; the UI side verifies it).
   const float queue_priority = 1.0f;
 
+  VkPhysicalDeviceTimelineSemaphoreFeatures supported_timeline{};
+  supported_timeline.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+
   VkPhysicalDeviceVulkan11Features supported_vulkan11_features{};
   supported_vulkan11_features.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+  supported_vulkan11_features.pNext = &supported_timeline;
 
   VkPhysicalDeviceFeatures2 supported_features2{};
   supported_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
   supported_features2.pNext = &supported_vulkan11_features;
   vkGetPhysicalDeviceFeatures2(m_physical_device, &supported_features2);
+
+  if (!supported_timeline.timelineSemaphore) {
+    LOG_FATAL(
+        "[VulkanContext::createLogicalDevice] selected Vulkan device does not "
+        "support timeline semaphores");
+  }
 
   if (!supported_vulkan11_features.shaderDrawParameters) {
     LOG_FATAL(
@@ -732,9 +747,15 @@ void VulkanContext::createLogicalDevice() {
   m_sampler_anisotropy_enabled =
       enabled_features.samplerAnisotropy == VK_TRUE;
 
+  VkPhysicalDeviceTimelineSemaphoreFeatures enabled_timeline{};
+  enabled_timeline.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+  enabled_timeline.timelineSemaphore = VK_TRUE;
+
   VkPhysicalDeviceDescriptorIndexingFeatures enabled_indexing{};
   enabled_indexing.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+  enabled_indexing.pNext = &enabled_timeline;
   enabled_indexing.runtimeDescriptorArray = VK_TRUE;
   enabled_indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
   enabled_indexing.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
@@ -763,6 +784,15 @@ void VulkanContext::createLogicalDevice() {
   // swapchain (the engine renders off-screen and never presents itself).
   eastl::vector<const char*> device_extensions;
   device_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+  if (VK_VERSION_MINOR(m_physical_device_properties.apiVersion) < 2) {
+    if (!hasDeviceExtension(m_physical_device,
+                           VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME)) {
+      LOG_FATAL(
+          "[VulkanContext::createLogicalDevice] selected Vulkan device does "
+          "not support VK_KHR_timeline_semaphore");
+    }
+    device_extensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+  }
   constexpr const char* k_swapchain_extension = "VK_KHR_swapchain";
   if (m_window_system != nullptr &&
       hasDeviceExtension(m_physical_device, k_swapchain_extension)) {

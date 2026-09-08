@@ -23,6 +23,7 @@ class ISceneStillGpuBackend {
       const MeshPreviewStudioLights& lights, uint32_t width, uint32_t height,
       eastl::vector<uint8_t>& out_rgba,
       const SceneInstance* lighting_scene = nullptr) = 0;
+  virtual bool lastMaterialTexturesPending() const { return false; }
 };
 
 }  // namespace Blunder

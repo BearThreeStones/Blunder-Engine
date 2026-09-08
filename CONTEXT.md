@@ -125,12 +125,38 @@ One provider or intercepting listener installed on a Seam, with a disposer that 
 _Avoid_: Unloading a System to remove one importer, reversible teardown of the Privileged core, using Plugin or Cordis effect as the product term
 
 **Context System**:
-A System looked up from the process-wide runtime context (`RuntimeGlobalContext`). It hosts the Privileged core, or every shipped Host composition starts it (Editor Session and Player). AssetCompiler is a Context System because both hosts cook-if-stale. Torn down only at process shutdown.
-_Avoid_: Putting Editor-only authorship Systems here as the lasting path, treating every current GlobalContext field as a Context System, moving AssetCompiler to the registry while Player still cooks at boot
+A System looked up from the process-wide runtime context (`RuntimeGlobalContext`). It hosts the Privileged core, or every shipped Host composition starts it (Editor Session and Player). AssetCompiler is a Context System because both hosts cook-if-stale. The Job System is a Context System because Editor and Player both schedule Jobs. Torn down only at process shutdown. Decision record: [ADR 0057](docs/adr/0057-task-job-system.md).
+_Avoid_: Putting Editor-only authorship Systems here as the lasting path, treating every current GlobalContext field as a Context System, moving AssetCompiler to the registry while Player still cooks at boot, treating the Job System as Editor-only
 
 **Registered System**:
 A System that at least one shipped Host composition omits. Editor-only authorship belongs here — Content Browser, Selection, Hierarchy, Scene Edit, Document History, Viewport Pick, Placement Preview, Animation Preview, Play Session, thumbnail/preview render services, Asset Import, UiHost, Slint, viewport sink/bridge, Authorship System. Player must not create them. Mounted at process boot via a registry; callers tolerate absence. Still process-lifetime — not a Plugin and not a Seam registration.
 _Avoid_: Plugin, unloading a Registered System while the process runs, conflating Registered System with Seam registration, creating Content Browser or Import inside the Player, Cordis ctx keys for the Privileged core; requiring Slint, UiHost, or the viewport sink in a Headless Editor
+
+### Job scheduling
+
+**Job**:
+A finite piece of CPU work the Job System runs to completion. A Job does not wait, yield, or switch a Fiber. It does not call into Object, ClassDB, SceneInstance, RHI, or Slint. It does not declare an edge onto another Job. It has no error channel: it does not throw and does not return a status. A Job barrier means the batch finished, not that the work was correct. It is not a Merge CI GitHub Actions job and not an OpenSpec `tasks.md` item.
+_Avoid_: Task as the product name, Fiber job, coroutine as this unit, treating Cook / Import / thumbnail-queue work as a Job, treating a GitHub Actions job as this, running engine object or GPU/UI calls inside a Job, a Job-to-Job dependency edge, HRESULT or `exception_ptr` as a Job result
+
+**Job System**:
+A Context System that runs Jobs on Workers and lets the caller wait at a barrier. First slice is fork-join of independent Jobs: the caller sequences phases with a barrier, not a graph. The **Job owner thread** prepares Job data, submits, and waits. While waiting, that thread runs remaining Jobs (help) and is a Worker until the wait finishes. It is not Privileged core, not a Seam, and not a Fiber runtime. It is not a replacement for spdlog, efsw, or SDL dialog threads. v1 has no C-ABI or Blunder.Api Submit surface; Behaviours do not schedule Jobs. Decision record: [ADR 0057](docs/adr/0057-task-job-system.md).
+_Avoid_: Fiber system, task graph as the product name or as v1, thread pool as the product name, treating existing IO or log threads as this System, waiting or submitting from inside a Job, putting the Job System on the Editor-only registry, a wait that sleeps while Jobs remain, a second Submit or Wait thread in v1, a C-ABI or C# Job schedule API in v1
+
+**Worker**:
+An OS thread that runs Jobs. The Job System owns dedicated Workers; that count may be zero, in which case the Job owner thread finishes every Job by helping at the barrier. The Job owner thread is a Worker only while it is in a Job barrier.
+_Avoid_: Fiber, treating the Slint UI thread's identity as a Worker, a dedicated wait-only thread that never runs Jobs, a dedicated Worker that Submits or Waits, requiring at least one dedicated Worker, treating zero dedicated Workers as a deadlock
+
+**Job owner thread**:
+The single external OS thread allowed to Submit Jobs and enter a Job barrier in v1. It is the thread that starts the Job System (process boot: the engine tick thread; tests: the thread that constructs the System). Dedicated Workers are not this thread.
+_Avoid_: Any-thread Complete, a second Submit thread, treating a dedicated Worker as the owner
+
+**Job barrier**:
+The wait that returns when a submitted set of independent Jobs has finished. Not a Job-to-Job edge. The waiting thread helps.
+_Avoid_: Dependency graph node, treating a barrier as a Fiber yield, a Job that waits on another Job
+
+**Job data**:
+Caller-owned bytes a Job may read or write. Prepared before submit and consumed after the wait. Not an Object, not a SceneInstance Entity, not an RHI resource, and not Slint state. Animation Pipeline buffers (Local Pose, Global Pose, Matrix Palette) are this kind of data; they are not the Job System.
+_Avoid_: Passing Object, ClassDB, SceneInstance, RHI, or Slint into a Job; treating a GPU buffer as Job data; treating the Job System itself as pose storage
 
 ### Rendering
 
@@ -141,6 +167,58 @@ _Avoid_: Shader reflection as a synonym of the Reflection kernel; treating frame
 **Pipeline layout**:
 The device object that instantiates a Shader resource layout for one graphics or compute pipeline so those resources can be bound. Not the forward render path and not pass scheduling.
 _Avoid_: Frame graph; “render pipeline” as this object; inventing a second layout description beside the shader
+
+**Frame graph**:
+A retained-mode CPU description of one frame of GPU work: Passes and named Resources with producer/consumer edges. Setup records virtual handles only; it does not allocate GPU memory or record commands. Distinct from Pipeline layout, from the Job System, and from today’s hardcoded ForwardRenderPath. The caller owns the graph object; this slice does not rebuild it every tick and does not use a Frame arena. Decision record: [ADR 0061](docs/adr/0061-frame-graph-cpu-setup.md).
+_Avoid_: Immediate-mode WorldRenderer; FrameGraph as a Vulkan render-pass object; Job graph or UE TaskGraph as this; “render pipeline” as this; treating Packt `TextureHandle` on the resource as the Setup identity; requiring a Frame arena for this slice
+
+**Frame graph handle**:
+A virtual id for a Resource during Setup. Execute is the only phase that may resolve it to an RHI object. Not a Bindless table index and not a Secondary command buffer.
+_Avoid_: `VkImage` / `ID3D12Resource` as this; bindless slot as this; Job data as this
+
+**Transient resource**:
+A Frame graph Resource the graph creates and owns for one frame. It is unallocated at Setup and discarded after its last access in that frame. Not an External resource and not a Bindless table entry.
+_Avoid_: Resource pool as this; treating a Bindless slot as graph-owned; a persistent offscreen target as this
+
+**External resource**:
+A Resource created and kept outside the Frame graph and imported so the graph can track reads, writes, and barriers. Typical cases: the viewport offscreen color/depth, shadow map, history, readback. The graph does not allocate or free its GPU memory.
+_Avoid_: Retained resource as the product name; Resource pool as a third kind; swapchain as an engine-owned surface (Slint still presents)
+
+**Frame graph pass**:
+A node in the Frame graph: one GPU stage that declares reads and writes on Resources. Not a Vulkan render pass object, not a Job, and not a Secondary command buffer.
+_Avoid_: `VkRenderPass` as this; treating ForwardRenderPath as one Pass; a Job as a Pass
+
+**Frame graph compile**:
+The phase that turns Setup into an executable order: producer/consumer edges, topological sort, dead-Pass elimination from Sinks, and a Resource lifetime on each live Resource. On one Frame graph handle, edges follow Setup order (Pass add order, then that Pass’s read/write call order): RAW (Write → later Read), WAW (Write → later Write), and WAR (Read → later Write). Usage does not grow extra edges. Same-Pass accesses never add an edge. Across Passes, a Read takes an edge from the previous Write; a Write takes an edge from the previous Write and from every Read after that previous Write. Read→Read has no edge. This slice has no Resource version type. It does not allocate GPU memory, alias heaps, insert barriers, or record commands. It does not throw. When Setup or the live subgraph is invalid, compile returns one failure and an empty live order, in this order: `InvalidPass` (a Pass handle that was never added), then `DanglingAccess` (a Resource that was never created or imported), then `NoSink`, then `Cycle` (a cycle among Passes a Sink can reach). Unreachable Passes are not a failure; DCE drops them, including unreachable Passes that cycle among themselves.
+_Avoid_: Packt `compile()` creating Vulkan images and framebuffers as this phase; Execute as this; Job System scheduling as this; exceptions as the compile error channel; treating zero Sinks as a successful empty graph; a Resource version type in this slice; treating ColorAttachment Write as a hidden Read; treating an invalid Pass handle as a silent no-op; treating Setup-order ping-pong (A writes X / reads Y, B writes Y / reads X) as a live cycle
+
+**Sink**:
+A Frame graph pass marked with a side effect the graph cannot see (present, CPU readback, history export). Dead-Pass elimination walks backward from Sinks; a Pass that nothing reaches from a Sink is dropped with its Transient resources. This slice does not enumerate which engine Passes are Sinks.
+_Avoid_: Treating every External resource as a Sink; treating the last writer of any resource as a Sink; a hardcoded engine Sink list in this slice
+
+**Resource lifetime**:
+The compiled interval `[first access, last access]` of a live Resource in Pass order. Later aliasing reads this interval. It is not a heap offset and not a GPU allocation.
+_Avoid_: VkDeviceMemory offset as this; treating lifetime as a Bindless slot span
+
+**Frame graph resource**:
+A named Texture or Buffer in the Frame graph, Transient or External. Not a Bindless table entry and not a Pipeline layout binding.
+_Avoid_: Packt Attachment or Reference as a resource type; treating a Bindless slot as this; a Vulkan image as the Setup identity
+
+**Resource access**:
+A Pass Read or Write of a Frame graph resource, plus a usage: Sampled, ColorAttachment, DepthAttachment, or Storage. Create makes a Transient resource; import makes an External resource. Write is not create.
+_Avoid_: Usage as a resource type; Packt input type as this; treating write as allocate
+
+**GraphBuilder**:
+The C++ API that records Frame graph Setup: create, import, read, write, and Sink marks. Tests and later engine Setup both use it. `read`, `write`, and `markSink` on a Pass handle that was never added make later compile return `InvalidPass`. Not a JSON parser, not Execute, and not the Job System.
+_Avoid_: Packt `graph.json` as the product authoring format; a Slint or C# builder in this slice; treating compile as this API; Blackboard as handle passing in this slice; treating an invalid Pass handle as a silent no-op
+
+**Blackboard**:
+A later per-frame typed bag of Frame graph handles for Setup modules. This slice does not have one; Setup passes handles as C++ values.
+_Avoid_: Job data as this; GraphBuilder as a blackboard; a global render-context singleton as this
+
+**Frame arena**:
+A later monotonic allocator for per-tick Setup and Compile scratch. This slice uses ordinary containers on the caller-owned Frame graph.
+_Avoid_: Requiring an arena for tests; treating graph storage as Job data; Filament linear allocator as this slice
 
 **Engine shader**:
 A first-party Slang program the engine ships (under `engine/shaders/`). It is not an Asset, not on the Asset Dependency Graph, and not project Cook output.
@@ -159,12 +237,20 @@ The user-level directory, outside any Project, that holds Shader bytecode cache 
 _Avoid_: Storing these blobs under a Project; mixing them into `.blunder/cooked/`; a per-Project Engine shader recompile as the intended hit path; treating a binding-set mismatch as a cache miss
 
 **Bindless texture table**:
-A device-wide resident table of sampled images and samplers, one table per device, shared by every mesh shading path on that device (editor viewport, Mesh Preview, Camera Preview, Scene Thumbnail / Capture, Player in that process). A mesh draw selects entries by stable index (valid while that GPU texture remains loaded) instead of binding a new descriptor set for those textures. Per-draw constant buffers stay a normal set. The shadow map stays a dedicated comparison binding; it is not an entry in this table. A full table does not fail process start; extra textures use the fallback index. Overlay, SSAO, and pick do not use this table. Not GPU-driven rendering and not descriptor buffers. Decision record: [ADR 0056](docs/adr/0056-bindless-texture-table.md).
-_Avoid_: Putting mesh UBOs and bone palettes into this table in this slice; a fallback path that keeps per-draw texture sets; VK_EXT_descriptor_buffer as this table; folding SampleCmp shadow into this table; replacing PCF so shadow can share the color table; repacking the table from the draw list every frame; a second table per offscreen target
+A device-wide resident table of sampled images and samplers, one table per device, shared by every mesh shading path on that device (editor viewport, Mesh Preview, Camera Preview, Scene Thumbnail / Capture, Player in that process). A mesh draw selects entries by stable index (valid while that GPU texture remains loaded) instead of binding a new descriptor set for those textures. Per-draw constant buffers stay a normal set. The shadow map stays a dedicated comparison binding; it is not an entry in this table. A full table does not fail process start; extra textures use the fallback index. Overlay, SSAO, and pick do not use this table. Not GPU-driven rendering and not descriptor buffers. A material texture that is still in the Texture Loader stays on the fallback index until the GPU copy is resident. Decision record: [ADR 0056](docs/adr/0056-bindless-texture-table.md).
+_Avoid_: Putting mesh UBOs and bone palettes into this table in this slice; a fallback path that keeps per-draw texture sets; VK_EXT_descriptor_buffer as this table; folding SampleCmp shadow into this table; replacing PCF so shadow can share the color table; repacking the table from the draw list every frame; a second table per offscreen target; writing a Bindless slot before the Texture Loader copy fence
+
+**Texture Loader**:
+The Render-owned path that makes a color material texture sampleable without stalling the tick on disk decode or a GPU wait. CPU half is Jobs (file + decode into Job data). GPU half is an upload queue: staging pool, copy command buffers on the graphics queue, timeline poll, then Bindless `writeSlot`. Until that write, draws use the Bindless fallback index. It is not AssetManager, not Pull cook, not ThumbnailGenerator, and not the Engine GPU cache. v1 is textures only. Decision record: [ADR 0058](docs/adr/0058-async-texture-loader.md).
+_Avoid_: A second AssetManager; GPU copies inside a Job; a dedicated transfer queue family in v1; mesh vertex/index streaming as this; replacing the thumbnail queue or Slang cache; `wait()` on the tick so fallback frames can present; a C-ABI texture schedule
 
 **Secondary command buffer**:
 A Vulkan SECONDARY command buffer recorded on the RHI owner thread and executed inside a render pass by the frame PRIMARY (`RENDER_PASS_CONTINUE` + inheritance). One pool lives on the Vulkan device, with distinct in-flight slots for Viewport, Camera Preview, and Immediate (Mesh Preview) streams. Shadow, forward (opaque / scene overlay / transparent), outline, overlay lines, overlay AA, SSAO, and screen overlays use this path. GPU pick and Texture Loader copies stay PRIMARY. v1 does not record from Jobs or a render worker pool. Decision record: [ADR 0059](docs/adr/0059-secondary-command-buffers.md).
 _Avoid_: Sharing a command pool across threads; re-recording a SECONDARY the current PRIMARY has already executed; putting layout barriers or copies inside a continue secondary; Job or D3D12-bundle recording in this slice
+
+**Timeline semaphore**:
+A Vulkan timeline semaphore on the device. Graphics-queue submits that used to signal an in-flight or one-shot fence instead signal a monotonic value. The RHI owner thread polls or waits that value (`vkWaitSemaphores`; poll uses timeout 0 so the signal is visible to the host). Viewport slots, immediate submits, GPU pick, and Texture Loader copies share this counter. No device means no alloc. v1 does not create a compute queue and Jobs do not wait on it. Decision record: [ADR 0060](docs/adr/0060-vulkan-timeline-semaphores.md).
+_Avoid_: Sharing this wait with a Job; a second timeline per pass in v1; a dedicated compute queue in this slice; engine-owned swapchain present; D3D12 fence work as this change
 
 **Forward mesh draw cap**:
 The maximum mesh draws the forward path records per list per frame. It is a limit of per-draw constant slots. The Bindless texture table does not raise it.
@@ -258,7 +344,7 @@ _Avoid_: Overloading ObjectId/BehaviourId, requiring every MessageId to be an en
 
 **Reflection kernel**:
 The first deliverable of the reflection system: ClassDB, Clang-driven export for a narrow set of types, PtrCall plus a small Variant path, API Blueprint, Object/`ObjectId`, projected property accessors, and a C-ABI skeleton — without shipping a .NET host, ALC hot reload, multi-Behaviour storage, or a full ECS rewrite of `SceneInstance`. The kernel Object retains a single Script Peer slot; multiple Behaviours arrive with the .NET host MVP (ADR 0011).
-_Avoid_: Treating C# hot reload, multi-Behaviour storage, or full ECS migration as part of the first reflection milestone; calling Shader resource layout extraction "reflection" as if it were this kernel
+_Avoid_: Treating C# hot reload, multi-Behaviour storage, or full ECS migration as part of the first reflection milestone; calling Shader resource layout extraction “reflection” as if it were this kernel
 
 **.NET host MVP**:
 The first script-host deliverable after the Reflection kernel: in-process CoreCLR, load one Project assembly, attach Behaviours to Objects, Ready/Tick per Behaviour list order — without ALC hot reload, without Behaviour scene serialization, and without Inspector Behaviour UX. The **DogWalk character slice** is written as C# Behaviours on this host, not as a throwaway C++ controller to migrate later. In development, the editor invokes `dotnet build` on the Scripts root (manually or before Play) and loads the output assembly; shipping builds use a separate publish/cook path. File-watcher auto-build is out of this slice.

@@ -202,6 +202,7 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneStill(
   }
 
   result.ok = true;
+  result.textures_pending = m_backend->lastMaterialTexturesPending();
   return result;
 }
 
