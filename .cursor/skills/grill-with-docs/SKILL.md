@@ -4,4 +4,4 @@ description: A relentless interview to sharpen a plan or design, which also crea
 disable-model-invocation: true
 ---
 
-Run a `/grilling` session, using the `/domain-modeling` skill.
+This skill is the git submodule file `.cursor/vendor/mattpocock-skills/skills/engineering/grill-with-docs/SKILL.md`. Read that file now and follow it in full. This stub exists so Cursor discovers the skill under `.cursor/skills/grill-with-docs/`. Update: `git submodule update --remote` on the vendor checkout, then commit the new pin.
