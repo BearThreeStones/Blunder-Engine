@@ -38,3 +38,21 @@
 [submodule "engine/3rdparty/efsw"]
 	path = engine/3rdparty/efsw
 	url = https://github.com/SpartanJ/efsw.git
+[submodule "gstack"]
+	path = .cursor/vendor/gstack
+	url = https://github.com/garrytan/gstack.git
+[submodule "caveman"]
+	path = .cursor/vendor/caveman
+	url = https://github.com/JuliusBrussee/caveman.git
+[submodule "ponytail"]
+	path = .cursor/vendor/ponytail
+	url = https://github.com/DietrichGebert/ponytail.git
+[submodule "anthropic-skills"]
+	path = .cursor/vendor/anthropic-skills
+	url = https://github.com/anthropics/skills.git
+[submodule "mattpocock-skills"]
+	path = .cursor/vendor/mattpocock-skills
+	url = https://github.com/mattpocock/skills.git
+[submodule "vercel-labs-skills"]
+	path = .cursor/vendor/vercel-labs-skills
+	url = https://github.com/vercel-labs/skills.git
