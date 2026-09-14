@@ -19,6 +19,8 @@ x64/
 .cursor/*
 !.cursor/skills/
 !.cursor/skills/**
+!.cursor/vendor/
+!.cursor/vendor/**
 !.cursor/commands/
 !.cursor/commands/**
 !.cursor/hooks/
