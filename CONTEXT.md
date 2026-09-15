@@ -273,15 +273,15 @@ The Inspector picker that lists authorable attachments for the current selection
 _Avoid_: Add Component, Add Node, treating the menu itself as a runtime type; keeping parallel Add Camera / Add Behaviour / Add Skeleton Modifier buttons as the product path; multi-select Add… as the first slice; nested submenus or type-ahead search as first-slice scope; using Hierarchy **Create…** as if it attached to the clicked row without spawning
 
 **Unique attachment**:
-An Add… item that may exist at most once on the selected Object or entity: Camera, Light, Skeleton, AnimationTree. When already present, the row stays visible and disabled.
-_Avoid_: Hiding unique items from Add…; treating Behaviours or SkeletonModifiers as unique; allowing a second Camera / Light / Tree / Skeleton on the same selection; AnimationPlayer as a Unique attachment
+An Add… item that may exist at most once on the selected Object or entity: Camera, Light, Fog, Skeleton, AnimationTree. When already present, the row stays visible and disabled.
+_Avoid_: Hiding unique items from Add…; treating Behaviours or SkeletonModifiers as unique; allowing a second Camera / Light / Fog / Tree / Skeleton on the same selection; AnimationPlayer as a Unique attachment
 
 **Add… kind icon**:
-The Inspector and Add… picker mark each Add… kind with one editor icon: Camera, Light, Skeleton, AnimationTree, Behaviour, SkeletonModifier. The icon sits on Unique section headers and on each Behaviour / SkeletonModifier row, and on the matching Add… picker rows. Color follows the label (including grey Unique-already-present and missing Behaviour). Clip rows are not a kind.
+The Inspector and Add… picker mark each Add… kind with one editor icon: Camera, Light, Fog, Skeleton, AnimationTree, Behaviour, SkeletonModifier. The icon sits on Unique section headers and on each Behaviour / SkeletonModifier row, and on the matching Add… picker rows. Color follows the label (including grey Unique-already-present and missing Behaviour). Clip rows are not a kind.
 _Avoid_: Per-CLR Behaviour icons; per-subclass Modifier icons; treating clip rows as an Add… kind; a second icon on the Behaviours / Skeleton Modifiers section titles; hiding the icon when Unique is already present; AnimationPlayer as an Add… kind
 
 **Hierarchy row icons**:
-Icons at the right of a Hierarchy entity row for what is on that entity: Local Transform; MeshRenderer when present; each present Unique attachment (Camera, Light, Skeleton, AnimationTree); each Behaviour; each SkeletonModifier. Unique / Behaviour / SkeletonModifier reuse **Add… kind icon**. Local Transform and MeshRenderer are shown on this row even though they are not Add… kinds. **Clip Binding** is not a Hierarchy icon — it lives only inside AnimationTree (Inspector clip list).
+Icons at the right of a Hierarchy entity row for what is on that entity: Local Transform; MeshRenderer when present; each present Unique attachment (Camera, Light, Fog, Skeleton, AnimationTree); each Behaviour; each SkeletonModifier. Unique / Behaviour / SkeletonModifier reuse **Add… kind icon**. Local Transform and MeshRenderer are shown on this row even though they are not Add… kinds. **Clip Binding** is not a Hierarchy icon — it lives only inside AnimationTree (Inspector clip list).
 **Attachment property preview** opens from these icons (see that term).
 _Avoid_: Unity Component strip as the product name; ECS Component icons; treating Hierarchy row icons as Add… kinds; hiding Transform because every spatial entity has Local Transform; an AnimationPlayer Unique icon; Clip Binding as a scene-mounted attachment or Hierarchy row icon; LMB on a row icon opening **Attachment property preview**
 
@@ -747,6 +747,18 @@ _Avoid_: Editor Camera widget; Play view HUD camera; treating Navigate gizmo as 
 **Light Gizmo**:
 The Editor Overlay that visualizes a scene **Light Component** in the editor viewport. Shape follows type: a Directional arrow along the **Light emit axis**; a Point sphere whose radius is **Light range**; a Spot outer-cone along the emit axis; an Area rectangle in local XY. Unselected lights draw muted; a **single** selected light uses the selection color. Clicking the gizmo selects that light entity. This slice has no drag handles for cone angles or Area size (those are Inspector). Hit-testing takes priority over mesh viewport pick; when a Camera Gizmo and Light Gizmo both hit, the closer wins. It is never shown or driven in the Player.
 _Avoid_: Billboard light icons as the product gizmo; Player light widgets; FOV-style drag handles on lights in this slice; hiding Light Gizmos merely because a Play Session is open
+
+**Fog Component**:
+A native scene Component (like Camera / Light) on an entity: pose follows that entity’s TRS; world **Z** is the fog height origin. Unique attachment. **Add… Fog** does not create a bound Object. Fields: Fog enabled (default on), volumetric fog enabled (default on), Fog density (default 0.02), Fog height falloff (default 0.2), Fog view distance (default 60 m), Fog albedo (default white), scattering distribution `g` (default 0.2). The first matching Fog in stable EntityId order is the active Fog. Missing or disabled Fog means no volumetric fog. Not a C# Behaviour and not a 2D height-fog actor.
+_Avoid_: Fog-as-Behaviour; always-on process-global fog when the scene has no Fog Component; Y-up height; a second height-fog term or box volume as the first slice; New Scene auto-spawning Fog; Hierarchy Create… Fog as the first slice
+
+**Volumetric fog**:
+A camera-aligned 3D froxel volume (~16 px screen tiles × 64 exponential-Z slices, distribution scale S = 32) filled by compute, then composited on the **Player** color target as `color * T + inscatter`. Density is exponential height falloff along world Z from the active **Fog Component**. Lighting this slice is one unshadowed **Directional Light** plus thin temporal (~20% current). The editor Viewport, Camera Preview, Placement Preview, Mesh Preview, and Scene Thumbnail may have no fog. Stacks on existing Forward Player; no new GBuffer. Distinct from analytical 2D height fog (not shipped this slice) and from clustered local-light lists (Player has none; point/spot do not inject).
+_Avoid_: Packt 128³ as the product size; in-mesh-shader fog as the first slice; a deferred GBuffer just to apply fog; treating Unreal Light Grid 64 px / 32 Z as the fog volume; a separate 2D height-fog pass as the ship look; injecting point/spot until Player has a clustered list
+
+**Volumetric shadows**:
+Shadowing inside the fog volume (CSM/VSM in scatter, shadowed-local 3D inject, extra shadow rays). Out of scope for the first volumetric-fog slice — Directional inject uses shadow factor 1.
+_Avoid_: Shipping volumetric shadows with the first Player fog composite; calling PCF mesh shadows “volumetric shadows”
 
 **Camera Preview**:
 An authorship-only floating panel over the editor viewport that shows a live view through a selected scene **Camera Component** (pose + FOV + near/far). It is Slint chrome plus a dedicated preview image, not an OverlaySystem draw into the main viewport offscreen, and never appears in the Player.
