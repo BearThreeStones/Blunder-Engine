@@ -32,6 +32,7 @@
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
+#include "runtime/function/scene/light_eval.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -102,14 +103,9 @@ Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id) {
       entity != nullptr && isValid(entity->getParentId())) {
     parent_world = scene.getWorldMatrix(entity->getParentId());
   }
-  bool centimetre_mesh = false;
-  if (scene.hasWorldBounds()) {
-    const AABB& bounds = scene.getWorldBounds();
-    centimetre_mesh = looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
-  }
   return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
                                          LightGizmoKind::directional,
-                                         centimetre_mesh);
+                                         sceneIsCentimetreWorld(scene));
 }
 
 }  // namespace

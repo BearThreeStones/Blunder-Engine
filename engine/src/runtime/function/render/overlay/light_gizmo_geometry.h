@@ -78,12 +78,13 @@ inline Vec3 overlayGizmoWorldOrigin(const Mat4& world) {
   return Vec3(world[3]);
 }
 
-/// Overlay gizmos must sit on the drawn mesh, never view-space / camera-parented.
-/// Unique 0.008 (cm→m) parks icon origins on the editor origin grid while Sponza
-/// verts stay centimetre. Undo that parent scale on translation. When the parent
-/// is identity but Unique translation is still metres (and the mesh AABB is
-/// centimetre), promote the origin onto the mesh. Enlarge display basis so wires
-/// stay readable in centimetre space.
+/// Overlay gizmos sit at the Unique's world translation, never view-space /
+/// camera-parented and never nudged by where that translation happens to land.
+/// A glTF attach Unique carrying the 0.008 cm→m scale would otherwise shrink its
+/// children onto the origin grid while Sponza verts stay centimetre, so that
+/// parent scale is undone on translation. The wire basis is enlarged by mesh
+/// scale only — deriving it from the gizmo's own distance to the origin is what
+/// teleported courtyard lights that happened to sit near (0,0,0).
 inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
                                             const Mat4& parent_world,
                                             LightGizmoKind kind,
@@ -92,23 +93,13 @@ inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
   const Vec3 parent_scale(glm::length(Vec3(parent_world[0])),
                           glm::length(Vec3(parent_world[1])),
                           glm::length(Vec3(parent_world[2])));
-  float display = 1.0f;
+  float display = centimetre_mesh ? 1.0f / kGltfCentimeterToMeterScale : 1.0f;
   if (isGltfCentimeterUniformScale(parent_scale)) {
     const float s = parent_scale.x;
     scaled_world[3] = Vec4(Vec3(unique_world[3]) / s, 1.0f);
     display = 1.0f / s;
   }
   Mat4 out = makeLightGizmoWorldMatrix(scaled_world, kind);
-  Vec3 origin = overlayGizmoWorldOrigin(out);
-  if (centimetre_mesh && looksLikeMeterSpaceTranslation(origin)) {
-    const float promote = 1.0f / kGltfCentimeterToMeterScale;
-    origin *= promote;
-    out[3] = Vec4(origin, 1.0f);
-    display = promote;
-  }
-  if (display == 1.0f && !looksLikeMeterSpaceTranslation(origin)) {
-    display = 1.0f / kGltfCentimeterToMeterScale;
-  }
   if (display != 1.0f) {
     out[0] = Vec4(Vec3(out[0]) * display, 0.0f);
     out[1] = Vec4(Vec3(out[1]) * display, 0.0f);
