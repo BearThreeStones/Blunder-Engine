@@ -78,13 +78,16 @@ inline Vec3 overlayGizmoWorldOrigin(const Mat4& world) {
   return Vec3(world[3]);
 }
 
-/// Overlay gizmos must sit on the drawn mesh. Unique 0.008 (cm→m) parks icon
-/// origins on the editor origin grid while Sponza verts stay centimetre.
-/// Undo that parent scale on translation, and enlarge display basis so wires
+/// Overlay gizmos must sit on the drawn mesh, never view-space / camera-parented.
+/// Unique 0.008 (cm→m) parks icon origins on the editor origin grid while Sponza
+/// verts stay centimetre. Undo that parent scale on translation. When the parent
+/// is identity but Unique translation is still metres (and the mesh AABB is
+/// centimetre), promote the origin onto the mesh. Enlarge display basis so wires
 /// stay readable in centimetre space.
 inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
                                             const Mat4& parent_world,
-                                            LightGizmoKind kind) {
+                                            LightGizmoKind kind,
+                                            bool centimetre_mesh = false) {
   Mat4 scaled_world = unique_world;
   const Vec3 parent_scale(glm::length(Vec3(parent_world[0])),
                           glm::length(Vec3(parent_world[1])),
@@ -96,8 +99,14 @@ inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
     display = 1.0f / s;
   }
   Mat4 out = makeLightGizmoWorldMatrix(scaled_world, kind);
-  if (display == 1.0f &&
-      !looksLikeMeterSpaceTranslation(overlayGizmoWorldOrigin(out))) {
+  Vec3 origin = overlayGizmoWorldOrigin(out);
+  if (centimetre_mesh && looksLikeMeterSpaceTranslation(origin)) {
+    const float promote = 1.0f / kGltfCentimeterToMeterScale;
+    origin *= promote;
+    out[3] = Vec4(origin, 1.0f);
+    display = promote;
+  }
+  if (display == 1.0f && !looksLikeMeterSpaceTranslation(origin)) {
     display = 1.0f / kGltfCentimeterToMeterScale;
   }
   if (display != 1.0f) {

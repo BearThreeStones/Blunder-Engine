@@ -10,6 +10,7 @@
 #include <glm/vec4.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/global/global_context.h"
@@ -30,6 +31,7 @@
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -100,8 +102,14 @@ Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id) {
       entity != nullptr && isValid(entity->getParentId())) {
     parent_world = scene.getWorldMatrix(entity->getParentId());
   }
+  bool centimetre_mesh = false;
+  if (scene.hasWorldBounds()) {
+    const AABB& bounds = scene.getWorldBounds();
+    centimetre_mesh = looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
+  }
   return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
-                                         LightGizmoKind::directional);
+                                         LightGizmoKind::directional,
+                                         centimetre_mesh);
 }
 
 }  // namespace

@@ -144,6 +144,21 @@ int main() {
   expect_near(identity_icon.x, local.x, "identity Unique keeps centimetre icon x");
   expect_near(identity_icon.z, local.z, "identity Unique keeps centimetre icon z");
 
+  const Mat4 metre_on_cm_mesh = makeLightGizmoWorldMatchingMesh(
+      glm::translate(Mat4(1.0f), meters), identity_parent, LightGizmoKind::point,
+      true);
+  const Vec3 promoted = overlayGizmoWorldOrigin(metre_on_cm_mesh);
+  expect_near(promoted.x, local.x,
+              "metre Unique on centimetre mesh parks icon on courtyard x");
+  expect_near(promoted.z, local.z,
+              "metre Unique on centimetre mesh parks icon on courtyard z");
+  expect_true("centimetre Sponza AABB is not metre space",
+              looksLikeCentimetreWorldBounds(Vec3(-1900.0f, -1150.0f, 0.0f),
+                                             Vec3(1900.0f, 1150.0f, 1550.0f)));
+  expect_true("metre editor AABB stays metre space",
+              !looksLikeCentimetreWorldBounds(Vec3(-8.0f, -8.0f, 0.0f),
+                                              Vec3(8.0f, 8.0f, 12.0f)));
+
   const Vec3 collapsed = Vec3(parent_cm * Vec4(meters, 1.0f));
   expect_true("metre locals under 0.008 parent collapse toward origin",
               glm::length(collapsed) < 0.1f);

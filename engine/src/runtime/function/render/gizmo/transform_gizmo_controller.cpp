@@ -5,6 +5,7 @@
 #include "runtime/core/event/event.h"
 #include "runtime/core/event/key_event.h"
 #include "runtime/core/event/mouse_event.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/document_history.h"
@@ -16,8 +17,10 @@
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/transform_edit_viewport_notify.h"
 #include "runtime/function/render/gizmo/transform_gizmo_pick.h"
+#include "runtime/function/render/overlay/light_gizmo_geometry.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/slint/slint_system.h"
@@ -44,6 +47,26 @@ Entity* selectedEntity() {
     return nullptr;
   }
   return scene->getEntity(g_runtime_global_context.m_editor_selection->getSelection());
+}
+
+bool overlayCentimetreMesh(const SceneInstance& scene) {
+  if (!scene.hasWorldBounds()) {
+    return false;
+  }
+  const AABB& bounds = scene.getWorldBounds();
+  return looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
+}
+
+Mat4 overlayWorldForEntity(SceneInstance& scene, EntityId entity_id) {
+  const Mat4 unique_world = scene.getWorldMatrix(entity_id);
+  Mat4 parent_world(1.0f);
+  if (const Entity* entity = scene.getEntity(entity_id);
+      entity != nullptr && isValid(entity->getParentId())) {
+    parent_world = scene.getWorldMatrix(entity->getParentId());
+  }
+  return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
+                                         LightGizmoKind::directional,
+                                         overlayCentimetreMesh(scene));
 }
 
 void syncInspectorLive() {
@@ -197,7 +220,7 @@ bool TransformGizmoController::beginGrabFromSelection(EditorCamera& camera) {
     return false;
   }
 
-  const glm::mat4 world = scene->getWorldMatrix(entity_id);
+  const glm::mat4 world = overlayWorldForEntity(*scene, entity_id);
   const GizmoBasis basis = buildGizmoBasis(world, m_space);
   const glm::quat world_rotation = worldRotationFromMatrix(world);
   float mouse_x = 0.0f;
@@ -396,8 +419,8 @@ bool TransformGizmoController::buildActiveGizmoBasis(GizmoBasis& out_basis) cons
   if (!entity || !scene) {
     return false;
   }
-  const glm::mat4 world = scene->getWorldMatrix(
-      g_runtime_global_context.m_editor_selection->getSelection());
+  const glm::mat4 world = overlayWorldForEntity(
+      *scene, g_runtime_global_context.m_editor_selection->getSelection());
   out_basis = buildGizmoBasis(world, m_space);
   return true;
 }
@@ -684,7 +707,7 @@ bool TransformGizmoController::onMousePressed(Event& event, EditorCamera& camera
     const EntityId selection_id =
         g_runtime_global_context.m_editor_selection->getSelection();
     const glm::mat4 world =
-        scene != nullptr ? scene->getWorldMatrix(selection_id) : glm::mat4(1.0f);
+        scene != nullptr ? overlayWorldForEntity(*scene, selection_id) : glm::mat4(1.0f);
     const glm::quat world_rotation = worldRotationFromMatrix(world);
     const TranslateModalConstraintOrientation initial_orientation =
         m_space == GizmoSpace::local

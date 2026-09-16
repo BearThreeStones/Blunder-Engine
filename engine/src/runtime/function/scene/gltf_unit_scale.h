@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <glm/common.hpp>
+
 #include "runtime/core/math/math_types.h"
 
 namespace Blunder {
@@ -27,6 +29,24 @@ inline bool looksLikeMeterSpaceTranslation(const Vec3& local) {
   const float max_abs =
       std::max(std::fabs(local.x), std::max(std::fabs(local.y), std::fabs(local.z)));
   return max_abs <= kMeterSpaceTranslationMaxAbs;
+}
+
+/// Khronos Sponza in centimetre mesh space has AABB corners in the hundreds
+/// / thousands. Metre-scale editor worlds stay under `kMeterSpaceTranslationMaxAbs`.
+inline bool looksLikeCentimetreWorldBounds(const Vec3& bounds_min,
+                                           const Vec3& bounds_max) {
+  const Vec3 a = glm::max(glm::abs(bounds_min), glm::abs(bounds_max));
+  return !looksLikeMeterSpaceTranslation(a);
+}
+
+/// Fog Unique `viewDistance` / falloff / light range are authored in metres.
+/// Centimetre mesh worlds need the same quantities in centimetres.
+inline float gltfCentimetreFromMetres(float metres) {
+  return metres / kGltfCentimeterToMeterScale;
+}
+
+inline float gltfMetreQuantityInWorld(float metres, bool centimetre_world) {
+  return centimetre_world ? gltfCentimetreFromMetres(metres) : metres;
 }
 
 /// World metres to local under a centimetre-scaled parent:
