@@ -190,7 +190,7 @@ float cameraIconSdf(float2 uv) {
     float lens = sdTriangleIsosceles(lp, float2(0.42, 0.55));
 
     float d = min(reelL, reelR);
-    float d = min(d, body);
+    d = min(d, body);
     d = min(d, lens);
     return d;
 }
