@@ -3,13 +3,17 @@
 #include "runtime/function/editor/authorship_system.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/editor_camera.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/project/machine_adapter.h"
 #include "runtime/project/machine_mcp.h"
 #include "runtime/project/play_session_controller.h"
 
+#include <glm/glm.hpp>
+
 #include <cstdio>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -210,6 +214,18 @@ int main() {
         host);
     expect_true("mcp tools play-frame",
                 listed.find("play-frame") != std::string::npos);
+    expect_true("mcp tools get-camera",
+                listed.find("get-camera") != std::string::npos);
+    expect_true("mcp tools set-camera",
+                listed.find("set-camera") != std::string::npos);
+    expect_true("mcp tools orbit", listed.find("\"name\":\"orbit\"") !=
+                                       std::string::npos);
+    expect_true("mcp tools orbit-camera",
+                listed.find("orbit-camera") != std::string::npos);
+    expect_true("mcp tools pan",
+                listed.find("\"name\":\"pan\"") != std::string::npos);
+    expect_true("mcp tools zoom",
+                listed.find("\"name\":\"zoom\"") != std::string::npos);
 
     SceneInstance scene;
     DocumentHistory history;
@@ -282,6 +298,176 @@ int main() {
     expect_true("capture missing out", !result.ok);
     expect_true("capture missing out code",
                 result.failure_code == k_request_cli_out_required);
+  }
+
+  {
+    EditorSessionLaunch launch;
+    launch.ok = true;
+    launch.headless = true;
+    launch.adapter = MachineAdapterKind::mcp;
+    launch.cli.verb = "get-camera";
+    MachineAdapterHost host;
+    MachineResult result;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("get-camera no editor camera", !result.ok);
+    expect_true("get-camera no camera code",
+                result.failure_code == k_request_viewport_no_camera);
+  }
+
+  {
+    EditorCamera camera(nullptr);
+    camera.setViewportRect(0, 0, 1280.0f, 720.0f, 1280.0f, 720.0f);
+    camera.snapLookAt(Vec3(20.0f, 8.0f, 6.0f), Vec3(12.0f, 4.0f, 3.0f));
+    const Vec3 eye_before = camera.getPosition();
+    const float dist_before = glm::length(eye_before);
+
+    EditorSessionLaunch launch;
+    launch.ok = true;
+    launch.headless = true;
+    launch.adapter = MachineAdapterKind::mcp;
+    MachineAdapterHost host;
+    host.editor_camera = &camera;
+
+    launch.cli.verb = "get-camera";
+    MachineResult result;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("get-camera ok", result.ok);
+    expect_true("get-camera has pose", result.has_camera);
+    expect_true("get-camera eye",
+                glm::length(result.camera_eye - eye_before) < 1e-3f);
+    const std::string got = machineResultJson(result);
+    expect_true("get-camera json eye", got.find("\"eye\"") != std::string::npos);
+
+    launch.cli.verb = "orbit";
+    launch.cli.dx = 60.0f;
+    launch.cli.dy = -30.0f;
+    result = {};
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("orbit ok", result.ok);
+    expect_true("orbit keeps distance to origin",
+                std::fabs(glm::length(camera.getPosition()) - dist_before) <
+                    1e-2f);
+    expect_true("orbit does not snap look-at to origin",
+                glm::length(camera.getFocalPoint()) > 1.0f);
+    expect_true("orbit moves the eye",
+                glm::length(camera.getPosition() - eye_before) > 1e-3f);
+
+    launch.cli.verb = "orbit-camera";
+    launch.cli.dx = 20.0f;
+    launch.cli.dy = -10.0f;
+    const Vec3 rmb_eye = camera.getPosition();
+    const Vec3 rmb_focal = camera.getFocalPoint();
+    result = {};
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("orbit-camera ok", result.ok);
+    expect_true("orbit-camera keeps eye",
+                glm::length(camera.getPosition() - rmb_eye) < 1e-3f);
+    expect_true("orbit-camera moves target",
+                glm::length(camera.getFocalPoint() - rmb_focal) > 1e-3f);
+
+    launch.cli.verb = "pan";
+    launch.cli.dx = 30.0f;
+    launch.cli.dy = -30.0f;
+    const Vec3 pan_focal = camera.getFocalPoint();
+    result = {};
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("pan ok", result.ok);
+    expect_true("pan moves target",
+                glm::length(camera.getFocalPoint() - pan_focal) > 1e-4f);
+
+    launch.cli.verb = "zoom";
+    launch.cli.wheel = -8.0f;
+    const float zoom_before = camera.getDistance();
+    result = {};
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("zoom ok", result.ok);
+    expect_true("zoom-out increases distance",
+                camera.getDistance() > zoom_before);
+
+    launch.cli.verb = "set-camera";
+    launch.cli.has_eye = true;
+    launch.cli.has_target = true;
+    launch.cli.eye_x = 12.0f;
+    launch.cli.eye_y = 12.0f;
+    launch.cli.eye_z = 12.0f;
+    launch.cli.target_x = 0.0f;
+    launch.cli.target_y = 0.0f;
+    launch.cli.target_z = 0.0f;
+    result = {};
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("set-camera ok", result.ok);
+    expect_true("set-camera eye",
+                glm::length(camera.getPosition() - Vec3(12.0f, 12.0f, 12.0f)) <
+                    1e-2f);
+    expect_true("set-camera target",
+                glm::length(camera.getFocalPoint()) < 1e-2f);
+
+    launch.cli.verb = "set-camera";
+    launch.cli.has_eye = true;
+    launch.cli.has_target = false;
+    result = {};
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("set-camera missing target", !result.ok);
+    expect_true("set-camera missing target code",
+                result.failure_code == k_request_viewport_lookat_required);
+  }
+
+  {
+    EditorSessionLaunch session;
+    session.ok = true;
+    session.headless = true;
+    session.adapter = MachineAdapterKind::mcp;
+    session.scene = "assets/Scenes/sponza.scene.asset";
+    session.project_root = "C:/Games/Demo";
+    EditorCamera camera(nullptr);
+    camera.setViewportRect(0, 0, 1280.0f, 720.0f, 1280.0f, 720.0f);
+    camera.snapLookAt(Vec3(20.0f, 8.0f, 6.0f), Vec3(12.0f, 4.0f, 3.0f));
+    MachineAdapterHost host;
+    host.editor_camera = &camera;
+    const std::string orbited = mcpHandleMessage(
+        "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"orbit\",\"arguments\":{\"dx\":40,\"dy\":-20}}}",
+        session, host);
+    expect_true("mcp orbit not error",
+                orbited.find("\"isError\":false") != std::string::npos);
+    expect_true("mcp orbit camera json",
+                orbited.find("\\\"eye\\\"") != std::string::npos);
+    const std::string zoomed = mcpHandleMessage(
+        "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"zoom\",\"arguments\":{\"wheel\":-4}}}",
+        session, host);
+    expect_true("mcp zoom not error",
+                zoomed.find("\"isError\":false") != std::string::npos);
+  }
+
+  {
+    EditorCamera camera(nullptr);
+    camera.snapLookAt(Vec3(5.0f, 5.0f, 5.0f), Vec3(0.0f, 0.0f, 0.0f));
+    EditorSessionLaunch launch = cliLaunch("capture");
+    launch.adapter = MachineAdapterKind::mcp;
+    launch.scene = "assets/Scenes/main.scene.asset";
+    launch.cli.subject = "live";
+    SceneInstance scene;
+    MachineAdapterHost host;
+    host.live_scene = &scene;
+    host.editor_camera = &camera;
+    bool used_editor_view = false;
+    host.capture_override = [&](const CaptureRequest& req) {
+      used_editor_view = req.override_framing && req.framing_override.ok &&
+                         glm::length(req.framing_override.eye -
+                                     camera.getPosition()) < 1e-3f;
+      CaptureResult still;
+      still.ok = true;
+      still.width = 2;
+      still.height = 2;
+      still.rgba = {255, 0, 0, 255, 0, 255, 0, 255,
+                    0, 0, 255, 255, 255, 255, 255, 255};
+      return still;
+    };
+    MachineResult result;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("mcp live capture uses editor camera", used_editor_view);
+    expect_true("mcp live capture ok", result.ok);
   }
 
   g_runtime_global_context.m_logger_system.reset();

@@ -31,6 +31,8 @@ struct SceneStillRequest {
   uint32_t height{128};
   /// Scene Thumbnail Render requires mesh draws; Capture does not.
   bool require_mesh{true};
+  bool override_framing{false};
+  MeshPreviewCameraFrame framing_override{};
 };
 
 struct SceneThumbnailRenderResult {

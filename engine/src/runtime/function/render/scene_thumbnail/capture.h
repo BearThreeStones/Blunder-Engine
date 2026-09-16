@@ -30,6 +30,10 @@ struct CaptureRequest {
   eastl::string scene_virtual_path;
   /// Capture never writes the Content Browser Thumbnail cache.
   bool write_cache{false};
+  /// When set, live capture uses this view (Viewport editor camera) instead of
+  /// the scene Play camera.
+  bool override_framing{false};
+  MeshPreviewCameraFrame framing_override{};
 };
 
 struct CaptureResult {

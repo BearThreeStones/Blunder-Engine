@@ -673,6 +673,13 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_particle_manager.reset();
 }
 
+EditorCamera* RuntimeGlobalContext::editorCamera() const {
+  if (!m_render_system) {
+    return nullptr;
+  }
+  return m_render_system->getEditorCamera();
+}
+
 void RuntimeGlobalContext::closeAttachmentPreviewCards() {
   if (m_slint_system) {
     m_slint_system->closeAttachmentPreviewCards();
