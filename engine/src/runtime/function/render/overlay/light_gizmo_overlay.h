@@ -51,6 +51,7 @@ class LightGizmoOverlay final : public Overlay {
     triangle = 1,
     origin_disc = 2,
     icon_billboard = 3,
+    light_icon_billboard = 4,
   };
 
   void recordDraw(VkCommandBuffer cmd, const OverlayState& state, DrawStyle style,

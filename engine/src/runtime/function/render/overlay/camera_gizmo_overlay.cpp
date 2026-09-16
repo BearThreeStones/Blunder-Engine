@@ -16,6 +16,7 @@
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/overlay/camera_gizmo_geometry.h"
 #include "runtime/function/render/overlay/camera_gizmo_hit_test.h"
+#include "runtime/function/render/overlay/light_gizmo_geometry.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/rhi_desc.h"
@@ -293,6 +294,8 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
   EditorSelectionSystem* selection =
       g_runtime_global_context.m_editor_selection.get();
 
+  scene->tick(0.0f);
+
   EntityId sole_selected_camera{k_invalid_entity_id};
   if (selection != nullptr) {
     const eastl::vector<EntityId> selected_ids = selection->getSelectedIds();
@@ -316,8 +319,9 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     const CameraGizmoFrame frame = buildCameraGizmoFrameLocal(
         fov_rad, aspect, kCameraGizmoDisplayDistance);
 
-    const glm::mat4 world = scene->getWorldMatrix(entity_id);
-    const glm::vec3 origin = transformPoint(world, frame.origin);
+    const glm::mat4 world = makeLightGizmoWorldMatrix(
+        scene->getWorldMatrix(entity_id), LightGizmoKind::directional);
+    const glm::vec3 origin = overlayGizmoWorldOrigin(world);
 
     glm::vec3 corners[4];
     for (int i = 0; i < 4; ++i) {
@@ -416,6 +420,8 @@ std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
   EntityId best_entity{k_invalid_entity_id};
   float best_depth = -1e9f;
 
+  scene->tick(0.0f);
+
   scene->forEachCamera([&](EntityId entity_id, const CameraComponent& cam) {
     if (!scene->isActiveInHierarchy(entity_id)) {
       return;
@@ -423,7 +429,8 @@ std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
     const float fov_rad = glm::radians(cam.vertical_fov_degrees);
     const CameraGizmoFrame frame =
         buildCameraGizmoFrameLocal(fov_rad, aspect, kCameraGizmoDisplayDistance);
-    const glm::mat4 world = scene->getWorldMatrix(entity_id);
+    const glm::mat4 world = makeLightGizmoWorldMatrix(
+        scene->getWorldMatrix(entity_id), LightGizmoKind::directional);
     const std::optional<float> hit_depth = hitTestCameraGizmoFrameViewportLocal(
         pointer, frame, world, view, proj, vp_w, vp_h);
     if (!hit_depth.has_value() ||
