@@ -56,10 +56,13 @@ int main() {
   }
 
   {
+    camera.snapLookAt(Vec3(12.0f, 12.0f, 12.0f), Vec3(0.0f, 0.0f, 0.0f));
     MouseButtonPressedEvent press(SDL_BUTTON_MIDDLE, 100.0f, 100.0f);
     camera.onEvent(press);
+    camera.onUpdate(1.0f / 60.0f);
     expect_true("viewport MMB starts interacting", camera.isViewportInteracting());
     const Vec3 pos_before = camera.getPosition();
+    const float dist_before = glm::length(pos_before);
     MouseMovedEvent move(140.0f, 80.0f, 40.0f, -20.0f);
     camera.onEvent(move);
     camera.onUpdate(1.0f / 60.0f);
@@ -67,6 +70,9 @@ int main() {
                 glm::length(camera.getFocalPoint()) < 1e-3f);
     expect_true("MMB origin orbit moves the camera",
                 pos_before != camera.getPosition());
+    expect_true("MMB origin orbit keeps distance to origin",
+                std::fabs(glm::length(camera.getPosition()) - dist_before) <
+                    1e-2f);
     MouseButtonReleasedEvent release(SDL_BUTTON_MIDDLE, 140.0f, 80.0f);
     camera.onEvent(release);
     camera.onUpdate(1.0f / 60.0f);
