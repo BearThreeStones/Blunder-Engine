@@ -927,6 +927,27 @@ void EditorCamera::setLookAt(const Vec3& position, const Vec3& target) {
            target.x, target.y, target.z, position.x, position.y, position.z);
 }
 
+void EditorCamera::orbitAroundWorldOrigin(const Vec2& mouse_delta) {
+  applyOrbitAroundWorldOrigin(mouse_delta);
+  updateViewMatrix();
+}
+
+void EditorCamera::orbitAroundCamera(const Vec2& mouse_delta) {
+  applyOrbitAroundCamera(mouse_delta);
+}
+
+void EditorCamera::panByMouseDelta(const Vec2& mouse_delta) {
+  m_mouse_delta_accumulator = mouse_delta;
+  pan();
+  updateViewMatrix();
+}
+
+void EditorCamera::zoomByWheel(float wheel_delta) {
+  m_scroll_delta_accumulator = wheel_delta;
+  zoom();
+  updateViewMatrix();
+}
+
 void EditorCamera::snapLookAt(const Vec3& position, const Vec3& target) {
   Vec3 forward = target - position;
   const float distance = glm::distance(position, target);

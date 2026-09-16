@@ -20,6 +20,17 @@
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:GITHUB_PERSONAL_ACCESS_TOKEN}"
       }
+    },
+    "blunder-editor": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/build/vs2026-debug/bin/Debug/engine_editor.exe",
+      "args": [
+        "--mcp",
+        "--project-root",
+        "E:\\Blunder Projects\\Test",
+        "--scene",
+        "assets/Scenes/sponza.scene.asset"
+      ]
     }
   }
 }

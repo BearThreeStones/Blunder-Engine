@@ -158,17 +158,21 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneStill(
   }
 
   root->tick(0.0f);
-  const float aspect = static_cast<float>(request.width) /
-                       static_cast<float>(request.height);
-  const ResolvedPlayCamera camera = resolvePlayCameraFromScene(*root, aspect);
-  if (!camera.ok) {
-    result.error = "No camera in scene";
-    result.failure_code = k_request_capture_no_camera;
-    return result;
+  MeshPreviewCameraFrame framing{};
+  if (request.override_framing) {
+    framing = request.framing_override;
+  } else {
+    const float aspect = static_cast<float>(request.width) /
+                         static_cast<float>(request.height);
+    const ResolvedPlayCamera camera = resolvePlayCameraFromScene(*root, aspect);
+    if (!camera.ok) {
+      result.error = "No camera in scene";
+      result.failure_code = k_request_capture_no_camera;
+      return result;
+    }
+    framing = meshPreviewFrameFromPlayCamera(
+        camera.position, camera.forward, camera.vertical_fov_radians);
   }
-
-  const MeshPreviewCameraFrame framing = meshPreviewFrameFromPlayCamera(
-      camera.position, camera.forward, camera.vertical_fov_radians);
   if (!framing.ok) {
     result.error = "Invalid camera framing";
     return result;

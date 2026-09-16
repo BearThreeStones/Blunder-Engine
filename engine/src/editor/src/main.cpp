@@ -48,6 +48,7 @@ Blunder::MachineAdapterHost makeHost() {
   if (ctx.m_scene_system) {
     host.live_scene = ctx.m_scene_system->getActiveInstance();
   }
+  host.editor_camera = ctx.editorCamera();
   host.pump = []() {
     if (g_engine) {
       g_engine->tickOneFrame(1.0f / 60.0f);

@@ -146,6 +146,39 @@ int main() {
                 zoom_cam.getDistance() > start);
   }
 
+  {
+    EditorCamera cam(nullptr);
+    cam.setViewportRect(0, 0, 1280.0f, 720.0f, 1280.0f, 720.0f);
+    cam.snapLookAt(Vec3(20.0f, 8.0f, 6.0f), Vec3(12.0f, 4.0f, 3.0f));
+    const Vec3 pos_before = cam.getPosition();
+    const float dist_before = glm::length(pos_before);
+    cam.orbitAroundWorldOrigin(Vec2(60.0f, -30.0f));
+    expect_true("API origin orbit keeps distance to world origin",
+                std::fabs(glm::length(cam.getPosition()) - dist_before) < 1e-2f);
+    expect_true("API origin orbit does not snap look-at to origin",
+                glm::length(cam.getFocalPoint()) > 1.0f);
+    expect_true("API origin orbit moves the eye",
+                glm::length(cam.getPosition() - pos_before) > 1e-3f);
+
+    const Vec3 rmb_eye = cam.getPosition();
+    const Vec3 rmb_focal = cam.getFocalPoint();
+    cam.orbitAroundCamera(Vec2(20.0f, -10.0f));
+    expect_true("API RMB orbit keeps the camera origin",
+                glm::length(cam.getPosition() - rmb_eye) < 1e-3f);
+    expect_true("API RMB orbit moves the look target",
+                glm::length(cam.getFocalPoint() - rmb_focal) > 1e-3f);
+
+    const Vec3 pan_focal = cam.getFocalPoint();
+    cam.panByMouseDelta(Vec2(30.0f, -30.0f));
+    expect_true("API pan moves the look target",
+                glm::length(cam.getFocalPoint() - pan_focal) > 1e-4f);
+
+    const float zoom_before = cam.getDistance();
+    cam.zoomByWheel(-8.0f);
+    expect_true("API wheel zoom-out increases distance",
+                cam.getDistance() > zoom_before);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

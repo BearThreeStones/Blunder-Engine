@@ -195,13 +195,39 @@ void applyArgNumber(EditorSessionLaunch& launch, const std::string& key,
     launch.cli.sy = std::strtof(value.c_str(), &end);
   } else if (key == "sz") {
     launch.cli.sz = std::strtof(value.c_str(), &end);
+  } else if (key == "dx") {
+    launch.cli.dx = std::strtof(value.c_str(), &end);
+  } else if (key == "dy") {
+    launch.cli.dy = std::strtof(value.c_str(), &end);
+  } else if (key == "wheel") {
+    launch.cli.wheel = std::strtof(value.c_str(), &end);
+  } else if (key == "eye_x") {
+    launch.cli.eye_x = std::strtof(value.c_str(), &end);
+    launch.cli.has_eye = true;
+  } else if (key == "eye_y") {
+    launch.cli.eye_y = std::strtof(value.c_str(), &end);
+    launch.cli.has_eye = true;
+  } else if (key == "eye_z") {
+    launch.cli.eye_z = std::strtof(value.c_str(), &end);
+    launch.cli.has_eye = true;
+  } else if (key == "target_x") {
+    launch.cli.target_x = std::strtof(value.c_str(), &end);
+    launch.cli.has_target = true;
+  } else if (key == "target_y") {
+    launch.cli.target_y = std::strtof(value.c_str(), &end);
+    launch.cli.has_target = true;
+  } else if (key == "target_z") {
+    launch.cli.target_z = std::strtof(value.c_str(), &end);
+    launch.cli.has_target = true;
   }
 }
 
 void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
   const char* keys[] = {"subject", "out",     "name", "entity", "asset", "scene",
                         "steps",   "tx",      "ty",   "tz",     "qx",    "qy",
-                        "qz",      "qw",      "sx",   "sy",     "sz"};
+                        "qz",      "qw",      "sx",   "sy",     "sz",    "dx",
+                        "dy",      "wheel",   "eye_x", "eye_y", "eye_z",
+                        "target_x", "target_y", "target_z"};
   for (const char* key : keys) {
     std::string value;
     if (jsonExtractString(src, key, value)) {
@@ -253,6 +279,31 @@ const char* k_tools_list =
     "{\"name\":\"capture\",\"description\":\"Host observation Capture\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"subject\":{\"type\":"
     "\"string\"},\"asset\":{\"type\":\"string\"}}}},"
+    "{\"name\":\"get-camera\",\"description\":\"Read Viewport editor camera "
+    "(eye, target, yaw, pitch, distance). Headless --mcp session camera.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
+    "{\"name\":\"set-camera\",\"description\":\"Set Viewport editor camera "
+    "look-at (eye + target). Headless --mcp session camera.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"eye_x\":{\"type\":"
+    "\"number\"},\"eye_y\":{\"type\":\"number\"},\"eye_z\":{\"type\":\"number\"},"
+    "\"target_x\":{\"type\":\"number\"},\"target_y\":{\"type\":\"number\"},"
+    "\"target_z\":{\"type\":\"number\"}}}},"
+    "{\"name\":\"orbit\",\"description\":\"MMB world-origin tumble from current "
+    "eye. Pivot (0,0,0). No look-at snap. dx/dy are pixel deltas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"dx\":{\"type\":"
+    "\"number\"},\"dy\":{\"type\":\"number\"}}}},"
+    "{\"name\":\"orbit-camera\",\"description\":\"RMB camera-pivot orbit. Keeps "
+    "the eye; rotates look target. dx/dy are pixel deltas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"dx\":{\"type\":"
+    "\"number\"},\"dy\":{\"type\":\"number\"}}}},"
+    "{\"name\":\"pan\",\"description\":\"Shift+MMB pan. dx/dy are pixel "
+    "deltas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"dx\":{\"type\":"
+    "\"number\"},\"dy\":{\"type\":\"number\"}}}},"
+    "{\"name\":\"zoom\",\"description\":\"Wheel zoom along view (unclamped "
+    "except the existing orbit distance cap). wheel matches scroll Y.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"wheel\":{\"type\":"
+    "\"number\"}}}},"
     "{\"name\":\"play\",\"description\":\"Start Play Session\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
     "{\"name\":\"pause\",\"description\":\"Play Pause\","

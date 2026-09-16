@@ -39,6 +39,8 @@ class EditorCamera final {
   const Vec3& getFocalPoint() const { return m_focal_point; }
   ProjectionMode getProjectionMode() const { return m_target_projection_mode; }
   float getDistance() const { return m_distance; }
+  float getYaw() const { return m_yaw; }
+  float getPitch() const { return m_pitch; }
   float getVerticalFov() const { return m_vertical_fov; }
   void setVerticalFov(float vertical_fov_radians);
   float getNearClip() const { return m_near_clip; }
@@ -80,6 +82,13 @@ class EditorCamera final {
   /// Immediate look-at (no smooth transition). Used by BLUNDER_EDITOR_LOOKAT.
   void snapLookAt(const Vec3& position, const Vec3& target);
   void placeInsideAABB(const AABB& bounds);
+
+  /// Programmatic Viewport mapping (same as mouse). Pixel deltas / wheel
+  /// match MMB origin tumble, RMB camera orbit, Shift+MMB pan, and wheel zoom.
+  void orbitAroundWorldOrigin(const Vec2& mouse_delta);
+  void orbitAroundCamera(const Vec2& mouse_delta);
+  void panByMouseDelta(const Vec2& mouse_delta);
+  void zoomByWheel(float wheel_delta);
 
   void setInteractionLocked(bool locked) { m_interaction_locked = locked; }
   bool isInteractionLocked() const { return m_interaction_locked; }

@@ -46,6 +46,7 @@ class DotNetHost;
 class PlaySessionController;
 class AnimationPreviewController;
 class AnimationSyncCinePreviewController;
+class EditorCamera;
 // class ParticleManager;
 
 struct EngineInitParams;
@@ -63,6 +64,7 @@ class RuntimeGlobalContext {
 
   EngineHostMode hostMode() const { return m_host_mode; }
   bool isHeadless() const { return m_headless; }
+  EditorCamera* editorCamera() const;
 
   /// Headless Player Stop / process-exit path (no OS window to close).
   void requestQuit() { m_quit_requested = true; }
