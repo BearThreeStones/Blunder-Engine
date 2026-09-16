@@ -28,6 +28,7 @@
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
@@ -90,6 +91,17 @@ uint32_t vertexCountForStyle(CameraGizmoDrawStyle style) {
     default:
       return 0u;
   }
+}
+
+Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id) {
+  const Mat4 unique_world = scene.getWorldMatrix(entity_id);
+  Mat4 parent_world(1.0f);
+  if (const Entity* entity = scene.getEntity(entity_id);
+      entity != nullptr && isValid(entity->getParentId())) {
+    parent_world = scene.getWorldMatrix(entity->getParentId());
+  }
+  return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
+                                         LightGizmoKind::directional);
 }
 
 }  // namespace
@@ -319,8 +331,7 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     const CameraGizmoFrame frame = buildCameraGizmoFrameLocal(
         fov_rad, aspect, kCameraGizmoDisplayDistance);
 
-    const glm::mat4 world = makeLightGizmoWorldMatrix(
-        scene->getWorldMatrix(entity_id), LightGizmoKind::directional);
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id);
     const glm::vec3 origin = overlayGizmoWorldOrigin(world);
 
     glm::vec3 corners[4];
@@ -429,8 +440,7 @@ std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
     const float fov_rad = glm::radians(cam.vertical_fov_degrees);
     const CameraGizmoFrame frame =
         buildCameraGizmoFrameLocal(fov_rad, aspect, kCameraGizmoDisplayDistance);
-    const glm::mat4 world = makeLightGizmoWorldMatrix(
-        scene->getWorldMatrix(entity_id), LightGizmoKind::directional);
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id);
     const std::optional<float> hit_depth = hitTestCameraGizmoFrameViewportLocal(
         pointer, frame, world, view, proj, vp_w, vp_h);
     if (!hit_depth.has_value() ||

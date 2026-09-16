@@ -125,8 +125,24 @@ int main() {
       makeLightGizmoWorldMatrix(parent_cm * glm::translate(Mat4(1.0f), local),
                                 LightGizmoKind::point);
   const Vec3 icon_origin = overlayGizmoWorldOrigin(gizmo_world);
-  expect_near(icon_origin.x, meters.x, "icon origin shares mesh world x");
-  expect_near(icon_origin.z, meters.z, "icon origin shares mesh world z");
+  expect_near(icon_origin.x, meters.x, "scaled Unique world parks icon at metres x");
+  expect_near(icon_origin.z, meters.z, "scaled Unique world parks icon at metres z");
+
+  const Mat4 mesh_matched = makeLightGizmoWorldMatchingMesh(
+      parent_cm * glm::translate(Mat4(1.0f), local), parent_cm,
+      LightGizmoKind::point);
+  const Vec3 mesh_icon = overlayGizmoWorldOrigin(mesh_matched);
+  expect_near(mesh_icon.x, local.x, "icon origin undoes Unique 0.008 onto mesh x");
+  expect_near(mesh_icon.z, local.z, "icon origin undoes Unique 0.008 onto mesh z");
+  expect_near(glm::length(Vec3(mesh_matched[0])), 1.0f / kGltfCentimeterToMeterScale,
+              "cm-space display basis matches 1/0.008");
+
+  Mat4 identity_parent(1.0f);
+  const Mat4 identity_matched = makeLightGizmoWorldMatchingMesh(
+      glm::translate(Mat4(1.0f), local), identity_parent, LightGizmoKind::point);
+  const Vec3 identity_icon = overlayGizmoWorldOrigin(identity_matched);
+  expect_near(identity_icon.x, local.x, "identity Unique keeps centimetre icon x");
+  expect_near(identity_icon.z, local.z, "identity Unique keeps centimetre icon z");
 
   const Vec3 collapsed = Vec3(parent_cm * Vec4(meters, 1.0f));
   expect_true("metre locals under 0.008 parent collapse toward origin",

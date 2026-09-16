@@ -25,6 +25,7 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
+#include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -88,6 +89,17 @@ LightGizmoShape shapeFromLight(const LightComponent& light) {
   shape.width = light.width;
   shape.height = light.height;
   return shape;
+}
+
+Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id,
+                         LightGizmoKind kind) {
+  const Mat4 unique_world = scene.getWorldMatrix(entity_id);
+  Mat4 parent_world(1.0f);
+  if (const Entity* entity = scene.getEntity(entity_id);
+      entity != nullptr && isValid(entity->getParentId())) {
+    parent_world = scene.getWorldMatrix(entity->getParentId());
+  }
+  return makeLightGizmoWorldMatchingMesh(unique_world, parent_world, kind);
 }
 
 enum class LightGizmoDrawStyle : uint32_t {
@@ -326,8 +338,7 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     const glm::vec4 color = selected ? k_selected_color : k_muted_color;
     LightGizmoShape shape = shapeFromLight(light);
     shape.show_range = selected;
-    const glm::mat4 world =
-        makeLightGizmoWorldMatrix(scene->getWorldMatrix(entity_id), shape.kind);
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id, shape.kind);
     const glm::vec3 origin = overlayGizmoWorldOrigin(world);
     const glm::vec4 icon_color =
         selected ? glm::vec4(k_selected_color.x, k_selected_color.y,
@@ -378,8 +389,7 @@ std::optional<OverlayGizmoPickHit> LightGizmoOverlay::hitTest(
     LightGizmoShape shape = shapeFromLight(light);
     const bool selected = selection != nullptr && selection->isSelected(entity_id);
     shape.show_range = selected;
-    const glm::mat4 world =
-        makeLightGizmoWorldMatrix(scene->getWorldMatrix(entity_id), shape.kind);
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id, shape.kind);
     const std::optional<float> hit_depth = hitTestLightGizmoViewportLocal(
         pointer, shape, world, view, proj, vp_w, vp_h);
     if (!hit_depth.has_value() ||

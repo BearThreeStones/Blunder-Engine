@@ -8,6 +8,7 @@
 #include <glm/trigonometric.hpp>
 
 #include "runtime/core/math/math_types.h"
+#include "runtime/function/scene/gltf_unit_scale.h"
 
 namespace Blunder {
 
@@ -75,6 +76,36 @@ inline Mat4 makeLightGizmoWorldMatrix(const Mat4& world, LightGizmoKind kind) {
 
 inline Vec3 overlayGizmoWorldOrigin(const Mat4& world) {
   return Vec3(world[3]);
+}
+
+/// Overlay gizmos must sit on the drawn mesh. Unique 0.008 (cm→m) parks icon
+/// origins on the editor origin grid while Sponza verts stay centimetre.
+/// Undo that parent scale on translation, and enlarge display basis so wires
+/// stay readable in centimetre space.
+inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
+                                            const Mat4& parent_world,
+                                            LightGizmoKind kind) {
+  Mat4 scaled_world = unique_world;
+  const Vec3 parent_scale(glm::length(Vec3(parent_world[0])),
+                          glm::length(Vec3(parent_world[1])),
+                          glm::length(Vec3(parent_world[2])));
+  float display = 1.0f;
+  if (isGltfCentimeterUniformScale(parent_scale)) {
+    const float s = parent_scale.x;
+    scaled_world[3] = Vec4(Vec3(unique_world[3]) / s, 1.0f);
+    display = 1.0f / s;
+  }
+  Mat4 out = makeLightGizmoWorldMatrix(scaled_world, kind);
+  if (display == 1.0f &&
+      !looksLikeMeterSpaceTranslation(overlayGizmoWorldOrigin(out))) {
+    display = 1.0f / kGltfCentimeterToMeterScale;
+  }
+  if (display != 1.0f) {
+    out[0] = Vec4(Vec3(out[0]) * display, 0.0f);
+    out[1] = Vec4(Vec3(out[1]) * display, 0.0f);
+    out[2] = Vec4(Vec3(out[2]) * display, 0.0f);
+  }
+  return out;
 }
 
 template <typename Fn>

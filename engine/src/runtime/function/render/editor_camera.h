@@ -77,20 +77,24 @@ class EditorCamera final {
   void snapFocusOnAABB(const AABB& bounds);
   void snapPlaceInsideAABB(const AABB& bounds);
   void setLookAt(const Vec3& position, const Vec3& target);
+  /// Immediate look-at (no smooth transition). Used by BLUNDER_EDITOR_LOOKAT.
+  void snapLookAt(const Vec3& position, const Vec3& target);
   void placeInsideAABB(const AABB& bounds);
 
   void setInteractionLocked(bool locked) { m_interaction_locked = locked; }
   bool isInteractionLocked() const { return m_interaction_locked; }
 
-  /// True while the user is actively manipulating the viewport (orbit/pan/look
-  /// or scroll zoom). Does not include WASD fly; that is gated in onUpdate.
+  /// True while the user is actively manipulating the viewport (MMB origin
+  /// orbit, RMB camera-pivot orbit, Shift+MMB pan, or scroll zoom). Does not
+  /// include WASD fly; that is gated in onUpdate.
   bool isViewportInteracting() const;
 
  private:
   enum class InteractionMode : uint32_t {
     none = 0,
     pan,
-    free_look,
+    orbit_origin,
+    orbit_camera,
   };
 
   bool onMouseButtonPressed(MouseButtonPressedEvent& event);
@@ -105,7 +109,15 @@ class EditorCamera final {
   Vec2 getCurrentCursorWindowPosition() const;
   bool isViewportReady() const;
   bool isCursorInViewport() const;
-  void applyFreeLookRotation(const Vec2& mouse_delta);
+  bool shiftHeld() const;
+  InteractionMode desiredMouseMode() const;
+  void setInteractionMode(InteractionMode mode);
+  /// Arm MMB world-origin tumble without re-aiming or moving the eye.
+  void beginOrbitAroundOrigin();
+  void applyOrbitAroundFocal(const Vec2& mouse_delta);
+  /// Tumble eye + look-at around world (0,0,0) from the current pose.
+  void applyOrbitAroundWorldOrigin(const Vec2& mouse_delta);
+  void applyOrbitAroundCamera(const Vec2& mouse_delta);
   void applyKeyboardFlyMovement(float delta_time, const bool* keyboard_state);
   void updateDirectionVectors();
   void pan();

@@ -4,10 +4,12 @@
 #include <cstdio>
 
 #include <SDL3/SDL.h>
+#include "runtime/core/debug/input_present_trace.h"
 #include "runtime/function/slint/window_pointer_map.h"
 #include <SDL3/SDL_scancode.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/mat3x3.hpp>
 
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/core/math/geometry.h"
@@ -65,8 +67,6 @@ void EditorCamera::onUpdate(float delta_time) {
     return;
   }
 
-  const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
-
   if (m_window_system) {
     const bool right_mouse_down =
         m_window_system->isMouseButtonDown(SDL_BUTTON_RIGHT);
@@ -81,29 +81,26 @@ void EditorCamera::onUpdate(float delta_time) {
       m_middle_drag_started_in_viewport = false;
     }
 
-    InteractionMode desired_mode = InteractionMode::none;
-    if (right_mouse_down &&
-        m_right_drag_started_in_viewport) {
-      desired_mode = InteractionMode::free_look;
-    } else if (middle_mouse_down && m_middle_drag_started_in_viewport) {
-      desired_mode = InteractionMode::pan;
-    }
+    setInteractionMode(desiredMouseMode());
 
-    if (desired_mode != m_interaction_mode) {
-      m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
-      m_has_last_mouse_position = false;
-      m_interaction_mode = desired_mode;
+    const bool want_capture =
+        wantsMouseCapture(m_window_system, m_right_drag_started_in_viewport,
+                          m_middle_drag_started_in_viewport);
+    if (want_capture && !m_window_system->getFocusMode()) {
+      beginMouseCapture();
+    } else if (!want_capture && m_window_system->getFocusMode()) {
+      endMouseCapture();
     }
+  }
 
-    if (m_interaction_mode == InteractionMode::pan) {
-      m_is_animating_params = false; // Interrupted by pan
-      pan();
-      if (keyboard_state) {
-        applyKeyboardFlyMovement(delta_time, keyboard_state);
-      }
-    } else if (keyboard_state &&
-               m_interaction_mode == InteractionMode::free_look) {
-      m_is_animating_params = false; // Interrupted by movement
+  if (m_interaction_mode == InteractionMode::pan) {
+    m_is_animating_params = false;
+    pan();
+  }
+  if (m_window_system != nullptr) {
+    const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
+    if (keyboard_state && m_interaction_mode != InteractionMode::none) {
+      m_is_animating_params = false;
       applyKeyboardFlyMovement(delta_time, keyboard_state);
     }
   }
@@ -207,17 +204,19 @@ bool EditorCamera::onMouseButtonPressed(MouseButtonPressedEvent& event) {
     m_right_drag_started_in_viewport = in_viewport;
     if (in_viewport) {
       m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
-      m_interaction_mode = InteractionMode::free_look;
-      beginMouseCapture();
+      setInteractionMode(InteractionMode::orbit_camera);
+      // Hide the cursor on the next onUpdate. Do not enable SDL relative
+      // mouse mode from the press handler (it flushes MOTION and has stalled
+      // HWND present until mouse-up).
     }
   } else if (event.getMouseButton() == SDL_BUTTON_MIDDLE) {
     m_middle_drag_started_in_viewport = in_viewport;
     m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
     m_last_mouse_position = mouse_position;
     m_has_last_mouse_position = in_viewport;
-    if (in_viewport && m_interaction_mode != InteractionMode::free_look) {
-      m_interaction_mode = InteractionMode::pan;
-      beginMouseCapture();
+    if (in_viewport && m_interaction_mode != InteractionMode::orbit_camera) {
+      setInteractionMode(shiftHeld() ? InteractionMode::pan
+                                     : InteractionMode::orbit_origin);
     }
   }
 
@@ -233,44 +232,39 @@ bool EditorCamera::onMouseButtonReleased(MouseButtonReleasedEvent& event) {
     m_has_last_mouse_position = false;
   }
 
-  if (m_window_system) {
-    InteractionMode desired_mode = InteractionMode::none;
-    if (m_window_system->isMouseButtonDown(SDL_BUTTON_RIGHT) &&
-        m_right_drag_started_in_viewport) {
-      desired_mode = InteractionMode::free_look;
-    } else if (m_window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE) &&
-               m_middle_drag_started_in_viewport) {
-      desired_mode = InteractionMode::pan;
-    }
-    if (desired_mode != m_interaction_mode) {
-      m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
-      m_interaction_mode = desired_mode;
-    }
-    if (!wantsMouseCapture(m_window_system, m_right_drag_started_in_viewport,
-                           m_middle_drag_started_in_viewport)) {
-      endMouseCapture();
-    }
+  setInteractionMode(desiredMouseMode());
+  if (m_window_system &&
+      !wantsMouseCapture(m_window_system, m_right_drag_started_in_viewport,
+                         m_middle_drag_started_in_viewport)) {
+    endMouseCapture();
   }
 
   return false;
 }
 
 bool EditorCamera::onMouseMoved(MouseMovedEvent& event) {
-  const bool should_free_look =
-      m_interaction_mode == InteractionMode::free_look ||
-      (m_window_system != nullptr && m_right_drag_started_in_viewport &&
+  const bool right_orbit =
+      m_right_drag_started_in_viewport &&
+      (m_window_system == nullptr ||
        m_window_system->isMouseButtonDown(SDL_BUTTON_RIGHT));
-  if (should_free_look) {
-    applyFreeLookRotation(Vec2(event.getDeltaX(), event.getDeltaY()));
+  if (right_orbit) {
+    setInteractionMode(InteractionMode::orbit_camera);
+    applyOrbitAroundCamera(Vec2(event.getDeltaX(), event.getDeltaY()));
     return false;
   }
 
-  const bool should_pan =
-      m_interaction_mode == InteractionMode::pan ||
-      (m_window_system != nullptr && m_middle_drag_started_in_viewport &&
+  const bool middle_drag =
+      m_middle_drag_started_in_viewport &&
+      (m_window_system == nullptr ||
        m_window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE));
-  if (should_pan) {
-    m_mouse_delta_accumulator += Vec2(event.getDeltaX(), event.getDeltaY());
+  if (middle_drag) {
+    if (shiftHeld()) {
+      setInteractionMode(InteractionMode::pan);
+      m_mouse_delta_accumulator += Vec2(event.getDeltaX(), event.getDeltaY());
+    } else {
+      setInteractionMode(InteractionMode::orbit_origin);
+      applyOrbitAroundWorldOrigin(Vec2(event.getDeltaX(), event.getDeltaY()));
+    }
     return false;
   }
 
@@ -554,9 +548,7 @@ void EditorCamera::beginMouseCapture() {
   }
 
   m_window_system->setFocusMode(true);
-  float relative_x = 0.0f;
-  float relative_y = 0.0f;
-  SDL_GetRelativeMouseState(&relative_x, &relative_y);
+  traceInputPresent("capture-begin", "{\"relative\":0}");
 }
 
 void EditorCamera::endMouseCapture() {
@@ -565,9 +557,7 @@ void EditorCamera::endMouseCapture() {
   }
 
   m_window_system->setFocusMode(false);
-  float relative_x = 0.0f;
-  float relative_y = 0.0f;
-  SDL_GetRelativeMouseState(&relative_x, &relative_y);
+  traceInputPresent("capture-end", "{\"relative\":0}");
 }
 
 Vec2 EditorCamera::getCurrentCursorWindowPosition() const {
@@ -585,16 +575,110 @@ bool EditorCamera::isCursorInViewport() const {
   return isWindowPositionInViewport(getCurrentCursorWindowPosition());
 }
 
-void EditorCamera::applyFreeLookRotation(const Vec2& mouse_delta) {
+bool EditorCamera::shiftHeld() const {
+  return (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+}
+
+EditorCamera::InteractionMode EditorCamera::desiredMouseMode() const {
+  const bool right_down =
+      m_right_drag_started_in_viewport &&
+      (m_window_system == nullptr ||
+       m_window_system->isMouseButtonDown(SDL_BUTTON_RIGHT));
+  if (right_down) {
+    return InteractionMode::orbit_camera;
+  }
+  const bool middle_down =
+      m_middle_drag_started_in_viewport &&
+      (m_window_system == nullptr ||
+       m_window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE));
+  if (middle_down) {
+    return shiftHeld() ? InteractionMode::pan : InteractionMode::orbit_origin;
+  }
+  return InteractionMode::none;
+}
+
+void EditorCamera::setInteractionMode(InteractionMode mode) {
+  if (mode == m_interaction_mode) {
+    return;
+  }
+  m_mouse_delta_accumulator = Vec2(0.0f, 0.0f);
+  m_has_last_mouse_position = false;
+  m_interaction_mode = mode;
+  if (mode == InteractionMode::orbit_origin) {
+    beginOrbitAroundOrigin();
+  }
+}
+
+void EditorCamera::beginOrbitAroundOrigin() {
+  // Keep the current eye and look-at. Re-aiming at (0,0,0) here framed the
+  // origin-grid gizmo cluster on button-down even though drag should tumble
+  // around world origin from wherever the camera already is.
+  m_is_animating_params = false;
+}
+
+void EditorCamera::applyOrbitAroundWorldOrigin(const Vec2& mouse_delta) {
   if (mouse_delta.x == 0.0f && mouse_delta.y == 0.0f) {
     return;
   }
 
-  m_is_animating_params = false; // Interrupted by free look mouse movement
+  m_is_animating_params = false;
+  const Vec3 old_right = m_right_direction;
+  const Vec3 old_up = m_up_direction;
+  const Vec3 old_forward = m_forward_direction;
   m_yaw -= mouse_delta.x * k_free_look_rotate_speed;
   m_pitch -= mouse_delta.y * k_free_look_rotate_speed;
   m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
   updateDirectionVectors();
+
+  const Mat3 old_basis(old_right, old_up, -old_forward);
+  const Mat3 new_basis(m_right_direction, m_up_direction, -m_forward_direction);
+  const Mat3 rotate_around_origin = new_basis * glm::transpose(old_basis);
+  m_focal_point = rotate_around_origin * m_focal_point;
+
+  char data[176];
+  std::snprintf(data, sizeof(data),
+                "{\"dx\":%.2f,\"dy\":%.2f,\"yaw\":%.4f,\"pitch\":%.4f,"
+                "\"pivot\":\"world-origin\"}",
+                mouse_delta.x, mouse_delta.y, m_yaw, m_pitch);
+  traceInputPresent("orbit-delta", data);
+}
+
+void EditorCamera::applyOrbitAroundFocal(const Vec2& mouse_delta) {
+  if (mouse_delta.x == 0.0f && mouse_delta.y == 0.0f) {
+    return;
+  }
+
+  m_is_animating_params = false;
+  m_yaw -= mouse_delta.x * k_free_look_rotate_speed;
+  m_pitch -= mouse_delta.y * k_free_look_rotate_speed;
+  m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
+  updateDirectionVectors();
+  char data[160];
+  std::snprintf(data, sizeof(data),
+                "{\"dx\":%.2f,\"dy\":%.2f,\"yaw\":%.4f,\"pitch\":%.4f}",
+                mouse_delta.x, mouse_delta.y, m_yaw, m_pitch);
+  traceInputPresent("orbit-delta", data);
+}
+
+void EditorCamera::applyOrbitAroundCamera(const Vec2& mouse_delta) {
+  if (mouse_delta.x == 0.0f && mouse_delta.y == 0.0f) {
+    return;
+  }
+
+  m_is_animating_params = false;
+  const Vec3 pivot = m_position;
+  m_yaw -= mouse_delta.x * k_free_look_rotate_speed;
+  m_pitch -= mouse_delta.y * k_free_look_rotate_speed;
+  m_pitch = std::clamp(m_pitch, k_min_pitch, k_max_pitch);
+  updateDirectionVectors();
+  m_focal_point = pivot + m_forward_direction * m_distance;
+  updateViewMatrix();
+  char data[176];
+  std::snprintf(
+      data, sizeof(data),
+      "{\"dx\":%.2f,\"dy\":%.2f,\"yaw\":%.4f,\"pitch\":%.4f,\"pivot\":\"camera\"}",
+      mouse_delta.x, mouse_delta.y, m_yaw, m_pitch);
+  traceInputPresent("orbit-delta", data);
 }
 
 void EditorCamera::updateDirectionVectors() {
@@ -835,6 +919,25 @@ void EditorCamera::setLookAt(const Vec3& position, const Vec3& target) {
   startParamAnimation(target, distance, target_pitch, target_yaw);
   LOG_INFO("[EditorCamera] look-at position smoothly transition to Target=({}, {}, {}) Position=({}, {}, {})",
            target.x, target.y, target.z, position.x, position.y, position.z);
+}
+
+void EditorCamera::snapLookAt(const Vec3& position, const Vec3& target) {
+  Vec3 forward = target - position;
+  const float distance = glm::distance(position, target);
+  if (distance < 1e-4f) {
+    return;
+  }
+  forward /= distance;
+  m_focal_point = target;
+  m_distance = distance;
+  m_pitch = std::clamp(std::asin(std::clamp(forward.z, -1.0f, 1.0f)), k_min_pitch,
+                       k_max_pitch);
+  m_yaw = std::atan2(forward.y, forward.x);
+  m_is_animating_params = false;
+  m_param_transition_time = 0.0f;
+  updateDirectionVectors();
+  updateViewMatrix();
+  updateProjectionMatrix();
 }
 
 void EditorCamera::placeInsideAABB(const AABB& bounds) {

@@ -170,7 +170,11 @@ void maybeAbsorbNodeScaleIntoAncestor(const SceneInstance& scene,
   if (!isGltfCentimeterUniformScale(local_scale)) {
     return;
   }
-  if (ancestorChainHasUniformScale(scene, parent_entity_id, local_scale.x)) {
+  // Drop nodesQ0S 0.008 under an attach Unique so mesh verts stay centimetre
+  // (matching identity GPU draws and courtyard Uniques). Also drop it when an
+  // ancestor already carries the same uniform scale (no double 0.008).
+  if (isValid(parent_entity_id) ||
+      ancestorChainHasUniformScale(scene, parent_entity_id, local_scale.x)) {
     local_scale = Vec3(1.0f);
   }
 }
