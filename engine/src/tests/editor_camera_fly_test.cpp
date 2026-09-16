@@ -125,6 +125,27 @@ int main() {
                 !camera.isViewportInteracting());
   }
 
+  {
+    EditorCamera zoom_cam(nullptr);
+    zoom_cam.setViewportRect(0, 0, 1280.0f, 720.0f, 1280.0f, 720.0f);
+    expect_true("editor far clip reaches centimetre Sponza",
+                zoom_cam.getFarClip() > 10000.0f);
+    const float start = zoom_cam.getDistance();
+    for (int i = 0; i < 120; ++i) {
+      MouseScrolledEvent scroll(0.0f, -1.0f, 100.0f, 100.0f);
+      zoom_cam.onEvent(scroll);
+      zoom_cam.onUpdate(1.0f / 60.0f);
+    }
+    expect_true("wheel zoom-out exceeds old 2000 metre cap",
+                zoom_cam.getDistance() > 2000.0f);
+    expect_true("wheel zoom-out can frame full Sponza",
+                zoom_cam.getDistance() >= 8000.0f);
+    expect_true("wheel zoom-out still has an upper cap",
+                zoom_cam.getDistance() <= 50000.0f + 1.0f);
+    expect_true("zoom-out moved farther than start",
+                zoom_cam.getDistance() > start);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

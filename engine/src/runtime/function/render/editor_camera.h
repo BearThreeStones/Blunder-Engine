@@ -154,7 +154,9 @@ class EditorCamera final {
   int32_t m_viewport_origin_y{0};
   float m_vertical_fov{glm::radians(45.0f)};
   float m_near_clip{0.1f};
-  float m_far_clip{1000.0f};
+  /// Was 1000. Viewport uses this for perspective; 1000 clips centimetre Sponza
+  /// to a roof slab once dolly exceeds that. 100000 covers max orbit + AABB.
+  float m_far_clip{100000.0f};
   float m_ortho_size{10.0f};
   ProjectionMode m_projection_mode{ProjectionMode::perspective};
   InteractionMode m_interaction_mode{InteractionMode::none};

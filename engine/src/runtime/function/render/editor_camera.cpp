@@ -32,6 +32,12 @@ constexpr float k_free_look_rotate_speed = 0.0025f;
 constexpr float k_free_look_move_speed = 6.0f;
 constexpr float k_free_look_sprint_multiplier = 3.0f;
 constexpr float k_dolly_speed = 1.2f;
+constexpr float k_min_orbit_distance = 0.05f;
+/// Was 2000 (metre editor). Centimetre Sponza spans ~3800; 2000 leaves the
+/// camera inside the roof. 50000 frames the whole building with margin.
+constexpr float k_max_orbit_distance = 50000.0f;
+constexpr float k_min_ortho_size = 0.1f;
+constexpr float k_max_ortho_size = 50000.0f;
 const float k_max_pitch = glm::radians(89.0f);
 const float k_min_pitch = glm::radians(-89.0f);
 
@@ -154,7 +160,7 @@ void EditorCamera::onUpdate(float delta_time) {
     if (m_projection_mode == ProjectionMode::orthographic || m_target_projection_mode == ProjectionMode::orthographic) {
       const float half_fov_tan = std::tan(m_vertical_fov * 0.5f);
       m_ortho_size = 2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
-      m_ortho_size = std::clamp(m_ortho_size, 0.1f, 2000.0f);
+      m_ortho_size = std::clamp(m_ortho_size, k_min_ortho_size, k_max_ortho_size);
       proj_dirty = true;
     }
 
@@ -459,7 +465,7 @@ void EditorCamera::setProjectionMode(ProjectionMode mode) {
     // Match the visible world height from the current perspective orbit.
     const float visible_height =
         2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
-    m_ortho_size = std::clamp(visible_height, 0.5f, 2000.0f);
+    m_ortho_size = std::clamp(visible_height, 0.5f, k_max_ortho_size);
   }
 
   m_target_projection_mode = mode;
@@ -754,12 +760,12 @@ void EditorCamera::zoom() {
   m_is_animating_params = false; // Interrupted by zoom
   const float zoom_factor = 1.0f - m_scroll_delta_accumulator * 0.1f;
   m_distance *= std::max(zoom_factor, 0.01f);
-  m_distance = std::clamp(m_distance, 0.05f, 2000.0f);
+  m_distance = std::clamp(m_distance, k_min_orbit_distance, k_max_orbit_distance);
 
   if (m_projection_mode == ProjectionMode::orthographic) {
     const float half_fov_tan = std::tan(m_vertical_fov * 0.5f);
     m_ortho_size = 2.0f * m_distance * std::max(half_fov_tan, 1e-4f);
-    m_ortho_size = std::clamp(m_ortho_size, 0.1f, 2000.0f);
+    m_ortho_size = std::clamp(m_ortho_size, k_min_ortho_size, k_max_ortho_size);
     updateProjectionMatrix();
   }
   m_scroll_delta_accumulator = 0.0f;
