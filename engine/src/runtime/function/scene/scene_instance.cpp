@@ -444,6 +444,7 @@ void SceneInstance::clear() {
   m_mesh_renderers.clear();
   m_cameras.clear();
   m_lights.clear();
+  m_fogs.clear();
   m_has_world_bounds = false;
   m_world_bounds = AABB{};
   m_world_matrices_dirty = true;
@@ -506,6 +507,29 @@ void SceneInstance::clearLight(EntityId id) {
     return;
   }
   m_lights.erase(id);
+}
+
+void SceneInstance::setFog(EntityId id, FogComponent fog) {
+  if (!isValid(id)) {
+    return;
+  }
+  sanitizeFogComponent(fog);
+  m_fogs[id] = eastl::move(fog);
+}
+
+const FogComponent* SceneInstance::getFog(EntityId id) const {
+  const auto it = m_fogs.find(id);
+  if (it == m_fogs.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+void SceneInstance::clearFog(EntityId id) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_fogs.erase(id);
 }
 
 void SceneInstance::setWorldBounds(const AABB& bounds) {

@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "runtime/function/scene/gltf_scene_importer.h"
 
 #include <cgltf.h>
@@ -20,6 +22,7 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/resource/asset/guid.h"
@@ -120,14 +123,92 @@ EntityId findUnusedDescendant(SceneInstance& scene, EntityId root,
   return found;
 }
 
+bool entityHoldsUniqueComponents(const SceneInstance& scene, EntityId id) {
+  return scene.getLight(id) != nullptr || scene.getCamera(id) != nullptr ||
+         scene.getFog(id) != nullptr;
+}
+
 EntityId findReusableNamedEntity(SceneInstance& scene, EntityId attach_root,
                                  EntityId parent_id, const eastl::string& name,
                                  const eastl::unordered_set<EntityId>& used) {
   EntityId found = findUnusedDirectChild(scene, parent_id, name, used);
-  if (isValid(found)) {
+  if (isValid(found) && !entityHoldsUniqueComponents(scene, found)) {
     return found;
   }
-  return findUnusedDescendant(scene, attach_root, name, used);
+  found = findUnusedDescendant(scene, attach_root, name, used);
+  if (isValid(found) && entityHoldsUniqueComponents(scene, found)) {
+    return k_invalid_entity_id;
+  }
+  return found;
+}
+
+bool ancestorChainHasUniformScale(const SceneInstance& scene, EntityId start_parent,
+                                  float scale) {
+  EntityId current = start_parent;
+  while (isValid(current)) {
+    Vec3 position{};
+    Quat rotation = glm::identity<Quat>();
+    Vec3 parent_scale(1.0f);
+    if (!scene.getTransform(current, position, rotation, parent_scale)) {
+      break;
+    }
+    if (isUniformScale(parent_scale) &&
+        std::fabs(parent_scale.x - scale) <= 1e-4f) {
+      return true;
+    }
+    const Entity* entity = scene.getEntity(current);
+    if (entity == nullptr) {
+      break;
+    }
+    current = entity->getParentId();
+  }
+  return false;
+}
+
+void maybeAbsorbNodeScaleIntoAncestor(const SceneInstance& scene,
+                                      EntityId parent_entity_id, Vec3& local_scale) {
+  if (!isGltfCentimeterUniformScale(local_scale)) {
+    return;
+  }
+  // Drop nodesQ0S 0.008 under an attach Unique so mesh verts stay centimetre
+  // (matching identity GPU draws and courtyard Uniques). Also drop it when an
+  // ancestor already carries the same uniform scale (no double 0.008).
+  if (isValid(parent_entity_id) ||
+      ancestorChainHasUniformScale(scene, parent_entity_id, local_scale.x)) {
+    local_scale = Vec3(1.0f);
+  }
+}
+
+void convertMeterSpaceUniquesBesideGltfScale(SceneInstance& scene,
+                                             EntityId attach_root) {
+  if (!isValid(attach_root)) {
+    return;
+  }
+  Vec3 root_position{};
+  Quat root_rotation = glm::identity<Quat>();
+  Vec3 root_scale(1.0f);
+  if (!scene.getTransform(attach_root, root_position, root_rotation, root_scale) ||
+      !isGltfCentimeterUniformScale(root_scale)) {
+    return;
+  }
+
+  const auto convert_if_meters = [&](EntityId id) {
+    Entity* entity = scene.getEntity(id);
+    if (entity == nullptr || entity->getParentId() != attach_root) {
+      return;
+    }
+    const Vec3 local = entity->getPosition();
+    if (!looksLikeMeterSpaceTranslation(local)) {
+      return;
+    }
+    scene.setTransform(id, meterTranslationToGltfLocal(local, root_scale.x),
+                       entity->getRotation(), entity->getScale());
+  };
+
+  scene.forEachLight(
+      [&](EntityId id, const LightComponent&) { convert_if_meters(id); });
+  scene.forEachCamera(
+      [&](EntityId id, const CameraComponent&) { convert_if_meters(id); });
 }
 
 GltfSceneImporter::ImportResult importGltfDocument(
@@ -151,16 +232,21 @@ GltfSceneImporter::ImportResult importGltfDocument(
     }
 
     const eastl::string node_name = gltfNodeDisplayName(node);
+    Vec3 local_position{};
+    Quat local_rotation = glm::identity<Quat>();
+    Vec3 local_scale(1.0f);
+    decomposeCgltfNodeLocal(node, local_position, local_rotation, local_scale);
+    maybeAbsorbNodeScaleIntoAncestor(scene_instance, parent_entity_id,
+                                     local_scale);
+
     EntityId node_entity_id = findReusableNamedEntity(
         scene_instance, attach_parent_entity, parent_entity_id, node_name,
         reused_ids);
     if (isValid(node_entity_id)) {
       reused_ids.insert(node_entity_id);
+      scene_instance.setTransform(node_entity_id, local_position, local_rotation,
+                                  local_scale);
     } else {
-      Vec3 local_position{};
-      Quat local_rotation = glm::identity<Quat>();
-      Vec3 local_scale(1.0f);
-      decomposeCgltfNodeLocal(node, local_position, local_rotation, local_scale);
       node_entity_id = scene_instance.createEntity(
           node_name, local_position, local_rotation, local_scale,
           parent_entity_id);
@@ -241,6 +327,7 @@ GltfSceneImporter::ImportResult importGltfDocument(
     }
   }
 
+  convertMeterSpaceUniquesBesideGltfScale(scene_instance, attach_parent_entity);
   scene_instance.markTransformsDirty();
   scene_instance.tick(0.0f);
 

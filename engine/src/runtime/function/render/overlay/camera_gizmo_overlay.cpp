@@ -10,12 +10,14 @@
 #include <glm/vec4.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/overlay/camera_gizmo_geometry.h"
 #include "runtime/function/render/overlay/camera_gizmo_hit_test.h"
+#include "runtime/function/render/overlay/light_gizmo_geometry.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
 #include "runtime/function/render/overlay/overlay_state.h"
 #include "runtime/function/render/rhi/rhi_desc.h"
@@ -27,7 +29,9 @@
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -89,6 +93,23 @@ uint32_t vertexCountForStyle(CameraGizmoDrawStyle style) {
     default:
       return 0u;
   }
+}
+
+Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id) {
+  const Mat4 unique_world = scene.getWorldMatrix(entity_id);
+  Mat4 parent_world(1.0f);
+  if (const Entity* entity = scene.getEntity(entity_id);
+      entity != nullptr && isValid(entity->getParentId())) {
+    parent_world = scene.getWorldMatrix(entity->getParentId());
+  }
+  bool centimetre_mesh = false;
+  if (scene.hasWorldBounds()) {
+    const AABB& bounds = scene.getWorldBounds();
+    centimetre_mesh = looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
+  }
+  return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
+                                         LightGizmoKind::directional,
+                                         centimetre_mesh);
 }
 
 }  // namespace
@@ -293,6 +314,8 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
   EditorSelectionSystem* selection =
       g_runtime_global_context.m_editor_selection.get();
 
+  scene->tick(0.0f);
+
   EntityId sole_selected_camera{k_invalid_entity_id};
   if (selection != nullptr) {
     const eastl::vector<EntityId> selected_ids = selection->getSelectedIds();
@@ -316,8 +339,8 @@ void CameraGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     const CameraGizmoFrame frame = buildCameraGizmoFrameLocal(
         fov_rad, aspect, kCameraGizmoDisplayDistance);
 
-    const glm::mat4 world = scene->getWorldMatrix(entity_id);
-    const glm::vec3 origin = transformPoint(world, frame.origin);
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id);
+    const glm::vec3 origin = overlayGizmoWorldOrigin(world);
 
     glm::vec3 corners[4];
     for (int i = 0; i < 4; ++i) {
@@ -416,6 +439,8 @@ std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
   EntityId best_entity{k_invalid_entity_id};
   float best_depth = -1e9f;
 
+  scene->tick(0.0f);
+
   scene->forEachCamera([&](EntityId entity_id, const CameraComponent& cam) {
     if (!scene->isActiveInHierarchy(entity_id)) {
       return;
@@ -423,7 +448,7 @@ std::optional<OverlayGizmoPickHit> CameraGizmoOverlay::hitTest(
     const float fov_rad = glm::radians(cam.vertical_fov_degrees);
     const CameraGizmoFrame frame =
         buildCameraGizmoFrameLocal(fov_rad, aspect, kCameraGizmoDisplayDistance);
-    const glm::mat4 world = scene->getWorldMatrix(entity_id);
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id);
     const std::optional<float> hit_depth = hitTestCameraGizmoFrameViewportLocal(
         pointer, frame, world, view, proj, vp_w, vp_h);
     if (!hit_depth.has_value() ||

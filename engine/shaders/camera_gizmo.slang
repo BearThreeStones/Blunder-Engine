@@ -6,7 +6,7 @@ static const uint kTriangleVertCount = 3u;
 static const uint kOriginDiscVertCount = 6u;
 static const uint kIconVertCount = 6u;
 static const float kOriginDiscRadiusPx = 3.0;
-/// Screen-space half-extent of the camera billboard icon (pixels).
+/// Screen-space half-extent of Unique icon billboards (pixels).
 static const float kIconHalfExtentPx = 18.0;
 static const float3 kIconFill = float3(0.969, 0.961, 0.812); // #f7f5cf
 static const float3 kIconOutline = float3(0.08, 0.08, 0.08);
@@ -153,7 +153,7 @@ VertexOutput vsIconBillboard(uint vid) {
     VertexOutput o;
     o.sv_position = float4(clipC.xy + offset, clipC.z, clipC.w);
     o.color = ubo.color;
-    o.style = 3.0;
+    o.style = ubo.style;
     o.disc_uv = uv;
     return o;
 }
@@ -195,6 +195,17 @@ float cameraIconSdf(float2 uv) {
     return d;
 }
 
+/// Godot GizmoLight-like bulb in UV [-1,1].
+float lightBulbSdf(float2 uv) {
+    float2 p = uv * 1.15;
+    float globe = sdCircle(p - float2(0.0, 0.20), 0.46);
+    float neck = sdRoundedBox(p - float2(0.0, -0.28), float2(0.16, 0.12), 0.04);
+    float base = sdRoundedBox(p - float2(0.0, -0.52), float2(0.26, 0.12), 0.04);
+    float d = min(globe, neck);
+    d = min(d, base);
+    return d;
+}
+
 [shader("vertex")]
 VertexOutput vertexMain(uint vid : SV_VertexID) {
     uint style = uint(ubo.style + 0.5);
@@ -216,7 +227,7 @@ VertexOutput vertexMain(uint vid : SV_VertexID) {
         }
         return vsOriginDisc(vid);
     }
-    if (style == 3u) {
+    if (style == 3u || style == 4u) {
         if (vid >= kIconVertCount) {
             return emitDiscarded();
         }
@@ -232,6 +243,21 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
     }
 
     float4 color = input.color;
+    if (input.style > 3.5) {
+        float d = lightBulbSdf(input.disc_uv);
+        float aa = max(fwidth(d), 1e-4);
+        float fill = 1.0 - smoothstep(-aa, aa, d);
+        float stroke = 1.0 - smoothstep(-aa, aa, abs(d) - 0.07);
+
+        float3 fillRgb = lerp(kIconFill, input.color.rgb, 0.35 * saturate(input.color.a));
+        float3 outlineRgb = lerp(kIconOutline, input.color.rgb, 0.55);
+        float3 rgb = lerp(outlineRgb, fillRgb, fill);
+        float a = max(fill, stroke) * saturate(input.color.a);
+        if (a < 0.001) {
+            discard;
+        }
+        return float4(rgb, a);
+    }
     if (input.style > 2.5) {
         float d = cameraIconSdf(input.disc_uv);
         float aa = max(fwidth(d), 1e-4);

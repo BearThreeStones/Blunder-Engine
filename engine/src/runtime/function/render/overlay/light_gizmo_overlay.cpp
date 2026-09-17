@@ -10,6 +10,7 @@
 #include <glm/vec4.hpp>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
@@ -25,7 +26,9 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
+#include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
@@ -34,7 +37,7 @@ namespace Blunder {
 
 namespace {
 
-constexpr uint32_t k_max_draws_per_frame = 256u;
+constexpr uint32_t k_max_draws_per_frame = 2048u;
 constexpr uint32_t k_line_vert_count = 6u;
 constexpr uint32_t k_triangle_vert_count = 3u;
 constexpr uint32_t k_origin_disc_vert_count = 6u;
@@ -80,6 +83,14 @@ LightGizmoKind kindFromLight(LightType type) {
   }
 }
 
+bool overlayCentimetreMesh(const SceneInstance& scene) {
+  if (!scene.hasWorldBounds()) {
+    return false;
+  }
+  const AABB& bounds = scene.getWorldBounds();
+  return looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
+}
+
 LightGizmoShape shapeFromLight(const LightComponent& light) {
   LightGizmoShape shape{};
   shape.kind = kindFromLight(light.type);
@@ -90,11 +101,24 @@ LightGizmoShape shapeFromLight(const LightComponent& light) {
   return shape;
 }
 
+Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id,
+                         LightGizmoKind kind) {
+  const Mat4 unique_world = scene.getWorldMatrix(entity_id);
+  Mat4 parent_world(1.0f);
+  if (const Entity* entity = scene.getEntity(entity_id);
+      entity != nullptr && isValid(entity->getParentId())) {
+    parent_world = scene.getWorldMatrix(entity->getParentId());
+  }
+  return makeLightGizmoWorldMatchingMesh(unique_world, parent_world, kind,
+                                         overlayCentimetreMesh(scene));
+}
+
 enum class LightGizmoDrawStyle : uint32_t {
   line = 0,
   triangle = 1,
   origin_disc = 2,
   icon_billboard = 3,
+  light_icon_billboard = 4,
 };
 
 uint32_t vertexCountForStyle(LightGizmoDrawStyle style) {
@@ -106,6 +130,7 @@ uint32_t vertexCountForStyle(LightGizmoDrawStyle style) {
     case LightGizmoDrawStyle::origin_disc:
       return k_origin_disc_vert_count;
     case LightGizmoDrawStyle::icon_billboard:
+    case LightGizmoDrawStyle::light_icon_billboard:
       return k_icon_vert_count;
     default:
       return 0u;
@@ -310,6 +335,8 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
   EditorSelectionSystem* selection =
       g_runtime_global_context.m_editor_selection.get();
 
+  scene->tick(0.0f);
+
   scene->forEachLight([&](EntityId entity_id, const LightComponent& light) {
     if (!scene->isActiveInHierarchy(entity_id)) {
       return;
@@ -320,8 +347,16 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
 
     const bool selected = selection != nullptr && selection->isSelected(entity_id);
     const glm::vec4 color = selected ? k_selected_color : k_muted_color;
-    const glm::mat4 world = scene->getWorldMatrix(entity_id);
-    const LightGizmoShape shape = shapeFromLight(light);
+    LightGizmoShape shape = shapeFromLight(light);
+    shape.show_range = selected;
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id, shape.kind);
+    const glm::vec3 origin = overlayGizmoWorldOrigin(world);
+    const glm::vec4 icon_color =
+        selected ? glm::vec4(k_selected_color.x, k_selected_color.y,
+                             k_selected_color.z, 1.0f)
+                 : glm::vec4(0.0f, 0.0f, 0.0f, 0.95f);
+    recordDraw(cmd, state, DrawStyle::light_icon_billboard, origin, glm::vec3(0.0f),
+               glm::vec3(0.0f), icon_color);
 
     forEachLightGizmoSegmentLocal(shape, [&](const Vec3& a, const Vec3& b) {
       recordDraw(cmd, state, DrawStyle::line, transformPoint(world, a),
@@ -354,13 +389,18 @@ std::optional<OverlayGizmoPickHit> LightGizmoOverlay::hitTest(
 
   EntityId best_entity{k_invalid_entity_id};
   float best_depth = -1e9f;
+  EditorSelectionSystem* selection =
+      g_runtime_global_context.m_editor_selection.get();
+  scene->tick(0.0f);
 
   scene->forEachLight([&](EntityId entity_id, const LightComponent& light) {
     if (!scene->isActiveInHierarchy(entity_id)) {
       return;
     }
-    const LightGizmoShape shape = shapeFromLight(light);
-    const glm::mat4 world = scene->getWorldMatrix(entity_id);
+    LightGizmoShape shape = shapeFromLight(light);
+    const bool selected = selection != nullptr && selection->isSelected(entity_id);
+    shape.show_range = selected;
+    const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id, shape.kind);
     const std::optional<float> hit_depth = hitTestLightGizmoViewportLocal(
         pointer, shape, world, view, proj, vp_w, vp_h);
     if (!hit_depth.has_value() ||
