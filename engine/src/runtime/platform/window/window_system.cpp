@@ -10,6 +10,7 @@
 #include <windows.h>
 #endif
 
+#include "EASTL/algorithm.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/core/event/application_event.h"
 #include "runtime/core/event/key_event.h"
@@ -57,58 +58,9 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
 
   m_should_close = false;
   m_is_focus_mode = false;
-  SDL_ShowWindow(m_window);
-  SDL_RaiseWindow(m_window);
+  m_startup_foreground_frames = 90;
   SDL_FlashWindow(m_window, SDL_FLASH_UNTIL_FOCUSED);
-#ifdef _WIN32
-  if (HWND hwnd = static_cast<HWND>(getNativeWin32Hwnd())) {
-    WINDOWPLACEMENT placement{};
-    placement.length = sizeof(placement);
-    if (GetWindowPlacement(hwnd, &placement) &&
-        (placement.showCmd == SW_SHOWMINIMIZED ||
-         placement.showCmd == SW_MINIMIZE)) {
-      ShowWindow(hwnd, SW_RESTORE);
-    } else {
-      ShowWindow(hwnd, SW_SHOWNORMAL);
-    }
-
-    RECT window_rect{};
-    GetWindowRect(hwnd, &window_rect);
-    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-    const bool offscreen = window_rect.left <= -10000 ||
-                           window_rect.right < vx || window_rect.bottom < vy ||
-                           window_rect.left > vx + vw ||
-                           window_rect.top > vy + vh;
-    if (offscreen) {
-      SetWindowPos(hwnd, HWND_TOPMOST, 80, 80, eastl::max(m_width, 1280),
-                   eastl::max(m_height, 720), SWP_SHOWWINDOW);
-    } else {
-      SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-    }
-
-    HWND foreground = GetForegroundWindow();
-    DWORD fg_thread = 0;
-    GetWindowThreadProcessId(foreground, &fg_thread);
-    const DWORD this_thread = GetCurrentThreadId();
-    const bool attached =
-        fg_thread != 0 && fg_thread != this_thread &&
-        AttachThreadInput(this_thread, fg_thread, TRUE);
-    AllowSetForegroundWindow(ASFW_ANY);
-    BringWindowToTop(hwnd);
-    const BOOL stole_fg = SetForegroundWindow(hwnd);
-    if (attached) {
-      AttachThreadInput(this_thread, fg_thread, FALSE);
-    }
-    if (stole_fg) {
-      SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-    }
-  }
-#endif
+  bringToForeground();
   SDL_StartTextInput(m_window);
 }
 
@@ -298,6 +250,82 @@ eastl::array<int, 2> WindowSystem::getDrawableSize() const {
 bool WindowSystem::isMouseButtonDown(int button) const {
   const SDL_MouseButtonFlags buttons = SDL_GetMouseState(nullptr, nullptr);
   return (buttons & SDL_BUTTON_MASK(button)) != 0;
+}
+
+bool WindowSystem::hasInputFocus() const {
+  if (!m_window) {
+    return false;
+  }
+  return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+}
+
+void WindowSystem::bringToForeground() {
+  if (!m_window) {
+    return;
+  }
+  SDL_ShowWindow(m_window);
+  SDL_RaiseWindow(m_window);
+#ifdef _WIN32
+  if (HWND hwnd = static_cast<HWND>(getNativeWin32Hwnd())) {
+    WINDOWPLACEMENT placement{};
+    placement.length = sizeof(placement);
+    if (GetWindowPlacement(hwnd, &placement) &&
+        (placement.showCmd == SW_SHOWMINIMIZED ||
+         placement.showCmd == SW_MINIMIZE)) {
+      ShowWindow(hwnd, SW_RESTORE);
+    } else {
+      ShowWindow(hwnd, SW_SHOWNORMAL);
+    }
+
+    RECT window_rect{};
+    GetWindowRect(hwnd, &window_rect);
+    const int vx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const int vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const int vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    const bool offscreen = window_rect.left <= -10000 ||
+                           window_rect.right < vx || window_rect.bottom < vy ||
+                           window_rect.left > vx + vw ||
+                           window_rect.top > vy + vh;
+    if (offscreen) {
+      SetWindowPos(hwnd, HWND_TOPMOST, 80, 80, eastl::max(m_width, 1280),
+                   eastl::max(m_height, 720), SWP_SHOWWINDOW);
+    } else {
+      SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    }
+
+    HWND foreground = GetForegroundWindow();
+    DWORD fg_thread = 0;
+    GetWindowThreadProcessId(foreground, &fg_thread);
+    const DWORD this_thread = GetCurrentThreadId();
+    const bool attached =
+        fg_thread != 0 && fg_thread != this_thread &&
+        AttachThreadInput(this_thread, fg_thread, TRUE);
+    AllowSetForegroundWindow(ASFW_ANY);
+    BringWindowToTop(hwnd);
+    const BOOL stole_fg = SetForegroundWindow(hwnd);
+    if (attached) {
+      AttachThreadInput(this_thread, fg_thread, FALSE);
+    }
+    if (stole_fg) {
+      SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    }
+  }
+#endif
+}
+
+void WindowSystem::pumpStartupForeground() {
+  if (!m_window || m_startup_foreground_frames <= 0) {
+    return;
+  }
+  if (hasInputFocus()) {
+    m_startup_foreground_frames = 0;
+    return;
+  }
+  --m_startup_foreground_frames;
+  bringToForeground();
 }
 
 void WindowSystem::setFocusMode(bool mode) {

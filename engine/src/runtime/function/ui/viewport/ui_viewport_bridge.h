@@ -16,7 +16,7 @@ class VulkanAllocator;
 class VulkanContext;
 class VulkanSync;
 
-/// Schedules Vulkan offscreen readback with in-flight fences (no post-submit stall).
+/// Schedules Vulkan offscreen readback with in-flight timeline values (no post-submit stall).
 ///
 /// Staging buffers are persistently mapped (VMA GPU_TO_CPU); pollAndPresent()
 /// hands the mapped pointer directly to the sink, avoiding an intermediate
@@ -32,7 +32,7 @@ class UIViewportBridge final {
 
   void resizeReadback(uint32_t width, uint32_t height);
 
-  /// Waits for the slot fence and resets it (call before recording the slot CB).
+  /// Waits for the slot timeline value (call before recording the slot CB).
   void waitForRecordingSlot(uint32_t slot);
 
   /// Non-blocking variant: returns false when the slot's previous submit is still
@@ -41,7 +41,7 @@ class UIViewportBridge final {
 
   VulkanBuffer* stagingBuffer(uint32_t slot);
 
-  /// Call after `vkQueueSubmit` for this slot's in-flight fence.
+  /// Call after `vkQueueSubmit` for this slot's timeline value.
   void notifyGpuSubmitted(uint32_t slot, uint32_t width, uint32_t height);
 
   /// Maps any signaled slots and presents the newest completed frame to the sink.

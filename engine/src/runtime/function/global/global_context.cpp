@@ -8,6 +8,7 @@
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/core/log/console_ring.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/function/job/job_system.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
@@ -93,7 +94,7 @@ std::filesystem::path findProjectGameAssembly(
 
 void tryStartDotNetHost(RuntimeGlobalContext& ctx, bool force_start) {
   // Product Play runs DotNetHost in engine_player (force_start). Edit Mode does
-  // not auto-start a host for authorship �?BLUNDER_DOTNET_SCRIPTS=1 is debug /
+  // not auto-start a host for authorship — BLUNDER_DOTNET_SCRIPTS=1 is debug /
   // Approach A / editor_dotnet_host_test opt-in only (see docs/agents/testing.md).
   // Avoid setting that env while using editor Play (would start a second host).
   if (!force_start && !envFlagEnabled("BLUNDER_DOTNET_SCRIPTS")) {
@@ -217,6 +218,8 @@ void RuntimeGlobalContext::startSystems(
   // m_config_manager->initialize(config_file_path);
 
   m_logger_system = eastl::make_shared<LogSystem>();
+  m_job_system = eastl::make_shared<JobSystem>();
+  m_job_system->initialize();
   // Player: Console Messages flush to the editor over Play IPC.
   ConsoleRing::instance().setForwardEnabled(player_host);
 
@@ -652,6 +655,11 @@ void RuntimeGlobalContext::shutdownSystems() {
   if (m_file_system) {
     m_file_system->shutdown();
     m_file_system.reset();
+  }
+
+  if (m_job_system) {
+    m_job_system->shutdown();
+    m_job_system.reset();
   }
 
   m_logger_system.reset();

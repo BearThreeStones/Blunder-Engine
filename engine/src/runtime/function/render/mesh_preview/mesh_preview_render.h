@@ -45,6 +45,7 @@ struct MeshPreviewRenderResult {
   eastl::vector<uint8_t> rgba;
   uint32_t width{0};
   uint32_t height{0};
+  bool textures_pending{false};
 };
 
 using MeshPreviewSuccessFn = void (*)(const MeshPreviewRenderResult& result,
@@ -83,6 +84,7 @@ class IMeshPreviewRenderBackend {
                                  const MeshPreviewStudioLights& lights,
                                  MeshPreviewPoseMode pose_mode,
                                  eastl::vector<uint8_t>& out_rgba) = 0;
+  virtual bool lastMaterialTexturesPending() const { return false; }
 };
 
 struct MeshPreviewRenderServiceInit {

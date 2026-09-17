@@ -50,6 +50,12 @@ class WindowSystem final {
 
   bool isMouseButtonDown(int button) const;
   bool getFocusMode() const { return m_is_focus_mode; }
+  /// SDL window has keyboard focus (clicked/active), distinct from Focus Mode.
+  bool hasInputFocus() const;
+  /// Raise this window and steal OS foreground (Play spawn vs editor mouse-up).
+  void bringToForeground();
+  /// While startup frames remain and this window lacks input focus, raise again.
+  void pumpStartupForeground();
   void setFocusMode(bool mode);
   void setSystemCursor(SDL_SystemCursor cursor);
   void clearSystemCursor();
@@ -97,6 +103,7 @@ class WindowSystem final {
   bool m_is_focus_mode{false};
   bool m_resize_notify_pending{false};
   bool m_win32_modal_size_loop{false};
+  int m_startup_foreground_frames{0};
   EventCallbackFn m_event_callback;
   eastl::function<void(const SDL_Event&)> m_native_event_callback;
 };

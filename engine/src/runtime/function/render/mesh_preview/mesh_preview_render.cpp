@@ -100,6 +100,8 @@ MeshPreviewRenderResult MeshPreviewRenderService::renderMeshAsset(
   }
 
   result.ok = true;
+  result.textures_pending =
+      m_backend != nullptr && m_backend->lastMaterialTexturesPending();
   notifySuccess(result);
   return result;
 }

@@ -12,16 +12,15 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    ├─ resize OffscreenRenderTarget if Slint reports a new central rect size
    ├─ assemble ForwardFrameState + opaque draw list (N mesh sources)
    └─► ForwardRenderPath::renderFrame
-         ├─ RHI beginRenderPass (color + depth clear) on offscreen RT
-         ├─ opaque draw list [0..N) (basic.slang, per-slot descriptors)
-         ├─ transparent meshes
-         ├─ scene overlays (axes, wireframe solids — depth-aware, main color)
+         ├─ shadow pass: PRIMARY begins SECONDARY contents, executes shadow draws
+         ├─ RHI beginRenderPass (color + depth clear) with SECONDARY contents
+         ├─ execute opaque secondary, scene-overlay secondary, transparent secondary
          ├─ RHI endRenderPass → SHADER_READ_ONLY
-   ├─ OverlaySystem::draw_outline (ID prepass + edge resolve → main color)
-   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT: grid lines → line_tx)
-   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang → main color)
-   ├─ SsaOPass::apply (composite AO onto main color)
-   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD: navigate gizmo)
+   ├─ OverlaySystem::draw_outline (ID prepass + edge resolve, each via secondary execute)
+   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT via secondary execute)
+   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang via secondary execute)
+   ├─ SsaOPass::apply (AO + composite via secondary execute; barriers stay on PRIMARY)
+   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD via secondary execute)
    ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
    ├─ RHI transitionToShaderRead
    ├─ submit (fence, no stall)
@@ -201,22 +200,24 @@ Restore Sponza demo: set `BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset` 
   Release builds (validation off) get zero-copy automatically; in debug set
   `BLUNDER_VK_VALIDATION=0` to enable it.
 - The CPU readback path uses persistently mapped staging buffers and async
-  fence polling; `VulkanSync::k_max_frames_in_flight` staging buffers are
+  timeline polls; `VulkanSync::k_max_frames_in_flight` staging buffers are
   provisioned for double-buffering. The GPU copy runs on frame N; on frame
-  N+1, `tryMapSlot` polls `vkGetFenceStatus` and, if signaled, hands the
-  already-mapped pointer directly to Slint (no intermediate memcpy). The
-  viewport displays ~1 frame behind the GPU.
+  N+1, `tryMapSlot` polls the slot timeline value (`vkWaitSemaphores` with
+  timeout 0) and, if reached, hands the already-mapped pointer directly to
+  Slint (no intermediate memcpy). The viewport displays ~1 frame behind
+  the GPU. See [ADR 0060](../adr/0060-vulkan-timeline-semaphores.md).
 - **Zero-copy double-buffering:** `OffscreenRenderTarget` owns
   `k_buffer_count` (= `VulkanSync::k_max_frames_in_flight`, 2) independent
   color + depth + framebuffer sets. Each frame, `RenderSystem` sets
   `setActiveBufferIndex(m_current_frame)` before recording; the GPU writes
   buffer[slot] while `pollZeroCopyAndPresent()` presents
-  `getImage(completed_slot)` to Slint after the matching fence signals.
-  Slint rebinds automatically when the presented `VkImage` handle changes
-  (slot alternation or resize). This removes same-image write-after-read
-  pressure that previously relied on the render-pass EXTERNAL subpass
-  dependency. Viewport latency is ~1–2 frames. **Not in v1:** timeline
-  semaphore / Skia wait sync.
+  `getImage(completed_slot)` to Slint after the matching timeline value is
+  reached. Slint rebinds automatically when the presented `VkImage` handle
+  changes (slot alternation or resize). This removes same-image
+  write-after-read pressure that previously relied on the render-pass
+  EXTERNAL subpass dependency. Viewport latency is ~1–2 frames. **Not in
+  v1:** Skia wait sync on the timeline (Slint still presents about one
+  frame behind).
 - **Partial Skia composite (viewport-only repaint):** when the Slint fork's
   Vulkan partial-rendering path is enabled (default), orbit/interaction marks
   only the central viewport logical rect dirty via

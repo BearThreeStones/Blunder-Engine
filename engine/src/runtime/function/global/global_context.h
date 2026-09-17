@@ -11,6 +11,7 @@
 
 namespace Blunder {
 class LogSystem;
+class JobSystem;
 class InputSystem;
 class SlintSystem;
 class UiHost;
@@ -111,6 +112,7 @@ class RuntimeGlobalContext {
  public:
   MemorySystem m_memory_system;
   eastl::shared_ptr<LogSystem> m_logger_system;
+  eastl::shared_ptr<JobSystem> m_job_system;
   eastl::shared_ptr<InputSystem> m_input_system;
   eastl::shared_ptr<FileSystem> m_file_system;
   eastl::shared_ptr<AssetRegistry> m_asset_registry;

@@ -15,9 +15,9 @@ class IOffscreenRenderTarget {
   virtual Extent2D extent() const = 0;
   virtual PixelFormat colorFormat() const = 0;
 
-  virtual void beginRenderPass(ICommandList& command_list,
-                               const ClearValue* clears,
-                               uint32_t clear_count) = 0;
+  virtual void beginRenderPass(
+      ICommandList& command_list, const ClearValue* clears, uint32_t clear_count,
+      SubpassContents contents = SubpassContents::Inline) = 0;
   virtual void endRenderPass(ICommandList& command_list) = 0;
   virtual void transitionToCopySource(ICommandList& command_list) = 0;
   virtual void transitionToShaderRead(ICommandList& command_list) = 0;

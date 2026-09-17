@@ -527,10 +527,10 @@ void Object::syncLocalTransformFromStore() {
 
 void Object::writeLocalTransformToStore() {
   materializeEntityIfNeeded();
+  IEntityStore* store = ObjectDB::getEntityStore();
   if (!hasEntity()) {
     return;
   }
-  IEntityStore* store = ObjectDB::getEntityStore();
   if (store == nullptr) {
     return;
   }

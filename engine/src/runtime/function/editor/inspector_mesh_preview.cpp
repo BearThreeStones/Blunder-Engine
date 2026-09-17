@@ -103,7 +103,7 @@ bool InspectorMeshPreview::renderFrame(MeshPreviewRenderService* service) {
   request.framing_override = framing;
   const MeshPreviewRenderResult result =
       service->renderMeshAsset(m_mesh_virtual_path, request);
-  m_dirty = false;
+  m_dirty = result.textures_pending;
   if (!result.ok || result.rgba.empty()) {
     m_has_image = false;
     return false;

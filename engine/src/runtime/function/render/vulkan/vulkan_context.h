@@ -7,9 +7,11 @@
 #include "EASTL/string.h"
 #include "EASTL/unique_ptr.h"
 #include "EASTL/unordered_map.h"
+#include "EASTL/unordered_set.h"
 #include "EASTL/vector.h"
 
 #include "runtime/function/render/vulkan/bindless_texture_table.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan/vulkan_texture.h"
 
@@ -32,10 +34,12 @@ class VulkanContext final {
 
   void initialize(const VulkanContextCreateInfo& info);
   void shutdown();
+  void bindSync(VulkanSync* sync) { m_sync = sync; }
+  VulkanSync* sync() const { return m_sync; }
   VkCommandBuffer beginImmediateCommands();
   void endImmediateCommands(VkCommandBuffer command_buffer);
-  /// Submits one-shot immediate commands without blocking; caller owns fence until signaled.
-  void submitImmediateCommandsNoWait(VkCommandBuffer command_buffer, VkFence fence);
+  /// Submits one-shot immediate commands without blocking; returns the signaled timeline value.
+  uint64_t submitImmediateCommandsNoWait(VkCommandBuffer command_buffer);
   void freeImmediateCommandBuffer(VkCommandBuffer command_buffer);
 
   VkInstance getInstance() const { return m_instance; }
@@ -59,10 +63,18 @@ class VulkanContext final {
       const VkGraphicsPipelineCreateInfo* create_infos, VkPipeline* pipelines);
 
   BindlessTextureTable& bindlessTextureTable() { return m_bindless_table; }
+  SecondaryCommandBufferPool& secondaryCommandBuffers() {
+    return m_secondary_command_buffers;
+  }
 
   /// One GPU texture per asset identity on this device (viewport + Mesh Preview).
   VulkanTexture* ensureUploadedTexture(VulkanAllocator* allocator,
                                        const Texture2DAsset& asset);
+  VulkanTexture* findUploadedTexture(const eastl::string& key) const;
+  void adoptUploadedTexture(eastl::string key,
+                            eastl::unique_ptr<VulkanTexture> texture);
+  void setAsyncTextureUploadPending(const eastl::string& key, bool pending);
+  bool isAsyncTextureUploadPending(const eastl::string& key) const;
   void destroyUploadedTextures();
 
   void retireSampledImage(VkImage image, VkImageView view, VkSampler sampler,
@@ -91,6 +103,7 @@ class VulkanContext final {
   void recreateEmptyPipelineCache();
   void destroyRetiredSampledImage(const RetiredSampledImage& image);
 
+  VulkanSync* m_sync{nullptr};
   WindowSystem* m_window_system{nullptr};
   bool m_enable_validation{true};
   bool m_enable_validation_layer{false};
@@ -111,8 +124,10 @@ class VulkanContext final {
   VkPipelineCache m_pipeline_cache{VK_NULL_HANDLE};
   eastl::string m_slang_build_tag;
   BindlessTextureTable m_bindless_table;
+  SecondaryCommandBufferPool m_secondary_command_buffers;
   eastl::unordered_map<eastl::string, eastl::unique_ptr<VulkanTexture>>
       m_uploaded_textures;
+  eastl::unordered_set<eastl::string> m_async_pending_textures;
   eastl::vector<RetiredSampledImage> m_retired_sampled_images;
   uint32_t m_in_flight_retire_seq[VulkanSync::k_max_frames_in_flight]{};
 };

@@ -115,6 +115,10 @@ bool ThumbnailGenerator::generateMeshThumbnail(const eastl::string& virtual_path
     request.height = m_thumbnail_size;
     const MeshPreviewRenderResult preview =
         m_mesh_preview_service->renderMeshAsset(virtual_path, request);
+    if (preview.ok && preview.textures_pending) {
+      m_defer_thumbnail = true;
+      return false;
+    }
     if (preview.ok && !preview.rgba.empty()) {
       out_rgba = eastl::move(preview.rgba);
       return true;
@@ -139,6 +143,10 @@ bool ThumbnailGenerator::generateSceneThumbnail(
     request.height = m_thumbnail_size;
     const SceneThumbnailRenderResult preview =
         m_scene_thumbnail_service->renderSceneAsset(request);
+    if (preview.ok && preview.textures_pending) {
+      m_defer_thumbnail = true;
+      return false;
+    }
     if (preview.ok && !preview.rgba.empty()) {
       out_rgba = eastl::move(preview.rgba);
       return true;
@@ -284,7 +292,12 @@ ThumbnailResult ThumbnailGenerator::ensureThumbnail(const ContentEntry& entry) {
   }
 
   eastl::vector<uint8_t> rgba;
+  m_defer_thumbnail = false;
   if (!generateRgbaForEntry(entry, rgba)) {
+    if (m_defer_thumbnail) {
+      result.status = ThumbnailStatus::None;
+      return result;
+    }
     LOG_WARN("[ThumbnailGenerator] failed to generate thumbnail for {}",
              entry.virtual_path.c_str());
     result.status = ThumbnailStatus::Failed;

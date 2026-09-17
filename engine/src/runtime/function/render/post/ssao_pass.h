@@ -32,7 +32,8 @@ class SsaOPass final {
 
   void apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscreen,
              const BlinnPhongEditorSettings& settings,
-             const glm::mat4& projection, float near_clip, float far_clip);
+             const glm::mat4& projection, float near_clip, float far_clip,
+             uint32_t secondary_frame);
 
  private:
   void createNoiseTexture();

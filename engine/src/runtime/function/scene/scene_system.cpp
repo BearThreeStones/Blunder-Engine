@@ -1,7 +1,9 @@
 #include "runtime/function/scene/scene_system.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/object/object_db.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
@@ -88,7 +90,7 @@ void SceneSystem::initialize(const SceneSystemInitInfo& info) {
 }
 
 void SceneSystem::shutdown() {
-  m_active_instance = nullptr;
+  setActiveInstance(nullptr);
   m_loaded_instances.clear();
   m_asset_manager = nullptr;
   m_is_initialized = false;
@@ -169,7 +171,7 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadScene(
         "[SceneSystem] reloading scene '{}' to attach mesh descriptors from scene file",
         virtual_path.c_str());
     if (m_active_instance == existing.get()) {
-      m_active_instance = nullptr;
+      setActiveInstance(nullptr);
     }
     it = m_loaded_instances.erase(it);
   }
@@ -268,7 +270,7 @@ void SceneSystem::unloadSceneInstance(SceneInstance* instance) {
   }
 
   if (m_active_instance == instance) {
-    m_active_instance = nullptr;
+    setActiveInstance(nullptr);
   }
 
   for (auto it = m_loaded_instances.begin(); it != m_loaded_instances.end();) {
@@ -283,7 +285,13 @@ void SceneSystem::unloadSceneInstance(SceneInstance* instance) {
 }
 
 void SceneSystem::setActiveInstance(SceneInstance* instance) {
+  if (m_active_instance != instance) {
+    if (g_runtime_global_context.m_render_system) {
+      g_runtime_global_context.m_render_system->dropInFlightTextures();
+    }
+  }
   m_active_instance = instance;
+  ObjectDB::setEntityStore(instance);
   if (instance != nullptr) {
     LOG_INFO("[SceneSystem] active scene set to '{}'", instance->getSourcePath().c_str());
   }

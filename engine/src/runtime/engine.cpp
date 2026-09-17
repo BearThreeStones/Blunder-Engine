@@ -464,8 +464,11 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       keys.paused = g_runtime_global_context.isPlayPaused();
       keys.focused = false;
       if (g_runtime_global_context.m_window_system) {
+        if (keys.player_host) {
+          g_runtime_global_context.m_window_system->pumpStartupForeground();
+        }
         keys.focused =
-            g_runtime_global_context.m_window_system->getFocusMode();
+            g_runtime_global_context.m_window_system->hasInputFocus();
       }
       int key_count = 0;
       const bool* kb = SDL_GetKeyboardState(&key_count);
@@ -519,21 +522,6 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
               g_runtime_global_context.m_slint_system.get());
         }
       }
-      if (g_runtime_global_context.m_render_system) {
-        SceneInstance* instance =
-            g_runtime_global_context.m_scene_system->getActiveInstance();
-        PlacementPreviewController* preview =
-            g_runtime_global_context.m_placement_preview.get();
-        const bool preview_visible = preview != nullptr && preview->isVisible();
-        if (instance != nullptr || preview_visible) {
-          syncSceneToRender(g_runtime_global_context.m_render_system.get(),
-                            instance);
-          if (preview_visible) {
-            preview->submitToRender(
-                g_runtime_global_context.m_render_system.get());
-          }
-        }
-      }
     }
 
     // Drive Behaviour Ready/Tick when CoreCLR ScriptHost is running.
@@ -559,6 +547,25 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
             tickObjectAnimationPlayFrame(object, args->dt, args->paused);
           },
           &tick_args);
+    }
+
+    // Rebuild world matrices after Behaviour TRS, then snapshot the draw list.
+    if (g_runtime_global_context.m_scene_system &&
+        g_runtime_global_context.m_render_system) {
+      g_runtime_global_context.m_scene_system->tick(delta_time);
+      SceneInstance* instance =
+          g_runtime_global_context.m_scene_system->getActiveInstance();
+      PlacementPreviewController* preview =
+          g_runtime_global_context.m_placement_preview.get();
+      const bool preview_visible = preview != nullptr && preview->isVisible();
+      if (instance != nullptr || preview_visible) {
+        syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                          instance);
+        if (preview_visible) {
+          preview->submitToRender(
+              g_runtime_global_context.m_render_system.get());
+        }
+      }
     }
   }
 

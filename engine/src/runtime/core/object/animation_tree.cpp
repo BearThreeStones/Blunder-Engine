@@ -1343,6 +1343,15 @@ void AnimationTree::advance(float delta_seconds) {
   if (m_clip_play_active) {
     m_clip_play_time += scaled_delta;
   }
+  if (m_animation_player != nullptr && m_animation_player->isLooping()) {
+    const float base_length = getBaseLayerClipLength();
+    if (base_length > 0.0f) {
+      m_sample_time = std::fmod(m_sample_time, base_length);
+      if (m_sample_time < 0.0f) {
+        m_sample_time += base_length;
+      }
+    }
+  }
 
   if (m_oneshot_active) {
     m_oneshot_time += scaled_delta;
@@ -1671,6 +1680,10 @@ float AnimationTree::getDominantBaseClipLength() const {
     return 0.0f;
   }
 
+  return getBaseLayerClipLength();
+}
+
+float AnimationTree::getBaseLayerClipLength() const {
   if (!m_base_blend_space_2d_node.empty()) {
     AnimationClipData clip;
     const BlendSpace2DParam param =

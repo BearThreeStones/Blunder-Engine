@@ -23,6 +23,7 @@ VulkanRenderBackend::VulkanRenderBackend(const rhi::RenderBackendInitInfo& init)
 
   m_sync = eastl::make_shared<VulkanSync>();
   m_sync->initialize(m_context.get(), VulkanSync::k_max_frames_in_flight);
+  m_context->bindSync(m_sync.get());
 
   m_device.bind(m_context.get(), m_allocator.get());
   m_shader_compiler.bind(m_slang_compiler.get());
@@ -30,6 +31,9 @@ VulkanRenderBackend::VulkanRenderBackend(const rhi::RenderBackendInitInfo& init)
 }
 
 VulkanRenderBackend::~VulkanRenderBackend() {
+  if (m_context) {
+    m_context->bindSync(nullptr);
+  }
   if (m_sync) {
     m_sync->shutdown();
     m_sync.reset();

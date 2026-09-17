@@ -4,8 +4,8 @@
 
 #include <vulkan/vulkan.h>
 
-#include "EASTL/unique_ptr.h"
-#include "EASTL/vector.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
+#include "runtime/function/render/vulkan/vulkan_sync.h"
 
 namespace Blunder {
 
@@ -60,6 +60,9 @@ class ForwardRenderPath final {
 
   /// Renders opaque+transparent into `target`. When draw_overlays is false, skips
   /// OverlaySystem (required for Camera Preview). Uses `target` extent for viewport.
+  /// `descriptor_frame` indexes host-visible mesh UBOs. `secondary_stream` /
+  /// `secondary_frame` select SECONDARY command buffers that must not alias an
+  /// in-flight PRIMARY's already-executed slots.
   void renderFrameTo(rhi::IOffscreenRenderTarget* target,
                      VkCommandBuffer command_buffer,
                      const ForwardFrameState& frame_state,
@@ -67,8 +70,9 @@ class ForwardRenderPath final {
                      uint32_t opaque_draw_count,
                      const ForwardOpaqueDraw* transparent_draws,
                      uint32_t transparent_draw_count,
-                     uint32_t frame_index,
-                     bool draw_overlays);
+                     uint32_t descriptor_frame, bool draw_overlays,
+                     SecondaryStream secondary_stream,
+                     uint32_t secondary_frame);
 
   /// Records opaque + transparent draws, overlays, and post-pass copy barriers.
   /// Submit, fence wait, and staging map remain the caller's responsibility.

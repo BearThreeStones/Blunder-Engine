@@ -8,6 +8,7 @@ struct GameplayInputKeys {
   bool s{false};
   bool d{false};
   bool space{false};
+  /// Window keyboard focus (Player: SDL input focus, not Focus Mode / Left Alt).
   bool focused{true};
   bool paused{false};
   bool player_host{false};

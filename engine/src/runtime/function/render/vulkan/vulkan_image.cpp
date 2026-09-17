@@ -175,6 +175,36 @@ void VulkanImage::uploadTexture2D(const Texture2DAsset& texture) {
                texture.getWidth(), texture.getHeight());
 }
 
+void VulkanImage::recordCopyFromBuffer(VkCommandBuffer command_buffer,
+                                       VkBuffer buffer, uint32_t width,
+                                       uint32_t height) {
+  ASSERT(command_buffer != VK_NULL_HANDLE);
+  ASSERT(buffer != VK_NULL_HANDLE);
+  ASSERT(m_image != VK_NULL_HANDLE);
+  ASSERT(width == m_width && height == m_height);
+  ASSERT((m_usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0);
+
+  cmdTransitionLayout(command_buffer, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+  VkBufferImageCopy copy_region{};
+  copy_region.bufferOffset = 0;
+  copy_region.bufferRowLength = 0;
+  copy_region.bufferImageHeight = 0;
+  copy_region.imageSubresource.aspectMask = m_aspect_mask;
+  copy_region.imageSubresource.mipLevel = 0;
+  copy_region.imageSubresource.baseArrayLayer = 0;
+  copy_region.imageSubresource.layerCount = 1;
+  copy_region.imageOffset = {0, 0, 0};
+  copy_region.imageExtent.width = width;
+  copy_region.imageExtent.height = height;
+  copy_region.imageExtent.depth = 1;
+
+  vkCmdCopyBufferToImage(command_buffer, buffer, m_image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy_region);
+
+  cmdTransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
 void VulkanImage::cmdTransitionLayout(VkCommandBuffer command_buffer,
                                       VkImageLayout new_layout) {
   ASSERT(command_buffer != VK_NULL_HANDLE);
@@ -281,26 +311,8 @@ void VulkanImage::uploadPixels(const void* pixel_data, size_t pixel_byte_size,
   staging_buffer.upload(pixel_data, static_cast<VkDeviceSize>(pixel_byte_size));
 
   VkCommandBuffer command_buffer = m_context->beginImmediateCommands();
-  cmdTransitionLayout(command_buffer, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-  VkBufferImageCopy copy_region{};
-  copy_region.bufferOffset = 0;
-  copy_region.bufferRowLength = 0;
-  copy_region.bufferImageHeight = 0;
-  copy_region.imageSubresource.aspectMask = m_aspect_mask;
-  copy_region.imageSubresource.mipLevel = 0;
-  copy_region.imageSubresource.baseArrayLayer = 0;
-  copy_region.imageSubresource.layerCount = 1;
-  copy_region.imageOffset = {0, 0, 0};
-  copy_region.imageExtent.width = width;
-  copy_region.imageExtent.height = height;
-  copy_region.imageExtent.depth = 1;
-
-  vkCmdCopyBufferToImage(command_buffer, staging_buffer.getBuffer(), m_image,
-                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                         &copy_region);
-
-  cmdTransitionLayout(command_buffer, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  recordCopyFromBuffer(command_buffer, staging_buffer.getBuffer(), width,
+                       height);
   m_context->endImmediateCommands(command_buffer);
 
   staging_buffer.destroy();

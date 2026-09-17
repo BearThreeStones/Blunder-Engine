@@ -28,6 +28,8 @@ class VulkanImage final {
                          VulkanAllocator*& allocator);
 
   void uploadTexture2D(const Texture2DAsset& texture);
+  void recordCopyFromBuffer(VkCommandBuffer command_buffer, VkBuffer buffer,
+                            uint32_t width, uint32_t height);
   void cmdTransitionLayout(VkCommandBuffer command_buffer,
                            VkImageLayout new_layout);
 

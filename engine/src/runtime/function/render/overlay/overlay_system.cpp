@@ -16,7 +16,9 @@
 
 #include <optional>
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
+#include "runtime/function/render/rhi/rhi_types.h"
 #include "runtime/function/render/slang/slang_compiler.h"
+#include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
 #include "runtime/function/render/vulkan_backend/vulkan_offscreen_target.h"
@@ -205,9 +207,18 @@ void OverlaySystem::draw_overlay_lines(VkCommandBuffer cmd) {
   if (!authorshipOverlaysActive()) {
     return;
   }
-  m_line_pass.begin(cmd);
-  m_axes.draw_line(cmd, m_state);
-  m_wireframe.draw_line(cmd, m_state);
+  m_line_pass.begin(cmd, rhi::SubpassContents::Secondary);
+  SecondaryCommandBufferPool& pool =
+      m_resources.vk_context->secondaryCommandBuffers();
+  const VkCommandBuffer secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::overlay_lines,
+      m_state.frame_index, m_line_pass.renderPass(), m_line_pass.framebuffer());
+  m_line_pass.bindViewportScissor(secondary);
+  m_axes.draw_line(secondary, m_state);
+  m_wireframe.draw_line(secondary, m_state);
+  pool.end(SecondaryStream::viewport, SecondaryPass::overlay_lines,
+           m_state.frame_index);
+  SecondaryCommandBufferPool::execute(cmd, secondary);
   m_line_pass.end(cmd);
 }
 
@@ -222,11 +233,20 @@ void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
   if (!authorshipOverlaysActive()) {
     return;
   }
-  m_screen_pass.begin(cmd);
-  m_camera_gizmo.draw_screen(cmd, m_state);
-  m_light_gizmo.draw_screen(cmd, m_state);
-  m_transform_gizmo.draw_screen(cmd, m_state);
-  m_navigate_gizmo.draw_screen(cmd, m_state);
+  m_screen_pass.begin(cmd, rhi::SubpassContents::Secondary);
+  SecondaryCommandBufferPool& pool =
+      m_resources.vk_context->secondaryCommandBuffers();
+  const VkCommandBuffer secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::screen_overlay,
+      m_state.frame_index, m_screen_pass.renderPass(),
+      m_native_offscreen->getFramebuffer());
+  m_camera_gizmo.draw_screen(secondary, m_state);
+  m_light_gizmo.draw_screen(secondary, m_state);
+  m_transform_gizmo.draw_screen(secondary, m_state);
+  m_navigate_gizmo.draw_screen(secondary, m_state);
+  pool.end(SecondaryStream::viewport, SecondaryPass::screen_overlay,
+           m_state.frame_index);
+  SecondaryCommandBufferPool::execute(cmd, secondary);
   m_screen_pass.end(cmd);
 }
 

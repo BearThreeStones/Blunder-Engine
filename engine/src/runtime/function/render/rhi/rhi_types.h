@@ -45,6 +45,11 @@ enum class CullMode : uint8_t {
   Back = 1,
 };
 
+enum class SubpassContents : uint8_t {
+  Inline = 0,
+  Secondary = 1,
+};
+
 struct Extent2D {
   uint32_t width{0};
   uint32_t height{0};

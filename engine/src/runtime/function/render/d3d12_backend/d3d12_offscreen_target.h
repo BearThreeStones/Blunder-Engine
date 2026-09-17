@@ -24,8 +24,8 @@ class D3D12OffscreenTarget final : public rhi::IOffscreenRenderTarget {
   rhi::PixelFormat colorFormat() const override;
 
   void beginRenderPass(rhi::ICommandList& command_list,
-                       const rhi::ClearValue* clears,
-                       uint32_t clear_count) override;
+                       const rhi::ClearValue* clears, uint32_t clear_count,
+                       rhi::SubpassContents contents) override;
   void endRenderPass(rhi::ICommandList& command_list) override;
   void transitionToCopySource(rhi::ICommandList& command_list) override;
   void transitionToShaderRead(rhi::ICommandList& command_list) override;

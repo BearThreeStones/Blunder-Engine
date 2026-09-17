@@ -24,8 +24,11 @@ class VulkanTexture final {
   void createFromTexture2DAsset(VulkanContext* context,
                                 VulkanAllocator* allocator,
                                 const Texture2DAsset& asset);
+  void createEmpty(VulkanContext* context, VulkanAllocator* allocator,
+                   uint32_t width, uint32_t height);
   void destroy();
 
+  VulkanImage& image() { return m_image; }
   const VulkanImage& getImage() const { return m_image; }
   VkImageView getImageView() const { return m_image.getImageView(); }
   VkSampler getSampler() const { return m_image.getSampler(); }
