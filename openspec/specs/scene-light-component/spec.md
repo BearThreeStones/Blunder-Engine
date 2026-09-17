@@ -69,19 +69,41 @@ Each Light Component SHALL have an optional inclusive receiver list of MeshRende
 - **THEN** A is affected by that Point Light and B is not
 
 ### Requirement: Light evaluation cap
-For each MeshRenderer, the engine SHALL evaluate at most 8 Light enabled lights that affect that MeshRenderer under Light linking and whose contribution is not a no-op for that draw. The engine SHALL take the first 8 in stable EntityId order and drop the rest. A scene MAY contain more than 8 lights.
+For each MeshRenderer shaded by a non-clustered forward path (Player, Camera Preview, Placement Preview, Mesh Preview, Scene Thumbnail), the engine SHALL evaluate at most 8 Light enabled lights that affect that MeshRenderer under Light linking and whose contribution is not a no-op for that draw. The engine SHALL take the first 8 in stable EntityId order and drop the rest. A scene MAY contain more than 8 lights.
+
+The editor Viewport's clustered GBuffer lighting path is exempt from this flat 8-light cap for point and spot lights: it is bounded instead by the per-froxel light cap defined by the froxel grid capability. Directional lighting in the editor Viewport continues to go through the existing fullscreen deferred pass and is unaffected by either cap.
 
 #### Scenario: Ninth affecting light is dropped
-- **WHEN** nine Light enabled Point Lights all have empty linking lists
-- **THEN** a MeshRenderer is shaded by the first 8 in stable EntityId order and not the ninth
+- **WHEN** nine Light enabled Point Lights all have empty linking lists and a MeshRenderer is shaded by a non-clustered forward path (for example, the Player)
+- **THEN** that path shades the MeshRenderer using the first 8 in stable EntityId order and not the ninth
+
+#### Scenario: Editor Viewport is not limited to 8
+- **WHEN** nine Light enabled Point Lights all have empty linking lists, none share a froxel with more than 64 assigned lights, and a MeshRenderer is visible in the editor Viewport
+- **THEN** the editor Viewport's clustered GBuffer lighting path can shade that MeshRenderer using contributions from more than 8 of those Point Lights
 
 ### Requirement: Light shadows this slice
-This slice SHALL cast Light shadows only from Directional Lights whose contribution includes shadows. At most one such Directional SHALL cast shadows per view: the first Light enabled Directional whose contribution includes shadows, in stable EntityId order. Other Directionals SHALL still add direct light when their contribution includes illumination. Point, Spot, and Area SHALL NOT cast shadows. Shadows only on a non-Directional light SHALL have no effect in this slice.
+This slice SHALL cast Light shadows from Directional, Point, and Spot Lights whose contribution includes shadows and whose Object is Active in Hierarchy. Area Light SHALL NOT cast shadows.
+
+At most one Directional SHALL cast shadows per view: the first Light enabled Directional whose contribution includes shadows, in stable EntityId order. That Directional SHALL use the directional virtual shadow map clipmap. Other Directionals SHALL still add direct light when their contribution includes illumination.
+
+Point Lights SHALL cast through cubemaps and Spot Lights SHALL cast through 2D perspective maps, each bounded by that type's per-view shadow-map budget. Shadows only on a Point or Spot Light SHALL cast that light's shadows and SHALL add no direct light. Shadows only on an Area Light SHALL have no effect.
 
 #### Scenario: First shadow Directional wins
 - **WHEN** two Light enabled Directionals both have contribution Illuminate and shadows
 - **THEN** only the earlier EntityId Directional casts Light shadows
 - **AND** both still add direct light
+
+#### Scenario: Point Shadows only occludes without lighting
+- **WHEN** a Light enabled Point has contribution Shadows only and is within the Point shadow budget
+- **THEN** MeshRenderers it affects receive its cubemap shadows and do not receive its direct light
+
+#### Scenario: Spot casts a 2D map
+- **WHEN** a Light enabled Spot has contribution Illuminate and shadows and is within the Spot shadow budget
+- **THEN** MeshRenderers it affects can receive its 2D shadow occlusion
+
+#### Scenario: Area still does not cast
+- **WHEN** a Light enabled Area Light has contribution Illuminate and shadows
+- **THEN** it adds direct light and does not cast Light shadows
 
 ### Requirement: Distance falloff
 Point Light and Spot Light intensity SHALL fall inverse-square with distance and SHALL reach 0 at Light range, with a smooth window near range. Directional Light SHALL have no distance falloff. Area Light SHALL NOT use this falloff in this slice.
@@ -143,3 +165,25 @@ A Light Component SHALL contribute neither illumination nor shadows unless its O
 - **WHEN** a Light enabled child is Object Active on
 - **AND** its parent is Object Active off
 - **THEN** that Light does not illuminate
+
+### Requirement: Deferred lighting uses linking and the evaluation cap per receiver
+When the editor viewport uses the Deferred Render Path, lighting SHALL apply Light linking and the Light evaluation cap per G-buffer receiver (the MeshRenderer that wrote that pixel). Per-pixel evaluation SHALL take at most 8 Light enabled lights that affect that MeshRenderer, in stable EntityId order. This SHALL NOT raise the Light evaluation cap. A global first-8 that ignores Light linking SHALL NOT be used.
+
+#### Scenario: Non-empty linking excludes others on Deferred
+- **WHEN** the editor viewport uses the Deferred Render Path
+- **AND** a Point Light’s receiver list contains only entity A and entity B is another MeshRenderer
+- **THEN** A’s pixels are affected by that Point Light and B’s pixels are not
+
+#### Scenario: Ninth affecting light is dropped on Deferred
+- **WHEN** the editor viewport uses the Deferred Render Path
+- **AND** nine Light enabled Point Lights all have empty linking lists
+- **THEN** a MeshRenderer’s pixels are shaded by the first 8 in stable EntityId order and not the ninth
+
+### Requirement: Deferred light list upload cap
+The Deferred Render Path lighting pass SHALL upload at most 32 Light enabled candidates in stable EntityId order (Active in Hierarchy, not a contribution no-op). Lights beyond 32 SHALL be dropped from that list before per-receiver filtering. That 32 SHALL NOT be the Light evaluation cap.
+
+#### Scenario: Thirty-third light does not enter the list
+- **WHEN** 33 Light enabled Point Lights all have empty linking lists
+- **THEN** the Deferred light list contains the first 32 in stable EntityId order
+- **AND** the 33rd light is not in that list
+- **AND** per-receiver evaluation still applies at most 8 from that list
