@@ -14,6 +14,7 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/render/overlay/collision_gizmo_geometry.h"
 #include "runtime/function/render/overlay/light_gizmo_geometry.h"
 #include "runtime/function/render/overlay/light_gizmo_hit_test.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
@@ -26,6 +27,8 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
+#include "runtime/function/scene/character_controller_component.h"
+#include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
@@ -361,6 +364,42 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
                  transformPoint(world, b), glm::vec3(0.0f), color);
     });
   });
+
+  scene->forEachCollider([&](EntityId entity_id, const ColliderComponent& collider) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
+    if (m_next_draw_slot >= k_max_draws_per_frame) {
+      return;
+    }
+
+    const bool selected = selection != nullptr && selection->isSelected(entity_id);
+    const glm::vec4 color = selected ? k_selected_color : k_muted_color;
+    const glm::mat4 world = scene->getWorldMatrix(entity_id);
+    forEachColliderWireSegment(collider, [&](const Vec3& a, const Vec3& b) {
+      recordDraw(cmd, state, DrawStyle::line, transformPoint(world, a),
+                 transformPoint(world, b), glm::vec3(0.0f), color);
+    });
+  });
+
+  scene->forEachCharacterController(
+      [&](EntityId entity_id, const CharacterControllerComponent& cct) {
+        if (!scene->isActiveInHierarchy(entity_id)) {
+          return;
+        }
+        if (m_next_draw_slot >= k_max_draws_per_frame) {
+          return;
+        }
+
+        const bool selected =
+            selection != nullptr && selection->isSelected(entity_id);
+        const glm::vec4 color = selected ? k_selected_color : k_muted_color;
+        const glm::mat4 world = scene->getWorldMatrix(entity_id);
+        forEachCharacterControllerWireSegment(cct, [&](const Vec3& a, const Vec3& b) {
+          recordDraw(cmd, state, DrawStyle::line, transformPoint(world, a),
+                     transformPoint(world, b), glm::vec3(0.0f), color);
+        });
+      });
 }
 
 std::optional<OverlayGizmoPickHit> LightGizmoOverlay::hitTest(
