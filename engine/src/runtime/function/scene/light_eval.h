@@ -32,6 +32,9 @@ struct EvaluatedLight final {
 /// read it here; three private copies of this predicate is how metre-authored
 /// ranges ended up compared against centimetre distances.
 bool sceneIsCentimetreWorld(const SceneInstance& scene);
+/// Overlay: mesh *vertex* AABB can be centimetre even when scene world bounds
+/// were never set (or were Unique metres). Drawn Sponza is this, not Unique world.
+bool sceneDrawnMeshIsCentimetre(const SceneInstance& scene);
 float sceneWorldUnitsPerMetre(const SceneInstance& scene);
 
 /// Punctual `range`, area extent and the `1/d^2` term are authored in metres but

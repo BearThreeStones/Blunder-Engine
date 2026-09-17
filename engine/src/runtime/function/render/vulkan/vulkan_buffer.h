@@ -47,6 +47,7 @@ class VulkanBuffer final {
               VkBufferUsageFlags usage, VmaMemoryUsage memory_usage);
   void destroy();
   void upload(const void* data, VkDeviceSize size);
+  bool download(void* dst, VkDeviceSize size);
 
   VkBuffer getBuffer() const { return m_buffer; }
   VmaAllocation getAllocation() const { return m_allocation; }

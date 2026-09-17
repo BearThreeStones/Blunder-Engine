@@ -18,6 +18,8 @@ struct BlinnPhongEditorSettings {
   float ssao_radius{0.45f};
   float ssao_bias{0.025f};
   float ssao_strength{0.5f};
+  /// Viewport-only froxel occupancy overlay. Off by default; not persisted.
+  bool froxel_occupancy_heatmap{false};
 };
 
 }  // namespace Blunder

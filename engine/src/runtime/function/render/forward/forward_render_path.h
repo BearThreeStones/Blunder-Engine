@@ -4,6 +4,10 @@
 
 #include <vulkan/vulkan.h>
 
+#include "EASTL/unique_ptr.h"
+#include "EASTL/vector.h"
+
+#include "runtime/function/render/shadow/mesh_shadow_system.h"
 #include "runtime/function/render/vulkan/secondary_command_buffer_pool.h"
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 
@@ -12,6 +16,7 @@ namespace Blunder {
 class VulkanAllocator;
 class VulkanBuffer;
 class VulkanContext;
+class GpuDrivenRenderer;
 class OverlaySystem;
 class ShadowMapTarget;
 class VulkanTexture;
@@ -26,6 +31,7 @@ class VulkanGraphicsPipeline;
 
 struct ForwardFrameState;
 struct ForwardOpaqueDraw;
+struct GpuDrivenDraw;
 
 struct ForwardRenderPathInit {
   VulkanContext* vk_context{nullptr};
@@ -40,6 +46,7 @@ struct ForwardRenderPathInit {
   ShadowMapTarget* shadow_map{nullptr};
   VulkanTexture* fallback_texture{nullptr};
   OverlaySystem* overlay_system{nullptr};
+  MeshShadowSystem* mesh_shadows{nullptr};
 };
 
 /// Single offscreen forward pass: opaque + transparent draw list + overlays.
@@ -72,7 +79,10 @@ class ForwardRenderPath final {
                      uint32_t transparent_draw_count,
                      uint32_t descriptor_frame, bool draw_overlays,
                      SecondaryStream secondary_stream,
-                     uint32_t secondary_frame);
+                     uint32_t secondary_frame,
+                     GpuDrivenRenderer* gpu_driven = nullptr,
+                     const GpuDrivenDraw* gpu_draws = nullptr,
+                     uint32_t gpu_draw_count = 0);
 
   /// Records opaque + transparent draws, overlays, and post-pass copy barriers.
   /// Submit, fence wait, and staging map remain the caller's responsibility.
@@ -82,7 +92,37 @@ class ForwardRenderPath final {
                    uint32_t opaque_draw_count,
                    const ForwardOpaqueDraw* transparent_draws,
                    uint32_t transparent_draw_count,
-                   uint32_t frame_index);
+                   uint32_t frame_index, GpuDrivenRenderer* gpu_driven = nullptr,
+                   const GpuDrivenDraw* gpu_draws = nullptr,
+                   uint32_t gpu_draw_count = 0);
+
+  /// Directional shadow pass (PRIMARY begins the shadow map with SECONDARY
+  /// contents, executes the `shadow` secondary, barriers to shader read).
+  /// No-op when shadows are off or no shadow map exists. Shared with the
+  /// Deferred Render Path so both paths use the same map.
+  void recordShadowPass(VkCommandBuffer command_buffer,
+                        const ForwardFrameState& frame_state,
+                        const ForwardOpaqueDraw* opaque_draws,
+                        uint32_t opaque_draw_count, uint32_t descriptor_frame,
+                        SecondaryStream secondary_stream,
+                        uint32_t secondary_frame,
+                        GpuDrivenRenderer* gpu_driven = nullptr,
+                        const GpuDrivenDraw* gpu_draws = nullptr,
+                        uint32_t gpu_draw_count = 0);
+
+  /// Records the `forward_scene_overlay` then `forward_transparent`
+  /// secondaries against `render_pass` / `framebuffer` and executes them on
+  /// `command_buffer`, which must already be inside that render pass with
+  /// SECONDARY contents. The Deferred Render Path calls this after lighting
+  /// inside the offscreen LOAD pass.
+  void recordSceneOverlayAndTransparent(
+      VkCommandBuffer command_buffer, VkRenderPass render_pass,
+      VkFramebuffer framebuffer, VkExtent2D extent,
+      const ForwardFrameState& frame_state,
+      const ForwardOpaqueDraw* transparent_draws,
+      uint32_t transparent_draw_count, uint32_t descriptor_frame,
+      bool draw_overlays, SecondaryStream secondary_stream,
+      uint32_t secondary_frame);
 
  private:
   void bindViewportScissor(VkCommandBuffer cmd, uint32_t width, uint32_t height);
@@ -110,6 +150,8 @@ class ForwardRenderPath final {
   ShadowMapTarget* m_shadow_map{nullptr};
   VulkanTexture* m_fallback_texture{nullptr};
   OverlaySystem* m_overlay_system{nullptr};
+  MeshShadowSystem* m_mesh_shadows{nullptr};
+  eastl::unique_ptr<MeshShadowSystem> m_owned_mesh_shadows;
 
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_opaque_uniform_buffers;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_shadow_uniform_buffers;

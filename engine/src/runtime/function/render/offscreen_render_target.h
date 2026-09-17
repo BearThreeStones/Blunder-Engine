@@ -35,12 +35,27 @@ class OffscreenRenderTarget final {
   uint32_t getActiveBufferIndex() const { return m_active_buffer_index; }
 
   VkRenderPass getRenderPass() const { return m_render_pass; }
+  /// Same attachments as `getRenderPass()` but LOAD color + depth. Used after
+  /// deferred lighting so scene overlays and transparent draws composite over
+  /// the lit offscreen. Compatible with `getFramebuffer()` and with pipelines
+  /// built against the CLEAR pass.
+  VkRenderPass getLoadRenderPass() const { return m_load_render_pass; }
   VkImage getImage() const;
   VkImage getImage(uint32_t buffer_index) const;
   VkImageView getImageView() const;
+  VkImageView getImageView(uint32_t buffer_index) const;
   VkImage getDepthImage() const;
+  VkImage getDepthImage(uint32_t buffer_index) const;
   VkImageView getDepthImageView() const;
+  VkImageView getDepthImageView(uint32_t buffer_index) const;
   VkFramebuffer getFramebuffer() const;
+
+  /// Begins `getLoadRenderPass()` on the active slot (no clears). The color
+  /// image must be in SHADER_READ_ONLY_OPTIMAL and depth in
+  /// DEPTH_STENCIL_READ_ONLY_OPTIMAL; the caller barriers on the PRIMARY.
+  void beginLoadRenderPass(VkCommandBuffer cmd, VkSubpassContents contents);
+  /// Ends a pass begun with `beginLoadRenderPass` and records final layouts.
+  void endLoadRenderPass(VkCommandBuffer cmd);
   VkExtent2D getExtent() const { return {m_width, m_height}; }
   VkFormat getFormat() const { return m_format; }
 
@@ -67,6 +82,7 @@ class OffscreenRenderTarget final {
   };
 
   void createRenderPass();
+  void createLoadRenderPass();
   void createImageAndFramebuffer();
   void destroyImageAndFramebuffer();
   void createBufferSlot(uint32_t slot_index);
@@ -78,6 +94,7 @@ class OffscreenRenderTarget final {
   VulkanContext* m_context{nullptr};
   VulkanAllocator* m_allocator{nullptr};
   VkRenderPass m_render_pass{VK_NULL_HANDLE};
+  VkRenderPass m_load_render_pass{VK_NULL_HANDLE};
   eastl::array<BufferSlot, k_buffer_count> m_buffers{};
   uint32_t m_active_buffer_index{0};
   uint32_t m_width{0};

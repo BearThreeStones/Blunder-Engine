@@ -5,8 +5,12 @@
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/job/job_system.h"
 #include "runtime/function/render/blinn_phong_editor_settings.h"
+#include "runtime/function/render/clustered/froxel_grid.h"
+#include "runtime/function/render/deferred/deferred_render_path.h"
+#include "runtime/function/render/frame_graph/frame_graph.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
+#include "runtime/function/render/gpu_driven/gpu_driven_renderer.h"
 #include "runtime/function/render/gpu_mesh.h"
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
@@ -17,7 +21,10 @@
 #include "runtime/function/render/player_authorship_input.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/post/ssao_pass.h"
+#include "runtime/function/render/post/volumetric_fog_pass.h"
+#include "runtime/function/render/volumetric_fog_math.h"
 #include "runtime/function/render/scene_thumbnail/scene_still.h"
+#include "runtime/function/render/shadow/mesh_shadow_system.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 #include "runtime/function/render/slang/shader_resource_layout.h"
 
@@ -26,9 +33,9 @@
 #include <slang.h>
 
 #include <algorithm>
-
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -39,6 +46,7 @@
 
 #include "EASTL/memory.h"
 #include "runtime/core/base/macro.h"
+#include "runtime/core/debug/input_present_trace.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/core/math/geometry.h"
 #include "runtime/core/math/math_types.h"
@@ -74,7 +82,9 @@
 #include "runtime/function/render/vulkan/vulkan_texture.h"
 #include "runtime/function/render/texture_loader.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
+#include "runtime/function/render/vulkan_backend/vulkan_frame_graph_recorder.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
+#include "runtime/function/render/vulkan_backend/vulkan_imported_gpu_texture.h"
 #include "runtime/function/render/vulkan_backend/vulkan_offscreen_target.h"
 #include "runtime/function/render/vulkan_backend/vulkan_render_backend.h"
 #include <vk_mem_alloc.h>
@@ -129,15 +139,37 @@ bool isViewportPickInputPoint(const EditorCamera& camera, float window_x,
   return true;
 }
 
-bool editorShadowsEnabled() {
+bool editorShadowsForcedOff() {
   const char* env = std::getenv("BLUNDER_EDITOR_SHADOWS");
-  return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
+  return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
 }
 
 bool editorOverlayAaEnabled() {
   const char* env = std::getenv("BLUNDER_EDITOR_OVERLAY_AA");
   return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
 }
+
+/// Editor Viewport uses Deferred (GBuffer + clustered froxels). Set
+/// `BLUNDER_EDITOR_DEFERRED=0` to force Forward. Player / previews ignore this.
+bool editorDeferredEnabled() {
+  const char* env = std::getenv("BLUNDER_EDITOR_DEFERRED");
+  if (env == nullptr || env[0] == '\0') {
+    return true;
+  }
+  return env[0] == '1' || env[0] == 't' || env[0] == 'T';
+}
+
+class ViewportSceneAllocator final : public IFrameGraphAllocator {
+ public:
+  std::unique_ptr<rhi::IGpuTexture> createTexture(
+      const FrameGraphResourceDesc&) override {
+    return nullptr;
+  }
+  std::unique_ptr<rhi::IGpuBuffer> createBuffer(
+      const FrameGraphResourceDesc&) override {
+    return nullptr;
+  }
+};
 
 float editorRenderScale() {
   const char* env = std::getenv("BLUNDER_EDITOR_RENDER_SCALE");
@@ -390,6 +422,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   m_shadow_map = eastl::make_unique<ShadowMapTarget>();
   m_shadow_map->initialize(vkCtx(this), vkAlloc(this));
 
+  m_mesh_shadows = eastl::make_unique<MeshShadowSystem>();
+  m_mesh_shadows->initialize(vkCtx(this), vkAlloc(this),
+                            vkBackend(this)->nativeSlangCompiler(), true);
+
   rhi::GraphicsPipelineDesc shadow_pipeline_desc{};
   shadow_pipeline_desc.shader_path = "engine/shaders/shadow_depth.slang";
   shadow_pipeline_desc.enable_vertex_input = true;
@@ -465,12 +501,45 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   forward_init.skinned_shadow_pipeline = m_skinned_shadow_pipeline.get();
   forward_init.shadow_map = m_shadow_map.get();
   forward_init.fallback_texture = m_fallback_texture;
+  forward_init.mesh_shadows = m_mesh_shadows.get();
   m_forward_path->initialize(forward_init);
+
+  const bool host_is_player =
+      g_runtime_global_context.hostMode() == EngineHostMode::Player;
+  if (!host_is_player && editorDeferredEnabled()) {
+    m_deferred_path = eastl::make_unique<DeferredRenderPath>();
+    DeferredRenderPathInit deferred_init{};
+    deferred_init.vk_context = vkCtx(this);
+    deferred_init.vk_allocator = vkAlloc(this);
+    deferred_init.slang_compiler = vkBackend(this)->nativeSlangCompiler();
+    deferred_init.offscreen = vkOffscreenRt(this);
+    deferred_init.forward_path = m_forward_path.get();
+    deferred_init.shadow_map = m_shadow_map.get();
+    deferred_init.fallback_texture = m_fallback_texture;
+    deferred_init.mesh_shadows = m_mesh_shadows.get();
+    m_deferred_path->initialize(deferred_init);
+    LOG_INFO(
+        "[RenderSystem] editor viewport uses the Deferred Render Path "
+        "(previews and Player stay Forward; BLUNDER_EDITOR_DEFERRED=0 forces "
+        "Forward)");
+  }
 
   m_ssao_pass = eastl::make_unique<SsaOPass>();
   m_ssao_pass->initialize(vkCtx(this), vkAlloc(this),
                           vkBackend(this)->nativeSlangCompiler());
   m_ssao_pass->resize(offscreen_desc.width, offscreen_desc.height);
+
+  m_volumetric_fog_pass = eastl::make_unique<VolumetricFogPass>();
+  m_volumetric_fog_pass->initialize(vkCtx(this), vkAlloc(this),
+                                    vkBackend(this)->nativeSlangCompiler());
+
+  m_gpu_driven_renderer = eastl::make_unique<GpuDrivenRenderer>();
+  m_gpu_driven_renderer->initialize(
+      vkCtx(this), vkAlloc(this), vkBackend(this)->nativeSlangCompiler(),
+      vkOffscreenRt(this)->getRenderPass(), m_shadow_map->getRenderPass(),
+      m_deferred_path ? m_deferred_path->gbufferRenderPass() : VK_NULL_HANDLE);
+  m_gpu_driven_renderer->resizeHiZ(offscreen_desc.width, offscreen_desc.height);
+  m_gpu_driven_renderer->setMeshShadows(m_mesh_shadows.get());
 
   LOG_INFO(
       "[RenderSystem] PBR pipelines ready (descriptor layout shared: opaque={}, "
@@ -494,11 +563,25 @@ GpuMesh* RenderSystem::getOrUploadGpuMesh(const MeshAsset* mesh_asset) {
     return nullptr;
   }
 
-  return getOrUploadGpuMeshByKey(gpuMeshCacheKey(*mesh_asset),
-                                 mesh_asset->getVertexData(),
-                                 mesh_asset->getVertexByteSize(),
-                                 mesh_asset->getIndices().data(),
-                                 mesh_asset->getIndexCount());
+  const eastl::string cache_key = gpuMeshCacheKey(*mesh_asset);
+  if (cache_key.empty()) {
+    return nullptr;
+  }
+  if (auto it = m_gpu_meshes.find(cache_key); it != m_gpu_meshes.end()) {
+    return it->second.get();
+  }
+
+  auto uploaded_mesh = GpuMesh::create(vkAlloc(this), *mesh_asset);
+  if (!uploaded_mesh) {
+    LOG_ERROR("[RenderSystem] GpuMesh upload failed for {}", cache_key.c_str());
+    return nullptr;
+  }
+  GpuMesh* uploaded_mesh_ptr = uploaded_mesh.get();
+  m_gpu_meshes[cache_key] = eastl::move(uploaded_mesh);
+  LOG_INFO("[RenderSystem] GpuMesh uploaded {} (indices={}, meshlets={})",
+           cache_key.c_str(), uploaded_mesh_ptr->getIndexCount(),
+           uploaded_mesh_ptr->getMeshletRecords().size());
+  return uploaded_mesh_ptr;
 }
 
 GpuMesh* RenderSystem::getOrUploadGpuMeshByKey(const eastl::string& cache_key,
@@ -654,6 +737,37 @@ bool RenderSystem::addTransparentMeshDraw(
   return true;
 }
 
+bool RenderSystem::addGpuDrivenDraw(
+    GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
+    VulkanTexture* base_color_texture, VulkanTexture* metallic_roughness_texture,
+    VulkanTexture* normal_texture, VulkanTexture* occlusion_texture,
+    const glm::mat4& model, float alpha_cutoff, cgltf_alpha_mode alpha_mode,
+    bool double_sided, EntityId entity_id) {
+  if (gpu_mesh == nullptr || !gpu_mesh->hasMeshlets() ||
+      gpu_mesh->getMeshletIndexBuffer() == nullptr) {
+    return false;
+  }
+  if (m_gpu_driven_draws.size() >= k_max_gpu_driven_instances) {
+    LOG_ERROR("[RenderSystem] GPU-driven instance limit reached ({})",
+              k_max_gpu_driven_instances);
+    return false;
+  }
+  GpuDrivenDraw draw{};
+  draw.gpu_mesh = gpu_mesh;
+  draw.material = eastl::move(material);
+  draw.base_color_texture = base_color_texture;
+  draw.metallic_roughness_texture = metallic_roughness_texture;
+  draw.normal_texture = normal_texture;
+  draw.occlusion_texture = occlusion_texture;
+  draw.model = model;
+  draw.alpha_cutoff = alpha_cutoff;
+  draw.alpha_mode = alpha_mode;
+  draw.double_sided = double_sided;
+  draw.entity_id = entity_id;
+  m_gpu_driven_draws.push_back(eastl::move(draw));
+  return true;
+}
+
 void RenderSystem::markViewportRenderDirty() { ++m_viewport_render_generation; }
 
 void RenderSystem::pollViewportPickIfActive() {
@@ -695,6 +809,7 @@ void RenderSystem::notifyZeroCopySubmitted(const uint32_t slot,
   present_slot.height = height;
   present_slot.pending_gpu = true;
   present_slot.completed_generation = m_zero_copy_next_generation++;
+  present_slot.submit_ns = SDL_GetTicksNS();
 }
 
 void RenderSystem::pollZeroCopyAndPresent() {
@@ -749,6 +864,26 @@ void RenderSystem::pollZeroCopyAndPresent() {
   vk_image.width = best_width;
   vk_image.height = best_height;
   m_viewport_sink->presentViewportVulkanImage(vk_image);
+  if (m_viewport_layout_source != nullptr &&
+      !static_cast<SlintSystem*>(m_viewport_layout_source)
+           ->lastViewportExternalBindOk()) {
+    // Dispatch-depth skip (or a failed bind) must not consume pending_gpu.
+    // Otherwise the completed Sponza slot is never rebound into the Viewport.
+    return;
+  }
+
+  if (inputPresentTraceEnabled()) {
+    const uint64_t submit_ns = m_zero_copy_slots[best_slot].submit_ns;
+    const double gpu_ms =
+        submit_ns != 0 ? static_cast<double>(SDL_GetTicksNS() - submit_ns) / 1.0e6
+                       : 0.0;
+    char data[160];
+    std::snprintf(data, sizeof(data),
+                  "{\"gen\":%llu,\"slot\":%u,\"gpuMs\":%.2f,\"w\":%u,\"h\":%u}",
+                  static_cast<unsigned long long>(best_generation), best_slot,
+                  gpu_ms, best_width, best_height);
+    traceInputPresent("viewport-bind", data);
+  }
 
   m_zero_copy_last_presented_generation = best_generation;
   for (ZeroCopyPresentSlot& present_slot : m_zero_copy_slots) {
@@ -795,6 +930,8 @@ void RenderSystem::clearOpaqueMeshDraws() { m_opaque_mesh_draws.clear(); }
 void RenderSystem::clearTransparentMeshDraws() {
   m_transparent_mesh_draws.clear();
 }
+
+void RenderSystem::clearGpuDrivenDraws() { m_gpu_driven_draws.clear(); }
 
 void RenderSystem::clearGpuMeshes() {
   for (auto& [key, mesh] : m_gpu_meshes) {
@@ -1204,6 +1341,9 @@ void RenderSystem::applyDeferredOffscreenResize() {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
     resizeViewportReadback(width, height);
   }
+  if (m_deferred_path) {
+    m_deferred_path->dropGpuTargets();
+  }
   m_offscreen->resize(width, height);
   if (isVulkanBackend()) {
     if (auto* vk_target =
@@ -1212,6 +1352,12 @@ void RenderSystem::applyDeferredOffscreenResize() {
     }
     if (m_ssao_pass) {
       m_ssao_pass->resize(width, height);
+    }
+    if (m_gpu_driven_renderer) {
+      m_gpu_driven_renderer->resizeHiZ(width, height);
+    }
+    if (m_deferred_path) {
+      m_deferred_path->resize(width, height);
     }
   }
   if (m_overlay_system) {
@@ -1346,9 +1492,24 @@ void RenderSystem::shutdown() {
 
   m_fallback_texture = nullptr;
 
+  if (m_gpu_driven_renderer) {
+    m_gpu_driven_renderer->shutdown();
+    m_gpu_driven_renderer.reset();
+  }
+
   if (m_ssao_pass) {
     m_ssao_pass->shutdown();
     m_ssao_pass.reset();
+  }
+
+  if (m_volumetric_fog_pass) {
+    m_volumetric_fog_pass->shutdown();
+    m_volumetric_fog_pass.reset();
+  }
+
+  if (m_deferred_path) {
+    m_deferred_path->shutdown();
+    m_deferred_path.reset();
   }
 
   if (m_forward_path) {
@@ -1356,8 +1517,14 @@ void RenderSystem::shutdown() {
     m_forward_path.reset();
   }
 
+  if (m_mesh_shadows) {
+    m_mesh_shadows->shutdown();
+    m_mesh_shadows.reset();
+  }
+
   clearOpaqueMeshDraws();
   clearTransparentMeshDraws();
+  clearGpuDrivenDraws();
   clearGpuMeshes();
   m_inspector_material.reset();
   m_fallback_texture = nullptr;
@@ -1413,6 +1580,27 @@ void RenderSystem::requestSceneCameraFocus() {
   m_refocus_when_mesh_draws_ready = true;
 }
 
+void RenderSystem::invalidateGpuDrivenOcclusion() {
+  if (m_gpu_driven_renderer) {
+    m_gpu_driven_renderer->invalidateSceneOcclusion();
+  }
+}
+
+void RenderSystem::notifyActiveSceneChanged() {
+  requestViewportRedraw();
+  requestSceneCameraFocus();
+  if (m_volumetric_fog_pass) {
+    m_volumetric_fog_pass->invalidateHistory();
+  }
+  if (m_gpu_driven_renderer) {
+    m_gpu_driven_renderer->invalidateSceneOcclusion();
+  }
+  if (m_viewport_layout_source != nullptr) {
+    static_cast<SlintSystem*>(m_viewport_layout_source)
+        ->forceNextViewportImageBind();
+  }
+}
+
 void RenderSystem::tick(float delta_time, uint32_t target_width,
                         uint32_t target_height) {
   if (m_texture_loader) {
@@ -1453,8 +1641,215 @@ void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
   }
 }
 
+void RenderSystem::recordViewportGraph(
+    VkCommandBuffer command_buffer, const ForwardFrameState& frame_state,
+    const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
+    const ForwardOpaqueDraw* transparent_draws, uint32_t transparent_draw_count,
+    uint32_t frame_index, bool host_is_player) {
+  if (!m_forward_path && !m_deferred_path) {
+    return;
+  }
+
+  OffscreenRenderTarget* offscreen = vkOffscreenRt(this);
+  if (offscreen == nullptr) {
+    LOG_FATAL("[RenderSystem] viewport graph missing offscreen");
+  }
+  if (m_shadow_map == nullptr) {
+    LOG_FATAL("[RenderSystem] viewport graph missing shadow map");
+  }
+
+  vulkan_backend::VulkanImportedGpuTexture color_import;
+  vulkan_backend::VulkanImportedGpuTexture depth_import;
+  vulkan_backend::VulkanImportedGpuTexture shadow_import;
+  color_import.bind(offscreen->getImage(), VK_IMAGE_ASPECT_COLOR_BIT);
+  depth_import.bind(offscreen->getDepthImage(), VK_IMAGE_ASPECT_DEPTH_BIT);
+  shadow_import.bind(m_shadow_map->getDepthImage(), VK_IMAGE_ASPECT_DEPTH_BIT);
+  if (color_import.vkImage() == VK_NULL_HANDLE ||
+      depth_import.vkImage() == VK_NULL_HANDLE ||
+      shadow_import.vkImage() == VK_NULL_HANDLE) {
+    LOG_FATAL("[RenderSystem] viewport graph missing VkImage");
+  }
+
+  const VkExtent2D color_extent = offscreen->getExtent();
+  const VkExtent2D shadow_extent = m_shadow_map->getExtent();
+
+  FrameGraphResourceDesc color_desc{};
+  color_desc.format = FrameGraphFormat::R8G8B8A8_UNORM;
+  color_desc.width = color_extent.width;
+  color_desc.height = color_extent.height;
+  color_desc.sample_count = 1;
+  color_desc.mip_count = 1;
+
+  FrameGraphResourceDesc depth_desc = color_desc;
+  depth_desc.format = FrameGraphFormat::D32_SFLOAT;
+
+  FrameGraphResourceDesc shadow_desc = depth_desc;
+  shadow_desc.width = shadow_extent.width;
+  shadow_desc.height = shadow_extent.height;
+
+  FrameGraph graph;
+  GraphBuilder builder(graph);
+  const FrameGraphHandle color =
+      builder.importExternal(color_desc, &color_import, "viewport.color");
+  const FrameGraphHandle depth =
+      builder.importExternal(depth_desc, &depth_import, "viewport.depth");
+  const FrameGraphHandle shadow =
+      builder.importExternal(shadow_desc, &shadow_import, "shadow.map");
+
+  auto color_handshake = [&](FrameGraphPassHandle pass) {
+    builder.read(pass, color, FrameGraphUsage::Sampled);
+    builder.write(pass, color, FrameGraphUsage::ColorAttachment);
+    builder.read(pass, color, FrameGraphUsage::Sampled);
+  };
+
+  const bool editor_deferred = m_deferred_path && !host_is_player;
+  if (editor_deferred) {
+    const FrameGraphPassHandle gbuffer = builder.addPass("viewport.gbuffer");
+    builder.write(gbuffer, depth, FrameGraphUsage::DepthAttachment);
+    builder.read(gbuffer, depth, FrameGraphUsage::Sampled);
+    builder.setExecute(gbuffer, [&](IFrameGraphRecorder&) {
+      m_deferred_path->recordGBufferPass(
+          command_buffer, frame_state, opaque_draws, opaque_draw_count,
+          frame_index, m_gpu_driven_renderer.get(), m_gpu_driven_draws.data(),
+          static_cast<uint32_t>(m_gpu_driven_draws.size()));
+    });
+
+    const FrameGraphPassHandle lighting = builder.addPass("viewport.lighting");
+    builder.read(lighting, depth, FrameGraphUsage::Sampled);
+    builder.read(lighting, shadow, FrameGraphUsage::Sampled);
+    builder.write(lighting, color, FrameGraphUsage::ColorAttachment);
+    builder.read(lighting, color, FrameGraphUsage::Sampled);
+    builder.setExecute(lighting, [&](IFrameGraphRecorder&) {
+      m_deferred_path->recordLightingPass(
+          command_buffer, frame_state, opaque_draws, opaque_draw_count,
+          transparent_draws, transparent_draw_count, frame_index,
+          m_gpu_driven_renderer.get());
+    });
+  } else if (m_forward_path) {
+    const FrameGraphPassHandle scene = builder.addPass("viewport.scene");
+    builder.write(scene, color, FrameGraphUsage::ColorAttachment);
+    builder.read(scene, color, FrameGraphUsage::Sampled);
+    builder.write(scene, depth, FrameGraphUsage::DepthAttachment);
+    builder.read(scene, depth, FrameGraphUsage::Sampled);
+    builder.read(scene, shadow, FrameGraphUsage::Sampled);
+    builder.setExecute(scene, [&](IFrameGraphRecorder&) {
+      m_forward_path->renderFrame(
+          command_buffer, frame_state, opaque_draws, opaque_draw_count,
+          transparent_draws, transparent_draw_count, frame_index,
+          m_gpu_driven_renderer.get(), m_gpu_driven_draws.data(),
+          static_cast<uint32_t>(m_gpu_driven_draws.size()));
+    });
+  }
+
+  if (m_overlay_system && m_overlay_system->hasActiveOutline()) {
+    const FrameGraphPassHandle outline = builder.addPass("viewport.outline");
+    color_handshake(outline);
+    builder.setExecute(outline, [&](IFrameGraphRecorder&) {
+      m_overlay_system->draw_outline(command_buffer);
+    });
+  }
+  if (m_overlay_system && m_overlay_system->hasActiveLineOverlays()) {
+    const FrameGraphPassHandle lines = builder.addPass("viewport.line_aa");
+    color_handshake(lines);
+    builder.setExecute(lines, [&](IFrameGraphRecorder&) {
+      m_overlay_system->draw_overlay_lines(command_buffer);
+      if (editorOverlayAaEnabled()) {
+        m_overlay_system->draw_overlay_aa(command_buffer);
+      }
+    });
+  }
+  if (m_ssao_pass && frame_state.shading.ssao_enabled) {
+    const FrameGraphPassHandle ssao = builder.addPass("viewport.ssao");
+    color_handshake(ssao);
+    builder.read(ssao, depth, FrameGraphUsage::Sampled);
+    builder.setExecute(ssao, [&](IFrameGraphRecorder&) {
+      m_ssao_pass->apply(command_buffer, offscreen, frame_state.shading,
+                         frame_state.projection, frame_state.near_clip,
+                         frame_state.far_clip, frame_index);
+    });
+  }
+
+  ActiveFog active_fog{};
+  if (frame_state.lighting_scene != nullptr) {
+    active_fog = pickActiveFog(*frame_state.lighting_scene);
+  }
+  if (m_volumetric_fog_pass &&
+      shouldApplyVolumetricFog(g_runtime_global_context.hostMode(),
+                               isValid(active_fog.entity_id))) {
+    const FrameGraphPassHandle fog_pass = builder.addPass("viewport.volumetric_fog");
+    color_handshake(fog_pass);
+    builder.read(fog_pass, depth, FrameGraphUsage::Sampled);
+    builder.setExecute(fog_pass, [&, active_fog](IFrameGraphRecorder&) {
+      m_volumetric_fog_pass->apply(command_buffer, offscreen, frame_state, active_fog,
+                                   frame_index);
+    });
+  }
+  if (m_overlay_system) {
+    const FrameGraphPassHandle screen = builder.addPass("viewport.screen");
+    color_handshake(screen);
+    builder.setExecute(screen, [&](IFrameGraphRecorder&) {
+      m_overlay_system->draw_screen_overlays(command_buffer);
+    });
+  }
+
+  const FrameGraphPassHandle copy = builder.addPass("viewport.copy");
+  builder.read(copy, color, FrameGraphUsage::Sampled);
+  builder.markSink(copy);
+  builder.setExecute(copy, [&](IFrameGraphRecorder&) {
+    vulkan_backend::VulkanCommandList command_list;
+    command_list.bind(vkCtx(this), command_buffer);
+    const bool zero_copy_viewport = usesZeroCopyViewport();
+    VulkanBuffer* readback_staging =
+        (!zero_copy_viewport && m_viewport_bridge)
+            ? m_viewport_bridge->stagingBuffer(frame_index)
+            : nullptr;
+    if (zero_copy_viewport) {
+      m_offscreen->transitionToShaderRead(command_list);
+    } else {
+      m_offscreen->transitionToCopySource(command_list);
+      if (readback_staging) {
+        VkBufferImageCopy copy_region{};
+        copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy_region.imageSubresource.mipLevel = 0;
+        copy_region.imageSubresource.baseArrayLayer = 0;
+        copy_region.imageSubresource.layerCount = 1;
+        copy_region.imageExtent = {color_extent.width, color_extent.height, 1};
+        vkCmdCopyImageToBuffer(command_buffer, offscreen->getImage(),
+                               VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               readback_staging->getBuffer(), 1, &copy_region);
+      }
+      m_offscreen->transitionToShaderRead(command_list);
+    }
+  });
+
+  const FrameGraphCompileResult compiled = graph.compile();
+  if (!compiled.ok) {
+    LOG_FATAL("[RenderSystem] viewport graph compile failed: {}",
+              static_cast<int>(compiled.reason));
+  }
+  ViewportSceneAllocator allocator;
+  const FrameGraphAllocateResult allocated = graph.allocate(allocator);
+  if (!allocated.ok) {
+    LOG_FATAL("[RenderSystem] viewport graph allocate failed: {}",
+              static_cast<int>(allocated.reason));
+  }
+  const FrameGraphPlanBarriersResult planned = graph.planBarriers();
+  if (!planned.ok) {
+    LOG_FATAL("[RenderSystem] viewport graph planBarriers failed: {}",
+              static_cast<int>(planned.reason));
+  }
+  vulkan_backend::VulkanFrameGraphRecorder recorder;
+  recorder.bind(&graph, command_buffer);
+  const FrameGraphExecuteResult executed = graph.execute(recorder);
+  if (!executed.ok) {
+    LOG_FATAL("[RenderSystem] viewport graph execute failed: {}",
+              static_cast<int>(executed.reason));
+  }
+}
+
 void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                 uint32_t target_height) {
+  InputPresentPhaseTrace phases("render-phases");
   const float render_scale = editorRenderScale();
   if (render_scale < 0.999f) {
     target_width = eastl::max(
@@ -1470,6 +1865,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   syncCameraPreviewSkipClear();
 
   tryPresentCameraPreview();
+  phases.mark("resizePreviewMs");
 
   const rhi::Extent2D offscreen_extent_rhi = m_offscreen->extent();
   const VkExtent2D offscreen_extent{offscreen_extent_rhi.width,
@@ -1502,6 +1898,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   }
 
   pollViewportPickIfActive();
+  phases.mark("pickMs");
 
   VkInstance instance = vkCtx(this)->getInstance();
   if (m_renderdoc_capture) {
@@ -1563,20 +1960,45 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
 
+    const char* lookat = std::getenv("BLUNDER_EDITOR_LOOKAT");
+    float lookat_eye_target[6] = {};
+    const bool has_lookat =
+        lookat != nullptr &&
+        std::sscanf(lookat, "%f,%f,%f,%f,%f,%f", &lookat_eye_target[0],
+                    &lookat_eye_target[1], &lookat_eye_target[2],
+                    &lookat_eye_target[3], &lookat_eye_target[4],
+                    &lookat_eye_target[5]) == 6;
     const bool wants_scene_focus =
         m_pending_scene_camera_focus || m_refocus_when_mesh_draws_ready;
     if (wants_scene_focus && g_runtime_global_context.m_scene_system != nullptr) {
       SceneInstance* active_scene =
           g_runtime_global_context.m_scene_system->getActiveInstance();
-      const bool has_mesh_draws =
-          !m_opaque_mesh_draws.empty() || !m_transparent_mesh_draws.empty();
-      if (active_scene != nullptr && active_scene->hasWorldBounds() &&
-          has_mesh_draws) {
-        const AABB& bounds = active_scene->getWorldBounds();
-        m_editor_camera->snapFocusOnAABB(bounds);
+      if (active_scene != nullptr && !active_scene->hasWorldBounds()) {
+        active_scene->rebuildWorldBoundsFromMeshes();
+      }
+      if (active_scene != nullptr && active_scene->hasWorldBounds()) {
+        m_editor_camera->snapFocusOnAABB(active_scene->getWorldBounds());
         m_pending_scene_camera_focus = false;
         m_refocus_when_mesh_draws_ready = false;
       }
+    }
+    // LOOKAT must snap even before mesh draws exist. Waiting on draws plus
+    // zero-copy camera-only skip leaves the presented image on the origin
+    // grid while Unique gizmos sit on the courtyard.
+    static bool s_lookat_applied = false;
+    static int s_lookat_hold_frames = 0;
+    if (has_lookat && !s_lookat_applied) {
+      s_lookat_applied = true;
+      s_lookat_hold_frames = 12;
+      m_pending_scene_camera_focus = false;
+      m_refocus_when_mesh_draws_ready = false;
+      m_editor_camera->snapLookAt(
+          Vec3(lookat_eye_target[0], lookat_eye_target[1], lookat_eye_target[2]),
+          Vec3(lookat_eye_target[3], lookat_eye_target[4], lookat_eye_target[5]));
+    }
+    if (s_lookat_hold_frames > 0) {
+      --s_lookat_hold_frames;
+      m_force_viewport_render = true;
     }
 
     view = m_editor_camera->getViewMatrix();
@@ -1585,6 +2007,59 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     camera_position = m_editor_camera->getPosition();
     camera_forward = m_editor_camera->getForwardDirection();
     camera_distance = m_editor_camera->getDistance();
+    {
+      static int s_dump = 0;
+      if (s_dump < 8) {
+        ++s_dump;
+        if (FILE* dump = std::fopen(
+                "E:/cursor/stores/bc-a87e1603-397e-40c2-ac5d-d4373b287a4a/"
+                "internal/gizmo-cam.log",
+                s_dump == 1 ? "w" : "a")) {
+          SceneInstance* sc =
+              g_runtime_global_context.m_scene_system
+                  ? g_runtime_global_context.m_scene_system->getActiveInstance()
+                  : nullptr;
+          const Vec3 focal = m_editor_camera->getFocalPoint();
+          const float cam_far = m_editor_camera->getFarClip();
+          float lighting_far = cam_far;
+          if (sc != nullptr && sc->hasWorldBounds()) {
+            lighting_far = clusteredLightingFar(
+                cam_far,
+                glm::length(sc->getWorldBounds().max - sc->getWorldBounds().min),
+                camera_distance);
+          }
+          std::fprintf(
+              dump,
+              "n=%d lookat=%d applied=%d pending=%d pos=(%.1f,%.1f,%.1f) "
+              "focal=(%.1f,%.1f,%.1f) dist=%.1f near=%.2f far=%.1f lfar=%.1f "
+              "gpu=%zu opaque=%zu bounds=%d",
+              s_dump, has_lookat ? 1 : 0, s_lookat_applied ? 1 : 0,
+              m_pending_scene_camera_focus ? 1 : 0, camera_position.x,
+              camera_position.y, camera_position.z, focal.x, focal.y, focal.z,
+              camera_distance, m_editor_camera->getNearClip(), cam_far,
+              lighting_far,
+              m_gpu_driven_draws.size(), m_opaque_mesh_draws.size(),
+              sc != nullptr && sc->hasWorldBounds() ? 1 : 0);
+          if (sc != nullptr && sc->hasWorldBounds()) {
+            const AABB& bb = sc->getWorldBounds();
+            std::fprintf(dump, " aabb=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)",
+                         bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y,
+                         bb.max.z);
+          }
+          if (!m_opaque_mesh_draws.empty()) {
+            const Mat4& m = m_opaque_mesh_draws[0].model;
+            const Vec3 t(m[3]);
+            const float sx = glm::length(Vec3(m[0]));
+            const float sy = glm::length(Vec3(m[1]));
+            const float sz = glm::length(Vec3(m[2]));
+            std::fprintf(dump, " model0 t=(%.2f,%.2f,%.2f) s=(%.5f,%.5f,%.5f)",
+                         t.x, t.y, t.z, sx, sy, sz);
+          }
+          std::fprintf(dump, " env=%s\n", lookat ? lookat : "null");
+          std::fclose(dump);
+        }
+      }
+    }
     near_clip = m_editor_camera->getNearClip();
     far_clip = m_editor_camera->getFarClip();
     vertical_fov = m_editor_camera->getVerticalFov();
@@ -1599,6 +2074,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     projection = proj;
     far_clip = 10.0f;
   }
+  phases.mark("cameraMs");
 
   ForwardFrameState frame_state{};
   frame_state.view = view;
@@ -1627,6 +2103,21 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     frame_state.shading.light_color = preview.light_color;
   }
   frame_state.shading.ssao_enabled = false;
+  if (m_viewport_layout_source != nullptr) {
+    auto* slint_layout = static_cast<SlintSystem*>(m_viewport_layout_source);
+    frame_state.shading.froxel_occupancy_heatmap =
+        slint_layout->froxelOccupancyHeatmapEnabled();
+    if (frame_state.shading.froxel_occupancy_heatmap && !m_deferred_path) {
+      static bool s_logged_heatmap_without_deferred = false;
+      if (!s_logged_heatmap_without_deferred) {
+        s_logged_heatmap_without_deferred = true;
+        LOG_WARN(
+            "[RenderSystem] Froxel occupancy heatmap is on, but the Viewport "
+            "is not on the Deferred path (BLUNDER_EDITOR_DEFERRED=0). Overlay "
+            "will not draw.");
+      }
+    }
+  }
   SceneInstance* active_scene = nullptr;
   if (g_runtime_global_context.m_scene_system != nullptr) {
     active_scene = g_runtime_global_context.m_scene_system->getActiveInstance();
@@ -1640,16 +2131,23 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     if (isValid(frame_state.shadow_caster_id)) {
       const Vec3 emit =
           lightWorldEmit(active_scene->getWorldMatrix(frame_state.shadow_caster_id));
-      shadow_light_dir = lightShadingL(LightType::directional, emit, Vec3(0.0f),
-                                       Vec3(0.0f));
+      // lookAt is -Z forward. Pass emit (sun onto the scene), not shading L,
+      // or the ortho camera sits under the floor and the 1024 map stays empty.
+      shadow_light_dir = emit;
     }
   }
   const bool host_is_player =
       g_runtime_global_context.hostMode() == EngineHostMode::Player;
+  if (active_scene != nullptr) {
+    frame_state.local_shadows = pickLocalShadowCasters(*active_scene);
+  }
+  frame_state.mesh_shadows = m_mesh_shadows.get();
+  const bool has_shadow_casters =
+      isValid(frame_state.local_shadows.directional) ||
+      frame_state.local_shadows.point_count > 0 ||
+      frame_state.local_shadows.spot_count > 0;
   frame_state.shadows_enabled =
-      isValid(frame_state.shadow_caster_id) &&
-      (host_is_player || editorShadowsEnabled());
-  (void)0;
+      has_shadow_casters && (host_is_player || !editorShadowsForcedOff());
 
   glm::vec3 shadow_focus(0.0f);
   float shadow_ortho_half_extent = k_shadow_ortho_half_extent;
@@ -1672,38 +2170,67 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       !matricesNearlyEqual(view, m_last_viewport_view) ||
       !matricesNearlyEqual(projection, m_last_viewport_projection);
   const bool scene_changed =
-      m_viewport_render_generation != m_last_rendered_viewport_generation;
-  bool skip_camera_only_zero_copy = false;
-  if (usesZeroCopyViewport() && m_viewport_layout_source != nullptr &&
-      !m_force_viewport_render && !viewport_target_changed && !scene_changed &&
-      camera_changed) {
-    skip_camera_only_zero_copy =
-        !static_cast<SlintSystem*>(m_viewport_layout_source)
-             ->isViewportPacingInteractive() &&
-        !static_cast<SlintSystem*>(m_viewport_layout_source)
-             ->wouldScheduleViewportComposite();
-  }
+      m_viewport_render_generation != m_last_rendered_viewport_generation ||
+      active_scene != m_last_rendered_scene_instance;
+  frame_state.scene_static = !host_is_player && !scene_changed;
+  const bool heatmap_changed = frame_state.shading.froxel_occupancy_heatmap !=
+                               m_last_rendered_froxel_heatmap;
+  // Programmatic LOOKAT / AABB snaps change the view without pointer
+  // interaction. Skipping that record keeps presenting the origin-grid
+  // frame while Unique gizmos sit on the courtyard.
+  const bool skip_camera_only_zero_copy = false;
   // Player is a game view: idle skip is editor-only (static camera + generation).
   // Behaviour TRS and CPU skin still update the draw list; without a record the
   // last presented swapchain image stays frozen.
   if (!host_is_player && !m_force_viewport_render && !viewport_target_changed &&
-      !camera_changed && !scene_changed) {
+      !camera_changed && !scene_changed && !heatmap_changed) {
+    phases.flag("skip", 1);
     pollViewportPresent();
     return;
   }
 
   if (skip_camera_only_zero_copy) {
+    phases.flag("skip", 2);
     pollViewportPresent();
     return;
   }
 
+  // Two frames in flight and one of the two images is pinned as the Slint-bound
+  // texture, so exactly one slot is recordable. Bind whatever the GPU finished
+  // before claiming that slot: tryBeginRecordingSlot() gates on the same
+  // slotReached() the presenter needs, so without this the recorder always wins
+  // the race and overwrites the finished image before it is ever shown. Orbit
+  // then submits at the GPU rate while the Viewport shows one frame per drag.
+  pollViewportPresent();
+
+  uint64_t bound_vk = 0;
+  if (usesZeroCopyViewport() && m_viewport_layout_source != nullptr) {
+    bound_vk = static_cast<SlintSystem*>(m_viewport_layout_source)
+                   ->boundViewportVkImage();
+    if (OffscreenRenderTarget* offscreen = vkOffscreenRt(this)) {
+      const uint64_t write_vk = reinterpret_cast<uint64_t>(
+          offscreen->getImage(m_current_frame));
+      if (bound_vk != 0 && write_vk == bound_vk) {
+        const uint32_t other =
+            (m_current_frame + 1u) % VulkanSync::k_max_frames_in_flight;
+        const uint64_t other_vk =
+            reinterpret_cast<uint64_t>(offscreen->getImage(other));
+        if (other_vk != bound_vk) {
+          m_current_frame = other;
+        }
+      }
+    }
+  }
+
   if (!tryBeginRecordingSlot(m_current_frame)) {
+    phases.flag("skip", 3);
     pollViewportPresent();
     if (m_viewport_render_generation != m_last_rendered_viewport_generation) {
       m_force_viewport_render = true;
     }
     return;
   }
+  phases.mark("beginSlotMs");
 
   if (OffscreenRenderTarget* offscreen = vkOffscreenRt(this)) {
     offscreen->setActiveBufferIndex(m_current_frame);
@@ -1767,8 +2294,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     append_forward_draw(mesh_draw, transparent_draws);
   }
 
+  phases.mark("drawListMs");
   VkCommandBuffer command_buffer =
-      m_mesh_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
       m_mesh_pipeline->nativePipeline()->getCommandBuffer(m_current_frame);
   vkResetCommandBuffer(command_buffer, 0);
 
@@ -1780,63 +2307,18 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     m_overlay_system->begin_sync(frame_state, m_current_frame);
   }
 
-  if (m_forward_path) {
-    m_forward_path->renderFrame(
-        command_buffer, frame_state, opaque_draws.data(),
-        static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
-        static_cast<uint32_t>(transparent_draws.size()), m_current_frame);
-  }
-
-  if (m_overlay_system) {
-    if (m_overlay_system->hasActiveOutline()) {
-      m_overlay_system->draw_outline(command_buffer);
-    }
-    if (m_overlay_system->hasActiveLineOverlays()) {
-      m_overlay_system->draw_overlay_lines(command_buffer);
-      if (editorOverlayAaEnabled()) {
-        m_overlay_system->draw_overlay_aa(command_buffer);
-      }
-    }
-  }
-
-  if (m_ssao_pass && frame_state.shading.ssao_enabled) {
-    m_ssao_pass->apply(command_buffer, vkOffscreenRt(this), frame_state.shading,
-                       projection, near_clip, far_clip, m_current_frame);
-  }
-
-  if (m_overlay_system) {
-    m_overlay_system->draw_screen_overlays(command_buffer);
-  }
-
-  vulkan_backend::VulkanCommandList command_list;
-  command_list.bind(vkCtx(this), command_buffer);
-
-  // Zero-copy path uses the same async timeline poll as CPU readback: submit
-  // without blocking, present the newest completed frame via pollZeroCopyAndPresent().
-  const bool zero_copy_viewport = usesZeroCopyViewport();
-
-  VulkanBuffer* readback_staging =
-      (!zero_copy_viewport && m_viewport_bridge)
-          ? m_viewport_bridge->stagingBuffer(m_current_frame)
-          : nullptr;
-
-  if (zero_copy_viewport) {
-    m_offscreen->transitionToShaderRead(command_list);
-  } else {
-    m_offscreen->transitionToCopySource(command_list);
-    if (readback_staging) {
-      VkBufferImageCopy copy_region{};
-      copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-      copy_region.imageSubresource.mipLevel = 0;
-      copy_region.imageSubresource.baseArrayLayer = 0;
-      copy_region.imageSubresource.layerCount = 1;
-      copy_region.imageExtent = {offscreen_extent.width, offscreen_extent.height,
-                                 1};
-      vkCmdCopyImageToBuffer(command_buffer, vkOffscreenRt(this)->getImage(),
-                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                             readback_staging->getBuffer(), 1, &copy_region);
-    }
-    m_offscreen->transitionToShaderRead(command_list);
+  // Editor viewport shading + overlays + Copy Sink (ADR 0067 / 0068 / 0069).
+  // Camera Preview below still uses ForwardRenderPath::renderFrameTo.
+  recordViewportGraph(
+      command_buffer, frame_state, opaque_draws.data(),
+      static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
+      static_cast<uint32_t>(transparent_draws.size()), m_current_frame,
+      host_is_player);
+  if (m_deferred_path && m_viewport_layout_source != nullptr && !host_is_player) {
+    static_cast<SlintSystem*>(m_viewport_layout_source)
+        ->syncFroxelViewportStats(
+            m_deferred_path->froxelDroppedLightAssignments(),
+            m_deferred_path->froxelDroppedLightAssignmentsTotal());
   }
 
   uint32_t preview_width = 0;
@@ -1846,6 +2328,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       preview_width, preview_height);
 
   vkEndCommandBuffer(command_buffer);
+  phases.mark("recordMs");
 
   VkSubmitInfo submit_info{};
   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1854,6 +2337,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   const uint64_t timeline_value =
       vkSync(this)->queueSubmit(vkCtx(this)->getGraphicsQueue(), submit_info);
   vkSync(this)->setSlotValue(m_current_frame, timeline_value);
+  phases.mark("submitMs");
 
   if (preview_recorded) {
     m_camera_preview_readback_pending = true;
@@ -1862,6 +2346,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     m_camera_preview_readback_h = preview_height;
   }
 
+  const bool zero_copy_viewport = usesZeroCopyViewport();
   if (zero_copy_viewport) {
     notifyZeroCopySubmitted(m_current_frame, offscreen_extent.width,
                             offscreen_extent.height);
@@ -1873,6 +2358,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     // the slot value to check if any previous frame's staging copy has completed.
     pollViewportPresent();
   }
+  phases.mark("presentPollMs");
 
   if (m_viewport_layout_source != nullptr) {
     static_cast<SlintSystem*>(m_viewport_layout_source)->syncViewportProjectionMode(
@@ -1888,6 +2374,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   m_last_viewport_target_w = target_width;
   m_last_viewport_target_h = target_height;
   m_last_rendered_viewport_generation = m_viewport_render_generation;
+  m_last_rendered_froxel_heatmap = frame_state.shading.froxel_occupancy_heatmap;
+  m_last_rendered_scene_instance = active_scene;
   m_force_viewport_render = false;
 
   m_current_frame = (m_current_frame + 1) % VulkanSync::k_max_frames_in_flight;
@@ -1908,15 +2396,24 @@ void RenderSystem::onEvent(Event& event) {
       playerAuthorshipInputEnabled(g_runtime_global_context.hostMode());
 
   if (overlays && m_overlay_system && m_editor_camera) {
-    m_overlay_system->transform_gizmo().controller().onEvent(event,
-                                                             *m_editor_camera);
-    if (event.handled) {
-      return;
+    auto& transform_ctrl = m_overlay_system->transform_gizmo().controller();
+    auto& camera_ctrl = m_overlay_system->camera_gizmo().controller();
+    const bool scene_gizmos = m_overlay_system->sceneGizmosVisible();
+    const EventType type = event.getEventType();
+    const bool mouse_event =
+        type == EventType::MouseMoved || type == EventType::MouseButtonPressed ||
+        type == EventType::MouseButtonReleased;
+    if (scene_gizmos || transform_ctrl.isDragging() || !mouse_event) {
+      transform_ctrl.onEvent(event, *m_editor_camera);
+      if (event.handled) {
+        return;
+      }
     }
-    m_overlay_system->camera_gizmo().controller().onEvent(event,
-                                                          *m_editor_camera);
-    if (event.handled) {
-      return;
+    if (scene_gizmos || camera_ctrl.isDragging()) {
+      camera_ctrl.onEvent(event, *m_editor_camera);
+      if (event.handled) {
+        return;
+      }
     }
   }
 
@@ -1927,7 +2424,9 @@ void RenderSystem::onEvent(Event& event) {
       auto& gizmo_ctrl = m_overlay_system->transform_gizmo().controller();
       const Vec2 pos(mouse_event.getX(), mouse_event.getY());
       bool hover_changed = false;
-      if (gizmo_ctrl.getMode() != TransformGizmoMode::none && !gizmo_ctrl.isDragging()) {
+      if (m_overlay_system->sceneGizmosVisible() &&
+          gizmo_ctrl.getMode() != TransformGizmoMode::none &&
+          !gizmo_ctrl.isDragging()) {
         if (m_editor_camera->isWindowPositionInViewport(pos)) {
           hover_changed = gizmo_ctrl.updateHoverFromPointer(pos, *m_editor_camera);
         } else if (gizmo_ctrl.hasHover()) {
@@ -2176,6 +2675,24 @@ bool RenderSystem::isTranslateModalSessionActive() const {
         .isTranslateModalSessionActive();
   }
   return false;
+}
+
+bool RenderSystem::areSceneGizmosVisible() const {
+  if (m_overlay_system) {
+    return m_overlay_system->sceneGizmosVisible();
+  }
+  return true;
+}
+
+void RenderSystem::toggleSceneGizmosVisible() {
+  if (!m_overlay_system) {
+    return;
+  }
+  m_overlay_system->setSceneGizmosVisible(!m_overlay_system->sceneGizmosVisible());
+  requestViewportRedraw();
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->syncTransformToolbarFromEngine();
+  }
 }
 
 }  // namespace Blunder

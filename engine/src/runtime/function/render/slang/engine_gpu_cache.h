@@ -10,7 +10,7 @@
 
 namespace Blunder {
 
-constexpr uint32_t k_engine_gpu_cache_generation = 1;
+constexpr uint32_t k_engine_gpu_cache_generation = 4;
 constexpr const char* k_spirv_profile_name = "spirv_1_5";
 constexpr const char* k_gpu_cache_dir_env = "BLUNDER_GPU_CACHE_DIR";
 

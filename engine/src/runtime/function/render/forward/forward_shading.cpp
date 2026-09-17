@@ -13,6 +13,8 @@
 
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/shadow/mesh_shadow_casters.h"
+#include "runtime/function/render/shadow/mesh_shadow_system.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 #include "runtime/function/scene/light_eval.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -33,6 +35,9 @@ void computeDirectionalLightMatrices(
     glm::vec3 light_dir, glm::vec3 focus, float ortho_half_extent,
     float near_plane, float far_plane, glm::mat4& out_light_view,
     glm::mat4& out_light_projection, glm::mat4& out_light_view_projection) {
+  // `light_dir` is emit / shine (sun onto the scene). lookAt is −Z forward, so
+  // the camera sits along −dir from the focus. Passing shading L puts it under
+  // the floor and every receiver samples a cleared 1.0 depth.
   const float light_dir_length = glm::length(light_dir);
   const glm::vec3 normalized_light_dir =
       light_dir_length > 0.0001f ? light_dir / light_dir_length
@@ -46,6 +51,8 @@ void computeDirectionalLightMatrices(
   const glm::vec3 light_position =
       focus - normalized_light_dir * k_light_view_distance;
   out_light_view = glm::lookAt(light_position, focus, up);
+  // Match extractFrustumPlanes / the rest of classic gpu-driven shadow (OpenGL
+  // clip Z). orthoZO here emptied the 1024 map after the emit look-at fix.
   out_light_projection = glm::ortho(-ortho_half_extent, ortho_half_extent,
                                     -ortho_half_extent, ortho_half_extent,
                                     near_plane, far_plane);
@@ -87,7 +94,8 @@ float gpuLightTypeCode(LightType type) {
 }
 
 void packEvaluatedLight(GpuSceneLight& gpu, const EvaluatedLight& light,
-                        EntityId shadow_caster_id, bool shadows_enabled) {
+                        EntityId shadow_caster_id, bool shadows_enabled,
+                        const LocalShadowCasters* local_shadows) {
   gpu.position_type =
       glm::vec4(light.world_position, gpuLightTypeCode(light.type));
   const float illuminate =
@@ -97,11 +105,15 @@ void packEvaluatedLight(GpuSceneLight& gpu, const EvaluatedLight& light,
   gpu.cone_area = glm::vec4(glm::cos(glm::radians(light.inner_cone_degrees)),
                             glm::cos(glm::radians(light.outer_cone_degrees)),
                             light.width, light.height);
-  const float uses_shadow =
-      shadows_enabled && light.entity_id == shadow_caster_id && illuminate > 0.5f
-          ? 1.0f
-          : 0.0f;
-  gpu.axis_x = glm::vec4(light.world_axis_x, uses_shadow);
+  float code = k_shadow_code_none;
+  if (local_shadows != nullptr) {
+    code = shadowCodeForLight(light, shadow_caster_id, *local_shadows,
+                              shadows_enabled);
+  } else if (shadows_enabled && isValid(shadow_caster_id) &&
+             light.entity_id == shadow_caster_id) {
+    code = k_shadow_code_directional;
+  }
+  gpu.axis_x = glm::vec4(light.world_axis_x, code);
 }
 
 void packSceneLights(ForwardMeshUniformData& mesh_ubo,
@@ -125,7 +137,8 @@ void packSceneLights(ForwardMeshUniformData& mesh_ubo,
   }
   for (size_t i = 0; i < count; ++i) {
     packEvaluatedLight(mesh_ubo.lights[i], gathered[i],
-                       frame_state.shadow_caster_id, frame_state.shadows_enabled);
+                       frame_state.shadow_caster_id, frame_state.shadows_enabled,
+                       &frame_state.local_shadows);
   }
 }
 
@@ -171,6 +184,9 @@ void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
   mesh_ubo.shadow_params = glm::vec4(
       frame_state.shadow_bias, frame_state.shadows_enabled ? 1.0f : 0.0f,
       inv_shadow_map_size, 0.0f);
+  if (frame_state.mesh_shadows != nullptr) {
+    frame_state.mesh_shadows->applySamplingUniforms(mesh_ubo.shadow_sampling);
+  }
 }
 
 void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,

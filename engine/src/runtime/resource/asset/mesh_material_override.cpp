@@ -116,7 +116,8 @@ eastl::shared_ptr<MeshAsset> cloneMeshAsset(
   return eastl::make_shared<MeshAsset>(
       eastl::move(meta), eastl::vector<MeshVertex>(source.getVertices()),
       eastl::vector<uint32_t>(source.getIndices()), source.getMaterial(),
-      eastl::move(material), source.getSkinData(), source.isFromCookedFinal());
+      eastl::move(material), source.getSkinData(), source.isFromCookedFinal(),
+      source.getMeshlets());
 }
 
 void applyMeshMaterialOverride(

@@ -12,6 +12,7 @@
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
+#include "runtime/resource/asset_cook/meshlet_builder.h"
 #include "runtime/resource/asset_cook/texture_cooker.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -53,15 +54,24 @@ fs::path resolveSourceAbsolute(FileSystem& file_system,
   return file_system.resolveResource(fs::path(relative.c_str()));
 }
 
+// A cooked Final is fresh when it exists, its meta matches both mtimes, and,
+// when `required_cook_format` is non-zero, the meta records that cook format.
+// Meta files written before `cook_format` existed read as 0 and therefore
+// count as stale for any non-zero requirement, which forces a recook.
 bool isCookFresh(FileSystem& file_system, const fs::path& cooked_path,
                  const fs::path& meta_path, uint64_t source_mtime,
-                 uint64_t descriptor_mtime) {
+                 uint64_t descriptor_mtime,
+                 uint32_t required_cook_format = 0) {
   if (!file_system.exists(cooked_path) || !file_system.exists(meta_path)) {
     return false;
   }
 
   CookedAssetMeta meta{};
   if (!readCookMetaFile(meta_path, meta)) {
+    return false;
+  }
+  if (required_cook_format != 0 &&
+      meta.cook_format != required_cook_format) {
     return false;
   }
   return meta.source_mtime == source_mtime &&
@@ -293,7 +303,7 @@ bool AssetCompilerService::cookMeshDescriptor(
 
   if (!force &&
       isCookFresh(*m_file_system, cooked_path, meta_path, source_mtime,
-                  descriptor_mtime)) {
+                  descriptor_mtime, kMeshCookVersion)) {
     return false;
   }
 
@@ -308,14 +318,23 @@ bool AssetCompilerService::cookMeshDescriptor(
   m_file_system->ensureParentDirectory(cooked_path);
   const MeshSkinData* skin_ptr =
       mesh->isSkinned() ? &mesh->getSkinData() : nullptr;
+  MeshletPayload meshlets{};
+  const MeshletPayload* meshlets_ptr = nullptr;
+  if (skin_ptr == nullptr) {
+    meshlets = buildStaticMeshlets(mesh->getVertices(), mesh->getIndices());
+    if (!meshlets.empty()) {
+      meshlets_ptr = &meshlets;
+    }
+  }
   if (!writeMeshCookFile(cooked_path, mesh->getVertices(), mesh->getIndices(),
-                         skin_ptr)) {
+                         skin_ptr, meshlets_ptr)) {
     return false;
   }
 
   CookedAssetMeta meta{};
   meta.source_mtime = source_mtime;
   meta.descriptor_mtime = descriptor_mtime;
+  meta.cook_format = kMeshCookVersion;
   writeCookMetaFile(meta_path, meta);
 
   m_asset_registry->registerAsset(descriptor.guid, descriptor_virtual_path);

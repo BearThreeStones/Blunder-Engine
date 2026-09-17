@@ -8,6 +8,7 @@
 #include <filesystem>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/render/gpu_driven/gpu_driven_types.h"
 #include "runtime/function/render/gpu_mesh.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/render_system.h"
@@ -82,14 +83,27 @@ void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
         normal_texture, occlusion_texture, draw_renderer.world_matrix,
         draw_renderer.alpha_cutoff, draw_renderer.double_sided,
         eastl::move(gpu_bone_palette), entity_id);
-  } else {
-    render_system->addOpaqueMeshDraw(
+    return;
+  }
+
+  const bool gpu_skinned = !gpu_bone_palette.empty();
+  if (!gpu_skinned && gpu_mesh->hasMeshlets() &&
+      gpu_mesh->getMeshletIndexBuffer() != nullptr) {
+    render_system->addGpuDrivenDraw(
         gpu_mesh, material, base_color_texture, metallic_roughness_texture,
         normal_texture, occlusion_texture, draw_renderer.world_matrix,
         draw_renderer.alpha_cutoff,
         material ? material->getAlphaMode() : draw_renderer.alpha_mode,
-        draw_renderer.double_sided, eastl::move(gpu_bone_palette), entity_id);
+        draw_renderer.double_sided, entity_id);
+    return;
   }
+
+  render_system->addOpaqueMeshDraw(
+      gpu_mesh, material, base_color_texture, metallic_roughness_texture,
+      normal_texture, occlusion_texture, draw_renderer.world_matrix,
+      draw_renderer.alpha_cutoff,
+      material ? material->getAlphaMode() : draw_renderer.alpha_mode,
+      draw_renderer.double_sided, eastl::move(gpu_bone_palette), entity_id);
 }
 
 }  // namespace
@@ -131,6 +145,7 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
 
   render_system->clearOpaqueMeshDraws();
   render_system->clearTransparentMeshDraws();
+  render_system->clearGpuDrivenDraws();
 
   if (scene_instance == nullptr) {
     return;

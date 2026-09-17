@@ -10,19 +10,36 @@ SDL3 pumpEvents
 
 RenderSystem::tick(dt, viewport_w, viewport_h)
    ├─ resize OffscreenRenderTarget if Slint reports a new central rect size
-   ├─ assemble ForwardFrameState + opaque draw list (N mesh sources)
-   └─► ForwardRenderPath::renderFrame
-         ├─ shadow pass: PRIMARY begins SECONDARY contents, executes shadow draws
-         ├─ RHI beginRenderPass (color + depth clear) with SECONDARY contents
-         ├─ execute opaque secondary, scene-overlay secondary, transparent secondary
-         ├─ RHI endRenderPass → SHADER_READ_ONLY
-   ├─ OverlaySystem::draw_outline (ID prepass + edge resolve, each via secondary execute)
-   ├─ OverlaySystem::draw_overlay_lines (OverlayLinePass MRT via secondary execute)
-   ├─ OverlaySystem::draw_overlay_aa (overlay_aa.slang via secondary execute)
-   ├─ SsaOPass::apply (AO + composite via secondary execute; barriers stay on PRIMARY)
-   ├─ OverlaySystem::draw_screen_overlays (ScreenOverlayPass LOAD via secondary execute)
-   ├─ RHI transitionToCopySource → copyColorToBuffer (staging)
-   ├─ RHI transitionToShaderRead
+   ├─ assemble ForwardFrameState + CPU opaque draw list (skinned / no-Meshlet meshes)
+   │     + GPU instance buffer (static opaque/alpha-clip MeshRenderers with Meshlets)
+   ├─► Frame graph execute (shading + overlays + Copy Sink; Vulkan recorder)
+   │     ([ADR 0067](../adr/0067-frame-graph-viewport-wire.md), [ADR 0068](../adr/0068-frame-graph-viewport-overlays.md), [ADR 0069](../adr/0069-frame-graph-deferred-split.md))
+   │     ├─ Scene callback ForwardRenderPath::renderFrame            (default; Player always)
+   │     │     ├─ shadow pass: mesh-shader VSM pages + point cubes + spot 2D
+   │     │     │     (VS/FS classic 1024² directional when mesh shaders are absent;
+   │     │     │      GPU-driven static casters are opaque meshlets only; no Hi-Z)
+   │     │     ├─ GPU-driven cull (graphics-queue compute): frustum + cone + previous-frame Hi-Z
+   │     │     │     → early indirect command list; late list retests last frame's Hi-Z rejects
+   │     │     ├─ RHI beginRenderPass (color + depth clear) with SECONDARY contents
+   │     │     ├─ execute opaque secondary: GPU-driven early + late (indirect or task/mesh),
+   │     │     │     then CPU `vkCmdDrawIndexed` list; scene-overlay secondary; transparent secondary
+   │     │     └─ RHI endRenderPass → SHADER_READ_ONLY; depth feeds next frame's Hi-Z pyramid
+   │     ├─ or editor Deferred: viewport.gbuffer then viewport.lighting (BLUNDER_EDITOR_DEFERRED=1)
+   │     │     ├─ G-buffer callback: shadow fill (VSM/locals or classic 1024), then G-buffer RP
+   │     │     │     After G-buffer: VSM page mark from offscreen depth (not froxel lists)
+   │     │     │     (GPU-driven static early/late + CPU skinned, alpha clip, Bindless set 1; no offscreen color)
+   │     │     └─ Lighting callback: offscreen color CLEAR, `deferred_lighting` secondary
+   │     │           (fullscreen triangle; Deferred light list 32 + mask SSBO 16384 slots, ≤ 8 lights/slot;
+   │     │            Directional VSM PCF + Point cube / Spot 2D PCF; no Bindless)
+   │     │           then PRIMARY barriers → OffscreenRenderTarget LOAD color + depth
+   │     │           execute scene-overlay secondary, then transparent secondary (Forward PBR)
+   │     │           endLoadRenderPass → SHADER_READ_ONLY / DEPTH_STENCIL_READ_ONLY
+   │     ├─ Outline (optional; `hasActiveOutline`)
+   │     ├─ Line+AA (optional; `hasActiveLineOverlays`; one Pass)
+   │     ├─ SSAO (optional; `ssao_enabled`)
+   │     ├─ Screen overlays (when OverlaySystem exists)
+   │     └─ Copy Sink (zero-copy shader-read vs CPU copy then shader-read)
+   ├─ Camera Preview (Forward `renderFrameTo`; after this execute)
    ├─ submit (fence, no stall)
    └─ pollAndPresent → tryMapSlot(vkGetFenceStatus) → present previous frame
 
@@ -39,11 +56,36 @@ SlintSystem::update()
 |----------------------|----------------------------------|
 | Window / HWND        | `WindowSystem` (SDL3, no `SDL_WINDOW_VULKAN`) |
 | Vulkan device        | `VulkanContext` (headless, no surface/swapchain) |
-| 3D scene pass        | `ForwardRenderPath` + `OffscreenRenderTarget` (RHI pass API) |
-| Per-frame readback   | `RenderSystem::tick` (async submit/fence after forward path) |
+| 3D scene pass        | Frame graph shading Passes (`execute` + Vulkan recorder): Forward/Player Scene ([ADR 0067](../adr/0067-frame-graph-viewport-wire.md)); editor Deferred G-buffer then Lighting ([ADR 0069](../adr/0069-frame-graph-deferred-split.md), path [ADR 0062](../adr/0062-deferred-render-path.md)). Overlay/copy Passes on that graph: [ADR 0068](../adr/0068-frame-graph-viewport-overlays.md) |
+| Static geometry submission | GPU-driven rendering inside the Forward / G-buffer / shadow passes ([ADR 0070](../adr/0070-gpu-driven-rendering.md)); CPU draw list for the remainder (see below) |
+| Per-frame readback   | `RenderSystem::tick` (async submit/fence after the viewport Render Path) |
 | UI composite + Present | `SlintSystem` + `SkiaRenderer` |
 | 3D viewport size     | Slint `viewport-width/height` ► `RenderSystem` |
 | 3D pixels into UI    | `SlintSystem::setViewportImage`  |
+
+## GPU-driven rendering (static opaque / alpha clip)
+
+Static opaque and alpha-clip `MeshRendererComponent`s whose cooked mesh Final
+contains Meshlets submit through the GPU instead of the CPU draw list
+([ADR 0070](../adr/0070-gpu-driven-rendering.md); terms: [CONTEXT.md — GPU-driven
+rendering, Meshlet, Hi-Z](../../CONTEXT.md)). Shading still runs on the Forward or
+Deferred Render Path; this is a geometry-submission change, not a visibility buffer
+and not Bindless.
+
+| Piece | Detail |
+|-------|--------|
+| Instance buffer | Per-frame GPU buffer of static opaque/alpha-clip MeshRenderers with Meshlets: world matrix, Bindless texture indices, Meshlet range, MeshRenderer receiver id. Meshes cooked without Meshlets (version ≤ 2 Finals, skinned) stay on the CPU `ForwardOpaqueDraw` list. |
+| Cull | Graphics-queue compute (no dedicated compute queue): frustum + Meshlet cone cull, then previous-frame Hi-Z. Writes indirect draw commands / Meshlet lists. Exact-match FATAL on the compute layout. |
+| Hi-Z | Path-owned depth pyramid built from the **previous** frame's offscreen depth, one per `OffscreenRenderTarget::k_buffer_count` slot (FIF like the G-buffer). Not a Frame graph Transient. First frame: empty pyramid, frustum-visible Meshlets draw. **Not** a depth prepass and **not** a visibility buffer. |
+| Early / late | Early pass draws Meshlets that pass frustum + cone + previous-frame Hi-Z. Late pass draws the Hi-Z rejects that still pass frustum + cone, in the **same** opaque secondary (no split of the CLEAR pass). The pyramid is built **after** the pass for the **next** frame. First frame: `hiz_enabled=0`. |
+| Draw | `vkCmdDrawIndexedIndirect` (count variant when available) with the existing PBR / G-buffer fragment shaders + Bindless set 1. With `VK_EXT_mesh_shader`: task + mesh shaders consume the early/late Meshlet lists and emit the same fragment inputs as the VS path. |
+| Mesh shader fallback | `VK_EXT_mesh_shader` is queried at device create; a missing extension **must not** fail device init. Without it the path is compute cull + traditional VS/FS indirect draws. Exact-match FATAL on task/mesh layouts when present. |
+| Directional shadows | Mesh-shader clipmap (128² pages, 512 physical D32 pages, FirstLevel 6…LastLevel 10) filled from opaque meshlets. Fallback device: classic 1024² ortho VS fill. Skinned / alpha / foliage do not cast. |
+| Point / Spot shadows | Up to 8 cubemaps and 8 perspective 2D maps per view, same opaque-meshlet fill, 2×2 PCF. Not VSM. |
+| Deferred | GPU-driven static writes the G-buffer (alpha clip in geometry). Receiver plane is `R16_UINT` with a 14-bit MeshRenderer slot + unlit + two-sided bits; Meshlets inherit their MeshRenderer id (no per-Meshlet id). `deferred_lighting.slang` decodes that packing. |
+| CPU list remainder | Skinned, blend-transparent, pick, outline, Mesh Preview, Camera Preview, and Scene Thumbnail / Capture stay on the CPU draw list with the Forward mesh draw cap (256 per-draw constant slots). GPU-driven static does not use that cap. |
+| Cook | Meshlets (64 verts / 124 tris, sphere + cone via MeshOptimizer) are appended to the mesh Final at Cook (`kMeshCookVersion` = 3). `.meshbin.meta` records `cook_format` (missing key reads as 0); `AssetCompilerService` treats a mesh Final as stale when that value differs from `kMeshCookVersion` and recooks it. Texture metas do not require `cook_format`. |
+| Demo scene | Sponza lives in the **Test project only**: `Assets/Scenes/sponza.scene.asset` (Main Camera, Directional Light, existing `Sponza.mesh.yaml` through the glTF importer). No Crytek files are copied into the engine repo and no engine test cooks Sponza. GPU-driven is the default path, not a per-scene switch. |
 
 ## Overlay phases
 
@@ -51,11 +93,33 @@ SlintSystem::update()
 
 | Phase | API | When |
 |-------|-----|------|
-| Scene | `draw_scene_overlays` | Inside forward render pass |
-| Outline | `draw_outline` | After forward; ID prepass (`color_id`/`ob_id` packed in `R16_UINT`) + smooth resolve composite; multi-select + transform-drag color |
-| Lines | `draw_overlay_lines` | After outline; MRT to `OverlayLineTargets` |
-| Line AA | `draw_overlay_aa` | Before SSAO; Blender-style cross-neighbor line composite when `BLUNDER_EDITOR_OVERLAY_AA=1` |
-| Screen | `draw_screen_overlays` | After SSAO; LOAD pass (`ScreenOverlayPass`) |
+| Scene | `draw_scene_overlays` | Forward: inside the forward CLEAR pass between opaque and transparent. Deferred: inside the offscreen LOAD pass after lighting, before transparent (never into the G-buffer) |
+| Outline | `draw_outline` | Frame graph Pass after Scene (Forward) or after Lighting (Deferred); ID prepass (`color_id`/`ob_id` packed in `R16_UINT`) + smooth resolve composite; multi-select + transform-drag color |
+| Lines | `draw_overlay_lines` | Frame graph Line+AA Pass after outline; MRT to `OverlayLineTargets` |
+| Line AA | `draw_overlay_aa` | Same Line+AA Pass, before SSAO; Blender-style cross-neighbor line composite when `BLUNDER_EDITOR_OVERLAY_AA=1` |
+| Screen | `draw_screen_overlays` | Frame graph Pass after SSAO; LOAD pass (`ScreenOverlayPass`); Copy is the Sink |
+
+### Deferred Render Path (opt-in)
+
+`DeferredRenderPath` (`function/render/deferred/`) is a hardcoded sibling of
+`ForwardRenderPath` for G-buffer vs lighting ([ADR 0062](../adr/0062-deferred-render-path.md)).
+Editor Deferred dispatch is a G-buffer Pass then a Lighting Pass
+([ADR 0069](../adr/0069-frame-graph-deferred-split.md)); Forward and the Player still
+use one Scene Pass ([ADR 0067](../adr/0067-frame-graph-viewport-wire.md)). Overlay,
+SSAO, and copy are later Passes on that same graph; Copy is the Sink
+([ADR 0068](../adr/0068-frame-graph-viewport-overlays.md)). `RenderSystem` creates
+the Deferred path only when `BLUNDER_EDITOR_DEFERRED` is truthy and the
+host is not the Player; Camera Preview, Mesh Preview, Scene Thumbnail / Capture
+still call `ForwardRenderPath::renderFrameTo`.
+
+| Piece | Detail |
+|-------|--------|
+| G-buffer | Path-owned extra images, one set per `OffscreenRenderTarget::k_buffer_count` slot: `RGBA8` albedo+AO, `RGBA8` oct-normal.xy+metallic+roughness, `R16_UINT` receiver (14-bit MeshRenderer slot bits 0–13, unlit bit 14, two-sided bit 15; clear `0xFFFF` = no geometry). Meshlets inherit their MeshRenderer id. Depth attachment is the offscreen depth of that slot. Not an `OffscreenRenderTarget` MRT. |
+| Geometry shaders | `gbuffer.slang` / `gbuffer_skinned.slang` (Bindless set 1 like Forward opaque; same Matrix Palette UBO as `pbr_skinned.slang`; alpha clip in geometry). GPU-driven static uses the same G-buffer fragment through indirect / mesh-shader geometry; skinned stays `vkCmdDrawIndexed`. Pipelines use `GraphicsPipelineDesc::color_attachment_count = 3`. |
+| Lighting | `deferred_lighting.slang` fullscreen triangle into the offscreen color (CLEAR to `kViewportBackgroundRgb`). UBO = Deferred light list (`buildDeferredFullscreenLightList`, cap 32) + shadow sampling uniforms. Per-slot 32-bit masks from `evaluateLightsForReceiver` (Light linking + cap 8) live in an SSBO of 16384 uints (CPU slots 0–255, GPU-driven 256–16383). Reconstructs world position from depth; samples directional VSM (or classic 1024) plus Point cubemaps and Spot 2D maps with 2×2 `SampleCmp` PCF. Clustered point/spot sample those maps. No Bindless. |
+| After lighting | PRIMARY barriers, then `OffscreenRenderTarget::beginLoadRenderPass` (LOAD color + depth) executing `forward_scene_overlay` then `forward_transparent` secondaries via `ForwardRenderPath::recordSceneOverlayAndTransparent`. Outline / lines / AA / SSAO / screen overlays / copy are Frame graph Passes after this Lighting Pass ([ADR 0068](../adr/0068-frame-graph-viewport-overlays.md)). |
+| Secondaries | New `SecondaryPass::gbuffer_opaque` and `SecondaryPass::deferred_lighting`; layout barriers stay on the PRIMARY (ADR 0059). |
+| Layout | Exact-match FATAL via `fillGBufferExpectedBindings` / `fillDeferredLightingExpectedBindings`; covered by `shader_resource_layout_test`. |
 
 Translate handle drags and `G` grab entry both enter `TranslateModalSession`,
 which owns screen-space motion, constraint projection, confirm/cancel, and session
@@ -175,7 +239,7 @@ Default editor startup loads **`assets/Scenes/pick_test.scene.asset`** (override
 
 All three are **root entities** sharing `assets/Meshes/Cube.mesh.yaml`. View the stack along ±Y so the ray through overlapping voxels hits three mesh renderers. glTF import adds `node → node_prim0` under each box; promotion walks up to `BoxFront` / `BoxMid` / `BoxBack`. Hybrid pick QA expects **≥3** piercing-menu rows and **≥3** same-pixel cycle steps with those promoted names. Sync peel list on first click enables same-pixel cycling on the second click; async broad delivery refines the list when ready.
 
-Restore Sponza demo: set `BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset` and spawn `assets/Sponza.mesh.yaml` from the Content Browser.
+Sponza demo (Test project): set `BLUNDER_STARTUP_SCENE=assets/Scenes/sponza.scene.asset`, or open it from the Content Browser. The scene references the existing `assets/Sponza.mesh.yaml` glTF import; nothing Crytek lives in the engine repo.
 
 ## Notes / known limitations
 
@@ -227,15 +291,18 @@ Restore Sponza demo: set `BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset` 
   the viewport logical rect dirty (not a full-window composite); resize/rebind
   still calls `force_full_refresh()`. Debug dirty
   coverage with `SLINT_SKIA_PARTIAL_RENDERING=log` (or `visualize`).
-- **Editor performance toggles (default off in editor):**
-  - `BLUNDER_EDITOR_SHADOWS=1` — shadow pass (doubles opaque draws for large scenes).
+- **Editor performance toggles:**
+  - `BLUNDER_EDITOR_SHADOWS=0` — debug *off* switch for Viewport shadows (default is on when casters exist). Player ignores this.
+  - `BLUNDER_EDITOR_DEFERRED=0` — force the editor viewport onto the Forward Render Path. Default Deferred. Player, Camera Preview, Mesh Preview, and Thumbnail stay Forward. See [ADR 0062](../adr/0062-deferred-render-path.md).
   - `BLUNDER_EDITOR_OVERLAY_AA=1` — full-scene overlay anti-aliasing pass.
   - `BLUNDER_VIEWPORT_ZERO_COPY=0` — force CPU readback even when shared device works.
   - `BLUNDER_EDITOR_RENDER_SCALE=0.75` — render 3D at reduced resolution (0.25–1.0,
     default 1.0); Slint upscales the viewport image.
-  - `BLUNDER_EDITOR_VIEWPORT_PRESENT_MS=50` — minimum ms between Skia composites
-    while the 3D viewport is updating (default 50). Each composite can still cost
-    ~50–120ms on large windows; increase if FPS is still low.
+  - `BLUNDER_EDITOR_VIEWPORT_PRESENT_MS=50` — Skia floor while the 3D viewport is
+    updating **and idle** (default 50). Interactive orbit/gizmo uses
+    `BLUNDER_EDITOR_VIEWPORT_INTERACTIVE_MS` only (not stacked on this 50ms),
+    so camera motion is not capped at 20 Hz. Each composite can still cost
+    ~50–120ms on large windows; increase the idle floor if background FPS is still low.
   - **Tiered viewport pacing** (interactive vs idle): composite **request** and Skia
     present floors follow camera/gizmo input plus a short hold after release.
     - `BLUNDER_EDITOR_VIEWPORT_INTERACTIVE_MS=33` — request/present floor while
@@ -244,9 +311,23 @@ Restore Sponza demo: set `BLUNDER_STARTUP_SCENE=assets/Scenes/root.scene.asset` 
       (~10 Hz target).
     - `BLUNDER_EDITOR_VIEWPORT_INTERACTIVE_HOLD_MS=150` — remain interactive tier
       after input stops (smooth release).
-    - Signals: `EditorCamera::isViewportInteracting()`, transform gizmo drag.
+    - Signals: `EditorCamera::isViewportInteracting()`, transform gizmo drag,
+      and camera pointer capture (`WindowSystem::getFocusMode()`).
+    - RMB/MMB orbit **does not** enable SDL relative mouse, mouse grab, cursor
+      hide, or auto-capture. Orbit applies `MouseMovedEvent` deltas. Layout
+      cooldown cannot skip `rendererTick` while the camera is interacting.
+      Slint does not receive pointer events during orbit. After each Skia
+      present the HWND compositor is flushed (`DwmFlush`). The Skia swapchain
+      prefers `IMMEDIATE` so DWM cannot queue FIFO frames until mouse-up.
+      Do **not** `waitSlot` on the UI thread during orbit (that blocked pumping
+      for ~1s). Do **not** set `WS_EX_NOREDIRECTIONBITMAP` on this HWND (Skia
+      Vulkan present still needs DWM's redirection bitmap; the style made the
+      editor window fully transparent). The SDL event drain is bounded so
+      `tickOneFrame` still presents while the button is held.
     - Zero-copy path skips redundant Vulkan submits on camera-only moves only in
-      **idle** tier when no composite is scheduled.
+      **idle** tier when no composite is scheduled. A completed GPU image always
+      sets `viewport_frame_ready`; Skia present interval is applied only in
+      `endFrame`.
     - Nsight validation: orbit 15 s → `vkQueueSubmit` ≥ 18/s; static 15 s → ≤ 12/s.
 - `EditorCamera` still receives input in window coordinates; for delta-based
   motion (drag/orbit) this is fine, but absolute-position interactions should

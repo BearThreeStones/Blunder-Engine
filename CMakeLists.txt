@@ -74,6 +74,7 @@ find_package(Vulkan REQUIRED)
 
 # ---------- Slang Shader Compiler SDK ----------
 include(cmake/slang.cmake)
+include(cmake/meshoptimizer.cmake)
 
 # ---------- 子模块 ----------
 add_subdirectory(engine)
