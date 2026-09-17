@@ -118,17 +118,17 @@ public static unsafe class Physics
     static PhysicsHit FromNative(in BlunderPhysicsHit native)
     {
         string groupsCsv;
-        fixed (byte* groups = native.groups)
+        fixed (byte* groupsBytes = native.groups)
         {
             int length = 0;
-            while (length < 255 && groups[length] != 0)
+            while (length < 255 && groupsBytes[length] != 0)
             {
                 ++length;
             }
 
             groupsCsv = length == 0
                 ? ""
-                : System.Text.Encoding.UTF8.GetString(groups, length);
+                : System.Text.Encoding.UTF8.GetString(groupsBytes, length);
         }
 
         string[] groups = string.IsNullOrEmpty(groupsCsv)
