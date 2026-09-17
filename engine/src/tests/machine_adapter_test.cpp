@@ -572,6 +572,8 @@ int main() {
                 rayed.find("\"isError\":false") != std::string::npos);
     expect_true("mcp ray hit json",
                 rayed.find("\\\"hit\\\":true") != std::string::npos);
+    expect_true("mcp tools/call closes text content object",
+                rayed.find(R"(}"}],"isError")") != std::string::npos);
   }
 
   g_runtime_global_context.m_logger_system.reset();
