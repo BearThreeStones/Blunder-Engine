@@ -23,6 +23,29 @@ No new Agent environment hook. The agent **stops and asks** instead of inventing
 
 Do not add a “Human confirmed” checkbox to the proposal.
 
+## Cloud and Windows worker
+
+Placement is execution, not a second spine. Grill, propose, and apply stay the sequence above.
+
+**Grill** happens in the same human conversation that will propose. Do not treat a separate Windows IDE chat as Grill unless that session writes the confirmed User stories and glossary into this repo before another agent proposes.
+
+While Grill is open:
+
+- Cloud agents may read this repo and Unity / Unreal / Godot, then return facts into the next Grill round.
+- They must not write `proposal.md` or engine code.
+- Editor, GPU, and machine-local path facts come from a Windows worker dispatched from that conversation. The human answers decisions, not logs.
+
+Terms that settle during Grill go into `CONTEXT.md` immediately. Hard-to-reverse trade-offs may become ADRs under `docs/adr/`. User stories are not Working memory until `/opsx:propose` writes them into `proposal.md`. Do not add Grill notes under `docs/exec-plans/` or `docs/superpowers/plans/`.
+
+**Propose** runs in that same conversation after the human confirms 3–7 User stories. Change-path stop still applies.
+
+**Apply** splits by what the change needs:
+
+- GPU, windowed editor, and machine-local paths: Windows worker
+- Pure logic, cross-engine reading, Linux configure/build checks: Cursor Cloud ([cursor-cloud.md](cursor-cloud.md))
+
+Cursor Cloud is not Merge CI and not Human acceptance. Windowed User stories are walked on Windows.
+
 ## Shortcuts
 
 | Kind | Path |
