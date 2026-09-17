@@ -11,6 +11,7 @@ import {
     EditorIconTreeArrowDown,
     EditorIconCamera3D,
     EditorIconLight,
+    EditorIconFogVolume,
     EditorIconSkeleton3D,
     EditorIconAnimationPlayer,
     EditorIconAnimationTree,
@@ -209,6 +210,19 @@ export component InspectorPanel inherits Rectangle {
     in-out property <string> light-linking-text: "";
     in-out property <bool> light-expanded: true;
     callback light-edited(bool);
+
+    in property <bool> has-fog: false;
+    in-out property <bool> fog-enabled: true;
+    in-out property <bool> fog-volumetric-enabled: true;
+    in-out property <float> fog-density: 0.02;
+    in-out property <float> fog-height-falloff: 0.2;
+    in-out property <float> fog-view-distance: 60.0;
+    in-out property <float> fog-albedo-r: 1.0;
+    in-out property <float> fog-albedo-g: 1.0;
+    in-out property <float> fog-albedo-b: 1.0;
+    in-out property <float> fog-g: 0.2;
+    in-out property <bool> fog-expanded: true;
+    callback fog-edited(bool);
 
     in property <bool> add-menu-enabled: false;
     in property <bool> has-skeleton: false;
@@ -996,6 +1010,42 @@ export component InspectorPanel inherits Rectangle {
                                             clicked => {
                                                 if !root.has-light {
                                                     root.add-unique-attachment("Light");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    unique-fog-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-fog-touch.has-hover && !root.has-fog ? EditorTheme.button-hover : transparent;
+                                        border-radius: 2px;
+                                        HorizontalLayout {
+                                            width: 100%;
+                                            height: 100%;
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 6px;
+                                            EditorIconFogVolume {
+                                                icon-size: 14px;
+                                                icon-color: root.has-fog ? EditorTheme.muted : EditorTheme.default-text;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            Text {
+                                                vertical-alignment: center;
+                                                text: "Fog";
+                                                color: root.has-fog ? EditorTheme.muted : EditorTheme.default-text;
+                                                font-size: 11px;
+                                                horizontal-stretch: 1;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        unique-fog-touch := TouchArea {
+                                            width: 100%;
+                                            height: 100%;
+                                            mouse-cursor: root.has-fog ? default : pointer;
+                                            clicked => {
+                                                if !root.has-fog {
+                                                    root.add-unique-attachment("Fog");
                                                     add-menu-popup.close();
                                                 }
                                             }
@@ -1866,6 +1916,81 @@ export component InspectorPanel inherits Rectangle {
                                     if (!self.has-focus) { root.light-linking-text = self.text; root.light-edited(true); }
                                 }
                             }
+                        }
+                    }
+                }
+
+                if root.has-fog: Rectangle { background: EditorTheme.hairline; height: 1px; }
+
+                if root.has-fog: EditorFoldout {
+                    title: "Fog";
+                    icon: EditorGlyphs.fog;
+                    expanded <=> root.fog-expanded;
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.remove-unique-attachment("Fog"); }
+                    }
+                }
+
+                if root.has-fog && root.fog-expanded: VerticalBox {
+                    spacing: 6px;
+                    if root.has-selection && !root.multi-edit-visible && root.has-fog: VerticalBox {
+                        spacing: 6px;
+                        EditorToggle {
+                            text: "Enabled";
+                            checked: root.fog-enabled;
+                            toggled => { root.fog-enabled = self.checked; root.fog-edited(true); }
+                        }
+                        EditorToggle {
+                            text: "Volumetric";
+                            checked: root.fog-volumetric-enabled;
+                            toggled => { root.fog-volumetric-enabled = self.checked; root.fog-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Density";
+                            value <=> root.fog-density;
+                            reset-value: 0.02;
+                            live-edited => { root.fog-edited(false); }
+                            committed => { root.fog-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Falloff";
+                            value <=> root.fog-height-falloff;
+                            reset-value: 0.2;
+                            live-edited => { root.fog-edited(false); }
+                            committed => { root.fog-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "View distance";
+                            value <=> root.fog-view-distance;
+                            reset-value: 60.0;
+                            live-edited => { root.fog-edited(false); }
+                            committed => { root.fog-edited(true); }
+                        }
+                        fog-albedo-cell := InspectorColorCell {
+                            label: "Albedo";
+                            r <=> root.fog-albedo-r;
+                            g <=> root.fog-albedo-g;
+                            b <=> root.fog-albedo-b;
+                            enable-reset: true;
+                            reset-r: 1.0;
+                            reset-g: 1.0;
+                            reset-b: 1.0;
+                            live-edited => {
+                                root.fog-albedo-r = fog-albedo-cell.r;
+                                root.fog-albedo-g = fog-albedo-cell.g;
+                                root.fog-albedo-b = fog-albedo-cell.b;
+                                root.fog-edited(false);
+                            }
+                            committed => { root.fog-edited(true); }
+                            hex-entered(t) => { root.color-hex-entered(5, t); }
+                        }
+                        InspectorScalarRow {
+                            label: "g";
+                            value <=> root.fog-g;
+                            reset-value: 0.2;
+                            live-edited => { root.fog-edited(false); }
+                            committed => { root.fog-edited(true); }
                         }
                     }
                 }

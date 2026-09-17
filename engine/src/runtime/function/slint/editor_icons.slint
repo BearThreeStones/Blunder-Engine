@@ -275,6 +275,23 @@ export component EditorIconLight inherits Rectangle {
     }
 }
 
+export component EditorIconFogVolume inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/FogVolume.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
 export component EditorIconSkeleton3D inherits Rectangle {
     in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
@@ -388,6 +405,8 @@ export global EditorGlyphs {
     out property <image> tool-scale: @image-url("../../../../3rdparty/godot-icons/ToolScale.svg");
     out property <image> space-global: @image-url("../../../../3rdparty/godot-icons/WorldEnvironment.svg");
     out property <image> space-local: @image-url("../../../../3rdparty/godot-icons/Object.svg");
+    out property <image> gizmos-visible: @image-url("../../../../3rdparty/godot-icons/GuiVisibilityVisible.svg");
+    out property <image> gizmos-hidden: @image-url("../../../../3rdparty/godot-icons/GuiVisibilityHidden.svg");
     out property <image> arrow-right: @image-url("../../../../3rdparty/godot-icons/GuiTreeArrowRight.svg");
     out property <image> arrow-down: @image-url("../../../../3rdparty/godot-icons/GuiTreeArrowDown.svg");
     out property <image> option-arrow: @image-url("../../../../3rdparty/godot-icons/GuiOptionArrow.svg");
@@ -400,6 +419,7 @@ export global EditorGlyphs {
     out property <image> script: @image-url("../../../../3rdparty/godot-icons/Script.svg");
     out property <image> camera: @image-url("../../../../3rdparty/godot-icons/Camera3D.svg");
     out property <image> light: @image-url("../../../../3rdparty/godot-icons/GizmoLight.svg");
+    out property <image> fog: @image-url("../../../../3rdparty/godot-icons/FogVolume.svg");
     out property <image> skeleton: @image-url("../../../../3rdparty/godot-icons/Skeleton3D.svg");
     out property <image> animation-player: @image-url("../../../../3rdparty/godot-icons/AnimationPlayer.svg");
     out property <image> animation-tree: @image-url("../../../../3rdparty/godot-icons/AnimationTree.svg");

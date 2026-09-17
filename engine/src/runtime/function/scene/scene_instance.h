@@ -10,6 +10,7 @@
 #include "runtime/core/object/object_id.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/play_camera_resolve.h"
@@ -129,9 +130,26 @@ class SceneInstance final : public IEntityStore {
     }
   }
 
+  void setFog(EntityId id, FogComponent fog);
+  const FogComponent* getFog(EntityId id) const;
+  void clearFog(EntityId id);
+  template <typename Fn>
+  void forEachFog(const Fn& fn) const {
+    for (const auto& entry : m_fogs) {
+      if (isTombstoned(entry.first)) {
+        continue;
+      }
+      fn(entry.first, entry.second);
+    }
+  }
+
   bool hasWorldBounds() const { return m_has_world_bounds; }
   const AABB& getWorldBounds() const { return m_world_bounds; }
   void setWorldBounds(const AABB& bounds);
+  /// Authored .scene.asset loads do not go through glTF import, so world
+  /// bounds stay unset and AABB camera snap never frames centimetre Sponza.
+  /// Build the AABB from MeshRenderer local bounds * world matrix.
+  bool rebuildWorldBoundsFromMeshes();
 
   void tick(float delta_time);
 
@@ -160,6 +178,7 @@ class SceneInstance final : public IEntityStore {
   eastl::unordered_map<EntityId, MeshRendererComponent> m_mesh_renderers;
   eastl::unordered_map<EntityId, CameraComponent> m_cameras;
   eastl::unordered_map<EntityId, LightComponent> m_lights;
+  eastl::unordered_map<EntityId, FogComponent> m_fogs;
   /// Objects created for Behaviour-bearing entities; destroyed on clear().
   eastl::vector<ObjectId> m_bound_object_ids;
   eastl::unordered_map<EntityId, ObjectId> m_bound_object_ids_by_entity;

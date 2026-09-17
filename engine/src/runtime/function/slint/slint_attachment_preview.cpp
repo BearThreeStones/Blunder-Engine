@@ -23,6 +23,7 @@
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/light_component.h"
+#include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -74,6 +75,8 @@ const char* previewTitleSuffix(int kind) {
       return "Behaviour";
     case 7:
       return "SkeletonModifier";
+    case 8:
+      return "Fog";
     default:
       return "Attachment";
   }
@@ -89,6 +92,8 @@ const char* uniqueKindNameFromIcon(int kind) {
       return "Skeleton";
     case 5:
       return "AnimationTree";
+    case 8:
+      return "Fog";
     default:
       return "";
   }
@@ -380,6 +385,17 @@ void SlintSystem::syncAttachmentPreviewCards() {
           row.light_width = light->width;
           row.light_height = light->height;
         }
+        if (const FogComponent* fog = scene->getFog(state.entity_id)) {
+          row.fog_enabled = fog->enabled;
+          row.fog_volumetric_enabled = fog->volumetric_enabled;
+          row.fog_density = fog->density;
+          row.fog_height_falloff = fog->height_falloff;
+          row.fog_view_distance = fog->view_distance;
+          row.fog_albedo_r = fog->albedo.r;
+          row.fog_albedo_g = fog->albedo.g;
+          row.fog_albedo_b = fog->albedo.b;
+          row.fog_g = fog->scattering_g;
+        }
 
         Object* object = scene->findBoundObject(state.entity_id);
         if (object != nullptr && object->hasAnimationTree()) {
@@ -618,6 +634,63 @@ void SlintSystem::applyPreviewLight(int entity_id, int kind, int index,
   notifyViewportAfterInspectorLightEdit(
       services ? services->render_system.get() : nullptr, this);
   syncInspectorLightFromSelection();
+  syncInspectorFogFromSelection();
+}
+
+void SlintSystem::applyPreviewFog(int entity_id, int kind, int index, bool enabled,
+                                  bool volumetric, float density, float height_falloff,
+                                  float view_distance, float albedo_r, float albedo_g,
+                                  float albedo_b, float scattering_g, bool commit) {
+  (void)kind;
+  (void)index;
+  if (!m_window_component || m_applying_preview_sync) {
+    return;
+  }
+  const auto services = lockServices();
+  SceneInstance* scene =
+      services && services->scene ? services->scene->getActiveInstance() : nullptr;
+  if (scene == nullptr) {
+    return;
+  }
+  const EntityId id = static_cast<EntityId>(entity_id);
+  const FogComponent* existing = scene->getFog(id);
+  if (existing == nullptr) {
+    return;
+  }
+  const FogComponent current = *existing;
+  FogComponent after = current;
+  after.enabled = enabled;
+  after.volumetric_enabled = volumetric;
+  after.density = density;
+  after.height_falloff = height_falloff;
+  after.view_distance = view_distance;
+  after.albedo = Vec3(albedo_r, albedo_g, albedo_b);
+  after.scattering_g = scattering_g;
+  sanitizeFogComponent(after);
+  if (fogComponentsEqual(after, current) && !m_inspector_fog_edit_open) {
+    return;
+  }
+  if (!commit) {
+    if (!m_inspector_fog_edit_open) {
+      m_inspector_fog_edit_before = current;
+      m_inspector_fog_edit_open = true;
+    }
+    if (!fogComponentsEqual(after, current)) {
+      scene->setFog(id, after);
+    }
+    return;
+  }
+  const FogComponent command_before =
+      m_inspector_fog_edit_open ? m_inspector_fog_edit_before : current;
+  m_inspector_fog_edit_open = false;
+  if (fogComponentsEqual(after, command_before)) {
+    return;
+  }
+  scene->setFog(id, after);
+  pushDocumentCommand(makeSetFogComponentCommand(
+      scene, id, command_before, after, currentSelectionSnapshot(),
+      currentSelectionSnapshot()));
+  syncInspectorFogFromSelection();
 }
 
 void SlintSystem::applyPreviewUniqueRemove(int entity_id, int kind, int index) {

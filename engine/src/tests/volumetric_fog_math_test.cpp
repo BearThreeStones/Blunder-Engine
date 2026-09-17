@@ -53,6 +53,10 @@ int main() {
   {
     const float near_z = volumetricFogNear(0.01f);
     expect_true("near offset 9.5cm", float_near(near_z, 0.095f));
+    expect_true("cm fog near is authored metres in centimetres",
+                float_near(volumetricFogNear(0.1f, true), 0.1f / 0.008f, 1e-3f));
+    expect_true("metre fog near stays world metres",
+                float_near(volumetricFogNear(0.1f, false), 0.1f));
     const float far_z = 60.0f;
     const FroxelGridZParams params = makeFroxelGridZParams(near_z, far_z);
     expect_true("params S", float_near(params.z, 32.0f));
@@ -103,6 +107,8 @@ int main() {
     expect_true("density at fog height is rho", float_near(at_height, rho));
     expect_true("higher Z is thinner", above < at_height);
     expect_true("world Y is not height", float_near(same_z_other_y, at_height));
+    const float below = volumetricHeightDensity(rho, falloff, -9.0f, fog_h);
+    expect_true("below fog plane keeps floor density", float_near(below, rho));
     std::fprintf(stdout, "height density dump: z=fogHeight %.6g  z=+10m %.6g\n",
                  static_cast<double>(at_height), static_cast<double>(above));
   }
@@ -309,7 +315,8 @@ int main() {
                 float_near(cm_density, authored_density * 0.008f, 1e-6f));
 
     const float far_z = volumetricFogVolumeFar(42.0f, true);
-    const FroxelGridZParams zp = makeFroxelGridZParams(volumetricFogNear(0.1f), far_z);
+    const FroxelGridZParams zp =
+        makeFroxelGridZParams(volumetricFogNear(0.1f, true), far_z);
     const auto volume_optical_depth = [&](float density) {
       float tau = 0.0f;
       for (uint32_t s = 0; s < k_volumetric_fog_slice_count; ++s) {
@@ -350,6 +357,15 @@ int main() {
         "engine/shaders/volumetric_fog_scatter.slang");
     const auto integrate = compiler.compileComputeProgram(
         "engine/shaders/volumetric_fog_integrate.slang");
+    // Covering triangle: uv 0 at NDC -1, uv 2 at NDC +3. Visible NDC +1
+    // must sample 1.0; uv*0.5 would stretch only the top-left quarter.
+    const float t_ndc_pos1 = (1.0f - (-1.0f)) / (3.0f - (-1.0f));
+    const float uv_at_ndc_pos1 = 0.0f + t_ndc_pos1 * 2.0f;
+    expect_true("fullscreen triangle UV at NDC +1 is 1",
+                float_near(uv_at_ndc_pos1, 1.0f));
+    expect_true("uv*0.5 is the quarter-sample bug, not the on-screen UV",
+                !float_near(uv_at_ndc_pos1 * 0.5f, 1.0f));
+
     const auto composite = compiler.compileGraphicsProgram(
         "engine/shaders/volumetric_fog_composite.slang");
     expect_true("density spirv", !density.compute.spirv_code.empty());

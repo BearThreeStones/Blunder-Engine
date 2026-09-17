@@ -58,6 +58,10 @@ bool parseInspectorUniqueKind(const eastl::string& name,
     out_kind = InspectorUniqueKind::Light;
     return true;
   }
+  if (name == "Fog") {
+    out_kind = InspectorUniqueKind::Fog;
+    return true;
+  }
   if (name == "Skeleton") {
     out_kind = InspectorUniqueKind::Skeleton;
     return true;
@@ -111,6 +115,16 @@ InspectorUniqueAddResult applyInspectorUniqueAdd(
     }
     scene.setLight(entity_id, LightComponent{});
     result.created_light = true;
+    return result;
+  }
+
+  if (kind == InspectorUniqueKind::Fog) {
+    if (scene.getFog(entity_id) != nullptr) {
+      result.already_present = true;
+      return result;
+    }
+    scene.setFog(entity_id, FogComponent{});
+    result.created_fog = true;
     return result;
   }
 
@@ -173,6 +187,9 @@ void undoInspectorUniqueAdd(SceneInstance& scene, EntityId entity_id,
   if (created.created_light) {
     scene.clearLight(entity_id);
   }
+  if (created.created_fog) {
+    scene.clearFog(entity_id);
+  }
 
   Object* object = scene.findBoundObject(entity_id);
   if (object != nullptr) {
@@ -213,6 +230,16 @@ bool applyInspectorUniqueRemove(AssetManager* /*asset_manager*/, SceneInstance& 
     }
     out_snapshot.light = *light;
     scene.clearLight(entity_id);
+    return true;
+  }
+
+  if (kind == InspectorUniqueKind::Fog) {
+    const FogComponent* fog = scene.getFog(entity_id);
+    if (fog == nullptr) {
+      return false;
+    }
+    out_snapshot.fog = *fog;
+    scene.clearFog(entity_id);
     return true;
   }
 
@@ -261,6 +288,10 @@ void undoInspectorUniqueRemove(AssetManager* asset_manager, SceneInstance& scene
 
   if (kind == InspectorUniqueKind::Light) {
     scene.setLight(entity_id, snapshot.light);
+    return;
+  }
+  if (kind == InspectorUniqueKind::Fog) {
+    scene.setFog(entity_id, snapshot.fog);
     return;
   }
 

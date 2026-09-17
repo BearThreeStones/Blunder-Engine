@@ -78,6 +78,17 @@ export component FloatingPanelWindow inherits Window {
     in-out property <float> inspector-light-height: 1.0;
     in-out property <string> inspector-light-linking-text: "";
     in-out property <bool> inspector-light-expanded: true;
+    in property <bool> inspector-has-fog: false;
+    in-out property <bool> inspector-fog-enabled: true;
+    in-out property <bool> inspector-fog-volumetric-enabled: true;
+    in-out property <float> inspector-fog-density: 0.02;
+    in-out property <float> inspector-fog-height-falloff: 0.2;
+    in-out property <float> inspector-fog-view-distance: 60.0;
+    in-out property <float> inspector-fog-albedo-r: 1.0;
+    in-out property <float> inspector-fog-albedo-g: 1.0;
+    in-out property <float> inspector-fog-albedo-b: 1.0;
+    in-out property <float> inspector-fog-g: 0.2;
+    in-out property <bool> inspector-fog-expanded: true;
     in property <bool> inspector-has-animation-player: false;
     in property <[AnimationClipRow]> inspector-animation-clips: [];
     in property <[AnimationClipPickerRow]> inspector-clip-picker-choices: [];
@@ -199,6 +210,7 @@ export component FloatingPanelWindow inherits Window {
     callback inspector-commit-skeleton-modifier-field(int, string, string, float, bool, bool);
     callback inspector-camera-edited(bool);
     callback inspector-light-edited(bool);
+    callback inspector-fog-edited(bool);
     callback inspector-add-unique-attachment(string);
     callback inspector-remove-unique-attachment(string);
     callback inspector-add-clip();
@@ -467,6 +479,18 @@ export component FloatingPanelWindow inherits Window {
                 light-linking-text <=> root.inspector-light-linking-text;
                 light-expanded <=> root.inspector-light-expanded;
                 light-edited(commit) => { root.inspector-light-edited(commit); }
+                has-fog: root.inspector-has-fog;
+                fog-enabled <=> root.inspector-fog-enabled;
+                fog-volumetric-enabled <=> root.inspector-fog-volumetric-enabled;
+                fog-density <=> root.inspector-fog-density;
+                fog-height-falloff <=> root.inspector-fog-height-falloff;
+                fog-view-distance <=> root.inspector-fog-view-distance;
+                fog-albedo-r <=> root.inspector-fog-albedo-r;
+                fog-albedo-g <=> root.inspector-fog-albedo-g;
+                fog-albedo-b <=> root.inspector-fog-albedo-b;
+                fog-g <=> root.inspector-fog-g;
+                fog-expanded <=> root.inspector-fog-expanded;
+                fog-edited(commit) => { root.inspector-fog-edited(commit); }
                 has-animation-player: root.inspector-has-animation-player;
                 animation-clips: root.inspector-animation-clips;
                 animation-player-expanded <=> root.inspector-animation-player-expanded;

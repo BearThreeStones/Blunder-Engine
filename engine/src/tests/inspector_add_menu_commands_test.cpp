@@ -11,6 +11,7 @@
 #include "runtime/function/scene/scene_instance.h"
 
 #include <cstdio>
+#include <cmath>
 
 namespace {
 
@@ -21,6 +22,10 @@ void expect_true(const char* label, bool ok) {
     std::fprintf(stderr, "FAIL %s\n", label);
     ++g_failures;
   }
+}
+
+bool float_near(float a, float b, float eps = 1e-5f) {
+  return std::fabs(a - b) <= eps;
 }
 
 void ensureLogger() {
@@ -274,6 +279,54 @@ int main() {
     applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Camera);
     expect_true("camera+light coexist", scene.getCamera(id) != nullptr &&
                                             scene.getLight(id) != nullptr);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Mist", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    InspectorUniqueAddResult result =
+        applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Fog);
+    expect_true("fog created", result.created_fog);
+    expect_true("fog present", scene.getFog(id) != nullptr);
+    expect_true("fog created no object", scene.findBoundObject(id) == nullptr);
+    const FogComponent* fog = scene.getFog(id);
+    expect_true("fog default density",
+                fog != nullptr && float_near(fog->density, 0.02f));
+    expect_true("fog default falloff",
+                fog != nullptr && float_near(fog->height_falloff, 0.2f));
+    expect_true("fog default view",
+                fog != nullptr && float_near(fog->view_distance, 60.0f));
+    expect_true("fog default albedo",
+                fog != nullptr && fog->albedo == Vec3(1.0f, 1.0f, 1.0f));
+    expect_true("fog default g", fog != nullptr && float_near(fog->scattering_g, 0.2f));
+    expect_true("fog default enabled", fog != nullptr && fog->enabled &&
+                                           fog->volumetric_enabled);
+
+    DocumentHistory history;
+    history.push(makeAddUniqueAttachmentCommand(
+        &scene, nullptr, id, InspectorUniqueKind::Fog, result,
+        SelectionSnapshot{id}, SelectionSnapshot{id}));
+    expect_true("undo add fog", history.undo());
+    expect_true("fog removed", scene.getFog(id) == nullptr);
+    expect_true("undo fog still no object", scene.findBoundObject(id) == nullptr);
+    expect_true("redo add fog", history.redo());
+    expect_true("fog restored", scene.getFog(id) != nullptr);
+
+    expect_true("unique already-present",
+                applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Fog)
+                    .already_present);
+
+    const FogComponent before = *scene.getFog(id);
+    FogComponent after = before;
+    after.density = 0.05f;
+    scene.setFog(id, after);
+    history.push(makeSetFogComponentCommand(
+        &scene, id, before, after, SelectionSnapshot{id}, SelectionSnapshot{id}));
+    expect_true("undo density", history.undo() && scene.getFog(id) != nullptr &&
+                                    float_near(scene.getFog(id)->density, 0.02f));
+    expect_true("redo density", history.redo() && scene.getFog(id) != nullptr &&
+                                    float_near(scene.getFog(id)->density, 0.05f));
   }
 
   ObjectDB::clear();
