@@ -49,6 +49,11 @@ inline float gltfMetreQuantityInWorld(float metres, bool centimetre_world) {
   return centimetre_world ? gltfCentimetreFromMetres(metres) : metres;
 }
 
+/// World units per authored metre. 1 in a metre world, 125 in centimetre Sponza.
+inline float gltfWorldUnitsPerMetre(bool centimetre_world) {
+  return centimetre_world ? gltfCentimetreFromMetres(1.0f) : 1.0f;
+}
+
 /// World metres to local under a centimetre-scaled parent:
 /// world = parentScale * local.
 inline Vec3 meterTranslationToGltfLocal(const Vec3& world_metres,

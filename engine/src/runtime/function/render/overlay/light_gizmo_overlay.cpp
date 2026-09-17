@@ -30,6 +30,7 @@
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/light_component.h"
+#include "runtime/function/scene/light_eval.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -83,14 +84,6 @@ LightGizmoKind kindFromLight(LightType type) {
   }
 }
 
-bool overlayCentimetreMesh(const SceneInstance& scene) {
-  if (!scene.hasWorldBounds()) {
-    return false;
-  }
-  const AABB& bounds = scene.getWorldBounds();
-  return looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
-}
-
 LightGizmoShape shapeFromLight(const LightComponent& light) {
   LightGizmoShape shape{};
   shape.kind = kindFromLight(light.type);
@@ -110,7 +103,7 @@ Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id,
     parent_world = scene.getWorldMatrix(entity->getParentId());
   }
   return makeLightGizmoWorldMatchingMesh(unique_world, parent_world, kind,
-                                         overlayCentimetreMesh(scene));
+                                         sceneIsCentimetreWorld(scene));
 }
 
 enum class LightGizmoDrawStyle : uint32_t {
