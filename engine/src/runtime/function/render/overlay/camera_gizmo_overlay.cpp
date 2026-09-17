@@ -99,13 +99,17 @@ uint32_t vertexCountForStyle(CameraGizmoDrawStyle style) {
 Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id) {
   const Mat4 unique_world = scene.getWorldMatrix(entity_id);
   Mat4 parent_world(1.0f);
-  if (const Entity* entity = scene.getEntity(entity_id);
-      entity != nullptr && isValid(entity->getParentId())) {
-    parent_world = scene.getWorldMatrix(entity->getParentId());
+  Vec3 unique_local(unique_world[3]);
+  if (const Entity* entity = scene.getEntity(entity_id); entity != nullptr) {
+    unique_local = entity->getPosition();
+    if (isValid(entity->getParentId())) {
+      parent_world = scene.getWorldMatrix(entity->getParentId());
+    }
   }
   return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
                                          LightGizmoKind::directional,
-                                         sceneIsCentimetreWorld(scene));
+                                         sceneDrawnMeshIsCentimetre(scene),
+                                         unique_local);
 }
 
 }  // namespace

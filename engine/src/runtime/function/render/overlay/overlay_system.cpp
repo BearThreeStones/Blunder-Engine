@@ -132,6 +132,19 @@ void OverlaySystem::disableAuthorshipOverlays() {
   m_anti_aliasing.enabled_ = false;
 }
 
+void OverlaySystem::setSceneGizmosVisible(const bool visible) {
+  if (m_scene_gizmos_visible == visible) {
+    return;
+  }
+  m_scene_gizmos_visible = visible;
+  if (!visible) {
+    m_transform_gizmo.controller().clearHover();
+    m_transform_gizmo.enabled_ = false;
+    m_camera_gizmo.enabled_ = false;
+    m_light_gizmo.enabled_ = false;
+  }
+}
+
 void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
                                uint32_t current_frame) {
   m_state = OverlayState::fromFrameState(frame_state, current_frame);
@@ -169,6 +182,12 @@ void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
   m_transform_gizmo.begin_sync(m_resources, m_state);
   m_camera_gizmo.begin_sync(m_resources, m_state);
   m_light_gizmo.begin_sync(m_resources, m_state);
+  if (!sceneAuthorshipGizmosEnabled(g_runtime_global_context.hostMode(),
+                                    m_scene_gizmos_visible)) {
+    m_transform_gizmo.enabled_ = false;
+    m_camera_gizmo.enabled_ = false;
+    m_light_gizmo.enabled_ = false;
+  }
   m_outline.begin_sync(m_resources, m_state);
   m_anti_aliasing.begin_sync(m_resources, m_state);
 }
@@ -252,7 +271,9 @@ void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
 
 bool OverlaySystem::tryHandleCameraOrLightGizmoClick(const Vec2& window_position,
                                                      EditorCamera& camera) {
-  if (!authorshipOverlaysActive()) {
+  if (!authorshipOverlaysActive() ||
+      !sceneAuthorshipGizmosEnabled(g_runtime_global_context.hostMode(),
+                                    m_scene_gizmos_visible)) {
     return false;
   }
   const std::optional<OverlayGizmoPickHit> camera_hit =

@@ -152,16 +152,54 @@ int main() {
               "metre Unique on centimetre mesh parks icon on courtyard x");
   expect_near(promoted.z, local.z,
               "metre Unique on centimetre mesh parks icon on courtyard z");
+
+  const Mat4 collapsed_world = parent_cm * glm::translate(Mat4(1.0f), meters);
+  const Vec3 collapsed_t = Vec3(collapsed_world[3]);
+  expect_true("metre locals under 0.008 parent collapse toward origin",
+              glm::length(collapsed_t) < 0.1f);
+  const Vec3 world_times_125 = collapsed_t / kGltfCentimeterToMeterScale;
+  expect_true("unique_world*125 of collapsed origin is still metres not courtyard",
+              glm::length(world_times_125 - local) > 100.0f);
+  const Mat4 local_matched = makeLightGizmoWorldMatchingMesh(
+      collapsed_world, parent_cm, LightGizmoKind::point, true, meters);
+  const Vec3 courtyard = overlayGizmoWorldOrigin(local_matched);
+  expect_near(courtyard.x, local.x,
+              "metre Unique local under 0.008 parent parks on courtyard x");
+  expect_near(courtyard.z, local.z,
+              "metre Unique local under 0.008 parent parks on courtyard z");
+
+  const Mat4 stale_identity(1.0f);
+  const Mat4 stale_matched = makeLightGizmoWorldMatchingMesh(
+      stale_identity, identity_parent, LightGizmoKind::point, true, local);
+  const Vec3 stale_icon = overlayGizmoWorldOrigin(stale_matched);
+  expect_near(stale_icon.x, local.x,
+              "stale identity Unique world still uses centimetre local x");
+  expect_near(stale_icon.z, local.z,
+              "stale identity Unique world still uses centimetre local z");
+
+  const Mat4 cm_local_identity = makeLightGizmoWorldMatchingMesh(
+      glm::translate(Mat4(1.0f), local), identity_parent, LightGizmoKind::point,
+      true, local);
+  const Vec3 cm_icon = overlayGizmoWorldOrigin(cm_local_identity);
+  expect_near(cm_icon.x, local.x, "centimetre Unique local stays on courtyard x");
+  expect_near(cm_icon.z, local.z, "centimetre Unique local stays on courtyard z");
+
+  const Mat4 stale_world_no_cm_flag = makeLightGizmoWorldMatchingMesh(
+      stale_identity, identity_parent, LightGizmoKind::point, false, local);
+  const Vec3 stale_no_flag = overlayGizmoWorldOrigin(stale_world_no_cm_flag);
+  expect_near(stale_no_flag.x, local.x,
+              "stale identity Unique world still uses Unique local x");
+  expect_near(stale_no_flag.z, local.z,
+              "stale identity Unique world still uses Unique local z");
+  expect_true("stale Unique world is not used as overlay origin",
+              glm::length(stale_no_flag) > 100.0f);
+
   expect_true("centimetre Sponza AABB is not metre space",
               looksLikeCentimetreWorldBounds(Vec3(-1900.0f, -1150.0f, 0.0f),
                                              Vec3(1900.0f, 1150.0f, 1550.0f)));
   expect_true("metre editor AABB stays metre space",
               !looksLikeCentimetreWorldBounds(Vec3(-8.0f, -8.0f, 0.0f),
                                               Vec3(8.0f, 8.0f, 12.0f)));
-
-  const Vec3 collapsed = Vec3(parent_cm * Vec4(meters, 1.0f));
-  expect_true("metre locals under 0.008 parent collapse toward origin",
-              glm::length(collapsed) < 0.1f);
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

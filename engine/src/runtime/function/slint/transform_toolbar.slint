@@ -4,13 +4,16 @@ import { EditorGlyphs } from "editor_icons.slint";
 export component TransformToolbar inherits Rectangle {
     in property <int> transform-mode: 0;
     in property <bool> gizmo-space-global: true;
+    in property <bool> scene-gizmos-visible: true;
 
     callback transform-mode-selected(int);
     callback gizmo-space-toggled();
+    callback scene-gizmos-toggled();
 
     height: 32px;
     width: strip.preferred-width;
     horizontal-stretch: 0;
+    clip: false;
     background: EditorTheme.toolbar.with-alpha(88%);
     border-radius: EditorTheme.radius-surface;
     border-width: 1px;
@@ -50,6 +53,18 @@ export component TransformToolbar inherits Rectangle {
         EditorToolbarButton {
             icon: root.gizmo-space-global ? EditorGlyphs.space-global : EditorGlyphs.space-local;
             clicked => { root.gizmo-space-toggled(); }
+        }
+
+        Rectangle {
+            width: 6px;
+            horizontal-stretch: 0;
+        }
+
+        EditorToolbarButton {
+            icon: root.scene-gizmos-visible ? EditorGlyphs.gizmos-visible : EditorGlyphs.gizmos-hidden;
+            checked: root.scene-gizmos-visible;
+            tooltip: root.scene-gizmos-visible ? "Gizmos" : "Show Gizmos";
+            clicked => { root.scene-gizmos-toggled(); }
         }
     }
 }

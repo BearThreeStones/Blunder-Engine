@@ -43,7 +43,11 @@ class EditorCamera final {
   float getPitch() const { return m_pitch; }
   float getVerticalFov() const { return m_vertical_fov; }
   void setVerticalFov(float vertical_fov_radians);
-  float getNearClip() const { return m_near_clip; }
+  /// Grows with orbit distance so centimetre Sponza at LOOKAT ~9000 does not
+  /// collapse to depth 1 (lighting/SSAO treat that as empty sky).
+  float getNearClip() const {
+    return glm::max(m_near_clip, m_distance * 0.002f);
+  }
   float getFarClip() const { return m_far_clip; }
   float getOrthoSize() const { return m_ortho_size; }
   float getProjectionTransitionT() const { return m_projection_transition_t; }
