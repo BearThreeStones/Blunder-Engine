@@ -98,12 +98,16 @@ Mat4 gizmoWorldForEntity(SceneInstance& scene, EntityId entity_id,
                          LightGizmoKind kind) {
   const Mat4 unique_world = scene.getWorldMatrix(entity_id);
   Mat4 parent_world(1.0f);
-  if (const Entity* entity = scene.getEntity(entity_id);
-      entity != nullptr && isValid(entity->getParentId())) {
-    parent_world = scene.getWorldMatrix(entity->getParentId());
+  Vec3 unique_local(unique_world[3]);
+  if (const Entity* entity = scene.getEntity(entity_id); entity != nullptr) {
+    unique_local = entity->getPosition();
+    if (isValid(entity->getParentId())) {
+      parent_world = scene.getWorldMatrix(entity->getParentId());
+    }
   }
-  return makeLightGizmoWorldMatchingMesh(unique_world, parent_world, kind,
-                                         sceneIsCentimetreWorld(scene));
+  return makeLightGizmoWorldMatchingMesh(
+      unique_world, parent_world, kind, sceneDrawnMeshIsCentimetre(scene),
+      unique_local);
 }
 
 enum class LightGizmoDrawStyle : uint32_t {
@@ -341,6 +345,7 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
     const bool selected = selection != nullptr && selection->isSelected(entity_id);
     const glm::vec4 color = selected ? k_selected_color : k_muted_color;
     LightGizmoShape shape = shapeFromLight(light);
+    shape.range = gltfMetreQuantityInWorld(light.range, sceneDrawnMeshIsCentimetre(*scene));
     shape.show_range = selected;
     const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id, shape.kind);
     const glm::vec3 origin = overlayGizmoWorldOrigin(world);
@@ -392,6 +397,7 @@ std::optional<OverlayGizmoPickHit> LightGizmoOverlay::hitTest(
     }
     LightGizmoShape shape = shapeFromLight(light);
     const bool selected = selection != nullptr && selection->isSelected(entity_id);
+    shape.range = gltfMetreQuantityInWorld(light.range, sceneDrawnMeshIsCentimetre(*scene));
     shape.show_range = selected;
     const glm::mat4 world = gizmoWorldForEntity(*scene, entity_id, shape.kind);
     const std::optional<float> hit_depth = hitTestLightGizmoViewportLocal(

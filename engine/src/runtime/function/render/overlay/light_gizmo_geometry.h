@@ -78,26 +78,68 @@ inline Vec3 overlayGizmoWorldOrigin(const Mat4& world) {
   return Vec3(world[3]);
 }
 
-/// Overlay gizmos sit at the Unique's world translation, never view-space /
-/// camera-parented and never nudged by where that translation happens to land.
-/// A glTF attach Unique carrying the 0.008 cm→m scale would otherwise shrink its
-/// children onto the origin grid while Sponza verts stay centimetre, so that
-/// parent scale is undone on translation. The wire basis is enlarged by mesh
-/// scale only — deriving it from the gizmo's own distance to the origin is what
-/// teleported courtyard lights that happened to sit near (0,0,0).
+/// Drawn Sponza verts stay centimetre (nodesQ0S 0.008 is absorbed on mesh
+/// nodes). Unique `getWorldMatrix` can still be metres, collapsed 0.008*metres,
+/// or a stale identity while the building sits hundreds of units off the
+/// origin grid. Overlay translation is Unique **local** through the parent
+/// with 0.008 stripped — never Unique world (that parks icons on the origin
+/// grid). Lighting/fog keep `getWorldMatrix`. Wire basis grows with mesh
+/// scale only.
+inline Mat4 overlayParentMeshBasis(const Mat4& parent_world) {
+  const Vec3 parent_scale(glm::length(Vec3(parent_world[0])),
+                          glm::length(Vec3(parent_world[1])),
+                          glm::length(Vec3(parent_world[2])));
+  Mat4 parent_mesh = parent_world;
+  if (isGltfCentimeterUniformScale(parent_scale)) {
+    const float s = parent_scale.x;
+    parent_mesh[0] = Vec4(Vec3(parent_world[0]) / s, 0.0f);
+    parent_mesh[1] = Vec4(Vec3(parent_world[1]) / s, 0.0f);
+    parent_mesh[2] = Vec4(Vec3(parent_world[2]) / s, 0.0f);
+    parent_mesh[3] = Vec4(Vec3(parent_world[3]) / s, 1.0f);
+  }
+  return parent_mesh;
+}
+
+inline Vec3 overlayGizmoTranslationMatchingMesh(const Vec3& unique_local,
+                                                const Mat4& unique_world,
+                                                const Mat4& parent_world,
+                                                bool centimetre_mesh) {
+  (void)unique_world;
+  Vec3 t = Vec3(overlayParentMeshBasis(parent_world) * Vec4(unique_local, 1.0f));
+  if (centimetre_mesh && looksLikeMeterSpaceTranslation(t)) {
+    t = t / kGltfCentimeterToMeterScale;
+  }
+  return t;
+}
+
+inline Vec3 overlayInferUniqueLocal(const Mat4& unique_world,
+                                    const Mat4& parent_world) {
+  const Vec3 parent_scale(glm::length(Vec3(parent_world[0])),
+                          glm::length(Vec3(parent_world[1])),
+                          glm::length(Vec3(parent_world[2])));
+  if (isGltfCentimeterUniformScale(parent_scale)) {
+    return (Vec3(unique_world[3]) - Vec3(parent_world[3])) / parent_scale.x;
+  }
+  const Mat4 inv_parent = glm::inverse(parent_world);
+  return Vec3(inv_parent * Vec4(Vec3(unique_world[3]), 1.0f));
+}
+
 inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
                                             const Mat4& parent_world,
                                             LightGizmoKind kind,
-                                            bool centimetre_mesh = false) {
+                                            bool centimetre_mesh,
+                                            const Vec3& unique_local) {
   Mat4 scaled_world = unique_world;
+  scaled_world[3] =
+      Vec4(overlayGizmoTranslationMatchingMesh(unique_local, unique_world,
+                                               parent_world, centimetre_mesh),
+           1.0f);
   const Vec3 parent_scale(glm::length(Vec3(parent_world[0])),
                           glm::length(Vec3(parent_world[1])),
                           glm::length(Vec3(parent_world[2])));
   float display = centimetre_mesh ? 1.0f / kGltfCentimeterToMeterScale : 1.0f;
   if (isGltfCentimeterUniformScale(parent_scale)) {
-    const float s = parent_scale.x;
-    scaled_world[3] = Vec4(Vec3(unique_world[3]) / s, 1.0f);
-    display = 1.0f / s;
+    display = 1.0f / parent_scale.x;
   }
   Mat4 out = makeLightGizmoWorldMatrix(scaled_world, kind);
   if (display != 1.0f) {
@@ -106,6 +148,15 @@ inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
     out[2] = Vec4(Vec3(out[2]) * display, 0.0f);
   }
   return out;
+}
+
+inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
+                                            const Mat4& parent_world,
+                                            LightGizmoKind kind,
+                                            bool centimetre_mesh = false) {
+  return makeLightGizmoWorldMatchingMesh(
+      unique_world, parent_world, kind, centimetre_mesh,
+      overlayInferUniqueLocal(unique_world, parent_world));
 }
 
 template <typename Fn>
