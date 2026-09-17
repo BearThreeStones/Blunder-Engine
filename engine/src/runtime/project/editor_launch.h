@@ -38,6 +38,17 @@ struct MachineCliArgs {
   float sx{1.0f};
   float sy{1.0f};
   float sz{1.0f};
+  float dx{0.0f};
+  float dy{0.0f};
+  float wheel{0.0f};
+  float eye_x{0.0f};
+  float eye_y{0.0f};
+  float eye_z{0.0f};
+  float target_x{0.0f};
+  float target_y{0.0f};
+  float target_z{0.0f};
+  bool has_eye{false};
+  bool has_target{false};
 };
 
 struct EditorSessionLaunch {

@@ -28,6 +28,8 @@ CaptureResult captureScene(SceneThumbnailRenderService& service,
   } else {
     still.scene_virtual_path = request.scene_virtual_path;
   }
+  still.override_framing = request.override_framing;
+  still.framing_override = request.framing_override;
 
   const SceneThumbnailRenderResult still_result = service.renderSceneStill(still);
   out.width = still_result.width;

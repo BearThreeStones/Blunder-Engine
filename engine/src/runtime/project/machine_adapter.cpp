@@ -1,6 +1,7 @@
 #include "runtime/project/machine_adapter.h"
 
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
 #include "runtime/project/play_session_controller.h"
 #include "runtime/project/play_step.h"
@@ -189,6 +190,74 @@ bool waitPlayReady(MachineAdapterHost& host, PlaySessionController& play,
   }
 }
 
+MeshPreviewCameraFrame frameFromEditorCamera(const EditorCamera& camera) {
+  MeshPreviewCameraFrame framing{};
+  framing.eye = camera.getPosition();
+  framing.target = camera.getFocalPoint();
+  framing.up = camera.getUpDirection();
+  framing.vertical_fov_rad = camera.getVerticalFov();
+  framing.ok = framing.vertical_fov_rad > 0.0f;
+  return framing;
+}
+
+void fillCameraResult(const EditorCamera& camera, MachineResult& out) {
+  out.has_camera = true;
+  out.camera_eye = camera.getPosition();
+  out.camera_target = camera.getFocalPoint();
+  out.camera_up = camera.getUpDirection();
+  out.camera_forward = camera.getForwardDirection();
+  out.camera_yaw = camera.getYaw();
+  out.camera_pitch = camera.getPitch();
+  out.camera_distance = camera.getDistance();
+  out.camera_fov = camera.getVerticalFov();
+  out.camera_near = camera.getNearClip();
+  out.camera_far = camera.getFarClip();
+}
+
+void jsonAppendVec3(std::string& out, const Vec3& v) {
+  out += '[';
+  out += std::to_string(v.x);
+  out += ',';
+  out += std::to_string(v.y);
+  out += ',';
+  out += std::to_string(v.z);
+  out += ']';
+}
+
+bool dispatchViewportCamera(const EditorSessionLaunch& launch,
+                            MachineAdapterHost& host, MachineResult& out) {
+  const eastl::string& verb = launch.cli.verb;
+  if (verb != "get-camera" && verb != "set-camera" && verb != "orbit" &&
+      verb != "orbit-camera" && verb != "pan" && verb != "zoom") {
+    return false;
+  }
+  if (host.editor_camera == nullptr) {
+    fail(out, k_request_viewport_no_camera);
+    return true;
+  }
+  EditorCamera& camera = *host.editor_camera;
+  if (verb == "set-camera") {
+    if (!launch.cli.has_eye || !launch.cli.has_target) {
+      fail(out, k_request_viewport_lookat_required);
+      return true;
+    }
+    camera.snapLookAt(
+        Vec3(launch.cli.eye_x, launch.cli.eye_y, launch.cli.eye_z),
+        Vec3(launch.cli.target_x, launch.cli.target_y, launch.cli.target_z));
+  } else if (verb == "orbit") {
+    camera.orbitAroundWorldOrigin(Vec2(launch.cli.dx, launch.cli.dy));
+  } else if (verb == "orbit-camera") {
+    camera.orbitAroundCamera(Vec2(launch.cli.dx, launch.cli.dy));
+  } else if (verb == "pan") {
+    camera.panByMouseDelta(Vec2(launch.cli.dx, launch.cli.dy));
+  } else if (verb == "zoom") {
+    camera.zoomByWheel(launch.cli.wheel);
+  }
+  fillCameraResult(camera, out);
+  succeed(out);
+  return true;
+}
+
 bool copyPlayFramePng(PlaySessionController& play, const EditorSessionLaunch& launch,
                       MachineResult& out) {
   const PlayIpcFrameRecord& frame = play.lastPlayFrame();
@@ -347,6 +416,29 @@ std::string machineResultJson(const MachineResult& result) {
     out += ",\"out\":";
     jsonAppendEscaped(out, result.out_path);
   }
+  if (result.has_camera) {
+    out += ",\"camera\":{\"eye\":";
+    jsonAppendVec3(out, result.camera_eye);
+    out += ",\"target\":";
+    jsonAppendVec3(out, result.camera_target);
+    out += ",\"up\":";
+    jsonAppendVec3(out, result.camera_up);
+    out += ",\"forward\":";
+    jsonAppendVec3(out, result.camera_forward);
+    out += ",\"yaw\":";
+    out += std::to_string(result.camera_yaw);
+    out += ",\"pitch\":";
+    out += std::to_string(result.camera_pitch);
+    out += ",\"distance\":";
+    out += std::to_string(result.camera_distance);
+    out += ",\"fov\":";
+    out += std::to_string(result.camera_fov);
+    out += ",\"near\":";
+    out += std::to_string(result.camera_near);
+    out += ",\"far\":";
+    out += std::to_string(result.camera_far);
+    out += '}';
+  }
   out += ",\"width\":";
   out += std::to_string(result.width);
   out += ",\"height\":";
@@ -361,6 +453,9 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
   const eastl::string& verb = launch.cli.verb;
   if (verb.empty()) {
     fail(out, "cli.verb_required");
+    return;
+  }
+  if (dispatchViewportCamera(launch, host, out)) {
     return;
   }
   if (verb == "save") {
@@ -485,6 +580,11 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
       if (req.subject == CaptureSubject::live && req.live_scene == nullptr) {
         fail(out, k_request_subject_no_live_document);
         return;
+      }
+      if (req.subject == CaptureSubject::live && host.editor_camera != nullptr &&
+          launch.adapter == MachineAdapterKind::mcp) {
+        req.override_framing = true;
+        req.framing_override = frameFromEditorCamera(*host.editor_camera);
       }
       writeStill(runCapture(host, req), launch, out);
       return;

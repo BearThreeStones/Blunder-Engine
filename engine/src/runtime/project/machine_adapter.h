@@ -15,6 +15,7 @@
 
 namespace Blunder {
 
+class EditorCamera;
 class EditorSceneEditSystem;
 class FileSystem;
 class PlaySessionController;
@@ -30,6 +31,9 @@ inline constexpr const char* k_request_cli_subject_required =
 inline constexpr const char* k_request_cli_save_unsupported =
     "cli.save_unsupported";
 inline constexpr const char* k_request_play_not_playing = "play.not_playing";
+inline constexpr const char* k_request_viewport_no_camera = "viewport.no_camera";
+inline constexpr const char* k_request_viewport_lookat_required =
+    "viewport.lookat_required";
 
 struct MachineAdapterHost {
   std::filesystem::path project_root;
@@ -39,6 +43,7 @@ struct MachineAdapterHost {
   PlaySessionController* play{nullptr};
   SceneThumbnailRenderService* thumbs{nullptr};
   EditorSceneEditSystem* scene_edit{nullptr};
+  EditorCamera* editor_camera{nullptr};
   std::function<void()> pump;
   std::function<CaptureResult(const CaptureRequest&)> capture_override;
   std::function<bool()> save_live;
@@ -55,6 +60,17 @@ struct MachineResult {
   uint32_t height{0};
   eastl::vector<uint8_t> png;
   eastl::string out_path;
+  bool has_camera{false};
+  Vec3 camera_eye{0.0f};
+  Vec3 camera_target{0.0f};
+  Vec3 camera_up{0.0f, 0.0f, 1.0f};
+  Vec3 camera_forward{0.0f, 1.0f, 0.0f};
+  float camera_yaw{0.0f};
+  float camera_pitch{0.0f};
+  float camera_distance{0.0f};
+  float camera_fov{0.0f};
+  float camera_near{0.0f};
+  float camera_far{0.0f};
   int exit_code{1};
 };
 
