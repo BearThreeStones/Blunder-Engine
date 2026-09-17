@@ -30,6 +30,7 @@ class ShadowMapTarget final {
 
   VkRenderPass getRenderPass() const { return m_render_pass; }
   VkFramebuffer getFramebuffer() const { return m_framebuffer; }
+  VkImage getDepthImage() const { return m_depth_image; }
   VkImageView getDepthImageView() const { return m_depth_image_view; }
   VkSampler getComparisonSampler() const { return m_comparison_sampler; }
   VkExtent2D getExtent() const {
@@ -40,6 +41,7 @@ class ShadowMapTarget final {
   void createRenderPass();
   void createResources();
   void destroyResources();
+  void transitionUndefinedToShaderRead();
 
   VulkanContext* m_context{nullptr};
   VulkanAllocator* m_allocator{nullptr};
