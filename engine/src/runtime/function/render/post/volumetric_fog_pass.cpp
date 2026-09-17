@@ -903,10 +903,10 @@ void VolumetricFogPass::apply(VkCommandBuffer cmd, OffscreenRenderTarget* offscr
   const glm::vec3 view_forward = volumetricFogViewForward(frame_state.view);
   const bool reuse_history =
       m_history_valid && volumetricFogHistoryUseful(m_prev_view_forward, view_forward);
-  const float near_z = volumetricFogNear(frame_state.near_clip);
   const bool centimetre_world =
       frame_state.lighting_scene != nullptr &&
       sceneIsCentimetreWorld(*frame_state.lighting_scene);
+  const float near_z = volumetricFogNear(frame_state.near_clip, centimetre_world);
   // Fog Unique viewDistance, not camera far. Viewport far 100000 would spread
   // 64 slices across 100 km and the courtyard density would vanish.
   const float far_z = volumetricFogVolumeFar(fog.fog.view_distance, centimetre_world);

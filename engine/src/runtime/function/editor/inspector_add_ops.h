@@ -5,6 +5,7 @@
 
 #include "runtime/core/object/animation_player.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/entity_id.h"
 
@@ -17,6 +18,7 @@ class SceneInstance;
 enum class InspectorUniqueKind {
   Camera,
   Light,
+  Fog,
   Skeleton,
   AnimationPlayer,
   AnimationTree,
@@ -29,12 +31,14 @@ struct InspectorUniqueAddResult {
   bool created_tree{false};
   bool created_camera{false};
   bool created_light{false};
+  bool created_fog{false};
   bool already_present{false};
 };
 
 struct InspectorUniqueRemoveSnapshot {
   CameraComponent camera{};
   LightComponent light{};
+  FogComponent fog{};
   eastl::vector<AnimationPlayer::ClipBinding> player_clips;
   eastl::string tree_asset_guid;
   bool tree_active{false};

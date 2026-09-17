@@ -33,15 +33,21 @@ VulkanTexture* resolveBaseColorTexture(RenderSystem& render_system,
   return uploaded != nullptr ? uploaded : render_system.getFallbackTexture();
 }
 
+// Conservative world AABB from the 8 corners of the cached local bounds. The
+// broad phase only needs an enclosing box; walking every vertex here ran per
+// frame (syncSceneToRender marks pick instances dirty) and cost ~230 ms on
+// Sponza in Debug — the editor loop, not the GPU, was the orbit stall.
 AABB computeWorldBounds(const MeshAsset& mesh, const glm::mat4& world_matrix) {
+  const AABB& local = mesh.getLocalBounds();
   AABB bounds{};
-  bool has_bounds = false;
-  for (const MeshVertex& vertex : mesh.getVertices()) {
+  for (int corner = 0; corner < 8; ++corner) {
+    const glm::vec3 local_corner((corner & 1) ? local.max.x : local.min.x,
+                                 (corner & 2) ? local.max.y : local.min.y,
+                                 (corner & 4) ? local.max.z : local.min.z);
     const glm::vec3 world =
-        glm::vec3(world_matrix * glm::vec4(vertex.position, 1.0f));
-    if (!has_bounds) {
+        glm::vec3(world_matrix * glm::vec4(local_corner, 1.0f));
+    if (corner == 0) {
       bounds.min = bounds.max = world;
-      has_bounds = true;
     } else {
       bounds.expandToInclude(world);
     }

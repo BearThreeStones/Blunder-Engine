@@ -16,6 +16,7 @@
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/function/scene/scene_starter.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/document_history_helpers.h"
 #include "runtime/function/editor/editor_commands.h"
@@ -154,6 +155,11 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
       }
       g_runtime_global_context.closeAttachmentPreviewCards();
       rememberEditorSessionLiveScenePath(virtual_path);
+      // Same instance pointer: idle skip can still present a stale offscreen
+      // while Inspector already shows this document (e.g. re-open Sponza).
+      if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->notifyActiveSceneChanged();
+      }
       return true;
     }
   }

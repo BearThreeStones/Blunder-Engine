@@ -6,6 +6,7 @@
 #include "EASTL/vector.h"
 
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/meshlet.h"
 #include "runtime/resource/asset_cook/asset_cook_types.h"
 
 namespace Blunder {
@@ -15,12 +16,14 @@ class FileSystem;
 bool writeMeshCookFile(const std::filesystem::path& output_path,
                        const eastl::vector<MeshVertex>& vertices,
                        const eastl::vector<uint32_t>& indices,
-                       const MeshSkinData* skin_data = nullptr);
+                       const MeshSkinData* skin_data = nullptr,
+                       const MeshletPayload* meshlets = nullptr);
 
 bool readMeshCookFile(const std::filesystem::path& input_path,
                       eastl::vector<MeshVertex>& out_vertices,
                       eastl::vector<uint32_t>& out_indices,
-                      MeshSkinData* out_skin_data = nullptr);
+                      MeshSkinData* out_skin_data = nullptr,
+                      MeshletPayload* out_meshlets = nullptr);
 
 bool writeCookMetaFile(const std::filesystem::path& meta_path,
                        const CookedAssetMeta& meta);

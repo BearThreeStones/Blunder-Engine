@@ -31,16 +31,18 @@ enum class SecondaryPass : uint8_t {
   ssao_ao = 8,
   ssao_composite = 9,
   screen_overlay = 10,
+  gbuffer_opaque = 11,
+  deferred_lighting = 12,
 };
 
 class SecondaryCommandBufferPool final {
  public:
   static constexpr uint32_t k_stream_count = 3;
-  static constexpr uint32_t k_pass_count = 11;
+  static constexpr uint32_t k_pass_count = 13;
 
   static_assert(static_cast<uint32_t>(SecondaryStream::immediate) + 1 ==
                 k_stream_count);
-  static_assert(static_cast<uint32_t>(SecondaryPass::screen_overlay) + 1 ==
+  static_assert(static_cast<uint32_t>(SecondaryPass::deferred_lighting) + 1 ==
                 k_pass_count);
 
   SecondaryCommandBufferPool() = default;

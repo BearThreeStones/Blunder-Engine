@@ -366,6 +366,17 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_light_linking_text(
           toSharedString(snapshot.inspector_light_linking_text));
       ui.set_inspector_light_expanded(snapshot.inspector_light_expanded);
+      ui.set_inspector_has_fog(snapshot.inspector_has_fog);
+      ui.set_inspector_fog_enabled(snapshot.inspector_fog_enabled);
+      ui.set_inspector_fog_volumetric_enabled(snapshot.inspector_fog_volumetric_enabled);
+      ui.set_inspector_fog_density(snapshot.inspector_fog_density);
+      ui.set_inspector_fog_height_falloff(snapshot.inspector_fog_height_falloff);
+      ui.set_inspector_fog_view_distance(snapshot.inspector_fog_view_distance);
+      ui.set_inspector_fog_albedo_r(snapshot.inspector_fog_albedo_r);
+      ui.set_inspector_fog_albedo_g(snapshot.inspector_fog_albedo_g);
+      ui.set_inspector_fog_albedo_b(snapshot.inspector_fog_albedo_b);
+      ui.set_inspector_fog_g(snapshot.inspector_fog_g);
+      ui.set_inspector_fog_expanded(snapshot.inspector_fog_expanded);
       ui.set_inspector_has_animation_player(snapshot.inspector_has_animation_player);
       {
         auto clip_model = std::make_shared<slint::VectorModel<AnimationClipRow>>();
@@ -881,6 +892,11 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
     component->on_inspector_light_edited([this](bool commit) {
       if (m_callbacks.on_inspector_light_edited) {
         m_callbacks.on_inspector_light_edited(commit);
+      }
+    });
+    component->on_inspector_fog_edited([this](bool commit) {
+      if (m_callbacks.on_inspector_fog_edited) {
+        m_callbacks.on_inspector_fog_edited(commit);
       }
     });
     component->on_inspector_add_unique_attachment([this](const slint::SharedString& kind) {

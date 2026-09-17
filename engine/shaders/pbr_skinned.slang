@@ -7,6 +7,8 @@ struct GpuSceneLight
     float4 axisX;
 };
 
+#include "shadow_sampling_ubo.slang"
+
 struct GlobalUniformData
 {
     float4x4 model;
@@ -28,6 +30,7 @@ struct GlobalUniformData
     uint4 bindlessTextureIndices;
     float4 lightCount;
     GpuSceneLight lights[8];
+    ShadowSamplingUniform shadowSampling;
 };
 
 [[vk::binding(0, 0)]]
@@ -48,6 +51,20 @@ struct BonePaletteData
 
 [[vk::binding(3, 0)]]
 ConstantBuffer<BonePaletteData> bonePalette;
+
+[[vk::binding(4, 0)]]
+Texture2DArray<float> vsmPages;
+
+[[vk::binding(5, 0)]]
+StructuredBuffer<uint> vsmPageTable;
+
+[[vk::binding(6, 0)]]
+TextureCubeArray<float> pointCubes;
+
+[[vk::binding(7, 0)]]
+Texture2DArray<float> spotMaps;
+
+#include "shadow_sampling.slang"
 
 [[vk::binding(0, 1)]]
 Texture2D<float4> bindlessTextures[];
@@ -152,7 +169,7 @@ VertexOutput vertexMain(VertexInput input)
 
 float sampleShadowPCF(float3 worldPos)
 {
-    if (ubo.shadowParams.y < 0.5)
+    if (ubo.shadowParams.y < 0.5 || ubo.shadowSampling.vsmParams.w > 0.5)
     {
         return 1.0;
     }
@@ -326,7 +343,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target
         return float4(albedo, alpha);
     }
 
-    if (ubo.metallicRoughnessFactors.w > 1.5)
+    if (ubo.metallicRoughnessFactors.w > 0.5 &&
+        ubo.metallicRoughnessFactors.w < 1.5)
     {
         clip(alpha - ubo.metallicRoughnessFactors.z);
     }
@@ -351,6 +369,7 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float shadow = sampleShadowPCF(input.worldPos);
 
     float3 color = float3(0.0, 0.0, 0.0);
+    float occluder = 1.0;
     int count = int(ubo.lightCount.x);
     for (int i = 0; i < 8; ++i)
     {
@@ -359,11 +378,17 @@ float4 fragmentMain(VertexOutput input) : SV_Target
             break;
         }
         GpuSceneLight light = ubo.lights[i];
+        float shadowTerm = sampleLightShadowTerm(
+            light, input.worldPos, shadow, shadowMap, shadowSampler,
+            ubo.lightViewProjection, ubo.shadowParams, ubo.shadowSampling.vsmLightView,
+            ubo.shadowSampling.vsmOriginLevels, ubo.shadowSampling.vsmParams,
+            vsmPages, vsmPageTable, pointCubes, spotMaps,
+            ubo.shadowSampling.spotViewProjections);
         if (light.colorFlags.w < 0.5)
         {
+            occluder *= shadowTerm;
             continue;
         }
-        float shadowTerm = light.axisX.w > 0.5 ? shadow : 1.0;
         if (light.positionType.w > 2.5)
         {
             color += shadeAreaLight(light, input.worldPos, normal, viewDir, albedo,
@@ -377,5 +402,6 @@ float4 fragmentMain(VertexOutput input) : SV_Target
                                roughness, ao);
     }
     color += albedo * ubo.ambientColor.rgb * ao;
+    color *= occluder;
     return float4(color, alpha);
 }

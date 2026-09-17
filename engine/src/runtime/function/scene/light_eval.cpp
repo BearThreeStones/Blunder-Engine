@@ -6,7 +6,9 @@
 
 #include "runtime/core/math/geometry.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
+#include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/resource/asset/mesh_asset.h"
 
 namespace Blunder {
 
@@ -32,6 +34,23 @@ bool sceneIsCentimetreWorld(const SceneInstance& scene) {
   }
   const AABB& bounds = scene.getWorldBounds();
   return looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
+}
+
+bool sceneDrawnMeshIsCentimetre(const SceneInstance& scene) {
+  if (sceneIsCentimetreWorld(scene)) {
+    return true;
+  }
+  bool centimetre = false;
+  scene.forEachMeshRenderer([&](EntityId, const MeshRendererComponent& renderer) {
+    if (centimetre || !renderer.mesh) {
+      return;
+    }
+    const AABB& local = renderer.mesh->getLocalBounds();
+    if (looksLikeCentimetreWorldBounds(local.min, local.max)) {
+      centimetre = true;
+    }
+  });
+  return centimetre;
 }
 
 float sceneWorldUnitsPerMetre(const SceneInstance& scene) {

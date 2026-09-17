@@ -1,6 +1,7 @@
 #include "runtime/engine.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/debug/input_present_trace.h"
 #include "runtime/core/event/application_event.h"
 #include "runtime/core/event/key_event.h"
 #include "runtime/core/event/mouse_event.h"
@@ -405,6 +406,7 @@ void BlunderEngine::run() {
 float BlunderEngine::calculateDeltaTime() { return m_frame_timer.tick(); }
 
 bool BlunderEngine::tickOneFrame(float delta_time) {
+  InputPresentPhaseTrace phases("frame-phases");
   finalizePendingWindowResize();
 
   g_runtime_global_context.m_memory_system.beginFrame();
@@ -421,9 +423,11 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     slint_system->beginFrame();
     slint_system->applyPendingViewportInvalidate();
   }
+  phases.mark("beginMs");
 
   const bool defer_heavy =
       slint_system != nullptr && slint_system->shouldDeferHeavyFrameWork();
+  phases.flag("defer", defer_heavy ? 1 : 0);
 
   static bool s_was_defer_heavy = false;
   if (s_was_defer_heavy && !defer_heavy && slint_system) {
@@ -481,10 +485,12 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       }
       gameplayInputState().sample(keys);
     }
+    phases.mark("inputMs");
 
     for (Layer* layer : *g_runtime_global_context.m_layer_stack) {
       layer->onUpdate(delta_time);
     }
+    phases.mark("layersMs");
 
     if (g_runtime_global_context.m_scene_system) {
       g_runtime_global_context.m_scene_system->tick(delta_time);
@@ -548,6 +554,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
           },
           &tick_args);
     }
+    phases.mark("sceneMs");
 
     // Rebuild world matrices after Behaviour TRS, then snapshot the draw list.
     if (g_runtime_global_context.m_scene_system &&
@@ -567,6 +574,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
         }
       }
     }
+    phases.mark("syncMs");
   }
 
   calculateFPS(delta_time);
@@ -574,11 +582,16 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   if (slint_system) {
     if (!defer_heavy && !m_skip_renderer_after_defer) {
       rendererTick(delta_time);
+      phases.flag("renderRan", 1);
+    } else {
+      phases.flag("renderRan", 0);
     }
+    phases.mark("renderMs");
     if (m_skip_renderer_after_defer) {
       m_skip_renderer_after_defer = false;
     }
     slint_system->endFrame();
+    phases.mark("endMs");
   } else if (!defer_heavy && !m_skip_renderer_after_defer) {
     // Player host: no Slint chrome — still drive the render tick (drawable size).
     rendererTick(delta_time);

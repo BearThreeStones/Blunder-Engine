@@ -13,12 +13,15 @@
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/gpu_driven/gpu_driven_renderer.h"
+#include "runtime/function/render/gpu_driven/gpu_driven_types.h"
 #include "runtime/function/scene/gpu_skinning.h"
 #include "runtime/function/render/overlay/overlay_system.h"
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/rhi/i_offscreen_render_target.h"
 #include "runtime/function/render/rhi/rhi_types.h"
 #include "runtime/function/render/viewport_style.h"
+#include "runtime/function/render/shadow/mesh_shadow_system.h"
 #include "runtime/function/render/shadow/shadow_map_target.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 #include "runtime/function/render/vulkan/vulkan_context.h"
@@ -55,7 +58,9 @@ uint32_t opaqueDescriptorIndex(uint32_t slot_index, uint32_t frame_index) {
 
 void writeOpaqueShadowBinding(VkDevice device, VkDescriptorSet descriptor_set,
                               ShadowMapTarget* shadow_map,
-                              VulkanTexture* fallback_texture) {
+                              VulkanTexture* fallback_texture,
+                              MeshShadowSystem* mesh_shadows,
+                              uint32_t sampling_first_binding) {
   VkDescriptorImageInfo shadow_image_info{};
   VkDescriptorImageInfo shadow_sampler_info{};
   if (shadow_map != nullptr) {
@@ -89,6 +94,10 @@ void writeOpaqueShadowBinding(VkDevice device, VkDescriptorSet descriptor_set,
   shadow_writes[1].pImageInfo = &shadow_sampler_info;
 
   vkUpdateDescriptorSets(device, 2, shadow_writes, 0, nullptr);
+  if (mesh_shadows != nullptr) {
+    mesh_shadows->writeSamplingDescriptors(device, descriptor_set,
+                                           sampling_first_binding);
+  }
 }
 
 }  // namespace
@@ -113,6 +122,13 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
   m_shadow_map = init.shadow_map;
   m_fallback_texture = init.fallback_texture;
   m_overlay_system = init.overlay_system;
+  m_mesh_shadows = init.mesh_shadows;
+  if (m_mesh_shadows == nullptr && m_vk_context != nullptr &&
+      m_vk_allocator != nullptr) {
+    m_owned_mesh_shadows = eastl::make_unique<MeshShadowSystem>();
+    m_owned_mesh_shadows->initialize(m_vk_context, m_vk_allocator, nullptr, false);
+    m_mesh_shadows = m_owned_mesh_shadows.get();
+  }
 
   if (m_fallback_texture != nullptr) {
     m_vk_context->bindlessTextureTable().setFallback(m_fallback_texture);
@@ -132,17 +148,19 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
 
   VkDevice device = m_vk_context->getDevice();
 
-  VkDescriptorPoolSize opaque_pool_sizes[3]{};
+  VkDescriptorPoolSize opaque_pool_sizes[4]{};
   opaque_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   opaque_pool_sizes[0].descriptorCount = total_opaque_sets;
   opaque_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  opaque_pool_sizes[1].descriptorCount = total_opaque_sets;
+  opaque_pool_sizes[1].descriptorCount = total_opaque_sets * 4u;
   opaque_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
   opaque_pool_sizes[2].descriptorCount = total_opaque_sets;
+  opaque_pool_sizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  opaque_pool_sizes[3].descriptorCount = total_opaque_sets;
 
   VkDescriptorPoolCreateInfo opaque_pool_info{};
   opaque_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  opaque_pool_info.poolSizeCount = 3;
+  opaque_pool_info.poolSizeCount = 4;
   opaque_pool_info.pPoolSizes = opaque_pool_sizes;
   opaque_pool_info.maxSets = total_opaque_sets;
   VkDescriptorPool opaque_pool = VK_NULL_HANDLE;
@@ -192,7 +210,7 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
     vkUpdateDescriptorSets(device, 1, &ubo_write, 0, nullptr);
 
     writeOpaqueShadowBinding(device, opaque_sets[i], m_shadow_map,
-                             m_fallback_texture);
+                             m_fallback_texture, m_mesh_shadows, 3);
   }
 
   if (m_shadow_pipeline != nullptr) {
@@ -274,17 +292,19 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
     }
 
-    VkDescriptorPoolSize skinned_pool_sizes[3]{};
+    VkDescriptorPoolSize skinned_pool_sizes[4]{};
     skinned_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     skinned_pool_sizes[0].descriptorCount = total_opaque_sets * 2u;
     skinned_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    skinned_pool_sizes[1].descriptorCount = total_opaque_sets;
+    skinned_pool_sizes[1].descriptorCount = total_opaque_sets * 4u;
     skinned_pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
     skinned_pool_sizes[2].descriptorCount = total_opaque_sets;
+    skinned_pool_sizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    skinned_pool_sizes[3].descriptorCount = total_opaque_sets;
 
     VkDescriptorPoolCreateInfo skinned_pool_info{};
     skinned_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    skinned_pool_info.poolSizeCount = 3;
+    skinned_pool_info.poolSizeCount = 4;
     skinned_pool_info.pPoolSizes = skinned_pool_sizes;
     skinned_pool_info.maxSets = total_opaque_sets;
     VkDescriptorPool skinned_pool = VK_NULL_HANDLE;
@@ -348,7 +368,7 @@ void ForwardRenderPath::initialize(const ForwardRenderPathInit& init) {
       vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
 
       writeOpaqueShadowBinding(device, skinned_sets[i], m_shadow_map,
-                               m_fallback_texture);
+                               m_fallback_texture, m_mesh_shadows, 4);
     }
   }
 
@@ -531,6 +551,8 @@ void ForwardRenderPath::shutdown() {
   m_overlay_system = nullptr;
   m_fallback_texture = nullptr;
   m_shadow_map = nullptr;
+  m_mesh_shadows = nullptr;
+  m_owned_mesh_shadows.reset();
   m_shadow_pipeline = nullptr;
   m_skinned_shadow_pipeline = nullptr;
   m_skinned_transparent_pipeline = nullptr;
@@ -804,7 +826,8 @@ void ForwardRenderPath::renderFrameTo(
     uint32_t opaque_draw_count, const ForwardOpaqueDraw* transparent_draws,
     uint32_t transparent_draw_count, uint32_t descriptor_frame,
     bool draw_overlays, SecondaryStream secondary_stream,
-    uint32_t secondary_frame) {
+    uint32_t secondary_frame, GpuDrivenRenderer* gpu_driven,
+    const GpuDrivenDraw* gpu_draws, uint32_t gpu_draw_count) {
   ASSERT(target);
   ASSERT(m_vk_context);
   const rhi::Extent2D extent = target->extent();
@@ -815,19 +838,17 @@ void ForwardRenderPath::renderFrameTo(
   SecondaryCommandBufferPool& pool = m_vk_context->secondaryCommandBuffers();
   ASSERT(pool.isAllocated());
 
-  if (m_shadow_map != nullptr && frame_state.shadows_enabled) {
-    m_shadow_map->beginRenderPass(command_buffer, 1.0f,
-                                 rhi::SubpassContents::Secondary);
-    const VkCommandBuffer shadow_secondary = pool.begin(
-        secondary_stream, SecondaryPass::shadow, secondary_frame,
-        m_shadow_map->getRenderPass(), m_shadow_map->getFramebuffer());
-    drawShadowOpaqueList(shadow_secondary, frame_state, opaque_draws,
-                         opaque_draw_count, descriptor_frame);
-    pool.end(secondary_stream, SecondaryPass::shadow, secondary_frame);
-    SecondaryCommandBufferPool::execute(command_buffer, shadow_secondary);
-    m_shadow_map->endRenderPass(command_buffer);
-    m_shadow_map->cmdBarrierToShaderReadDepth(command_buffer);
+  const bool record_gpu = gpu_driven != nullptr && gpu_draw_count > 0 &&
+                          gpu_draws != nullptr;
+  if (record_gpu) {
+    gpu_driven->uploadAndCull(command_buffer, descriptor_frame, gpu_draws,
+                              gpu_draw_count, frame_state,
+                              frame_state.camera_distance < 2000.0f);
   }
+
+  recordShadowPass(command_buffer, frame_state, opaque_draws, opaque_draw_count,
+                   descriptor_frame, secondary_stream, secondary_frame,
+                   record_gpu ? gpu_driven : nullptr, gpu_draws, gpu_draw_count);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(m_vk_context, command_buffer);
@@ -844,38 +865,115 @@ void ForwardRenderPath::renderFrameTo(
   target->beginRenderPass(command_list, clears, 2,
                           rhi::SubpassContents::Secondary);
 
-  VkCommandBuffer forward_secondaries[3]{};
-  forward_secondaries[0] = pool.begin(
+  const VkCommandBuffer opaque_secondary = pool.begin(
       secondary_stream, SecondaryPass::forward_opaque, secondary_frame,
       native_target->getRenderPass(), native_target->getFramebuffer());
-  bindViewportScissor(forward_secondaries[0], extent.width, extent.height);
-  drawOpaqueList(forward_secondaries[0], frame_state, opaque_draws,
+  bindViewportScissor(opaque_secondary, extent.width, extent.height);
+  drawOpaqueList(opaque_secondary, frame_state, opaque_draws,
                  opaque_draw_count, descriptor_frame);
+  if (record_gpu) {
+    gpu_driven->recordOpaqueIndirect(opaque_secondary, descriptor_frame,
+                                     frame_state, false, m_shadow_map,
+                                     m_fallback_texture);
+    if (gpu_driven->latePassEnabled()) {
+      gpu_driven->recordOpaqueIndirect(opaque_secondary, descriptor_frame,
+                                       frame_state, true, m_shadow_map,
+                                       m_fallback_texture);
+    }
+  }
   pool.end(secondary_stream, SecondaryPass::forward_opaque, secondary_frame);
+  SecondaryCommandBufferPool::execute(command_buffer, opaque_secondary);
 
-  forward_secondaries[1] = pool.begin(
-      secondary_stream, SecondaryPass::forward_scene_overlay, secondary_frame,
-      native_target->getRenderPass(), native_target->getFramebuffer());
-  bindViewportScissor(forward_secondaries[1], extent.width, extent.height);
+  recordSceneOverlayAndTransparent(
+      command_buffer, native_target->getRenderPass(),
+      native_target->getFramebuffer(), VkExtent2D{extent.width, extent.height},
+      frame_state, transparent_draws, transparent_draw_count, descriptor_frame,
+      draw_overlays, secondary_stream, secondary_frame);
+
+  target->endRenderPass(command_list);
+  target->markPostRenderPassShaderRead();
+  if (record_gpu) {
+    gpu_driven->recordBuildHiZ(command_buffer, descriptor_frame,
+                               native_target->getDepthImageView(), extent.width,
+                               extent.height, native_target->getDepthImage());
+  }
+}
+
+void ForwardRenderPath::recordShadowPass(
+    VkCommandBuffer command_buffer, const ForwardFrameState& frame_state,
+    const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
+    uint32_t descriptor_frame, SecondaryStream secondary_stream,
+    uint32_t secondary_frame, GpuDrivenRenderer* gpu_driven,
+    const GpuDrivenDraw* gpu_draws, uint32_t gpu_draw_count) {
+  if (m_mesh_shadows != nullptr && frame_state.shadows_enabled) {
+    m_mesh_shadows->beginFrame(frame_state, gpu_draws, gpu_draw_count,
+                               descriptor_frame);
+  }
+  const bool vsm = m_mesh_shadows != nullptr && m_mesh_shadows->vsmEnabled();
+  if (!vsm && m_shadow_map != nullptr && frame_state.shadows_enabled) {
+    ASSERT(m_vk_context);
+    SecondaryCommandBufferPool& pool = m_vk_context->secondaryCommandBuffers();
+    ASSERT(pool.isAllocated());
+
+    if (gpu_driven != nullptr) {
+      gpu_driven->recordShadowCull(command_buffer, descriptor_frame, frame_state);
+    }
+
+    m_shadow_map->beginRenderPass(command_buffer, 1.0f,
+                                  rhi::SubpassContents::Secondary);
+    const VkCommandBuffer shadow_secondary = pool.begin(
+        secondary_stream, SecondaryPass::shadow, secondary_frame,
+        m_shadow_map->getRenderPass(), m_shadow_map->getFramebuffer());
+    drawShadowOpaqueList(shadow_secondary, frame_state, opaque_draws,
+                         opaque_draw_count, descriptor_frame);
+    if (gpu_driven != nullptr) {
+      gpu_driven->recordShadowIndirect(shadow_secondary, descriptor_frame,
+                                       frame_state);
+    }
+    pool.end(secondary_stream, SecondaryPass::shadow, secondary_frame);
+    SecondaryCommandBufferPool::execute(command_buffer, shadow_secondary);
+    m_shadow_map->endRenderPass(command_buffer);
+    m_shadow_map->cmdBarrierToShaderReadDepth(command_buffer);
+  }
+  if (m_mesh_shadows != nullptr) {
+    m_mesh_shadows->recordFill(command_buffer, frame_state, opaque_draws,
+                               opaque_draw_count, descriptor_frame);
+  }
+}
+
+void ForwardRenderPath::recordSceneOverlayAndTransparent(
+    VkCommandBuffer command_buffer, VkRenderPass render_pass,
+    VkFramebuffer framebuffer, VkExtent2D extent,
+    const ForwardFrameState& frame_state,
+    const ForwardOpaqueDraw* transparent_draws,
+    uint32_t transparent_draw_count, uint32_t descriptor_frame,
+    bool draw_overlays, SecondaryStream secondary_stream,
+    uint32_t secondary_frame) {
+  ASSERT(m_vk_context);
+  SecondaryCommandBufferPool& pool = m_vk_context->secondaryCommandBuffers();
+  ASSERT(pool.isAllocated());
+
+  VkCommandBuffer secondaries[2]{};
+  secondaries[0] = pool.begin(secondary_stream,
+                              SecondaryPass::forward_scene_overlay,
+                              secondary_frame, render_pass, framebuffer);
+  bindViewportScissor(secondaries[0], extent.width, extent.height);
   if (draw_overlays && m_overlay_system != nullptr) {
-    m_overlay_system->draw_scene_overlays(forward_secondaries[1]);
+    m_overlay_system->draw_scene_overlays(secondaries[0]);
   }
   pool.end(secondary_stream, SecondaryPass::forward_scene_overlay,
            secondary_frame);
 
-  forward_secondaries[2] = pool.begin(
-      secondary_stream, SecondaryPass::forward_transparent, secondary_frame,
-      native_target->getRenderPass(), native_target->getFramebuffer());
-  bindViewportScissor(forward_secondaries[2], extent.width, extent.height);
-  drawTransparentList(forward_secondaries[2], frame_state, transparent_draws,
+  secondaries[1] = pool.begin(secondary_stream,
+                              SecondaryPass::forward_transparent,
+                              secondary_frame, render_pass, framebuffer);
+  bindViewportScissor(secondaries[1], extent.width, extent.height);
+  drawTransparentList(secondaries[1], frame_state, transparent_draws,
                       transparent_draw_count, descriptor_frame);
   pool.end(secondary_stream, SecondaryPass::forward_transparent,
            secondary_frame);
 
-  SecondaryCommandBufferPool::execute(command_buffer, forward_secondaries, 3);
-
-  target->endRenderPass(command_list);
-  target->markPostRenderPassShaderRead();
+  SecondaryCommandBufferPool::execute(command_buffer, secondaries, 2);
 }
 
 void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
@@ -884,11 +982,14 @@ void ForwardRenderPath::renderFrame(VkCommandBuffer command_buffer,
                                     uint32_t opaque_draw_count,
                                     const ForwardOpaqueDraw* transparent_draws,
                                     uint32_t transparent_draw_count,
-                                    uint32_t frame_index) {
+                                    uint32_t frame_index,
+                                    GpuDrivenRenderer* gpu_driven,
+                                    const GpuDrivenDraw* gpu_draws,
+                                    uint32_t gpu_draw_count) {
   renderFrameTo(m_offscreen, command_buffer, frame_state, opaque_draws,
                 opaque_draw_count, transparent_draws, transparent_draw_count,
                 frame_index, /*draw_overlays=*/true, SecondaryStream::viewport,
-                frame_index);
+                frame_index, gpu_driven, gpu_draws, gpu_draw_count);
 }
 
 }  // namespace Blunder

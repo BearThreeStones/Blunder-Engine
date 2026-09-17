@@ -19,6 +19,7 @@ void ShadowMapTarget::initialize(VulkanContext* context,
 
   createRenderPass();
   createResources();
+  transitionUndefinedToShaderRead();
 }
 
 void ShadowMapTarget::shutdown() {
@@ -279,6 +280,36 @@ void ShadowMapTarget::cmdBarrierToShaderReadDepth(VkCommandBuffer cmd) {
                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
                        nullptr, 1, &barrier);
 
+  m_current_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+}
+
+void ShadowMapTarget::transitionUndefinedToShaderRead() {
+  if (m_depth_image == VK_NULL_HANDLE || m_context == nullptr) {
+    return;
+  }
+  if (m_current_layout != VK_IMAGE_LAYOUT_UNDEFINED) {
+    return;
+  }
+
+  VkCommandBuffer cmd = m_context->beginImmediateCommands();
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.srcAccessMask = 0;
+  barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = m_depth_image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &barrier);
+  m_context->endImmediateCommands(cmd);
   m_current_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 }
 

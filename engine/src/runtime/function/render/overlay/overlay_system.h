@@ -102,6 +102,10 @@ class OverlaySystem final {
   CameraGizmoOverlay& camera_gizmo() { return m_camera_gizmo; }
   LightGizmoOverlay& light_gizmo() { return m_light_gizmo; }
 
+  /// Session-persisted Unity-style Scene Gizmos toggle. Navigate HUD is separate.
+  bool sceneGizmosVisible() const { return m_scene_gizmos_visible; }
+  void setSceneGizmosVisible(bool visible);
+
   bool tryHandleCameraOrLightGizmoClick(const Vec2& window_position,
                                         EditorCamera& camera);
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
@@ -136,6 +140,7 @@ class OverlaySystem final {
   CameraGizmoOverlay m_camera_gizmo;
   LightGizmoOverlay m_light_gizmo;
   OverlayAntiAliasing m_anti_aliasing;
+  bool m_scene_gizmos_visible{true};
 };
 
 }  // namespace Blunder

@@ -22,6 +22,10 @@ VkDescriptorType vkDescriptorType(ShaderDescriptorKind kind) {
       return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     case ShaderDescriptorKind::Sampler:
       return VK_DESCRIPTOR_TYPE_SAMPLER;
+    case ShaderDescriptorKind::StorageBuffer:
+      return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    case ShaderDescriptorKind::StorageImage:
+      return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
   }
   return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }
@@ -36,6 +40,12 @@ VkShaderStageFlags vkShaderStageFlags(uint32_t stage_mask) {
   }
   if ((stage_mask & k_shader_stage_compute) != 0) {
     flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+  }
+  if ((stage_mask & k_shader_stage_task) != 0) {
+    flags |= VK_SHADER_STAGE_TASK_BIT_EXT;
+  }
+  if ((stage_mask & k_shader_stage_mesh) != 0) {
+    flags |= VK_SHADER_STAGE_MESH_BIT_EXT;
   }
   if (flags == 0) {
     flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -182,7 +192,7 @@ void VulkanPipeline::createGraphicsPipeline(
 
   VkPipelineRasterizationStateCreateInfo rasterizer{};
   rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-  rasterizer.depthClampEnable = VK_FALSE;
+  rasterizer.depthClampEnable = VK_TRUE;
   rasterizer.rasterizerDiscardEnable = VK_FALSE;
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0f;
@@ -214,6 +224,22 @@ void VulkanPipeline::createGraphicsPipeline(
       VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
+  VkPipelineColorBlendAttachmentState
+      color_blend_attachments[k_max_pipeline_color_attachments];
+  uint32_t color_attachment_count = m_create_info.color_attachment_count;
+  if (color_attachment_count == 0) {
+    color_attachment_count = 1;
+  }
+  if (color_attachment_count > k_max_pipeline_color_attachments) {
+    LOG_FATAL(
+        "[VulkanPipeline::createGraphicsPipeline] color_attachment_count {} "
+        "exceeds {}",
+        color_attachment_count, k_max_pipeline_color_attachments);
+  }
+  for (uint32_t i = 0; i < color_attachment_count; ++i) {
+    color_blend_attachments[i] = color_blend_attachment;
+  }
+
   VkPipelineColorBlendStateCreateInfo color_blending{};
   color_blending.sType =
       VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -222,8 +248,8 @@ void VulkanPipeline::createGraphicsPipeline(
     color_blending.attachmentCount = 0;
     color_blending.pAttachments = nullptr;
   } else {
-    color_blending.attachmentCount = 1;
-    color_blending.pAttachments = &color_blend_attachment;
+    color_blending.attachmentCount = color_attachment_count;
+    color_blending.pAttachments = color_blend_attachments;
   }
 
   VkDynamicState dynamic_states[3] = {VK_DYNAMIC_STATE_VIEWPORT,

@@ -20,6 +20,7 @@
 #include "runtime/function/render/viewport_unproject.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 
@@ -51,6 +52,15 @@ bool wantsMouseCapture(const WindowSystem* window_system,
           right_drag_started_in_viewport) ||
          (window_system->isMouseButtonDown(SDL_BUTTON_MIDDLE) &&
           middle_drag_started_in_viewport);
+}
+
+void invalidateGpuDrivenHiZAfterCameraSnap() {
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->invalidateGpuDrivenOcclusion();
+    // Zero-copy idle skip treats a non-interactive camera jump as
+    // "camera-only" and keeps presenting the previous origin-grid image.
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
+  }
 }
 
 }  // namespace
@@ -320,9 +330,14 @@ bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {
     if (g_runtime_global_context.m_scene_system != nullptr) {
       SceneInstance* active_scene =
           g_runtime_global_context.m_scene_system->getActiveInstance();
-      if (active_scene != nullptr && active_scene->hasWorldBounds()) {
-        snapFocusOnAABB(active_scene->getWorldBounds());
-        return true;
+      if (active_scene != nullptr) {
+        if (!active_scene->hasWorldBounds()) {
+          active_scene->rebuildWorldBoundsFromMeshes();
+        }
+        if (active_scene->hasWorldBounds()) {
+          snapFocusOnAABB(active_scene->getWorldBounds());
+          return true;
+        }
       }
     }
   }
@@ -779,9 +794,10 @@ void EditorCamera::updateViewMatrix() {
 
 void EditorCamera::updateProjectionMatrix() {
   const float aspect = m_viewport_width / m_viewport_height;
+  const float near_clip = getNearClip();
 
   // Calculate perspective projection matrix
-  Mat4 persp = glm::perspectiveZO(m_vertical_fov, aspect, m_near_clip, m_far_clip);
+  Mat4 persp = glm::perspectiveZO(m_vertical_fov, aspect, near_clip, m_far_clip);
   persp[1][1] *= -1.0f;
 
   // Calculate matching orthographic projection matrix
@@ -790,7 +806,7 @@ void EditorCamera::updateProjectionMatrix() {
   const float ortho_half_h = target_ortho_size * 0.5f;
   const float ortho_half_w = ortho_half_h * aspect;
   Mat4 ortho = glm::orthoZO(-ortho_half_w, ortho_half_w, -ortho_half_h, ortho_half_h,
-                            m_near_clip, m_far_clip);
+                            near_clip, m_far_clip);
   ortho[1][1] *= -1.0f;
 
   // Cubic ease-in-out easing for projection transition
@@ -858,9 +874,17 @@ void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
 
   m_focal_point = center;
   const bool large_scene = glm::max(size.x, size.y) > 8.0f;
-  m_distance = large_scene ? std::max(radius * 1.25f, 6.0f)
-                           : std::max(radius * 2.5f, 10.0f);
-  m_pitch = large_scene ? glm::radians(32.0f) : glm::radians(28.0f);
+  // Centimetre Sponza AABB is ~3700 across. Positive pitch puts the eye
+  // *below* the courtyard; 1.25*radius then parks inside a wing so gizmos
+  // sit on the origin grid and the building is a corner slab. Look down from
+  // a 3/4 at 3.4*radius so the whole mesh stays in frame.
+  if (large_scene) {
+    m_distance = std::max(radius * 3.4f, 6.0f);
+    m_pitch = glm::radians(-32.0f);
+  } else {
+    m_distance = std::max(radius * 2.5f, 10.0f);
+    m_pitch = glm::radians(28.0f);
+  }
   m_yaw = glm::radians(-48.0f);
   updateDirectionVectors();
   updateViewMatrix();
@@ -888,27 +912,12 @@ void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
     }
   }
 
-  if (large_scene) {
-    // Sponza-like assets: AABB center sits in open courtyard air. Bias focal toward
-    // interior columns so the default view shows solid geometry, not sky through arches.
-    m_focal_point =
-        Vec3(center.x + extents.x * 0.12f, center.y,
-             bounds.min.z + glm::clamp(size.z * 0.38f, 2.0f, size.z - 1.0f));
-
-    Vec3 to_focal = m_focal_point - m_position;
-    m_distance = glm::length(to_focal);
-    if (m_distance > 1e-4f) {
-      const Vec3 forward = to_focal / m_distance;
-      m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
-      m_yaw = std::atan2(forward.y, forward.x);
-      updateDirectionVectors();
-      updateViewMatrix();
-    }
+  if (getLogSystem()) {
+    LOG_INFO("[EditorCamera] snap focus on AABB center=({}, {}, {}) distance={} eye=({}, {}, {})",
+             m_focal_point.x, m_focal_point.y, m_focal_point.z, m_distance, m_position.x,
+             m_position.y, m_position.z);
   }
-
-  LOG_INFO("[EditorCamera] snap focus on AABB center=({}, {}, {}) distance={} eye=({}, {}, {})",
-           m_focal_point.x, m_focal_point.y, m_focal_point.z, m_distance, m_position.x,
-           m_position.y, m_position.z);
+  invalidateGpuDrivenHiZAfterCameraSnap();
 }
 
 void EditorCamera::setLookAt(const Vec3& position, const Vec3& target) {
@@ -965,6 +974,7 @@ void EditorCamera::snapLookAt(const Vec3& position, const Vec3& target) {
   updateDirectionVectors();
   updateViewMatrix();
   updateProjectionMatrix();
+  invalidateGpuDrivenHiZAfterCameraSnap();
 }
 
 void EditorCamera::placeInsideAABB(const AABB& bounds) {

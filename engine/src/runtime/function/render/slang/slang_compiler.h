@@ -62,6 +62,26 @@ class SlangCompiler final {
       const char* source_path, const char* vertex_entry = "vertexMain",
       const char* fragment_entry = "fragmentMain");
 
+  struct ComputeProgramResult {
+    ShaderResult compute;
+    ShaderResourceLayout layout;
+  };
+
+  ComputeProgramResult compileComputeProgram(const char* source_path,
+                                             const char* entry_point = "main");
+
+  struct MeshProgramResult {
+    ShaderResult task;
+    ShaderResult mesh;
+    ShaderResult fragment;
+    ShaderResourceLayout layout;
+  };
+
+  MeshProgramResult compileMeshProgram(const char* source_path,
+                                       const char* task_entry = "taskMain",
+                                       const char* mesh_entry = "meshMain",
+                                       const char* fragment_entry = "fragmentMain");
+
   /// True when the last compileShader / compileGraphicsProgram restored SPIR-V
   /// from Shader bytecode cache (tests).
   bool lastBytecodeCacheHit() const { return m_last_bytecode_hit; }

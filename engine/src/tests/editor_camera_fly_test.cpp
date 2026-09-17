@@ -179,6 +179,64 @@ int main() {
                 cam.getDistance() > zoom_before);
   }
 
+  {
+    EditorCamera frame_cam(nullptr);
+    frame_cam.setViewportRect(0, 0, 1280.0f, 720.0f, 1280.0f, 720.0f);
+    AABB sponza{};
+    sponza.min = Vec3(-1921.0f, -1105.0f, -126.0f);
+    sponza.max = Vec3(1800.0f, 1183.0f, 1429.0f);
+    frame_cam.snapFocusOnAABB(sponza);
+    const Vec3 eye = frame_cam.getPosition();
+    const Vec3 focal = frame_cam.getFocalPoint();
+    const float radius = glm::length(sponza.extents());
+    expect_true("Sponza snap looks at courtyard center",
+                glm::length(focal - sponza.center()) < 1.0f);
+    expect_true("Sponza snap keeps the eye above the roof",
+                eye.z > sponza.max.z);
+    expect_true("Sponza snap distance frames the whole mesh",
+                frame_cam.getDistance() >= radius * 3.0f);
+    const Mat4 vp = frame_cam.getProjectionMatrix() * frame_cam.getViewMatrix();
+    const Vec3 corners[8] = {
+        sponza.min,
+        Vec3(sponza.max.x, sponza.min.y, sponza.min.z),
+        Vec3(sponza.min.x, sponza.max.y, sponza.min.z),
+        Vec3(sponza.max.x, sponza.max.y, sponza.min.z),
+        Vec3(sponza.min.x, sponza.min.y, sponza.max.z),
+        Vec3(sponza.max.x, sponza.min.y, sponza.max.z),
+        Vec3(sponza.min.x, sponza.max.y, sponza.max.z),
+        sponza.max,
+    };
+    bool all_in_view = true;
+    for (const Vec3& corner : corners) {
+      const glm::vec4 clip = vp * glm::vec4(corner, 1.0f);
+      if (clip.w <= 1e-4f) {
+        all_in_view = false;
+        break;
+      }
+      const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+      if (ndc.x < -1.15f || ndc.x > 1.15f || ndc.y < -1.15f || ndc.y > 1.15f) {
+        all_in_view = false;
+        break;
+      }
+    }
+    expect_true("Sponza snap keeps every AABB corner in the Viewport", all_in_view);
+  }
+
+  {
+    EditorCamera zoom_cam(nullptr);
+    zoom_cam.snapLookAt(Vec3(-5500.0f, -6200.0f, 4200.0f),
+                        Vec3(-60.0f, 40.0f, 650.0f));
+    expect_true("LOOKAT near grows with orbit so depth is not sky",
+                zoom_cam.getNearClip() > 10.0f &&
+                    zoom_cam.getNearClip() < zoom_cam.getFarClip() * 0.5f);
+    const Mat4 vp =
+        zoom_cam.getProjectionMatrix() * zoom_cam.getViewMatrix();
+    const glm::vec4 clip = vp * glm::vec4(-60.0f, 40.0f, 650.0f, 1.0f);
+    const float ndc_z = clip.z / clip.w;
+    expect_true("LOOKAT courtyard ndc.z is not the far-plane sky",
+                clip.w > 1e-4f && ndc_z > 0.0f && ndc_z < 0.999f);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

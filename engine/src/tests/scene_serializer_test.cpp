@@ -426,6 +426,47 @@ void serializeAndParseLightAllTypes() {
   }
 }
 
+/// Fog Component round-trips present `"fog"`; defaults and custom fields survive.
+void serializeAndParseFog() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  scene.setGuid("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  SceneEntityDefinition entity;
+  entity.name = "Volume";
+  entity.has_fog = true;
+  entity.fog.enabled = true;
+  entity.fog.volumetric_enabled = true;
+  entity.fog.density = 0.04f;
+  entity.fog.height_falloff = 0.3f;
+  entity.fog.view_distance = 80.0f;
+  entity.fog.albedo = Vec3(0.8f, 0.9f, 1.0f);
+  entity.fog.scattering_g = 0.4f;
+  scene.getEntities().push_back(eastl::move(entity));
+
+  eastl::string json;
+  expect_true("serialize fog", SceneSerializer::serialize(scene, json));
+  expect_true("json contains fog key", json.find("\"fog\"") != eastl::string::npos);
+  expect_true("json contains volumetricEnabled",
+              json.find("\"volumetricEnabled\"") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize fog", SceneSerializer::deserialize(json, loaded));
+  expect_true("one entity after fog deserialize", loaded.getEntities().size() == 1);
+  const SceneEntityDefinition& out = loaded.getEntities()[0];
+  expect_true("has_fog restored", out.has_fog);
+  expect_true("fog enabled restored", out.fog.enabled);
+  expect_true("fog volumetric restored", out.fog.volumetric_enabled);
+  expect_true("density restored", float_near(out.fog.density, 0.04f));
+  expect_true("falloff restored", float_near(out.fog.height_falloff, 0.3f));
+  expect_true("view distance restored", float_near(out.fog.view_distance, 80.0f));
+  expect_true("albedo restored", float_near(out.fog.albedo.x, 0.8f) &&
+                                     float_near(out.fog.albedo.y, 0.9f) &&
+                                     float_near(out.fog.albedo.z, 1.0f));
+  expect_true("g restored", float_near(out.fog.scattering_g, 0.4f));
+}
+
 /// instantiate() resolves linking names to EntityIds and drops stale names.
 void instantiateLightLinkingResolvesNames() {
   using namespace Blunder;
@@ -636,6 +677,7 @@ void deserializeLegacyEntityWithoutCamera() {
   expect_true("legacy has_camera false",
               !loaded.getEntities()[0].has_camera);
   expect_true("legacy has_light false", !loaded.getEntities()[0].has_light);
+  expect_true("legacy has_fog false", !loaded.getEntities()[0].has_fog);
 }
 
 /// Quotes / backslashes in type names and string property values must round-trip.
@@ -782,6 +824,7 @@ int main() {
   serializeAndParseEscapedBehaviourStrings();
   serializeAndParseCamera();
   serializeAndParseLightAllTypes();
+  serializeAndParseFog();
   instantiateLightLinkingResolvesNames();
   serializeAndParseAnimationPlayerAndSkeleton();
   serializeAndParseAnimationPlayerPhase2Defaults();

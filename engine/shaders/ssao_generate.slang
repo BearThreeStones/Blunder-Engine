@@ -51,7 +51,9 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
     VertexOutput output;
     float2 uv = float2((vertexId << 1) & 2, vertexId & 2);
     output.sv_position = float4(uv * 2.0 - 1.0, 0.0, 1.0);
-    output.uv = uv * 0.5;
+    // Covering-triangle verts sit at NDC -1 and +3 with uv 0/2 so the visible
+    // NDC [-1,1] square interpolates to [0,1]. Do not scale by 0.5.
+    output.uv = uv;
     return output;
 }
 
@@ -104,7 +106,7 @@ float fragmentMain(VertexOutput input) : SV_Target
 
     float2 uv = input.uv;
     float depth = depthTexture.Sample(depthSampler, uv).r;
-    if (depth >= 0.9999)
+    if (depth >= 0.999999)
     {
         return 1.0;
     }

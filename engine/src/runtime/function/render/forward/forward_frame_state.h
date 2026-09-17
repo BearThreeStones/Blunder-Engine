@@ -7,10 +7,12 @@
 
 #include "runtime/function/render/blinn_phong_editor_settings.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/render/shadow/mesh_shadow_casters.h"
 #include "runtime/function/scene/entity_id.h"
 
 namespace Blunder {
 
+class MeshShadowSystem;
 class SceneInstance;
 
 enum class ForwardGridPlane : uint32_t {
@@ -45,6 +47,11 @@ struct ForwardFrameState {
   const SceneInstance* lighting_scene{nullptr};
   bool live_scene_lighting{false};
   EntityId shadow_caster_id{k_invalid_entity_id};
+  LocalShadowCasters local_shadows{};
+  MeshShadowSystem* mesh_shadows{nullptr};
+  /// Editor camera-only records: scene identity, lights, and mesh list are
+  /// unchanged, so skip CPU gather / caster rebuild / descriptor rewrites.
+  bool scene_static{false};
 };
 
 }  // namespace Blunder

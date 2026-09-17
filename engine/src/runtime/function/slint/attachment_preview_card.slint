@@ -87,6 +87,15 @@ export struct AttachmentPreviewCardRow {
     light-width: float,
     light-height: float,
     light-linking: string,
+    fog-enabled: bool,
+    fog-volumetric-enabled: bool,
+    fog-density: float,
+    fog-height-falloff: float,
+    fog-view-distance: float,
+    fog-albedo-r: float,
+    fog-albedo-g: float,
+    fog-albedo-b: float,
+    fog-g: float,
     mesh-path: string,
     behaviour-id: int,
     behaviour-type: string,
@@ -114,6 +123,7 @@ export component AttachmentPreviewCard inherits Rectangle {
     callback transform-edited(float, float, float, float, float, float, float, float, float);
     callback camera-edited(float, float, float, bool, bool);
     callback light-edited(int, float, float, float, float, bool, float, bool);
+    callback fog-edited(bool, bool, float, float, float, float, float, float, float, bool);
     callback color-hex-entered(string);
     callback unique-remove-requested();
     callback tree-canvas-requested();
@@ -140,6 +150,13 @@ export component AttachmentPreviewCard inherits Rectangle {
             root.card.light-color-r, root.card.light-color-g, root.card.light-color-b,
             root.card.light-intensity, root.card.light-enabled, root.card.light-range,
             commit);
+    }
+    function emit-fog(commit: bool) {
+        root.fog-edited(
+            root.card.fog-enabled, root.card.fog-volumetric-enabled,
+            root.card.fog-density, root.card.fog-height-falloff, root.card.fog-view-distance,
+            root.card.fog-albedo-r, root.card.fog-albedo-g, root.card.fog-albedo-b,
+            root.card.fog-g, commit);
     }
 
     width: 280px;
@@ -499,6 +516,81 @@ export component AttachmentPreviewCard inherits Rectangle {
                     EditorButton {
                         text: "Remove";
                         clicked => { root.modifier-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 8: VerticalBox {
+                    spacing: 6px;
+                    EditorToggle {
+                        text: "Enabled";
+                        checked: root.card.fog-enabled;
+                        toggled => {
+                            root.card.fog-enabled = self.checked;
+                            root.emit-fog(true);
+                        }
+                    }
+                    EditorToggle {
+                        text: "Volumetric";
+                        checked: root.card.fog-volumetric-enabled;
+                        toggled => {
+                            root.card.fog-volumetric-enabled = self.checked;
+                            root.emit-fog(true);
+                        }
+                    }
+                    InspectorScalarRow {
+                        label: "Density";
+                        label-width: 72px;
+                        value <=> root.card.fog-density;
+                        reset-value: 0.02;
+                        live-edited => { root.emit-fog(false); }
+                        committed => { root.emit-fog(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Falloff";
+                        label-width: 72px;
+                        value <=> root.card.fog-height-falloff;
+                        reset-value: 0.2;
+                        live-edited => { root.emit-fog(false); }
+                        committed => { root.emit-fog(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "View distance";
+                        label-width: 72px;
+                        value <=> root.card.fog-view-distance;
+                        reset-value: 60.0;
+                        live-edited => { root.emit-fog(false); }
+                        committed => { root.emit-fog(true); }
+                    }
+                    preview-fog-albedo := InspectorColorCell {
+                        label: "Albedo";
+                        label-width: 72px;
+                        r <=> root.card.fog-albedo-r;
+                        g <=> root.card.fog-albedo-g;
+                        b <=> root.card.fog-albedo-b;
+                        enable-reset: true;
+                        reset-r: 1.0;
+                        reset-g: 1.0;
+                        reset-b: 1.0;
+                        live-edited => {
+                            root.card.fog-albedo-r = preview-fog-albedo.r;
+                            root.card.fog-albedo-g = preview-fog-albedo.g;
+                            root.card.fog-albedo-b = preview-fog-albedo.b;
+                            root.emit-fog(false);
+                        }
+                        committed => { root.emit-fog(true); }
+                        hex-entered(t) => { root.color-hex-entered(t); }
+                    }
+                    InspectorScalarRow {
+                        label: "g";
+                        label-width: 72px;
+                        value <=> root.card.fog-g;
+                        reset-value: 0.2;
+                        live-edited => { root.emit-fog(false); }
+                        committed => { root.emit-fog(true); }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
                     }
                 }
             }

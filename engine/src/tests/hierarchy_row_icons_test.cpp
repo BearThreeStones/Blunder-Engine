@@ -86,6 +86,17 @@ int main() {
   {
     SceneInstance scene;
     const EntityId id =
+        scene.createEntity("FogRow", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Fog);
+    eastl::vector<HierarchyRowIconSlot> icons;
+    fillHierarchyRowIcons(scene, id, icons);
+    expect_true("fog icon", hasKind(icons, HierarchyRowIconKind::Fog));
+    expect_true("fog plus transform", icons.size() == 2);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId id =
         scene.createEntity("Behaviours", Vec3(0, 0, 0), glm::identity<Quat>(),
                            Vec3(1));
     Object* object = scene.ensureBoundObject(id);

@@ -13,6 +13,7 @@
 #include <cgltf.h>
 
 #include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/gpu_driven/gpu_driven_types.h"
 #include "runtime/function/render/gizmo/transform_gizmo_types.h"
 #include "runtime/function/render/opaque_mesh_draw.h"
 
@@ -24,11 +25,16 @@ namespace Blunder {
 
 class Event;
 class AssetManager;
+class DeferredRenderPath;
 class EditorCamera;
 class ForwardRenderPath;
+class GpuDrivenRenderer;
 class OverlaySystem;
+class SceneInstance;
 class SsaOPass;
+class VolumetricFogPass;
 class GpuMesh;
+class MeshShadowSystem;
 class RenderDocCapture;
 class ShadowMapTarget;
 class MaterialAsset;
@@ -86,13 +92,11 @@ struct SharedVulkanHandles {
 ///
 /// The engine no longer owns a window swapchain. Slint's Skia renderer is in
 /// charge of presenting to the HWND. Each frame this system:
-///   1. assembles a forward draw list and delegates scene recording to
-///      `ForwardRenderPath`,
-///   2. transitions the off-screen color image and copies it into a host-visible
-///      staging buffer,
-///   3. submits the command buffer signaling a timeline value and polls
+///   1. assembles a forward draw list and records the viewport Scene plus
+///      overlay/copy Passes through Frame graph execute (Copy is the Sink),
+///   2. submits the command buffer signaling a timeline value and polls
 ///      previous slots asynchronously (no blocking stall), and
-///   4. pushes the latest completed RGBA8 pixels into the viewport presenter.
+///   3. pushes the latest completed RGBA8 pixels into the viewport presenter.
 class RenderSystem final {
  public:
   RenderSystem();
@@ -149,8 +153,16 @@ class RenderSystem final {
       const glm::mat4& model, float alpha_cutoff = 0.5f, bool double_sided = false,
       eastl::vector<glm::mat4> gpu_bone_palette = {},
       EntityId entity_id = k_invalid_entity_id);
+  bool addGpuDrivenDraw(GpuMesh* gpu_mesh, eastl::shared_ptr<MaterialAsset> material,
+                        VulkanTexture* base_color_texture,
+                        VulkanTexture* metallic_roughness_texture,
+                        VulkanTexture* normal_texture,
+                        VulkanTexture* occlusion_texture, const glm::mat4& model,
+                        float alpha_cutoff, cgltf_alpha_mode alpha_mode,
+                        bool double_sided, EntityId entity_id);
   void clearOpaqueMeshDraws();
   void clearTransparentMeshDraws();
+  void clearGpuDrivenDraws();
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
 
   EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }
@@ -163,6 +175,13 @@ class RenderSystem final {
 
   /// Frames the active scene once the viewport has a valid size (see tick).
   void requestSceneCameraFocus();
+  /// Drop previous-frame GPU-driven Hi-Z after an editor camera snap / look-at
+  /// so a courtyard close-up cannot false-occlude the zoomed-out mesh.
+  void invalidateGpuDrivenOcclusion();
+
+  /// Live document changed: force a Viewport record (idle skip would keep the
+  /// previous offscreen) and snap the editor camera to the new scene bounds.
+  void notifyActiveSceneChanged();
 
   void setTransformGizmoMode(TransformGizmoMode mode);
   TransformGizmoMode getTransformGizmoMode() const;
@@ -170,6 +189,8 @@ class RenderSystem final {
   bool isTransformGizmoSpaceGlobal() const;
   bool isTransformGizmoDragging() const;
   bool isTranslateModalSessionActive() const;
+  bool areSceneGizmosVisible() const;
+  void toggleSceneGizmosVisible();
   /// Forces the next viewport offscreen pass (gizmo mode/space, overlays, etc.).
   void requestViewportRedraw();
   rhi::IRenderBackend* getRenderBackend() const { return m_backend.get(); }
@@ -188,6 +209,13 @@ class RenderSystem final {
   void initializeTextureLoader();
   void tickVulkan(float delta_time, uint32_t target_width,
                   uint32_t target_height);
+  void recordViewportGraph(VkCommandBuffer command_buffer,
+                            const ForwardFrameState& frame_state,
+                            const ForwardOpaqueDraw* opaque_draws,
+                            uint32_t opaque_draw_count,
+                            const ForwardOpaqueDraw* transparent_draws,
+                            uint32_t transparent_draw_count,
+                            uint32_t frame_index, bool host_is_player);
   void tickD3D12Skeleton(float delta_time, uint32_t target_width,
                          uint32_t target_height);
 
@@ -215,16 +243,23 @@ class RenderSystem final {
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_skinned_shadow_pipeline;
   eastl::unique_ptr<OverlaySystem> m_overlay_system;
   eastl::unique_ptr<ShadowMapTarget> m_shadow_map;
+  eastl::unique_ptr<MeshShadowSystem> m_mesh_shadows;
   eastl::unique_ptr<EditorCamera> m_editor_camera;
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;
+  /// Editor viewport only, created unless `BLUNDER_EDITOR_DEFERRED=0`
+  /// (never in Player). Previews keep `ForwardRenderPath::renderFrameTo`.
+  eastl::unique_ptr<DeferredRenderPath> m_deferred_path;
   eastl::unique_ptr<SsaOPass> m_ssao_pass;
+  eastl::unique_ptr<VolumetricFogPass> m_volumetric_fog_pass;
+  eastl::unique_ptr<GpuDrivenRenderer> m_gpu_driven_renderer;
   eastl::unique_ptr<TextureLoader> m_texture_loader;
 
   eastl::unordered_map<eastl::string, eastl::unique_ptr<GpuMesh>> m_gpu_meshes;
   VulkanTexture* m_fallback_texture{nullptr};
   eastl::vector<OpaqueMeshDraw> m_opaque_mesh_draws;
   eastl::vector<OpaqueMeshDraw> m_transparent_mesh_draws;
+  eastl::vector<GpuDrivenDraw> m_gpu_driven_draws;
   eastl::shared_ptr<MaterialAsset> m_inspector_material;
   uint32_t m_current_frame{0};
   bool m_pending_scene_camera_focus{false};
@@ -240,7 +275,9 @@ class RenderSystem final {
   uint32_t m_last_viewport_target_h{0};
   uint32_t m_viewport_render_generation{0};
   uint32_t m_last_rendered_viewport_generation{0};
+  bool m_last_rendered_froxel_heatmap{false};
   bool m_force_viewport_render{true};
+  SceneInstance* m_last_rendered_scene_instance{nullptr};
   bool m_defer_viewport_for_texture_residency{false};
 
   struct ZeroCopyPresentSlot {
@@ -248,6 +285,7 @@ class RenderSystem final {
     uint32_t height{0};
     bool pending_gpu{false};
     uint64_t completed_generation{0};
+    uint64_t submit_ns{0};
   };
   eastl::array<ZeroCopyPresentSlot, VulkanSync::k_max_frames_in_flight>
       m_zero_copy_slots{};

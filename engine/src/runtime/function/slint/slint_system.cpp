@@ -21,6 +21,8 @@
 #include <utility>
 #include <vector>
 
+#include "runtime/core/debug/input_present_trace.h"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_timer.h>
 #include <glm/ext/matrix_float4x4.hpp>
@@ -81,6 +83,7 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/light_component.h"
+#include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
@@ -222,7 +225,7 @@ uint64_t readViewportPacingIntervalMs(const char* env_name, int default_ms) {
   return static_cast<uint64_t>(interval_ms) * 1'000'000ull;
 }
 
-uint64_t g_adaptive_viewport_present_ns = 50'000'000ull;
+uint64_t g_adaptive_viewport_present_ns = 8'000'000ull;
 
 }  // namespace
 
@@ -687,6 +690,8 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     m_owner->markViewportDirtyRegion();
   }
 
+  InputPresentPhaseTrace phases("composite-phases");
+  phases.flag("fullRefresh", forced_full_refresh ? 1 : 0);
   const auto skia_start = std::chrono::steady_clock::now();
   try {
     m_renderer->render();
@@ -700,15 +705,14 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     m_present_suppress_frames = 2u;
     return;
   }
+  phases.mark("renderMs");
   {
     const auto skia_us = std::chrono::duration_cast<std::chrono::microseconds>(
                              std::chrono::steady_clock::now() - skia_start)
                              .count();
-    g_adaptive_viewport_present_ns = eastl::max<uint64_t>(
-        editorViewportPresentMinIntervalNs(),
-        static_cast<uint64_t>(skia_us) * 1000ull);
+    g_adaptive_viewport_present_ns =
+        eastl::max<uint64_t>(1'000'000ull, static_cast<uint64_t>(skia_us) * 1000ull);
   }
-
 }
 
 void SlintSystem::SlintWindowAdapter::renderIfNeeded() {
@@ -1201,6 +1205,14 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
           applyPreviewLight(entity_id, kind, index, light_type, color_r, color_g,
                             color_b, intensity, enabled, range, commit);
         });
+    component->on_attachment_preview_fog_edited(
+        [this](int entity_id, int kind, int index, bool enabled, bool volumetric,
+               float density, float falloff, float view_distance, float albedo_r,
+               float albedo_g, float albedo_b, float scattering_g, bool commit) {
+          applyPreviewFog(entity_id, kind, index, enabled, volumetric, density, falloff,
+                          view_distance, albedo_r, albedo_g, albedo_b, scattering_g,
+                          commit);
+        });
     component->on_attachment_preview_color_hex_entered(
         [this](int entity_id, int kind, int index, const slint::SharedString& hex) {
           applyPreviewColorHex(entity_id, kind, index, hex);
@@ -1427,6 +1439,7 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         });
     component->on_inspector_camera_edited([this](bool commit) { applyInspectorCamera(commit); });
     component->on_inspector_light_edited([this](bool commit) { applyInspectorLight(commit); });
+    component->on_inspector_fog_edited([this](bool commit) { applyInspectorFog(commit); });
     component->on_inspector_add_unique_attachment(
         [this](const slint::SharedString& kind) {
           applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
@@ -1483,6 +1496,12 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       if (g_runtime_global_context.m_render_system) {
         g_runtime_global_context.m_render_system->toggleTransformGizmoSpace();
         syncTransformToolbarFromEngine();
+      }
+    });
+
+    component->on_scene_gizmos_toggled([this]() {
+      if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->toggleSceneGizmosVisible();
       }
     });
 
@@ -2107,6 +2126,18 @@ void SlintSystem::markViewportDirtyRegion() {
 
 void SlintSystem::markFullSkiaRefresh() { m_pending_full_skia_refresh = true; }
 
+void SlintSystem::forceNextViewportImageBind() {
+  m_force_viewport_image_bind = true;
+  m_borrowed_viewport_image_bound = false;
+  m_borrowed_viewport_vk_image = 0;
+  clearBorrowedViewportImageCache();
+  markFullSkiaRefresh();
+  markViewportDirtyRegion();
+  if (m_window_adapter) {
+    m_window_adapter->request_redraw();
+  }
+}
+
 bool SlintSystem::consumePendingFullSkiaRefresh() {
   if (!m_pending_full_skia_refresh) {
     return false;
@@ -2259,6 +2290,7 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
                                              uint32_t layout, uint32_t width,
                                              uint32_t height,
                                              bool request_composite) {
+  m_last_viewport_external_bind_ok = false;
   if (!m_window_component || image == 0 || width == 0 || height == 0) {
     return;
   }
@@ -2272,21 +2304,41 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
     const bool size_changed =
         width != m_viewport_upload_width || height != m_viewport_upload_height;
     logViewportPresentPathOnce(true);
-    // Cache Slint images for each in-flight VkImage; defer ui.set_viewport_image
-    // until a Skia composite is actually scheduled (avoids per-frame UI invalidation).
-    (void)borrowedViewportImageForHandle(image, format, layout, width, height);
+    // Rebind the Slint image whenever the completed offscreen VkImage changes.
+    // Requesting a Skia composite stays paced; writing the bound image is the hitch.
     m_viewport_image_stale = false;
     m_viewport_upload_width = width;
     m_viewport_upload_height = height;
-    const bool request_skia_composite =
-        shouldRequestViewportComposite(request_composite);
-    if (request_skia_composite) {
-      const slint::Image viewport_image =
-          borrowedViewportImageForHandle(image, format, layout, width, height);
+    const bool force_rebind = m_force_viewport_image_bind;
+    if (force_rebind) {
+      clearBorrowedViewportImageCache();
+    }
+    const slint::Image viewport_image =
+        borrowedViewportImageForHandle(image, format, layout, width, height);
+    const bool image_changed =
+        force_rebind || !m_borrowed_viewport_image_bound ||
+        m_borrowed_viewport_vk_image != image;
+    if (image_changed) {
       ui.set_viewport_image(viewport_image);
       ui.set_viewport_image_ready(true);
       m_borrowed_viewport_image_bound = true;
       m_borrowed_viewport_vk_image = image;
+      m_force_viewport_image_bind = false;
+    }
+    const bool request_skia_composite =
+        force_rebind || shouldRequestViewportComposite(request_composite);
+    // Bind always means a new GPU frame is displayable. Do not let the
+    // composite-request throttle clear this flag — endFrame is the present
+    // pacer. Otherwise orbit binds are dropped until a Slint mouse-up redraw.
+    m_viewport_frame_ready = true;
+    m_last_viewport_external_bind_ok = true;
+    if (force_rebind) {
+      markFullSkiaRefresh();
+    }
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+    if (request_skia_composite) {
       m_viewport_image_dirty = size_changed;
       if (!s_logged_first_zero_copy) {
         LOG_INFO(
@@ -2294,21 +2346,17 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
             width, height);
         s_logged_first_zero_copy = true;
       }
-      m_viewport_frame_ready = true;
       static bool s_zero_copy_needs_initial_full_refresh = true;
       if (size_changed || s_zero_copy_needs_initial_full_refresh) {
         markFullSkiaRefresh();
         s_zero_copy_needs_initial_full_refresh = false;
       } else if (slintPartialCompositeEnabled()) {
-        // Double-buffered VkImage handles alternate each frame (rebind); that must
-        // not force a full-window composite (~100ms). Repaint viewport rect only.
         markViewportDirtyRegion();
       } else {
         markFullSkiaRefresh();
       }
-      if (m_window_adapter) {
-        m_window_adapter->request_redraw();
-      }
+    } else if (image_changed && slintPartialCompositeEnabled()) {
+      markViewportDirtyRegion();
     }
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::setViewportExternalTexture] {}", e.what());
@@ -2359,10 +2407,13 @@ bool SlintSystem::shouldRequestViewportComposite(const bool request_composite) {
 
 void SlintSystem::updateViewportPacingTier() {
   bool signal = false;
+  if (m_window_system && m_window_system->getFocusMode()) {
+    signal = true;
+  }
   if (RenderSystem* render_system =
           g_runtime_global_context.m_render_system.get()) {
     if (EditorCamera* camera = render_system->getEditorCamera()) {
-      signal = camera->isViewportInteracting();
+      signal = signal || camera->isViewportInteracting();
     }
     if (render_system->isTransformGizmoDragging()) {
       signal = true;
@@ -2435,8 +2486,13 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     m_viewport_upload_height = height;
     const bool request_skia_composite =
         image_ready && shouldRequestViewportComposite(request_composite);
-    if (request_skia_composite) {
+    if (image_ready) {
       m_viewport_frame_ready = true;
+      if (m_window_adapter) {
+        m_window_adapter->request_redraw();
+      }
+    }
+    if (request_skia_composite) {
       logViewportPresentPathOnce(false);
       if (size_changed) {
         markFullSkiaRefresh();
@@ -2444,9 +2500,6 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
         markViewportDirtyRegion();
       } else {
         markFullSkiaRefresh();
-      }
-      if (m_window_adapter) {
-        m_window_adapter->request_redraw();
       }
     } else if (size_changed && m_window_adapter) {
       m_window_adapter->request_redraw();
@@ -2515,6 +2568,46 @@ void SlintSystem::syncViewportProjectionMode(bool is_perspective) {
     LOG_ERROR("[SlintSystem::syncViewportProjectionMode] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::syncViewportProjectionMode] unknown exception");
+  }
+}
+
+bool SlintSystem::froxelOccupancyHeatmapEnabled() const {
+  if (!m_window_component) {
+    return false;
+  }
+  try {
+    return m_window_component->operator->()->get_froxel_occupancy_heatmap();
+  } catch (...) {
+    return false;
+  }
+}
+
+void SlintSystem::toggleFroxelOccupancyHeatmap() {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_froxel_occupancy_heatmap(!ui->get_froxel_occupancy_heatmap());
+    markFullSkiaRefresh();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::toggleFroxelOccupancyHeatmap] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::toggleFroxelOccupancyHeatmap] unknown exception");
+  }
+}
+
+void SlintSystem::syncFroxelViewportStats(uint32_t dropped_this_frame,
+                                          uint64_t) {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    m_window_component->operator->()->set_froxel_dropped_lights(
+        static_cast<int>(dropped_this_frame));
+  } catch (...) {
   }
 }
 
@@ -3430,6 +3523,11 @@ void SlintSystem::applyInspectorColorHex(int target,
         ui->set_mesh_specular_g(g);
         ui->set_mesh_specular_b(b);
         break;
+      case 5:
+        ui->set_inspector_fog_albedo_r(r);
+        ui->set_inspector_fog_albedo_g(g);
+        ui->set_inspector_fog_albedo_b(b);
+        break;
       default:
         return;
     }
@@ -3438,6 +3536,10 @@ void SlintSystem::applyInspectorColorHex(int target,
   }
   if (target == 0) {
     applyInspectorLight(true);
+    return;
+  }
+  if (target == 5) {
+    applyInspectorFog(true);
     return;
   }
   const int field = target == 1 ? 0 : (target == 2 ? 3 : (target == 3 ? 4 : 5));
@@ -3460,8 +3562,19 @@ void SlintSystem::applyPreviewColorHex(int entity_id, int kind, int index,
   if (scene == nullptr) {
     return;
   }
-  const LightComponent* existing =
-      scene->getLight(static_cast<EntityId>(entity_id));
+  const EntityId id = static_cast<EntityId>(entity_id);
+  if (kind == static_cast<int>(HierarchyRowIconKind::Fog)) {
+    const FogComponent* existing = scene->getFog(id);
+    if (existing == nullptr) {
+      return;
+    }
+    applyPreviewFog(entity_id, kind, index, existing->enabled, existing->volumetric_enabled,
+                    existing->density, existing->height_falloff, existing->view_distance, r,
+                    g, b, existing->scattering_g, true);
+    syncAttachmentPreviewCards();
+    return;
+  }
+  const LightComponent* existing = scene->getLight(id);
   if (existing == nullptr) {
     return;
   }
@@ -3586,6 +3699,7 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorLightFromSelection();
+    syncInspectorFogFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       syncInspectorUniqueAttachmentsFromSelection();
       return;
@@ -3608,6 +3722,7 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorLightFromSelection();
+    syncInspectorFogFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       syncInspectorUniqueAttachmentsFromSelection();
       return;
@@ -3755,6 +3870,7 @@ void SlintSystem::syncInspectorFromSelection() {
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorLightFromSelection();
+    syncInspectorFogFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
   } catch (const std::exception& e) {
@@ -4698,10 +4814,131 @@ void SlintSystem::applyInspectorLight(bool commit) {
     }
     notifyViewportAfterInspectorLightEdit(services->render_system.get(), this);
     syncInspectorLightFromSelection();
+    syncInspectorFogFromSelection();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorLight] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::applyInspectorLight] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorFogFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_has_fog(false);
+      return;
+    }
+
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    if (ids.size() != 1) {
+      ui->set_inspector_has_fog(false);
+      return;
+    }
+
+    if (const FogComponent* fog = scene->getFog(ids[0])) {
+      ui->set_inspector_has_fog(true);
+      ui->set_inspector_fog_enabled(fog->enabled);
+      ui->set_inspector_fog_volumetric_enabled(fog->volumetric_enabled);
+      ui->set_inspector_fog_density(fog->density);
+      ui->set_inspector_fog_height_falloff(fog->height_falloff);
+      ui->set_inspector_fog_view_distance(fog->view_distance);
+      ui->set_inspector_fog_albedo_r(fog->albedo.r);
+      ui->set_inspector_fog_albedo_g(fog->albedo.g);
+      ui->set_inspector_fog_albedo_b(fog->albedo.b);
+      ui->set_inspector_fog_g(fog->scattering_g);
+    } else {
+      ui->set_inspector_has_fog(false);
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorFogFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorFogFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorFog(bool commit) {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  const FogComponent* existing_fog = scene->getFog(entity_id);
+  if (existing_fog == nullptr) {
+    return;
+  }
+
+  try {
+    const auto& ui = *m_window_component;
+    const FogComponent existing = *existing_fog;
+    FogComponent after = existing;
+    after.enabled = ui->get_inspector_fog_enabled();
+    after.volumetric_enabled = ui->get_inspector_fog_volumetric_enabled();
+    after.density = ui->get_inspector_fog_density();
+    after.height_falloff = ui->get_inspector_fog_height_falloff();
+    after.view_distance = ui->get_inspector_fog_view_distance();
+    after.albedo = Vec3(ui->get_inspector_fog_albedo_r(), ui->get_inspector_fog_albedo_g(),
+                        ui->get_inspector_fog_albedo_b());
+    after.scattering_g = ui->get_inspector_fog_g();
+    sanitizeFogComponent(after);
+    if (fogComponentsEqual(existing, after) && !m_inspector_fog_edit_open) {
+      return;
+    }
+    if (!commit) {
+      if (!m_inspector_fog_edit_open) {
+        m_inspector_fog_edit_before = existing;
+        m_inspector_fog_edit_open = true;
+      }
+      if (!fogComponentsEqual(existing, after)) {
+        scene->setFog(entity_id, after);
+      }
+      return;
+    }
+    const FogComponent command_before =
+        m_inspector_fog_edit_open ? m_inspector_fog_edit_before : existing;
+    m_inspector_fog_edit_open = false;
+    if (fogComponentsEqual(command_before, after)) {
+      return;
+    }
+    scene->setFog(entity_id, after);
+    pushDocumentCommand(makeSetFogComponentCommand(
+        scene, entity_id, command_before, after, SelectionSnapshot{entity_id},
+        SelectionSnapshot{entity_id}));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
+    syncInspectorFogFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorFog] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorFog] unknown exception");
   }
 }
 
@@ -4741,7 +4978,8 @@ void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_na
     }
     const bool created_anything =
         result.created_object || result.created_skeleton || result.created_player ||
-        result.created_tree || result.created_camera || result.created_light;
+        result.created_tree || result.created_camera || result.created_light ||
+        result.created_fog;
     if (!created_anything) {
       return;
     }
@@ -4752,6 +4990,7 @@ void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_na
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorLightFromSelection();
+    syncInspectorFogFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
@@ -4962,6 +5201,7 @@ void SlintSystem::applyInspectorRemoveUniqueAttachment(const eastl::string& kind
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorLightFromSelection();
+    syncInspectorFogFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
@@ -6033,6 +6273,8 @@ void SlintSystem::syncTransformToolbarFromEngine() {
     ui->set_transform_gizmo_mode(slint_mode);
     ui->set_transform_gizmo_space_global(
         g_runtime_global_context.m_render_system->isTransformGizmoSpaceGlobal());
+    ui->set_scene_gizmos_visible(
+        g_runtime_global_context.m_render_system->areSceneGizmosVisible());
     if (g_runtime_global_context.m_document_history ||
         g_runtime_global_context.m_global_history) {
       const EditorUndoScope scope = resolveUndoScope(
@@ -7236,9 +7478,50 @@ void SlintSystem::handleAutoHideOutsideClick(float logical_x, float logical_y) {
   m_docking_model_dirty = true;
 }
 
+bool SlintSystem::isEditorCameraInteracting() const {
+  if (RenderSystem* render_system =
+          g_runtime_global_context.m_render_system.get()) {
+    if (EditorCamera* camera = render_system->getEditorCamera()) {
+      return camera->isViewportInteracting();
+    }
+  }
+  return false;
+}
+
 bool SlintSystem::shouldDeferHeavyFrameWork() const {
+  // Orbit/pan must keep Vulkan+present on the UI thread. Interaction is set on
+  // RMB/MMB press — before focus-mode hide-cursor — so a leftover layout
+  // cooldown cannot skip rendererTick until mouse-up.
+  if (m_window_system && m_window_system->getFocusMode()) {
+    return false;
+  }
+  if (isEditorCameraInteracting()) {
+    return false;
+  }
   if (m_win32_size_modal || m_resize_cooldown_frames > 0 ||
       m_layout_cooldown_frames > 0) {
+    return true;
+  }
+  return false;
+}
+
+bool SlintSystem::shouldSuppressSlintPointerForViewportCamera(
+    const SDL_Event& event) const {
+  if (event.type != SDL_EVENT_MOUSE_MOTION &&
+      event.type != SDL_EVENT_MOUSE_BUTTON_DOWN &&
+      event.type != SDL_EVENT_MOUSE_BUTTON_UP) {
+    return false;
+  }
+  if (m_window_system && m_window_system->getFocusMode()) {
+    return true;
+  }
+  if (isEditorCameraInteracting()) {
+    return true;
+  }
+  if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+      (event.button.button == SDL_BUTTON_RIGHT ||
+       event.button.button == SDL_BUTTON_MIDDLE) &&
+      shouldRouteMouseToInputLayers(event)) {
     return true;
   }
   return false;
@@ -7257,9 +7540,13 @@ bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
   if (!m_docking_has_viewport) {
     return false;
   }
-  // Editor camera capture (relative mouse + grab): keep routing motion deltas even
-  // when the warped/hidden cursor is outside the viewport rect.
+  // Editor camera: RMB camera-pivot orbit, MMB origin orbit, Shift+MMB pan.
+  // Keep routing motion even if the cursor leaves the
+  // viewport tile. Do not wait for hide-cursor focus mode (that starts in onUpdate).
   if (m_window_system && m_window_system->getFocusMode()) {
+    return true;
+  }
+  if (isEditorCameraInteracting()) {
     return true;
   }
   float px = m_last_mouse_window_x;
@@ -7283,6 +7570,10 @@ bool SlintSystem::shouldRouteMouseToInputLayers(const SDL_Event& event) const {
 
 bool SlintSystem::probeProjectionButtonAtLogical(float logical_x,
                                                 float logical_y) const {
+  if (m_window_component &&
+      m_window_component->operator->()->get_view_menu_visible()) {
+    return false;
+  }
   // Hit-test must match ViewportProjectionToggle.slint (Slint layout), not the
   // chrome-expanded cache used for Vulkan render target sizing (G79).
   float vp_x = 0.0f;
@@ -8079,6 +8370,13 @@ void SlintSystem::processCoalescedSdlMouseMotion() {
   m_pending_sdl_mouse_motion = false;
   m_sdl_motion_events_coalesced = 0;
 
+  if (m_window_system && m_window_system->getFocusMode()) {
+    return;
+  }
+  if (isEditorCameraInteracting()) {
+    return;
+  }
+
   if (m_window_resize_active || !m_window_adapter || !m_window_component) {
     return;
   }
@@ -8125,6 +8423,11 @@ void SlintSystem::processCoalescedSdlMouseMotion() {
 
 void SlintSystem::flushPendingPointerMove() {
   if (!m_pending_pointer_move || !m_window_adapter || !m_window_system) {
+    return;
+  }
+  if (m_window_system->getFocusMode() || isEditorCameraInteracting()) {
+    m_pending_pointer_move = false;
+    m_coalesced_pointer_moves = 0;
     return;
   }
   m_pending_pointer_move = false;
@@ -8735,6 +9038,18 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_light_linking_text =
             main.get_inspector_light_linking_text().data();
         snapshot.inspector_light_expanded = main.get_inspector_light_expanded();
+        snapshot.inspector_has_fog = main.get_inspector_has_fog();
+        snapshot.inspector_fog_enabled = main.get_inspector_fog_enabled();
+        snapshot.inspector_fog_volumetric_enabled =
+            main.get_inspector_fog_volumetric_enabled();
+        snapshot.inspector_fog_density = main.get_inspector_fog_density();
+        snapshot.inspector_fog_height_falloff = main.get_inspector_fog_height_falloff();
+        snapshot.inspector_fog_view_distance = main.get_inspector_fog_view_distance();
+        snapshot.inspector_fog_albedo_r = main.get_inspector_fog_albedo_r();
+        snapshot.inspector_fog_albedo_g = main.get_inspector_fog_albedo_g();
+        snapshot.inspector_fog_albedo_b = main.get_inspector_fog_albedo_b();
+        snapshot.inspector_fog_g = main.get_inspector_fog_g();
+        snapshot.inspector_fog_expanded = main.get_inspector_fog_expanded();
         snapshot.inspector_has_animation_player =
             main.get_inspector_has_animation_player();
         snapshot.inspector_animation_clips.clear();
@@ -9180,6 +9495,7 @@ void SlintSystem::wireNativeFloatingCallbacks() {
       };
   callbacks.on_inspector_camera_edited = [this](bool commit) { applyInspectorCamera(commit); };
   callbacks.on_inspector_light_edited = [this](bool commit) { applyInspectorLight(commit); };
+  callbacks.on_inspector_fog_edited = [this](bool commit) { applyInspectorFog(commit); };
   callbacks.on_inspector_add_unique_attachment =
       [this](const slint::SharedString& kind) {
         applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
@@ -9698,6 +10014,7 @@ bool SlintSystem::processSlintAdapterEvent(SlintWindowAdapter* adapter,
 }
 
 void SlintSystem::beginFrame() {
+  InputPresentPhaseTrace phases("begin-phases");
   if (m_project_manager_mode) {
     try {
       ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -9745,6 +10062,7 @@ void SlintSystem::beginFrame() {
     m_pending_file_dialog_is_import = false;
     openImportFileDialog();
   }
+  phases.mark("sessionMs");
 
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
@@ -9758,22 +10076,27 @@ void SlintSystem::beginFrame() {
     tickAutoHideHover();
     tickGlobalDockPointerPoll();
     processPendingAssetImports();
+    phases.mark("pollsMs");
     processCoalescedSdlMouseMotion();
     flushPendingPointerMove();
+    phases.mark("pointerMs");
     if (m_pending_content_browser_sync) {
       m_pending_content_browser_sync = false;
       syncContentBrowser();
     }
+    phases.mark("browserMs");
     const bool defer_heavy = shouldDeferHeavyFrameWork();
     const bool splitter_interaction = isSplitterResizeInteractionActive();
     if (!defer_heavy) {
       slint::platform::update_timers_and_animations();
     }
+    phases.mark("timersMs");
     // Drain after timers so ContextMenuArea popups close before MenuItem
     // callbacks run.
     if (const auto ui_host = m_ui_host.lock()) {
       ui_host->drainEventQueue();
     }
+    phases.mark("drainMs");
     if (m_window_adapter) {
       const uint32_t resize_events_this_frame = m_resize_events_pumped;
       m_resize_events_pumped = 0;
@@ -9820,19 +10143,25 @@ void SlintSystem::beginFrame() {
       }
       m_force_window_commit = false;
     }
+    phases.mark("windowMs");
     if (shouldSkipSkiaPresentDuringDefer() || splitter_interaction) {
       cacheViewportLogicalRectOnly();
     } else {
       cacheLayoutRects();
     }
+    phases.mark("layoutMs");
     syncDockingWorkspace();
     tickProjectionTogglePointerPoll();
+    phases.mark("dockMs");
     if (!defer_heavy) {
       syncCameraPreviewFromSlint();
       syncCameraPreviewFromEngine();
+      phases.mark("previewMs");
       if (const auto ui_host = m_ui_host.lock()) {
         ui_host->tickEditorPanels();
+        phases.mark("panelsMs");
         ui_host->syncPreviewSettingsFromPresentation();
+        phases.mark("settingsMs");
       }
     }
   } catch (const std::exception& e) {
@@ -9910,6 +10239,9 @@ void SlintSystem::endFrame() {
         } else if (shouldPresentSkiaFrame()) {
           static uint64_t s_last_full_composite_ns = 0;
           const uint64_t now_ns = SDL_GetTicksNS();
+          const bool orbiting =
+              isEditorCameraInteracting() ||
+              (m_window_system && m_window_system->getFocusMode());
           const bool ui_animating =
               m_window_adapter->needsRedraw() && !m_viewport_image_dirty;
           const bool viewport_updating = m_viewport_frame_ready;
@@ -9918,7 +10250,10 @@ void SlintSystem::endFrame() {
                                             : editorViewportIdleRequestNs();
           const uint64_t min_interval_ns =
               viewport_updating
-                  ? eastl::max(editorViewportPresentMinIntervalNs(), tier_request_ns)
+                  ? (m_viewport_pacing_interactive
+                         ? tier_request_ns
+                         : eastl::max(editorViewportPresentMinIntervalNs(),
+                                      tier_request_ns))
                   : ui_animating ? 16'000'000ull
                                  : 33'000'000ull;
           if (m_pending_full_skia_refresh || s_last_full_composite_ns == 0 ||
@@ -9928,9 +10263,28 @@ void SlintSystem::endFrame() {
             m_viewport_image_dirty = false;
             m_viewport_frame_ready = false;
             cacheLayoutRects();
+            char present_data[192];
+            std::snprintf(
+                present_data, sizeof(present_data),
+                "{\"interactive\":%d,\"focus\":%d,\"orbit\":%d,\"minMs\":%.3f}",
+                m_viewport_pacing_interactive ? 1 : 0,
+                (m_window_system && m_window_system->getFocusMode()) ? 1 : 0,
+                orbiting ? 1 : 0,
+                static_cast<double>(min_interval_ns) / 1'000'000.0);
+            traceInputPresent("skia-present", present_data);
           } else {
             m_window_adapter->request_redraw();
+            char skip_data[192];
+            std::snprintf(
+                skip_data, sizeof(skip_data),
+                "{\"reason\":\"interval\",\"interactive\":%d,\"focus\":%d}",
+                m_viewport_pacing_interactive ? 1 : 0,
+                (m_window_system && m_window_system->getFocusMode()) ? 1 : 0);
+            traceInputPresent("skia-skip", skip_data);
           }
+        } else if (m_window_system && m_window_system->getFocusMode()) {
+          traceInputPresent("skia-skip",
+                            "{\"reason\":\"not-ready\",\"focus\":1}");
         }
       }
     }
@@ -9947,7 +10301,6 @@ void SlintSystem::endFrame() {
       m_window_system->requestClose();
     }
   }
-
 }
 
 void SlintSystem::update() {
@@ -9956,6 +10309,48 @@ void SlintSystem::update() {
 }
 
 void SlintSystem::processEvent(const SDL_Event& event) {
+  if (inputPresentTraceEnabled() && (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                                     event.type == SDL_EVENT_MOUSE_BUTTON_UP)) {
+    const ViewportLogicalRect& vp = m_cached_viewport_logical_rect;
+    char data[256];
+    std::snprintf(data, sizeof(data),
+                  "{\"button\":%d,\"down\":%d,\"x\":%.1f,\"y\":%.1f,\"route\":%d,"
+                  "\"vp\":[%d,%d,%d,%d],\"dockVp\":%d,\"focus\":%d}",
+                  static_cast<int>(event.button.button),
+                  event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? 1 : 0,
+                  static_cast<float>(event.button.x),
+                  static_cast<float>(event.button.y),
+                  shouldRouteMouseToInputLayers(event) ? 1 : 0, vp.x, vp.y,
+                  vp.width, vp.height, m_docking_has_viewport ? 1 : 0,
+                  (m_window_system && m_window_system->getFocusMode()) ? 1 : 0);
+    traceInputPresent("pointer-button-sdl", data);
+  }
+  if (shouldSuppressSlintPointerForViewportCamera(event)) {
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+      m_last_mouse_window_x = static_cast<float>(event.motion.x);
+      m_last_mouse_window_y = static_cast<float>(event.motion.y);
+      char data[160];
+      std::snprintf(data, sizeof(data),
+                    "{\"xrel\":%.2f,\"yrel\":%.2f,\"focus\":1}",
+                    static_cast<float>(event.motion.xrel),
+                    static_cast<float>(event.motion.yrel));
+      traceInputPresent("pointer-motion-camera", data);
+    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+               event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+      m_last_mouse_window_x = static_cast<float>(event.button.x);
+      m_last_mouse_window_y = static_cast<float>(event.button.y);
+      char data[128];
+      std::snprintf(data, sizeof(data),
+                    "{\"button\":%d,\"down\":%d,\"x\":%.1f,\"y\":%.1f}",
+                    static_cast<int>(event.button.button),
+                    event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? 1 : 0,
+                    static_cast<float>(event.button.x),
+                    static_cast<float>(event.button.y));
+      traceInputPresent("pointer-button-camera", data);
+    }
+    return;
+  }
+
   if (m_floating_host.processEvent(event)) {
     return;
   }
@@ -10222,6 +10617,10 @@ void SlintSystem::processEvent(const SDL_Event& event) {
           if (!event.key.repeat && event.key.key == SDLK_P &&
               !g_runtime_global_context.inlineRenameActive()) {
             requestViewportProjectionToggle("keyboard_p");
+          }
+          if (!event.key.repeat && event.key.key == SDLK_H &&
+              !g_runtime_global_context.inlineRenameActive()) {
+            toggleFroxelOccupancyHeatmap();
           }
           const slint::SharedString key_text = mapKeycode(event.key.key);
           if (!key_text.empty() && isSpecialKey(event.key.key)) {

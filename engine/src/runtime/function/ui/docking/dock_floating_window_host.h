@@ -193,6 +193,17 @@ struct NativeFloatPanelSnapshot {
   float inspector_light_height{1.0f};
   eastl::string inspector_light_linking_text;
   bool inspector_light_expanded{true};
+  bool inspector_has_fog{false};
+  bool inspector_fog_enabled{true};
+  bool inspector_fog_volumetric_enabled{true};
+  float inspector_fog_density{0.02f};
+  float inspector_fog_height_falloff{0.2f};
+  float inspector_fog_view_distance{60.0f};
+  float inspector_fog_albedo_r{1.0f};
+  float inspector_fog_albedo_g{1.0f};
+  float inspector_fog_albedo_b{1.0f};
+  float inspector_fog_g{0.2f};
+  bool inspector_fog_expanded{true};
   bool inspector_has_animation_player{false};
   eastl::vector<NativeFloatAnimationClipRow> inspector_animation_clips;
   bool inspector_animation_player_expanded{true};
@@ -341,6 +352,7 @@ class DockFloatingWindowHost final {
         on_inspector_commit_skeleton_modifier_field;
     std::function<void(bool)> on_inspector_camera_edited;
     std::function<void(bool)> on_inspector_light_edited;
+    std::function<void(bool)> on_inspector_fog_edited;
     std::function<void(const slint::SharedString&)> on_inspector_add_unique_attachment;
     std::function<void(const slint::SharedString&)> on_inspector_remove_unique_attachment;
     std::function<void()> on_inspector_add_clip;

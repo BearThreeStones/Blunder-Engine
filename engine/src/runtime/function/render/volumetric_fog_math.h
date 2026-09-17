@@ -62,8 +62,9 @@ inline FroxelGridSize froxelGridSize(uint32_t view_width, uint32_t view_height) 
   return size;
 }
 
-inline float volumetricFogNear(float play_near) {
-  return std::max(play_near, k_volumetric_fog_near_offset_m);
+inline float volumetricFogNear(float play_near, bool centimetre_world = false) {
+  const float authored = std::max(play_near, k_volumetric_fog_near_offset_m);
+  return gltfMetreQuantityInWorld(authored, centimetre_world);
 }
 
 /// 64 exponential slices stay on Fog Unique `viewDistance` (metre-authored).
@@ -115,9 +116,12 @@ inline float froxelSliceFromViewZ(float view_z, const FroxelGridZParams& params)
 }
 
 /// ρ · exp2(−falloff · (world.z − fogHeight)). World Y is not the height axis.
+/// Below the fog plane keep floor density: exp2(−falloff · negative) exploded
+/// when the editor camera dropped under the courtyard and filled the screen.
 inline float volumetricHeightDensity(float density, float height_falloff,
                                      float world_z, float fog_height_z) {
-  return density * std::exp2(-height_falloff * (world_z - fog_height_z));
+  const float dz = std::max(world_z - fog_height_z, 0.0f);
+  return density * std::exp2(-height_falloff * dz);
 }
 
 /// Editor Viewport and Player present paths share `recordViewportGraph`.

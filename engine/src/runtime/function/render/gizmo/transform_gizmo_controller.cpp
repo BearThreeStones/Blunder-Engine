@@ -21,6 +21,7 @@
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
+#include "runtime/function/scene/light_eval.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/slint/slint_system.h"
@@ -49,24 +50,20 @@ Entity* selectedEntity() {
   return scene->getEntity(g_runtime_global_context.m_editor_selection->getSelection());
 }
 
-bool overlayCentimetreMesh(const SceneInstance& scene) {
-  if (!scene.hasWorldBounds()) {
-    return false;
-  }
-  const AABB& bounds = scene.getWorldBounds();
-  return looksLikeCentimetreWorldBounds(bounds.min, bounds.max);
-}
-
 Mat4 overlayWorldForEntity(SceneInstance& scene, EntityId entity_id) {
   const Mat4 unique_world = scene.getWorldMatrix(entity_id);
   Mat4 parent_world(1.0f);
-  if (const Entity* entity = scene.getEntity(entity_id);
-      entity != nullptr && isValid(entity->getParentId())) {
-    parent_world = scene.getWorldMatrix(entity->getParentId());
+  Vec3 unique_local(unique_world[3]);
+  if (const Entity* entity = scene.getEntity(entity_id); entity != nullptr) {
+    unique_local = entity->getPosition();
+    if (isValid(entity->getParentId())) {
+      parent_world = scene.getWorldMatrix(entity->getParentId());
+    }
   }
   return makeLightGizmoWorldMatchingMesh(unique_world, parent_world,
                                          LightGizmoKind::directional,
-                                         overlayCentimetreMesh(scene));
+                                         sceneDrawnMeshIsCentimetre(scene),
+                                         unique_local);
 }
 
 void syncInspectorLive() {
