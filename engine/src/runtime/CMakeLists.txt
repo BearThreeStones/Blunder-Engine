@@ -535,6 +535,8 @@ add_library(blunder_engine_c_static STATIC
 target_include_directories(blunder_engine_c_static
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/..
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf
 )
 target_link_libraries(blunder_engine_c_static
     PUBLIC
@@ -555,6 +557,8 @@ add_library(blunder_engine_c SHARED
 target_include_directories(blunder_engine_c
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/..
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf
 )
 target_link_libraries(blunder_engine_c
     PRIVATE
