@@ -7,6 +7,7 @@
 #include <cgltf.h>
 
 #include "runtime/core/math/geometry.h"
+#include "runtime/function/render/shadow/virtual_shadow_map.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gpu_skinning.h"
 
@@ -15,7 +16,9 @@ namespace Blunder {
 class MaterialAsset;
 class SceneInstance;
 struct BlinnPhongEditorSettings;
+struct EvaluatedLight;
 struct ForwardFrameState;
+struct LocalShadowCasters;
 
 constexpr uint32_t k_max_forward_scene_lights = 8;
 
@@ -53,12 +56,20 @@ struct ForwardMeshUniformData {
   glm::uvec4 bindless_texture_indices{0};
   glm::vec4 light_count{0.0f};
   GpuSceneLight lights[k_max_forward_scene_lights];
+  ShadowSamplingUniform shadow_sampling{};
 };
 
 void computeDirectionalLightMatrices(
     glm::vec3 light_dir, glm::vec3 focus, float ortho_half_extent,
     float near_plane, float far_plane, glm::mat4& out_light_view,
     glm::mat4& out_light_projection, glm::mat4& out_light_view_projection);
+
+/// Packs one evaluated Light into the GPU layout shared by pbr.slang and
+/// deferred_lighting.slang. `axis_x.w` is the shadow code: 0 none, 1 directional
+/// VSM/classic, 2+i point cube slot, 10+i spot slot.
+void packEvaluatedLight(GpuSceneLight& gpu, const EvaluatedLight& light,
+                        EntityId shadow_caster_id, bool shadows_enabled,
+                        const LocalShadowCasters* local_shadows = nullptr);
 
 void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                                     const MaterialAsset* material,

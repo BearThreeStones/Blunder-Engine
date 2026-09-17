@@ -42,12 +42,29 @@ VkImageView OffscreenRenderTarget::getImageView() const {
   return activeSlot().color_view;
 }
 
+VkImageView OffscreenRenderTarget::getImageView(
+    const uint32_t buffer_index) const {
+  checkBufferIndex(buffer_index);
+  return m_buffers[buffer_index].color_view;
+}
+
 VkImage OffscreenRenderTarget::getDepthImage() const {
   return activeSlot().depth_image;
 }
 
+VkImage OffscreenRenderTarget::getDepthImage(const uint32_t buffer_index) const {
+  checkBufferIndex(buffer_index);
+  return m_buffers[buffer_index].depth_image;
+}
+
 VkImageView OffscreenRenderTarget::getDepthImageView() const {
   return activeSlot().depth_view;
+}
+
+VkImageView OffscreenRenderTarget::getDepthImageView(
+    const uint32_t buffer_index) const {
+  checkBufferIndex(buffer_index);
+  return m_buffers[buffer_index].depth_view;
 }
 
 VkFramebuffer OffscreenRenderTarget::getFramebuffer() const {
@@ -86,6 +103,7 @@ void OffscreenRenderTarget::initialize(VulkanContext* context,
   m_active_buffer_index = 0;
 
   createRenderPass();
+  createLoadRenderPass();
   createImageAndFramebuffer();
 }
 
@@ -96,6 +114,10 @@ void OffscreenRenderTarget::shutdown() {
 
   destroyImageAndFramebuffer();
 
+  if (m_load_render_pass != VK_NULL_HANDLE) {
+    vkDestroyRenderPass(m_context->getDevice(), m_load_render_pass, nullptr);
+    m_load_render_pass = VK_NULL_HANDLE;
+  }
   if (m_render_pass != VK_NULL_HANDLE) {
     vkDestroyRenderPass(m_context->getDevice(), m_render_pass, nullptr);
     m_render_pass = VK_NULL_HANDLE;
@@ -158,7 +180,8 @@ void OffscreenRenderTarget::createRenderPass() {
   VkSubpassDependency dependencies[2]{};
   dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
   dependencies[0].dstSubpass = 0;
-  dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
   dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
   dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
@@ -168,6 +191,7 @@ void OffscreenRenderTarget::createRenderPass() {
   dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                                  VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
   dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
                                  VK_PIPELINE_STAGE_TRANSFER_BIT;
   dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                                     VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -193,6 +217,112 @@ void OffscreenRenderTarget::createRenderPass() {
         "{}",
         static_cast<int>(result));
   }
+}
+
+void OffscreenRenderTarget::createLoadRenderPass() {
+  VkAttachmentDescription color_attachment{};
+  color_attachment.format = m_format;
+  color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+  color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+  color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  color_attachment.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+  VkAttachmentReference color_attachment_ref{};
+  color_attachment_ref.attachment = 0;
+  color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+  VkAttachmentDescription depth_attachment{};
+  depth_attachment.format = VK_FORMAT_D32_SFLOAT;
+  depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+  depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+  depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depth_attachment.initialLayout =
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+  depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+  VkAttachmentReference depth_attachment_ref{};
+  depth_attachment_ref.attachment = 1;
+  depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+  VkSubpassDescription subpass{};
+  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  subpass.colorAttachmentCount = 1;
+  subpass.pColorAttachments = &color_attachment_ref;
+  subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+  // Same subpass dependencies as createRenderPass. Vulkan render-pass
+  // compatibility includes dependencies; LOAD vs CLEAR may only differ in
+  // loadOp / initialLayout. Extra LOAD sync stays on the PRIMARY barrier.
+  VkSubpassDependency dependencies[2]{};
+  dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+  dependencies[0].dstSubpass = 0;
+  dependencies[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+  dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  dependencies[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+  dependencies[1].srcSubpass = 0;
+  dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+  dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                 VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+  dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT;
+  dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  dependencies[1].dstAccessMask =
+      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+  dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+  VkAttachmentDescription attachments[2] = {color_attachment, depth_attachment};
+  VkRenderPassCreateInfo render_pass_info{};
+  render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+  render_pass_info.attachmentCount = 2;
+  render_pass_info.pAttachments = attachments;
+  render_pass_info.subpassCount = 1;
+  render_pass_info.pSubpasses = &subpass;
+  render_pass_info.dependencyCount = 2;
+  render_pass_info.pDependencies = dependencies;
+
+  const VkResult result = vkCreateRenderPass(
+      m_context->getDevice(), &render_pass_info, nullptr, &m_load_render_pass);
+  if (result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[OffscreenRenderTarget::createLoadRenderPass] vkCreateRenderPass "
+        "failed: {}",
+        static_cast<int>(result));
+  }
+}
+
+void OffscreenRenderTarget::beginLoadRenderPass(VkCommandBuffer cmd,
+                                                VkSubpassContents contents) {
+  ASSERT(m_load_render_pass != VK_NULL_HANDLE);
+  BufferSlot& slot = activeSlot();
+  ASSERT(slot.framebuffer != VK_NULL_HANDLE);
+
+  VkRenderPassBeginInfo rp_begin{};
+  rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  rp_begin.renderPass = m_load_render_pass;
+  rp_begin.framebuffer = slot.framebuffer;
+  rp_begin.renderArea.offset = {0, 0};
+  rp_begin.renderArea.extent = {m_width, m_height};
+  rp_begin.clearValueCount = 0;
+  vkCmdBeginRenderPass(cmd, &rp_begin, contents);
+  slot.color_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  slot.depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+}
+
+void OffscreenRenderTarget::endLoadRenderPass(VkCommandBuffer cmd) {
+  vkCmdEndRenderPass(cmd);
+  BufferSlot& slot = activeSlot();
+  slot.color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  slot.depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 }
 
 void OffscreenRenderTarget::createBufferSlot(const uint32_t slot_index) {
@@ -456,7 +586,8 @@ void OffscreenRenderTarget::cmdBarrierDepthToShaderRead(VkCommandBuffer cmd) {
   barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0,
                        nullptr, 1, &barrier);
 
   slot.depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;

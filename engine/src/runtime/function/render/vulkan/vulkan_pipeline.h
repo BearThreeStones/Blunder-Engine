@@ -34,7 +34,10 @@ struct VulkanPipelineCreateInfo {
   uint32_t expected_descriptor_binding_count{1};
   uintptr_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
+  uint32_t color_attachment_count{1};
 };
+
+constexpr uint32_t k_max_pipeline_color_attachments = 4;
 
 /// 3D scene pipeline using basic.slang. The pipeline is built against an
 /// externally-owned render pass (typically OffscreenRenderTarget's render

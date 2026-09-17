@@ -16,6 +16,11 @@ set(SHADER_CANDIDATES
     shadow_depth_skinned.slang
     ssao_generate.slang
     ssao_apply.slang
+    volumetric_fog_common.slang
+    volumetric_fog_density.slang
+    volumetric_fog_scatter.slang
+    volumetric_fog_integrate.slang
+    volumetric_fog_composite.slang
     pick_broad_phase.slang
     pick_prepass.slang
     navigate_gizmo.slang

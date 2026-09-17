@@ -54,8 +54,22 @@ class VulkanContext final {
   float getMaxSamplerAnisotropy() const {
     return m_physical_device_properties.limits.maxSamplerAnisotropy;
   }
+  uint32_t maxImageArrayLayers() const {
+    return m_physical_device_properties.limits.maxImageArrayLayers;
+  }
   bool isSamplerAnisotropyEnabled() const {
     return m_sampler_anisotropy_enabled;
+  }
+  bool meshShadersEnabled() const { return m_mesh_shaders_enabled; }
+  bool shaderOutputLayerEnabled() const { return m_shader_output_layer_enabled; }
+  bool multiDrawIndirectEnabled() const { return m_multi_draw_indirect_enabled; }
+  bool drawIndirectCountEnabled() const { return m_draw_indirect_count_enabled; }
+  uint32_t maxDrawIndirectCount() const { return m_max_draw_indirect_count; }
+  PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasksEXT() const {
+    return m_cmd_draw_mesh_tasks_ext;
+  }
+  PFN_vkCmdDrawIndexedIndirectCount cmdDrawIndexedIndirectCount() const {
+    return m_cmd_draw_indexed_indirect_count;
   }
 
   VkResult createGraphicsPipelines(
@@ -108,6 +122,13 @@ class VulkanContext final {
   bool m_enable_validation{true};
   bool m_enable_validation_layer{false};
   bool m_sampler_anisotropy_enabled{false};
+  bool m_mesh_shaders_enabled{false};
+  bool m_shader_output_layer_enabled{false};
+  bool m_multi_draw_indirect_enabled{false};
+  bool m_draw_indirect_count_enabled{false};
+  uint32_t m_max_draw_indirect_count{1};
+  PFN_vkCmdDrawMeshTasksEXT m_cmd_draw_mesh_tasks_ext{nullptr};
+  PFN_vkCmdDrawIndexedIndirectCount m_cmd_draw_indexed_indirect_count{nullptr};
 
   VkInstance m_instance{VK_NULL_HANDLE};
   VkDebugUtilsMessengerEXT m_debug_messenger{VK_NULL_HANDLE};

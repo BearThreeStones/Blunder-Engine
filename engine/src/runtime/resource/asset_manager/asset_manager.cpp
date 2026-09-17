@@ -356,7 +356,8 @@ eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
   eastl::vector<MeshVertex> vertices;
   eastl::vector<uint32_t> indices;
   MeshSkinData skin_data;
-  if (!readMeshCookFile(cooked_path, vertices, indices, &skin_data)) {
+  MeshletPayload meshlets;
+  if (!readMeshCookFile(cooked_path, vertices, indices, &skin_data, &meshlets)) {
     return nullptr;
   }
 
@@ -373,7 +374,7 @@ eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
   } else {
     asset = eastl::make_shared<MeshAsset>(
         eastl::move(meta), eastl::move(vertices), eastl::move(indices),
-        AssetHandle{}, nullptr, MeshSkinData{}, true);
+        AssetHandle{}, nullptr, MeshSkinData{}, true, eastl::move(meshlets));
   }
   LOG_INFO("[AssetManager] loaded cooked Mesh {} ({})", descriptor_key.c_str(),
            cooked_path.generic_string());

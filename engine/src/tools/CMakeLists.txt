@@ -17,6 +17,8 @@ target_precompile_headers(asset_compiler
     REUSE_FROM engine_runtime
 )
 
+blunder_copy_runtime_dlls(asset_compiler)
+
 add_custom_target(cook-assets
     COMMAND $<TARGET_FILE:asset_compiler> --project-root "${CMAKE_SOURCE_DIR}"
     DEPENDS asset_compiler

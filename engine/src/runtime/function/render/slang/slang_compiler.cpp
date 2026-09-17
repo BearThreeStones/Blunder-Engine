@@ -3,7 +3,9 @@
 #include <slang-com-ptr.h>
 #include <slang.h>
 
+#include <chrono>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -16,7 +18,18 @@ namespace Blunder {
 
 namespace {
 
-eastl::string readFileToString(const char* path) {
+eastl::string pathToUtf8(const std::filesystem::path& path) {
+  const std::u8string u8 = path.lexically_normal().generic_u8string();
+  return eastl::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+}
+
+struct SlangFile {
+  eastl::string code;
+  eastl::string resolved;
+  eastl::string directory;
+};
+
+SlangFile loadSlangFile(const char* path) {
   namespace fs = std::filesystem;
 
   const fs::path file_path(path);
@@ -40,18 +53,37 @@ eastl::string readFileToString(const char* path) {
     if (file.is_open()) {
       const auto file_size = file.tellg();
       if (file_size <= 0) continue;
-      eastl::string content;
-      content.resize(static_cast<size_t>(file_size));
+      SlangFile loaded;
+      loaded.code.resize(static_cast<size_t>(file_size));
       file.seekg(0);
-      file.read(content.data(), file_size);
+      file.read(loaded.code.data(), file_size);
       if (file) {
-        return content;
+        loaded.resolved = pathToUtf8(candidate);
+        loaded.directory = pathToUtf8(candidate.parent_path());
+        return loaded;
       }
     }
   }
 
   LOG_FATAL("[SlangCompiler] failed to open shader file: {}", path);
   return {};
+}
+
+void applySlangSearchPath(slang::SessionDesc& session_desc,
+                          const char** search_path_storage,
+                          const SlangFile& file) {
+  search_path_storage[0] = file.directory.c_str();
+  session_desc.searchPaths = search_path_storage;
+  session_desc.searchPathCount = 1;
+}
+
+void agentLogSlangInclude(const char* hid, const char* loc, const char* msg,
+                          const SlangFile& file, int ok) {
+  (void)hid;
+  (void)loc;
+  (void)msg;
+  (void)file;
+  (void)ok;
 }
 
 eastl::string diagnosticsToString(slang::IBlob* diagnostics) {
@@ -100,6 +132,7 @@ bool isDescriptorParameter(slang::VariableLayoutReflection* var) {
       if (inner == slang::ParameterCategory::DescriptorTableSlot ||
           inner == slang::ParameterCategory::ConstantBuffer ||
           inner == slang::ParameterCategory::ShaderResource ||
+          inner == slang::ParameterCategory::UnorderedAccess ||
           inner == slang::ParameterCategory::SamplerState) {
         return true;
       }
@@ -109,11 +142,20 @@ bool isDescriptorParameter(slang::VariableLayoutReflection* var) {
   return category == slang::ParameterCategory::DescriptorTableSlot ||
          category == slang::ParameterCategory::ConstantBuffer ||
          category == slang::ParameterCategory::ShaderResource ||
+         category == slang::ParameterCategory::UnorderedAccess ||
          category == slang::ParameterCategory::SamplerState;
 }
 
-ShaderDescriptorKind descriptorKindFromKind(slang::TypeReflection::Kind kind,
+ShaderDescriptorKind descriptorKindFromType(slang::TypeReflection* type,
                                             const char* parameter_name) {
+  if (type == nullptr) {
+    LOG_FATAL("[SlangCompiler] Shader resource layout type is null");
+  }
+  slang::TypeReflection* unwrapped = type->unwrapArray();
+  if (unwrapped == nullptr) {
+    unwrapped = type;
+  }
+  const slang::TypeReflection::Kind kind = unwrapped->getKind();
   switch (kind) {
     case slang::TypeReflection::Kind::ConstantBuffer:
     case slang::TypeReflection::Kind::ParameterBlock:
@@ -121,8 +163,20 @@ ShaderDescriptorKind descriptorKindFromKind(slang::TypeReflection::Kind kind,
     case slang::TypeReflection::Kind::SamplerState:
       return ShaderDescriptorKind::Sampler;
     case slang::TypeReflection::Kind::Resource:
-    case slang::TypeReflection::Kind::TextureBuffer:
-      return ShaderDescriptorKind::SampledImage;
+    case slang::TypeReflection::Kind::TextureBuffer: {
+      const SlangResourceShape shape = unwrapped->getResourceShape();
+      const SlangResourceAccess access = unwrapped->getResourceAccess();
+      const SlangResourceShape base =
+          static_cast<SlangResourceShape>(shape & SLANG_RESOURCE_BASE_SHAPE_MASK);
+      const bool uav = access == SLANG_RESOURCE_ACCESS_READ_WRITE ||
+                       access == SLANG_RESOURCE_ACCESS_WRITE;
+      if (base == SLANG_STRUCTURED_BUFFER || base == SLANG_BYTE_ADDRESS_BUFFER ||
+          base == SLANG_TEXTURE_BUFFER) {
+        return ShaderDescriptorKind::StorageBuffer;
+      }
+      return uav ? ShaderDescriptorKind::StorageImage
+                 : ShaderDescriptorKind::SampledImage;
+    }
     default:
       LOG_FATAL(
           "[SlangCompiler] unsupported Shader resource layout type kind {} "
@@ -139,29 +193,14 @@ ShaderDescriptorKind descriptorKindFromParameter(
   if (var != nullptr) {
     slang::TypeLayoutReflection* type_layout = var->getTypeLayout();
     if (type_layout != nullptr) {
-      slang::TypeReflection::Kind layout_kind = type_layout->getKind();
-      if (layout_kind == slang::TypeReflection::Kind::Array) {
-        slang::TypeLayoutReflection* element = type_layout->getElementTypeLayout();
-        if (element != nullptr) {
-          layout_kind = element->getKind();
-        }
-      }
-      if (layout_kind != slang::TypeReflection::Kind::None &&
-          layout_kind != slang::TypeReflection::Kind::Array &&
-          layout_kind != slang::TypeReflection::Kind::Struct) {
-        return descriptorKindFromKind(layout_kind, name);
+      slang::TypeReflection* layout_type = type_layout->getType();
+      if (layout_type != nullptr) {
+        return descriptorKindFromType(layout_type, name);
       }
     }
   }
   slang::TypeReflection* type = var != nullptr ? var->getType() : nullptr;
-  if (type == nullptr) {
-    LOG_FATAL("[SlangCompiler] Shader resource layout type is null");
-  }
-  slang::TypeReflection* unwrapped = type->unwrapArray();
-  if (unwrapped == nullptr) {
-    LOG_FATAL("[SlangCompiler] Shader resource layout unwrap failed");
-  }
-  return descriptorKindFromKind(unwrapped->getKind(), name);
+  return descriptorKindFromType(type, name);
 }
 
 uint32_t stageMaskFromSlang(SlangStage stage) {
@@ -172,6 +211,10 @@ uint32_t stageMaskFromSlang(SlangStage stage) {
       return k_shader_stage_fragment;
     case SLANG_STAGE_COMPUTE:
       return k_shader_stage_compute;
+    case SLANG_STAGE_AMPLIFICATION:
+      return k_shader_stage_task;
+    case SLANG_STAGE_MESH:
+      return k_shader_stage_mesh;
     default:
       return k_shader_stage_vertex | k_shader_stage_fragment;
   }
@@ -288,11 +331,11 @@ SlangCompiler::ShaderResult SlangCompiler::compileShader(
   ASSERT(source_path);
   ASSERT(entry_point);
 
-  eastl::string source_code = readFileToString(source_path);
+  const SlangFile slang_file = loadSlangFile(source_path);
 
   m_last_bytecode_hit = false;
   uint8_t source_hash[32];
-  hashSourceBytes(source_code, source_hash);
+  hashSourceBytes(slang_file.code, source_hash);
   const char* slang_tag = slangBuildTag(m_global_session);
   CachedShaderSpirv cached;
   if (tryLoadShaderBytecode(source_hash, slang_tag, k_spirv_profile_name,
@@ -327,6 +370,8 @@ SlangCompiler::ShaderResult SlangCompiler::compileShader(
   session_desc.compilerOptionEntries = options;
   session_desc.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
   session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+  const char* search_paths[1]{};
+  applySlangSearchPath(session_desc, search_paths, slang_file);
 
   Slang::ComPtr<slang::ISession> session;
   SlangResult result =
@@ -337,11 +382,13 @@ SlangCompiler::ShaderResult SlangCompiler::compileShader(
 
   Slang::ComPtr<slang::IBlob> diagnostics_blob;
   Slang::ComPtr<slang::IModule> shader_module(
-      session->loadModuleFromSourceString("shader", source_path,
-                                          source_code.c_str(),
+      session->loadModuleFromSourceString("shader", slang_file.resolved.c_str(),
+                                          slang_file.code.c_str(),
                                           diagnostics_blob.writeRef()));
   logDiagnostics("compilation diagnostics", diagnostics_blob.get());
   if (!shader_module) {
+    agentLogSlangInclude("Q", "slang_compiler.cpp:compileShader", "slang-include",
+                         slang_file, 0);
     LOG_FATAL("[SlangCompiler::compileShader] failed to load module from: {}",
               source_path);
   }
@@ -396,11 +443,11 @@ SlangCompiler::GraphicsProgramResult SlangCompiler::compileGraphicsProgram(
   ASSERT(vertex_entry);
   ASSERT(fragment_entry);
 
-  eastl::string source_code = readFileToString(source_path);
+  const SlangFile slang_file = loadSlangFile(source_path);
 
   m_last_bytecode_hit = false;
   uint8_t source_hash[32];
-  hashSourceBytes(source_code, source_hash);
+  hashSourceBytes(slang_file.code, source_hash);
   const char* slang_tag = slangBuildTag(m_global_session);
   CachedGraphicsProgram cached;
   if (tryLoadGraphicsBytecode(source_hash, slang_tag, k_spirv_profile_name,
@@ -440,6 +487,8 @@ SlangCompiler::GraphicsProgramResult SlangCompiler::compileGraphicsProgram(
   session_desc.compilerOptionEntries = options;
   session_desc.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
   session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+  const char* search_paths[1]{};
+  applySlangSearchPath(session_desc, search_paths, slang_file);
 
   Slang::ComPtr<slang::ISession> session;
   SlangResult result =
@@ -452,10 +501,13 @@ SlangCompiler::GraphicsProgramResult SlangCompiler::compileGraphicsProgram(
 
   Slang::ComPtr<slang::IBlob> diagnostics_blob;
   Slang::ComPtr<slang::IModule> shader_module(
-      session->loadModuleFromSourceString("shader", source_path,
-                                          source_code.c_str(),
+      session->loadModuleFromSourceString("shader", slang_file.resolved.c_str(),
+                                          slang_file.code.c_str(),
                                           diagnostics_blob.writeRef()));
   logDiagnostics("compilation diagnostics", diagnostics_blob.get());
+  agentLogSlangInclude("Q", "slang_compiler.cpp:compileGraphicsProgram",
+                       "slang-include", slang_file,
+                       shader_module ? 1 : 0);
   if (!shader_module) {
     LOG_FATAL(
         "[SlangCompiler::compileGraphicsProgram] failed to load module from: "
@@ -529,6 +581,243 @@ SlangCompiler::GraphicsProgramResult SlangCompiler::compileGraphicsProgram(
   return program;
 }
 
+SlangCompiler::ComputeProgramResult SlangCompiler::compileComputeProgram(
+    const char* source_path, const char* entry_point) {
+  ASSERT(m_global_session);
+  ASSERT(source_path);
+  ASSERT(entry_point);
+
+  const SlangFile slang_file = loadSlangFile(source_path);
+
+  m_last_bytecode_hit = false;
+  uint8_t source_hash[32];
+  hashSourceBytes(slang_file.code, source_hash);
+  const char* slang_tag = slangBuildTag(m_global_session);
+  CachedGraphicsProgram cached;
+  if (tryLoadGraphicsBytecode(source_hash, slang_tag, k_spirv_profile_name,
+                              entry_point, "__compute__", &cached) &&
+      cached.fragment_spirv.empty()) {
+    m_last_bytecode_hit = true;
+    ComputeProgramResult program;
+    program.compute.entry_point_name =
+        eastl::string(entry_point, std::strlen(entry_point));
+    program.compute.spirv_code = cached.vertex_spirv;
+    program.layout = cached.layout;
+    LOG_INFO(
+        "[SlangCompiler] bytecode cache hit compute '{}' {} bytes, {} "
+        "descriptor bindings",
+        source_path, program.compute.spirv_code.size(), program.layout.count);
+    return program;
+  }
+  LOG_INFO("[SlangCompiler] bytecode cache miss compute '{}'", source_path);
+
+  slang::TargetDesc target_desc{};
+  target_desc.format = SLANG_SPIRV;
+  target_desc.profile = m_global_session->findProfile(k_spirv_profile_name);
+
+  slang::CompilerOptionEntry options[] = {
+      {slang::CompilerOptionName::EmitSpirvDirectly,
+       {slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}},
+      {slang::CompilerOptionName::VulkanUseEntryPointName,
+       {slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}},
+  };
+
+  slang::SessionDesc session_desc{};
+  session_desc.targets = &target_desc;
+  session_desc.targetCount = 1;
+  session_desc.compilerOptionEntries = options;
+  session_desc.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
+  session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+  const char* search_paths[1]{};
+  applySlangSearchPath(session_desc, search_paths, slang_file);
+
+  Slang::ComPtr<slang::ISession> session;
+  SlangResult result =
+      m_global_session->createSession(session_desc, session.writeRef());
+  if (SLANG_FAILED(result) || !session) {
+    LOG_FATAL(
+        "[SlangCompiler::compileComputeProgram] failed to create Slang "
+        "session");
+  }
+
+  Slang::ComPtr<slang::IBlob> diagnostics_blob;
+  Slang::ComPtr<slang::IModule> shader_module(
+      session->loadModuleFromSourceString("shader", slang_file.resolved.c_str(),
+                                          slang_file.code.c_str(),
+                                          diagnostics_blob.writeRef()));
+  logDiagnostics("compilation diagnostics", diagnostics_blob.get());
+  if (!shader_module) {
+    agentLogSlangInclude("Q", "slang_compiler.cpp:compileComputeProgram",
+                         "slang-include", slang_file, 0);
+    LOG_FATAL(
+        "[SlangCompiler::compileComputeProgram] failed to load module from: "
+        "{}",
+        source_path);
+  }
+
+  Slang::ComPtr<slang::IEntryPoint> entry_obj;
+  result = shader_module->findEntryPointByName(entry_point, entry_obj.writeRef());
+  if (SLANG_FAILED(result) || !entry_obj) {
+    LOG_FATAL(
+        "[SlangCompiler::compileComputeProgram] entry point '{}' not found "
+        "in: {}",
+        entry_point, source_path);
+  }
+
+  slang::IComponentType* components[] = {shader_module, entry_obj};
+  Slang::ComPtr<slang::IComponentType> composed_program;
+  diagnostics_blob = nullptr;
+  result = session->createCompositeComponentType(
+      components, 2, composed_program.writeRef(), diagnostics_blob.writeRef());
+  logDiagnostics("composition diagnostics", diagnostics_blob.get());
+  if (SLANG_FAILED(result) || !composed_program) {
+    LOG_FATAL(
+        "[SlangCompiler::compileComputeProgram] failed to compose program "
+        "for: {}",
+        source_path);
+  }
+
+  Slang::ComPtr<slang::IComponentType> linked_program;
+  diagnostics_blob = nullptr;
+  result = composed_program->link(linked_program.writeRef(),
+                                  diagnostics_blob.writeRef());
+  logDiagnostics("link diagnostics", diagnostics_blob.get());
+  if (SLANG_FAILED(result) || !linked_program) {
+    LOG_FATAL(
+        "[SlangCompiler::compileComputeProgram] failed to link program for: "
+        "{}",
+        source_path);
+  }
+
+  ComputeProgramResult program;
+  program.layout = extractShaderResourceLayout(linked_program);
+  program.compute = copyEntryPointSpirv(linked_program, 0, entry_point);
+
+  CachedGraphicsProgram stored;
+  stored.vertex_spirv = program.compute.spirv_code;
+  stored.layout = program.layout;
+  tryStoreGraphicsBytecode(source_hash, slang_tag, k_spirv_profile_name,
+                           entry_point, "__compute__", stored);
+
+  LOG_INFO(
+      "[SlangCompiler] compiled compute '{}' {} bytes, {} descriptor bindings",
+      source_path, program.compute.spirv_code.size(), program.layout.count);
+  return program;
+}
+
+SlangCompiler::MeshProgramResult SlangCompiler::compileMeshProgram(
+    const char* source_path, const char* task_entry, const char* mesh_entry,
+    const char* fragment_entry) {
+  ASSERT(m_global_session);
+  ASSERT(source_path);
+  ASSERT(task_entry);
+  ASSERT(mesh_entry);
+  ASSERT(fragment_entry);
+
+  const SlangFile slang_file = loadSlangFile(source_path);
+  m_last_bytecode_hit = false;
+
+  slang::TargetDesc target_desc{};
+  target_desc.format = SLANG_SPIRV;
+  target_desc.profile = m_global_session->findProfile(k_spirv_profile_name);
+
+  slang::CompilerOptionEntry options[] = {
+      {slang::CompilerOptionName::EmitSpirvDirectly,
+       {slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}},
+      {slang::CompilerOptionName::VulkanUseEntryPointName,
+       {slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}},
+  };
+
+  slang::SessionDesc session_desc{};
+  session_desc.targets = &target_desc;
+  session_desc.targetCount = 1;
+  session_desc.compilerOptionEntries = options;
+  session_desc.compilerOptionEntryCount = sizeof(options) / sizeof(options[0]);
+  session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+  const char* search_paths[1]{};
+  applySlangSearchPath(session_desc, search_paths, slang_file);
+
+  Slang::ComPtr<slang::ISession> session;
+  SlangResult result =
+      m_global_session->createSession(session_desc, session.writeRef());
+  if (SLANG_FAILED(result) || !session) {
+    LOG_FATAL("[SlangCompiler::compileMeshProgram] failed to create Slang session");
+  }
+
+  Slang::ComPtr<slang::IBlob> diagnostics_blob;
+  Slang::ComPtr<slang::IModule> shader_module(
+      session->loadModuleFromSourceString("shader", slang_file.resolved.c_str(),
+                                          slang_file.code.c_str(),
+                                          diagnostics_blob.writeRef()));
+  logDiagnostics("compilation diagnostics", diagnostics_blob.get());
+  agentLogSlangInclude("Q", "slang_compiler.cpp:compileMeshProgram",
+                       "slang-include", slang_file, shader_module ? 1 : 0);
+  if (!shader_module) {
+    LOG_FATAL(
+        "[SlangCompiler::compileMeshProgram] failed to load module from: {}",
+        source_path);
+  }
+
+  Slang::ComPtr<slang::IEntryPoint> task_obj;
+  result = shader_module->findEntryPointByName(task_entry, task_obj.writeRef());
+  if (SLANG_FAILED(result) || !task_obj) {
+    LOG_FATAL(
+        "[SlangCompiler::compileMeshProgram] entry point '{}' not found in: {}",
+        task_entry, source_path);
+  }
+  Slang::ComPtr<slang::IEntryPoint> mesh_obj;
+  result = shader_module->findEntryPointByName(mesh_entry, mesh_obj.writeRef());
+  if (SLANG_FAILED(result) || !mesh_obj) {
+    LOG_FATAL(
+        "[SlangCompiler::compileMeshProgram] entry point '{}' not found in: {}",
+        mesh_entry, source_path);
+  }
+  Slang::ComPtr<slang::IEntryPoint> fragment_obj;
+  result = shader_module->findEntryPointByName(fragment_entry,
+                                               fragment_obj.writeRef());
+  if (SLANG_FAILED(result) || !fragment_obj) {
+    LOG_FATAL(
+        "[SlangCompiler::compileMeshProgram] entry point '{}' not found in: {}",
+        fragment_entry, source_path);
+  }
+
+  slang::IComponentType* components[] = {shader_module, task_obj, mesh_obj,
+                                         fragment_obj};
+  Slang::ComPtr<slang::IComponentType> composed_program;
+  diagnostics_blob = nullptr;
+  result = session->createCompositeComponentType(
+      components, 4, composed_program.writeRef(), diagnostics_blob.writeRef());
+  logDiagnostics("composition diagnostics", diagnostics_blob.get());
+  if (SLANG_FAILED(result) || !composed_program) {
+    LOG_FATAL(
+        "[SlangCompiler::compileMeshProgram] failed to compose program for: {}",
+        source_path);
+  }
+
+  Slang::ComPtr<slang::IComponentType> linked_program;
+  diagnostics_blob = nullptr;
+  result = composed_program->link(linked_program.writeRef(),
+                                  diagnostics_blob.writeRef());
+  logDiagnostics("link diagnostics", diagnostics_blob.get());
+  if (SLANG_FAILED(result) || !linked_program) {
+    LOG_FATAL(
+        "[SlangCompiler::compileMeshProgram] failed to link program for: {}",
+        source_path);
+  }
+
+  MeshProgramResult program;
+  program.layout = extractShaderResourceLayout(linked_program);
+  program.task = copyEntryPointSpirv(linked_program, 0, task_entry);
+  program.mesh = copyEntryPointSpirv(linked_program, 1, mesh_entry);
+  program.fragment = copyEntryPointSpirv(linked_program, 2, fragment_entry);
+  LOG_INFO(
+      "[SlangCompiler] compiled mesh '{}' task {} mesh {} FS {} bytes, {} "
+      "descriptor bindings",
+      source_path, program.task.spirv_code.size(), program.mesh.spirv_code.size(),
+      program.fragment.spirv_code.size(), program.layout.count);
+  return program;
+}
+
 SlangCompiler::ShaderResult SlangCompiler::compileShaderDxil(
     const char* source_path, const char* entry_point, int stage) {
   ASSERT(m_global_session);
@@ -536,7 +825,7 @@ SlangCompiler::ShaderResult SlangCompiler::compileShaderDxil(
   ASSERT(entry_point);
   (void)stage;
 
-  eastl::string source_code = readFileToString(source_path);
+  const SlangFile slang_file = loadSlangFile(source_path);
 
   slang::TargetDesc target_desc{};
   target_desc.format = SLANG_DXIL;
@@ -546,6 +835,8 @@ SlangCompiler::ShaderResult SlangCompiler::compileShaderDxil(
   session_desc.targets = &target_desc;
   session_desc.targetCount = 1;
   session_desc.defaultMatrixLayoutMode = SLANG_MATRIX_LAYOUT_COLUMN_MAJOR;
+  const char* search_paths[1]{};
+  applySlangSearchPath(session_desc, search_paths, slang_file);
 
   Slang::ComPtr<slang::ISession> session;
   SlangResult result =
@@ -557,9 +848,12 @@ SlangCompiler::ShaderResult SlangCompiler::compileShaderDxil(
 
   Slang::ComPtr<slang::IBlob> diagnostics_blob;
   Slang::ComPtr<slang::IModule> shader_module(session->loadModuleFromSourceString(
-      "shader", source_path, source_code.c_str(), diagnostics_blob.writeRef()));
+      "shader", slang_file.resolved.c_str(), slang_file.code.c_str(),
+      diagnostics_blob.writeRef()));
 
   if (!shader_module) {
+    agentLogSlangInclude("Q", "slang_compiler.cpp:compileShaderDxil",
+                         "slang-include", slang_file, 0);
     LOG_FATAL("[SlangCompiler::compileShaderDxil] failed to load module: {}",
               source_path);
   }

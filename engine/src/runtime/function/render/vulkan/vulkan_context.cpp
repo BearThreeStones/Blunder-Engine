@@ -711,10 +711,26 @@ void VulkanContext::createLogicalDevice() {
   supported_timeline.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
 
+  VkPhysicalDeviceMeshShaderFeaturesEXT supported_mesh{};
+  supported_mesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+  supported_mesh.pNext = &supported_timeline;
+
+  VkPhysicalDeviceVulkan12Features supported_vulkan12_features{};
+  supported_vulkan12_features.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+
   VkPhysicalDeviceVulkan11Features supported_vulkan11_features{};
   supported_vulkan11_features.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-  supported_vulkan11_features.pNext = &supported_timeline;
+
+  const bool device_vulkan12 =
+      VK_VERSION_MINOR(m_physical_device_properties.apiVersion) >= 2;
+  if (device_vulkan12) {
+    supported_vulkan12_features.pNext = &supported_mesh;
+    supported_vulkan11_features.pNext = &supported_vulkan12_features;
+  } else {
+    supported_vulkan11_features.pNext = &supported_mesh;
+  }
 
   VkPhysicalDeviceFeatures2 supported_features2{};
   supported_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -744,8 +760,20 @@ void VulkanContext::createLogicalDevice() {
       supported_features2.features.samplerAnisotropy;
   enabled_features.geometryShader = supported_features2.features.geometryShader;
   enabled_features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+  enabled_features.multiDrawIndirect =
+      supported_features2.features.multiDrawIndirect;
+  enabled_features.drawIndirectFirstInstance =
+      supported_features2.features.drawIndirectFirstInstance;
+  m_multi_draw_indirect_enabled =
+      enabled_features.multiDrawIndirect == VK_TRUE &&
+      enabled_features.drawIndirectFirstInstance == VK_TRUE;
   m_sampler_anisotropy_enabled =
       enabled_features.samplerAnisotropy == VK_TRUE;
+  m_max_draw_indirect_count =
+      m_physical_device_properties.limits.maxDrawIndirectCount;
+  if (m_max_draw_indirect_count == 0) {
+    m_max_draw_indirect_count = 1;
+  }
 
   VkPhysicalDeviceTimelineSemaphoreFeatures enabled_timeline{};
   enabled_timeline.sType =
@@ -762,11 +790,35 @@ void VulkanContext::createLogicalDevice() {
   enabled_indexing.descriptorBindingPartiallyBound = VK_TRUE;
   enabled_indexing.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
 
+  VkPhysicalDeviceVulkan12Features enabled_vulkan12_features{};
+  enabled_vulkan12_features.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+  enabled_vulkan12_features.pNext = &enabled_indexing;
+  enabled_vulkan12_features.drawIndirectCount =
+      supported_vulkan12_features.drawIndirectCount;
+  enabled_vulkan12_features.shaderOutputLayer =
+      supported_vulkan12_features.shaderOutputLayer;
+
   VkPhysicalDeviceVulkan11Features enabled_vulkan11_features{};
   enabled_vulkan11_features.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-  enabled_vulkan11_features.pNext = &enabled_indexing;
+  enabled_vulkan11_features.pNext =
+      device_vulkan12 ? static_cast<void*>(&enabled_vulkan12_features)
+                      : static_cast<void*>(&enabled_indexing);
   enabled_vulkan11_features.shaderDrawParameters = VK_TRUE;
+
+  const bool want_mesh_shaders =
+      hasDeviceExtension(m_physical_device, VK_EXT_MESH_SHADER_EXTENSION_NAME) &&
+      supported_mesh.taskShader == VK_TRUE &&
+      supported_mesh.meshShader == VK_TRUE;
+
+  VkPhysicalDeviceMeshShaderFeaturesEXT enabled_mesh{};
+  enabled_mesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+  enabled_mesh.taskShader = VK_TRUE;
+  enabled_mesh.meshShader = VK_TRUE;
+  if (want_mesh_shaders) {
+    enabled_mesh.pNext = &enabled_vulkan11_features;
+  }
 
   VkDeviceQueueCreateInfo queue_create_info{};
   queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -776,7 +828,9 @@ void VulkanContext::createLogicalDevice() {
 
   VkDeviceCreateInfo create_info{};
   create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-  create_info.pNext = &enabled_vulkan11_features;
+  create_info.pNext =
+      want_mesh_shaders ? static_cast<void*>(&enabled_mesh)
+                        : static_cast<void*>(&enabled_vulkan11_features);
   create_info.queueCreateInfoCount = 1;
   create_info.pQueueCreateInfos = &queue_create_info;
   create_info.pEnabledFeatures = &enabled_features;
@@ -798,6 +852,16 @@ void VulkanContext::createLogicalDevice() {
       hasDeviceExtension(m_physical_device, k_swapchain_extension)) {
     device_extensions.push_back(k_swapchain_extension);
   }
+  if (want_mesh_shaders) {
+    device_extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+  }
+  const bool want_khr_draw_indirect_count =
+      !device_vulkan12 || supported_vulkan12_features.drawIndirectCount != VK_TRUE;
+  if (want_khr_draw_indirect_count &&
+      hasDeviceExtension(m_physical_device,
+                         VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME)) {
+    device_extensions.push_back(VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
+  }
   create_info.enabledExtensionCount =
       static_cast<uint32_t>(device_extensions.size());
   create_info.ppEnabledExtensionNames =
@@ -815,6 +879,47 @@ void VulkanContext::createLogicalDevice() {
 
   vkGetDeviceQueue(m_device, m_graphics_queue_family, 0, &m_graphics_queue);
   m_present_queue = m_graphics_queue;
+
+  m_mesh_shaders_enabled = want_mesh_shaders;
+  m_shader_output_layer_enabled =
+      device_vulkan12 && enabled_vulkan12_features.shaderOutputLayer == VK_TRUE;
+  LOG_INFO("[VulkanContext] shaderOutputLayer={}",
+           m_shader_output_layer_enabled ? 1 : 0);
+  if (m_mesh_shaders_enabled) {
+    m_cmd_draw_mesh_tasks_ext = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(
+        vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksEXT"));
+    if (m_cmd_draw_mesh_tasks_ext == nullptr) {
+      LOG_WARN(
+          "[VulkanContext] VK_EXT_mesh_shader enabled but "
+          "vkCmdDrawMeshTasksEXT is null; falling back to compute+VS/FS");
+      m_mesh_shaders_enabled = false;
+    } else {
+      LOG_INFO("[VulkanContext] VK_EXT_mesh_shader enabled");
+    }
+  } else {
+    LOG_INFO(
+        "[VulkanContext] VK_EXT_mesh_shader absent; GPU-driven uses "
+        "compute+VS/FS");
+  }
+
+  m_cmd_draw_indexed_indirect_count =
+      reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
+          vkGetDeviceProcAddr(m_device, "vkCmdDrawIndexedIndirectCount"));
+  if (m_cmd_draw_indexed_indirect_count == nullptr) {
+    m_cmd_draw_indexed_indirect_count =
+        reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
+            vkGetDeviceProcAddr(m_device, "vkCmdDrawIndexedIndirectCountKHR"));
+  }
+  m_draw_indirect_count_enabled = m_cmd_draw_indexed_indirect_count != nullptr &&
+                                  m_multi_draw_indirect_enabled;
+  if (m_draw_indirect_count_enabled) {
+    LOG_INFO("[VulkanContext] drawIndirectCount enabled (max {})",
+             m_max_draw_indirect_count);
+  } else {
+    LOG_INFO(
+        "[VulkanContext] drawIndirectCount absent; GPU-driven uses sparse "
+        "vkCmdDrawIndexedIndirect");
+  }
 
   createImmediateCommandPool();
   m_secondary_command_buffers.initialize(this);

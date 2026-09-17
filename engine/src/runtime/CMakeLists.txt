@@ -217,6 +217,8 @@ add_library(engine_runtime STATIC
     "resource/asset_cook/asset_cook_types.h"
     "resource/asset_cook/mesh_cooker.h"
     "resource/asset_cook/mesh_cooker.cpp"
+    "resource/asset_cook/meshlet_builder.h"
+    "resource/asset_cook/meshlet_builder.cpp"
     "resource/asset_cook/texture_cooker.h"
     "resource/asset_cook/texture_cooker.cpp"
     "resource/asset_cook/asset_compiler_service.h"
@@ -277,6 +279,7 @@ add_library(engine_runtime STATIC
     "function/scene/entity.cpp"
     "function/scene/scene.h"
     "function/scene/light_component.h"
+    "function/scene/fog_component.h"
     "function/scene/light_eval.h"
     "function/scene/light_eval.cpp"
     "function/scene/scene_starter.h"
@@ -469,6 +472,7 @@ target_link_libraries(engine_runtime
         vma
         slang::slang
         yaml-cpp
+        meshoptimizer
 )
 
 if(TARGET efsw)

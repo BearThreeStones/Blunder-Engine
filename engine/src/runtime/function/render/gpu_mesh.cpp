@@ -34,17 +34,19 @@ eastl::unique_ptr<GpuMesh> GpuMesh::createInternal(
   eastl::unique_ptr<GpuMesh> gpu_mesh(new GpuMesh());
 
   gpu_mesh->m_vertex_buffer = eastl::make_unique<VulkanBuffer>();
-  gpu_mesh->m_vertex_buffer->create(allocator, vertex_byte_size,
-                                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                    VMA_MEMORY_USAGE_CPU_TO_GPU);
+  gpu_mesh->m_vertex_buffer->create(
+      allocator, vertex_byte_size,
+      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      VMA_MEMORY_USAGE_CPU_TO_GPU);
   gpu_mesh->m_vertex_buffer->upload(vertex_bytes, vertex_byte_size);
 
   const VkDeviceSize index_byte_size =
       static_cast<VkDeviceSize>(index_count * sizeof(uint32_t));
   gpu_mesh->m_index_buffer = eastl::make_unique<VulkanBuffer>();
-  gpu_mesh->m_index_buffer->create(allocator, index_byte_size,
-                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                   VMA_MEMORY_USAGE_CPU_TO_GPU);
+  gpu_mesh->m_index_buffer->create(
+      allocator, index_byte_size,
+      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      VMA_MEMORY_USAGE_CPU_TO_GPU);
   gpu_mesh->m_index_buffer->upload(indices, index_byte_size);
 
   gpu_mesh->m_index_count = static_cast<uint32_t>(index_count);
@@ -56,10 +58,14 @@ eastl::unique_ptr<GpuMesh> GpuMesh::create(VulkanAllocator* allocator,
   if (mesh_asset.getVertexCount() == 0 || mesh_asset.getIndexCount() == 0) {
     return nullptr;
   }
-  return createInternal(allocator, mesh_asset.getVertexData(),
-                        static_cast<VkDeviceSize>(mesh_asset.getVertexByteSize()),
-                        mesh_asset.getIndices().data(),
-                        mesh_asset.getIndexCount());
+  eastl::unique_ptr<GpuMesh> gpu_mesh = createInternal(
+      allocator, mesh_asset.getVertexData(),
+      static_cast<VkDeviceSize>(mesh_asset.getVertexByteSize()),
+      mesh_asset.getIndices().data(), mesh_asset.getIndexCount());
+  if (gpu_mesh) {
+    gpu_mesh->uploadMeshlets(allocator, mesh_asset);
+  }
+  return gpu_mesh;
 }
 
 eastl::unique_ptr<GpuMesh> GpuMesh::createFromGeometry(
@@ -83,6 +89,19 @@ bool GpuMesh::uploadVertices(const void* vertex_bytes, size_t vertex_byte_size) 
 }
 
 void GpuMesh::destroy() {
+  if (m_meshlet_triangle_buffer) {
+    m_meshlet_triangle_buffer->destroy();
+    m_meshlet_triangle_buffer.reset();
+  }
+  if (m_meshlet_vertex_buffer) {
+    m_meshlet_vertex_buffer->destroy();
+    m_meshlet_vertex_buffer.reset();
+  }
+  if (m_meshlet_index_buffer) {
+    m_meshlet_index_buffer->destroy();
+    m_meshlet_index_buffer.reset();
+  }
+  m_meshlet_records.clear();
   if (m_index_buffer) {
     m_index_buffer->destroy();
     m_index_buffer.reset();
@@ -92,6 +111,87 @@ void GpuMesh::destroy() {
     m_vertex_buffer.reset();
   }
   m_index_count = 0;
+}
+
+void GpuMesh::uploadMeshlets(VulkanAllocator* allocator,
+                             const MeshAsset& mesh_asset) {
+  m_meshlet_records.clear();
+  if (m_meshlet_index_buffer) {
+    m_meshlet_index_buffer->destroy();
+    m_meshlet_index_buffer.reset();
+  }
+  if (m_meshlet_vertex_buffer) {
+    m_meshlet_vertex_buffer->destroy();
+    m_meshlet_vertex_buffer.reset();
+  }
+  if (m_meshlet_triangle_buffer) {
+    m_meshlet_triangle_buffer->destroy();
+    m_meshlet_triangle_buffer.reset();
+  }
+  if (allocator == nullptr) {
+    return;
+  }
+
+  const MeshletPayload* payload = nullptr;
+  if (mesh_asset.hasMeshlets()) {
+    payload = &mesh_asset.getMeshlets();
+  }
+  if (payload == nullptr) {
+    return;
+  }
+  eastl::vector<uint32_t> expanded;
+  expanded.reserve(payload->triangles.size());
+  m_meshlet_records.reserve(payload->meshlets.size());
+  for (const MeshletRecord& record : payload->meshlets) {
+    const uint32_t first_index = static_cast<uint32_t>(expanded.size());
+    const uint32_t index_count =
+        static_cast<uint32_t>(record.triangle_count) * 3u;
+    for (uint32_t t = 0; t < record.triangle_count; ++t) {
+      const uint32_t tri = record.triangle_offset + t * 3u;
+      for (uint32_t k = 0; k < 3u; ++k) {
+        const uint8_t local = payload->triangles[tri + k];
+        expanded.push_back(payload->vertices[record.vertex_offset + local]);
+      }
+    }
+    m_meshlet_records.push_back(
+        packMeshletGpuRecord(record, first_index, index_count));
+  }
+  if (expanded.empty()) {
+    m_meshlet_records.clear();
+    return;
+  }
+
+  m_meshlet_index_buffer = eastl::make_unique<VulkanBuffer>();
+  const VkDeviceSize bytes =
+      static_cast<VkDeviceSize>(expanded.size() * sizeof(uint32_t));
+  m_meshlet_index_buffer->create(
+      allocator, bytes,
+      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      VMA_MEMORY_USAGE_CPU_TO_GPU);
+  m_meshlet_index_buffer->upload(expanded.data(), bytes);
+
+  if (!payload->vertices.empty()) {
+    m_meshlet_vertex_buffer = eastl::make_unique<VulkanBuffer>();
+    const VkDeviceSize vertex_bytes =
+        static_cast<VkDeviceSize>(payload->vertices.size() * sizeof(uint32_t));
+    m_meshlet_vertex_buffer->create(
+        allocator, vertex_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_CPU_TO_GPU);
+    m_meshlet_vertex_buffer->upload(payload->vertices.data(), vertex_bytes);
+  }
+  if (!payload->triangles.empty()) {
+    eastl::vector<uint8_t> padded = payload->triangles;
+    while (padded.size() % 4u != 0u) {
+      padded.push_back(0);
+    }
+    m_meshlet_triangle_buffer = eastl::make_unique<VulkanBuffer>();
+    const VkDeviceSize tri_bytes =
+        static_cast<VkDeviceSize>(padded.size() * sizeof(uint8_t));
+    m_meshlet_triangle_buffer->create(
+        allocator, tri_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VMA_MEMORY_USAGE_CPU_TO_GPU);
+    m_meshlet_triangle_buffer->upload(padded.data(), tri_bytes);
+  }
 }
 
 }  // namespace Blunder

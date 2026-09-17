@@ -310,7 +310,7 @@ bool readLayout(const uint8_t*& cursor, const uint8_t* end,
     }
     layout->bindings[i].set = set;
     layout->bindings[i].binding = binding;
-    if (kind > static_cast<uint32_t>(ShaderDescriptorKind::Sampler)) {
+    if (kind > static_cast<uint32_t>(ShaderDescriptorKind::StorageImage)) {
       return false;
     }
     layout->bindings[i].kind = static_cast<ShaderDescriptorKind>(kind);

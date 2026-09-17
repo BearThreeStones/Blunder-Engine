@@ -12,6 +12,7 @@
 #include "runtime/resource/asset/asset.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_skin_data.h"
+#include "runtime/resource/asset/meshlet.h"
 
 namespace Blunder {
 
@@ -47,7 +48,8 @@ class MeshAsset final : public Asset {
   MeshAsset(Asset::Meta meta, eastl::vector<MeshVertex> vertices,
             eastl::vector<uint32_t> indices, AssetHandle material = {},
             eastl::shared_ptr<MaterialAsset> material_asset = nullptr,
-            MeshSkinData skin_data = {}, bool from_cooked_final = false)
+            MeshSkinData skin_data = {}, bool from_cooked_final = false,
+            MeshletPayload meshlets = {})
       : Asset(Asset::Type::Mesh, eastl::move(meta)),
         m_vertices(eastl::move(vertices)),
         m_indices(eastl::move(indices)),
@@ -55,6 +57,7 @@ class MeshAsset final : public Asset {
         m_material_asset(eastl::move(material_asset)),
         m_skin_data(eastl::move(skin_data)),
         m_from_cooked_final(from_cooked_final),
+        m_meshlets(eastl::move(meshlets)),
         m_local_bounds(computeLocalBounds(m_vertices)) {
     setState(State::Loaded);
   }
@@ -84,6 +87,8 @@ class MeshAsset final : public Asset {
   bool hasCookedFinalSkin() const {
     return m_from_cooked_final && m_skin_data.isValid();
   }
+  const MeshletPayload& getMeshlets() const { return m_meshlets; }
+  bool hasMeshlets() const { return !m_meshlets.empty(); }
 
  private:
   eastl::vector<MeshVertex> m_vertices;
@@ -92,6 +97,7 @@ class MeshAsset final : public Asset {
   eastl::shared_ptr<MaterialAsset> m_material_asset;
   MeshSkinData m_skin_data;
   bool m_from_cooked_final{false};
+  MeshletPayload m_meshlets{};
   AABB m_local_bounds{};
 };
 

@@ -48,6 +48,9 @@ struct GraphicsPipelineDesc {
   /// Non-zero: reuse an existing VkDescriptorSetLayout (opaque mesh layout).
   uint64_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
+  /// Color attachments in the target subpass (G-buffer MRT uses 3). Ignored
+  /// when `depth_only_subpass` is set.
+  uint32_t color_attachment_count{1};
 };
 
 struct RenderBackendInitInfo {

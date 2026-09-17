@@ -164,4 +164,23 @@ void VulkanBuffer::upload(const void* data, VkDeviceSize size) {
   vmaUnmapMemory(m_allocator->getAllocator(), m_allocation);
 }
 
+bool VulkanBuffer::download(void* dst, VkDeviceSize nbytes) {
+  if (dst == nullptr || m_allocator == nullptr ||
+      m_buffer == VK_NULL_HANDLE || m_allocation == VK_NULL_HANDLE ||
+      nbytes == 0 || nbytes > m_size) {
+    return false;
+  }
+
+  void* mapped_data = nullptr;
+  const VkResult map_result =
+      vmaMapMemory(m_allocator->getAllocator(), m_allocation, &mapped_data);
+  if (map_result != VK_SUCCESS || mapped_data == nullptr) {
+    return false;
+  }
+  vmaInvalidateAllocation(m_allocator->getAllocator(), m_allocation, 0, nbytes);
+  std::memcpy(dst, mapped_data, static_cast<size_t>(nbytes));
+  vmaUnmapMemory(m_allocator->getAllocator(), m_allocation);
+  return true;
+}
+
 }  // namespace Blunder

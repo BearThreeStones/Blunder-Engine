@@ -346,6 +346,25 @@ target_precompile_headers(frame_graph_test
 add_test(NAME frame_graph_test
          COMMAND frame_graph_test)
 
+add_executable(vulkan_frame_graph_recorder_test
+    "vulkan_frame_graph_recorder_test.cpp"
+)
+
+target_link_libraries(vulkan_frame_graph_recorder_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(vulkan_frame_graph_recorder_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(vulkan_frame_graph_recorder_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME vulkan_frame_graph_recorder_test
+         COMMAND vulkan_frame_graph_recorder_test)
+
 add_executable(texture_loader_test
     "texture_loader_test.cpp"
 )
@@ -1460,6 +1479,25 @@ endif()
 add_test(NAME camera_gizmo_hit_test_test
          COMMAND camera_gizmo_hit_test_test)
 
+add_executable(light_gizmo_geometry_test
+    "light_gizmo_geometry_test.cpp"
+)
+
+target_include_directories(light_gizmo_geometry_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+target_link_libraries(light_gizmo_geometry_test
+    PRIVATE glm::glm-header-only
+)
+
+if(MSVC)
+    target_compile_options(light_gizmo_geometry_test PRIVATE /Zc:preprocessor)
+endif()
+
+add_test(NAME light_gizmo_geometry_test
+         COMMAND light_gizmo_geometry_test)
+
 add_executable(light_gizmo_hit_test_test
     "light_gizmo_hit_test_test.cpp"
 )
@@ -2437,6 +2475,135 @@ target_precompile_headers(mesh_skin_cook_test
 
 add_test(NAME mesh_skin_cook_test
          COMMAND mesh_skin_cook_test)
+
+add_executable(meshlet_cook_test
+    "meshlet_cook_test.cpp"
+)
+
+target_link_libraries(meshlet_cook_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(meshlet_cook_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(meshlet_cook_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(meshlet_cook_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME meshlet_cook_test
+         COMMAND meshlet_cook_test)
+
+add_executable(meshlet_cull_test
+    "meshlet_cull_test.cpp"
+)
+
+target_link_libraries(meshlet_cull_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(meshlet_cull_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+if(MSVC)
+    target_compile_options(meshlet_cull_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(meshlet_cull_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME meshlet_cull_test
+         COMMAND meshlet_cull_test)
+
+add_executable(mesh_shader_shadow_test
+    "mesh_shader_shadow_test.cpp"
+)
+
+target_link_libraries(mesh_shader_shadow_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(mesh_shader_shadow_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(mesh_shader_shadow_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(mesh_shader_shadow_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME mesh_shader_shadow_test
+         COMMAND mesh_shader_shadow_test)
+
+add_executable(froxel_grid_test
+    "froxel_grid_test.cpp"
+)
+
+target_link_libraries(froxel_grid_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(froxel_grid_test
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(froxel_grid_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(froxel_grid_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME froxel_grid_test
+         COMMAND froxel_grid_test)
+
+add_executable(volumetric_fog_math_test
+    "volumetric_fog_math_test.cpp"
+)
+
+target_link_libraries(volumetric_fog_math_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(volumetric_fog_math_test
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(volumetric_fog_math_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(volumetric_fog_math_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME volumetric_fog_math_test
+         COMMAND volumetric_fog_math_test
+         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+blunder_copy_runtime_dlls(volumetric_fog_math_test)
 
 add_executable(gpu_skinning_test
     "gpu_skinning_test.cpp"

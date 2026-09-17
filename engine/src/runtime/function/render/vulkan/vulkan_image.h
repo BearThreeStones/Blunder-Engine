@@ -40,6 +40,7 @@ class VulkanImage final {
   VkExtent2D getExtent() const { return {m_width, m_height}; }
   VkFormat getFormat() const { return m_format; }
   VkImageLayout getCurrentLayout() const { return m_current_layout; }
+  VkImageAspectFlags getAspectMask() const { return m_aspect_mask; }
   void setCurrentLayout(VkImageLayout layout) { m_current_layout = layout; }
   uint32_t getWidth() const { return m_width; }
   uint32_t getHeight() const { return m_height; }

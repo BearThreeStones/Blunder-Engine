@@ -5,6 +5,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/meshlet.h"
 
 namespace Blunder {
 
@@ -17,7 +18,7 @@ bool readMeshCookHeader(std::istream& stream, MeshCookHeader& header) {
   if (!stream) {
     return false;
   }
-  if (header.version >= kMeshCookVersion) {
+  if (header.version >= kMeshCookVersionSkin) {
     stream.read(reinterpret_cast<char*>(&header.flags), sizeof(header.flags));
     if (!stream) {
       return false;
@@ -71,6 +72,64 @@ bool readSkinPayload(std::istream& stream, uint32_t vertex_count,
   return stream.good() && out_skin_data.isValid();
 }
 
+bool writeMeshletPayload(std::ostream& stream, const MeshletPayload& payload) {
+  const uint32_t meshlet_count =
+      static_cast<uint32_t>(payload.meshlets.size());
+  const uint32_t vertex_count =
+      static_cast<uint32_t>(payload.vertices.size());
+  const uint32_t triangle_count =
+      static_cast<uint32_t>(payload.triangles.size());
+  stream.write(reinterpret_cast<const char*>(&meshlet_count),
+               sizeof(meshlet_count));
+  stream.write(reinterpret_cast<const char*>(&vertex_count),
+               sizeof(vertex_count));
+  stream.write(reinterpret_cast<const char*>(&triangle_count),
+               sizeof(triangle_count));
+  if (meshlet_count > 0) {
+    stream.write(reinterpret_cast<const char*>(payload.meshlets.data()),
+                 static_cast<std::streamsize>(meshlet_count *
+                                              sizeof(MeshletRecord)));
+  }
+  if (vertex_count > 0) {
+    stream.write(reinterpret_cast<const char*>(payload.vertices.data()),
+                 static_cast<std::streamsize>(vertex_count * sizeof(uint32_t)));
+  }
+  if (triangle_count > 0) {
+    stream.write(reinterpret_cast<const char*>(payload.triangles.data()),
+                 static_cast<std::streamsize>(triangle_count));
+  }
+  return stream.good();
+}
+
+bool readMeshletPayload(std::istream& stream, MeshletPayload& out_payload) {
+  uint32_t meshlet_count = 0;
+  uint32_t vertex_count = 0;
+  uint32_t triangle_count = 0;
+  stream.read(reinterpret_cast<char*>(&meshlet_count), sizeof(meshlet_count));
+  stream.read(reinterpret_cast<char*>(&vertex_count), sizeof(vertex_count));
+  stream.read(reinterpret_cast<char*>(&triangle_count), sizeof(triangle_count));
+  if (!stream) {
+    return false;
+  }
+  out_payload.meshlets.resize(meshlet_count);
+  out_payload.vertices.resize(vertex_count);
+  out_payload.triangles.resize(triangle_count);
+  if (meshlet_count > 0) {
+    stream.read(reinterpret_cast<char*>(out_payload.meshlets.data()),
+                static_cast<std::streamsize>(meshlet_count *
+                                             sizeof(MeshletRecord)));
+  }
+  if (vertex_count > 0) {
+    stream.read(reinterpret_cast<char*>(out_payload.vertices.data()),
+                static_cast<std::streamsize>(vertex_count * sizeof(uint32_t)));
+  }
+  if (triangle_count > 0) {
+    stream.read(reinterpret_cast<char*>(out_payload.triangles.data()),
+                static_cast<std::streamsize>(triangle_count));
+  }
+  return stream.good();
+}
+
 }  // namespace
 
 std::filesystem::path cookedRoot(FileSystem& file_system) {
@@ -108,22 +167,28 @@ std::filesystem::path cookedTextureMetaPath(FileSystem& file_system,
 bool writeMeshCookFile(const fs::path& output_path,
                        const eastl::vector<MeshVertex>& vertices,
                        const eastl::vector<uint32_t>& indices,
-                       const MeshSkinData* skin_data) {
+                       const MeshSkinData* skin_data,
+                       const MeshletPayload* meshlets) {
   const bool has_skin =
       skin_data != nullptr && skin_data->isValid() &&
       skin_data->influences.size() == vertices.size();
+  const bool has_meshlets =
+      !has_skin && meshlets != nullptr && !meshlets->empty();
 
   MeshCookHeader header{};
   std::memcpy(header.magic, kMeshCookMagic, sizeof(header.magic));
   header.vertex_count = static_cast<uint32_t>(vertices.size());
   header.index_count = static_cast<uint32_t>(indices.size());
   header.vertex_stride = sizeof(MeshVertex);
+  header.flags = 0;
   if (has_skin) {
-    header.version = kMeshCookVersion;
+    header.version = kMeshCookVersionSkin;
     header.flags = kMeshCookFlag_HasSkin;
+  } else if (has_meshlets) {
+    header.version = kMeshCookVersion;
+    header.flags = kMeshCookFlag_HasMeshlets;
   } else {
     header.version = kMeshCookVersionLegacy;
-    header.flags = 0;
   }
 
   std::ofstream stream(output_path, std::ios::binary | std::ios::trunc);
@@ -131,7 +196,7 @@ bool writeMeshCookFile(const fs::path& output_path,
     return false;
   }
 
-  if (has_skin) {
+  if (header.version >= kMeshCookVersionSkin) {
     stream.write(reinterpret_cast<const char*>(&header), sizeof(header));
   } else {
     stream.write(reinterpret_cast<const char*>(&header), kMeshCookHeaderV1Size);
@@ -147,13 +212,17 @@ bool writeMeshCookFile(const fs::path& output_path,
   if (has_skin && !writeSkinPayload(stream, *skin_data, header.vertex_count)) {
     return false;
   }
+  if (has_meshlets && !writeMeshletPayload(stream, *meshlets)) {
+    return false;
+  }
   return stream.good();
 }
 
 bool readMeshCookFile(const fs::path& input_path,
                       eastl::vector<MeshVertex>& out_vertices,
                       eastl::vector<uint32_t>& out_indices,
-                      MeshSkinData* out_skin_data) {
+                      MeshSkinData* out_skin_data,
+                      MeshletPayload* out_meshlets) {
   std::ifstream stream(input_path, std::ios::binary);
   if (!stream) {
     return false;
@@ -166,6 +235,7 @@ bool readMeshCookFile(const fs::path& input_path,
   if (std::memcmp(header.magic, kMeshCookMagic, sizeof(header.magic)) != 0 ||
       header.vertex_stride != sizeof(MeshVertex) ||
       (header.version != kMeshCookVersionLegacy &&
+       header.version != kMeshCookVersionSkin &&
        header.version != kMeshCookVersion)) {
     return false;
   }
@@ -195,6 +265,20 @@ bool readMeshCookFile(const fs::path& input_path,
         return false;
       }
     }
+  } else if ((header.flags & kMeshCookFlag_HasSkin) != 0) {
+    MeshSkinData skip_skin;
+    if (!readSkinPayload(stream, header.vertex_count, skip_skin)) {
+      return false;
+    }
+  }
+
+  if (out_meshlets != nullptr) {
+    *out_meshlets = MeshletPayload{};
+    if ((header.flags & kMeshCookFlag_HasMeshlets) != 0) {
+      if (!readMeshletPayload(stream, *out_meshlets)) {
+        return false;
+      }
+    }
   }
 
   return stream.good();
@@ -207,6 +291,7 @@ bool writeCookMetaFile(const fs::path& meta_path, const CookedAssetMeta& meta) {
   }
   stream << "source_mtime: " << meta.source_mtime << '\n';
   stream << "descriptor_mtime: " << meta.descriptor_mtime << '\n';
+  stream << "cook_format: " << meta.cook_format << '\n';
   return stream.good();
 }
 
@@ -219,6 +304,7 @@ bool readCookMetaFile(const fs::path& meta_path, CookedAssetMeta& out_meta) {
   std::string line;
   bool found_source = false;
   bool found_descriptor = false;
+  out_meta.cook_format = 0;  // missing key means 0
   while (std::getline(stream, line)) {
     const size_t colon = line.find(':');
     if (colon == std::string::npos) {
@@ -233,6 +319,8 @@ bool readCookMetaFile(const fs::path& meta_path, CookedAssetMeta& out_meta) {
     } else if (key == "descriptor_mtime") {
       out_meta.descriptor_mtime = parsed;
       found_descriptor = true;
+    } else if (key == "cook_format") {
+      out_meta.cook_format = static_cast<uint32_t>(parsed);
     }
   }
   return found_source && found_descriptor;
