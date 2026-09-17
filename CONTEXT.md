@@ -273,15 +273,15 @@ The Inspector picker that lists authorable attachments for the current selection
 _Avoid_: Add Component, Add Node, treating the menu itself as a runtime type; keeping parallel Add Camera / Add Behaviour / Add Skeleton Modifier buttons as the product path; multi-select Add… as the first slice; nested submenus or type-ahead search as first-slice scope; using Hierarchy **Create…** as if it attached to the clicked row without spawning
 
 **Unique attachment**:
-An Add… item that may exist at most once on the selected Object or entity: Camera, Light, Skeleton, AnimationTree. When already present, the row stays visible and disabled.
-_Avoid_: Hiding unique items from Add…; treating Behaviours or SkeletonModifiers as unique; allowing a second Camera / Light / Tree / Skeleton on the same selection; AnimationPlayer as a Unique attachment
+An Add… item that may exist at most once on the selected Object or entity: Camera, Light, Skeleton, AnimationTree, Collider, Character Controller. When already present, the row stays visible and disabled.
+_Avoid_: Hiding unique items from Add…; treating Behaviours or SkeletonModifiers as unique; allowing a second Camera / Light / Tree / Skeleton / Collider / Character Controller on the same selection; AnimationPlayer as a Unique attachment
 
 **Add… kind icon**:
-The Inspector and Add… picker mark each Add… kind with one editor icon: Camera, Light, Skeleton, AnimationTree, Behaviour, SkeletonModifier. The icon sits on Unique section headers and on each Behaviour / SkeletonModifier row, and on the matching Add… picker rows. Color follows the label (including grey Unique-already-present and missing Behaviour). Clip rows are not a kind.
+The Inspector and Add… picker mark each Add… kind with one editor icon: Camera, Light, Skeleton, AnimationTree, Collider, Character Controller, Behaviour, SkeletonModifier. The icon sits on Unique section headers and on each Behaviour / SkeletonModifier row, and on the matching Add… picker rows. Color follows the label (including grey Unique-already-present and missing Behaviour). Clip rows are not a kind.
 _Avoid_: Per-CLR Behaviour icons; per-subclass Modifier icons; treating clip rows as an Add… kind; a second icon on the Behaviours / Skeleton Modifiers section titles; hiding the icon when Unique is already present; AnimationPlayer as an Add… kind
 
 **Hierarchy row icons**:
-Icons at the right of a Hierarchy entity row for what is on that entity: Local Transform; MeshRenderer when present; each present Unique attachment (Camera, Light, Skeleton, AnimationTree); each Behaviour; each SkeletonModifier. Unique / Behaviour / SkeletonModifier reuse **Add… kind icon**. Local Transform and MeshRenderer are shown on this row even though they are not Add… kinds. **Clip Binding** is not a Hierarchy icon — it lives only inside AnimationTree (Inspector clip list).
+Icons at the right of a Hierarchy entity row for what is on that entity: Local Transform; MeshRenderer when present; each present Unique attachment (Camera, Light, Skeleton, AnimationTree, Collider, Character Controller); each Behaviour; each SkeletonModifier. Unique / Behaviour / SkeletonModifier reuse **Add… kind icon**. Local Transform and MeshRenderer are shown on this row even though they are not Add… kinds. **Clip Binding** is not a Hierarchy icon — it lives only inside AnimationTree (Inspector clip list).
 **Attachment property preview** opens from these icons (see that term).
 _Avoid_: Unity Component strip as the product name; ECS Component icons; treating Hierarchy row icons as Add… kinds; hiding Transform because every spatial entity has Local Transform; an AnimationPlayer Unique icon; Clip Binding as a scene-mounted attachment or Hierarchy row icon; LMB on a row icon opening **Attachment property preview**
 
@@ -432,8 +432,36 @@ An engine-owned Q32.32 math module (scalars, vectors, quaternions, and the trans
 _Avoid_: Physics-private one-off fixed helpers that cannot be reused by future lockstep gameplay, float glm as a dependency of the simulation math path, converting to float mid-step for "just this solve"
 
 **Physics scene bridge**:
-The first post–Kernel-v0 milestone: project Physics World body poses into `SceneInstance` and/or a future ECS Transform path so simulation is visible/usable in the engine host. Still not CharacterController or full gameplay physics API. Follows v0 golden closure; precedes treating multithreading / CCD / joints / meshes as the next top priority by default.
-_Avoid_: Bundling the bridge into Kernel v0 closure, equating the bridge with Character API, requiring multithreaded solve before any scene projection
+The post–Kernel-v0 host that binds Physics World colliders to scene Unique attachments so Play and the editor can query and walk. This slice (**scene collision bridge**, [ADR 0057](docs/adr/0057-scene-collision-bridge.md)) includes Collider Unique (box / sphere / capsule / static triangle mesh), Character Controller Unique (`move_and_slide` / Unity CCT size, not Unreal CMC), ray / primitive shapecast, 32-bit collision layer+mask, string groups, C# API, Play / `engine_player`, Viewport collision wireframe, and edit-mode rays on that same query API. Units stay SI metres (Q32.32). Missing trimesh data skips (no collision): no auto-box, no hard Import fail. Dynamic hollow trimesh is out. Product scene is the DogWalk Project, not Test/Sponza. Still not CCD, joints, island sleep, heightfields, or Unreal centimetres.
+_Avoid_: Bundling the bridge into Kernel v0 closure, Unreal CMC as the character product, Unreal cm, treating groups as layers or layers as groups, auto-box on missing collision, Test/Sponza as the main scene, requiring multithreaded solve before any scene projection
+
+**Collider Unique**:
+A Unique attachment (at most one per entity) that authors a collision shape: Box, Sphere, Capsule, or Triangle Mesh. Body kind is Static, Kinematic, or Area (query-only, no solid contacts). Layer and mask are 32-bit. Sizes are metres. Triangle Mesh is Static-only; a moving trimesh Unique attaches no kernel collider. Add… Collider does not create an Object.
+_Avoid_: Dynamic hollow trimesh, four Add… kinds for box/sphere/capsule/mesh, centimetre sizes, auto-box when mesh collision is missing
+
+**Character Controller Unique**:
+A Unique attachment that walks by capsule sweep + slide / floor stick (Godot `move_and_slide` / Unity CCT volume). Capsule axis is entity local +Z. Gravity is applied by script to velocity. `Object.Position` write is teleport without sweep and is not the walk path. Add… Character Controller does not create an Object.
+_Avoid_: Unreal `UCharacterMovementComponent` walking/falling modes as this slice, driving walk with Dynamic rigidbody velocity, treating CCT as the Physics Kernel
+
+**Collision layer / mask**:
+32-bit physics filter: layer is what the collider is; mask is what queries and Character Controller slides see. A pair/query matches when `(layer & mask) != 0`. Inspector bits are 1–32. Default layer has bit 0 set; default mask is all bits.
+_Avoid_: Using group names `TerrainIce` / `TerrainSnow` / `LeashPivots` as this filter, Unreal GameplayTags as a trace channel
+
+**Object groups**:
+String names on a scene entity (`TerrainIce`, `TerrainSnow`, `LeashPivots`, …). Not a physics mask. Hits expose groups. C# find-by-group returns bound Objects only; entity-only membership still appears on a hit.
+_Avoid_: Encoding ice/snow/leash as layers instead of groups, requiring an Object on every static forest collider just to store a group
+
+**Physics query**:
+Raycast and box/sphere/capsule shapecast against a SceneInstance Physics World. Shared by Play and editor edit-mode. Filter is the layer mask; collide-with-areas is opt-in (default false). Query shapes are primitives; they may hit static triangle meshes; they are not triangle meshes.
+_Avoid_: GPU viewport pick as the gameplay ray, shapecasting a trimesh shape, centimetre distances
+
+**Collision Area**:
+Collider Unique body kind that is query-only (Godot Area3D). Does not block Character Controller slides. Rays hit it only when collide-with-areas is true.
+_Avoid_: Treating Areas as solid walls, making Areas always hittable
+
+**Collision wireframe**:
+Editor Overlay line draw of Collider Unique shapes and Character Controller capsules in the Viewport. Authorship chrome; Player does not draw it, including while paused.
+_Avoid_: Presenting collision debug to HWND, drawing collision wires in `engine_player`
 
 **Physics golden suite**:
 A fixed set of scenarios with numeric assertions that gate Physics Kernel changes. Primary acceptance for the kernel; module unit tests cover isolated algorithms (e.g. GJK, contact solve step). Optional early calibration against another engine is allowed; that engine is not the lasting truth source. **Kernel v0 required scenarios:** (1) free fall under gravity; (2) Dynamic resting on Static; (3) stack of ≥3 boxes; (4) sphere–box and capsule–box resting contacts; (5) frictional incline; (6) Kinematic platform lifts/pushes a Dynamic box; (7) impact against Static with bounded kinetic energy at restitution 0; (8) sleeping Dynamic wakes on hit. Bounce, joints, CCD, triangle meshes, and compound-shape stress are out of the v0 required set.
