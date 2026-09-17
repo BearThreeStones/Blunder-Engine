@@ -3709,6 +3709,7 @@ target_link_libraries(physics_host_test
 )
 target_include_directories(physics_host_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 if(MSVC)
     target_compile_options(physics_host_test PRIVATE /Zc:preprocessor)
@@ -3728,6 +3729,7 @@ target_link_libraries(physics_c_abi_test
 )
 target_include_directories(physics_c_abi_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 if(MSVC)
     target_compile_options(physics_c_abi_test PRIVATE /Zc:preprocessor)
@@ -3747,6 +3749,7 @@ target_link_libraries(gltf_collision_extras_test
 )
 target_include_directories(gltf_collision_extras_test
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
 )
 if(MSVC)
     target_compile_options(gltf_collision_extras_test PRIVATE /Zc:preprocessor)
