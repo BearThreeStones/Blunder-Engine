@@ -608,6 +608,7 @@ std::string mcpHandleMessage(const std::string& request,
     }
     escaped.push_back('"');
     content += escaped;
+    content += "}";
     if (!result.png.empty()) {
       content += ",{\"type\":\"image\",\"mimeType\":\"image/png\",\"data\":\"";
       content += base64Encode(result.png.data(), result.png.size());
