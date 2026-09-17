@@ -72,6 +72,7 @@ add_library(engine_runtime STATIC
     "core/log/console_ring.cpp"
     "core/log/log_system.h"
     "core/log/log_system.cpp"
+    "core/debug/input_present_trace.h"
     "core/base/high_precision_timer.h"
     "core/base/high_precision_timer.cpp"
     "core/base/macro.h"
