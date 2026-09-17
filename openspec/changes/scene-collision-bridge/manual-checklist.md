@@ -4,6 +4,8 @@ One row per User story. Agent QC does not substitute. Only the human confirms.
 
 **Status:** Not run
 
+Agent QC (not acceptance): kernel/host/C-ABI/inspector/MCP-adapter tests passed; `openspec validate scene-collision-bridge --strict` passed; Debug `engine_editor` / `engine_player` relinked. Windowed DogWalk capture/orbit/query did not run — this session has no `blunder-editor` MCP.
+
 Windowed `engine_editor` on the DogWalk Project (`E:\Blunder Projects\DogWalk`). Do not use Test or Sponza as the main scene.
 
 | # | User story | Pass |
