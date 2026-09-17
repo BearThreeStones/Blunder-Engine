@@ -54,6 +54,7 @@ Linux validation is a successful configure + build. Run first-party tests from [
 
 ## See also
 
+- [workflow.md](workflow.md#cloud-and-windows-worker) — Grill / propose / apply placement vs a Windows worker
 - [build.md](build.md) — Windows presets
 - [slint-fork.md](slint-fork.md)
 - [code-style.md](code-style.md)

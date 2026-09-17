@@ -73,6 +73,7 @@ Do not add `docs/exec-plans/` or `docs/superpowers/plans/` files. Do not run `/o
 | Topic | Document |
 |-------|----------|
 | Cursor Cloud / Linux build | [docs/agents/cursor-cloud.md](docs/agents/cursor-cloud.md) |
+| Cloud vs Windows worker | [docs/agents/workflow.md](docs/agents/workflow.md#cloud-and-windows-worker) |
 | Merge CI (GitHub Actions) | [docs/agents/testing.md](docs/agents/testing.md#merge-ci) |
 
 ## References & maintenance
