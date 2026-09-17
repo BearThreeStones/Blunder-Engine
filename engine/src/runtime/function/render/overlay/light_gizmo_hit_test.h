@@ -13,6 +13,7 @@
 namespace Blunder {
 
 constexpr float kLightGizmoPickThresholdPx = 7.0f;
+constexpr float kLightGizmoIconHalfExtentPx = 18.0f;
 
 inline std::optional<float> hitTestLightGizmoViewportLocal(
     const glm::vec2& pointer, const LightGizmoShape& shape,
@@ -41,10 +42,15 @@ inline std::optional<float> hitTestLightGizmoViewportLocal(
       hit = true;
     }
   });
+  const glm::vec3 origin = to_world(Vec3(0.0f));
+  if (const std::optional<glm::vec2> icon = project(origin)) {
+    if (glm::length(pointer - *icon) <= kLightGizmoIconHalfExtentPx) {
+      hit = true;
+    }
+  }
   if (!hit) {
     return std::nullopt;
   }
-  const glm::vec3 origin = to_world(Vec3(0.0f));
   return (view * glm::vec4(origin, 1.0f)).z;
 }
 
