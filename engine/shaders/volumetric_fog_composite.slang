@@ -1,3 +1,4 @@
+#include "display_transform.slang"
 #include "volumetric_fog_common.slang"
 
 [[vk::binding(0, 0)]]
@@ -34,7 +35,11 @@ VertexOutput vertexMain(uint vertexId : SV_VertexID)
     VertexOutput output;
     float2 uv = float2((vertexId << 1) & 2, vertexId & 2);
     output.sv_position = float4(uv * 2.0 - 1.0, 0.0, 1.0);
-    output.uv = uv * 0.5;
+    // Covering-triangle verts sit at NDC -1 and +3 with uv 0/2 so the visible
+    // NDC [-1,1] square interpolates to [0,1]. uv*0.5 maps the screen to
+    // [0,0.5] and samples only the top-left quarter — LOOKAT Sponza then
+    // shows empty sky while Unique gizmos (drawn after) stay on the courtyard.
+    output.uv = uv;
     return output;
 }
 
@@ -65,10 +70,12 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float slice = sliceFromViewZ(viewZ, ubo.gridZParams.xyz);
     float3 uvw = float3(uv, (slice + 0.5) / ubo.gridSize.z);
     float4 fogSample = integratedVolume.SampleLevel(integratedSampler, uvw, 0);
-    float3 inscatter = fogSample.rgb;
     float transmittance = fogSample.a;
-    // Offscreen is UNORM8 with no scene tonemap. Soft-compress inscatter only so
-    // remaining local peaks cannot bloom to white/cyan orbs.
-    inscatter = inscatter / (1.0 + inscatter);
-    return float4(scene.rgb * transmittance + inscatter, scene.a);
+    // Deferred lighting already encoded the presented colour, so decode before
+    // blending: `scene * T + inscatter` in sRGB space darkens the fog wrongly.
+    // Inscatter is tonemapped into the same 0..1 display range as the scene so
+    // local peaks cannot bloom into white orbs.
+    float3 sceneLinear = srgbToLinear(scene.rgb);
+    float3 inscatter = tonemapReinhard(fogSample.rgb);
+    return float4(linearToSrgb(sceneLinear * transmittance + inscatter), scene.a);
 }

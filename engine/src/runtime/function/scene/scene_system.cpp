@@ -288,6 +288,7 @@ void SceneSystem::setActiveInstance(SceneInstance* instance) {
   if (m_active_instance != instance) {
     if (g_runtime_global_context.m_render_system) {
       g_runtime_global_context.m_render_system->dropInFlightTextures();
+      g_runtime_global_context.m_render_system->notifyActiveSceneChanged();
     }
   }
   m_active_instance = instance;

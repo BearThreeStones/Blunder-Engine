@@ -1,6 +1,7 @@
 #include "runtime/platform/window/window_system.h"
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_video.h>
@@ -24,6 +25,14 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
     LOG_FATAL("[WindowSystem::initialize] failed to initialize SDL3: {}",
               SDL_GetError());
   }
+
+  // RMB orbit must keep Skia/HWND presenting. SDL's default auto-capture calls
+  // SetCapture while any button is down; that has stalled present until mouse-up.
+  SDL_SetHint(SDL_HINT_MOUSE_AUTO_CAPTURE, "0");
+  // SDL drops the button press that activates an unfocused window. Coming back
+  // from another app and RMB-dragging the viewport must start the orbit on that
+  // first press, not silently do nothing until the next attempt.
+  SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 
   m_width = create_info.width;
   m_height = create_info.height;
@@ -332,19 +341,19 @@ void WindowSystem::setFocusMode(bool mode) {
   if (!m_window) {
     return;
   }
-
-  m_is_focus_mode = mode;
-  if (!SDL_SetWindowRelativeMouseMode(m_window, mode)) {
-    LOG_WARN("[WindowSystem::setFocusMode] failed to set relative mouse mode: {}",
-             SDL_GetError());
+  if (m_is_focus_mode == mode) {
+    return;
   }
 
-  if (mode) {
-    SDL_HideCursor();
-    SDL_SetWindowMouseGrab(m_window, true);
-  } else {
-    SDL_ShowCursor();
-    SDL_SetWindowMouseGrab(m_window, false);
+  m_is_focus_mode = mode;
+  // Do not enable SDL relative mouse mode, mouse grab, or hide the cursor.
+  // Relative mode / SetCapture / ClipCursor / ShowCursor(FALSE) have frozen
+  // HWND composition until mouse-up on this Win32 + Skia path. Orbit uses
+  // ordinary WM_MOUSEMOVE deltas.
+  SDL_CaptureMouse(false);
+  SDL_SetWindowMouseGrab(m_window, false);
+  if (SDL_GetWindowRelativeMouseMode(m_window)) {
+    SDL_SetWindowRelativeMouseMode(m_window, false);
   }
 }
 
