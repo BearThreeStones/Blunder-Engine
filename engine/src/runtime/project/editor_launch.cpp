@@ -58,7 +58,8 @@ EditorSessionLaunch failLaunch(const char* code, const char* message) {
 
 bool isMachineCliVerb(const char* arg) {
   return eq(arg, "query") || eq(arg, "op") || eq(arg, "diagnose") ||
-         eq(arg, "capture") || eq(arg, "play-frame") || eq(arg, "save");
+         eq(arg, "capture") || eq(arg, "play-frame") || eq(arg, "save") ||
+         eq(arg, "ray") || eq(arg, "group") || eq(arg, "collider");
 }
 
 EditorSessionLaunch resolveEditorSessionLaunch(
@@ -191,6 +192,66 @@ EditorSessionLaunch resolveEditorSessionLaunch(
       if (takeValue(argc, argv, i, value)) {
         cli.sz = parseFloat(value, 1.0f);
       }
+      continue;
+    }
+    if (eq(arg, "--dx")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.dx = parseFloat(value, 0.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--dy")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.dy = parseFloat(value, 0.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--dz")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.dz = parseFloat(value, 0.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--ox")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.ox = parseFloat(value, 0.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--oy")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.oy = parseFloat(value, 0.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--oz")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.oz = parseFloat(value, 0.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--max-distance")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.max_distance = parseFloat(value, 100.0f);
+      }
+      continue;
+    }
+    if (eq(arg, "--mask")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.mask = parseU32(value);
+      }
+      continue;
+    }
+    if (eq(arg, "--collide-with-areas")) {
+      cli.collide_with_areas = true;
       continue;
     }
     if (arg[0] == '-') {

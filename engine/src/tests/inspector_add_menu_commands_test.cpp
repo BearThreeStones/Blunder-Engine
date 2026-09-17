@@ -329,6 +329,109 @@ int main() {
                                     float_near(scene.getFog(id)->density, 0.05f));
   }
 
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Solid", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    InspectorUniqueAddResult result =
+        applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Collider);
+    expect_true("collider created", result.created_collider);
+    expect_true("collider present", scene.getCollider(id) != nullptr);
+    expect_true("collider created no object", scene.findBoundObject(id) == nullptr);
+    const ColliderComponent* collider = scene.getCollider(id);
+    expect_true("collider default box",
+                collider != nullptr && collider->shape == ColliderShapeKind::Box);
+    expect_true("collider default static",
+                collider != nullptr && collider->body_kind == ColliderBodyKind::Static);
+
+    DocumentHistory history;
+    history.push(makeAddUniqueAttachmentCommand(
+        &scene, nullptr, id, InspectorUniqueKind::Collider, result,
+        SelectionSnapshot{id}, SelectionSnapshot{id}));
+    expect_true("undo add collider", history.undo());
+    expect_true("collider removed", scene.getCollider(id) == nullptr);
+    expect_true("undo collider still no object", scene.findBoundObject(id) == nullptr);
+    expect_true("redo add collider", history.redo());
+    expect_true("collider restored", scene.getCollider(id) != nullptr);
+
+    expect_true("collider unique already-present",
+                applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Collider)
+                    .already_present);
+
+    const ColliderComponent before = *scene.getCollider(id);
+    ColliderComponent after = before;
+    after.body_kind = ColliderBodyKind::Area;
+    scene.setCollider(id, after);
+    history.push(makeSetColliderComponentCommand(
+        &scene, id, before, after, SelectionSnapshot{id}, SelectionSnapshot{id}));
+    expect_true("undo collider body",
+                history.undo() && scene.getCollider(id) != nullptr &&
+                    scene.getCollider(id)->body_kind == ColliderBodyKind::Static);
+    expect_true("redo collider body",
+                history.redo() && scene.getCollider(id) != nullptr &&
+                    scene.getCollider(id)->body_kind == ColliderBodyKind::Area);
+
+    eastl::vector<eastl::string> before_groups;
+    eastl::vector<eastl::string> after_groups;
+    after_groups.push_back("TerrainIce");
+    scene.setGroups(id, after_groups);
+    history.push(makeSetEntityGroupsCommand(
+        &scene, id, before_groups, after_groups, SelectionSnapshot{id},
+        SelectionSnapshot{id}));
+    expect_true("groups set", scene.isInGroup(id, "TerrainIce"));
+    expect_true("undo groups", history.undo() && !scene.isInGroup(id, "TerrainIce"));
+    expect_true("redo groups", history.redo() && scene.isInGroup(id, "TerrainIce"));
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Walker", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    InspectorUniqueAddResult result = applyInspectorUniqueAdd(
+        nullptr, scene, id, InspectorUniqueKind::CharacterController);
+    expect_true("cct created", result.created_character_controller);
+    expect_true("cct present", scene.getCharacterController(id) != nullptr);
+    expect_true("cct created no object", scene.findBoundObject(id) == nullptr);
+    const CharacterControllerComponent* cct = scene.getCharacterController(id);
+    expect_true("cct default radius",
+                cct != nullptr && float_near(cct->radius, 0.4f));
+    expect_true("cct default height",
+                cct != nullptr && float_near(cct->height, 1.8f));
+
+    DocumentHistory history;
+    history.push(makeAddUniqueAttachmentCommand(
+        &scene, nullptr, id, InspectorUniqueKind::CharacterController, result,
+        SelectionSnapshot{id}, SelectionSnapshot{id}));
+    expect_true("undo add cct", history.undo());
+    expect_true("cct removed", scene.getCharacterController(id) == nullptr);
+    expect_true("undo cct still no object", scene.findBoundObject(id) == nullptr);
+    expect_true("redo add cct", history.redo());
+    expect_true("cct restored", scene.getCharacterController(id) != nullptr);
+
+    expect_true("cct unique already-present",
+                applyInspectorUniqueAdd(nullptr, scene, id,
+                                        InspectorUniqueKind::CharacterController)
+                    .already_present);
+
+    const CharacterControllerComponent before = *scene.getCharacterController(id);
+    CharacterControllerComponent after = before;
+    after.height = 2.0f;
+    scene.setCharacterController(id, after);
+    history.push(makeSetCharacterControllerComponentCommand(
+        &scene, id, before, after, SelectionSnapshot{id}, SelectionSnapshot{id}));
+    expect_true("undo cct height",
+                history.undo() && scene.getCharacterController(id) != nullptr &&
+                    float_near(scene.getCharacterController(id)->height, 1.8f));
+    expect_true("redo cct height",
+                history.redo() && scene.getCharacterController(id) != nullptr &&
+                    float_near(scene.getCharacterController(id)->height, 2.0f));
+
+    applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Collider);
+    expect_true("collider+cct coexist",
+                scene.getCollider(id) != nullptr &&
+                    scene.getCharacterController(id) != nullptr);
+  }
+
   ObjectDB::clear();
   g_runtime_global_context.m_logger_system.reset();
   if (g_failures != 0) {

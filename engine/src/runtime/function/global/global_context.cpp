@@ -32,7 +32,7 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/platform/input/input_system.h"
 // #include "runtime/function/particle/particle_manager.h"
-// #include "runtime/function/physics/physics_manager.h"
+#include "runtime/function/physics/physics_manager.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -375,8 +375,7 @@ void RuntimeGlobalContext::startSystems(
     return;
   }
 
-  // m_physics_manager = eastl::make_shared<PhysicsManager>();
-  // m_physics_manager->initialize();
+  m_physics_manager = eastl::make_shared<PhysicsManager>();
 
   // m_world_manager = eastl::make_shared<WorldManager>();
   // m_world_manager->initialize();
@@ -612,8 +611,10 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_world_manager->clear();
   // m_world_manager.reset();
 
-  // m_physics_manager->clear();
-  // m_physics_manager.reset();
+  if (m_physics_manager) {
+    m_physics_manager->clear();
+    m_physics_manager.reset();
+  }
 
   if (m_asset_import) {
     m_asset_import->shutdown();

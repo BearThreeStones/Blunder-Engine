@@ -3700,6 +3700,63 @@ endif()
 add_test(NAME physics_query_test
          COMMAND physics_query_test)
 
+add_executable(physics_host_test
+    "physics_host_test.cpp"
+)
+target_link_libraries(physics_host_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+target_include_directories(physics_host_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+if(MSVC)
+    target_compile_options(physics_host_test PRIVATE /Zc:preprocessor)
+endif()
+target_precompile_headers(physics_host_test
+    REUSE_FROM engine_runtime
+)
+add_test(NAME physics_host_test
+         COMMAND physics_host_test)
+
+add_executable(physics_c_abi_test
+    "physics_c_abi_test.cpp"
+)
+target_link_libraries(physics_c_abi_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+target_include_directories(physics_c_abi_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+if(MSVC)
+    target_compile_options(physics_c_abi_test PRIVATE /Zc:preprocessor)
+endif()
+target_precompile_headers(physics_c_abi_test
+    REUSE_FROM engine_runtime
+)
+add_test(NAME physics_c_abi_test
+         COMMAND physics_c_abi_test)
+
+add_executable(gltf_collision_extras_test
+    "gltf_collision_extras_test.cpp"
+)
+target_link_libraries(gltf_collision_extras_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+target_include_directories(gltf_collision_extras_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+if(MSVC)
+    target_compile_options(gltf_collision_extras_test PRIVATE /Zc:preprocessor)
+endif()
+target_precompile_headers(gltf_collision_extras_test
+    REUSE_FROM engine_runtime
+)
+add_test(NAME gltf_collision_extras_test
+         COMMAND gltf_collision_extras_test)
+
 # Physics kernel v0 golden suite 鈥?headless Done gate for all 8 required scenarios.
 # Cross-platform bit-identical peer: Linux Clang or GCC x64 must match Win MSVC x64 dumps.
 set(PHYSICS_GOLDEN_FIXTURE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/physics_golden")

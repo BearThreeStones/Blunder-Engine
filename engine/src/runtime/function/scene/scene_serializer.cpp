@@ -1041,6 +1041,103 @@ bool parseFogObject(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseColliderTriangles(const char* object_start, const char* object_end,
+                            eastl::vector<ColliderTriangle>& out_triangles) {
+  const char* array_end = nullptr;
+  const char* array_content =
+      findArrayAfterKeyBounded(object_start, object_end, "\"triangles\"", &array_end);
+  if (array_content == nullptr) {
+    return true;
+  }
+  out_triangles.clear();
+  const char* p = array_content;
+  while (p < array_end - 1) {
+    p = skipWhitespace(p);
+    if (p >= array_end - 1 || *p == ']') {
+      break;
+    }
+    if (*p != '{') {
+      ++p;
+      continue;
+    }
+    const char* tri_start = p;
+    int depth = 0;
+    do {
+      if (*p == '{') {
+        ++depth;
+      } else if (*p == '}') {
+        --depth;
+      }
+      ++p;
+    } while (p < array_end && depth > 0);
+    ColliderTriangle tri{};
+    parseVec3Field(tri_start, p, "\"v0\"", tri.v0, Vec3(0.0f));
+    parseVec3Field(tri_start, p, "\"v1\"", tri.v1, Vec3(0.0f));
+    parseVec3Field(tri_start, p, "\"v2\"", tri.v2, Vec3(0.0f));
+    out_triangles.push_back(tri);
+    p = skipWhitespace(p);
+    if (p < array_end && *p == ',') {
+      ++p;
+    }
+  }
+  return true;
+}
+
+bool parseColliderObject(const char* object_start, const char* object_end,
+                         ColliderComponent& out_collider) {
+  eastl::string shape;
+  if (parseStringField(object_start, object_end, "\"shape\"", shape)) {
+    ColliderShapeKind parsed = ColliderShapeKind::Box;
+    if (colliderShapeKindFromJson(shape, parsed)) {
+      out_collider.shape = parsed;
+    }
+  }
+  eastl::string body;
+  if (parseStringField(object_start, object_end, "\"body\"", body)) {
+    ColliderBodyKind parsed = ColliderBodyKind::Static;
+    if (colliderBodyKindFromJson(body, parsed)) {
+      out_collider.body_kind = parsed;
+    }
+  }
+  uint64_t layer = out_collider.layer;
+  if (parseUint64Field(object_start, object_end, "\"layer\"", layer)) {
+    out_collider.layer = static_cast<uint32_t>(layer);
+  }
+  uint64_t mask = out_collider.mask;
+  if (parseUint64Field(object_start, object_end, "\"mask\"", mask)) {
+    out_collider.mask = static_cast<uint32_t>(mask);
+  }
+  parseVec3Field(object_start, object_end, "\"halfExtents\"", out_collider.box_half_extents,
+                 Vec3(1.0f, 1.0f, 1.0f));
+  parseFloatField(object_start, object_end, "\"radius\"", out_collider.sphere_radius);
+  parseFloatField(object_start, object_end, "\"capsuleRadius\"", out_collider.capsule_radius);
+  if (out_collider.shape == ColliderShapeKind::Sphere) {
+    out_collider.sphere_radius = out_collider.sphere_radius;
+  } else if (out_collider.shape == ColliderShapeKind::Capsule) {
+    parseFloatField(object_start, object_end, "\"radius\"", out_collider.capsule_radius);
+  }
+  parseFloatField(object_start, object_end, "\"height\"", out_collider.capsule_height);
+  parseColliderTriangles(object_start, object_end, out_collider.triangles);
+  sanitizeColliderComponent(out_collider);
+  return true;
+}
+
+bool parseCharacterControllerObject(const char* object_start, const char* object_end,
+                                    CharacterControllerComponent& out_cct) {
+  parseFloatField(object_start, object_end, "\"radius\"", out_cct.radius);
+  parseFloatField(object_start, object_end, "\"height\"", out_cct.height);
+  parseFloatField(object_start, object_end, "\"slopeLimit\"", out_cct.slope_limit_degrees);
+  parseFloatField(object_start, object_end, "\"stepHeight\"", out_cct.step_height);
+  parseFloatField(object_start, object_end, "\"snap\"", out_cct.snap_length);
+  parseFloatField(object_start, object_end, "\"skin\"", out_cct.skin);
+  uint64_t mask = out_cct.mask;
+  if (parseUint64Field(object_start, object_end, "\"mask\"", mask)) {
+    out_cct.mask = static_cast<uint32_t>(mask);
+  }
+  sanitizeCharacterControllerComponent(out_cct);
+  return true;
+}
+
 bool parseAnimationTreeObject(const char* object_start, const char* object_end,
                               SceneEntityDefinition& out_entity);
 
@@ -1168,6 +1265,29 @@ bool parseEntityObject(const char* object_start, const char* object_end,
   if (fog_content != nullptr) {
     out_entity.has_fog = true;
     if (!parseFogObject(fog_content, fog_end, out_entity.fog)) {
+      return false;
+    }
+  }
+
+  parseStringArrayField(object_start, object_end, "\"groups\"", out_entity.groups);
+
+  const char* collider_end = nullptr;
+  const char* collider_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"collider\"", &collider_end);
+  if (collider_content != nullptr) {
+    out_entity.has_collider = true;
+    if (!parseColliderObject(collider_content, collider_end, out_entity.collider)) {
+      return false;
+    }
+  }
+
+  const char* cct_end = nullptr;
+  const char* cct_content = findObjectAfterKeyBounded(
+      object_start, object_end, "\"characterController\"", &cct_end);
+  if (cct_content != nullptr) {
+    out_entity.has_character_controller = true;
+    if (!parseCharacterControllerObject(cct_content, cct_end,
+                                        out_entity.character_controller)) {
       return false;
     }
   }
@@ -1987,6 +2107,61 @@ void appendFogJson(eastl::string& out, const FogComponent& fog) {
   out.append(buffer);
 }
 
+void appendColliderJson(eastl::string& out, const ColliderComponent& collider) {
+  ColliderComponent sanitized = collider;
+  sanitizeColliderComponent(sanitized);
+  char buffer[256];
+  out.append(",\n      \"collider\": {\n");
+  out.append("        \"shape\": \"");
+  out.append(colliderShapeKindJson(sanitized.shape));
+  out.append("\",\n        \"body\": \"");
+  out.append(colliderBodyKindJson(sanitized.body_kind));
+  std::snprintf(buffer, sizeof(buffer),
+                "\",\n        \"layer\": %u,\n        \"mask\": %u,\n        \"halfExtents\": ",
+                sanitized.layer, sanitized.mask);
+  out.append(buffer);
+  appendFloat3(out, sanitized.box_half_extents);
+  std::snprintf(buffer, sizeof(buffer),
+                ",\n        \"radius\": %.6g,\n        \"capsuleRadius\": %.6g,\n        "
+                "\"height\": %.6g",
+                static_cast<double>(sanitized.sphere_radius),
+                static_cast<double>(sanitized.capsule_radius),
+                static_cast<double>(sanitized.capsule_height));
+  out.append(buffer);
+  if (!sanitized.triangles.empty()) {
+    out.append(",\n        \"triangles\": [\n");
+    for (size_t i = 0; i < sanitized.triangles.size(); ++i) {
+      out.append("          { \"v0\": ");
+      appendFloat3(out, sanitized.triangles[i].v0);
+      out.append(", \"v1\": ");
+      appendFloat3(out, sanitized.triangles[i].v1);
+      out.append(", \"v2\": ");
+      appendFloat3(out, sanitized.triangles[i].v2);
+      out.append(i + 1 == sanitized.triangles.size() ? " }\n" : " },\n");
+    }
+    out.append("        ]");
+  }
+  out.append("\n      }");
+}
+
+void appendCharacterControllerJson(eastl::string& out,
+                                   const CharacterControllerComponent& cct) {
+  CharacterControllerComponent sanitized = cct;
+  sanitizeCharacterControllerComponent(sanitized);
+  char buffer[256];
+  out.append(",\n      \"characterController\": {\n");
+  std::snprintf(buffer, sizeof(buffer),
+                "        \"radius\": %.6g,\n        \"height\": %.6g,\n        "
+                "\"slopeLimit\": %.6g,\n        \"stepHeight\": %.6g,\n        "
+                "\"snap\": %.6g,\n        \"skin\": %.6g,\n        \"mask\": %u\n      }",
+                static_cast<double>(sanitized.radius), static_cast<double>(sanitized.height),
+                static_cast<double>(sanitized.slope_limit_degrees),
+                static_cast<double>(sanitized.step_height),
+                static_cast<double>(sanitized.snap_length), static_cast<double>(sanitized.skin),
+                sanitized.mask);
+  out.append(buffer);
+}
+
 eastl::string meshReferenceForSerialize(const eastl::string& mesh_ref,
                                         const AssetRegistry* registry) {
   if (mesh_ref.empty() || isValidGuidFormat(mesh_ref) || registry == nullptr) {
@@ -2094,6 +2269,24 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
 
   if (entity.has_fog) {
     appendFogJson(out, entity.fog);
+  }
+
+  if (!entity.groups.empty()) {
+    out.append(",\n      \"groups\": [\n");
+    for (size_t i = 0; i < entity.groups.size(); ++i) {
+      out.append("        ");
+      appendJsonString(out, entity.groups[i]);
+      out.append(i + 1 == entity.groups.size() ? "\n" : ",\n");
+    }
+    out.append("      ]");
+  }
+
+  if (entity.has_collider) {
+    appendColliderJson(out, entity.collider);
+  }
+
+  if (entity.has_character_controller) {
+    appendCharacterControllerJson(out, entity.character_controller);
   }
 
   out.append(is_last ? "\n    }\n" : "\n    },\n");

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v12 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v13 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -129,6 +129,24 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<int*, int> cine_is_gameplay_input_suppressed;
     public delegate* unmanaged[Cdecl]<int, byte*, byte*, int> log;
     public delegate* unmanaged[Cdecl]<ulong, byte*, int> animation_tree_play;
+    public delegate* unmanaged[Cdecl]<BlunderPhysicsRay*, BlunderPhysicsHit*, int> physics_raycast;
+    public delegate* unmanaged[Cdecl]<BlunderPhysicsSweep*, BlunderPhysicsHit*, int>
+        physics_shapecast;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> object_add_group;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int> object_remove_group;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int*, int> object_is_in_group;
+    public delegate* unmanaged[Cdecl]<ulong, int> object_group_count;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int> object_group_at;
+    public delegate* unmanaged[Cdecl]<byte*, ulong*, int, int*, int> find_objects_in_group;
+    public delegate* unmanaged[Cdecl]<ulong, int*, int> object_has_character_controller;
+    public delegate* unmanaged[Cdecl]<ulong, int> character_controller_move_and_slide;
+    public delegate* unmanaged[Cdecl]<ulong, float, float, float, int>
+        character_controller_set_velocity;
+    public delegate* unmanaged[Cdecl]<ulong, float*, float*, float*, int>
+        character_controller_get_velocity;
+    public delegate* unmanaged[Cdecl]<ulong, int*, int> character_controller_is_on_floor;
+    public delegate* unmanaged[Cdecl]<ulong, int*, int> character_controller_is_on_wall;
+    public delegate* unmanaged[Cdecl]<ulong, int*, int> character_controller_is_on_ceiling;
 }
 
 /// <summary>
@@ -144,4 +162,59 @@ public unsafe struct BlunderSyncGroupFireInstruction
     public byte _padding0;
     public byte _padding1;
     public byte _padding2;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct BlunderPhysicsRay
+{
+    public float ox;
+    public float oy;
+    public float oz;
+    public float dx;
+    public float dy;
+    public float dz;
+    public float max_distance;
+    public uint mask;
+    public int collide_with_areas;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public struct BlunderPhysicsSweep
+{
+    public int shape;
+    public float ox;
+    public float oy;
+    public float oz;
+    public float qx;
+    public float qy;
+    public float qz;
+    public float qw;
+    public float hx;
+    public float hy;
+    public float hz;
+    public float sphere_radius;
+    public float capsule_radius;
+    public float capsule_half_height;
+    public float dx;
+    public float dy;
+    public float dz;
+    public float max_distance;
+    public uint mask;
+    public int collide_with_areas;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public unsafe struct BlunderPhysicsHit
+{
+    public ulong object_id;
+    public float distance;
+    public float point_x;
+    public float point_y;
+    public float point_z;
+    public float normal_x;
+    public float normal_y;
+    public float normal_z;
+    public int hit;
+    public int is_area;
+    public fixed byte groups[256];
 }

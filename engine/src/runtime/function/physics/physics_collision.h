@@ -18,8 +18,14 @@ struct ColliderWorldShape {
   Fixed sphere_radius = Fixed::zero();
   Fixed capsule_radius = Fixed::zero();
   Fixed capsule_half_height = Fixed::zero();
+  const PhysicsTriangle* triangles = nullptr;
+  uint32_t triangle_count = 0;
 };
 
 [[nodiscard]] ContactManifold collide(const ColliderWorldShape& a, const ColliderWorldShape& b);
+
+[[nodiscard]] bool raycastShape(const ColliderWorldShape& shape, FixedVec3 origin,
+                                FixedVec3 direction, Fixed max_distance, Fixed& out_t,
+                                FixedVec3& out_point, FixedVec3& out_normal);
 
 }  // namespace Blunder

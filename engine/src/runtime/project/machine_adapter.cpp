@@ -1,10 +1,16 @@
 #include "runtime/project/machine_adapter.h"
 
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/physics/physics_manager.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
+#include "runtime/function/scene/collider_component.h"
+#include "runtime/function/scene/scene_instance.h"
 #include "runtime/project/play_session_controller.h"
 #include "runtime/project/play_step.h"
+
+#include <glm/glm.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -439,6 +445,27 @@ std::string machineResultJson(const MachineResult& result) {
     out += std::to_string(result.camera_far);
     out += '}';
   }
+  if (result.has_physics_hit) {
+    out += ",\"hit\":";
+    out += result.physics_hit ? "true" : "false";
+    out += ",\"is_area\":";
+    out += result.physics_is_area ? "true" : "false";
+    out += ",\"distance\":";
+    out += std::to_string(result.physics_distance);
+    out += ",\"point\":";
+    jsonAppendVec3(out, result.physics_point);
+    out += ",\"normal\":";
+    jsonAppendVec3(out, result.physics_normal);
+    out += ",\"groups\":";
+    jsonAppendEscaped(out, result.physics_groups);
+  }
+  if (!result.collider_shape.empty() || !result.collider_body.empty()) {
+    out += ",\"collider\":{\"shape\":";
+    jsonAppendEscaped(out, result.collider_shape);
+    out += ",\"body\":";
+    jsonAppendEscaped(out, result.collider_body);
+    out += '}';
+  }
   out += ",\"width\":";
   out += std::to_string(result.width);
   out += ",\"height\":";
@@ -456,6 +483,80 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
     return;
   }
   if (dispatchViewportCamera(launch, host, out)) {
+    return;
+  }
+  if (verb == "ray" || verb == "group" || verb == "collider") {
+    SceneInstance* scene = host.live_scene;
+    if (scene == nullptr) {
+      fail(out, k_request_subject_no_live_document);
+      return;
+    }
+    if (verb == "ray") {
+      PhysicsManager* physics = host.physics;
+      if (physics == nullptr) {
+        physics = g_runtime_global_context.m_physics_manager.get();
+      }
+      if (physics == nullptr) {
+        fail(out, "physics.unavailable");
+        return;
+      }
+      Vec3 origin(launch.cli.ox, launch.cli.oy, launch.cli.oz);
+      Vec3 direction(launch.cli.dx, launch.cli.dy, launch.cli.dz);
+      if (glm::length(direction) < 1e-6f) {
+        direction = Vec3(0.0f, 0.0f, -1.0f);
+      }
+      PhysicsSceneHit hit{};
+      const bool ok = physics->raycast(
+          *scene, origin, direction, launch.cli.max_distance, launch.cli.mask,
+          launch.cli.collide_with_areas, hit);
+      out.has_physics_hit = true;
+      out.physics_hit = ok && hit.hit;
+      out.physics_is_area = hit.is_area;
+      out.physics_distance = hit.distance;
+      out.physics_point = hit.point;
+      out.physics_normal = hit.normal;
+      for (size_t i = 0; i < hit.groups.size(); ++i) {
+        if (i != 0) {
+          out.physics_groups.append(",");
+        }
+        out.physics_groups.append(hit.groups[i]);
+      }
+      if (out.physics_hit) {
+        succeed(out);
+      } else {
+        fail(out, "physics.miss");
+      }
+      return;
+    }
+    if (verb == "group") {
+      if (launch.cli.entity.empty()) {
+        fail(out, k_request_address_unknown);
+        return;
+      }
+      scene->forEachEntity([&](EntityId id, const Entity&) {
+        if (scene->isInGroup(id, launch.cli.entity)) {
+          if (const Entity* entity = scene->getEntity(id)) {
+            out.names.push_back(entity->getName());
+          }
+        }
+      });
+      succeed(out);
+      return;
+    }
+    if (launch.cli.entity.empty()) {
+      fail(out, k_request_address_unknown);
+      return;
+    }
+    const EntityId id = scene->findEntityByName(launch.cli.entity);
+    const ColliderComponent* collider =
+        isValid(id) ? scene->getCollider(id) : nullptr;
+    if (collider == nullptr) {
+      fail(out, "collider.missing");
+      return;
+    }
+    out.collider_shape = colliderShapeKindJson(collider->shape);
+    out.collider_body = colliderBodyKindJson(collider->body_kind);
+    succeed(out);
     return;
   }
   if (verb == "save") {

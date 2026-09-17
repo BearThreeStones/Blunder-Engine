@@ -377,6 +377,29 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
       ui.set_inspector_fog_albedo_b(snapshot.inspector_fog_albedo_b);
       ui.set_inspector_fog_g(snapshot.inspector_fog_g);
       ui.set_inspector_fog_expanded(snapshot.inspector_fog_expanded);
+      ui.set_inspector_has_collider(snapshot.inspector_has_collider);
+      ui.set_inspector_collider_shape(snapshot.inspector_collider_shape);
+      ui.set_inspector_collider_body(snapshot.inspector_collider_body);
+      ui.set_inspector_collider_layer(snapshot.inspector_collider_layer);
+      ui.set_inspector_collider_mask(snapshot.inspector_collider_mask);
+      ui.set_inspector_collider_box_x(snapshot.inspector_collider_box_x);
+      ui.set_inspector_collider_box_y(snapshot.inspector_collider_box_y);
+      ui.set_inspector_collider_box_z(snapshot.inspector_collider_box_z);
+      ui.set_inspector_collider_sphere_radius(snapshot.inspector_collider_sphere_radius);
+      ui.set_inspector_collider_capsule_radius(snapshot.inspector_collider_capsule_radius);
+      ui.set_inspector_collider_capsule_height(snapshot.inspector_collider_capsule_height);
+      ui.set_inspector_collider_expanded(snapshot.inspector_collider_expanded);
+      ui.set_inspector_has_character_controller(snapshot.inspector_has_character_controller);
+      ui.set_inspector_cct_radius(snapshot.inspector_cct_radius);
+      ui.set_inspector_cct_height(snapshot.inspector_cct_height);
+      ui.set_inspector_cct_slope_limit(snapshot.inspector_cct_slope_limit);
+      ui.set_inspector_cct_step_height(snapshot.inspector_cct_step_height);
+      ui.set_inspector_cct_snap(snapshot.inspector_cct_snap);
+      ui.set_inspector_cct_skin(snapshot.inspector_cct_skin);
+      ui.set_inspector_cct_mask(snapshot.inspector_cct_mask);
+      ui.set_inspector_character_controller_expanded(
+          snapshot.inspector_character_controller_expanded);
+      ui.set_inspector_groups_text(toSharedString(snapshot.inspector_groups_text));
       ui.set_inspector_has_animation_player(snapshot.inspector_has_animation_player);
       {
         auto clip_model = std::make_shared<slint::VectorModel<AnimationClipRow>>();
@@ -897,6 +920,21 @@ void DockFloatingWindowHost::createEntry(const std::shared_ptr<DockNode>& node,
     component->on_inspector_fog_edited([this](bool commit) {
       if (m_callbacks.on_inspector_fog_edited) {
         m_callbacks.on_inspector_fog_edited(commit);
+      }
+    });
+    component->on_inspector_collider_edited([this](bool commit) {
+      if (m_callbacks.on_inspector_collider_edited) {
+        m_callbacks.on_inspector_collider_edited(commit);
+      }
+    });
+    component->on_inspector_character_controller_edited([this](bool commit) {
+      if (m_callbacks.on_inspector_character_controller_edited) {
+        m_callbacks.on_inspector_character_controller_edited(commit);
+      }
+    });
+    component->on_inspector_groups_edited([this]() {
+      if (m_callbacks.on_inspector_groups_edited) {
+        m_callbacks.on_inspector_groups_edited();
       }
     });
     component->on_inspector_add_unique_attachment([this](const slint::SharedString& kind) {

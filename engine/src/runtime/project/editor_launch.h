@@ -49,6 +49,13 @@ struct MachineCliArgs {
   float target_z{0.0f};
   bool has_eye{false};
   bool has_target{false};
+  float ox{0.0f};
+  float oy{0.0f};
+  float oz{0.0f};
+  float dz{0.0f};
+  float max_distance{100.0f};
+  uint32_t mask{0xFFFFFFFFu};
+  bool collide_with_areas{false};
 };
 
 struct EditorSessionLaunch {

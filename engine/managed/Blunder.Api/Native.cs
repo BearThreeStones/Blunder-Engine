@@ -126,7 +126,22 @@ internal static unsafe class Native
         abi.cine_is_in_cine != null &&
         abi.cine_is_gameplay_input_suppressed != null &&
         abi.log != null &&
-        abi.animation_tree_play != null;
+        abi.animation_tree_play != null &&
+        abi.physics_raycast != null &&
+        abi.physics_shapecast != null &&
+        abi.object_add_group != null &&
+        abi.object_remove_group != null &&
+        abi.object_is_in_group != null &&
+        abi.object_group_count != null &&
+        abi.object_group_at != null &&
+        abi.find_objects_in_group != null &&
+        abi.object_has_character_controller != null &&
+        abi.character_controller_move_and_slide != null &&
+        abi.character_controller_set_velocity != null &&
+        abi.character_controller_get_velocity != null &&
+        abi.character_controller_is_on_floor != null &&
+        abi.character_controller_is_on_wall != null &&
+        abi.character_controller_is_on_ceiling != null;
 
     static void EnsureRegistered()
     {
@@ -614,6 +629,202 @@ internal static unsafe class Native
         {
             return s_abi.animation_tree_play(id, namePtr);
         }
+    }
+
+    public static int blunder_physics_raycast(in BlunderPhysicsRay ray, out BlunderPhysicsHit hit)
+    {
+        EnsureRegistered();
+        hit = default;
+        BlunderPhysicsRay copy = ray;
+        BlunderPhysicsHit result = default;
+        int rc = s_abi.physics_raycast(&copy, &result);
+        hit = result;
+        return rc;
+    }
+
+    public static int blunder_physics_shapecast(in BlunderPhysicsSweep sweep, out BlunderPhysicsHit hit)
+    {
+        EnsureRegistered();
+        hit = default;
+        BlunderPhysicsSweep copy = sweep;
+        BlunderPhysicsHit result = default;
+        int rc = s_abi.physics_shapecast(&copy, &result);
+        hit = result;
+        return rc;
+    }
+
+    public static int blunder_object_add_group(ulong id, string name)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.object_add_group(id, namePtr);
+        }
+    }
+
+    public static int blunder_object_remove_group(ulong id, string name)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.object_remove_group(id, namePtr);
+        }
+    }
+
+    public static int blunder_object_is_in_group(ulong id, string name, out int value)
+    {
+        EnsureRegistered();
+        value = 0;
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            int flag = 0;
+            int rc = s_abi.object_is_in_group(id, namePtr, &flag);
+            value = flag;
+            return rc;
+        }
+    }
+
+    public static int blunder_object_group_count(ulong id)
+    {
+        EnsureRegistered();
+        return s_abi.object_group_count(id);
+    }
+
+    public static int blunder_object_group_at(ulong id, int index, out string name)
+    {
+        EnsureRegistered();
+        name = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.object_group_at(id, index, namePtr, capacity);
+            if (rc != Ok)
+            {
+                return rc;
+            }
+
+            int length = 0;
+            while (length < capacity - 1 && buffer[length] != 0)
+            {
+                ++length;
+            }
+
+            name = length == 0 ? "" : Encoding.UTF8.GetString(buffer, 0, length);
+            return rc;
+        }
+    }
+
+    public static int blunder_find_objects_in_group(string name, out ulong[] ids)
+    {
+        EnsureRegistered();
+        ids = [];
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            int count = 0;
+            int rc = s_abi.find_objects_in_group(namePtr, null, 0, &count);
+            if (rc != Ok)
+            {
+                return rc;
+            }
+
+            if (count <= 0)
+            {
+                return Ok;
+            }
+
+            ulong[] buffer = new ulong[count];
+            fixed (ulong* idsPtr = buffer)
+            {
+                int written = 0;
+                rc = s_abi.find_objects_in_group(namePtr, idsPtr, count, &written);
+                if (rc != Ok)
+                {
+                    return rc;
+                }
+
+                if (written < count)
+                {
+                    Array.Resize(ref buffer, written);
+                }
+
+                ids = buffer;
+                return rc;
+            }
+        }
+    }
+
+    public static int blunder_object_has_character_controller(ulong id, out int value)
+    {
+        EnsureRegistered();
+        value = 0;
+        int flag = 0;
+        int rc = s_abi.object_has_character_controller(id, &flag);
+        value = flag;
+        return rc;
+    }
+
+    public static int blunder_character_controller_move_and_slide(ulong id)
+    {
+        EnsureRegistered();
+        return s_abi.character_controller_move_and_slide(id);
+    }
+
+    public static int blunder_character_controller_set_velocity(ulong id, float x, float y, float z)
+    {
+        EnsureRegistered();
+        return s_abi.character_controller_set_velocity(id, x, y, z);
+    }
+
+    public static int blunder_character_controller_get_velocity(
+        ulong id, out float x, out float y, out float z)
+    {
+        EnsureRegistered();
+        x = 0;
+        y = 0;
+        z = 0;
+        float ox = 0;
+        float oy = 0;
+        float oz = 0;
+        int rc = s_abi.character_controller_get_velocity(id, &ox, &oy, &oz);
+        x = ox;
+        y = oy;
+        z = oz;
+        return rc;
+    }
+
+    public static int blunder_character_controller_is_on_floor(ulong id, out int value)
+    {
+        EnsureRegistered();
+        value = 0;
+        int flag = 0;
+        int rc = s_abi.character_controller_is_on_floor(id, &flag);
+        value = flag;
+        return rc;
+    }
+
+    public static int blunder_character_controller_is_on_wall(ulong id, out int value)
+    {
+        EnsureRegistered();
+        value = 0;
+        int flag = 0;
+        int rc = s_abi.character_controller_is_on_wall(id, &flag);
+        value = flag;
+        return rc;
+    }
+
+    public static int blunder_character_controller_is_on_ceiling(ulong id, out int value)
+    {
+        EnsureRegistered();
+        value = 0;
+        int flag = 0;
+        int rc = s_abi.character_controller_is_on_ceiling(id, &flag);
+        value = flag;
+        return rc;
     }
 
     public static int blunder_animation_tree_set_add2_weight(ulong id, float weight)
