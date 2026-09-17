@@ -235,6 +235,24 @@ int main() {
                 listed.find("\"name\":\"group\"") != std::string::npos);
     expect_true("mcp tools collider",
                 listed.find("\"name\":\"collider\"") != std::string::npos);
+    expect_true("mcp initialize needs no engine",
+                !mcpMessageNeedsEngine(
+                    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}"));
+    expect_true(
+        "mcp initialized needs no engine",
+        !mcpMessageNeedsEngine(
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}"));
+    expect_true("mcp tools/list needs no engine",
+                !mcpMessageNeedsEngine(
+                    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+    expect_true("mcp ping needs no engine",
+                !mcpMessageNeedsEngine(
+                    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}"));
+    expect_true(
+        "mcp tools/call needs engine",
+        mcpMessageNeedsEngine(
+            "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":"
+            "{\"name\":\"query\"}}"));
 
     SceneInstance scene;
     DocumentHistory history;

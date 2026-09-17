@@ -374,6 +374,38 @@ bool mcpStdinHasBytes() {
 #endif
 }
 
+bool mcpStdinClosed() {
+#ifdef _WIN32
+  HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+  if (handle == INVALID_HANDLE_VALUE || handle == nullptr) {
+    return true;
+  }
+  DWORD avail = 0;
+  if (PeekNamedPipe(handle, nullptr, 0, nullptr, &avail, nullptr)) {
+    return false;
+  }
+  const DWORD err = GetLastError();
+  return err == ERROR_BROKEN_PIPE || err == ERROR_PIPE_NOT_CONNECTED;
+#else
+  pollfd fd{};
+  fd.fd = STDIN_FILENO;
+  fd.events = POLLIN;
+  const int r = poll(&fd, 1, 0);
+  if (r < 0) {
+    return true;
+  }
+  return (fd.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0;
+#endif
+}
+
+bool mcpMessageNeedsEngine(const std::string& request) {
+  std::string method;
+  if (!jsonExtractString(request, "method", method)) {
+    return false;
+  }
+  return method == "tools/call";
+}
+
 namespace {
 
 #ifdef _WIN32
