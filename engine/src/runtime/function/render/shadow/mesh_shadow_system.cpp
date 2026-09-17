@@ -1,7 +1,6 @@
 #include "runtime/function/render/shadow/mesh_shadow_system.h"
 
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -1055,29 +1054,12 @@ void MeshShadowSystem::logVsmFrame() {
   LOG_INFO(
       "[MeshShadowSystem] frame={} vsm={} dir={} meshlets={} marked={} "
       "gpuMarks={} overflow={} light=({:.3f},{:.3f},{:.3f}) cam=({:.3f},{:.3f},"
-      "{:.3f}) floorSlot={} floorZ={:.4f} midSlot={} midZ={:.4f}",
-      m_debug_frame, m_vsm_enabled ? 1 : 0, isValid(m_local.directional) ? 1 : 0,
-      m_meshlet_count, m_marked_count, m_gpu_mark_count, m_overflow, m_light_dir.x,
-      m_light_dir.y, m_light_dir.z, m_camera.x, m_camera.y, m_camera.z, floor_slot,
-      floor_z, mid_slot, mid_z);
-  FILE* file = nullptr;
-  if (fopen_s(&file,
-              "E:\\cursor\\stores\\bc-a87e1603-397e-40c2-ac5d-d4373b287a4a\\"
-              "internal\\vsm-runtime.log",
-              "a") != 0 ||
-      file == nullptr) {
-    return;
-  }
-  std::fprintf(
-      file,
-      "frame=%u vsm=%d dir=%d meshlets=%u marked=%u gpuMarks=%u overflow=%u "
-      "light=(%.3f,%.3f,%.3f) cam=(%.3f,%.3f,%.3f) floorVirt=%u floorSlot=%u "
-      "floorZ=%.4f midSlot=%u midZ=%.4f\n",
+      "{:.3f}) floorVirt={} floorSlot={} floorZ={:.4f} midVirt={} midSlot={} "
+      "midZ={:.4f}",
       m_debug_frame, m_vsm_enabled ? 1 : 0, isValid(m_local.directional) ? 1 : 0,
       m_meshlet_count, m_marked_count, m_gpu_mark_count, m_overflow, m_light_dir.x,
       m_light_dir.y, m_light_dir.z, m_camera.x, m_camera.y, m_camera.z, floor_virt,
-      floor_slot, floor_z, mid_slot, mid_z);
-  std::fclose(file);
+      floor_slot, floor_z, mid_virt, mid_slot, mid_z);
 }
 
 void MeshShadowSystem::compactCpuFlags() {
