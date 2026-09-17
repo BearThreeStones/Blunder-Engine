@@ -2,11 +2,11 @@
 
 One row per User story. Agent QC does not substitute. Only the human confirms.
 
-**Status:** Agent QC run 2026-09-17 (not human acceptance)
+**Status:** Agent QC rerun 2026-09-17 (not human acceptance)
 
-Agent QC (not acceptance): this cloud-agent session has **no** Cursor `blunder-editor` namespace. Spoke JSON-RPC stdio to Debug `engine_editor_qc.exe --mcp --project-root "E:\Blunder Projects\DogWalk" --scene assets/Scenes/root.scene.asset` (20 tools). `tools/call` JSON framing was missing a `}` (fixed on this branch; `machine_adapter_test` pass). Cursor `mcp.json` `--scene Assets/...` does not match the `assets/` virtual-path prefix, so that spelling never opens a live document.
+Agent QC (not acceptance): this cloud-agent session has **no** Cursor `blunder-editor` namespace (`GetDynamicTools` pattern `blunder` empty). Spoke JSON-RPC stdio to Debug `engine_editor_qc.exe --mcp --project-root "E:\Blunder Projects\DogWalk" --scene assets/Scenes/root.scene.asset` (kept stdin/stdout; handshake 22.1 ms; 20 tools). Human Cursor MCP pid 62760 already owns product `engine_editor.exe` with `--scene Assets/...` (capital A never opens a live document). `tools/call` text JSON was missing a `}` until this branch.
 
-Windowed `engine_editor` on the DogWalk Project (`E:\Blunder Projects\DogWalk`). Do not use Test or Sponza as the main scene. Agent QC used Headless `--mcp` stdio (same verbs); live `capture` returned `capture.scene_unreadable`; `play-frame` is a blank 1280×720 (no mesh renderers). Human still confirms.
+Windowed `engine_editor` on the DogWalk Project (`E:\Blunder Projects\DogWalk`). Do not use Test or Sponza as the main scene. Agent QC used Headless `--mcp` stdio (same verbs). Live `capture` → `capture.scene_unreadable` (thumbnail service / no mesh draws). `play` / `pause` / `step` 120 ok; `diagnose` clean with `DogWalk.dll` present. Live `query` Walker stayed at z=1.8 after step (Play world ≠ live query). `play-frame` is a blank 1280×720 (no mesh renderers, no editor wires). Human still confirms.
 
 | # | User story | Pass |
 |---|------------|------|
