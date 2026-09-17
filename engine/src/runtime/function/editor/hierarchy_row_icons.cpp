@@ -33,6 +33,11 @@ void fillHierarchyRowIcons(const SceneInstance& scene, EntityId entity_id,
     slot.kind = HierarchyRowIconKind::Light;
     out.push_back(slot);
   }
+  if (scene.getFog(entity_id) != nullptr) {
+    HierarchyRowIconSlot slot{};
+    slot.kind = HierarchyRowIconKind::Fog;
+    out.push_back(slot);
+  }
 
   const Object* object = scene.findBoundObject(entity_id);
   if (object == nullptr) {
@@ -114,6 +119,8 @@ bool hierarchyRowIconAttachmentPresent(const SceneInstance& scene,
       return scene.getCamera(entity_id) != nullptr;
     case HierarchyRowIconKind::Light:
       return scene.getLight(entity_id) != nullptr;
+    case HierarchyRowIconKind::Fog:
+      return scene.getFog(entity_id) != nullptr;
     case HierarchyRowIconKind::Skeleton: {
       const Object* object = scene.findBoundObject(entity_id);
       return object != nullptr && object->hasSkeleton();

@@ -126,6 +126,26 @@ class SetLightComponentCommand final : public IEditorCommand {
   }
 };
 
+class SetFogComponentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  FogComponent before_fog{};
+  FogComponent after_fog{};
+
+  void undo() override { apply(before_fog); }
+
+  void redo() override { apply(after_fog); }
+
+ private:
+  void apply(const FogComponent& fog) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    scene->setFog(entity_id, fog);
+  }
+};
+
 class SetAnimationPlayerClipBindingsCommand final : public IEditorCommand {
  public:
   SceneInstance* scene{nullptr};
@@ -633,6 +653,21 @@ eastl::unique_ptr<IEditorCommand> makeSetLightComponentCommand(
   command->entity_id = entity_id;
   command->before_light = before_light;
   command->after_light = after_light;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetFogComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const FogComponent& before_fog,
+    const FogComponent& after_fog, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetFogComponentCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_fog = before_fog;
+  command->after_fog = after_fog;
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   stampPlayV1(*command, entity_id);

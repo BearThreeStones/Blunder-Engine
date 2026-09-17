@@ -146,6 +146,10 @@ class SceneInstance final : public IEntityStore {
   bool hasWorldBounds() const { return m_has_world_bounds; }
   const AABB& getWorldBounds() const { return m_world_bounds; }
   void setWorldBounds(const AABB& bounds);
+  /// Authored .scene.asset loads do not go through glTF import, so world
+  /// bounds stay unset and AABB camera snap never frames centimetre Sponza.
+  /// Build the AABB from MeshRenderer local bounds * world matrix.
+  bool rebuildWorldBoundsFromMeshes();
 
   void tick(float delta_time);
 

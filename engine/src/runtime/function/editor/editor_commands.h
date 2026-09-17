@@ -11,6 +11,7 @@
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene.h"
@@ -35,6 +36,11 @@ eastl::unique_ptr<IEditorCommand> makeSetCameraComponentCommand(
 eastl::unique_ptr<IEditorCommand> makeSetLightComponentCommand(
     SceneInstance* scene, EntityId entity_id, const LightComponent& before_light,
     const LightComponent& after_light, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetFogComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const FogComponent& before_fog,
+    const FogComponent& after_fog, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
 
 eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(

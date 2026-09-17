@@ -23,6 +23,7 @@
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/light_component.h"
+#include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_manager.h"
@@ -141,6 +142,9 @@ class SlintSystem final : public IEditorUiPresentation {
   /// False during dock-splitter drags so editor camera / layers do not see mouse events.
   bool shouldRouteMouseToInputLayers(const SDL_Event& event) const;
 
+  /// RMB/MMB viewport orbit owns the pointer; do not dispatch to Slint.
+  bool shouldSuppressSlintPointerForViewportCamera(const SDL_Event& event) const;
+
   /// True only for Win32 border sizing — skip Skia present (OS stretch).
   bool shouldSkipSkiaPresentDuringDefer() const;
 
@@ -211,8 +215,17 @@ class SlintSystem final : public IEditorUiPresentation {
   /// True while interactive-tier viewport pacing applies (camera/gizmo input or hold).
   bool isViewportPacingInteractive() const { return m_viewport_pacing_interactive; }
 
+  /// VkImage currently bound into the Slint viewport (0 if none). 3D must not
+  /// write this image while Skia may still sample it.
+  uint64_t boundViewportVkImage() const { return m_borrowed_viewport_vk_image; }
+
   /// Updates the Persp/Iso label on the viewport overlay (Slint, not GPU).
   void syncViewportProjectionMode(bool is_perspective);
+
+  /// Viewport-only froxel occupancy heatmap (not persisted).
+  bool froxelOccupancyHeatmapEnabled() const;
+  void toggleFroxelOccupancyHeatmap();
+  void syncFroxelViewportStats(uint32_t dropped_this_frame, uint64_t dropped_total);
 
   /// Clears a stale 3D readback (e.g. after viewport resize) before the next render upload.
   void applyPendingViewportInvalidate();
@@ -225,6 +238,12 @@ class SlintSystem final : public IEditorUiPresentation {
   void markViewportDirtyRegion();
   /// Forces the next Skia composite to repaint the full window.
   void markFullSkiaRefresh();
+  /// Live document swapped: next zero-copy present must rebind the Viewport
+  /// Image even if the VkImage handle is unchanged, and skip the idle composite
+  /// throttle. Partial Skia otherwise keeps the previous scene's tile.
+  void forceNextViewportImageBind();
+  /// True when the last `setViewportExternalTexture` call bound the image.
+  bool lastViewportExternalBindOk() const { return m_last_viewport_external_bind_ok; }
   bool consumePendingFullSkiaRefresh();
   bool slintPartialCompositeEnabled() const;
 
@@ -290,6 +309,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyInspectorAddBehaviour(const eastl::string& clr_type);
   void applyInspectorCamera(bool commit);
   void applyInspectorLight(bool commit);
+  void applyInspectorFog(bool commit);
   void applyInspectorAddUniqueAttachment(const eastl::string& kind_name);
   void applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name);
   void applyHierarchyCreateRequested(int parent_entity_id, const eastl::string& kind_name);
@@ -323,6 +343,10 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyPreviewLight(int entity_id, int kind, int index, int light_type,
                          float color_r, float color_g, float color_b,
                          float intensity, bool enabled, float range, bool commit);
+  void applyPreviewFog(int entity_id, int kind, int index, bool enabled, bool volumetric,
+                       float density, float height_falloff, float view_distance,
+                       float albedo_r, float albedo_g, float albedo_b, float scattering_g,
+                       bool commit);
   void applyPreviewUniqueRemove(int entity_id, int kind, int index);
   void applyPreviewTreeCanvas(int entity_id);
   void applyPreviewBehaviourRemove(int entity_id, int kind, int index);
@@ -342,6 +366,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyInspectorRemoveClipRow(int entry_index);
   void syncInspectorCameraFromSelection();
   void syncInspectorLightFromSelection();
+  void syncInspectorFogFromSelection();
   void syncInspectorAnimationPlayerFromSelection();
   void syncInspectorUniqueAttachmentsFromSelection();
   void applyInspectorAnimationClipCommit(int entry_index, const eastl::string& clip_name,
@@ -540,6 +565,8 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Returns nullopt while the engine is shutting down or UiHost is gone.
   std::optional<UiContext::LockedServices> lockServices() const;
 
+  bool isEditorCameraInteracting() const;
+
   void cacheLayoutRects();
   void cacheViewportLogicalRectOnly();
   void seedDockingWorkspace();
@@ -681,6 +708,8 @@ class SlintSystem final : public IEditorUiPresentation {
   CameraComponent m_inspector_camera_edit_before{};
   bool m_inspector_light_edit_open{false};
   LightComponent m_inspector_light_edit_before{};
+  bool m_inspector_fog_edit_open{false};
+  FogComponent m_inspector_fog_edit_before{};
   bool m_inspector_mesh_material_edit_open{false};
   MeshAssetDescriptor m_inspector_mesh_material_edit_before{};
   bool m_inspector_behaviour_edit_open{false};
@@ -719,6 +748,8 @@ class SlintSystem final : public IEditorUiPresentation {
   /// Zero-copy: avoid re-binding Slint Image when only VkImage contents changed.
   bool m_borrowed_viewport_image_bound{false};
   uint64_t m_borrowed_viewport_vk_image{0};
+  bool m_force_viewport_image_bind{false};
+  bool m_last_viewport_external_bind_ok{false};
   struct BorrowedViewportImageCacheEntry {
     uint64_t vk_image{0};
     uint32_t width{0};

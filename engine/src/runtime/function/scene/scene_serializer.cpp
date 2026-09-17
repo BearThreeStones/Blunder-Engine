@@ -1024,6 +1024,23 @@ bool parseLightObject(const char* object_start, const char* object_end,
   return true;
 }
 
+bool parseFogObject(const char* object_start, const char* object_end,
+                    FogComponent& out_fog) {
+  parseBoolField(object_start, object_end, "\"enabled\"", out_fog.enabled);
+  parseBoolField(object_start, object_end, "\"volumetricEnabled\"",
+                 out_fog.volumetric_enabled);
+  parseFloatField(object_start, object_end, "\"density\"", out_fog.density);
+  parseFloatField(object_start, object_end, "\"heightFalloff\"",
+                  out_fog.height_falloff);
+  parseFloatField(object_start, object_end, "\"viewDistance\"",
+                  out_fog.view_distance);
+  parseVec3Field(object_start, object_end, "\"albedo\"", out_fog.albedo,
+                 Vec3(1.0f, 1.0f, 1.0f));
+  parseFloatField(object_start, object_end, "\"g\"", out_fog.scattering_g);
+  sanitizeFogComponent(out_fog);
+  return true;
+}
+
 bool parseAnimationTreeObject(const char* object_start, const char* object_end,
                               SceneEntityDefinition& out_entity);
 
@@ -1141,6 +1158,16 @@ bool parseEntityObject(const char* object_start, const char* object_end,
     out_entity.has_light = true;
     if (!parseLightObject(light_content, light_end, out_entity.light,
                           out_entity.light_linking_names)) {
+      return false;
+    }
+  }
+
+  const char* fog_end = nullptr;
+  const char* fog_content =
+      findObjectAfterKeyBounded(object_start, object_end, "\"fog\"", &fog_end);
+  if (fog_content != nullptr) {
+    out_entity.has_fog = true;
+    if (!parseFogObject(fog_content, fog_end, out_entity.fog)) {
       return false;
     }
   }
@@ -1938,6 +1965,28 @@ void appendLightJson(eastl::string& out, const LightComponent& light,
   out.append("        ]\n      }");
 }
 
+void appendFogJson(eastl::string& out, const FogComponent& fog) {
+  char buffer[192];
+  FogComponent sanitized = fog;
+  sanitizeFogComponent(sanitized);
+  out.append(",\n      \"fog\": {\n");
+  out.append("        \"enabled\": ");
+  out.append(sanitized.enabled ? "true" : "false");
+  out.append(",\n        \"volumetricEnabled\": ");
+  out.append(sanitized.volumetric_enabled ? "true" : "false");
+  std::snprintf(buffer, sizeof(buffer),
+                ",\n        \"density\": %.6g,\n        \"heightFalloff\": %.6g,\n"
+                "        \"viewDistance\": %.6g,\n        \"albedo\": ",
+                static_cast<double>(sanitized.density),
+                static_cast<double>(sanitized.height_falloff),
+                static_cast<double>(sanitized.view_distance));
+  out.append(buffer);
+  appendFloat3(out, sanitized.albedo);
+  std::snprintf(buffer, sizeof(buffer), ",\n        \"g\": %.6g\n      }",
+                static_cast<double>(sanitized.scattering_g));
+  out.append(buffer);
+}
+
 eastl::string meshReferenceForSerialize(const eastl::string& mesh_ref,
                                         const AssetRegistry* registry) {
   if (mesh_ref.empty() || isValidGuidFormat(mesh_ref) || registry == nullptr) {
@@ -2041,6 +2090,10 @@ void appendEntityJson(eastl::string& out, const SceneEntityDefinition& entity,
 
   if (entity.has_light) {
     appendLightJson(out, entity.light, entity.light_linking_names);
+  }
+
+  if (entity.has_fog) {
+    appendFogJson(out, entity.fog);
   }
 
   out.append(is_last ? "\n    }\n" : "\n    },\n");

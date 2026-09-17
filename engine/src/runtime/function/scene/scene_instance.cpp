@@ -17,6 +17,7 @@
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/scene/scene_serializer.h"
+#include "runtime/resource/asset/mesh_asset.h"
 
 #include <cstddef>
 #include <cstring>
@@ -426,6 +427,16 @@ void SceneInstance::instantiate(const Scene& scene) {
     }
     setLight(ids[i], eastl::move(light));
   }
+
+  for (size_t i = 0; i < scene.getEntities().size(); ++i) {
+    const SceneEntityDefinition& definition = scene.getEntities()[i];
+    if (!definition.has_fog) {
+      continue;
+    }
+    FogComponent fog = definition.fog;
+    sanitizeFogComponent(fog);
+    setFog(ids[i], eastl::move(fog));
+  }
 }
 
 void SceneInstance::clear() {
@@ -535,6 +546,35 @@ void SceneInstance::clearFog(EntityId id) {
 void SceneInstance::setWorldBounds(const AABB& bounds) {
   m_world_bounds = bounds;
   m_has_world_bounds = true;
+}
+
+bool SceneInstance::rebuildWorldBoundsFromMeshes() {
+  AABB merged{};
+  bool any = false;
+  forEachMeshRenderer([&](EntityId entity_id, const MeshRendererComponent& renderer) {
+    if (!renderer.mesh || !isActiveInHierarchy(entity_id)) {
+      return;
+    }
+    const AABB& local = renderer.mesh->getLocalBounds();
+    const Mat4 world = getWorldMatrix(entity_id);
+    for (int corner = 0; corner < 8; ++corner) {
+      const Vec3 local_corner((corner & 1) ? local.max.x : local.min.x,
+                              (corner & 2) ? local.max.y : local.min.y,
+                              (corner & 4) ? local.max.z : local.min.z);
+      const Vec3 world_corner = Vec3(world * Vec4(local_corner, 1.0f));
+      if (!any) {
+        merged.min = merged.max = world_corner;
+        any = true;
+      } else {
+        merged.expandToInclude(world_corner);
+      }
+    }
+  });
+  if (!any) {
+    return false;
+  }
+  setWorldBounds(merged);
+  return true;
 }
 
 void SceneInstance::setParent(SceneInstance* parent) {
@@ -812,6 +852,11 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
         }
         definition.light_linking_names.push_back(linked->getName());
       }
+    }
+
+    if (const FogComponent* fog = getFog(entity_id)) {
+      definition.has_fog = true;
+      definition.fog = *fog;
     }
 
     out_scene.getEntities().push_back(eastl::move(definition));
