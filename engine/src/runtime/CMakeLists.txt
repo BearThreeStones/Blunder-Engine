@@ -277,6 +277,7 @@ add_library(engine_runtime STATIC
     "function/scene/entity.cpp"
     "function/scene/scene.h"
     "function/scene/light_component.h"
+    "function/scene/fog_component.h"
     "function/scene/light_eval.h"
     "function/scene/light_eval.cpp"
     "function/scene/scene_starter.h"
