@@ -10,6 +10,14 @@
 #include <filesystem>
 #include <fstream>
 
+#ifdef _WIN32
+#include <windows.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/slang/engine_gpu_cache.h"
 #include "runtime/function/render/slang/sha256.h"
@@ -23,6 +31,47 @@ eastl::string pathToUtf8(const std::filesystem::path& path) {
   return eastl::string(reinterpret_cast<const char*>(u8.data()), u8.size());
 }
 
+std::filesystem::path queryExecutablePath() {
+#ifdef _WIN32
+  wchar_t buffer[MAX_PATH];
+  const DWORD len = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+  if (len == 0 || len == MAX_PATH) {
+    return {};
+  }
+  return std::filesystem::path(buffer);
+#elif defined(__linux__)
+  char buffer[4096];
+  const ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+  if (len <= 0) {
+    return {};
+  }
+  buffer[len] = '\0';
+  return std::filesystem::path(buffer);
+#elif defined(__APPLE__)
+  char buffer[4096];
+  uint32_t size = sizeof(buffer);
+  if (_NSGetExecutablePath(buffer, &size) != 0) {
+    return {};
+  }
+  return std::filesystem::path(buffer);
+#else
+  return {};
+#endif
+}
+
+void appendAncestorCandidates(eastl::vector<std::filesystem::path>& candidates,
+                              std::filesystem::path current,
+                              const std::filesystem::path& file_path) {
+  while (!current.empty()) {
+    candidates.emplace_back(current / file_path);
+    const std::filesystem::path parent = current.parent_path();
+    if (parent == current) {
+      break;
+    }
+    current = parent;
+  }
+}
+
 struct SlangFile {
   eastl::string code;
   eastl::string resolved;
@@ -34,18 +83,20 @@ SlangFile loadSlangFile(const char* path) {
 
   const fs::path file_path(path);
   eastl::vector<fs::path> candidates;
-  candidates.reserve(8);
+  candidates.reserve(24);
   candidates.emplace_back(file_path);
 
   std::error_code ec;
-  fs::path current = fs::current_path(ec);
+  fs::path cwd = fs::current_path(ec);
   if (!ec) {
-    while (!current.empty()) {
-      candidates.emplace_back(current / file_path);
-      const fs::path parent = current.parent_path();
-      if (parent == current) break;
-      current = parent;
-    }
+    appendAncestorCandidates(candidates, cwd, file_path);
+  }
+
+  // Cursor MCP cwd is often the workspace (E:\Dev), which has no engine/shaders
+  // parent. Walk from the exe dir too (GetModuleFileName / equivalent).
+  const fs::path exe_path = queryExecutablePath();
+  if (!exe_path.empty()) {
+    appendAncestorCandidates(candidates, exe_path.parent_path(), file_path);
   }
 
   for (const fs::path& candidate : candidates) {
