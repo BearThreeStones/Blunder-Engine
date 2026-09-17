@@ -285,6 +285,10 @@ add_library(engine_runtime STATIC
     "function/scene/scene.h"
     "function/scene/light_component.h"
     "function/scene/fog_component.h"
+    "function/scene/collider_component.h"
+    "function/scene/character_controller_component.h"
+    "function/physics/physics_manager.h"
+    "function/physics/physics_manager.cpp"
     "function/scene/light_eval.h"
     "function/scene/light_eval.cpp"
     "function/scene/scene_starter.h"
@@ -298,6 +302,8 @@ add_library(engine_runtime STATIC
     "function/scene/gltf_scene_importer.h"
     "function/scene/gltf_scene_importer.cpp"
     "function/scene/gltf_node_extras.h"
+    "function/scene/gltf_collision_extras.h"
+    "function/scene/gltf_collision_extras.cpp"
     "function/scene/se_world_flatten.h"
     "function/scene/se_world_flatten.cpp"
     "function/scene/skeleton_from_gltf.h"
@@ -467,6 +473,7 @@ target_link_libraries(engine_runtime
         EASTL
         glm
         spdlog
+        blunder_physics
         Recast
         Detour
         DetourCrowd
@@ -523,6 +530,7 @@ endif()
 # duplicate ObjectDB/ClassDB globals in one process.
 add_library(blunder_engine_c_static STATIC
     "core/reflection/engine_c_abi.cpp"
+    "core/reflection/engine_c_abi_physics.cpp"
 )
 target_include_directories(blunder_engine_c_static
     PUBLIC
@@ -542,6 +550,7 @@ endif()
 # do not also LoadLibrary SHARED for Object traffic beside the static image.
 add_library(blunder_engine_c SHARED
     "core/reflection/engine_c_abi.cpp"
+    "core/reflection/engine_c_abi_physics.cpp"
 )
 target_include_directories(blunder_engine_c
     PUBLIC

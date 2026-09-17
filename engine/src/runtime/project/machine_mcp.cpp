@@ -294,6 +294,18 @@ void applyArgNumber(EditorSessionLaunch& launch, const std::string& key,
   } else if (key == "target_z") {
     launch.cli.target_z = std::strtof(value.c_str(), &end);
     launch.cli.has_target = true;
+  } else if (key == "ox") {
+    launch.cli.ox = std::strtof(value.c_str(), &end);
+  } else if (key == "oy") {
+    launch.cli.oy = std::strtof(value.c_str(), &end);
+  } else if (key == "oz") {
+    launch.cli.oz = std::strtof(value.c_str(), &end);
+  } else if (key == "dz") {
+    launch.cli.dz = std::strtof(value.c_str(), &end);
+  } else if (key == "max_distance") {
+    launch.cli.max_distance = std::strtof(value.c_str(), &end);
+  } else if (key == "mask") {
+    launch.cli.mask = static_cast<uint32_t>(std::strtoul(value.c_str(), &end, 0));
   }
 }
 
@@ -301,8 +313,9 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
   const char* keys[] = {"subject", "out",     "name", "entity", "asset", "scene",
                         "steps",   "tx",      "ty",   "tz",     "qx",    "qy",
                         "qz",      "qw",      "sx",   "sy",     "sz",    "dx",
-                        "dy",      "wheel",   "eye_x", "eye_y", "eye_z",
-                        "target_x", "target_y", "target_z"};
+                        "dy",      "dz",      "wheel", "eye_x", "eye_y", "eye_z",
+                        "target_x", "target_y", "target_z", "ox", "oy", "oz",
+                        "max_distance", "mask"};
   for (const char* key : keys) {
     std::string value;
     if (jsonExtractString(src, key, value)) {
@@ -344,6 +357,10 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
              src.find("\"enabled\": false") != std::string::npos) {
     launch.cli.enabled = false;
     launch.cli.has_enabled = true;
+  }
+  if (src.find("\"collide_with_areas\":true") != std::string::npos ||
+      src.find("\"collide_with_areas\": true") != std::string::npos) {
+    launch.cli.collide_with_areas = true;
   }
 }
 
@@ -413,6 +430,21 @@ const char* k_tools_list =
     "\"boolean\"}}}},"
     "{\"name\":\"select\",\"description\":\"Select a Live entity by name so "
     "Camera Preview / Mesh Preview chrome can show.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}},"
+    "{\"name\":\"ray\",\"description\":\"Physics raycast in SI metres (Play/Edit "
+    "same query). origin ox/oy/oz, direction dx/dy/dz, max_distance, mask, "
+    "collide_with_areas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"ox\":{\"type\":"
+    "\"number\"},\"oy\":{\"type\":\"number\"},\"oz\":{\"type\":\"number\"},"
+    "\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":\"number\"},\"dz\":{\"type\":"
+    "\"number\"},\"max_distance\":{\"type\":\"number\"},\"mask\":{\"type\":"
+    "\"integer\"},\"collide_with_areas\":{\"type\":\"boolean\"}}}},"
+    "{\"name\":\"group\",\"description\":\"List entity names in a scene group.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}},"
+    "{\"name\":\"collider\",\"description\":\"Read Collider Unique shape/body for "
+    "an entity name.\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
     "\"string\"}}}}"
     "]}";

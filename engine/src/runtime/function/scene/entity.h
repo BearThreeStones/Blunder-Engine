@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EASTL/string.h"
+#include "EASTL/vector.h"
 
 #include "runtime/core/math/math_types.h"
 #include "runtime/function/scene/entity_id.h"
@@ -43,6 +44,12 @@ class Entity final {
     m_mesh_virtual_path = eastl::move(path);
   }
 
+  const eastl::vector<eastl::string>& getGroups() const { return m_groups; }
+  void setGroups(eastl::vector<eastl::string> groups) { m_groups = eastl::move(groups); }
+  void addGroup(const eastl::string& name);
+  void removeGroup(const eastl::string& name);
+  bool isInGroup(const eastl::string& name) const;
+
   Mat4 getLocalMatrix() const;
 
  private:
@@ -52,6 +59,7 @@ class Entity final {
   Vec3 m_scale{1.0f, 1.0f, 1.0f};
   EntityId m_parent_id{k_invalid_entity_id};
   eastl::string m_mesh_virtual_path;
+  eastl::vector<eastl::string> m_groups;
   bool m_enabled{true};
   bool m_active{true};
   bool m_tombstoned{false};

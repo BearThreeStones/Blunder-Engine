@@ -8,6 +8,8 @@ import {
     EditorIconCamera3D,
     EditorIconLight,
     EditorIconFogVolume,
+    EditorIconCollisionShape3D,
+    EditorIconCharacterBody3D,
     EditorIconSkeleton3D,
     EditorIconAnimationTree,
     EditorIconScript,
@@ -362,6 +364,18 @@ export component HierarchyPanel {
                                                 y: (parent.height - self.height) / 2;
                                             }
                                             if icon.kind == 8: EditorIconFogVolume {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 9: EditorIconCollisionShape3D {
+                                                icon-size: 14px;
+                                                icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            if icon.kind == 10: EditorIconCharacterBody3D {
                                                 icon-size: 14px;
                                                 icon-color: row.selected ? EditorTheme.accent-sel-text : EditorTheme.icon;
                                                 x: (parent.width - self.width) / 2;

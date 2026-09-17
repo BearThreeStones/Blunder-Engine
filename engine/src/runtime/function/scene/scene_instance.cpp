@@ -17,6 +17,8 @@
 #include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/physics/physics_manager.h"
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
@@ -29,6 +31,11 @@
 namespace Blunder {
 
 namespace {
+
+const eastl::vector<eastl::string>& emptyGroups() {
+  static const eastl::vector<eastl::string> k_empty;
+  return k_empty;
+}
 
 Mat4 composeTrs(const Vec3& position, const Quat& rotation, const Vec3& scale) {
   const Mat4 translation = glm::translate(Mat4(1.0f), position);
@@ -280,6 +287,7 @@ bool SceneInstance::instantiate(const Scene& scene) {
       if (!definition.mesh_virtual_path.empty()) {
         entity->setMeshVirtualPath(definition.mesh_virtual_path);
       }
+      entity->setGroups(definition.groups);
     }
     // Bind Object + restore Behaviour slots only when the list is non-empty.
     // Peers stay null here; mountSceneBehaviours attaches when DotNetHost runs.
@@ -443,6 +451,21 @@ bool SceneInstance::instantiate(const Scene& scene) {
     setFog(ids[i], eastl::move(fog));
   }
 
+  for (size_t i = 0; i < scene.getEntities().size(); ++i) {
+    const SceneEntityDefinition& definition = scene.getEntities()[i];
+    if (definition.has_collider) {
+      ColliderComponent collider = definition.collider;
+      sanitizeColliderComponent(collider);
+      setCollider(ids[i], eastl::move(collider));
+    }
+    if (definition.has_character_controller) {
+      CharacterControllerComponent cct = definition.character_controller;
+      sanitizeCharacterControllerComponent(cct);
+      setCharacterController(ids[i], eastl::move(cct));
+    }
+  }
+
+  markPhysicsDirty();
   m_instantiate_completed = true;
   return true;
 }
@@ -464,10 +487,13 @@ void SceneInstance::clear() {
   m_cameras.clear();
   m_lights.clear();
   m_fogs.clear();
+  m_colliders.clear();
+  m_character_controllers.clear();
   m_has_world_bounds = false;
   m_instantiate_completed = false;
   m_world_bounds = AABB{};
   m_world_matrices_dirty = true;
+  m_physics_dirty = true;
 }
 
 void SceneInstance::setMeshRenderer(EntityId id, MeshRendererComponent renderer) {
@@ -616,6 +642,117 @@ void SceneInstance::clearFog(EntityId id) {
   m_fogs.erase(id);
 }
 
+void SceneInstance::setCollider(EntityId id, ColliderComponent collider) {
+  if (!isValid(id)) {
+    return;
+  }
+  sanitizeColliderComponent(collider);
+  m_colliders[id] = eastl::move(collider);
+  markPhysicsDirty();
+}
+
+const ColliderComponent* SceneInstance::getCollider(EntityId id) const {
+  const auto it = m_colliders.find(id);
+  if (it == m_colliders.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+void SceneInstance::clearCollider(EntityId id) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_colliders.erase(id);
+  markPhysicsDirty();
+}
+
+void SceneInstance::setCharacterController(EntityId id, CharacterControllerComponent cct) {
+  if (!isValid(id)) {
+    return;
+  }
+  sanitizeCharacterControllerComponent(cct);
+  m_character_controllers[id] = eastl::move(cct);
+  markPhysicsDirty();
+}
+
+const CharacterControllerComponent* SceneInstance::getCharacterController(EntityId id) const {
+  const auto it = m_character_controllers.find(id);
+  if (it == m_character_controllers.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+CharacterControllerComponent* SceneInstance::getCharacterController(EntityId id) {
+  const auto it = m_character_controllers.find(id);
+  if (it == m_character_controllers.end()) {
+    return nullptr;
+  }
+  return &it->second;
+}
+
+void SceneInstance::clearCharacterController(EntityId id) {
+  if (!isValid(id)) {
+    return;
+  }
+  m_character_controllers.erase(id);
+  markPhysicsDirty();
+}
+
+const eastl::vector<eastl::string>& SceneInstance::getGroups(EntityId id) const {
+  const Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return emptyGroups();
+  }
+  return entity->getGroups();
+}
+
+void SceneInstance::setGroups(EntityId id, eastl::vector<eastl::string> groups) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return;
+  }
+  entity->setGroups(eastl::move(groups));
+}
+
+void SceneInstance::addGroup(EntityId id, const eastl::string& name) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return;
+  }
+  entity->addGroup(name);
+}
+
+void SceneInstance::removeGroup(EntityId id, const eastl::string& name) {
+  Entity* entity = getEntity(id);
+  if (entity == nullptr) {
+    return;
+  }
+  entity->removeGroup(name);
+}
+
+bool SceneInstance::isInGroup(EntityId id, const eastl::string& name) const {
+  const Entity* entity = getEntity(id);
+  return entity != nullptr && entity->isInGroup(name);
+}
+
+void SceneInstance::findBoundObjectsInGroup(const eastl::string& name,
+                                           eastl::vector<Object*>& out_objects) const {
+  out_objects.clear();
+  if (name.empty()) {
+    return;
+  }
+  forEachEntity([&](EntityId entity_id, const Entity& entity) {
+    if (entity.isTombstoned() || !entity.isInGroup(name)) {
+      return;
+    }
+    if (Object* object = findBoundObject(entity_id)) {
+      out_objects.push_back(object);
+    }
+  });
+}
+
 void SceneInstance::setWorldBounds(const AABB& bounds) {
   m_world_bounds = bounds;
   m_has_world_bounds = true;
@@ -715,6 +852,10 @@ bool SceneInstance::setTransform(EntityId id, const Vec3& position,
   entity->setRotation(rotation);
   entity->setScale(scale);
   markTransformsDirty();
+  ensureWorldMatrices();
+  if (g_runtime_global_context.m_physics_manager) {
+    g_runtime_global_context.m_physics_manager->syncEntityPose(*this, id);
+  }
   return true;
 }
 
@@ -726,6 +867,7 @@ bool SceneInstance::softDeleteEntity(EntityId id) {
   entity->setTombstoned(true);
   entity->setEnabled(false);
   m_world_matrices_dirty = true;
+  markPhysicsDirty();
   return true;
 }
 
@@ -737,6 +879,7 @@ bool SceneInstance::restoreEntity(EntityId id) {
   entity->setTombstoned(false);
   entity->setEnabled(true);
   m_world_matrices_dirty = true;
+  markPhysicsDirty();
   return true;
 }
 
@@ -754,6 +897,7 @@ void SceneInstance::setObjectActive(EntityId id, bool active) {
   if (Object* object = findBoundObject(id)) {
     object->setEnabled(active);
   }
+  markPhysicsDirty();
 }
 
 bool SceneInstance::isActiveInHierarchy(EntityId id) const {
@@ -930,6 +1074,20 @@ bool SceneInstance::exportToScene(Scene& out_scene) const {
     if (const FogComponent* fog = getFog(entity_id)) {
       definition.has_fog = true;
       definition.fog = *fog;
+    }
+
+    if (const ColliderComponent* collider = getCollider(entity_id)) {
+      definition.has_collider = true;
+      definition.collider = *collider;
+    }
+
+    if (const CharacterControllerComponent* cct = getCharacterController(entity_id)) {
+      definition.has_character_controller = true;
+      definition.character_controller = *cct;
+    }
+
+    if (const Entity* entity = getEntity(entity_id)) {
+      definition.groups = entity->getGroups();
     }
 
     out_scene.getEntities().push_back(eastl::move(definition));

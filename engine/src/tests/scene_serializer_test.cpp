@@ -467,6 +467,115 @@ void serializeAndParseFog() {
   expect_true("g restored", float_near(out.fog.scattering_g, 0.4f));
 }
 
+/// Collider Unique, CCT Unique, and entity groups round-trip.
+void serializeAndParseColliderCctAndGroups() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  scene.setGuid("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+
+  SceneEntityDefinition floor;
+  floor.name = "Floor";
+  floor.has_collider = true;
+  floor.collider.shape = ColliderShapeKind::TriangleMesh;
+  floor.collider.body_kind = ColliderBodyKind::Static;
+  floor.collider.layer = 1u;
+  floor.collider.mask = 0xFFFFFFFFu;
+  ColliderTriangle tri{};
+  tri.v0 = Vec3(-10, -10, 0);
+  tri.v1 = Vec3(10, -10, 0);
+  tri.v2 = Vec3(0, 10, 0);
+  floor.collider.triangles.push_back(tri);
+
+  SceneEntityDefinition ice;
+  ice.name = "IceArea";
+  ice.groups.push_back("TerrainIce");
+  ice.has_collider = true;
+  ice.collider.shape = ColliderShapeKind::Box;
+  ice.collider.body_kind = ColliderBodyKind::Area;
+  ice.collider.box_half_extents = Vec3(2.0f, 2.0f, 0.5f);
+
+  SceneEntityDefinition walker;
+  walker.name = "Walker";
+  walker.has_character_controller = true;
+  walker.character_controller.radius = 0.4f;
+  walker.character_controller.height = 1.8f;
+  walker.character_controller.slope_limit_degrees = 45.0f;
+  walker.character_controller.step_height = 0.3f;
+  walker.character_controller.snap_length = 0.2f;
+  walker.character_controller.skin = 0.04f;
+  walker.behaviours.push_back({"DogWalk.WalkProbe", static_cast<BehaviourId>(1), {}});
+
+  scene.getEntities().push_back(eastl::move(floor));
+  scene.getEntities().push_back(eastl::move(ice));
+  scene.getEntities().push_back(eastl::move(walker));
+
+  eastl::string json;
+  expect_true("serialize collider/cct/groups", SceneSerializer::serialize(scene, json));
+  expect_true("json contains collider", json.find("\"collider\"") != eastl::string::npos);
+  expect_true("json contains triangleMesh",
+              json.find("\"triangleMesh\"") != eastl::string::npos);
+  expect_true("json contains characterController",
+              json.find("\"characterController\"") != eastl::string::npos);
+  expect_true("json contains groups", json.find("\"groups\"") != eastl::string::npos);
+  expect_true("json contains TerrainIce",
+              json.find("TerrainIce") != eastl::string::npos);
+  expect_true("json contains WalkProbe",
+              json.find("DogWalk.WalkProbe") != eastl::string::npos);
+
+  Scene loaded;
+  expect_true("deserialize collider/cct/groups",
+              SceneSerializer::deserialize(json, loaded));
+  expect_true("three entities", loaded.getEntities().size() == 3);
+  const SceneEntityDefinition& out_floor = loaded.getEntities()[0];
+  expect_true("floor collider", out_floor.has_collider &&
+                                    out_floor.collider.shape ==
+                                        ColliderShapeKind::TriangleMesh &&
+                                    out_floor.collider.triangles.size() == 1);
+  const SceneEntityDefinition& out_ice = loaded.getEntities()[1];
+  expect_true("ice area", out_ice.has_collider &&
+                              out_ice.collider.body_kind == ColliderBodyKind::Area);
+  expect_true("ice group",
+              out_ice.groups.size() == 1 && out_ice.groups[0] == "TerrainIce");
+  const SceneEntityDefinition& out_walker = loaded.getEntities()[2];
+  expect_true("walker cct",
+              out_walker.has_character_controller &&
+                  float_near(out_walker.character_controller.radius, 0.4f) &&
+                  float_near(out_walker.character_controller.height, 1.8f));
+  expect_true("walker behaviour",
+              out_walker.behaviours.size() == 1 &&
+                  out_walker.behaviours[0].type == "DogWalk.WalkProbe");
+}
+
+void instantiateColliderAndGroups() {
+  using namespace Blunder;
+  ensureLogger();
+
+  Scene scene;
+  SceneEntityDefinition ice;
+  ice.name = "IceArea";
+  ice.groups.push_back("TerrainIce");
+  ice.has_collider = true;
+  ice.collider.body_kind = ColliderBodyKind::Area;
+  ice.collider.box_half_extents = Vec3(2.0f, 2.0f, 0.5f);
+  scene.getEntities().push_back(eastl::move(ice));
+
+  SceneEntityDefinition walker;
+  walker.name = "Walker";
+  walker.has_character_controller = true;
+  scene.getEntities().push_back(eastl::move(walker));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  const EntityId ice_id = instance.findEntityByName("IceArea");
+  const EntityId walker_id = instance.findEntityByName("Walker");
+  expect_true("ice and walker spawned", isValid(ice_id) && isValid(walker_id));
+  expect_true("ice collider attached", instance.getCollider(ice_id) != nullptr);
+  expect_true("ice group attached", instance.isInGroup(ice_id, "TerrainIce"));
+  expect_true("cct attached", instance.getCharacterController(walker_id) != nullptr);
+}
+
 /// instantiate() resolves linking names to EntityIds and drops stale names.
 void instantiateLightLinkingResolvesNames() {
   using namespace Blunder;
@@ -825,6 +934,8 @@ int main() {
   serializeAndParseCamera();
   serializeAndParseLightAllTypes();
   serializeAndParseFog();
+  serializeAndParseColliderCctAndGroups();
+  instantiateColliderAndGroups();
   instantiateLightLinkingResolvesNames();
   serializeAndParseAnimationPlayerAndSkeleton();
   serializeAndParseAnimationPlayerPhase2Defaults();

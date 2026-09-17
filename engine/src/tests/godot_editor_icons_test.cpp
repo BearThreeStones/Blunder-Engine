@@ -55,6 +55,8 @@ int main() {
       "GuiTreeArrowDown.svg",
       "Instance.svg",
       "Unlinked.svg",
+      "CollisionShape3D.svg",
+      "CharacterBody3D.svg",
   };
 
   expect_true("godot-icons directory exists", fs::is_directory(icons_dir));
@@ -112,6 +114,8 @@ int main() {
            "export component EditorIconTreeArrowDown",
            "export component EditorIconInstance",
            "export component EditorIconUnlinked",
+           "export component EditorIconCollisionShape3D",
+           "export component EditorIconCharacterBody3D",
            "Search.svg",
            "ImportCheck.svg",
            "Reload.svg",
@@ -120,6 +124,8 @@ int main() {
            "GuiTreeArrowDown.svg",
            "Instance.svg",
            "Unlinked.svg",
+           "CollisionShape3D.svg",
+           "CharacterBody3D.svg",
            "colorize:",
        }) {
     if (!contains(editor_icons, needle)) {
@@ -158,6 +164,10 @@ int main() {
               contains(inspector, "EditorIconInstance"));
   expect_true("inspector uses EditorIconUnlinked",
               contains(inspector, "EditorIconUnlinked"));
+  expect_true("inspector uses Collider kind icon",
+              contains(inspector, "EditorIconCollisionShape3D"));
+  expect_true("inspector uses Character Controller kind icon",
+              contains(inspector, "EditorIconCharacterBody3D"));
   expect_true("inspector uses tree arrow icons for section",
               contains(inspector, "EditorIconTreeArrowRight") &&
                   contains(inspector, "EditorIconTreeArrowDown"));

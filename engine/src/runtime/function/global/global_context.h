@@ -20,7 +20,7 @@ class UiHost;
 
 class IViewportSink;
 class UIViewportBridge;
-// class PhysicsManager;
+class PhysicsManager;
 class FileSystem;
 class AssetManager;
 class AssetRegistry;
@@ -140,7 +140,7 @@ class RuntimeGlobalContext {
   eastl::shared_ptr<ViewportPickSystem> m_viewport_pick;
   // eastl::shared_ptr<ConfigManager> m_config_manager;
   // eastl::shared_ptr<WorldManager> m_world_manager;
-  // eastl::shared_ptr<PhysicsManager> m_physics_manager;
+  eastl::shared_ptr<PhysicsManager> m_physics_manager;
   eastl::shared_ptr<WindowSystem> m_window_system;
   eastl::shared_ptr<RenderSystem> m_render_system;
   eastl::shared_ptr<UiHost> m_ui_host;

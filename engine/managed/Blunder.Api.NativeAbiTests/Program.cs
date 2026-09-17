@@ -65,11 +65,22 @@ static unsafe class Program
     static float s_quatZ;
     static float s_quatW = 1f;
 
+    static readonly List<string> s_groups = [];
+    static float s_cctVelX;
+    static float s_cctVelY;
+    static float s_cctVelZ;
+    static int s_cctOnFloor;
+    static int s_cctOnWall;
+    static int s_cctOnCeiling;
+    static int s_hasCct = 1;
+    static int s_moveAndSlideCalls;
+    static float s_lastRayOx;
+
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 87 * sizeof(nint),
-            "BlunderNativeAbi layout size is 87 pointers");
+            sizeof(BlunderNativeAbi) == 102 * sizeof(nint),
+            "BlunderNativeAbi layout size is 102 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -186,6 +197,21 @@ static unsafe class Program
         abi.cine_is_gameplay_input_suppressed = &StubCineIsGameplayInputSuppressed;
         abi.log = &StubLog;
         abi.animation_tree_play = &StubAnimationTreePlay;
+        abi.physics_raycast = &StubPhysicsRaycast;
+        abi.physics_shapecast = &StubPhysicsShapecast;
+        abi.object_add_group = &StubObjectAddGroup;
+        abi.object_remove_group = &StubObjectRemoveGroup;
+        abi.object_is_in_group = &StubObjectIsInGroup;
+        abi.object_group_count = &StubObjectGroupCount;
+        abi.object_group_at = &StubObjectGroupAt;
+        abi.find_objects_in_group = &StubFindObjectsInGroup;
+        abi.object_has_character_controller = &StubObjectHasCharacterController;
+        abi.character_controller_move_and_slide = &StubCharacterControllerMoveAndSlide;
+        abi.character_controller_set_velocity = &StubCharacterControllerSetVelocity;
+        abi.character_controller_get_velocity = &StubCharacterControllerGetVelocity;
+        abi.character_controller_is_on_floor = &StubCharacterControllerIsOnFloor;
+        abi.character_controller_is_on_wall = &StubCharacterControllerIsOnWall;
+        abi.character_controller_is_on_ceiling = &StubCharacterControllerIsOnCeiling;
 
         Native.Register(in abi);
 
@@ -222,6 +248,7 @@ static unsafe class Program
         RunSkeletonModifierProductFacadeSmokeTests();
         RunSyncGroupAndCineSmokeTests();
         RunSyncFireOneShotSmokeTests();
+        RunPhysicsGroupsAndCctSmokeTests();
 
         if (s_failures == 0)
         {
@@ -568,6 +595,75 @@ static unsafe class Program
         Expect(
             Native.blunder_cine_enter(1) == Native.Ok,
             "Native cine_enter after register");
+    }
+
+    static void RunPhysicsGroupsAndCctSmokeTests()
+    {
+        s_groups.Clear();
+        s_cctVelX = 0f;
+        s_cctVelY = 0f;
+        s_cctVelZ = 0f;
+        s_cctOnFloor = 0;
+        s_cctOnWall = 0;
+        s_cctOnCeiling = 0;
+        s_hasCct = 1;
+        s_moveAndSlideCalls = 0;
+        s_lastRayOx = 0f;
+
+        ObjectHandle handle = ObjectHandle.GetOrCreate(7);
+        handle.AddGroup("TerrainIce");
+        Expect(handle.IsInGroup("TerrainIce"), "ObjectHandle.IsInGroup");
+        Expect(handle.Groups.Length == 1 && handle.Groups[0] == "TerrainIce",
+            "ObjectHandle.Groups");
+        ObjectHandle[] found = ObjectHandle.FindObjectsInGroup("TerrainIce");
+        Expect(found.Length == 1 && found[0].Id == 7UL, "FindObjectsInGroup via stub");
+        handle.RemoveGroup("TerrainIce");
+        Expect(!handle.IsInGroup("TerrainIce"), "RemoveGroup");
+
+        Expect(
+            Physics.Raycast(
+                new Vec3(0f, 0f, 5f), new Vec3(0f, 0f, -1f), 20f, 0xFFFFFFFFu, false,
+                out PhysicsHit hit) &&
+            hit.Hit &&
+            hit.Distance == 4f &&
+            hit.Groups.Length == 1 &&
+            hit.Groups[0] == "TerrainIce",
+            "Physics.Raycast via stub");
+        Expect(s_lastRayOx == 0f, "Raycast origin forwarded");
+
+        Expect(
+            Physics.CapsuleCast(
+                new Vec3(0f, 0f, 6f), Quat.Identity, 0.5f, 1f, new Vec3(0f, 0f, -1f),
+                20f, 0xFFFFFFFFu, false, out PhysicsHit sweep) &&
+            sweep.Hit,
+            "Physics.CapsuleCast via stub");
+
+        CharacterController? cct = handle.CharacterController;
+        Expect(cct != null, "CharacterController façade present");
+        if (cct != null)
+        {
+            cct.Velocity = new Vec3(1f, 0f, -9.81f);
+            Expect(
+                Math.Abs(cct.Velocity.X - 1f) < 0.0001f &&
+                Math.Abs(cct.Velocity.Z + 9.81f) < 0.0001f,
+                "CharacterController.Velocity round-trip");
+            Expect(cct.MoveAndSlide(), "CharacterController.MoveAndSlide via stub");
+            Expect(s_moveAndSlideCalls == 1, "MoveAndSlide forwarded once");
+            Expect(cct.IsOnFloor, "IsOnFloor via stub");
+        }
+
+        Expect(
+            Native.blunder_physics_raycast(
+                new BlunderPhysicsRay
+                {
+                    oz = 5f,
+                    dz = -1f,
+                    max_distance = 20f,
+                    mask = 0xFFFFFFFFu,
+                },
+                out BlunderPhysicsHit nativeHit) == Native.Ok &&
+            nativeHit.hit != 0,
+            "Native raycast after register (no DllImport)");
     }
 
     static void Expect(bool condition, string label)
@@ -1521,6 +1617,225 @@ static unsafe class Program
         s_lastLogSeverity = severity;
         s_lastLogText = Utf8ToString(text);
         s_lastLogStack = Utf8ToString(stack);
+        return Native.Ok;
+    }
+
+    static void FillStubHit(BlunderPhysicsHit* outHit)
+    {
+        if (outHit == null)
+        {
+            return;
+        }
+
+        *outHit = default;
+        outHit->object_id = 7;
+        outHit->distance = 4f;
+        outHit->point_z = 1f;
+        outHit->normal_z = 1f;
+        outHit->hit = 1;
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes("TerrainIce");
+        int copyLen = bytes.Length < 255 ? bytes.Length : 255;
+        for (int i = 0; i < copyLen; ++i)
+        {
+            outHit->groups[i] = bytes[i];
+        }
+
+        outHit->groups[copyLen] = 0;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubPhysicsRaycast(BlunderPhysicsRay* ray, BlunderPhysicsHit* outHit)
+    {
+        if (ray == null || outHit == null)
+        {
+            return Native.Error;
+        }
+
+        s_lastRayOx = ray->ox;
+        FillStubHit(outHit);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubPhysicsShapecast(BlunderPhysicsSweep* sweep, BlunderPhysicsHit* outHit)
+    {
+        if (sweep == null || outHit == null)
+        {
+            return Native.Error;
+        }
+
+        FillStubHit(outHit);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectAddGroup(ulong id, byte* name)
+    {
+        if (id == 0 || name == null)
+        {
+            return Native.Error;
+        }
+
+        string group = Utf8ToString(name);
+        if (!s_groups.Contains(group))
+        {
+            s_groups.Add(group);
+        }
+
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectRemoveGroup(ulong id, byte* name)
+    {
+        if (id == 0 || name == null)
+        {
+            return Native.Error;
+        }
+
+        s_groups.Remove(Utf8ToString(name));
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectIsInGroup(ulong id, byte* name, int* outValue)
+    {
+        if (id == 0 || name == null || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_groups.Contains(Utf8ToString(name)) ? 1 : 0;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectGroupCount(ulong id) => id == 0 ? 0 : s_groups.Count;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectGroupAt(ulong id, int index, byte* outName, int nameCapacity)
+    {
+        if (id == 0 || outName == null || nameCapacity <= 0 || index < 0 ||
+            index >= s_groups.Count)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_groups[index], outName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubFindObjectsInGroup(byte* name, ulong* outIds, int capacity, int* outCount)
+    {
+        if (name == null || outCount == null)
+        {
+            return Native.Error;
+        }
+
+        string group = Utf8ToString(name);
+        int count = s_groups.Contains(group) ? 1 : 0;
+        *outCount = count;
+        if (outIds == null || capacity <= 0)
+        {
+            return Native.Ok;
+        }
+
+        if (count > 0)
+        {
+            outIds[0] = 7;
+        }
+
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectHasCharacterController(ulong id, int* outValue)
+    {
+        if (id == 0 || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_hasCct;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCharacterControllerMoveAndSlide(ulong id)
+    {
+        if (id == 0)
+        {
+            return Native.Error;
+        }
+
+        ++s_moveAndSlideCalls;
+        s_cctOnFloor = 1;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCharacterControllerSetVelocity(ulong id, float x, float y, float z)
+    {
+        if (id == 0)
+        {
+            return Native.Error;
+        }
+
+        s_cctVelX = x;
+        s_cctVelY = y;
+        s_cctVelZ = z;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCharacterControllerGetVelocity(
+        ulong id, float* x, float* y, float* z)
+    {
+        if (id == 0 || x == null || y == null || z == null)
+        {
+            return Native.Error;
+        }
+
+        *x = s_cctVelX;
+        *y = s_cctVelY;
+        *z = s_cctVelZ;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCharacterControllerIsOnFloor(ulong id, int* outValue)
+    {
+        if (id == 0 || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_cctOnFloor;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCharacterControllerIsOnWall(ulong id, int* outValue)
+    {
+        if (id == 0 || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_cctOnWall;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubCharacterControllerIsOnCeiling(ulong id, int* outValue)
+    {
+        if (id == 0 || outValue == null)
+        {
+            return Native.Error;
+        }
+
+        *outValue = s_cctOnCeiling;
         return Native.Ok;
     }
 }

@@ -13,6 +13,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "EASTL/string.h"
 #include "EASTL/unordered_map.h"
 #include "EASTL/unordered_set.h"
 #include "EASTL/vector.h"
@@ -25,6 +26,7 @@
 #include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_collision_extras.h"
 #include "runtime/function/scene/gltf_node_extras.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene.h"
@@ -132,7 +134,8 @@ EntityId findUnusedDescendant(SceneInstance& scene, EntityId root,
 
 bool entityHoldsUniqueComponents(const SceneInstance& scene, EntityId id) {
   return scene.getLight(id) != nullptr || scene.getCamera(id) != nullptr ||
-         scene.getFog(id) != nullptr;
+         scene.getFog(id) != nullptr || scene.getCollider(id) != nullptr ||
+         scene.getCharacterController(id) != nullptr;
 }
 
 EntityId findReusableNamedEntity(SceneInstance& scene, EntityId attach_root,
@@ -147,6 +150,49 @@ EntityId findReusableNamedEntity(SceneInstance& scene, EntityId attach_root,
     return k_invalid_entity_id;
   }
   return found;
+}
+
+bool copyGltfExtrasJson(const cgltf_data* data, const cgltf_extras& extras,
+                        eastl::string& out_json) {
+  if (data == nullptr) {
+    return false;
+  }
+  cgltf_size size = 0;
+  cgltf_copy_extras_json(data, &extras, nullptr, &size);
+  if (size <= 1) {
+    return false;
+  }
+  out_json.resize(size);
+  if (cgltf_copy_extras_json(data, &extras, out_json.data(), &size) !=
+      cgltf_result_success) {
+    out_json.clear();
+    return false;
+  }
+  if (!out_json.empty() && out_json.back() == '\0') {
+    out_json.pop_back();
+  }
+  return !out_json.empty();
+}
+
+void maybeAttachCollisionExtras(SceneInstance& scene, EntityId entity_id,
+                                const cgltf_data* data, const cgltf_mesh& mesh,
+                                cgltf_size primitive_index) {
+  ColliderComponent collider{};
+  eastl::string extras_json;
+  bool attached = false;
+  if (copyGltfExtrasJson(data, mesh.extras, extras_json) &&
+      parseCollisionExtrasJson(extras_json.c_str(), extras_json.size(), collider)) {
+    attached = true;
+  } else if (primitive_index < mesh.primitives_count &&
+             copyGltfExtrasJson(data, mesh.primitives[primitive_index].extras,
+                                extras_json) &&
+             parseCollisionExtrasJson(extras_json.c_str(), extras_json.size(),
+                                      collider)) {
+    attached = true;
+  }
+  if (attached) {
+    scene.setCollider(entity_id, eastl::move(collider));
+  }
 }
 
 bool ancestorChainHasUniformScale(const SceneInstance& scene, EntityId start_parent,
@@ -315,6 +361,8 @@ GltfSceneImporter::ImportResult importGltfDocument(
               node_entity_id);
         }
         scene_instance.setMeshRenderer(primitive_entity_id, eastl::move(renderer));
+        maybeAttachCollisionExtras(scene_instance, primitive_entity_id, data, mesh,
+                                   primitive_index);
         new_primitive_entities.push_back(primitive_entity_id);
         ++result.mesh_primitive_count;
       }

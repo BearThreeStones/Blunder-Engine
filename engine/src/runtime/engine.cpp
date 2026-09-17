@@ -37,6 +37,7 @@
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/script/animation_frame.h"
+#include "runtime/function/physics/physics_manager.h"
 
 #include <SDL3/SDL.h>
 #if defined(_WIN32)
@@ -597,6 +598,19 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
               g_runtime_global_context.m_slint_system.get());
         }
       }
+    }
+
+    if (g_runtime_global_context.m_physics_manager &&
+        g_runtime_global_context.m_scene_system) {
+      SceneInstance* physics_scene =
+          g_runtime_global_context.m_scene_system->getActiveInstance();
+      if (physics_scene != nullptr) {
+        g_runtime_global_context.m_physics_manager->ensureWorld(*physics_scene);
+      }
+      const bool play_host =
+          g_runtime_global_context.hostMode() == EngineHostMode::Player;
+      g_runtime_global_context.m_physics_manager->tick(
+          delta_time, play_host, g_runtime_global_context.isPlayPaused());
     }
 
     // Drive Behaviour Ready/Tick when CoreCLR ScriptHost is running.

@@ -24,6 +24,8 @@
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/fog_component.h"
+#include "runtime/function/scene/collider_component.h"
+#include "runtime/function/scene/character_controller_component.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/ui/docking/dock_floating_window_host.h"
 #include "runtime/function/ui/docking/dock_manager.h"
@@ -314,6 +316,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void applyInspectorCamera(bool commit);
   void applyInspectorLight(bool commit);
   void applyInspectorFog(bool commit);
+  void applyInspectorCollider(bool commit);
+  void applyInspectorCharacterController(bool commit);
+  void applyInspectorGroups();
   void applyInspectorAddUniqueAttachment(const eastl::string& kind_name);
   void applyInspectorRemoveUniqueAttachment(const eastl::string& kind_name);
   void applyHierarchyCreateRequested(int parent_entity_id, const eastl::string& kind_name);
@@ -351,6 +356,13 @@ class SlintSystem final : public IEditorUiPresentation {
                        float density, float height_falloff, float view_distance,
                        float albedo_r, float albedo_g, float albedo_b, float scattering_g,
                        bool commit);
+  void applyPreviewCollider(int entity_id, int kind, int index, int shape, int body,
+                            float layer, float mask, float box_x, float box_y, float box_z,
+                            float sphere_radius, float capsule_radius, float capsule_height,
+                            bool commit);
+  void applyPreviewCharacterController(int entity_id, int kind, int index, float radius,
+                                       float height, float slope_limit, float step_height,
+                                       float snap, float skin, float mask, bool commit);
   void applyPreviewUniqueRemove(int entity_id, int kind, int index);
   void applyPreviewTreeCanvas(int entity_id);
   void applyPreviewBehaviourRemove(int entity_id, int kind, int index);
@@ -371,6 +383,9 @@ class SlintSystem final : public IEditorUiPresentation {
   void syncInspectorCameraFromSelection();
   void syncInspectorLightFromSelection();
   void syncInspectorFogFromSelection();
+  void syncInspectorColliderFromSelection();
+  void syncInspectorCharacterControllerFromSelection();
+  void syncInspectorGroupsFromSelection();
   void syncInspectorAnimationPlayerFromSelection();
   void syncInspectorUniqueAttachmentsFromSelection();
   void applyInspectorAnimationClipCommit(int entry_index, const eastl::string& clip_name,
@@ -714,6 +729,10 @@ class SlintSystem final : public IEditorUiPresentation {
   LightComponent m_inspector_light_edit_before{};
   bool m_inspector_fog_edit_open{false};
   FogComponent m_inspector_fog_edit_before{};
+  bool m_inspector_collider_edit_open{false};
+  ColliderComponent m_inspector_collider_edit_before{};
+  bool m_inspector_cct_edit_open{false};
+  CharacterControllerComponent m_inspector_cct_edit_before{};
   bool m_inspector_mesh_material_edit_open{false};
   MeshAssetDescriptor m_inspector_mesh_material_edit_before{};
   bool m_inspector_behaviour_edit_open{false};

@@ -10,6 +10,8 @@
 #include "runtime/core/object/object_id.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/character_controller_component.h"
+#include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
@@ -75,6 +77,17 @@ class SceneInstance final : public IEntityStore {
 
   void markTransformsDirty() override { m_world_matrices_dirty = true; }
   bool isWorldMatricesDirty() const { return m_world_matrices_dirty; }
+  void markPhysicsDirty() { m_physics_dirty = true; }
+  bool consumePhysicsDirty() {
+    const bool dirty = m_physics_dirty;
+    m_physics_dirty = false;
+    return dirty;
+  }
+  void ensureWorldMatrices() {
+    if (m_world_matrices_dirty) {
+      rebuildWorldMatrices();
+    }
+  }
 
   EntityId getEntityIdAtIndex(size_t index) const;
 
@@ -154,6 +167,41 @@ class SceneInstance final : public IEntityStore {
     }
   }
 
+  void setCollider(EntityId id, ColliderComponent collider);
+  const ColliderComponent* getCollider(EntityId id) const;
+  void clearCollider(EntityId id);
+  template <typename Fn>
+  void forEachCollider(const Fn& fn) const {
+    for (const auto& entry : m_colliders) {
+      if (isTombstoned(entry.first)) {
+        continue;
+      }
+      fn(entry.first, entry.second);
+    }
+  }
+
+  void setCharacterController(EntityId id, CharacterControllerComponent cct);
+  const CharacterControllerComponent* getCharacterController(EntityId id) const;
+  CharacterControllerComponent* getCharacterController(EntityId id);
+  void clearCharacterController(EntityId id);
+  template <typename Fn>
+  void forEachCharacterController(const Fn& fn) const {
+    for (const auto& entry : m_character_controllers) {
+      if (isTombstoned(entry.first)) {
+        continue;
+      }
+      fn(entry.first, entry.second);
+    }
+  }
+
+  const eastl::vector<eastl::string>& getGroups(EntityId id) const;
+  void setGroups(EntityId id, eastl::vector<eastl::string> groups);
+  void addGroup(EntityId id, const eastl::string& name);
+  void removeGroup(EntityId id, const eastl::string& name);
+  bool isInGroup(EntityId id, const eastl::string& name) const;
+  void findBoundObjectsInGroup(const eastl::string& name,
+                               eastl::vector<Object*>& out_objects) const;
+
   bool hasWorldBounds() const { return m_has_world_bounds; }
   const AABB& getWorldBounds() const { return m_world_bounds; }
   void setWorldBounds(const AABB& bounds);
@@ -190,6 +238,8 @@ class SceneInstance final : public IEntityStore {
   eastl::unordered_map<EntityId, CameraComponent> m_cameras;
   eastl::unordered_map<EntityId, LightComponent> m_lights;
   eastl::unordered_map<EntityId, FogComponent> m_fogs;
+  eastl::unordered_map<EntityId, ColliderComponent> m_colliders;
+  eastl::unordered_map<EntityId, CharacterControllerComponent> m_character_controllers;
   /// Objects created for Behaviour-bearing entities; destroyed on clear().
   eastl::vector<ObjectId> m_bound_object_ids;
   eastl::unordered_map<EntityId, ObjectId> m_bound_object_ids_by_entity;
@@ -198,6 +248,7 @@ class SceneInstance final : public IEntityStore {
   bool m_has_world_bounds{false};
   bool m_world_matrices_dirty{true};
   bool m_instantiate_completed{false};
+  bool m_physics_dirty{true};
 };
 
 /// Prefer Main camera; else first camera in ascending EntityId order (stable).
