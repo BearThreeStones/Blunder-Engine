@@ -162,7 +162,7 @@ bool parseAssetIndexJson(const eastl::string& json,
       }
     }
     if (!id.empty() && !entry.filepath.empty()) {
-      out.insert({id, entry});
+      out[id] = entry;
     }
     p = object_end + 1;
   }
@@ -341,10 +341,10 @@ struct FlattenBaker {
       if (data != nullptr) {
         cgltf_free(data);
       }
-      documents.insert({key, nullptr});
+      documents[key] = nullptr;
       return nullptr;
     }
-    documents.insert({key, data});
+    documents[key] = data;
     return data;
   }
 
@@ -356,7 +356,7 @@ struct FlattenBaker {
     const eastl::string path_key(absolute.generic_string().c_str());
     const auto by_path = guid_by_path.find(path_key);
     if (by_path != guid_by_path.end()) {
-      guid_by_asset_id.insert({asset_id, by_path->second});
+      guid_by_asset_id[asset_id] = by_path->second;
       return by_path->second;
     }
 
@@ -377,8 +377,8 @@ struct FlattenBaker {
       guid = generateGuidV4();
     }
     if (!guid.empty()) {
-      guid_by_asset_id.insert({asset_id, guid});
-      guid_by_path.insert({path_key, guid});
+      guid_by_asset_id[asset_id] = guid;
+      guid_by_path[path_key] = guid;
     }
     return guid;
   }
