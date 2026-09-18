@@ -315,23 +315,11 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
   if (g_runtime_global_context.m_content_browser &&
       g_runtime_global_context.hostMode() != EngineHostMode::Player &&
       !g_runtime_global_context.isHeadless()) {
-    const ContentBrowserRefreshStats stats =
-        g_runtime_global_context.m_content_browser->refresh();
-    LOG_INFO(
-        "[BlunderEngine] content index: {} entries (thumbnails: {} generated, "
-        "{} cached, {} skipped, {} failed)",
-        stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
-        stats.thumbnails_skipped, stats.thumbnails_failed);
-
-    // Mark dirty so UiHost::tickEditorPanels re-pushes models even if the
-    // immediate sync below runs before Slint finishes first layout.
-    if (g_runtime_global_context.m_ui_host) {
-      g_runtime_global_context.m_ui_host->panels().markDirty(
-          EditorPanelDirty::content_browser);
-    }
-    if (g_runtime_global_context.m_slint_system) {
-      g_runtime_global_context.m_slint_system->syncContentBrowser();
-    }
+    // Index + thumbs after the Live scene is up. Scanning Resources/ and
+    // enqueueing every missing glTF/scene thumb used to stall SE-world open
+    // (renderSceneAsset instantiates the forest; mesh thumbs parse glTFs).
+    m_content_browser_refresh_pending = true;
+    LOG_INFO("[BlunderEngine] defer content-browser refresh until first tick");
   } else if (g_runtime_global_context.isHeadless()) {
     LOG_INFO("[BlunderEngine] skip content-browser refresh (headless)");
   }
@@ -451,6 +439,27 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
 
   if (!defer_heavy) {
     const bool tick_content_browser = !g_runtime_global_context.isHeadless();
+    if (tick_content_browser && m_content_browser_refresh_pending &&
+        g_runtime_global_context.m_content_browser) {
+      m_content_browser_refresh_pending = false;
+      const ContentBrowserRefreshStats stats =
+          g_runtime_global_context.m_content_browser->refresh();
+      LOG_INFO(
+          "[BlunderEngine] content index: {} entries (thumbnails: {} generated, "
+          "{} cached, {} skipped, {} failed)",
+          stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
+          stats.thumbnails_skipped, stats.thumbnails_failed);
+      if (g_runtime_global_context.m_ui_host) {
+        g_runtime_global_context.m_ui_host->panels().markDirty(
+            EditorPanelDirty::content_browser);
+      }
+      if (slint_system) {
+        slint_system->syncContentBrowser();
+      }
+    }
+    if (g_runtime_global_context.m_asset_manager) {
+      g_runtime_global_context.m_asset_manager->tickDeferredGltfMaterials(2u);
+    }
     if (tick_content_browser && g_runtime_global_context.m_content_browser &&
         g_runtime_global_context.m_content_browser->tickFileWatch()) {
       g_runtime_global_context.m_content_browser->refresh();

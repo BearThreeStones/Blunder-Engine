@@ -8,6 +8,7 @@
 #include "runtime/resource/content/content_entry.h"
 #include "runtime/resource/thumbnail/thumbnail_cache.h"
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
+#include "runtime/resource/thumbnail/thumbnail_generation_queue.h"
 #include "runtime/resource/thumbnail/thumbnail_placeholders.h"
 #include "runtime/resource/thumbnail/thumbnail_resize.h"
 
@@ -617,6 +618,53 @@ void textureThumbnailPathUnchanged() {
   fs::remove_all(project);
 }
 
+void heavySceneThumbnailUsesPlaceholder() {
+  using namespace Blunder;
+  ensureLogger();
+  expect_true("256KiB scene is not heavy",
+              !ThumbnailGenerator::isHeavySceneThumbnail(256u * 1024u));
+  expect_true("256KiB+1 scene is heavy",
+              ThumbnailGenerator::isHeavySceneThumbnail(256u * 1024u + 1u));
+
+  const fs::path project = makeTempProject();
+  fs::create_directories(project / "Assets" / "Scenes");
+  std::string json(300u * 1024u, ' ');
+  json.replace(0, 16, "{ \"entities\": []");
+  json.back() = '}';
+  writeTextFile(project / "Assets" / "Scenes" / "huge.scene.asset", json);
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init{};
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+  AssetManager manager;
+  AssetManagerInitInfo am_init{};
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  ThumbnailGenerator generator;
+  ThumbnailGeneratorInit thumb_init{};
+  thumb_init.file_system = &file_system;
+  thumb_init.asset_manager = &manager;
+  thumb_init.thumbnail_size = 16;
+  generator.initialize(thumb_init);
+
+  ContentEntry entry{};
+  entry.virtual_path = "assets/Scenes/huge.scene.asset";
+  entry.size_bytes = static_cast<uint64_t>(json.size());
+  eastl::vector<uint8_t> rgba;
+  expect_true("heavy scene thumb generates placeholder",
+              generator.generateThumbnailRgba(entry, rgba));
+  expect_true("heavy scene placeholder not empty", !rgba.empty());
+  generator.enqueueThumbnail(entry, ThumbnailQueuePriority::Background);
+  expect_true("heavy scene not queued", !generator.hasQueuedThumbnails());
+
+  generator.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -626,6 +674,7 @@ int main() {
   meshThumbnailCacheStoresPreviewStillOnRegenerate();
   meshThumbnailMtimeInvalidatesOldTextureCache();
   textureThumbnailPathUnchanged();
+  heavySceneThumbnailUsesPlaceholder();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

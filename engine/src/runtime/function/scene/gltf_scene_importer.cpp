@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cmath>
 
 #include "runtime/function/scene/gltf_scene_importer.h"
@@ -521,6 +522,7 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
 
   LOG_INFO("[GltfSceneImporter] attachEntityMeshes begin (entities={})",
            scene.getEntities().size());
+  const auto attach_begin = std::chrono::steady_clock::now();
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if (definition.mesh_virtual_path.empty()) {
@@ -531,6 +533,13 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     if (!isValid(entity_id)) {
       LOG_WARN("[GltfSceneImporter] mesh entity '{}' not found in scene '{}'",
                definition.name.c_str(), instance.getSourcePath().c_str());
+      continue;
+    }
+
+    if (auto cached = mesh_by_ref.find(definition.mesh_virtual_path);
+        cached != mesh_by_ref.end()) {
+      bindMeshAssetRenderer(instance, entity_id, cached->second);
+      ++mesh_asset_binds;
       continue;
     }
 
@@ -549,11 +558,7 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     if (meshRefLooksLikeAsset(definition.mesh_virtual_path) ||
         meshRefLooksLikeAsset(mesh_ref)) {
       eastl::shared_ptr<MeshAsset> mesh;
-      if (auto cached = mesh_by_ref.find(definition.mesh_virtual_path);
-          cached != mesh_by_ref.end()) {
-        mesh = cached->second;
-      }
-      if (!mesh && isValidGuidFormat(definition.mesh_virtual_path) &&
+      if (isValidGuidFormat(definition.mesh_virtual_path) &&
           registry != nullptr) {
         mesh = asset_manager->loadMeshByGuid(definition.mesh_virtual_path, *registry);
       }
@@ -611,8 +616,12 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
 
   LOG_INFO(
       "[GltfSceneImporter] attached MeshRenderers in '{}' (mesh assets={}, "
-      "gltf imports={})",
-      instance.getSourcePath().c_str(), mesh_asset_binds, gltf_imports);
+      "gltf imports={}, unique={}, {:.1f}ms)",
+      instance.getSourcePath().c_str(), mesh_asset_binds, gltf_imports,
+      mesh_by_ref.size(),
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - attach_begin)
+          .count());
 }
 
 }  // namespace Blunder

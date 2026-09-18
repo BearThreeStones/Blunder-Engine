@@ -166,6 +166,12 @@ class AssetManager final {
   void previewMeshMaterialOverride(const eastl::string& descriptor_virtual_path,
                                    const MeshMaterialOverride& overlay);
 
+  /// Cooked Mesh Assets store geometry only. Queue glTF material+textures so
+  /// scene open is not blocked; tick after the first present.
+  void queueDeferredGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
+  size_t tickDeferredGltfMaterials(uint32_t max_items);
+  bool hydrateMeshGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
+
  private:
   template <typename T>
   using Cache = eastl::unordered_map<eastl::string, eastl::weak_ptr<T>>;
@@ -188,6 +194,7 @@ class AssetManager final {
   bool m_is_initialized{false};
   bool m_inside_cook_request{false};
   size_t m_gltf_document_open_count{0};
+  eastl::vector<eastl::weak_ptr<MeshAsset>> m_pending_gltf_materials;
 };
 
 }  // namespace Blunder

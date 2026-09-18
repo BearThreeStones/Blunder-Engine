@@ -376,7 +376,7 @@ eastl::shared_ptr<MeshAsset> loadCookedMeshAsset(
         eastl::move(meta), eastl::move(vertices), eastl::move(indices),
         AssetHandle{}, nullptr, MeshSkinData{}, true, eastl::move(meshlets));
   }
-  LOG_INFO("[AssetManager] loaded cooked Mesh {} ({})", descriptor_key.c_str(),
+  LOG_DEBUG("[AssetManager] loaded cooked Mesh {} ({})", descriptor_key.c_str(),
            cooked_path.generic_string());
   return asset;
 }
@@ -436,6 +436,7 @@ void AssetManager::shutdown() {
     return;
   }
   clearCache();
+  m_pending_gltf_materials.clear();
   m_asset_compiler.reset();
   m_inside_cook_request = false;
   m_file_system = nullptr;
@@ -461,6 +462,75 @@ void AssetManager::requestCookAfterFastPath(const eastl::string& guid) {
   m_inside_cook_request = true;
   (void)compiler->cookAsset(guid);
   m_inside_cook_request = false;
+}
+
+void AssetManager::queueDeferredGltfMaterial(
+    const eastl::shared_ptr<MeshAsset>& mesh) {
+  if (!mesh || mesh->getMaterialAsset()) {
+    return;
+  }
+  m_pending_gltf_materials.push_back(mesh);
+}
+
+bool AssetManager::hydrateMeshGltfMaterial(
+    const eastl::shared_ptr<MeshAsset>& mesh) {
+  if (!mesh) {
+    return false;
+  }
+  if (mesh->getMaterialAsset()) {
+    return true;
+  }
+
+  eastl::string gltf_virtual;
+  if (!resolveGltfSourcePath(mesh->getVirtualPath(), gltf_virtual)) {
+    return false;
+  }
+
+  GltfImportDocument document{};
+  if (!openGltfImportDocument(gltf_virtual, document) ||
+      document.data == nullptr) {
+    return false;
+  }
+
+  eastl::shared_ptr<MaterialAsset> material;
+  cgltf_data* data = document.data;
+  for (cgltf_size mesh_index = 0;
+       mesh_index < data->meshes_count && !material; ++mesh_index) {
+    const cgltf_mesh& gltf_mesh = data->meshes[mesh_index];
+    for (cgltf_size primitive_index = 0;
+         primitive_index < gltf_mesh.primitives_count && !material;
+         ++primitive_index) {
+      const cgltf_primitive& primitive = gltf_mesh.primitives[primitive_index];
+      if (primitive.material == nullptr) {
+        continue;
+      }
+      const size_t material_index =
+          static_cast<size_t>(primitive.material - data->materials);
+      material = loadGltfMaterial(data, material_index, document.absolute,
+                                  document.canonical_key);
+    }
+  }
+  closeGltfImportDocument(document);
+  if (!material) {
+    return false;
+  }
+  mesh->setMaterialAsset(eastl::move(material));
+  return true;
+}
+
+size_t AssetManager::tickDeferredGltfMaterials(uint32_t max_items) {
+  size_t hydrated = 0;
+  while (hydrated < max_items && !m_pending_gltf_materials.empty()) {
+    eastl::shared_ptr<MeshAsset> mesh = m_pending_gltf_materials.front().lock();
+    m_pending_gltf_materials.erase(m_pending_gltf_materials.begin());
+    if (!mesh || mesh->getMaterialAsset()) {
+      continue;
+    }
+    if (hydrateMeshGltfMaterial(mesh)) {
+      ++hydrated;
+    }
+  }
+  return hydrated;
 }
 
 eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
@@ -917,6 +987,10 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
         g_runtime_global_context.m_asset_registry.get();
     eastl::shared_ptr<MeshAsset> yaml_mesh = instantiateMeshWithMaterialOverride(
         loaded, descriptor, this, registry);
+    if (yaml_mesh && descriptor.import.materials &&
+        !yaml_mesh->getMaterialAsset()) {
+      queueDeferredGltfMaterial(yaml_mesh);
+    }
     m_mesh_cache[key] = yaml_mesh;
     return yaml_mesh;
   }

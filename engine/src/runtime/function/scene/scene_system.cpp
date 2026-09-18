@@ -1,9 +1,14 @@
 #include "runtime/function/scene/scene_system.h"
 
+#include <chrono>
+
+#include "EASTL/unordered_set.h"
+
 #include "runtime/core/base/macro.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
@@ -19,49 +24,36 @@ namespace Blunder {
 
 namespace {
 
-bool isEntityOrDescendant(const SceneInstance& instance, EntityId root,
-                          EntityId candidate) {
-  EntityId current = candidate;
-  while (isValid(current)) {
-    if (current == root) {
-      return true;
-    }
-    const Entity* entity = instance.getEntity(current);
-    if (entity == nullptr) {
-      break;
-    }
-    current = entity->getParentId();
-  }
-  return false;
-}
-
-bool entitySubtreeHasMeshRenderer(const SceneInstance& instance, EntityId root) {
-  bool found = false;
+void coverMeshRendererAncestors(const SceneInstance& instance,
+                                eastl::unordered_set<EntityId>& covered) {
   instance.forEachMeshRenderer([&](EntityId entity_id,
                                    const MeshRendererComponent& renderer) {
-    if (found || !renderer.mesh) {
+    if (!renderer.mesh) {
       return;
     }
-    if (isEntityOrDescendant(instance, root, entity_id)) {
-      found = true;
+    EntityId current = entity_id;
+    while (isValid(current) && covered.insert(current).second) {
+      const Entity* entity = instance.getEntity(current);
+      if (entity == nullptr) {
+        break;
+      }
+      current = entity->getParentId();
     }
   });
-  return found;
 }
 
 }  // namespace
 
 bool SceneSystem::needsMeshAttach(const SceneInstance& instance,
                                   const Scene& scene) const {
+  eastl::unordered_set<EntityId> covered;
+  coverMeshRendererAncestors(instance, covered);
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if (definition.mesh_virtual_path.empty()) {
       continue;
     }
     const EntityId entity_id = instance.findEntityByName(definition.name);
-    if (!isValid(entity_id)) {
-      return true;
-    }
-    if (!entitySubtreeHasMeshRenderer(instance, entity_id)) {
+    if (!isValid(entity_id) || covered.find(entity_id) == covered.end()) {
       return true;
     }
   }
@@ -69,12 +61,14 @@ bool SceneSystem::needsMeshAttach(const SceneInstance& instance,
 }
 
 bool SceneSystem::needsMeshAttach(const SceneInstance& instance) const {
+  eastl::unordered_set<EntityId> covered;
+  coverMeshRendererAncestors(instance, covered);
   bool needed = false;
   instance.forEachEntity([&](EntityId id, const Entity& entity) {
     if (needed || entity.isTombstoned() || entity.getMeshVirtualPath().empty()) {
       return;
     }
-    if (!entitySubtreeHasMeshRenderer(instance, id)) {
+    if (covered.find(id) == covered.end()) {
       needed = true;
     }
   });
@@ -105,15 +99,29 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
 
   auto instance = eastl::make_shared<SceneInstance>();
   instance->setSourcePath(virtual_path);
+  const auto instantiate_begin = std::chrono::steady_clock::now();
   instance->instantiate(scene_asset->getScene());
+  const double instantiate_ms =
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - instantiate_begin)
+          .count();
 
   if (g_runtime_global_context.m_dotnet_host != nullptr) {
     mountSceneBehaviours(*instance, *g_runtime_global_context.m_dotnet_host,
                          &scene_asset->getScene());
   }
 
+  const auto attach_begin = std::chrono::steady_clock::now();
   completeSceneDocumentInstantiate(m_asset_manager, *instance,
                                    scene_asset->getScene());
+  const double attach_ms =
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - attach_begin)
+          .count();
+  LOG_INFO(
+      "[SceneSystem] instantiate '{}' entities={} graph={:.1f}ms attach={:.1f}ms",
+      virtual_path.c_str(), instance->getEntityCount(), instantiate_ms,
+      attach_ms);
 
   return instance;
 }
@@ -176,12 +184,17 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadScene(
     it = m_loaded_instances.erase(it);
   }
 
+  const auto load_begin = std::chrono::steady_clock::now();
   const eastl::shared_ptr<SceneAsset> scene_asset =
       m_asset_manager->loadScene(virtual_path);
   if (!scene_asset) {
     LOG_ERROR("[SceneSystem] failed to load scene asset '{}'", virtual_path.c_str());
     return nullptr;
   }
+  const double deserialize_ms =
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - load_begin)
+          .count();
 
   const eastl::shared_ptr<SceneInstance> root_instance =
       instantiateScene(scene_asset, virtual_path);
@@ -190,8 +203,9 @@ eastl::shared_ptr<SceneInstance> SceneSystem::loadScene(
   }
 
   m_loaded_instances.push_back(root_instance);
-  LOG_INFO("[SceneSystem] loaded scene '{}' (entities={})",
-           virtual_path.c_str(), root_instance->getEntityCount());
+  LOG_INFO(
+      "[SceneSystem] loaded scene '{}' (entities={}, deserialize={:.1f}ms)",
+      virtual_path.c_str(), root_instance->getEntityCount(), deserialize_ms);
   return root_instance;
 }
 

@@ -194,12 +194,13 @@ eastl::shared_ptr<MeshAsset> instantiateMeshWithMaterialOverride(
   if (!source) {
     return nullptr;
   }
+  if (descriptor.material_override.empty()) {
+    return source;
+  }
   eastl::shared_ptr<MeshAsset> yaml_mesh =
       cloneMeshAsset(*source, source->getMaterialAsset());
-  if (!descriptor.material_override.empty()) {
-    reapplyMeshMaterialOverride(*yaml_mesh, source.get(),
-                                descriptor.material_override, assets, registry);
-  }
+  reapplyMeshMaterialOverride(*yaml_mesh, source.get(),
+                              descriptor.material_override, assets, registry);
   return yaml_mesh;
 }
 

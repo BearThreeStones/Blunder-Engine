@@ -11,10 +11,12 @@
 #include "runtime/project/editor_session_restore.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
+#include "runtime/function/scene/scene_system.h"
 
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -531,6 +533,73 @@ void testSeWorldOpenPath() {
   fs::remove_all(project);
 }
 
+void testDogWalkSeWorldOpenTiming() {
+  using namespace Blunder;
+  ensureLogger();
+
+  fs::path product("E:/Blunder Projects/DogWalk");
+  if (const char* env = std::getenv("BLUNDER_PRODUCT_ROOT");
+      env != nullptr && env[0] != '\0') {
+    product = env;
+  }
+  const fs::path scene_file =
+      product / "Assets" / "Scenes" / "se-world.scene.asset";
+  if (!fs::exists(scene_file)) {
+    std::fprintf(stdout, "skip DogWalk se-world timing (missing %s)\n",
+                 scene_file.string().c_str());
+    return;
+  }
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = product;
+  file_system.initialize(fs_init);
+
+  auto registry = eastl::make_shared<AssetRegistry>();
+  registry->initialize(&file_system);
+  g_runtime_global_context.m_asset_registry = registry;
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  SceneSystem scenes;
+  scenes.initialize(SceneSystemInitInfo{&manager});
+
+  const auto begin = std::chrono::steady_clock::now();
+  const eastl::shared_ptr<SceneInstance> instance =
+      scenes.loadScene(eastl::string("assets/Scenes/se-world.scene.asset"));
+  const double open_ms = std::chrono::duration<double, std::milli>(
+                             std::chrono::steady_clock::now() - begin)
+                             .count();
+  std::fprintf(stdout,
+               "DogWalk se-world open: %.1f ms entities=%zu renderers=%zu "
+               "gltf_opens=%zu\n",
+               open_ms, instance ? instance->getEntityCount() : 0u,
+               instance ? liveMeshRendererCount(*instance) : 0u,
+               manager.gltfDocumentOpenCount());
+
+  expect_true("se-world loadScene returned", instance != nullptr);
+  expect_true("se-world entity count",
+              instance && instance->getEntityCount() >= 10000u);
+  expect_true("se-world mesh bind not glTF reimport",
+              instance && liveMeshRendererCount(*instance) >= 10000u);
+  expect_true("se-world attach opened no glTF",
+              manager.gltfDocumentOpenCount() == 0u);
+  expect_true("se-world open under 10s", open_ms < 10000.0);
+
+  const size_t hydrated = manager.tickDeferredGltfMaterials(8u);
+  std::fprintf(stdout, "DogWalk se-world deferred materials (8): %zu\n",
+               hydrated);
+
+  scenes.shutdown();
+  manager.shutdown();
+  g_runtime_global_context.m_asset_registry.reset();
+  registry->shutdown();
+  file_system.shutdown();
+}
+
 }  // namespace
 
 int main() {
@@ -544,6 +613,7 @@ int main() {
   testColSkipAndExtrasIgnoredOnImport();
   testAttachMeshAssetsBindWithoutGraphImport();
   testSeWorldOpenPath();
+  testDogWalkSeWorldOpenTiming();
   g_runtime_global_context.m_logger_system.reset();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

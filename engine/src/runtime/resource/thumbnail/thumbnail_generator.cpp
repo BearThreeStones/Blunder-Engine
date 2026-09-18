@@ -1,6 +1,7 @@
 #include "runtime/resource/thumbnail/thumbnail_generator.h"
 
 #include <cstring>
+#include <filesystem>
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
@@ -18,6 +19,14 @@
 #include "runtime/resource/thumbnail/thumbnail_resize.h"
 
 namespace Blunder {
+
+namespace {
+constexpr uint64_t k_heavy_scene_thumbnail_bytes = 256u * 1024u;
+}  // namespace
+
+bool ThumbnailGenerator::isHeavySceneThumbnail(uint64_t size_bytes) {
+  return size_bytes > k_heavy_scene_thumbnail_bytes;
+}
 
 void ThumbnailGenerator::initialize(const ThumbnailGeneratorInit& init) {
   ASSERT(init.file_system);
@@ -136,6 +145,20 @@ bool ThumbnailGenerator::generateMeshThumbnail(const eastl::string& virtual_path
 
 bool ThumbnailGenerator::generateSceneThumbnail(
     const eastl::string& virtual_path, eastl::vector<uint8_t>& out_rgba) {
+  if (m_file_system != nullptr) {
+    eastl::string relative = virtual_path;
+    if (relative.compare(0, 7, "assets/") == 0) {
+      relative.erase(0, 7);
+    }
+    const uint64_t bytes = m_file_system->fileSize(
+        m_file_system->resolveAsset(std::filesystem::path(relative.c_str())));
+    if (isHeavySceneThumbnail(bytes)) {
+      LOG_INFO(
+          "[ThumbnailGenerator] skip heavy scene thumb {} ({} bytes)",
+          virtual_path.c_str(), bytes);
+      return generatePlaceholder(ThumbnailPlaceholderKind::Scene, out_rgba);
+    }
+  }
   if (m_scene_thumbnail_service != nullptr) {
     SceneThumbnailRenderRequest request{};
     request.scene_virtual_path = virtual_path;
@@ -244,6 +267,10 @@ ThumbnailResult ThumbnailGenerator::probeThumbnailStatus(
 void ThumbnailGenerator::enqueueThumbnail(const ContentEntry& entry,
                                           ThumbnailQueuePriority priority) {
   if (!m_is_initialized || shouldSkipEntry(entry)) {
+    return;
+  }
+  if (endsWithSuffix(entry.virtual_path, ".scene.asset") &&
+      isHeavySceneThumbnail(entry.size_bytes)) {
     return;
   }
   const ThumbnailResult probe = probeThumbnailStatus(entry);
