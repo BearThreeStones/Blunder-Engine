@@ -28,8 +28,8 @@ bool float_near(float a, float b, float eps = 1e-4f) {
 int main() {
   using namespace Blunder;
 
-  expect_true("abi version is 12",
-              BLUNDER_ENGINE_C_ABI_VERSION == 12);
+  expect_true("abi version >= 13",
+              BLUNDER_ENGINE_C_ABI_VERSION >= 13);
   expect_true("abi version callable",
               blunder_engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
 

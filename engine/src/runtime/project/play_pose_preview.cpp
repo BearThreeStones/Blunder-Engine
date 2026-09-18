@@ -107,4 +107,19 @@ Mat4 worldMatrixWithPlayPoseOverlay(const SceneInstance& scene, EntityId id,
   return world;
 }
 
+bool applyNamedPlayPose(const PlayPoseOverlayMap& overlay, const eastl::string& name,
+                        Vec3& position, Quat& rotation, Vec3& scale) {
+  if (name.empty()) {
+    return false;
+  }
+  const auto it = overlay.find(name);
+  if (it == overlay.end()) {
+    return false;
+  }
+  position = Vec3(it->second.t[0], it->second.t[1], it->second.t[2]);
+  rotation = Quat(it->second.r[3], it->second.r[0], it->second.r[1], it->second.r[2]);
+  scale = Vec3(it->second.s[0], it->second.s[1], it->second.s[2]);
+  return true;
+}
+
 }  // namespace Blunder

@@ -146,6 +146,63 @@ class SetFogComponentCommand final : public IEditorCommand {
   }
 };
 
+class SetColliderComponentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  ColliderComponent before_collider{};
+  ColliderComponent after_collider{};
+
+  void undo() override { apply(before_collider); }
+  void redo() override { apply(after_collider); }
+
+ private:
+  void apply(const ColliderComponent& collider) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    scene->setCollider(entity_id, collider);
+  }
+};
+
+class SetCharacterControllerComponentCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  CharacterControllerComponent before_cct{};
+  CharacterControllerComponent after_cct{};
+
+  void undo() override { apply(before_cct); }
+  void redo() override { apply(after_cct); }
+
+ private:
+  void apply(const CharacterControllerComponent& cct) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    scene->setCharacterController(entity_id, cct);
+  }
+};
+
+class SetEntityGroupsCommand final : public IEditorCommand {
+ public:
+  SceneInstance* scene{nullptr};
+  EntityId entity_id{k_invalid_entity_id};
+  eastl::vector<eastl::string> before_groups;
+  eastl::vector<eastl::string> after_groups;
+
+  void undo() override { apply(before_groups); }
+  void redo() override { apply(after_groups); }
+
+ private:
+  void apply(const eastl::vector<eastl::string>& groups) {
+    if (scene == nullptr || !isValid(entity_id)) {
+      return;
+    }
+    scene->setGroups(entity_id, groups);
+  }
+};
+
 class SetAnimationPlayerClipBindingsCommand final : public IEditorCommand {
  public:
   SceneInstance* scene{nullptr};
@@ -668,6 +725,52 @@ eastl::unique_ptr<IEditorCommand> makeSetFogComponentCommand(
   command->entity_id = entity_id;
   command->before_fog = before_fog;
   command->after_fog = after_fog;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetColliderComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const ColliderComponent& before_collider,
+    const ColliderComponent& after_collider, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetColliderComponentCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_collider = before_collider;
+  command->after_collider = after_collider;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetCharacterControllerComponentCommand(
+    SceneInstance* scene, EntityId entity_id,
+    const CharacterControllerComponent& before_cct,
+    const CharacterControllerComponent& after_cct, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetCharacterControllerComponentCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_cct = before_cct;
+  command->after_cct = after_cct;
+  command->selection_before = selection_before;
+  command->selection_after = selection_after;
+  stampPlayV1(*command, entity_id);
+  return command;
+}
+
+eastl::unique_ptr<IEditorCommand> makeSetEntityGroupsCommand(
+    SceneInstance* scene, EntityId entity_id, eastl::vector<eastl::string> before_groups,
+    eastl::vector<eastl::string> after_groups, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after) {
+  auto command = eastl::make_unique<SetEntityGroupsCommand>();
+  command->scene = scene;
+  command->entity_id = entity_id;
+  command->before_groups = eastl::move(before_groups);
+  command->after_groups = eastl::move(after_groups);
   command->selection_before = selection_before;
   command->selection_after = selection_after;
   stampPlayV1(*command, entity_id);

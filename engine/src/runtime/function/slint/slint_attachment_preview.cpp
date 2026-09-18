@@ -24,6 +24,8 @@
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/fog_component.h"
+#include "runtime/function/scene/collider_component.h"
+#include "runtime/function/scene/character_controller_component.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -77,6 +79,10 @@ const char* previewTitleSuffix(int kind) {
       return "SkeletonModifier";
     case 8:
       return "Fog";
+    case 9:
+      return "Collider";
+    case 10:
+      return "Character Controller";
     default:
       return "Attachment";
   }
@@ -94,6 +100,10 @@ const char* uniqueKindNameFromIcon(int kind) {
       return "AnimationTree";
     case 8:
       return "Fog";
+    case 9:
+      return "Collider";
+    case 10:
+      return "CharacterController";
     default:
       return "";
   }
@@ -396,6 +406,30 @@ void SlintSystem::syncAttachmentPreviewCards() {
           row.fog_albedo_b = fog->albedo.b;
           row.fog_g = fog->scattering_g;
         }
+        if (const ColliderComponent* collider = scene->getCollider(state.entity_id)) {
+          row.collider_shape = static_cast<int>(collider->shape);
+          row.collider_body = static_cast<int>(collider->body_kind);
+          row.collider_layer = static_cast<float>(collider->layer);
+          row.collider_mask = collider->mask == 0xFFFFFFFFu
+                                  ? -1.0f
+                                  : static_cast<float>(collider->mask);
+          row.collider_box_x = collider->box_half_extents.x;
+          row.collider_box_y = collider->box_half_extents.y;
+          row.collider_box_z = collider->box_half_extents.z;
+          row.collider_sphere_radius = collider->sphere_radius;
+          row.collider_capsule_radius = collider->capsule_radius;
+          row.collider_capsule_height = collider->capsule_height;
+        }
+        if (const CharacterControllerComponent* cct =
+                scene->getCharacterController(state.entity_id)) {
+          row.cct_radius = cct->radius;
+          row.cct_height = cct->height;
+          row.cct_slope_limit = cct->slope_limit_degrees;
+          row.cct_step_height = cct->step_height;
+          row.cct_snap = cct->snap_length;
+          row.cct_skin = cct->skin;
+          row.cct_mask = cct->mask == 0xFFFFFFFFu ? -1.0f : static_cast<float>(cct->mask);
+        }
 
         Object* object = scene->findBoundObject(state.entity_id);
         if (object != nullptr && object->hasAnimationTree()) {
@@ -635,6 +669,9 @@ void SlintSystem::applyPreviewLight(int entity_id, int kind, int index,
       services ? services->render_system.get() : nullptr, this);
   syncInspectorLightFromSelection();
   syncInspectorFogFromSelection();
+  syncInspectorColliderFromSelection();
+  syncInspectorCharacterControllerFromSelection();
+  syncInspectorGroupsFromSelection();
 }
 
 void SlintSystem::applyPreviewFog(int entity_id, int kind, int index, bool enabled,
@@ -691,6 +728,129 @@ void SlintSystem::applyPreviewFog(int entity_id, int kind, int index, bool enabl
       scene, id, command_before, after, currentSelectionSnapshot(),
       currentSelectionSnapshot()));
   syncInspectorFogFromSelection();
+  syncInspectorColliderFromSelection();
+  syncInspectorCharacterControllerFromSelection();
+  syncInspectorGroupsFromSelection();
+}
+
+void SlintSystem::applyPreviewCollider(int entity_id, int kind, int index, int shape,
+                                       int body, float layer, float mask, float box_x,
+                                       float box_y, float box_z, float sphere_radius,
+                                       float capsule_radius, float capsule_height,
+                                       bool commit) {
+  (void)kind;
+  (void)index;
+  if (!m_window_component || m_applying_preview_sync) {
+    return;
+  }
+  const auto services = lockServices();
+  SceneInstance* scene =
+      services && services->scene ? services->scene->getActiveInstance() : nullptr;
+  if (scene == nullptr) {
+    return;
+  }
+  const EntityId id = static_cast<EntityId>(entity_id);
+  const ColliderComponent* existing = scene->getCollider(id);
+  if (existing == nullptr) {
+    return;
+  }
+  const ColliderComponent current = *existing;
+  ColliderComponent after = current;
+  const int shape_clamped = shape < 0 ? 0 : (shape > 3 ? 3 : shape);
+  const int body_clamped = body < 0 ? 0 : (body > 2 ? 2 : body);
+  after.shape = static_cast<ColliderShapeKind>(shape_clamped);
+  after.body_kind = static_cast<ColliderBodyKind>(body_clamped);
+  const long layer_rounded = std::lround(static_cast<double>(layer));
+  after.layer = layer_rounded <= 0 ? 1u : static_cast<uint32_t>(layer_rounded);
+  after.mask = mask < 0.0f ? 0xFFFFFFFFu
+                           : static_cast<uint32_t>(std::llround(static_cast<double>(mask)));
+  after.box_half_extents = Vec3(box_x, box_y, box_z);
+  after.sphere_radius = sphere_radius;
+  after.capsule_radius = capsule_radius;
+  after.capsule_height = capsule_height;
+  sanitizeColliderComponent(after);
+  if (colliderComponentsEqual(after, current) && !m_inspector_collider_edit_open) {
+    return;
+  }
+  if (!commit) {
+    if (!m_inspector_collider_edit_open) {
+      m_inspector_collider_edit_before = current;
+      m_inspector_collider_edit_open = true;
+    }
+    if (!colliderComponentsEqual(after, current)) {
+      scene->setCollider(id, after);
+    }
+    return;
+  }
+  const ColliderComponent command_before =
+      m_inspector_collider_edit_open ? m_inspector_collider_edit_before : current;
+  m_inspector_collider_edit_open = false;
+  if (colliderComponentsEqual(after, command_before)) {
+    return;
+  }
+  scene->setCollider(id, after);
+  pushDocumentCommand(makeSetColliderComponentCommand(
+      scene, id, command_before, after, currentSelectionSnapshot(),
+      currentSelectionSnapshot()));
+  syncInspectorColliderFromSelection();
+}
+
+void SlintSystem::applyPreviewCharacterController(int entity_id, int kind, int index,
+                                                  float radius, float height,
+                                                  float slope_limit, float step_height,
+                                                  float snap, float skin, float mask,
+                                                  bool commit) {
+  (void)kind;
+  (void)index;
+  if (!m_window_component || m_applying_preview_sync) {
+    return;
+  }
+  const auto services = lockServices();
+  SceneInstance* scene =
+      services && services->scene ? services->scene->getActiveInstance() : nullptr;
+  if (scene == nullptr) {
+    return;
+  }
+  const EntityId id = static_cast<EntityId>(entity_id);
+  const CharacterControllerComponent* existing = scene->getCharacterController(id);
+  if (existing == nullptr) {
+    return;
+  }
+  const CharacterControllerComponent current = *existing;
+  CharacterControllerComponent after = current;
+  after.radius = radius;
+  after.height = height;
+  after.slope_limit_degrees = slope_limit;
+  after.step_height = step_height;
+  after.snap_length = snap;
+  after.skin = skin;
+  after.mask = mask < 0.0f ? 0xFFFFFFFFu
+                           : static_cast<uint32_t>(std::llround(static_cast<double>(mask)));
+  sanitizeCharacterControllerComponent(after);
+  if (characterControllerAuthoredEqual(after, current) && !m_inspector_cct_edit_open) {
+    return;
+  }
+  if (!commit) {
+    if (!m_inspector_cct_edit_open) {
+      m_inspector_cct_edit_before = current;
+      m_inspector_cct_edit_open = true;
+    }
+    if (!characterControllerAuthoredEqual(after, current)) {
+      scene->setCharacterController(id, after);
+    }
+    return;
+  }
+  const CharacterControllerComponent command_before =
+      m_inspector_cct_edit_open ? m_inspector_cct_edit_before : current;
+  m_inspector_cct_edit_open = false;
+  if (characterControllerAuthoredEqual(after, command_before)) {
+    return;
+  }
+  scene->setCharacterController(id, after);
+  pushDocumentCommand(makeSetCharacterControllerComponentCommand(
+      scene, id, command_before, after, currentSelectionSnapshot(),
+      currentSelectionSnapshot()));
+  syncInspectorCharacterControllerFromSelection();
 }
 
 void SlintSystem::applyPreviewUniqueRemove(int entity_id, int kind, int index) {

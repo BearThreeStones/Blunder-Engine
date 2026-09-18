@@ -194,6 +194,24 @@ int main() {
     fs::remove_all(tmp);
   }
 
+  {
+    std::vector<std::string> args = {
+        "engine_editor", "--project-root", "C:/Games/Demo", "--scene",
+        "assets/Scenes/root.scene.asset", "ray", "--ox", "0", "--oy", "0",
+        "--oz", "5", "--dz", "-1", "--max-distance", "20", "--mask",
+        "4294967295", "--collide-with-areas"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("cli ray ok", opts.ok);
+    expect_true("cli ray verb", opts.cli.verb == "ray");
+    expect_true("cli ray oz", opts.cli.oz == 5.0f);
+    expect_true("cli ray dz", opts.cli.dz == -1.0f);
+    expect_true("cli ray max", opts.cli.max_distance == 20.0f);
+    expect_true("cli ray mask", opts.cli.mask == 4294967295u);
+    expect_true("cli ray areas", opts.cli.collide_with_areas);
+  }
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

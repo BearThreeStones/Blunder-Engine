@@ -163,6 +163,8 @@ void applyArgString(EditorSessionLaunch& launch, const std::string& key,
     launch.cli.out_path = value.c_str();
   } else if (key == "name" || key == "entity") {
     launch.cli.entity = value.c_str();
+  } else if (key == "shape") {
+    launch.cli.sweep_shape = value.c_str();
   } else if (key == "asset") {
     launch.cli.asset = value.c_str();
   } else if (key == "scene") {
@@ -219,6 +221,30 @@ void applyArgNumber(EditorSessionLaunch& launch, const std::string& key,
   } else if (key == "target_z") {
     launch.cli.target_z = std::strtof(value.c_str(), &end);
     launch.cli.has_target = true;
+  } else if (key == "ox") {
+    launch.cli.ox = std::strtof(value.c_str(), &end);
+  } else if (key == "oy") {
+    launch.cli.oy = std::strtof(value.c_str(), &end);
+  } else if (key == "oz") {
+    launch.cli.oz = std::strtof(value.c_str(), &end);
+  } else if (key == "dz") {
+    launch.cli.dz = std::strtof(value.c_str(), &end);
+  } else if (key == "max_distance") {
+    launch.cli.max_distance = std::strtof(value.c_str(), &end);
+  } else if (key == "mask") {
+    launch.cli.mask = static_cast<uint32_t>(std::strtoul(value.c_str(), &end, 0));
+  } else if (key == "hx") {
+    launch.cli.hx = std::strtof(value.c_str(), &end);
+  } else if (key == "hy") {
+    launch.cli.hy = std::strtof(value.c_str(), &end);
+  } else if (key == "hz") {
+    launch.cli.hz = std::strtof(value.c_str(), &end);
+  } else if (key == "sphere_radius") {
+    launch.cli.sphere_radius = std::strtof(value.c_str(), &end);
+  } else if (key == "capsule_radius") {
+    launch.cli.capsule_radius = std::strtof(value.c_str(), &end);
+  } else if (key == "capsule_half_height") {
+    launch.cli.capsule_half_height = std::strtof(value.c_str(), &end);
   }
 }
 
@@ -226,8 +252,11 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
   const char* keys[] = {"subject", "out",     "name", "entity", "asset", "scene",
                         "steps",   "tx",      "ty",   "tz",     "qx",    "qy",
                         "qz",      "qw",      "sx",   "sy",     "sz",    "dx",
-                        "dy",      "wheel",   "eye_x", "eye_y", "eye_z",
-                        "target_x", "target_y", "target_z"};
+                        "dy",      "dz",      "wheel", "eye_x", "eye_y", "eye_z",
+                        "target_x", "target_y", "target_z", "ox", "oy", "oz",
+                        "max_distance", "mask", "shape", "hx", "hy", "hz",
+                        "sphere_radius", "capsule_radius",
+                        "capsule_half_height"};
   for (const char* key : keys) {
     std::string value;
     if (jsonExtractString(src, key, value)) {
@@ -260,6 +289,10 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
   if (src.find("\"save\":true") != std::string::npos ||
       src.find("\"save\": true") != std::string::npos) {
     launch.cli.save = true;
+  }
+  if (src.find("\"collide_with_areas\":true") != std::string::npos ||
+      src.find("\"collide_with_areas\": true") != std::string::npos) {
+    launch.cli.collide_with_areas = true;
   }
 }
 
@@ -318,7 +351,35 @@ const char* k_tools_list =
     "{\"name\":\"play-frame\",\"description\":\"Play frame\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
     "{\"name\":\"save\",\"description\":\"Persist Live document\","
-    "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}"
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
+    "{\"name\":\"ray\",\"description\":\"Physics raycast in SI metres (Play/Edit "
+    "same query). origin ox/oy/oz, direction dx/dy/dz, max_distance, mask, "
+    "collide_with_areas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"ox\":{\"type\":"
+    "\"number\"},\"oy\":{\"type\":\"number\"},\"oz\":{\"type\":\"number\"},"
+    "\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":\"number\"},\"dz\":{\"type\":"
+    "\"number\"},\"max_distance\":{\"type\":\"number\"},\"mask\":{\"type\":"
+    "\"integer\"},\"collide_with_areas\":{\"type\":\"boolean\"}}}},"
+    "{\"name\":\"shapecast\",\"description\":\"Physics box/sphere/capsule "
+    "shapecast in SI metres (same query as Play). shape, origin ox/oy/oz, "
+    "direction dx/dy/dz, hx/hy/hz, sphere_radius, capsule_radius, "
+    "capsule_half_height, max_distance, mask, collide_with_areas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"shape\":{\"type\":"
+    "\"string\"},\"ox\":{\"type\":\"number\"},\"oy\":{\"type\":\"number\"},"
+    "\"oz\":{\"type\":\"number\"},\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":"
+    "\"number\"},\"dz\":{\"type\":\"number\"},\"hx\":{\"type\":\"number\"},"
+    "\"hy\":{\"type\":\"number\"},\"hz\":{\"type\":\"number\"},"
+    "\"sphere_radius\":{\"type\":\"number\"},\"capsule_radius\":{\"type\":"
+    "\"number\"},\"capsule_half_height\":{\"type\":\"number\"},"
+    "\"max_distance\":{\"type\":\"number\"},\"mask\":{\"type\":\"integer\"},"
+    "\"collide_with_areas\":{\"type\":\"boolean\"}}}},"
+    "{\"name\":\"group\",\"description\":\"List entity names in a scene group.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}},"
+    "{\"name\":\"collider\",\"description\":\"Read Collider Unique shape/body for "
+    "an entity name.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}}"
     "]}";
 
 }  // namespace
@@ -342,35 +403,181 @@ bool mcpStdinHasBytes() {
 #endif
 }
 
-bool mcpReadMessage(std::string& json) {
-  json.clear();
-  std::string header;
-  char line[1024];
-  int content_length = -1;
-  while (std::fgets(line, sizeof(line), stdin) != nullptr) {
-    if (std::strcmp(line, "\r\n") == 0 || std::strcmp(line, "\n") == 0) {
-      break;
-    }
-    header += line;
-    const char* key = "Content-Length:";
-    const char* found = std::strstr(line, key);
-    if (found != nullptr) {
-      content_length = std::atoi(found + std::strlen(key));
-    }
+bool mcpStdinClosed() {
+#ifdef _WIN32
+  HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+  if (handle == INVALID_HANDLE_VALUE || handle == nullptr) {
+    return true;
   }
-  if (content_length < 0) {
+  DWORD avail = 0;
+  if (PeekNamedPipe(handle, nullptr, 0, nullptr, &avail, nullptr)) {
     return false;
   }
-  json.resize(static_cast<size_t>(content_length));
-  const size_t got =
-      std::fread(json.data(), 1, static_cast<size_t>(content_length), stdin);
-  json.resize(got);
-  return got == static_cast<size_t>(content_length);
+  const DWORD err = GetLastError();
+  return err == ERROR_BROKEN_PIPE || err == ERROR_PIPE_NOT_CONNECTED;
+#else
+  pollfd fd{};
+  fd.fd = STDIN_FILENO;
+  fd.events = POLLIN;
+  const int r = poll(&fd, 1, 0);
+  if (r < 0) {
+    return true;
+  }
+  return (fd.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0;
+#endif
+}
+
+bool mcpMessageNeedsEngine(const std::string& request) {
+  std::string method;
+  if (!jsonExtractString(request, "method", method)) {
+    return false;
+  }
+  return method == "tools/call";
+}
+
+namespace {
+
+#ifdef _WIN32
+bool mcpReadExact(HANDLE handle, void* buf, DWORD n) {
+  auto* bytes = static_cast<char*>(buf);
+  DWORD got_total = 0;
+  while (got_total < n) {
+    DWORD got = 0;
+    if (!ReadFile(handle, bytes + got_total, n - got_total, &got, nullptr) ||
+        got == 0) {
+      return false;
+    }
+    got_total += got;
+  }
+  return true;
+}
+
+bool mcpReadLine(HANDLE handle, std::string& line) {
+  line.clear();
+  char c = 0;
+  DWORD got = 0;
+  while (ReadFile(handle, &c, 1, &got, nullptr) && got == 1) {
+    if (c == '\n') {
+      if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+      }
+      return true;
+    }
+    line.push_back(c);
+  }
+  return !line.empty();
+}
+
+bool mcpWriteAll(HANDLE handle, const char* data, size_t n) {
+  size_t off = 0;
+  while (off < n) {
+    DWORD chunk = static_cast<DWORD>(n - off);
+    DWORD written = 0;
+    if (!WriteFile(handle, data + off, chunk, &written, nullptr) ||
+        written == 0) {
+      return false;
+    }
+    off += written;
+  }
+  return true;
+}
+
+bool lineStartsWith(const std::string& line, const char* prefix) {
+  const size_t n = std::strlen(prefix);
+  return line.size() >= n && std::strncmp(line.c_str(), prefix, n) == 0;
+}
+#endif
+
+}  // namespace
+
+bool mcpReadMessage(std::string& json) {
+  json.clear();
+#ifdef _WIN32
+  HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+  if (hin == nullptr || hin == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  std::string line;
+  if (!mcpReadLine(hin, line)) {
+    return false;
+  }
+  const char* k_content_length = "Content-Length:";
+  if (lineStartsWith(line, k_content_length)) {
+    int content_length = std::atoi(line.c_str() + std::strlen(k_content_length));
+    while (true) {
+      std::string header;
+      if (!mcpReadLine(hin, header)) {
+        return false;
+      }
+      if (header.empty()) {
+        break;
+      }
+      if (lineStartsWith(header, k_content_length)) {
+        content_length =
+            std::atoi(header.c_str() + std::strlen(k_content_length));
+      }
+    }
+    if (content_length < 0) {
+      return false;
+    }
+    json.resize(static_cast<size_t>(content_length));
+    return mcpReadExact(hin, json.data(), static_cast<DWORD>(content_length));
+  }
+  json = std::move(line);
+  return !json.empty();
+#else
+  std::string line;
+  if (!std::getline(std::cin, line)) {
+    return false;
+  }
+  if (!line.empty() && line.back() == '\r') {
+    line.pop_back();
+  }
+  const char* k_content_length = "Content-Length:";
+  if (line.compare(0, std::strlen(k_content_length), k_content_length) == 0) {
+    int content_length = std::atoi(line.c_str() + std::strlen(k_content_length));
+    while (true) {
+      std::string header;
+      if (!std::getline(std::cin, header)) {
+        return false;
+      }
+      if (!header.empty() && header.back() == '\r') {
+        header.pop_back();
+      }
+      if (header.empty()) {
+        break;
+      }
+      if (header.compare(0, std::strlen(k_content_length), k_content_length) ==
+          0) {
+        content_length =
+            std::atoi(header.c_str() + std::strlen(k_content_length));
+      }
+    }
+    if (content_length < 0) {
+      return false;
+    }
+    json.resize(static_cast<size_t>(content_length));
+    std::cin.read(json.data(), content_length);
+    return std::cin.gcount() == content_length;
+  }
+  json = std::move(line);
+  return !json.empty();
+#endif
 }
 
 void mcpWriteMessage(const std::string& json) {
-  std::cout << "Content-Length: " << json.size() << "\r\n\r\n" << json
-            << std::flush;
+#ifdef _WIN32
+  HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (hout == nullptr || hout == INVALID_HANDLE_VALUE) {
+    return;
+  }
+  std::string framed = json;
+  framed.push_back('\n');
+  (void)mcpWriteAll(hout, framed.data(), framed.size());
+  (void)FlushFileBuffers(hout);
+#else
+  std::cout << json << '\n' << std::flush;
+#endif
 }
 
 std::string mcpHandleMessage(const std::string& request,
@@ -430,6 +637,7 @@ std::string mcpHandleMessage(const std::string& request,
     }
     escaped.push_back('"');
     content += escaped;
+    content += "}";
     if (!result.png.empty()) {
       content += ",{\"type\":\"image\",\"mimeType\":\"image/png\",\"data\":\"";
       content += base64Encode(result.png.data(), result.png.size());

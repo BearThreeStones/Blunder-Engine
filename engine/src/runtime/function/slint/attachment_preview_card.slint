@@ -96,6 +96,23 @@ export struct AttachmentPreviewCardRow {
     fog-albedo-g: float,
     fog-albedo-b: float,
     fog-g: float,
+    collider-shape: int,
+    collider-body: int,
+    collider-layer: float,
+    collider-mask: float,
+    collider-box-x: float,
+    collider-box-y: float,
+    collider-box-z: float,
+    collider-sphere-radius: float,
+    collider-capsule-radius: float,
+    collider-capsule-height: float,
+    cct-radius: float,
+    cct-height: float,
+    cct-slope-limit: float,
+    cct-step-height: float,
+    cct-snap: float,
+    cct-skin: float,
+    cct-mask: float,
     mesh-path: string,
     behaviour-id: int,
     behaviour-type: string,
@@ -124,6 +141,8 @@ export component AttachmentPreviewCard inherits Rectangle {
     callback camera-edited(float, float, float, bool, bool);
     callback light-edited(int, float, float, float, float, bool, float, bool);
     callback fog-edited(bool, bool, float, float, float, float, float, float, float, bool);
+    callback collider-edited(int, int, float, float, float, float, float, float, float, float, bool);
+    callback character-controller-edited(float, float, float, float, float, float, float, bool);
     callback color-hex-entered(string);
     callback unique-remove-requested();
     callback tree-canvas-requested();
@@ -157,6 +176,20 @@ export component AttachmentPreviewCard inherits Rectangle {
             root.card.fog-density, root.card.fog-height-falloff, root.card.fog-view-distance,
             root.card.fog-albedo-r, root.card.fog-albedo-g, root.card.fog-albedo-b,
             root.card.fog-g, commit);
+    }
+    function emit-collider(commit: bool) {
+        root.collider-edited(
+            root.card.collider-shape, root.card.collider-body,
+            root.card.collider-layer, root.card.collider-mask,
+            root.card.collider-box-x, root.card.collider-box-y, root.card.collider-box-z,
+            root.card.collider-sphere-radius, root.card.collider-capsule-radius,
+            root.card.collider-capsule-height, commit);
+    }
+    function emit-cct(commit: bool) {
+        root.character-controller-edited(
+            root.card.cct-radius, root.card.cct-height, root.card.cct-slope-limit,
+            root.card.cct-step-height, root.card.cct-snap, root.card.cct-skin,
+            root.card.cct-mask, commit);
     }
 
     width: 280px;
@@ -587,6 +620,176 @@ export component AttachmentPreviewCard inherits Rectangle {
                         reset-value: 0.2;
                         live-edited => { root.emit-fog(false); }
                         committed => { root.emit-fog(true); }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 9: VerticalBox {
+                    spacing: 6px;
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Shape"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.card.collider-shape = root.card.collider-shape >= 3 ? 0 : root.card.collider-shape + 1;
+                                root.emit-collider(true);
+                            }
+                            Text {
+                                text: root.card.collider-shape == 0 ? "Box" : (root.card.collider-shape == 1 ? "Sphere" : (root.card.collider-shape == 2 ? "Capsule" : "Triangle Mesh"));
+                                color: EditorTheme.default-text;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    HorizontalBox {
+                        spacing: 6px;
+                        Text { text: "Body"; color: EditorTheme.muted; font-size: 11px; width: 72px; vertical-alignment: center; }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.card.collider-body = root.card.collider-body >= 2 ? 0 : root.card.collider-body + 1;
+                                root.emit-collider(true);
+                            }
+                            Text {
+                                text: root.card.collider-body == 0 ? "Static" : (root.card.collider-body == 1 ? "Kinematic" : "Area");
+                                color: EditorTheme.default-text;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    InspectorScalarRow {
+                        label: "Layer";
+                        label-width: 72px;
+                        value <=> root.card.collider-layer;
+                        reset-value: 1.0;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Mask";
+                        label-width: 72px;
+                        value <=> root.card.collider-mask;
+                        reset-value: -1.0;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    if root.card.collider-shape == 0: InspectorScalarRow {
+                        label: "Half X";
+                        label-width: 72px;
+                        value <=> root.card.collider-box-x;
+                        reset-value: 1.0;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    if root.card.collider-shape == 0: InspectorScalarRow {
+                        label: "Half Y";
+                        label-width: 72px;
+                        value <=> root.card.collider-box-y;
+                        reset-value: 1.0;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    if root.card.collider-shape == 0: InspectorScalarRow {
+                        label: "Half Z";
+                        label-width: 72px;
+                        value <=> root.card.collider-box-z;
+                        reset-value: 1.0;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    if root.card.collider-shape == 1: InspectorScalarRow {
+                        label: "Radius";
+                        label-width: 72px;
+                        value <=> root.card.collider-sphere-radius;
+                        reset-value: 0.5;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    if root.card.collider-shape == 2: InspectorScalarRow {
+                        label: "Radius";
+                        label-width: 72px;
+                        value <=> root.card.collider-capsule-radius;
+                        reset-value: 0.5;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    if root.card.collider-shape == 2: InspectorScalarRow {
+                        label: "Height";
+                        label-width: 72px;
+                        value <=> root.card.collider-capsule-height;
+                        reset-value: 2.0;
+                        live-edited => { root.emit-collider(false); }
+                        committed => { root.emit-collider(true); }
+                    }
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.unique-remove-requested(); }
+                    }
+                }
+
+                if root.card.kind == 10: VerticalBox {
+                    spacing: 6px;
+                    InspectorScalarRow {
+                        label: "Radius";
+                        label-width: 72px;
+                        value <=> root.card.cct-radius;
+                        reset-value: 0.4;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Height";
+                        label-width: 72px;
+                        value <=> root.card.cct-height;
+                        reset-value: 1.8;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Slope Limit";
+                        label-width: 72px;
+                        value <=> root.card.cct-slope-limit;
+                        reset-value: 45.0;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Step Height";
+                        label-width: 72px;
+                        value <=> root.card.cct-step-height;
+                        reset-value: 0.3;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Snap";
+                        label-width: 72px;
+                        value <=> root.card.cct-snap;
+                        reset-value: 0.2;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Skin";
+                        label-width: 72px;
+                        value <=> root.card.cct-skin;
+                        reset-value: 0.04;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
+                    }
+                    InspectorScalarRow {
+                        label: "Mask";
+                        label-width: 72px;
+                        value <=> root.card.cct-mask;
+                        reset-value: -1.0;
+                        live-edited => { root.emit-cct(false); }
+                        committed => { root.emit-cct(true); }
                     }
                     EditorButton {
                         text: "Remove";

@@ -6,6 +6,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/scene_thumbnail/capture.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
+#include "runtime/function/render/mesh_preview/mesh_preview_studio_lights.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_offscreen_backend.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
@@ -193,6 +194,27 @@ SceneThumbnailRenderResult SceneThumbnailRenderService::renderSceneStill(
   }
   if (request.require_mesh && draws.empty()) {
     result.error = "No mesh renderers in scene";
+    return result;
+  }
+
+  if (draws.empty()) {
+    if (m_backend->renderSubmeshDraws(draws, framing, defaultMeshPreviewStudioLights(),
+                                       request.width, request.height, result.rgba,
+                                       root)) {
+      result.ok = true;
+      result.textures_pending = m_backend->lastMaterialTexturesPending();
+      return result;
+    }
+    result.rgba.assign(static_cast<size_t>(request.width) *
+                           static_cast<size_t>(request.height) * 4u,
+                       0);
+    for (size_t i = 0; i < result.rgba.size(); i += 4) {
+      result.rgba[i] = 18;
+      result.rgba[i + 1] = 22;
+      result.rgba[i + 2] = 28;
+      result.rgba[i + 3] = 255;
+    }
+    result.ok = true;
     return result;
   }
 

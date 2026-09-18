@@ -16,6 +16,7 @@ public sealed class ObjectHandle
     readonly List<Behaviour> _behaviours = new();
     AnimationPlayer? _animationPlayer;
     AnimationTree? _animationTree;
+    CharacterController? _characterController;
 
     ObjectHandle(ulong id)
     {
@@ -105,6 +106,7 @@ public sealed class ObjectHandle
                 handle._animationPlayer?.DetachNativeListeners();
                 handle._animationPlayer = null;
                 handle._animationTree = null;
+                handle._characterController = null;
                 handle._behaviours.Clear();
             }
 
@@ -188,6 +190,64 @@ public sealed class ObjectHandle
     /// <summary>Cached co-located AnimationTree façade for this Object.</summary>
     public AnimationTree EnsureAnimationTree() =>
         _animationTree ??= new AnimationTree(this);
+
+    public CharacterController? CharacterController
+    {
+        get
+        {
+            if (Native.blunder_object_has_character_controller(Id, out int present) !=
+                    Native.Ok ||
+                present == 0)
+            {
+                return null;
+            }
+
+            return _characterController ??= new CharacterController(this);
+        }
+    }
+
+    public void AddGroup(string name) => Native.blunder_object_add_group(Id, name);
+
+    public void RemoveGroup(string name) => Native.blunder_object_remove_group(Id, name);
+
+    public bool IsInGroup(string name)
+    {
+        if (Native.blunder_object_is_in_group(Id, name, out int value) != Native.Ok)
+        {
+            return false;
+        }
+
+        return value != 0;
+    }
+
+    public string[] Groups
+    {
+        get
+        {
+            int count = Native.blunder_object_group_count(Id);
+            if (count <= 0)
+            {
+                return [];
+            }
+
+            string[] names = new string[count];
+            for (int i = 0; i < count; ++i)
+            {
+                if (Native.blunder_object_group_at(Id, i, out string name) != Native.Ok)
+                {
+                    names[i] = "";
+                    continue;
+                }
+
+                names[i] = name;
+            }
+
+            return names;
+        }
+    }
+
+    public static ObjectHandle[] FindObjectsInGroup(string name) =>
+        Physics.FindObjectsInGroup(name);
 
     public int SkeletonModifierCount
     {

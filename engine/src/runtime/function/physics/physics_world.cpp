@@ -3,6 +3,7 @@
 #include "function/physics/physics_collision.h"
 
 #include <cassert>
+#include <utility>
 #include <vector>
 
 namespace Blunder {
@@ -13,6 +14,28 @@ Fixed defaultGravityZ() {
 }
 
 Fixed absFixed(Fixed value) { return value.raw() < 0 ? -value : value; }
+
+FixedVec3 cross(FixedVec3 a, FixedVec3 b) {
+  return FixedVec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
+FixedVec3 rotateVec(FixedQuat q, FixedVec3 v) {
+  const FixedVec3 u(q.x, q.y, q.z);
+  const Fixed s = q.w;
+  const Fixed two = Fixed::from_int(2);
+  return u * (two * dot(u, v)) + v * (s * s - dot(u, u)) + cross(u, v) * (two * s);
+}
+
+FixedVec3 capsuleWorldAxis(const PhysicsTransform& pose) {
+  return rotateVec(pose.rotation, FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(1)));
+}
+
+void capsuleEndpoints(const PhysicsTransform& pose, Fixed half_height, FixedVec3& out_a,
+                      FixedVec3& out_b) {
+  const FixedVec3 axis = capsuleWorldAxis(pose);
+  out_a = pose.position + axis * (Fixed::zero() - half_height);
+  out_b = pose.position + axis * half_height;
+}
 
 struct RigidBodyState {
   MotionType motion_type = MotionType::Dynamic;
@@ -39,6 +62,11 @@ struct ColliderState {
   Fixed sphere_radius = Fixed::zero();
   Fixed capsule_radius = Fixed::zero();
   Fixed capsule_half_height = Fixed::zero();
+  std::vector<PhysicsTriangle> triangles;
+  uint32_t layer = kDefaultColliderLayer;
+  uint32_t mask = kDefaultColliderMask;
+  bool query_only = false;
+  uint64_t user_data = 0;
   bool alive = false;
   uint32_t generation = 0;
 };
@@ -100,6 +128,22 @@ const ColliderState* findCollider(const std::vector<ColliderState>& colliders, C
   return &collider;
 }
 
+ColliderHandle insertCollider(std::vector<ColliderState>& colliders, ColliderState collider) {
+  collider.alive = true;
+  if (colliders.size() < colliders.capacity()) {
+    for (uint32_t i = 0; i < colliders.size(); ++i) {
+      if (!colliders[i].alive) {
+        collider.generation = colliders[i].generation + 1;
+        colliders[i] = std::move(collider);
+        return ColliderHandle{i, colliders[i].generation};
+      }
+    }
+  }
+  const uint32_t index = static_cast<uint32_t>(colliders.size());
+  colliders.push_back(std::move(collider));
+  return ColliderHandle{index, colliders[index].generation};
+}
+
 ColliderWorldShape buildWorldShape(const RigidBodyState& body, const ColliderState& collider) {
   ColliderWorldShape shape{};
   shape.shape = collider.shape;
@@ -108,6 +152,10 @@ ColliderWorldShape buildWorldShape(const RigidBodyState& body, const ColliderSta
   shape.sphere_radius = collider.sphere_radius;
   shape.capsule_radius = collider.capsule_radius;
   shape.capsule_half_height = collider.capsule_half_height;
+  if (!collider.triangles.empty()) {
+    shape.triangles = collider.triangles.data();
+    shape.triangle_count = static_cast<uint32_t>(collider.triangles.size());
+  }
   return shape;
 }
 
@@ -158,6 +206,13 @@ void detectContacts(const std::vector<RigidBodyState>& bodies, const std::vector
       const ColliderState& collider_a = colliders[i];
       const ColliderState& collider_b = colliders[j];
       if (collider_a.body == collider_b.body) {
+        continue;
+      }
+
+      if (collider_a.query_only || collider_b.query_only) {
+        continue;
+      }
+      if ((collider_a.layer & collider_b.mask) == 0 || (collider_b.layer & collider_a.mask) == 0) {
         continue;
       }
 
@@ -494,21 +549,7 @@ ColliderHandle PhysicsWorld::attachBoxCollider(RigidBodyHandle body_handle, Fixe
   collider.shape = ColliderShape::Box;
   collider.material = material;
   collider.box_half_extents = half_extents;
-  collider.alive = true;
-
-  if (m_impl->colliders.size() < m_impl->colliders.capacity()) {
-    for (uint32_t i = 0; i < m_impl->colliders.size(); ++i) {
-      if (!m_impl->colliders[i].alive) {
-        collider.generation = m_impl->colliders[i].generation + 1;
-        m_impl->colliders[i] = collider;
-        return ColliderHandle{i, collider.generation};
-      }
-    }
-  }
-
-  const uint32_t index = static_cast<uint32_t>(m_impl->colliders.size());
-  m_impl->colliders.push_back(collider);
-  return ColliderHandle{index, collider.generation};
+  return insertCollider(m_impl->colliders, std::move(collider));
 }
 
 ColliderHandle PhysicsWorld::attachSphereCollider(RigidBodyHandle body_handle, Fixed radius,
@@ -520,21 +561,7 @@ ColliderHandle PhysicsWorld::attachSphereCollider(RigidBodyHandle body_handle, F
   collider.shape = ColliderShape::Sphere;
   collider.material = material;
   collider.sphere_radius = radius;
-  collider.alive = true;
-
-  if (m_impl->colliders.size() < m_impl->colliders.capacity()) {
-    for (uint32_t i = 0; i < m_impl->colliders.size(); ++i) {
-      if (!m_impl->colliders[i].alive) {
-        collider.generation = m_impl->colliders[i].generation + 1;
-        m_impl->colliders[i] = collider;
-        return ColliderHandle{i, collider.generation};
-      }
-    }
-  }
-
-  const uint32_t index = static_cast<uint32_t>(m_impl->colliders.size());
-  m_impl->colliders.push_back(collider);
-  return ColliderHandle{index, collider.generation};
+  return insertCollider(m_impl->colliders, std::move(collider));
 }
 
 ColliderHandle PhysicsWorld::attachCapsuleCollider(RigidBodyHandle body_handle, Fixed radius, Fixed half_height,
@@ -547,21 +574,26 @@ ColliderHandle PhysicsWorld::attachCapsuleCollider(RigidBodyHandle body_handle, 
   collider.material = material;
   collider.capsule_radius = radius;
   collider.capsule_half_height = half_height;
-  collider.alive = true;
+  return insertCollider(m_impl->colliders, std::move(collider));
+}
 
-  if (m_impl->colliders.size() < m_impl->colliders.capacity()) {
-    for (uint32_t i = 0; i < m_impl->colliders.size(); ++i) {
-      if (!m_impl->colliders[i].alive) {
-        collider.generation = m_impl->colliders[i].generation + 1;
-        m_impl->colliders[i] = collider;
-        return ColliderHandle{i, collider.generation};
-      }
-    }
+ColliderHandle PhysicsWorld::attachTriangleMeshCollider(RigidBodyHandle body_handle,
+                                                        const PhysicsTriangle* triangles,
+                                                        uint32_t triangle_count, PhysicsMaterial material) {
+  const RigidBodyState* body = findBody(m_impl->bodies, body_handle);
+  if (body == nullptr || body->motion_type != MotionType::Static) {
+    return ColliderHandle{};
+  }
+  if (triangles == nullptr || triangle_count == 0) {
+    return ColliderHandle{};
   }
 
-  const uint32_t index = static_cast<uint32_t>(m_impl->colliders.size());
-  m_impl->colliders.push_back(collider);
-  return ColliderHandle{index, collider.generation};
+  ColliderState collider{};
+  collider.body = body_handle;
+  collider.shape = ColliderShape::TriangleMesh;
+  collider.material = material;
+  collider.triangles.assign(triangles, triangles + triangle_count);
+  return insertCollider(m_impl->colliders, std::move(collider));
 }
 
 void PhysicsWorld::destroyCollider(ColliderHandle collider_handle) {
@@ -593,6 +625,250 @@ bool PhysicsWorld::isBodySleeping(RigidBodyHandle body_handle) const {
   const RigidBodyState* body = findBody(m_impl->bodies, body_handle);
   assert(body != nullptr);
   return body->is_sleeping;
+}
+
+void PhysicsWorld::setColliderLayer(ColliderHandle collider_handle, uint32_t layer) {
+  ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  if (collider != nullptr) {
+    collider->layer = layer;
+  }
+}
+
+void PhysicsWorld::setColliderMask(ColliderHandle collider_handle, uint32_t mask) {
+  ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  if (collider != nullptr) {
+    collider->mask = mask;
+  }
+}
+
+void PhysicsWorld::setColliderQueryOnly(ColliderHandle collider_handle, bool query_only) {
+  ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  if (collider != nullptr) {
+    collider->query_only = query_only;
+  }
+}
+
+void PhysicsWorld::setColliderUserData(ColliderHandle collider_handle, uint64_t user_data) {
+  ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  if (collider != nullptr) {
+    collider->user_data = user_data;
+  }
+}
+
+uint32_t PhysicsWorld::getColliderLayer(ColliderHandle collider_handle) const {
+  const ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  assert(collider != nullptr);
+  return collider->layer;
+}
+
+uint32_t PhysicsWorld::getColliderMask(ColliderHandle collider_handle) const {
+  const ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  assert(collider != nullptr);
+  return collider->mask;
+}
+
+bool PhysicsWorld::isColliderQueryOnly(ColliderHandle collider_handle) const {
+  const ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  assert(collider != nullptr);
+  return collider->query_only;
+}
+
+uint64_t PhysicsWorld::getColliderUserData(ColliderHandle collider_handle) const {
+  const ColliderState* collider = findCollider(m_impl->colliders, collider_handle);
+  assert(collider != nullptr);
+  return collider->user_data;
+}
+
+bool queryCandidate(const ColliderState& collider, uint32_t mask, bool collide_with_areas) {
+  if (!collider.alive) {
+    return false;
+  }
+  if ((collider.layer & mask) == 0) {
+    return false;
+  }
+  if (collider.query_only && !collide_with_areas) {
+    return false;
+  }
+  return true;
+}
+
+void fillHit(const ColliderState& collider, ColliderHandle handle, Fixed distance, FixedVec3 point,
+             FixedVec3 normal, PhysicsQueryHit& out_hit) {
+  out_hit.hit = true;
+  out_hit.distance = distance;
+  out_hit.point = point;
+  out_hit.normal = normal;
+  out_hit.collider = handle;
+  out_hit.body = collider.body;
+  out_hit.user_data = collider.user_data;
+  out_hit.is_area = collider.query_only;
+}
+
+bool PhysicsWorld::raycast(FixedVec3 origin, FixedVec3 direction, Fixed max_distance, uint32_t mask,
+                           bool collide_with_areas, PhysicsQueryHit& out_hit) const {
+  out_hit = {};
+  PhysicsQueryHit best{};
+  for (uint32_t i = 0; i < m_impl->colliders.size(); ++i) {
+    const ColliderState& collider = m_impl->colliders[i];
+    if (!queryCandidate(collider, mask, collide_with_areas)) {
+      continue;
+    }
+    const RigidBodyState* body = findBody(m_impl->bodies, collider.body);
+    if (body == nullptr) {
+      continue;
+    }
+    const ColliderWorldShape shape = buildWorldShape(*body, collider);
+    Fixed t = Fixed::zero();
+    FixedVec3 point{};
+    FixedVec3 normal{};
+    if (!raycastShape(shape, origin, direction, max_distance, t, point, normal)) {
+      continue;
+    }
+    if (!best.hit || t.raw() < best.distance.raw()) {
+      fillHit(collider, ColliderHandle{i, collider.generation}, t, point, normal, best);
+    }
+  }
+  out_hit = best;
+  return out_hit.hit;
+}
+
+bool PhysicsWorld::shapecast(PhysicsSweepShape sweep_shape, PhysicsTransform pose, FixedVec3 box_half_extents,
+                             Fixed sphere_radius, Fixed capsule_radius, Fixed capsule_half_height,
+                             FixedVec3 direction, Fixed max_distance, uint32_t mask, bool collide_with_areas,
+                             PhysicsQueryHit& out_hit) const {
+  out_hit = {};
+  if (sweep_shape == PhysicsSweepShape::TriangleMesh || sweep_shape == PhysicsSweepShape::Ray) {
+    return false;
+  }
+  const Fixed dir_len_sq = dot(direction, direction);
+  if (dir_len_sq.raw() == 0 || max_distance.raw() <= 0) {
+    return false;
+  }
+  const FixedVec3 dir = direction / sqrt(dir_len_sq);
+
+  ColliderWorldShape query{};
+  query.pose = pose;
+  if (sweep_shape == PhysicsSweepShape::Box) {
+    query.shape = ColliderShape::Box;
+    query.box_half_extents = box_half_extents;
+  } else if (sweep_shape == PhysicsSweepShape::Sphere) {
+    query.shape = ColliderShape::Sphere;
+    query.sphere_radius = sphere_radius;
+  } else {
+    query.shape = ColliderShape::Capsule;
+    query.capsule_radius = capsule_radius;
+    query.capsule_half_height = capsule_half_height;
+  }
+
+  PhysicsQueryHit best{};
+  for (uint32_t i = 0; i < m_impl->colliders.size(); ++i) {
+    const ColliderState& collider = m_impl->colliders[i];
+    if (!queryCandidate(collider, mask, collide_with_areas)) {
+      continue;
+    }
+    const RigidBodyState* body = findBody(m_impl->bodies, collider.body);
+    if (body == nullptr) {
+      continue;
+    }
+    const ColliderWorldShape world_shape = buildWorldShape(*body, collider);
+
+    Fixed t = Fixed::zero();
+    FixedVec3 point{};
+    FixedVec3 normal{};
+    bool hit = false;
+
+    if (sweep_shape == PhysicsSweepShape::Capsule &&
+        world_shape.shape == ColliderShape::TriangleMesh) {
+      FixedVec3 seg_a{};
+      FixedVec3 seg_b{};
+      capsuleEndpoints(pose, capsule_half_height, seg_a, seg_b);
+      Fixed t_a = Fixed::zero();
+      FixedVec3 point_a{};
+      FixedVec3 normal_a{};
+      const bool hit_a = raycastInflatedTriangleMesh(
+          world_shape, seg_a, dir, max_distance, capsule_radius, t_a, point_a, normal_a);
+      Fixed t_b = Fixed::zero();
+      FixedVec3 point_b{};
+      FixedVec3 normal_b{};
+      const bool hit_b = raycastInflatedTriangleMesh(
+          world_shape, seg_b, dir, max_distance, capsule_radius, t_b, point_b, normal_b);
+      if (hit_a && (!hit_b || t_a.raw() <= t_b.raw())) {
+        hit = true;
+        t = t_a;
+        point = point_a;
+        normal = normal_a;
+      } else if (hit_b) {
+        hit = true;
+        t = t_b;
+        point = point_b;
+        normal = normal_b;
+      }
+    } else {
+      Fixed inflated = sphere_radius;
+      if (sweep_shape == PhysicsSweepShape::Box) {
+        inflated = box_half_extents.x;
+        if (box_half_extents.y.raw() > inflated.raw()) {
+          inflated = box_half_extents.y;
+        }
+        if (box_half_extents.z.raw() > inflated.raw()) {
+          inflated = box_half_extents.z;
+        }
+      } else if (sweep_shape == PhysicsSweepShape::Capsule) {
+        inflated = capsule_radius;
+      }
+
+      ColliderWorldShape expanded = world_shape;
+      if (sweep_shape == PhysicsSweepShape::Capsule) {
+        const FixedVec3 axis = capsuleWorldAxis(pose);
+        if (expanded.shape == ColliderShape::Sphere) {
+          expanded.shape = ColliderShape::Capsule;
+          expanded.capsule_radius = expanded.sphere_radius + capsule_radius;
+          expanded.capsule_half_height = capsule_half_height;
+          expanded.pose.rotation = pose.rotation;
+        } else if (expanded.shape == ColliderShape::Capsule) {
+          expanded.capsule_radius = expanded.capsule_radius + capsule_radius;
+          expanded.capsule_half_height = expanded.capsule_half_height + capsule_half_height;
+        } else if (expanded.shape == ColliderShape::Box) {
+          expanded.box_half_extents = FixedVec3(
+              expanded.box_half_extents.x + inflated + absFixed(axis.x) * capsule_half_height,
+              expanded.box_half_extents.y + inflated + absFixed(axis.y) * capsule_half_height,
+              expanded.box_half_extents.z + inflated + absFixed(axis.z) * capsule_half_height);
+        }
+      } else if (expanded.shape == ColliderShape::Sphere) {
+        expanded.sphere_radius = expanded.sphere_radius + inflated;
+      } else if (expanded.shape == ColliderShape::Capsule) {
+        expanded.capsule_radius = expanded.capsule_radius + inflated;
+      } else if (expanded.shape == ColliderShape::Box) {
+        expanded.box_half_extents = FixedVec3(expanded.box_half_extents.x + inflated,
+                                              expanded.box_half_extents.y + inflated,
+                                              expanded.box_half_extents.z + inflated);
+      }
+
+      hit = raycastShape(expanded, pose.position, dir, max_distance, t, point, normal);
+      if (!hit && world_shape.shape == ColliderShape::TriangleMesh) {
+        hit = raycastShape(world_shape, pose.position, dir, max_distance, t, point, normal);
+      }
+    }
+    if (!hit) {
+      ColliderWorldShape moved = query;
+      moved.pose.position = pose.position + dir * max_distance;
+      const ContactManifold manifold = collide(moved, world_shape);
+      if (manifold.valid) {
+        t = max_distance;
+        point = manifold.point_on_a;
+        normal = manifold.normal * Fixed::from_int(-1);
+        hit = true;
+      }
+    }
+    if (!hit) {
+      continue;
+    }
+    if (!best.hit || t.raw() < best.distance.raw()) {
+      fillHit(collider, ColliderHandle{i, collider.generation}, t, point, normal, best);
+    }
+  }
+  out_hit = best;
+  return out_hit.hit;
 }
 
 void PhysicsWorld::step(Fixed dt) {

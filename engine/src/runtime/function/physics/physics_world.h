@@ -35,7 +35,30 @@ class PhysicsWorld final {
                                                     PhysicsMaterial material = {});
   [[nodiscard]] ColliderHandle attachCapsuleCollider(RigidBodyHandle body, Fixed radius, Fixed half_height,
                                                      PhysicsMaterial material = {});
+  /// Static triangle mesh only. Empty list or non-Static body returns an invalid handle
+  /// (no collider, no AABB fallback).
+  [[nodiscard]] ColliderHandle attachTriangleMeshCollider(RigidBodyHandle body,
+                                                          const PhysicsTriangle* triangles,
+                                                          uint32_t triangle_count,
+                                                          PhysicsMaterial material = {});
   void destroyCollider(ColliderHandle collider);
+
+  void setColliderLayer(ColliderHandle collider, uint32_t layer);
+  void setColliderMask(ColliderHandle collider, uint32_t mask);
+  void setColliderQueryOnly(ColliderHandle collider, bool query_only);
+  void setColliderUserData(ColliderHandle collider, uint64_t user_data);
+  [[nodiscard]] uint32_t getColliderLayer(ColliderHandle collider) const;
+  [[nodiscard]] uint32_t getColliderMask(ColliderHandle collider) const;
+  [[nodiscard]] bool isColliderQueryOnly(ColliderHandle collider) const;
+  [[nodiscard]] uint64_t getColliderUserData(ColliderHandle collider) const;
+
+  [[nodiscard]] bool raycast(FixedVec3 origin, FixedVec3 direction, Fixed max_distance, uint32_t mask,
+                             bool collide_with_areas, PhysicsQueryHit& out_hit) const;
+  /// Primitive sweep only. `PhysicsSweepShape::TriangleMesh` is rejected (no hit).
+  [[nodiscard]] bool shapecast(PhysicsSweepShape sweep_shape, PhysicsTransform pose,
+                               FixedVec3 box_half_extents, Fixed sphere_radius, Fixed capsule_radius,
+                               Fixed capsule_half_height, FixedVec3 direction, Fixed max_distance,
+                               uint32_t mask, bool collide_with_areas, PhysicsQueryHit& out_hit) const;
 
   [[nodiscard]] PhysicsMaterial getColliderMaterial(ColliderHandle collider) const;
   [[nodiscard]] ColliderShape getColliderShape(ColliderHandle collider) const;

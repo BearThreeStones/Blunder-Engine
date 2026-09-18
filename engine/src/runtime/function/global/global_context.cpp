@@ -32,7 +32,7 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/platform/input/input_system.h"
 // #include "runtime/function/particle/particle_manager.h"
-// #include "runtime/function/physics/physics_manager.h"
+#include "runtime/function/physics/physics_manager.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -375,8 +375,7 @@ void RuntimeGlobalContext::startSystems(
     return;
   }
 
-  // m_physics_manager = eastl::make_shared<PhysicsManager>();
-  // m_physics_manager->initialize();
+  m_physics_manager = eastl::make_shared<PhysicsManager>();
 
   // m_world_manager = eastl::make_shared<WorldManager>();
   // m_world_manager->initialize();
@@ -388,12 +387,16 @@ void RuntimeGlobalContext::startSystems(
       window_create_info.title = "Blunder Player";
     }
     m_window_system->initialize(window_create_info);
-  } else if (!create_os_window && !SDL_WasInit(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+  } else if (!create_os_window && !SDL_WasInit(SDL_INIT_VIDEO)) {
+    // MCP answers JSON-RPC `initialize` in SDL_AppInit before GPU boot. The
+    // callback runner then inits EVENTS, so a later startSystems must still
+    // bring up VIDEO without treating "EVENTS already up" as full SDL.
+    const bool already_had_sdl = SDL_WasInit(SDL_INIT_EVENTS) != 0;
+    if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
       LOG_FATAL("[RuntimeGlobalContext] Headless SDL_Init failed: {}",
                 SDL_GetError());
     }
-    m_headless_sdl_owned = true;
+    m_headless_sdl_owned = !already_had_sdl;
   }
 
   m_render_system = eastl::make_shared<RenderSystem>();
@@ -612,8 +615,10 @@ void RuntimeGlobalContext::shutdownSystems() {
   // m_world_manager->clear();
   // m_world_manager.reset();
 
-  // m_physics_manager->clear();
-  // m_physics_manager.reset();
+  if (m_physics_manager) {
+    m_physics_manager->clear();
+    m_physics_manager.reset();
+  }
 
   if (m_asset_import) {
     m_asset_import->shutdown();

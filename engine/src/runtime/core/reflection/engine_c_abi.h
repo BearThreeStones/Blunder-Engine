@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 12
+#define BLUNDER_ENGINE_C_ABI_VERSION 13
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -267,6 +267,97 @@ enum BlunderLogSeverity {
 BLUNDER_ENGINE_C_API int blunder_log(int severity, const char* text,
                                      const char* stack);
 
+enum BlunderPhysicsSweepShape {
+  BLUNDER_PHYSICS_SWEEP_BOX = 0,
+  BLUNDER_PHYSICS_SWEEP_SPHERE = 1,
+  BLUNDER_PHYSICS_SWEEP_CAPSULE = 2,
+};
+
+typedef struct BlunderPhysicsRay {
+  float ox;
+  float oy;
+  float oz;
+  float dx;
+  float dy;
+  float dz;
+  float max_distance;
+  uint32_t mask;
+  int collide_with_areas;
+} BlunderPhysicsRay;
+
+typedef struct BlunderPhysicsSweep {
+  int shape;
+  float ox;
+  float oy;
+  float oz;
+  float qx;
+  float qy;
+  float qz;
+  float qw;
+  float hx;
+  float hy;
+  float hz;
+  float sphere_radius;
+  float capsule_radius;
+  float capsule_half_height;
+  float dx;
+  float dy;
+  float dz;
+  float max_distance;
+  uint32_t mask;
+  int collide_with_areas;
+} BlunderPhysicsSweep;
+
+typedef struct BlunderPhysicsHit {
+  BlunderObjectId object_id;
+  float distance;
+  float point_x;
+  float point_y;
+  float point_z;
+  float normal_x;
+  float normal_y;
+  float normal_z;
+  int hit;
+  int is_area;
+  char groups[256];
+} BlunderPhysicsHit;
+
+BLUNDER_ENGINE_C_API int blunder_physics_raycast(const BlunderPhysicsRay* ray,
+                                                 BlunderPhysicsHit* out_hit);
+BLUNDER_ENGINE_C_API int blunder_physics_shapecast(
+    const BlunderPhysicsSweep* sweep, BlunderPhysicsHit* out_hit);
+
+BLUNDER_ENGINE_C_API int blunder_object_add_group(BlunderObjectId id,
+                                                  const char* name);
+BLUNDER_ENGINE_C_API int blunder_object_remove_group(BlunderObjectId id,
+                                                     const char* name);
+BLUNDER_ENGINE_C_API int blunder_object_is_in_group(BlunderObjectId id,
+                                                    const char* name,
+                                                    int* out_value);
+BLUNDER_ENGINE_C_API int blunder_object_group_count(BlunderObjectId id);
+BLUNDER_ENGINE_C_API int blunder_object_group_at(BlunderObjectId id, int index,
+                                                 char* out_name,
+                                                 int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_find_objects_in_group(const char* name,
+                                                       BlunderObjectId* out_ids,
+                                                       int capacity,
+                                                       int* out_count);
+
+BLUNDER_ENGINE_C_API int blunder_object_has_character_controller(
+    BlunderObjectId id, int* out_value);
+BLUNDER_ENGINE_C_API int blunder_character_controller_move_and_slide(
+    BlunderObjectId id);
+BLUNDER_ENGINE_C_API int blunder_character_controller_set_velocity(
+    BlunderObjectId id, float x, float y, float z);
+BLUNDER_ENGINE_C_API int blunder_character_controller_get_velocity(
+    BlunderObjectId id, float* x, float* y, float* z);
+BLUNDER_ENGINE_C_API int blunder_character_controller_is_on_floor(
+    BlunderObjectId id, int* out_value);
+BLUNDER_ENGINE_C_API int blunder_character_controller_is_on_wall(
+    BlunderObjectId id, int* out_value);
+BLUNDER_ENGINE_C_API int blunder_character_controller_is_on_ceiling(
+    BlunderObjectId id, int* out_value);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
@@ -433,6 +524,26 @@ typedef struct BlunderNativeAbi {
   int (*cine_is_gameplay_input_suppressed)(int* out_value);
   int (*log)(int severity, const char* text, const char* stack);
   int (*animation_tree_play)(BlunderObjectId id, const char* clip_name);
+  int (*physics_raycast)(const BlunderPhysicsRay* ray, BlunderPhysicsHit* out_hit);
+  int (*physics_shapecast)(const BlunderPhysicsSweep* sweep,
+                           BlunderPhysicsHit* out_hit);
+  int (*object_add_group)(BlunderObjectId id, const char* name);
+  int (*object_remove_group)(BlunderObjectId id, const char* name);
+  int (*object_is_in_group)(BlunderObjectId id, const char* name, int* out_value);
+  int (*object_group_count)(BlunderObjectId id);
+  int (*object_group_at)(BlunderObjectId id, int index, char* out_name,
+                         int name_capacity);
+  int (*find_objects_in_group)(const char* name, BlunderObjectId* out_ids,
+                               int capacity, int* out_count);
+  int (*object_has_character_controller)(BlunderObjectId id, int* out_value);
+  int (*character_controller_move_and_slide)(BlunderObjectId id);
+  int (*character_controller_set_velocity)(BlunderObjectId id, float x, float y,
+                                           float z);
+  int (*character_controller_get_velocity)(BlunderObjectId id, float* x, float* y,
+                                           float* z);
+  int (*character_controller_is_on_floor)(BlunderObjectId id, int* out_value);
+  int (*character_controller_is_on_wall)(BlunderObjectId id, int* out_value);
+  int (*character_controller_is_on_ceiling)(BlunderObjectId id, int* out_value);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).

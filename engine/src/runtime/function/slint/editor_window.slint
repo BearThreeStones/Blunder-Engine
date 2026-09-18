@@ -69,6 +69,8 @@ export component MainEditorWindow inherits Window {
     callback attachment-preview-camera-edited(int, int, int, float, float, float, bool, bool);
     callback attachment-preview-light-edited(int, int, int, int, float, float, float, float, bool, float, bool);
     callback attachment-preview-fog-edited(int, int, int, bool, bool, float, float, float, float, float, float, float, bool);
+    callback attachment-preview-collider-edited(int, int, int, int, int, float, float, float, float, float, float, float, float, bool);
+    callback attachment-preview-character-controller-edited(int, int, int, float, float, float, float, float, float, float, bool);
     callback attachment-preview-color-hex-entered(int, int, int, string);
     callback attachment-preview-unique-remove(int, int, int);
     callback attachment-preview-tree-canvas(int, int, int);
@@ -231,6 +233,31 @@ export component MainEditorWindow inherits Window {
     in-out property <float> inspector-fog-g: 0.2;
     in-out property <bool> inspector-fog-expanded: true;
 
+    in property <bool> inspector-has-collider: false;
+    in-out property <int> inspector-collider-shape: 0;
+    in-out property <int> inspector-collider-body: 0;
+    in-out property <float> inspector-collider-layer: 1.0;
+    in-out property <float> inspector-collider-mask: -1.0;
+    in-out property <float> inspector-collider-box-x: 1.0;
+    in-out property <float> inspector-collider-box-y: 1.0;
+    in-out property <float> inspector-collider-box-z: 1.0;
+    in-out property <float> inspector-collider-sphere-radius: 0.5;
+    in-out property <float> inspector-collider-capsule-radius: 0.5;
+    in-out property <float> inspector-collider-capsule-height: 2.0;
+    in-out property <bool> inspector-collider-expanded: true;
+
+    in property <bool> inspector-has-character-controller: false;
+    in-out property <float> inspector-cct-radius: 0.4;
+    in-out property <float> inspector-cct-height: 1.8;
+    in-out property <float> inspector-cct-slope-limit: 45.0;
+    in-out property <float> inspector-cct-step-height: 0.3;
+    in-out property <float> inspector-cct-snap: 0.2;
+    in-out property <float> inspector-cct-skin: 0.04;
+    in-out property <float> inspector-cct-mask: -1.0;
+    in-out property <bool> inspector-character-controller-expanded: true;
+
+    in-out property <string> inspector-groups-text: "";
+
     in property <bool> inspector-has-animation-player: false;
     in property <[AnimationClipRow]> inspector-animation-clips: [];
     in property <[AnimationClipPickerRow]> inspector-clip-picker-choices: [];
@@ -313,6 +340,9 @@ export component MainEditorWindow inherits Window {
     callback inspector-camera-edited(bool);
     callback inspector-light-edited(bool);
     callback inspector-fog-edited(bool);
+    callback inspector-collider-edited(bool);
+    callback inspector-character-controller-edited(bool);
+    callback inspector-groups-edited();
     callback inspector-add-unique-attachment(string);
     callback inspector-remove-unique-attachment(string);
     callback inspector-add-clip();
@@ -933,6 +963,31 @@ export component MainEditorWindow inherits Window {
                         fog-g <=> root.inspector-fog-g;
                         fog-expanded <=> root.inspector-fog-expanded;
                         fog-edited(commit) => { root.inspector-fog-edited(commit); }
+                        has-collider: root.inspector-has-collider;
+                        collider-shape <=> root.inspector-collider-shape;
+                        collider-body <=> root.inspector-collider-body;
+                        collider-layer <=> root.inspector-collider-layer;
+                        collider-mask <=> root.inspector-collider-mask;
+                        collider-box-x <=> root.inspector-collider-box-x;
+                        collider-box-y <=> root.inspector-collider-box-y;
+                        collider-box-z <=> root.inspector-collider-box-z;
+                        collider-sphere-radius <=> root.inspector-collider-sphere-radius;
+                        collider-capsule-radius <=> root.inspector-collider-capsule-radius;
+                        collider-capsule-height <=> root.inspector-collider-capsule-height;
+                        collider-expanded <=> root.inspector-collider-expanded;
+                        collider-edited(commit) => { root.inspector-collider-edited(commit); }
+                        has-character-controller: root.inspector-has-character-controller;
+                        cct-radius <=> root.inspector-cct-radius;
+                        cct-height <=> root.inspector-cct-height;
+                        cct-slope-limit <=> root.inspector-cct-slope-limit;
+                        cct-step-height <=> root.inspector-cct-step-height;
+                        cct-snap <=> root.inspector-cct-snap;
+                        cct-skin <=> root.inspector-cct-skin;
+                        cct-mask <=> root.inspector-cct-mask;
+                        character-controller-expanded <=> root.inspector-character-controller-expanded;
+                        character-controller-edited(commit) => { root.inspector-character-controller-edited(commit); }
+                        groups-text <=> root.inspector-groups-text;
+                        groups-edited => { root.inspector-groups-edited(); }
                         has-animation-player: root.inspector-has-animation-player;
                         animation-clips: root.inspector-animation-clips;
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
@@ -1405,6 +1460,31 @@ export component MainEditorWindow inherits Window {
                         fog-g <=> root.inspector-fog-g;
                         fog-expanded <=> root.inspector-fog-expanded;
                         fog-edited(commit) => { root.inspector-fog-edited(commit); }
+                        has-collider: root.inspector-has-collider;
+                        collider-shape <=> root.inspector-collider-shape;
+                        collider-body <=> root.inspector-collider-body;
+                        collider-layer <=> root.inspector-collider-layer;
+                        collider-mask <=> root.inspector-collider-mask;
+                        collider-box-x <=> root.inspector-collider-box-x;
+                        collider-box-y <=> root.inspector-collider-box-y;
+                        collider-box-z <=> root.inspector-collider-box-z;
+                        collider-sphere-radius <=> root.inspector-collider-sphere-radius;
+                        collider-capsule-radius <=> root.inspector-collider-capsule-radius;
+                        collider-capsule-height <=> root.inspector-collider-capsule-height;
+                        collider-expanded <=> root.inspector-collider-expanded;
+                        collider-edited(commit) => { root.inspector-collider-edited(commit); }
+                        has-character-controller: root.inspector-has-character-controller;
+                        cct-radius <=> root.inspector-cct-radius;
+                        cct-height <=> root.inspector-cct-height;
+                        cct-slope-limit <=> root.inspector-cct-slope-limit;
+                        cct-step-height <=> root.inspector-cct-step-height;
+                        cct-snap <=> root.inspector-cct-snap;
+                        cct-skin <=> root.inspector-cct-skin;
+                        cct-mask <=> root.inspector-cct-mask;
+                        character-controller-expanded <=> root.inspector-character-controller-expanded;
+                        character-controller-edited(commit) => { root.inspector-character-controller-edited(commit); }
+                        groups-text <=> root.inspector-groups-text;
+                        groups-edited => { root.inspector-groups-edited(); }
                         has-animation-player: root.inspector-has-animation-player;
                         animation-clips: root.inspector-animation-clips;
                         animation-player-expanded <=> root.inspector-animation-player-expanded;
@@ -1484,6 +1564,16 @@ export component MainEditorWindow inherits Window {
                 root.attachment-preview-fog-edited(
                     card.entity-id, card.kind, card.index, enabled, volumetric, density, falloff,
                     view-distance, r, g, b, scattering-g, commit);
+            }
+            collider-edited(shape, body, layer, mask, box-x, box-y, box-z, sphere-radius, capsule-radius, capsule-height, commit) => {
+                root.attachment-preview-collider-edited(
+                    card.entity-id, card.kind, card.index, shape, body, layer, mask, box-x, box-y, box-z,
+                    sphere-radius, capsule-radius, capsule-height, commit);
+            }
+            character-controller-edited(radius, height, slope-limit, step-height, snap, skin, mask, commit) => {
+                root.attachment-preview-character-controller-edited(
+                    card.entity-id, card.kind, card.index, radius, height, slope-limit, step-height, snap,
+                    skin, mask, commit);
             }
             color-hex-entered(hex) => {
                 root.attachment-preview-color-hex-entered(card.entity-id, card.kind, card.index, hex);

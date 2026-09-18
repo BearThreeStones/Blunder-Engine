@@ -220,6 +220,36 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
   expect_true((std::string(label) + ": log").c_str(), abi.log != nullptr);
   expect_true((std::string(label) + ": animation_tree_play").c_str(),
               abi.animation_tree_play != nullptr);
+  expect_true((std::string(label) + ": physics_raycast").c_str(),
+              abi.physics_raycast != nullptr);
+  expect_true((std::string(label) + ": physics_shapecast").c_str(),
+              abi.physics_shapecast != nullptr);
+  expect_true((std::string(label) + ": object_add_group").c_str(),
+              abi.object_add_group != nullptr);
+  expect_true((std::string(label) + ": object_remove_group").c_str(),
+              abi.object_remove_group != nullptr);
+  expect_true((std::string(label) + ": object_is_in_group").c_str(),
+              abi.object_is_in_group != nullptr);
+  expect_true((std::string(label) + ": object_group_count").c_str(),
+              abi.object_group_count != nullptr);
+  expect_true((std::string(label) + ": object_group_at").c_str(),
+              abi.object_group_at != nullptr);
+  expect_true((std::string(label) + ": find_objects_in_group").c_str(),
+              abi.find_objects_in_group != nullptr);
+  expect_true((std::string(label) + ": object_has_character_controller").c_str(),
+              abi.object_has_character_controller != nullptr);
+  expect_true((std::string(label) + ": character_controller_move_and_slide").c_str(),
+              abi.character_controller_move_and_slide != nullptr);
+  expect_true((std::string(label) + ": character_controller_set_velocity").c_str(),
+              abi.character_controller_set_velocity != nullptr);
+  expect_true((std::string(label) + ": character_controller_get_velocity").c_str(),
+              abi.character_controller_get_velocity != nullptr);
+  expect_true((std::string(label) + ": character_controller_is_on_floor").c_str(),
+              abi.character_controller_is_on_floor != nullptr);
+  expect_true((std::string(label) + ": character_controller_is_on_wall").c_str(),
+              abi.character_controller_is_on_wall != nullptr);
+  expect_true((std::string(label) + ": character_controller_is_on_ceiling").c_str(),
+              abi.character_controller_is_on_ceiling != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -239,7 +269,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 12", BLUNDER_ENGINE_C_ABI_VERSION >= 12);
+  expect_true("abi version >= 13", BLUNDER_ENGINE_C_ABI_VERSION >= 13);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

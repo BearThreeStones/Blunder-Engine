@@ -160,7 +160,9 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
   if (g_runtime_global_context.hostMode() == EngineHostMode::Editor) {
     if (PlaySessionController* session =
             g_runtime_global_context.m_play_session.get()) {
-      if (session->reloadEnabled() && !session->poseOverlay().empty()) {
+      if ((session->state() == PlaySessionState::Playing ||
+           session->state() == PlaySessionState::Paused) &&
+          !session->poseOverlay().empty()) {
         overlay = &session->poseOverlay();
       }
     }

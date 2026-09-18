@@ -18,6 +18,7 @@ namespace Blunder {
 class EditorCamera;
 class EditorSceneEditSystem;
 class FileSystem;
+class PhysicsManager;
 class PlaySessionController;
 class SceneInstance;
 class SceneThumbnailRenderService;
@@ -44,6 +45,7 @@ struct MachineAdapterHost {
   SceneThumbnailRenderService* thumbs{nullptr};
   EditorSceneEditSystem* scene_edit{nullptr};
   EditorCamera* editor_camera{nullptr};
+  PhysicsManager* physics{nullptr};
   std::function<void()> pump;
   std::function<CaptureResult(const CaptureRequest&)> capture_override;
   std::function<bool()> save_live;
@@ -71,6 +73,15 @@ struct MachineResult {
   float camera_fov{0.0f};
   float camera_near{0.0f};
   float camera_far{0.0f};
+  bool has_physics_hit{false};
+  bool physics_hit{false};
+  bool physics_is_area{false};
+  float physics_distance{0.0f};
+  Vec3 physics_point{0.0f};
+  Vec3 physics_normal{0.0f, 0.0f, 1.0f};
+  eastl::string physics_groups;
+  eastl::string collider_shape;
+  eastl::string collider_body;
   int exit_code{1};
 };
 
