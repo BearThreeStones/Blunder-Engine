@@ -144,6 +144,17 @@ bool editorShadowsForcedOff() {
   return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
 }
 
+bool playFrameAabbRequested() {
+  const char* env = std::getenv("BLUNDER_PLAY_FRAME_AABB");
+  return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
+}
+
+bool playUsesWorldAabbCamera() {
+  return playFrameAabbRequested() ||
+         (g_runtime_global_context.hostMode() == EngineHostMode::Player &&
+          g_runtime_global_context.isHeadless());
+}
+
 bool editorOverlayAaEnabled() {
   const char* env = std::getenv("BLUNDER_EDITOR_OVERLAY_AA");
   return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
@@ -1930,19 +1941,48 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     const float aspect =
         static_cast<float>(offscreen_extent.width) /
         static_cast<float>(eastl::max(1u, offscreen_extent.height));
-    ResolvedPlayCamera cam =
-        scene ? resolvePlayCameraFromScene(*scene, aspect) : ResolvedPlayCamera{};
-    if (!cam.ok) {
-      pollViewportPresent();
-      return;
+    bool used_aabb = false;
+    if (playUsesWorldAabbCamera() && m_editor_camera != nullptr &&
+        scene != nullptr) {
+      m_editor_camera->setViewportRect(
+          0, 0, static_cast<float>(offscreen_extent.width),
+          static_cast<float>(offscreen_extent.height),
+          static_cast<float>(offscreen_extent.width),
+          static_cast<float>(offscreen_extent.height));
+      if (!scene->hasWorldBounds()) {
+        scene->rebuildWorldBoundsFromMeshes();
+      }
+      if (scene->hasWorldBounds()) {
+        m_editor_camera->snapFocusOnAABB(scene->getWorldBounds());
+        view = m_editor_camera->getViewMatrix();
+        projection = m_editor_camera->getProjectionMatrix();
+        projection_mode = m_editor_camera->getProjectionMode();
+        camera_position = m_editor_camera->getPosition();
+        camera_forward = m_editor_camera->getForwardDirection();
+        camera_distance = m_editor_camera->getDistance();
+        near_clip = m_editor_camera->getNearClip();
+        far_clip = m_editor_camera->getFarClip();
+        vertical_fov = m_editor_camera->getVerticalFov();
+        ortho_size = m_editor_camera->getOrthoSize();
+        used_aabb = true;
+      }
     }
-    view = cam.view;
-    projection = cam.projection;
-    camera_position = cam.position;
-    camera_forward = cam.forward;
-    near_clip = cam.near_clip;
-    far_clip = cam.far_clip;
-    vertical_fov = cam.vertical_fov_radians;
+    if (!used_aabb) {
+      ResolvedPlayCamera cam =
+          scene ? resolvePlayCameraFromScene(*scene, aspect)
+                : ResolvedPlayCamera{};
+      if (!cam.ok) {
+        pollViewportPresent();
+        return;
+      }
+      view = cam.view;
+      projection = cam.projection;
+      camera_position = cam.position;
+      camera_forward = cam.forward;
+      near_clip = cam.near_clip;
+      far_clip = cam.far_clip;
+      vertical_fov = cam.vertical_fov_radians;
+    }
   } else if (m_editor_camera) {
     int32_t viewport_x = 0;
     int32_t viewport_y = 0;
@@ -2155,17 +2195,25 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
 
   glm::vec3 shadow_focus(0.0f);
   float shadow_ortho_half_extent = k_shadow_ortho_half_extent;
+  float shadow_view_distance = 30.0f;
+  float shadow_near_plane = k_shadow_near_plane;
+  float shadow_far_plane = k_shadow_far_plane;
   if (active_scene != nullptr && active_scene->hasWorldBounds()) {
     const AABB& bounds = active_scene->getWorldBounds();
     shadow_focus = bounds.center();
-    shadow_ortho_half_extent = computeShadowOrthoHalfExtentFromAABB(
-        bounds, shadow_light_dir);
+    const DirectionalShadowPlacement place =
+        computeDirectionalShadowPlacementFromAABB(bounds, shadow_light_dir);
+    shadow_ortho_half_extent = place.ortho_half_extent;
+    shadow_view_distance = place.view_distance;
+    shadow_near_plane = place.near_plane;
+    shadow_far_plane = place.far_plane;
   }
 
   computeDirectionalLightMatrices(
       shadow_light_dir, shadow_focus, shadow_ortho_half_extent,
-      k_shadow_near_plane, k_shadow_far_plane, frame_state.light_view,
-      frame_state.light_projection, frame_state.light_view_projection);
+      shadow_near_plane, shadow_far_plane, frame_state.light_view,
+      frame_state.light_projection, frame_state.light_view_projection,
+      shadow_view_distance);
 
   const bool viewport_target_changed =
       target_width != m_last_viewport_target_w ||

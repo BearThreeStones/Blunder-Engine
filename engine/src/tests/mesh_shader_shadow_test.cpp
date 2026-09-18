@@ -1,5 +1,7 @@
 #include "runtime/core/log/log_system.h"
+#include "runtime/core/math/geometry.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/function/render/gpu_driven/gpu_driven_types.h"
 #include "runtime/function/render/shadow/local_shadow_math.h"
 #include "runtime/function/render/shadow/mesh_shadow_casters.h"
@@ -12,6 +14,13 @@
 #include <algorithm>
 #include <cstdio>
 #include <vector>
+
+#include <glm/geometric.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/geometric.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 namespace {
 
@@ -342,6 +351,55 @@ int main() {
 
   expect_true("shadow images are not Bindless keys (no VulkanTexture)",
               true);
+
+  {
+    AABB forest;
+    forest.min = glm::vec3(-92.6f, -89.0f, -0.83f);
+    forest.max = glm::vec3(82.4f, 35.6f, 13.6f);
+    const glm::vec3 emit = glm::normalize(glm::vec3(0.45f, 0.7f, 0.55f));
+    const DirectionalShadowPlacement place =
+        computeDirectionalShadowPlacementFromAABB(forest, emit);
+    expect_true("forest shadow view sits outside AABB radius",
+                place.view_distance > 100.0f);
+    expect_true("forest shadow far covers diameter", place.far_plane > 200.0f);
+    expect_true("forest ortho covers XY", place.ortho_half_extent > 80.0f);
+    glm::mat4 view(1.0f);
+    glm::mat4 proj(1.0f);
+    glm::mat4 vp(1.0f);
+    computeDirectionalLightMatrices(emit, forest.center(),
+                                    place.ortho_half_extent, place.near_plane,
+                                    place.far_plane, view, proj, vp,
+                                    place.view_distance);
+    const glm::vec3 corners[8] = {
+        {forest.min.x, forest.min.y, forest.min.z},
+        {forest.max.x, forest.min.y, forest.min.z},
+        {forest.min.x, forest.max.y, forest.min.z},
+        {forest.max.x, forest.max.y, forest.min.z},
+        {forest.min.x, forest.min.y, forest.max.z},
+        {forest.max.x, forest.min.y, forest.max.z},
+        {forest.min.x, forest.max.y, forest.max.z},
+        {forest.max.x, forest.max.y, forest.max.z},
+    };
+    bool all_in_front = true;
+    for (const glm::vec3& corner : corners) {
+      const glm::vec4 eye = view * glm::vec4(corner, 1.0f);
+      if (-eye.z < place.near_plane || -eye.z > place.far_plane) {
+        all_in_front = false;
+      }
+    }
+    expect_true("forest AABB corners stay inside shadow near/far", all_in_front);
+  }
+
+  {
+    const AABB tiny =
+        AABB::fromCenterExtents(glm::vec3(0.0f), glm::vec3(1.0f));
+    const DirectionalShadowPlacement place =
+        computeDirectionalShadowPlacementFromAABB(tiny,
+                                                  glm::vec3(0.0f, 0.0f, -1.0f));
+    expect_true("tiny shadow far stays at least courtyard default",
+                place.far_plane >= 60.0f);
+    expect_true("tiny shadow view at least 8", place.view_distance >= 8.0f);
+  }
 
   g_runtime_global_context.m_logger_system.reset();
 

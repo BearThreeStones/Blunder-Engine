@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <glm/common.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <slang.h>
 #include <vk_mem_alloc.h>
@@ -1271,6 +1272,11 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
                          frame_state.shadow_caster_id, frame_state.shadows_enabled,
                          &frame_state.local_shadows);
     }
+  }
+  if (frame_state.live_scene_lighting) {
+    view_ubo.ambient_color =
+        glm::max(view_ubo.ambient_color,
+                 glm::vec4(k_live_lighting_ambient_floor));
   }
 
   const uint64_t lights = hashEvaluatedLights(scene_lights, scene_light_count);

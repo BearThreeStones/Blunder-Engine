@@ -981,8 +981,9 @@ void DeferredRenderPath::uploadLightingUniforms(
   if (frame_state.mesh_shadows != nullptr) {
     frame_state.mesh_shadows->applySamplingUniforms(ubo.shadow_sampling);
   }
-  // Live scene lighting has no ambient term (packSceneLights zeroes it).
-  ubo.ambient_color = glm::vec4(0.0f);
+  // Live lighting has no IBL. Keep a floor so a clipped directional map
+  // cannot zero albedo (SE-world forest is ~175 m; courtyard far was 60).
+  ubo.ambient_color = glm::vec4(k_live_lighting_ambient_floor);
   ubo.background_color = viewportBackgroundColor();
   ubo.view = frame_state.view;
 

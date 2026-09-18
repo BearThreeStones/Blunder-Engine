@@ -59,10 +59,22 @@ struct ForwardMeshUniformData {
   ShadowSamplingUniform shadow_sampling{};
 };
 
+/// Live scene lighting has no IBL. GPU-driven / deferred both multiply
+/// albedo by this floor so a clipped directional map cannot zero the forest.
+constexpr float k_live_lighting_ambient_floor = 0.22f;
+
+struct DirectionalShadowPlacement {
+  float view_distance{30.0f};
+  float near_plane{0.1f};
+  float far_plane{60.0f};
+  float ortho_half_extent{14.0f};
+};
+
 void computeDirectionalLightMatrices(
     glm::vec3 light_dir, glm::vec3 focus, float ortho_half_extent,
     float near_plane, float far_plane, glm::mat4& out_light_view,
-    glm::mat4& out_light_projection, glm::mat4& out_light_view_projection);
+    glm::mat4& out_light_projection, glm::mat4& out_light_view_projection,
+    float view_distance = 30.0f);
 
 /// Packs one evaluated Light into the GPU layout shared by pbr.slang and
 /// deferred_lighting.slang. `axis_x.w` is the shadow code: 0 none, 1 directional
@@ -87,5 +99,11 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
 
 float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
                                            const glm::vec3& light_direction);
+
+/// Sits the directional ortho camera outside `bounds` so no AABB corner is
+/// behind the light or past `far_plane`. The 30/60 courtyard defaults clip a
+/// ~175 m forest and shade it black.
+DirectionalShadowPlacement computeDirectionalShadowPlacementFromAABB(
+    const AABB& bounds, const glm::vec3& light_direction);
 
 }  // namespace Blunder
