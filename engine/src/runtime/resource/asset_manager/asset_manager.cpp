@@ -472,12 +472,138 @@ void AssetManager::queueDeferredGltfMaterial(
   m_pending_gltf_materials.push_back(mesh);
 }
 
+eastl::string AssetManager::meshDescriptorGuid(const MeshAsset& mesh) const {
+  if (m_file_system == nullptr) {
+    return {};
+  }
+  const std::filesystem::path& absolute = mesh.getAbsolutePath();
+  if (absolute.empty()) {
+    return {};
+  }
+  eastl::string yaml_text;
+  if (!m_file_system->readText(absolute, yaml_text)) {
+    return {};
+  }
+  MeshAssetDescriptor descriptor{};
+  if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+    return {};
+  }
+  return descriptor.guid;
+}
+
+void AssetManager::writeCookedMeshMaterialSidecar(
+    const eastl::shared_ptr<MeshAsset>& mesh, const eastl::string& guid) {
+  if (!mesh || guid.empty() || m_file_system == nullptr) {
+    return;
+  }
+  const eastl::shared_ptr<MaterialAsset>& material = mesh->getMaterialAsset();
+  if (!material) {
+    return;
+  }
+  MeshCookedMaterialSidecar sidecar{};
+  sidecar.base_color_factor = material->getBaseColorFactor();
+  sidecar.ambient = material->getAmbientColor();
+  sidecar.diffuse = material->getDiffuseColor();
+  sidecar.specular = material->getSpecularColor();
+  sidecar.shininess = material->getShininess();
+  sidecar.metallic_factor = material->getMetallicFactor();
+  sidecar.roughness_factor = material->getRoughnessFactor();
+  sidecar.alpha_mode = static_cast<uint32_t>(material->getAlphaMode());
+  sidecar.alpha_cutoff = material->getAlphaCutoff();
+  sidecar.double_sided = material->isDoubleSided();
+  sidecar.unlit = material->isUnlit();
+  if (material->getBaseColorTextureAsset()) {
+    sidecar.base_color_texture =
+        material->getBaseColorTextureAsset()->getVirtualPath();
+  }
+  if (material->getMetallicRoughnessTextureAsset()) {
+    sidecar.metallic_roughness_texture =
+        material->getMetallicRoughnessTextureAsset()->getVirtualPath();
+  }
+  if (material->getNormalTextureAsset()) {
+    sidecar.normal_texture = material->getNormalTextureAsset()->getVirtualPath();
+  }
+  if (material->getOcclusionTextureAsset()) {
+    sidecar.occlusion_texture =
+        material->getOcclusionTextureAsset()->getVirtualPath();
+  }
+  const std::filesystem::path path = cookedMeshMaterialPath(*m_file_system, guid);
+  m_file_system->ensureParentDirectory(path);
+  (void)m_file_system->writeText(
+      path, AssetYaml::serializeMeshCookedMaterialSidecar(sidecar));
+}
+
+bool AssetManager::applyCookedMeshMaterialSidecar(
+    const eastl::shared_ptr<MeshAsset>& mesh, const eastl::string& guid) {
+  if (!mesh || guid.empty() || m_file_system == nullptr) {
+    return false;
+  }
+  if (mesh->getMaterialAsset()) {
+    return true;
+  }
+  const std::filesystem::path path = cookedMeshMaterialPath(*m_file_system, guid);
+  if (!m_file_system->exists(path)) {
+    return false;
+  }
+  eastl::string yaml_text;
+  if (!m_file_system->readText(path, yaml_text)) {
+    return false;
+  }
+  MeshCookedMaterialSidecar sidecar{};
+  if (!AssetYaml::parseMeshCookedMaterialSidecar(yaml_text, sidecar)) {
+    return false;
+  }
+
+  auto loadSlot = [this](const eastl::string& virtual_path)
+      -> eastl::shared_ptr<Texture2DAsset> {
+    if (virtual_path.empty()) {
+      return nullptr;
+    }
+    return bindTexture2D(virtual_path);
+  };
+  eastl::shared_ptr<Texture2DAsset> base_color =
+      loadSlot(sidecar.base_color_texture);
+  eastl::shared_ptr<Texture2DAsset> metallic_roughness;
+  eastl::shared_ptr<Texture2DAsset> normal;
+  eastl::shared_ptr<Texture2DAsset> occlusion;
+  AssetHandle base_color_handle;
+  if (base_color) {
+    base_color_handle =
+        makeHandle(Asset::Type::Texture2D, base_color->getVirtualPath());
+  }
+
+  Asset::Meta material_meta;
+  material_meta.virtual_path = mesh->getVirtualPath() + "#cooked_material";
+  material_meta.absolute_path = mesh->getAbsolutePath();
+  material_meta.source_timestamp = mesh->getSourceTimestamp();
+  auto material = eastl::make_shared<MaterialAsset>(
+      eastl::move(material_meta), sidecar.base_color_factor, base_color_handle,
+      eastl::move(base_color), eastl::move(metallic_roughness),
+      eastl::move(normal), eastl::move(occlusion), sidecar.ambient,
+      sidecar.diffuse, sidecar.specular, sidecar.shininess,
+      sidecar.metallic_factor, sidecar.roughness_factor,
+      static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
+      sidecar.double_sided, sidecar.unlit);
+  mesh->setMaterialAsset(eastl::move(material));
+  if (!sidecar.base_color_texture.empty() && mesh->getMaterialAsset() &&
+      !mesh->getMaterialAsset()->hasBaseColorTexture()) {
+    mesh->setMaterialAsset(nullptr);
+    return false;
+  }
+  return mesh->getMaterialAsset() != nullptr;
+}
+
 bool AssetManager::hydrateMeshGltfMaterial(
     const eastl::shared_ptr<MeshAsset>& mesh) {
   if (!mesh) {
     return false;
   }
+  const eastl::string guid = meshDescriptorGuid(*mesh);
   if (mesh->getMaterialAsset()) {
+    writeCookedMeshMaterialSidecar(mesh, guid);
+    return true;
+  }
+  if (applyCookedMeshMaterialSidecar(mesh, guid)) {
     return true;
   }
 
@@ -493,28 +619,45 @@ bool AssetManager::hydrateMeshGltfMaterial(
   }
 
   eastl::shared_ptr<MaterialAsset> material;
+  eastl::shared_ptr<MaterialAsset> textured;
   cgltf_data* data = document.data;
-  for (cgltf_size mesh_index = 0;
-       mesh_index < data->meshes_count && !material; ++mesh_index) {
+  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count;
+       ++mesh_index) {
     const cgltf_mesh& gltf_mesh = data->meshes[mesh_index];
     for (cgltf_size primitive_index = 0;
-         primitive_index < gltf_mesh.primitives_count && !material;
-         ++primitive_index) {
+         primitive_index < gltf_mesh.primitives_count; ++primitive_index) {
       const cgltf_primitive& primitive = gltf_mesh.primitives[primitive_index];
       if (primitive.material == nullptr) {
         continue;
       }
       const size_t material_index =
           static_cast<size_t>(primitive.material - data->materials);
-      material = loadGltfMaterial(data, material_index, document.absolute,
-                                  document.canonical_key);
+      eastl::shared_ptr<MaterialAsset> candidate = loadGltfMaterial(
+          data, material_index, document.absolute, document.canonical_key);
+      if (!candidate) {
+        continue;
+      }
+      if (!material) {
+        material = candidate;
+      }
+      if (candidate->hasBaseColorTexture()) {
+        textured = candidate;
+        break;
+      }
+    }
+    if (textured) {
+      break;
     }
   }
   closeGltfImportDocument(document);
+  if (textured) {
+    material = textured;
+  }
   if (!material) {
     return false;
   }
   mesh->setMaterialAsset(eastl::move(material));
+  writeCookedMeshMaterialSidecar(mesh, guid);
   return true;
 }
 
@@ -531,6 +674,42 @@ size_t AssetManager::tickDeferredGltfMaterials(uint32_t max_items) {
     }
   }
   return hydrated;
+}
+
+eastl::shared_ptr<Texture2DAsset> AssetManager::bindTexture2D(
+    const eastl::string& virtual_path) {
+  if (!m_is_initialized || virtual_path.empty() || m_file_system == nullptr) {
+    return nullptr;
+  }
+  const eastl::string request_key = canonicalKey(virtual_path);
+  if (auto it = m_texture_cache.find(request_key); it != m_texture_cache.end()) {
+    if (auto cached = it->second.lock()) {
+      return cached;
+    }
+    m_texture_cache.erase(it);
+  }
+  const ResolvedContentPath resolved =
+      resolveContentPath(m_file_system, virtual_path, true);
+  const eastl::string& key = resolved.canonical_key;
+  if (auto it = m_texture_cache.find(key); it != m_texture_cache.end()) {
+    if (auto cached = it->second.lock()) {
+      return cached;
+    }
+    m_texture_cache.erase(it);
+  }
+  if (!m_file_system->exists(resolved.absolute)) {
+    LOG_ERROR("[AssetManager] bindTexture2D: missing {}",
+              resolved.absolute.generic_string());
+    return nullptr;
+  }
+  Asset::Meta meta;
+  meta.virtual_path = key;
+  meta.absolute_path = resolved.absolute;
+  meta.source_timestamp = querySourceTimestamp(resolved.absolute);
+  auto asset = eastl::make_shared<Texture2DAsset>(eastl::move(meta), 0u, 0u, 4u,
+                                                  eastl::vector<uint8_t>{});
+  m_texture_cache[key] = asset;
+  return asset;
 }
 
 eastl::shared_ptr<Texture2DAsset> AssetManager::loadTexture2D(
@@ -989,7 +1168,9 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
         loaded, descriptor, this, registry);
     if (yaml_mesh && descriptor.import.materials &&
         !yaml_mesh->getMaterialAsset()) {
-      queueDeferredGltfMaterial(yaml_mesh);
+      if (!hydrateMeshGltfMaterial(yaml_mesh)) {
+        queueDeferredGltfMaterial(yaml_mesh);
+      }
     }
     m_mesh_cache[key] = yaml_mesh;
     return yaml_mesh;

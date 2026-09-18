@@ -25,7 +25,8 @@ namespace {
 // old 15s Play ready wait. Mesh-preview stills also cap at 256 forward draws.
 constexpr int k_play_start_timeout_ms = 180000;
 constexpr int k_play_frame_timeout_ms = 120000;
-constexpr int k_live_capture_warmup_ticks = 12;
+constexpr int k_live_capture_warmup_ticks = 24;
+constexpr int k_live_capture_texture_wait_ms = 20000;
 
 void pumpHost(MachineAdapterHost& host);
 
@@ -179,6 +180,16 @@ CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
     for (int i = 0; i < k_live_capture_warmup_ticks; ++i) {
       pumpHost(host);
       if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->requestViewportRedraw();
+      }
+    }
+    if (g_runtime_global_context.m_render_system) {
+      const auto deadline = std::chrono::steady_clock::now() +
+                            std::chrono::milliseconds(k_live_capture_texture_wait_ms);
+      while (g_runtime_global_context.m_render_system
+                 ->textureUploadInFlightCount() > 0u &&
+             std::chrono::steady_clock::now() < deadline) {
+        pumpHost(host);
         g_runtime_global_context.m_render_system->requestViewportRedraw();
       }
     }

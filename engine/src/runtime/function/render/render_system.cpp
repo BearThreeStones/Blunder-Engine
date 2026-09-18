@@ -1299,10 +1299,26 @@ VulkanTexture* RenderSystem::ensureTextureUploaded(
       !vkCtx(this)) {
     return nullptr;
   }
+  const eastl::string key = gpuTextureCacheKey(*texture_asset);
+  if (VulkanTexture* resident = vkCtx(this)->findUploadedTexture(key)) {
+    return resident;
+  }
+  if (texture_asset->getPixelData() != nullptr &&
+      texture_asset->getPixelByteSize() > 0 && texture_asset->getWidth() > 0 &&
+      texture_asset->getHeight() > 0) {
+    return vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
+  }
   if (m_texture_loader) {
     return m_texture_loader->request(texture_asset);
   }
   return vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
+}
+
+uint32_t RenderSystem::textureUploadInFlightCount() const {
+  if (!m_texture_loader) {
+    return 0u;
+  }
+  return m_texture_loader->inFlightCount();
 }
 
 void RenderSystem::dropInFlightTextures() {

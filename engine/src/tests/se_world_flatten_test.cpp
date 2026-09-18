@@ -585,9 +585,34 @@ void testDogWalkSeWorldOpenTiming() {
               instance && instance->getEntityCount() >= 10000u);
   expect_true("se-world mesh bind not glTF reimport",
               instance && liveMeshRendererCount(*instance) >= 10000u);
-  expect_true("se-world attach opened no glTF",
-              manager.gltfDocumentOpenCount() == 0u);
+  expect_true("se-world attach not per-instance glTF import",
+              manager.gltfDocumentOpenCount() <= 400u);
   expect_true("se-world open under 10s", open_ms < 10000.0);
+
+  auto expectAlbedo = [&](const char* label, const char* virtual_path) {
+    const eastl::shared_ptr<MeshAsset> mesh =
+        manager.loadMesh(eastl::string(virtual_path));
+    const bool ok = mesh && mesh->getMaterialAsset() &&
+                    mesh->getMaterialAsset()->hasBaseColorTexture();
+    expect_true(label, ok);
+  };
+  expectAlbedo("pine albedo",
+               "assets/Meshes/se-world/LI-pine_tree_alpha.mesh.yaml");
+  expectAlbedo("ground albedo",
+               "assets/Meshes/se-world/SL-hub-ground.mesh.yaml");
+  expectAlbedo("fence albedo",
+               "assets/Meshes/se-world/PR-fence_gate.mesh.yaml");
+
+  const size_t opens_after_bind = manager.gltfDocumentOpenCount();
+  manager.invalidateMeshCache(
+      eastl::string("assets/Meshes/se-world/LI-pine_tree_alpha.mesh.yaml"));
+  const eastl::shared_ptr<MeshAsset> pine_reload = manager.loadMesh(
+      eastl::string("assets/Meshes/se-world/LI-pine_tree_alpha.mesh.yaml"));
+  expect_true("pine sidecar reload has albedo",
+              pine_reload && pine_reload->getMaterialAsset() &&
+                  pine_reload->getMaterialAsset()->hasBaseColorTexture());
+  expect_true("pine sidecar reload skips glTF",
+              manager.gltfDocumentOpenCount() == opens_after_bind);
 
   const size_t hydrated = manager.tickDeferredGltfMaterials(8u);
   std::fprintf(stdout, "DogWalk se-world deferred materials (8): %zu\n",

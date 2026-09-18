@@ -35,6 +35,8 @@ std::filesystem::path cookedMeshPath(FileSystem& file_system,
                                      const eastl::string& guid);
 std::filesystem::path cookedMeshMetaPath(FileSystem& file_system,
                                          const eastl::string& guid);
+std::filesystem::path cookedMeshMaterialPath(FileSystem& file_system,
+                                             const eastl::string& guid);
 std::filesystem::path cookedTexturePath(FileSystem& file_system,
                                         const eastl::string& guid);
 std::filesystem::path cookedTextureMetaPath(FileSystem& file_system,

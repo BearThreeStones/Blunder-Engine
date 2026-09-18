@@ -317,8 +317,13 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   occlusion_texture_asset = loadGltfImageTexture(material.occlusion_texture.texture);
 
   if (alpha_mode == cgltf_alpha_mode_blend && base_color_factor.a >= 0.999f) {
-    // Blender often tags solid meshes as BLEND; that skips depth write.
-    alpha_mode = cgltf_alpha_mode_opaque;
+    // Blender tags solid meshes as BLEND (skips depth write). Foliage cards
+    // keep a base-color texture with alpha — MASK punches the cutout.
+    if (base_color_texture_asset) {
+      alpha_mode = cgltf_alpha_mode_mask;
+    } else {
+      alpha_mode = cgltf_alpha_mode_opaque;
+    }
   }
 
   if (base_color_texture_asset) {

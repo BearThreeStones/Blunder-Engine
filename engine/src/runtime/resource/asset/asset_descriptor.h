@@ -130,6 +130,27 @@ struct TextureAssetDescriptor {
   TextureImportSettings import{};
 };
 
+/// Sidecar next to `{guid}.meshbin`. Cooked bins store geometry only; this
+/// keeps glTF albedo paths so load does not reopen the source for materials.
+struct MeshCookedMaterialSidecar {
+  glm::vec4 base_color_factor{1.0f};
+  glm::vec3 ambient{0.15f};
+  glm::vec3 diffuse{1.0f};
+  glm::vec3 specular{0.4f};
+  float shininess{32.0f};
+  float metallic_factor{1.0f};
+  float roughness_factor{1.0f};
+  /// cgltf_alpha_mode: 0 opaque, 1 mask, 2 blend.
+  uint32_t alpha_mode{0};
+  float alpha_cutoff{0.5f};
+  bool double_sided{false};
+  bool unlit{false};
+  eastl::string base_color_texture;
+  eastl::string metallic_roughness_texture;
+  eastl::string normal_texture;
+  eastl::string occlusion_texture;
+};
+
 enum class AnimationInterpolation {
   Constant,
   Linear,
