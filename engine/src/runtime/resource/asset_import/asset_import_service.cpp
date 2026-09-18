@@ -125,7 +125,7 @@ bool collectExternalGltfResourcePaths(
     cgltf_decode_uri(decoded.data());
     const fs::path relative(decoded.data());
     if (relative.empty() || relative.is_absolute() ||
-        relative.has_root_name() || relativePathEscapesRoot(relative)) {
+        relative.has_root_name()) {
       return false;
     }
 
@@ -148,6 +148,15 @@ bool collectExternalGltfResourcePaths(
   return valid;
 }
 
+bool isPathInsideRoot(const fs::path& path, const fs::path& root) {
+  if (root.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  const fs::path rel = fs::relative(path.lexically_normal(), root.lexically_normal(), ec);
+  return !ec && !relativePathEscapesRoot(rel);
+}
+
 bool copyGltfExternalResources(FileSystem* file_system,
                                const fs::path& source_gltf,
                                const fs::path& destination_gltf,
@@ -157,17 +166,23 @@ bool copyGltfExternalResources(FileSystem* file_system,
     return false;
   }
 
+  const fs::path resources_root = file_system->getResourcesRoot();
   for (const fs::path& relative : relative_resources) {
-    const fs::path source = source_gltf.parent_path() / relative;
-    const fs::path destination = destination_gltf.parent_path() / relative;
+    const fs::path source =
+        (source_gltf.parent_path() / relative).lexically_normal();
+    const fs::path destination =
+        (destination_gltf.parent_path() / relative).lexically_normal();
+    if (!isPathInsideRoot(destination, resources_root)) {
+      return false;
+    }
     if (!file_system->exists(source)) {
       return false;
     }
-    if (pathsReferToSameFile(source, destination)) {
+    if (pathsReferToSameFile(source, destination) ||
+        file_system->exists(destination)) {
       continue;
     }
-    if (file_system->exists(destination) ||
-        !file_system->copyFile(source, destination, false)) {
+    if (!file_system->copyFile(source, destination, false)) {
       return false;
     }
     copied_paths.push_back(destination);

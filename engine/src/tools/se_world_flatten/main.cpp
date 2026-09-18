@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
   std::printf("imported_mesh_assets=%d\n", stats.imported_mesh_assets);
   std::printf("root.scene.asset before=%s after=%s\n", root_before.c_str(),
               root_after.c_str());
+  std::fflush(stdout);
   if (!stats.error_message.empty()) {
     std::fprintf(stderr, "error: %s\n", stats.error_message.c_str());
   }

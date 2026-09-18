@@ -10,6 +10,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -197,6 +198,42 @@ bool writeTextFile(const fs::path& path, const eastl::string& text,
   return static_cast<bool>(stream);
 }
 
+bool pathEscapesRoot(const fs::path& relative) {
+  for (const auto& part : relative.lexically_normal()) {
+    if (part == ".") {
+      continue;
+    }
+    return part == "..";
+  }
+  return false;
+}
+
+bool pathIsUnder(const fs::path& path, const fs::path& root) {
+  if (root.empty()) {
+    return true;
+  }
+  std::error_code ec;
+  const fs::path rel =
+      fs::relative(path.lexically_normal(), root.lexically_normal(), ec);
+  return !ec && !pathEscapesRoot(rel);
+}
+
+bool copyFileIfMissing(const fs::path& src, const fs::path& dst) {
+  std::error_code ec;
+  if (!fs::is_regular_file(src, ec)) {
+    return false;
+  }
+  if (fs::exists(dst, ec)) {
+    return true;
+  }
+  fs::create_directories(dst.parent_path(), ec);
+  if (ec) {
+    return false;
+  }
+  fs::copy_file(src, dst, ec);
+  return !ec;
+}
+
 void bakeNodeLocal(const cgltf_node* node, Vec3& out_position, Quat& out_rotation,
                    Vec3& out_scale) {
   out_position = Vec3(0.0f);
@@ -348,6 +385,60 @@ struct FlattenBaker {
     return data;
   }
 
+  bool stageGltfUri(const char* uri, const fs::path& source_gltf,
+                    const fs::path& dest_gltf, const fs::path& dest_root) {
+    if (uri == nullptr || uri[0] == '\0' || std::strncmp(uri, "data:", 5) == 0) {
+      return true;
+    }
+    std::vector<char> decoded(uri, uri + std::strlen(uri) + 1);
+    cgltf_decode_uri(decoded.data());
+    const fs::path relative(decoded.data());
+    if (relative.empty() || relative.is_absolute() || relative.has_root_name()) {
+      return false;
+    }
+    const fs::path source = (source_gltf.parent_path() / relative).lexically_normal();
+    const fs::path dest = (dest_gltf.parent_path() / relative).lexically_normal();
+    if (!pathIsUnder(dest, dest_root)) {
+      return false;
+    }
+    return copyFileIfMissing(source, dest);
+  }
+
+  fs::path stageGltfWithSidecars(const fs::path& godot_absolute) {
+    if (options->file_system == nullptr) {
+      return godot_absolute;
+    }
+    std::error_code ec;
+    const fs::path rel = fs::relative(godot_absolute, options->godot_root, ec);
+    if (ec || rel.empty() || pathEscapesRoot(rel)) {
+      return {};
+    }
+    const fs::path dest_root =
+        options->file_system->getResourcesRoot() / "se-world";
+    const fs::path dest_gltf = (dest_root / rel).lexically_normal();
+    if (!pathIsUnder(dest_gltf, dest_root)) {
+      return {};
+    }
+    if (!copyFileIfMissing(godot_absolute, dest_gltf)) {
+      return {};
+    }
+    cgltf_data* data = loadGltf(godot_absolute);
+    if (data == nullptr) {
+      return {};
+    }
+    for (cgltf_size i = 0; i < data->buffers_count; ++i) {
+      if (!stageGltfUri(data->buffers[i].uri, godot_absolute, dest_gltf, dest_root)) {
+        return {};
+      }
+    }
+    for (cgltf_size i = 0; i < data->images_count; ++i) {
+      if (!stageGltfUri(data->images[i].uri, godot_absolute, dest_gltf, dest_root)) {
+        return {};
+      }
+    }
+    return dest_gltf;
+  }
+
   eastl::string ensureMeshGuid(const eastl::string& asset_id, const fs::path& absolute) {
     const auto by_id = guid_by_asset_id.find(asset_id);
     if (by_id != guid_by_asset_id.end()) {
@@ -360,20 +451,40 @@ struct FlattenBaker {
       return by_path->second;
     }
 
+    fs::path import_path = absolute;
+    if (options->import_service != nullptr && options->file_system != nullptr) {
+      import_path = stageGltfWithSidecars(absolute);
+      if (import_path.empty()) {
+        LOG_WARN("[se-world-flatten] failed to stage glTF {} ({})",
+                 absolute.generic_string().c_str(), asset_id.c_str());
+        return {};
+      }
+    }
+
     eastl::string guid;
-    if (options->import_service != nullptr) {
+    if (options->asset_registry != nullptr) {
+      const eastl::string stem(import_path.stem().generic_string().c_str());
+      eastl::string descriptor = options->mesh_assets_folder;
+      if (!descriptor.empty() && descriptor.back() != '/') {
+        descriptor.push_back('/');
+      }
+      descriptor.append(stem.c_str());
+      descriptor.append(".mesh.yaml");
+      guid = options->asset_registry->findGuidForPath(descriptor);
+    }
+    if (guid.empty() && options->import_service != nullptr) {
       MeshImportSettings settings{};
       settings.animations = false;
       const ImportResult imported = options->import_service->importMesh(
-          absolute, options->mesh_assets_folder, settings);
+          import_path, options->mesh_assets_folder, settings);
       if (imported.success) {
         guid = imported.guid;
         ++stats->imported_mesh_assets;
       } else {
         LOG_WARN("[se-world-flatten] Import failed for {} ({})",
-                 absolute.generic_string().c_str(), asset_id.c_str());
+                 import_path.generic_string().c_str(), asset_id.c_str());
       }
-    } else {
+    } else if (guid.empty()) {
       guid = generateGuidV4();
     }
     if (!guid.empty()) {
