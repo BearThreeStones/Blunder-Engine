@@ -162,6 +162,64 @@ int main() {
 
   {
     SceneInstance scene;
+    const EntityId floor_id =
+        scene.createEntity("Floor", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    ColliderComponent floor{};
+    floor.box_half_extents = Vec3(8.0f, 8.0f, 0.25f);
+    scene.setCollider(floor_id, floor);
+
+    const EntityId walker_id =
+        scene.createEntity("Walker", Vec3(0, 0, 4), glm::identity<Quat>(), Vec3(1));
+    CharacterControllerComponent cct{};
+    scene.setCharacterController(walker_id, cct);
+
+    PhysicsManager physics;
+    expect_true("walker drop",
+                physics.moveAndSlide(scene, walker_id, Vec3(0.0f, 0.0f, -10.0f)));
+    Vec3 pos{};
+    Quat rot = glm::identity<Quat>();
+    Vec3 scale{1.0f};
+    expect_true("walker rest transform",
+                scene.getTransform(walker_id, pos, rot, scale));
+    // Floor top 0.25 + height/2 0.9 + skin 0.04 = 1.19. Sphere-at-origin rest is ~0.69.
+    expect_true("walker rest height/2", float_near(pos.z, 1.19f, 0.12f));
+    const CharacterControllerComponent* after = scene.getCharacterController(walker_id);
+    expect_true("walker on floor", after != nullptr && after->on_floor);
+  }
+
+  {
+    auto physics = eastl::make_shared<PhysicsManager>();
+    g_runtime_global_context.m_physics_manager = physics;
+    {
+      SceneInstance scene;
+      const EntityId id =
+          scene.createEntity("Box", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+      ColliderComponent collider{};
+      collider.box_half_extents = Vec3(1.0f, 1.0f, 1.0f);
+      scene.setCollider(id, collider);
+      expect_true("bind before destroy", physics->ensureWorld(scene) != nullptr);
+    }
+    physics->tick(1.0f / 60.0f, true, false);
+    expect_true("tick after scene destroy", true);
+    g_runtime_global_context.m_physics_manager.reset();
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("Box", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    ColliderComponent collider{};
+    collider.box_half_extents = Vec3(1.0f, 1.0f, 1.0f);
+    scene.setCollider(id, collider);
+    PhysicsManager physics;
+    expect_true("unbind world created", physics.ensureWorld(scene) != nullptr);
+    physics.unbind(&scene);
+    expect_true("unbind drops world", physics.worldFor(&scene) == nullptr);
+    physics.tick(1.0f / 60.0f, true, false);
+  }
+
+  {
+    SceneInstance scene;
     const EntityId id =
         scene.createEntity("KinematicMesh", Vec3(0, 0, 0), glm::identity<Quat>(),
                            Vec3(1));

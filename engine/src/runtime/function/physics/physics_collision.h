@@ -28,4 +28,10 @@ struct ColliderWorldShape {
                                 FixedVec3 direction, Fixed max_distance, Fixed& out_t,
                                 FixedVec3& out_point, FixedVec3& out_normal);
 
+/// Sphere-swept mesh: offset faces plus edge capsules of `radius`. Used by capsule shapecast.
+[[nodiscard]] bool raycastInflatedTriangleMesh(const ColliderWorldShape& shape, FixedVec3 origin,
+                                               FixedVec3 direction, Fixed max_distance, Fixed radius,
+                                               Fixed& out_t, FixedVec3& out_point,
+                                               FixedVec3& out_normal);
+
 }  // namespace Blunder

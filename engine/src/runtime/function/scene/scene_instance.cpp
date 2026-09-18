@@ -261,6 +261,9 @@ void captureSkeletonModifiers(const SceneInstance& scene, const Object& object,
 }  // namespace
 
 SceneInstance::~SceneInstance() {
+  if (g_runtime_global_context.m_physics_manager) {
+    g_runtime_global_context.m_physics_manager->unbind(this);
+  }
   if (ObjectDB::getEntityStore() == this) {
     ObjectDB::setEntityStore(nullptr);
   }

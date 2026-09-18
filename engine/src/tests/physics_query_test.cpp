@@ -106,6 +106,11 @@ void capsule_cast_hits_static_box() {
       Fixed::from_int(20), Blunder::kDefaultColliderMask, false, hit);
   assert(ok);
   assert(hit.hit);
+  // Box top 1 + radius 0.5 + half_height 1 = 2.5; from z=6, t=3.5 (not sphere-at-origin t=4.5).
+  const Fixed expected_t = Fixed::from_int(7) / Fixed::from_int(2);
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(10);
+  assert(hit.distance.raw() > (expected_t - slop).raw());
+  assert(hit.distance.raw() < (expected_t + slop).raw());
   world->destroy();
 }
 
@@ -211,6 +216,53 @@ void move_and_slide_floor() {
   world->destroy();
 }
 
+void move_and_slide_box_floor_rest_height() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachBoxCollider(
+      body, FixedVec3(Fixed::from_int(8), Fixed::from_int(8), Fixed::from_int(1) / Fixed::from_int(4)));
+
+  Blunder::PhysicsCharacterMove move{};
+  move.pose.position.z = Fixed::from_int(4);
+  move.displacement = FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(-10));
+  move.radius = Fixed::from_int(2) / Fixed::from_int(5);
+  move.half_height = Fixed::from_int(1) / Fixed::from_int(2);
+  move.snap_length = Fixed::from_int(1) / Fixed::from_int(5);
+  move.skin = Fixed::from_int(1) / Fixed::from_int(25);
+  const Blunder::PhysicsCharacterResult result = Blunder::moveAndSlide(*world, move);
+  assert(result.on_floor);
+  // Floor top 0.25 + height/2 (0.9) + skin 0.04 = 1.19. Sphere-at-origin would rest ~0.69.
+  const Fixed expected = Fixed::from_int(119) / Fixed::from_int(100);
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(10);
+  assert(result.pose.position.z.raw() > (expected - slop).raw());
+  assert(result.pose.position.z.raw() < (expected + slop).raw());
+  world->destroy();
+}
+
+void move_and_slide_trimesh_floor_rest_height() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  const PhysicsTriangle floor = unitFloor();
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachTriangleMeshCollider(body, &floor, 1);
+
+  Blunder::PhysicsCharacterMove move{};
+  move.pose.position.z = Fixed::from_int(4);
+  move.displacement = FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(-10));
+  move.radius = Fixed::from_int(1) / Fixed::from_int(2);
+  move.half_height = Fixed::from_int(1);
+  move.snap_length = Fixed::zero();
+  move.skin = Fixed::zero();
+  const Blunder::PhysicsCharacterResult result = Blunder::moveAndSlide(*world, move);
+  assert(result.on_floor);
+  const Fixed expected = Fixed::from_int(3) / Fixed::from_int(2);
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(5);
+  assert(result.pose.position.z.raw() > (expected - slop).raw());
+  assert(result.pose.position.z.raw() < (expected + slop).raw());
+  world->destroy();
+}
+
 }  // namespace
 
 int main() {
@@ -224,5 +276,7 @@ int main() {
   area_does_not_block_dynamic();
   move_and_slide_wall();
   move_and_slide_floor();
+  move_and_slide_box_floor_rest_height();
+  move_and_slide_trimesh_floor_rest_height();
   return 0;
 }

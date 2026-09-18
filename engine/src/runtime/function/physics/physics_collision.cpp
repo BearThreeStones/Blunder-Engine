@@ -512,6 +512,83 @@ bool rayTriangle(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, const Phys
 }
 
 bool raySphere(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, FixedVec3 center, Fixed radius,
+               Fixed& out_t, FixedVec3& out_normal);
+
+bool rayFiniteCylinder(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, FixedVec3 a, FixedVec3 b,
+                       Fixed radius, Fixed& out_t, FixedVec3& out_normal) {
+  const FixedVec3 ba = b - a;
+  const Fixed baba = dot(ba, ba);
+  if (baba.raw() == 0 || radius.raw() <= 0) {
+    return false;
+  }
+  const FixedVec3 oa = origin - a;
+  const FixedVec3 v = cross(dir, ba);
+  const FixedVec3 q = cross(oa, ba);
+  const Fixed a_q = dot(v, v);
+  if (a_q.raw() == 0) {
+    return false;
+  }
+  const Fixed b_q = Fixed::from_int(2) * dot(q, v);
+  const Fixed c_q = dot(q, q) - radius * radius * baba;
+  const Fixed disc = b_q * b_q - Fixed::from_int(4) * a_q * c_q;
+  if (disc.raw() < 0) {
+    return false;
+  }
+  const Fixed sqrt_disc = sqrt(disc);
+  const Fixed two_a = Fixed::from_int(2) * a_q;
+  Fixed t = (-b_q - sqrt_disc) / two_a;
+  if (t.raw() < 0) {
+    t = (-b_q + sqrt_disc) / two_a;
+  }
+  if (t.raw() < 0 || t.raw() > max_distance.raw()) {
+    return false;
+  }
+  const FixedVec3 hit = origin + dir * t;
+  const Fixed s = dot(hit - a, ba) / baba;
+  if (s.raw() <= 0 || s.raw() >= Fixed::from_int(1).raw()) {
+    return false;
+  }
+  const FixedVec3 axis_pt = a + ba * s;
+  const FixedVec3 n = hit - axis_pt;
+  const Fixed n_len_sq = dot(n, n);
+  out_t = t;
+  out_normal = n_len_sq.raw() == 0 ? FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(1))
+                                   : n / sqrt(n_len_sq);
+  return true;
+}
+
+bool rayCapsule(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, FixedVec3 a, FixedVec3 b,
+                Fixed radius, Fixed& out_t, FixedVec3& out_normal) {
+  bool hit = false;
+  Fixed best_t = max_distance;
+  FixedVec3 best_n{};
+  Fixed t = Fixed::zero();
+  FixedVec3 n{};
+  if (raySphere(origin, dir, max_distance, a, radius, t, n) && (!hit || t.raw() < best_t.raw())) {
+    hit = true;
+    best_t = t;
+    best_n = n;
+  }
+  if (raySphere(origin, dir, max_distance, b, radius, t, n) && (!hit || t.raw() < best_t.raw())) {
+    hit = true;
+    best_t = t;
+    best_n = n;
+  }
+  if (rayFiniteCylinder(origin, dir, max_distance, a, b, radius, t, n) &&
+      (!hit || t.raw() < best_t.raw())) {
+    hit = true;
+    best_t = t;
+    best_n = n;
+  }
+  if (!hit) {
+    return false;
+  }
+  out_t = best_t;
+  out_normal = best_n;
+  return true;
+}
+
+bool raySphere(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, FixedVec3 center, Fixed radius,
                Fixed& out_t, FixedVec3& out_normal) {
   const FixedVec3 oc = origin - center;
   const Fixed a = dot(dir, dir);
@@ -694,26 +771,76 @@ bool raycastShape(const ColliderWorldShape& shape, FixedVec3 origin, FixedVec3 d
     FixedVec3 seg_a{};
     FixedVec3 seg_b{};
     getCapsuleSegment(shape, seg_a, seg_b);
-    Fixed t = Fixed::zero();
-    FixedVec3 n{};
-    if (raySphere(origin, dir, max_distance, seg_a, shape.capsule_radius, t, n) &&
-        (!hit || t.raw() < best_t.raw())) {
-      hit = true;
-      best_t = t;
-      best_n = n;
-    }
-    if (raySphere(origin, dir, max_distance, seg_b, shape.capsule_radius, t, n) &&
-        (!hit || t.raw() < best_t.raw())) {
-      hit = true;
-      best_t = t;
-      best_n = n;
-    }
+    hit = rayCapsule(origin, dir, max_distance, seg_a, seg_b, shape.capsule_radius, best_t, best_n);
   } else if (shape.shape == ColliderShape::TriangleMesh && shape.triangles != nullptr) {
     for (uint32_t i = 0; i < shape.triangle_count; ++i) {
       Fixed t = Fixed::zero();
       FixedVec3 n{};
       const PhysicsTriangle tri = triangleInWorld(shape.pose, shape.triangles[i]);
       if (rayTriangle(origin, dir, max_distance, tri, t, n) &&
+          (!hit || t.raw() < best_t.raw())) {
+        hit = true;
+        best_t = t;
+        best_n = n;
+      }
+    }
+  }
+
+  if (!hit) {
+    return false;
+  }
+  out_t = best_t;
+  out_point = origin + dir * best_t;
+  out_normal = best_n;
+  return true;
+}
+
+bool raycastInflatedTriangleMesh(const ColliderWorldShape& shape, FixedVec3 origin,
+                                 FixedVec3 direction, Fixed max_distance, Fixed radius,
+                                 Fixed& out_t, FixedVec3& out_point, FixedVec3& out_normal) {
+  if (shape.shape != ColliderShape::TriangleMesh || shape.triangles == nullptr ||
+      shape.triangle_count == 0) {
+    return false;
+  }
+  if (radius.raw() <= 0) {
+    return raycastShape(shape, origin, direction, max_distance, out_t, out_point, out_normal);
+  }
+  const Fixed dir_len_sq = dot(direction, direction);
+  if (dir_len_sq.raw() == 0 || max_distance.raw() <= 0) {
+    return false;
+  }
+  const FixedVec3 dir = direction / sqrt(dir_len_sq);
+  bool hit = false;
+  Fixed best_t = max_distance;
+  FixedVec3 best_n{};
+
+  for (uint32_t i = 0; i < shape.triangle_count; ++i) {
+    const PhysicsTriangle tri = triangleInWorld(shape.pose, shape.triangles[i]);
+    const FixedVec3 tn = triangleNormal(tri);
+    for (int side = 0; side < 2; ++side) {
+      const Fixed sign = side == 0 ? Fixed::from_int(1) : Fixed::from_int(-1);
+      const FixedVec3 offset = tn * (radius * sign);
+      PhysicsTriangle inflated{};
+      inflated.v0 = tri.v0 + offset;
+      inflated.v1 = tri.v1 + offset;
+      inflated.v2 = tri.v2 + offset;
+      Fixed t = Fixed::zero();
+      FixedVec3 n{};
+      if (rayTriangle(origin, dir, max_distance, inflated, t, n) &&
+          (!hit || t.raw() < best_t.raw())) {
+        hit = true;
+        best_t = t;
+        best_n = n;
+      }
+    }
+    const FixedVec3 edge_a[2] = {tri.v0, tri.v1};
+    const FixedVec3 edge_b[2] = {tri.v1, tri.v2};
+    const FixedVec3 edge_c[2] = {tri.v2, tri.v0};
+    const FixedVec3* edges[3] = {edge_a, edge_b, edge_c};
+    for (const FixedVec3* edge : edges) {
+      Fixed t = Fixed::zero();
+      FixedVec3 n{};
+      if (rayCapsule(origin, dir, max_distance, edge[0], edge[1], radius, t, n) &&
           (!hit || t.raw() < best_t.raw())) {
         hit = true;
         best_t = t;

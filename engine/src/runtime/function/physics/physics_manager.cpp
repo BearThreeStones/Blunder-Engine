@@ -74,6 +74,18 @@ void PhysicsManager::clear() {
   m_worlds.clear();
 }
 
+void PhysicsManager::unbind(const SceneInstance* scene) {
+  if (scene == nullptr) {
+    return;
+  }
+  const auto it = m_worlds.find(scene);
+  if (it == m_worlds.end()) {
+    return;
+  }
+  destroyBinding(it->second);
+  m_worlds.erase(it);
+}
+
 void PhysicsManager::fillHit(const SceneInstance& scene, const PhysicsQueryHit& kernel,
                              PhysicsSceneHit& out_hit) const {
   out_hit = {};
