@@ -237,7 +237,9 @@ int main() {
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
+    g_runtime_global_context.m_logger_system.reset();
     return 1;
   }
+  g_runtime_global_context.m_logger_system.reset();
   return 0;
 }

@@ -408,10 +408,11 @@ void testColSkipAndExtrasIgnoredOnImport() {
           &manager, eastl::string("assets/Meshes/set.mesh.yaml"), col_scene,
           col_parent);
   expect_true("2.1 attach GEO", col_result.success);
-  expect_true("2.1 GEO renderer present",
-              isValid(col_scene.findEntityByName("GEO-ground")) &&
-                  col_scene.getMeshRenderer(col_scene.findEntityByName("GEO-ground")) !=
-                      nullptr);
+  expect_true("2.1 GEO entity spawned",
+              isValid(col_scene.findEntityByName("GEO-ground")));
+  const EntityId geo_prim = col_scene.findEntityByName("GEO-ground_prim0");
+  expect_true("2.1 GEO primitive has MeshRenderer",
+              isValid(geo_prim) && col_scene.getMeshRenderer(geo_prim) != nullptr);
   expect_true("2.1 COL entity not spawned",
               !isValid(col_scene.findEntityByName("COL-ground")));
   expect_true("2.1 at least one renderer", liveMeshRendererCount(col_scene) >= 1u);
