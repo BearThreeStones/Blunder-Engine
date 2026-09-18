@@ -56,6 +56,13 @@ struct MachineCliArgs {
   float max_distance{100.0f};
   uint32_t mask{0xFFFFFFFFu};
   bool collide_with_areas{false};
+  eastl::string sweep_shape;
+  float hx{0.5f};
+  float hy{0.5f};
+  float hz{0.5f};
+  float sphere_radius{0.5f};
+  float capsule_radius{0.5f};
+  float capsule_half_height{0.5f};
 };
 
 struct EditorSessionLaunch {
