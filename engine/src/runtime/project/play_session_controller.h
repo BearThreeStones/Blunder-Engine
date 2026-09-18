@@ -67,8 +67,8 @@ struct PlaySessionHooks {
   /// Optional Scripts dirty gate (run before spawn). When unset, gate is skipped.
   std::function<bool()> is_scripts_dirty;
   std::function<bool(std::string& error)> build_scripts;
-  /// Starting to Playing deadline. Default 15s.
-  std::chrono::milliseconds starting_timeout{std::chrono::milliseconds(15000)};
+  /// Starting to Playing deadline. 15s is below SE-world player AppInit.
+  std::chrono::milliseconds starting_timeout{std::chrono::milliseconds(180000)};
   /// Optional clock for tests; defaults to steady_clock::now.
   std::function<std::chrono::steady_clock::time_point()> now;
 };

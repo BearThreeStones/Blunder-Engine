@@ -35,6 +35,14 @@ eastl::shared_ptr<SceneInstance> instantiateScene(
   return instance;
 }
 
+bool meshAssetPathAlreadyFinal(const eastl::string& path) {
+  auto ends = [](const eastl::string& value, const char* suffix, size_t n) {
+    return value.size() >= n &&
+           value.compare(value.size() - n, n, suffix) == 0;
+  };
+  return ends(path, ".mesh.yaml", 10) || ends(path, ".mesh.asset", 11);
+}
+
 void collectDrawsFromInstance(AssetManager& asset_manager,
                               SceneInstance& instance,
                               eastl::vector<MeshPreviewSubmeshDraw>& out) {
@@ -45,20 +53,22 @@ void collectDrawsFromInstance(AssetManager& asset_manager,
       return;
     }
     eastl::string path = renderer.mesh->getVirtualPath();
-    if (path.empty()) {
-      // Fall back to a single draw with identity relative to entity world.
+    const Mat4 world = instance.getWorldMatrix(entity_id);
+    // Flattened Mesh Assets already carry engine-space geometry. Re-opening
+    // each instance's source glTF (~10k SE-world draws) stalled capture ~107s
+    // and still hit ForwardRenderPath::k_max_opaque_draws=256.
+    if (path.empty() || meshAssetPathAlreadyFinal(path)) {
       MeshPreviewSubmeshDraw draw{};
       draw.mesh = renderer.mesh;
       draw.material = renderer.material ? renderer.material
                                         : renderer.mesh->getMaterialAsset();
-      draw.model = instance.getWorldMatrix(entity_id);
+      draw.model = world;
       draw.entity_id = entity_id;
       out.push_back(eastl::move(draw));
       return;
     }
     eastl::vector<MeshPreviewSubmeshDraw> parts =
         collectMeshPreviewSubmeshes(asset_manager, path);
-    const Mat4 world = instance.getWorldMatrix(entity_id);
     if (parts.empty()) {
       MeshPreviewSubmeshDraw draw{};
       draw.mesh = renderer.mesh;
