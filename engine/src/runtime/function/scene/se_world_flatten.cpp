@@ -687,7 +687,12 @@ SeWorldFlattenStats bakeSeWorldFlattenScene(const SeWorldFlattenOptions& options
   baker.visitGltf(layout, root_name, FlattenKind::root);
 
   if (options.asset_registry != nullptr) {
-    out_scene.setGuid(options.asset_registry->allocateGuid());
+    eastl::string existing = options.asset_registry->findGuidForPath(
+        eastl::string(k_se_world_scene_virtual_path));
+    if (existing.empty()) {
+      existing = options.asset_registry->allocateGuid();
+    }
+    out_scene.setGuid(existing);
   } else if (out_scene.getGuid().empty()) {
     out_scene.setGuid(generateGuidV4());
   }
