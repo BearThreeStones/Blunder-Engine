@@ -136,6 +136,7 @@ bool pumpMcp(bool block_for_one) {
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
   try {
+    Blunder::mcpCaptureStdioHandles();
     g_launch = Blunder::resolveEditorSessionLaunch(
         argc, argv, isDebugLaunchBuild(), compiledProjectRoot());
     if (!g_launch.ok) {

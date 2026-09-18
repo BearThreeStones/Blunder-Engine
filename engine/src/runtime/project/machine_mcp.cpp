@@ -19,6 +19,62 @@
 
 namespace Blunder {
 
+#ifdef _WIN32
+namespace {
+HANDLE g_mcp_stdin = INVALID_HANDLE_VALUE;
+HANDLE g_mcp_stdout = INVALID_HANDLE_VALUE;
+bool g_mcp_stdio_captured = false;
+}  // namespace
+#endif
+
+void mcpCaptureStdioHandles() {
+#ifdef _WIN32
+  if (g_mcp_stdio_captured) {
+    return;
+  }
+  g_mcp_stdio_captured = true;
+  HANDLE process = GetCurrentProcess();
+  HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (in != nullptr && in != INVALID_HANDLE_VALUE) {
+    if (!DuplicateHandle(process, in, process, &g_mcp_stdin, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS)) {
+      g_mcp_stdin = in;
+    }
+  }
+  if (out != nullptr && out != INVALID_HANDLE_VALUE) {
+    if (!DuplicateHandle(process, out, process, &g_mcp_stdout, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS)) {
+      g_mcp_stdout = out;
+    }
+  }
+#endif
+}
+
+#ifdef _WIN32
+HANDLE mcpStdinHandle() {
+  mcpCaptureStdioHandles();
+  if (g_mcp_stdin != nullptr && g_mcp_stdin != INVALID_HANDLE_VALUE) {
+    return g_mcp_stdin;
+  }
+  return GetStdHandle(STD_INPUT_HANDLE);
+}
+
+HANDLE mcpStdoutHandle() {
+  mcpCaptureStdioHandles();
+  if (g_mcp_stdout != nullptr && g_mcp_stdout != INVALID_HANDLE_VALUE) {
+    return g_mcp_stdout;
+  }
+  return GetStdHandle(STD_OUTPUT_HANDLE);
+}
+
+namespace {
+struct McpStdioCaptureAtLoad {
+  McpStdioCaptureAtLoad() { mcpCaptureStdioHandles(); }
+} g_mcp_stdio_capture_at_load;
+}  // namespace
+#endif
+
 namespace {
 
 bool jsonExtractObject(const std::string& src, const char* key, std::string& out) {
@@ -325,7 +381,7 @@ const char* k_tools_list =
 
 bool mcpStdinHasBytes() {
 #ifdef _WIN32
-  HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE handle = mcpStdinHandle();
   if (handle == INVALID_HANDLE_VALUE || handle == nullptr) {
     return false;
   }
@@ -344,7 +400,7 @@ bool mcpStdinHasBytes() {
 
 bool mcpStdinClosed() {
 #ifdef _WIN32
-  HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE handle = mcpStdinHandle();
   if (handle == INVALID_HANDLE_VALUE || handle == nullptr) {
     return true;
   }
@@ -432,7 +488,7 @@ bool lineStartsWith(const std::string& line, const char* prefix) {
 bool mcpReadMessage(std::string& json) {
   json.clear();
 #ifdef _WIN32
-  HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE hin = mcpStdinHandle();
   if (hin == nullptr || hin == INVALID_HANDLE_VALUE) {
     return false;
   }
@@ -492,7 +548,7 @@ bool mcpReadMessage(std::string& json) {
 
 void mcpWriteMessage(const std::string& json) {
 #ifdef _WIN32
-  HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
+  HANDLE hout = mcpStdoutHandle();
   if (hout == nullptr || hout == INVALID_HANDLE_VALUE) {
     return;
   }
