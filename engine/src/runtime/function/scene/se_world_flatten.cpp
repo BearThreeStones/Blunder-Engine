@@ -386,7 +386,8 @@ struct FlattenBaker {
   }
 
   bool stageGltfUri(const char* uri, const fs::path& source_gltf,
-                    const fs::path& dest_gltf, const fs::path& dest_root) {
+                    const fs::path& dest_gltf, const fs::path& dest_root,
+                    bool required) {
     if (uri == nullptr || uri[0] == '\0' || std::strncmp(uri, "data:", 5) == 0) {
       return true;
     }
@@ -394,11 +395,20 @@ struct FlattenBaker {
     cgltf_decode_uri(decoded.data());
     const fs::path relative(decoded.data());
     if (relative.empty() || relative.is_absolute() || relative.has_root_name()) {
-      return false;
+      return !required;
     }
     const fs::path source = (source_gltf.parent_path() / relative).lexically_normal();
     const fs::path dest = (dest_gltf.parent_path() / relative).lexically_normal();
     if (!pathIsUnder(dest, dest_root)) {
+      return !required;
+    }
+    std::error_code ec;
+    if (!fs::is_regular_file(source, ec)) {
+      if (!required) {
+        LOG_WARN("[se-world-flatten] optional sidecar missing {}",
+                 source.generic_string().c_str());
+        return true;
+      }
       return false;
     }
     return copyFileIfMissing(source, dest);
@@ -427,12 +437,14 @@ struct FlattenBaker {
       return {};
     }
     for (cgltf_size i = 0; i < data->buffers_count; ++i) {
-      if (!stageGltfUri(data->buffers[i].uri, godot_absolute, dest_gltf, dest_root)) {
+      if (!stageGltfUri(data->buffers[i].uri, godot_absolute, dest_gltf, dest_root,
+                        true)) {
         return {};
       }
     }
     for (cgltf_size i = 0; i < data->images_count; ++i) {
-      if (!stageGltfUri(data->images[i].uri, godot_absolute, dest_gltf, dest_root)) {
+      if (!stageGltfUri(data->images[i].uri, godot_absolute, dest_gltf, dest_root,
+                        false)) {
         return {};
       }
     }
