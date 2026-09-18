@@ -25,8 +25,8 @@ Today: `GltfSceneImporter` walks glTF nodes and primitives, applies `similarityG
 ## Decisions
 
 1. **Offline bake writes the Scene Asset; runtime never consults `asset_index.json`.**  
-   Apply ships a first-party headless baker (engine-repo C++, no mouse) that reads Godot extras the way `process_instancing_node` does, Imports reachable SE/SL glTFs into DogWalk, and Save-writes one `.scene.asset`. Play/editor only load that JSON.  
-   *Alternatives:* expand inside `GltfSceneImporter::importIntoScene` on every SE-world import (Grill: runtime must not look up `instance_asset_id`); keep PackedScene-like childScenes (forbidden by ADR 0030).
+   Apply ships a first-party headless baker (engine-repo C++, no mouse) that reads Godot extras the way `process_instancing_node` does, Imports reachable SE/SL glTFs into DogWalk, and writes one `.scene.asset`. Play/editor only load that JSON. The shipping path is that offline bake, not “editor Import SE-world then Save”. Runtime load must not look up `instance_asset_id`.  
+   *Alternatives:* expand inside `GltfSceneImporter::importIntoScene` on every SE-world import (Grill: runtime must not look up `instance_asset_id`); keep PackedScene-like childScenes (forbidden by ADR 0030); treat editor Import + Save as the product bake (rejected).
 
 2. **Shared Mesh Asset GUIDs, one entity per layout instance.**  
    196 library assets, ~4795 instance entities. Scene mesh fields store GUIDs ([asset-identity](../../../../openspec/specs/asset-identity/spec.md)). Instantiate creates the entity; `attachEntityMeshes` imports that library glTF under it (existing path).  
@@ -36,9 +36,9 @@ Today: `GltfSceneImporter` walks glTF nodes and primitives, applies `similarityG
    Tree glTFs still carry extras for needles/knots/leaves. Import ignores extras, so the baker must emit those children with their own mesh GUIDs or the tree stays a stub. Hierarchy row count MAY exceed ~5000; layout-instance count is the acceptance grain.  
    *Alternatives:* combine internals into one mesh at bake (loses author structure, extra cook work); hope `importUnderEntity` expands extras (it will not).
 
-4. **COL-* skip is a MeshRenderer filter, not a later `active: false` placeholder.**  
-   Skip MeshRenderer for glTF nodes / baked entities whose display name starts with `COL-`. GEO (and other non-COL visible meshes) draw. Empty COL entities are optional; this slice does not require them. Next knife may bind trimesh from COL or GEO.  
-   *Alternatives:* draw COL (z-fight with GEO); `active: false` placeholders (Grill default was no MeshRenderer, not a hidden duplicate graph).
+4. **COL-* are omitted this slice: no MeshRenderer and no entity.**  
+   Skip glTF nodes whose display name starts with `COL-` in the baker and in runtime attach. GEO (and other non-COL visible meshes) draw. Do not spawn `COL-*` entities, including inactive (`active: false`) placeholders. Next knife may bind static trimesh from COL or GEO.  
+   *Alternatives:* draw COL (z-fight with GEO); `active: false` placeholders (Grill locked: omit COL entities this slice).
 
 5. **Unique names at bake, matching `makeUniqueEntityName`.**  
    `stem`, then `stem_1`… Godot repeats ~1196 names. Mesh attach and Authorship Address need uniqueness. Do not change `findEntityByName` into a multi-map this slice.  

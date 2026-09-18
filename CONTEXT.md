@@ -1749,7 +1749,7 @@ Former nested Scene Asset composition (`childScenes` / `SceneChildReference`) th
 _Avoid_: Keeping childScenes as latent file format; Save merging orphan childScenes; recursive Thumbnail/load of nested scenes; calling mesh/entity parenting a Child Scene; failing open because a legacy childScenes array is present
 
 **SE-world flatten**:
-The offline bake that expands Godot `SE-world` `instance_asset_id` extras (plus nested extras on library glTFs) into **one flat Scene Asset** in the DogWalk Project (`Assets/Scenes/se-world.scene.asset`). Runtime instantiate attaches Mesh Assets by GUID and unique entity names. It does not look up `instance_asset_id` or `asset_index.json`. Missing asset ids skip that instance. **COL-*** get no MeshRenderer this slice. Metres, Z-up. Not Test/Sponza, not nested scenes, not MultiMesh Unique. Collision QC stays on `root.scene.asset`. Decision record: [ADR 0071](docs/adr/0071-se-world-flatten.md).
+The offline bake that expands Godot `SE-world` `instance_asset_id` extras (plus nested extras on library glTFs) into **one flat Scene Asset** in the DogWalk Project (`Assets/Scenes/se-world.scene.asset`). Runtime instantiate attaches Mesh Assets by GUID and unique entity names. It does not look up `instance_asset_id` or `asset_index.json`. Missing asset ids skip that instance. **COL-*** get no MeshRenderer this slice and are not spawned. Metres, Z-up. Not Test/Sponza, not nested scenes, not MultiMesh Unique. Collision QC stays on `root.scene.asset`. Decision record: [ADR 0071](docs/adr/0071-se-world-flatten.md).
 _Avoid_: Runtime PackedScene / prefab from extras; overwriting `root.scene.asset`; Sponza `0.008` or the 64 m centimetre heuristic on this forest; drawing COL-* as the ground; C# Find as the generate path; waiting on the collision-bridge branch to *see* the forest
 
 **instance_asset_id**:
@@ -1761,8 +1761,8 @@ One LI/PR placement from `SE-world.gltf` after flatten (~4795 reachable SE/SL in
 _Avoid_: Counting ikea/zoo/vertical_slice in this grain; treating eight empty `SE-world` nodes as the layout; using placeholder boxes as instances
 
 **COL-***:
-Godot collision-mesh nodes (`COL-` prefix) on set glTFs. This flatten slice does not create a MeshRenderer for them. Static trimesh bind is a later knife (scene collision bridge), not this bake.
-_Avoid_: Drawing COL on top of GEO; requiring `active: false` COL placeholders as flatten Done; treating missing COL MeshRenderer as a failed forest
+Godot collision-mesh nodes (`COL-` prefix) on set glTFs. This flatten slice does not spawn those entities and does not create a MeshRenderer for them. Static trimesh bind is a later knife (scene collision bridge), not this bake.
+_Avoid_: Drawing COL on top of GEO; spawning `active: false` COL placeholders; treating missing COL MeshRenderer as a failed forest
 
 **GEO**:
 Visible set-glTF meshes (ground / path / snow / pond / creek and the same class). Flatten draws these. Not COL-*. Not Sponza courtyard.

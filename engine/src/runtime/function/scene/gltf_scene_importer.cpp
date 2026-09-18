@@ -22,6 +22,7 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_node_extras.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -232,6 +233,15 @@ GltfSceneImporter::ImportResult importGltfDocument(
     }
 
     const eastl::string node_name = gltfNodeDisplayName(node);
+    // Grill locked: omit COL-* (no MeshRenderer, no inactive placeholder entity).
+    if (gltfNodeNameStartsWith(node, "COL-")) {
+      return;
+    }
+    eastl::string instance_asset_id;
+    // Runtime attach/import is not the flatten bake: ignore instance_asset_id.
+    if (gltfNodeInstanceAssetId(node, instance_asset_id)) {
+      return;
+    }
     Vec3 local_position{};
     Quat local_rotation = glm::identity<Quat>();
     Vec3 local_scale(1.0f);

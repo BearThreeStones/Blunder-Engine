@@ -349,8 +349,14 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
           env != nullptr && env[0] != '\0') {
         env_startup = env;
       }
+      eastl::string se_world;
+      if (g_runtime_global_context.m_file_system) {
+        se_world = projectSeWorldScenePathIfExists(
+            *g_runtime_global_context.m_file_system);
+      }
       scene_path = resolveWindowedLiveScenePath(
-          {}, remembered_guid, guid_path, env_startup, k_default_startup_scene_path);
+          {}, remembered_guid, guid_path, env_startup, k_default_startup_scene_path,
+          se_world);
     } else if (scene_path.empty() && use_startup_scene_when_empty) {
       scene_path = resolveStartupScenePath();
     }

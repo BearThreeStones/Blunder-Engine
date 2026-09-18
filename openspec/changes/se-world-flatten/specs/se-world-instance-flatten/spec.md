@@ -62,12 +62,13 @@ When a layout or nested instance’s asset id is absent from `asset_index.json` 
 - **AND** later instances still bake
 
 ### Requirement: COL-* have no MeshRenderer
-Nodes whose display name starts with `COL-` SHALL NOT receive a MeshRenderer this slice. Visible set geometry SHALL come from GEO (and the same class of non-COL mesh). The bake SHALL NOT treat COL meshes as a placeholder box or as the visible ground.
+Nodes whose display name starts with `COL-` SHALL NOT receive a MeshRenderer this slice. The bake and runtime attach SHALL NOT spawn `COL-*` entities, including inactive (`active: false`) placeholders. Visible set geometry SHALL come from GEO (and the same class of non-COL mesh). The bake SHALL NOT treat COL meshes as a placeholder box or as the visible ground.
 
 #### Scenario: Collision mesh is not drawn
 - **WHEN** a set glTF contains both a `COL-*` node and a `GEO-*` node
 - **THEN** the GEO node can receive a MeshRenderer
-- **AND** the COL node has no MeshRenderer
+- **AND** the COL node is not present as a scene entity
+- **AND** the Scene Asset does not contain `active: false` COL placeholders
 
 ### Requirement: Metres, Z-up, keep negative scale
 Baked entity TRS SHALL be engine metres, Z-up, using the existing glTF→engine basis `(x, y, z)_gltf → (x, z, −y)_engine`. The bake SHALL NOT apply Sponza centimetre scale (`0.008`). The bake SHALL NOT treat forest translations whose absolute value exceeds 64 as a centimetre world. Negative scale on a source instance SHALL be preserved.

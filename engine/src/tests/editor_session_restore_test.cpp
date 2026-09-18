@@ -75,6 +75,17 @@ int main() {
               resolveWindowedLiveScenePath("", "", "", "",
                                            "assets/Scenes/pick_test.scene.asset") ==
                   "assets/Scenes/pick_test.scene.asset");
+  expect_true(
+      "se-world beats compiled default when present",
+      resolveWindowedLiveScenePath("", "", "", "",
+                                   "assets/Scenes/pick_test.scene.asset",
+                                   "assets/Scenes/se-world.scene.asset") ==
+          "assets/Scenes/se-world.scene.asset");
+  expect_true(
+      "compiled default stays pick_test without se-world",
+      resolveWindowedLiveScenePath("", "", "", "",
+                                   "assets/Scenes/pick_test.scene.asset", "") ==
+          "assets/Scenes/pick_test.scene.asset");
 
   {
     DockManager manager;

@@ -300,7 +300,8 @@ eastl::string resolveWindowedLiveScenePath(eastl::string_view cli_scene,
                                            eastl::string_view remembered_guid,
                                            eastl::string_view guid_resolved_path,
                                            eastl::string_view env_startup,
-                                           eastl::string_view compiled_default) {
+                                           eastl::string_view compiled_default,
+                                           eastl::string_view project_se_world_scene) {
   if (!cli_scene.empty()) {
     return toEastl(cli_scene);
   }
@@ -310,7 +311,19 @@ eastl::string resolveWindowedLiveScenePath(eastl::string_view cli_scene,
   if (!env_startup.empty()) {
     return toEastl(env_startup);
   }
+  if (!project_se_world_scene.empty()) {
+    return toEastl(project_se_world_scene);
+  }
   return toEastl(compiled_default);
+}
+
+eastl::string projectSeWorldScenePathIfExists(const FileSystem& file_system) {
+  const std::filesystem::path absolute =
+      file_system.resolveAsset("Scenes/se-world.scene.asset");
+  if (file_system.isFile(absolute)) {
+    return eastl::string(k_se_world_scene_virtual_path);
+  }
+  return {};
 }
 
 bool loadEditorSessionRestore(const std::filesystem::path& path,
