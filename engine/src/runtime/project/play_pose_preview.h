@@ -30,4 +30,9 @@ void collectPlayPosesFromActiveScene(const SceneSystem* scenes,
 Mat4 worldMatrixWithPlayPoseOverlay(const SceneInstance& scene, EntityId id,
                                     const PlayPoseOverlayMap* overlay);
 
+/// Copy a named Play pose onto Query fields. Returns false when the name is
+/// missing from the overlay (caller keeps Live authored TRS).
+bool applyNamedPlayPose(const PlayPoseOverlayMap& overlay, const eastl::string& name,
+                        Vec3& position, Quat& rotation, Vec3& scale);
+
 }  // namespace Blunder

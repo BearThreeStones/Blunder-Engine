@@ -5,17 +5,23 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/physics/physics_manager.h"
+#include "runtime/function/physics/physics_world.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/render/overlay/collision_overlay_still.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/scene_thumbnail/scene_still.h"
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
 #include "runtime/function/scene/collider_component.h"
+#include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/slint/slint_system.h"
 #include "runtime/project/play_frame.h"
+#include "runtime/project/play_pose_preview.h"
 #include "runtime/project/play_session_controller.h"
 #include "runtime/project/play_step.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -173,10 +179,17 @@ bool writeStill(const CaptureResult& still, const EditorSessionLaunch& launch,
   return true;
 }
 
+void refreshPlayObservation(MachineAdapterHost& host);
+void paintCollisionObservation(MachineAdapterHost& host, CaptureResult& still,
+                               const MeshPreviewCameraFrame& framing_hint);
+CaptureResult captureLiveViewport(MachineAdapterHost& host,
+                                  const CaptureRequest& req);
+
 CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
   if (host.capture_override) {
     return host.capture_override(req);
   }
+  refreshPlayObservation(host);
   if (req.subject == CaptureSubject::live && req.live_scene != nullptr) {
     if (req.override_framing && req.framing_override.ok &&
         host.editor_camera != nullptr) {
@@ -213,23 +226,133 @@ CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
       still.framing = req.framing_override;
       LOG_INFO("[MCP] live capture GPU-driven viewport {}x{} ({} bytes)", width,
                height, still.rgba.size());
+      paintCollisionObservation(host, still, req.framing_override);
       return still;
+    }
+    CaptureResult viewport = captureLiveViewport(host, req);
+    if (viewport.ok) {
+      paintCollisionObservation(host, viewport, req.framing_override);
+      return viewport;
     }
     LOG_WARN(
         "[MCP] live viewport readback failed; falling back to mesh-preview still");
   }
-  if (host.thumbs == nullptr) {
-    CaptureResult failed;
-    failed.failure_code = k_request_capture_scene_unreadable;
-    return failed;
+  CaptureResult still;
+  if (host.thumbs != nullptr) {
+    still = captureScene(*host.thumbs, req);
   }
-  return captureScene(*host.thumbs, req);
+  if (!still.ok && req.subject == CaptureSubject::live &&
+      req.live_scene != nullptr) {
+    still = {};
+    still.framing = req.framing_override.ok ? req.framing_override
+                                            : defaultCollisionCaptureFraming();
+    ensureCollisionStillBuffer(still.rgba, still.width, still.height);
+    still.ok = true;
+  }
+  if (req.subject == CaptureSubject::live && req.live_scene != nullptr) {
+    paintCollisionObservation(host, still, req.framing_override);
+  }
+  if (!still.ok && still.failure_code.empty()) {
+    still.failure_code = k_request_capture_scene_unreadable;
+  }
+  return still;
 }
 
 void pumpHost(MachineAdapterHost& host) {
   if (host.pump) {
     host.pump();
   }
+}
+
+const PlayPoseOverlayMap* hostPlayPoseOverlay(MachineAdapterHost& host) {
+  if (host.play == nullptr) {
+    return nullptr;
+  }
+  if (host.play->state() != PlaySessionState::Playing &&
+      host.play->state() != PlaySessionState::Paused) {
+    return nullptr;
+  }
+  if (host.play->poseOverlay().empty()) {
+    return nullptr;
+  }
+  return &host.play->poseOverlay();
+}
+
+void refreshPlayObservation(MachineAdapterHost& host) {
+  if (host.play != nullptr) {
+    host.play->poll();
+  }
+  pumpHost(host);
+}
+
+void waitPlayPoses(MachineAdapterHost& host, PlaySessionController& play,
+                   int timeout_ms) {
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeout_ms < 0 ? 0 : timeout_ms);
+  for (;;) {
+    play.poll();
+    pumpHost(host);
+    if (!play.poseOverlay().empty()) {
+      return;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+}
+
+void paintCollisionObservation(MachineAdapterHost& host, CaptureResult& still,
+                               const MeshPreviewCameraFrame& framing_hint) {
+  MeshPreviewCameraFrame framing = still.framing;
+  if (!framing.ok) {
+    framing = framing_hint.ok ? framing_hint : defaultCollisionCaptureFraming();
+  }
+  still.framing = framing;
+  ensureCollisionStillBuffer(still.rgba, still.width, still.height);
+  SceneInstance* scene = host.live_scene;
+  if (scene == nullptr) {
+    still.ok = !still.rgba.empty() && still.width > 0 && still.height > 0;
+    return;
+  }
+  paintCollisionOverlayRgba(still.rgba.data(), still.width, still.height, framing,
+                            *scene, hostPlayPoseOverlay(host));
+  still.ok = !still.rgba.empty() && still.width > 0 && still.height > 0;
+  if (still.ok) {
+    still.failure_code.clear();
+  }
+}
+
+CaptureResult captureLiveViewport(MachineAdapterHost& host,
+                                  const CaptureRequest& req) {
+  CaptureResult out{};
+  if (g_runtime_global_context.m_render_system) {
+    g_runtime_global_context.m_render_system->markViewportRenderDirty();
+  }
+  for (int i = 0; i < 3; ++i) {
+    pumpHost(host);
+  }
+  if (!g_runtime_global_context.m_render_system) {
+    return out;
+  }
+  eastl::vector<uint8_t> src;
+  uint32_t src_w = 0;
+  uint32_t src_h = 0;
+  if (!g_runtime_global_context.m_render_system->readbackOffscreenRgba(src, src_w,
+                                                                      src_h)) {
+    return out;
+  }
+  SceneStillExtent extent{};
+  if (!fitRgbaToSceneStill(src.data(), src_w, src_h, k_capture_aspect_w,
+                           k_capture_aspect_h, k_capture_longest_edge, out.rgba,
+                           extent)) {
+    return out;
+  }
+  out.width = extent.width;
+  out.height = extent.height;
+  out.framing = req.framing_override;
+  out.ok = !out.rgba.empty();
+  return out;
 }
 
 bool waitPlayReady(MachineAdapterHost& host, PlaySessionController& play,
@@ -347,20 +470,24 @@ bool dispatchViewportCamera(const EditorSessionLaunch& launch,
 }
 
 bool copyPlayFramePng(PlaySessionController& play, const EditorSessionLaunch& launch,
-                      MachineResult& out) {
-  const PlayIpcFrameRecord& frame = play.lastPlayFrame();
-  if (frame.width == 0 || frame.height == 0 || frame.rgba.empty()) {
-    fail(out, k_request_play_not_playing);
-    return false;
-  }
+                      MachineAdapterHost& host, MachineResult& out) {
+  refreshPlayObservation(host);
   CaptureResult still;
-  still.ok = true;
-  still.width = frame.width;
-  still.height = frame.height;
-  still.rgba.resize(frame.rgba.size());
-  if (!frame.rgba.empty()) {
-    std::memcpy(still.rgba.data(), frame.rgba.data(), frame.rgba.size());
+  const PlayIpcFrameRecord& frame = play.lastPlayFrame();
+  if (frame.width != 0 && frame.height != 0 && !frame.rgba.empty()) {
+    still.ok = true;
+    still.width = frame.width;
+    still.height = frame.height;
+    still.rgba.resize(frame.rgba.size());
+    if (!frame.rgba.empty()) {
+      std::memcpy(still.rgba.data(), frame.rgba.data(), frame.rgba.size());
+    }
   }
+  MeshPreviewCameraFrame framing{};
+  if (host.editor_camera != nullptr) {
+    framing = frameFromEditorCamera(*host.editor_camera);
+  }
+  paintCollisionObservation(host, still, framing);
   return writeStill(still, launch, out);
 }
 
@@ -647,7 +774,8 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
     succeed(out);
     return;
   }
-  if (verb == "ray" || verb == "group" || verb == "collider") {
+  if (verb == "ray" || verb == "shapecast" || verb == "group" ||
+      verb == "collider") {
     SceneInstance* scene = host.live_scene;
     if (scene == nullptr) {
       fail(out, k_request_subject_no_live_document);
@@ -671,6 +799,57 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
       const bool ok = physics->raycast(
           *scene, origin, direction, launch.cli.max_distance, launch.cli.mask,
           launch.cli.collide_with_areas, hit);
+      out.has_physics_hit = true;
+      out.physics_hit = ok && hit.hit;
+      out.physics_is_area = hit.is_area;
+      out.physics_distance = hit.distance;
+      out.physics_point = hit.point;
+      out.physics_normal = hit.normal;
+      for (size_t i = 0; i < hit.groups.size(); ++i) {
+        if (i != 0) {
+          out.physics_groups.append(",");
+        }
+        out.physics_groups.append(hit.groups[i]);
+      }
+      if (out.physics_hit) {
+        succeed(out);
+      } else {
+        fail(out, "physics.miss");
+      }
+      return;
+    }
+    if (verb == "shapecast") {
+      PhysicsManager* physics = host.physics;
+      if (physics == nullptr) {
+        physics = g_runtime_global_context.m_physics_manager.get();
+      }
+      if (physics == nullptr) {
+        fail(out, "physics.unavailable");
+        return;
+      }
+      PhysicsSweepShape sweep = PhysicsSweepShape::Sphere;
+      if (launch.cli.sweep_shape == "box") {
+        sweep = PhysicsSweepShape::Box;
+      } else if (launch.cli.sweep_shape == "capsule") {
+        sweep = PhysicsSweepShape::Capsule;
+      } else if (!launch.cli.sweep_shape.empty() &&
+                 launch.cli.sweep_shape != "sphere") {
+        fail(out, "physics.sweep_shape");
+        return;
+      }
+      Vec3 origin(launch.cli.ox, launch.cli.oy, launch.cli.oz);
+      Vec3 direction(launch.cli.dx, launch.cli.dy, launch.cli.dz);
+      if (glm::length(direction) < 1e-6f) {
+        direction = Vec3(0.0f, 0.0f, -1.0f);
+      }
+      Quat rotation(launch.cli.qw, launch.cli.qx, launch.cli.qy, launch.cli.qz);
+      PhysicsSceneHit hit{};
+      const bool ok = physics->shapecast(
+          *scene, sweep, origin, rotation,
+          Vec3(launch.cli.hx, launch.cli.hy, launch.cli.hz),
+          launch.cli.sphere_radius, launch.cli.capsule_radius,
+          launch.cli.capsule_half_height, direction, launch.cli.max_distance,
+          launch.cli.mask, launch.cli.collide_with_areas, hit);
       out.has_physics_hit = true;
       out.physics_hit = ok && hit.hit;
       out.physics_is_area = hit.is_area;
@@ -817,6 +996,13 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
       applyAuthorshipStatus(status, out);
       if (out.ok) {
         out.has_entity = true;
+        if (subject == AuthorshipSubject::live) {
+          refreshPlayObservation(host);
+          if (const PlayPoseOverlayMap* overlay = hostPlayPoseOverlay(host)) {
+            applyNamedPlayPose(*overlay, out.entity.name, out.entity.position,
+                               out.entity.rotation, out.entity.scale);
+          }
+        }
       }
       return;
     }
@@ -882,6 +1068,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
         fail(out, "play.start_timeout");
         return;
       }
+      waitPlayPoses(host, play, 2000);
       succeed(out);
       return;
     }
@@ -913,6 +1100,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
                       : play.lastRequestFailure().c_str());
         return;
       }
+      waitPlayPoses(host, play, 2000);
       succeed(out);
       return;
     }
@@ -943,6 +1131,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
                           : play.lastRequestFailure().c_str());
             return;
           }
+          waitPlayPoses(host, play, 2000);
         }
         if (!play.waitForPlayFrame(k_play_frame_timeout_ms,
                                    [&host]() { pumpHost(host); })) {
@@ -950,7 +1139,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
           fail(out, "play.frame_timeout");
           return;
         }
-        const bool wrote = copyPlayFramePng(play, launch, out);
+        const bool wrote = copyPlayFramePng(play, launch, host, out);
         play.stop();
         if (!wrote) {
           return;
@@ -968,7 +1157,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
         fail(out, "play.frame_timeout");
         return;
       }
-      copyPlayFramePng(play, launch, out);
+      copyPlayFramePng(play, launch, host, out);
       return;
     }
   }

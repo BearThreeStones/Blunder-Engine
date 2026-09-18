@@ -134,6 +134,7 @@ set(RENDER_SOURCES
     "function/render/overlay/camera_gizmo_math.h"
     "function/render/overlay/overlay_gizmo_pick.h"
     "function/render/overlay/collision_gizmo_geometry.h"
+    "function/render/overlay/collision_overlay_still.h"
     "function/render/overlay/light_gizmo_geometry.h"
     "function/render/overlay/light_gizmo_hit_test.h"
     "function/render/overlay/light_gizmo_overlay.cpp"

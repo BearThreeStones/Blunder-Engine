@@ -59,7 +59,8 @@ EditorSessionLaunch failLaunch(const char* code, const char* message) {
 bool isMachineCliVerb(const char* arg) {
   return eq(arg, "query") || eq(arg, "op") || eq(arg, "diagnose") ||
          eq(arg, "capture") || eq(arg, "play-frame") || eq(arg, "save") ||
-         eq(arg, "ray") || eq(arg, "group") || eq(arg, "collider");
+         eq(arg, "ray") || eq(arg, "shapecast") || eq(arg, "group") ||
+         eq(arg, "collider");
 }
 
 EditorSessionLaunch resolveEditorSessionLaunch(
@@ -252,6 +253,55 @@ EditorSessionLaunch resolveEditorSessionLaunch(
     }
     if (eq(arg, "--collide-with-areas")) {
       cli.collide_with_areas = true;
+      continue;
+    }
+    if (eq(arg, "--shape")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.sweep_shape = value;
+      }
+      continue;
+    }
+    if (eq(arg, "--hx")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.hx = parseFloat(value, 0.5f);
+      }
+      continue;
+    }
+    if (eq(arg, "--hy")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.hy = parseFloat(value, 0.5f);
+      }
+      continue;
+    }
+    if (eq(arg, "--hz")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.hz = parseFloat(value, 0.5f);
+      }
+      continue;
+    }
+    if (eq(arg, "--sphere-radius")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.sphere_radius = parseFloat(value, 0.5f);
+      }
+      continue;
+    }
+    if (eq(arg, "--capsule-radius")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.capsule_radius = parseFloat(value, 0.5f);
+      }
+      continue;
+    }
+    if (eq(arg, "--capsule-half-height")) {
+      eastl::string value;
+      if (takeValue(argc, argv, i, value)) {
+        cli.capsule_half_height = parseFloat(value, 0.5f);
+      }
       continue;
     }
     if (arg[0] == '-') {

@@ -5,10 +5,12 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/physics/physics_manager.h"
+#include "runtime/function/scene/character_controller_component.h"
 #include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/project/machine_adapter.h"
+#include "runtime/function/render/scene_thumbnail/capture.h"
 #include "runtime/project/machine_mcp.h"
 #include "runtime/project/play_session_controller.h"
 
@@ -251,6 +253,8 @@ int main() {
                               "\"tools/call\",\"params\":{\"name\":\"query\"}}"));
     expect_true("mcp tools ray",
                 listed.find("\"name\":\"ray\"") != std::string::npos);
+    expect_true("mcp tools shapecast",
+                listed.find("\"name\":\"shapecast\"") != std::string::npos);
     expect_true("mcp tools group",
                 listed.find("\"name\":\"group\"") != std::string::npos);
     expect_true("mcp tools collider",
@@ -574,6 +578,45 @@ int main() {
                 rayed.find("\\\"hit\\\":true") != std::string::npos);
     expect_true("mcp tools/call closes text content object",
                 rayed.find(R"(}"}],"isError")") != std::string::npos);
+
+    launch.cli.verb = "shapecast";
+    launch.cli.sweep_shape = "sphere";
+    launch.cli.sphere_radius = 0.2f;
+    launch.cli.oz = 5.0f;
+    launch.cli.dz = -1.0f;
+    launch.cli.max_distance = 20.0f;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("shapecast hits floor", result.ok && result.physics_hit);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId floor_id =
+        scene.createEntity("Floor", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    ColliderComponent floor{};
+    floor.box_half_extents = Vec3(8.0f, 8.0f, 0.25f);
+    scene.setCollider(floor_id, floor);
+    CharacterControllerComponent cct{};
+    const EntityId walker_id =
+        scene.createEntity("Walker", Vec3(0, 0, 1.8f), glm::identity<Quat>(),
+                           Vec3(1));
+    scene.setCharacterController(walker_id, cct);
+
+    EditorSessionLaunch session;
+    session.ok = true;
+    session.headless = true;
+    session.adapter = MachineAdapterKind::mcp;
+    session.scene = "assets/Scenes/root.scene.asset";
+    session.cli.verb = "capture";
+    session.cli.subject = "live";
+    MachineAdapterHost host;
+    host.live_scene = &scene;
+    MachineResult result;
+    dispatchMachineAdapter(session, host, result);
+    expect_true("live collider capture without thumbs", result.ok);
+    expect_true("live collider capture has png", !result.png.empty());
+    expect_true("live collider capture not unreadable",
+                result.failure_code != k_request_capture_scene_unreadable);
   }
 
   g_runtime_global_context.m_logger_system.reset();
