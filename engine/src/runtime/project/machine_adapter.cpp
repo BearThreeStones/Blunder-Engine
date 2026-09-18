@@ -184,14 +184,11 @@ CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
       }
     }
     if (g_runtime_global_context.m_render_system) {
-      const auto deadline = std::chrono::steady_clock::now() +
-                            std::chrono::milliseconds(k_live_capture_texture_wait_ms);
-      while (g_runtime_global_context.m_render_system
-                 ->textureUploadInFlightCount() > 0u &&
-             std::chrono::steady_clock::now() < deadline) {
-        pumpHost(host);
-        g_runtime_global_context.m_render_system->requestViewportRedraw();
-      }
+      waitUntilTextureUploadsIdle(
+          static_cast<uint32_t>(k_live_capture_texture_wait_ms), [&host]() {
+            pumpHost(host);
+            g_runtime_global_context.m_render_system->requestViewportRedraw();
+          });
     }
     CaptureResult still;
     uint32_t width = 0;

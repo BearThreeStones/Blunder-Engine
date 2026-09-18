@@ -4,7 +4,32 @@
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/scene_thumbnail/scene_still.h"
 
+#include <chrono>
+
 namespace Blunder {
+
+void waitUntilTextureUploadsIdle(uint32_t timeout_ms,
+                                 const std::function<void()>& pump) {
+  auto* render = g_runtime_global_context.m_render_system.get();
+  if (render == nullptr) {
+    return;
+  }
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeout_ms);
+  while (render->textureUploadInFlightCount() > 0u &&
+         std::chrono::steady_clock::now() < deadline) {
+    if (pump) {
+      pump();
+    }
+    render->requestViewportRedraw();
+  }
+  for (int i = 0; i < 4; ++i) {
+    if (pump) {
+      pump();
+    }
+    render->requestViewportRedraw();
+  }
+}
 
 bool capturePlayProcessFrame(eastl::vector<uint8_t>& out_rgba, uint32_t& out_width,
                              uint32_t& out_height) {
