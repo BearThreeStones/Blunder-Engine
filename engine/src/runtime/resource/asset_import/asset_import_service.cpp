@@ -176,6 +176,13 @@ bool copyGltfExternalResources(FileSystem* file_system,
       return false;
     }
     if (!file_system->exists(source)) {
+      const eastl::string ext = extensionLower(source);
+      if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".webp" ||
+          ext == ".tga" || ext == ".ktx" || ext == ".ktx2" || ext == ".bmp") {
+        LOG_WARN("[AssetImport] optional glTF image sidecar missing {}",
+                 source.generic_string());
+        continue;
+      }
       return false;
     }
     if (pathsReferToSameFile(source, destination) ||
