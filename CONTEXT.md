@@ -1748,6 +1748,26 @@ _Avoid_: Path-only scene identity, treating scenes as non-Assets outside the reg
 Former nested Scene Asset composition (`childScenes` / `SceneChildReference`) that recursively instantiated other Scene Assets under a parent. **Out of product** — removed in an independent change before New / Duplicate / Save As ([ADR 0030](docs/adr/0030-remove-child-scenes.md)). Scene load, Save, Thumbnail, and fingerprint operate on one Scene Asset only. Legacy `.scene.asset` files that still contain a `childScenes` field load by **ignoring** that field with a warning; the next Save omits it. Prefer placing entities in the scene, or later a deliberate prefab/instance model if nesting returns.
 _Avoid_: Keeping childScenes as latent file format; Save merging orphan childScenes; recursive Thumbnail/load of nested scenes; calling mesh/entity parenting a Child Scene; failing open because a legacy childScenes array is present
 
+**SE-world flatten**:
+The offline bake that expands Godot `SE-world` `instance_asset_id` extras (plus nested extras on library glTFs) into **one flat Scene Asset** in the DogWalk Project (`Assets/Scenes/se-world.scene.asset`). Runtime instantiate attaches Mesh Assets by GUID and unique entity names. It does not look up `instance_asset_id` or `asset_index.json`. Missing asset ids skip that instance. **COL-*** get no MeshRenderer this slice. Metres, Z-up. Not Test/Sponza, not nested scenes, not MultiMesh Unique. Collision QC stays on `root.scene.asset`. Decision record: [ADR 0071](docs/adr/0071-se-world-flatten.md).
+_Avoid_: Runtime PackedScene / prefab from extras; overwriting `root.scene.asset`; Sponza `0.008` or the 64 m centimetre heuristic on this forest; drawing COL-* as the ground; C# Find as the generate path; waiting on the collision-bridge branch to *see* the forest
+
+**instance_asset_id**:
+A Godot / blender-studio glTF extras key on `SE-world` (and some library) nodes that names a library asset in `asset_index.json`. Product expansion is the **SE-world flatten** bake. glTF Import and runtime mesh attach ignore this key.
+_Avoid_: Treating extras as a Blunder Scene Asset nested ref; requiring `asset_index.json` beside the Player
+
+**Layout instance**:
+One LI/PR placement from `SE-world.gltf` after flatten (~4795 reachable SE/SL instances, minus skipped missing ids). Each is a scene entity with a shared Mesh Asset GUID. Nested library instances (needles, knots, leaves) sit under that entity and may raise Hierarchy row count above the layout grain.
+_Avoid_: Counting ikea/zoo/vertical_slice in this grain; treating eight empty `SE-world` nodes as the layout; using placeholder boxes as instances
+
+**COL-***:
+Godot collision-mesh nodes (`COL-` prefix) on set glTFs. This flatten slice does not create a MeshRenderer for them. Static trimesh bind is a later knife (scene collision bridge), not this bake.
+_Avoid_: Drawing COL on top of GEO; requiring `active: false` COL placeholders as flatten Done; treating missing COL MeshRenderer as a failed forest
+
+**GEO**:
+Visible set-glTF meshes (ground / path / snow / pond / creek and the same class). Flatten draws these. Not COL-*. Not Sponza courtyard.
+_Avoid_: Using Test Chocomel plane as GEO; scaling GEO as centimetre Sponza
+
 **New Scene Asset**:
 Creating a new starter Scene Asset on disk (new GUID) under the **Browser folder context**, then opening it as the active scene (with the existing dirty-open prompt if the current document is dirty). The starter document is not entity-empty: it includes one default **Main Camera** entity (`isMain: true`, engine CameraComponent defaults) and a second default entity with a **Directional Light** (not the Camera entity), placed above the XY ground with its **Light emit axis** slanted toward that plane so the ground is lit. Play / Scene Thumbnail resolve a camera and have lighting out of the box. Distinct from Duplicate Scene Asset and from Save As. Primary entry: Content Browser Create/New Scene, including a folder/empty-area right-click menu (**New Scene**) on the grid and the folder tree, sharing **Browser folder context** with New Folder. Name: auto `NewScene.scene.asset` in that context folder, with `_1`, `_2`, … on collision — no naming dialog in this slice.
 _Avoid_: Truly entity-empty New as the product default; omitting Main Camera; omitting the default Directional Light; putting the starter Directional Light on the Main Camera entity; identity rotation at the origin for the starter Directional; cloning the current document; treating New as Save As; creating without opening; putting New only on the editor top bar; requiring a name dialog for v1; shipping meshes as part of the New starter; New Scene and New Folder using different parents from the same menu
