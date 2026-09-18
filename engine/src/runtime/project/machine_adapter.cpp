@@ -327,7 +327,7 @@ CaptureResult captureLiveViewport(MachineAdapterHost& host,
                                   const CaptureRequest& req) {
   CaptureResult out{};
   if (g_runtime_global_context.m_render_system) {
-    g_runtime_global_context.m_render_system->markViewportRenderDirty();
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
   }
   for (int i = 0; i < 3; ++i) {
     pumpHost(host);
