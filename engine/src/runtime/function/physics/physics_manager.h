@@ -31,6 +31,7 @@ class PhysicsManager final {
   ~PhysicsManager();
 
   void clear();
+  void unbind(const SceneInstance* scene);
   void rebuild(SceneInstance& scene);
   void syncEntityPose(SceneInstance& scene, EntityId entity_id);
   void tick(float dt, bool play_host, bool paused);

@@ -15,6 +15,28 @@ Fixed defaultGravityZ() {
 
 Fixed absFixed(Fixed value) { return value.raw() < 0 ? -value : value; }
 
+FixedVec3 cross(FixedVec3 a, FixedVec3 b) {
+  return FixedVec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+}
+
+FixedVec3 rotateVec(FixedQuat q, FixedVec3 v) {
+  const FixedVec3 u(q.x, q.y, q.z);
+  const Fixed s = q.w;
+  const Fixed two = Fixed::from_int(2);
+  return u * (two * dot(u, v)) + v * (s * s - dot(u, u)) + cross(u, v) * (two * s);
+}
+
+FixedVec3 capsuleWorldAxis(const PhysicsTransform& pose) {
+  return rotateVec(pose.rotation, FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(1)));
+}
+
+void capsuleEndpoints(const PhysicsTransform& pose, Fixed half_height, FixedVec3& out_a,
+                      FixedVec3& out_b) {
+  const FixedVec3 axis = capsuleWorldAxis(pose);
+  out_a = pose.position + axis * (Fixed::zero() - half_height);
+  out_b = pose.position + axis * half_height;
+}
+
 struct RigidBodyState {
   MotionType motion_type = MotionType::Dynamic;
   PhysicsTransform pose{};
@@ -750,36 +772,82 @@ bool PhysicsWorld::shapecast(PhysicsSweepShape sweep_shape, PhysicsTransform pos
     }
     const ColliderWorldShape world_shape = buildWorldShape(*body, collider);
 
-    Fixed inflated = sphere_radius;
-    if (sweep_shape == PhysicsSweepShape::Box) {
-      inflated = box_half_extents.x;
-      if (box_half_extents.y.raw() > inflated.raw()) {
-        inflated = box_half_extents.y;
-      }
-      if (box_half_extents.z.raw() > inflated.raw()) {
-        inflated = box_half_extents.z;
-      }
-    } else if (sweep_shape == PhysicsSweepShape::Capsule) {
-      inflated = capsule_radius;
-    }
-
-    ColliderWorldShape expanded = world_shape;
-    if (expanded.shape == ColliderShape::Sphere) {
-      expanded.sphere_radius = expanded.sphere_radius + inflated;
-    } else if (expanded.shape == ColliderShape::Capsule) {
-      expanded.capsule_radius = expanded.capsule_radius + inflated;
-    } else if (expanded.shape == ColliderShape::Box) {
-      expanded.box_half_extents = FixedVec3(expanded.box_half_extents.x + inflated,
-                                            expanded.box_half_extents.y + inflated,
-                                            expanded.box_half_extents.z + inflated);
-    }
-
     Fixed t = Fixed::zero();
     FixedVec3 point{};
     FixedVec3 normal{};
-    bool hit = raycastShape(expanded, pose.position, dir, max_distance, t, point, normal);
-    if (!hit && world_shape.shape == ColliderShape::TriangleMesh) {
-      hit = raycastShape(world_shape, pose.position, dir, max_distance, t, point, normal);
+    bool hit = false;
+
+    if (sweep_shape == PhysicsSweepShape::Capsule &&
+        world_shape.shape == ColliderShape::TriangleMesh) {
+      FixedVec3 seg_a{};
+      FixedVec3 seg_b{};
+      capsuleEndpoints(pose, capsule_half_height, seg_a, seg_b);
+      Fixed t_a = Fixed::zero();
+      FixedVec3 point_a{};
+      FixedVec3 normal_a{};
+      const bool hit_a = raycastInflatedTriangleMesh(
+          world_shape, seg_a, dir, max_distance, capsule_radius, t_a, point_a, normal_a);
+      Fixed t_b = Fixed::zero();
+      FixedVec3 point_b{};
+      FixedVec3 normal_b{};
+      const bool hit_b = raycastInflatedTriangleMesh(
+          world_shape, seg_b, dir, max_distance, capsule_radius, t_b, point_b, normal_b);
+      if (hit_a && (!hit_b || t_a.raw() <= t_b.raw())) {
+        hit = true;
+        t = t_a;
+        point = point_a;
+        normal = normal_a;
+      } else if (hit_b) {
+        hit = true;
+        t = t_b;
+        point = point_b;
+        normal = normal_b;
+      }
+    } else {
+      Fixed inflated = sphere_radius;
+      if (sweep_shape == PhysicsSweepShape::Box) {
+        inflated = box_half_extents.x;
+        if (box_half_extents.y.raw() > inflated.raw()) {
+          inflated = box_half_extents.y;
+        }
+        if (box_half_extents.z.raw() > inflated.raw()) {
+          inflated = box_half_extents.z;
+        }
+      } else if (sweep_shape == PhysicsSweepShape::Capsule) {
+        inflated = capsule_radius;
+      }
+
+      ColliderWorldShape expanded = world_shape;
+      if (sweep_shape == PhysicsSweepShape::Capsule) {
+        const FixedVec3 axis = capsuleWorldAxis(pose);
+        if (expanded.shape == ColliderShape::Sphere) {
+          expanded.shape = ColliderShape::Capsule;
+          expanded.capsule_radius = expanded.sphere_radius + capsule_radius;
+          expanded.capsule_half_height = capsule_half_height;
+          expanded.pose.rotation = pose.rotation;
+        } else if (expanded.shape == ColliderShape::Capsule) {
+          expanded.capsule_radius = expanded.capsule_radius + capsule_radius;
+          expanded.capsule_half_height = expanded.capsule_half_height + capsule_half_height;
+        } else if (expanded.shape == ColliderShape::Box) {
+          expanded.box_half_extents = FixedVec3(
+              expanded.box_half_extents.x + inflated + absFixed(axis.x) * capsule_half_height,
+              expanded.box_half_extents.y + inflated + absFixed(axis.y) * capsule_half_height,
+              expanded.box_half_extents.z + inflated + absFixed(axis.z) * capsule_half_height);
+        }
+      } else if (expanded.shape == ColliderShape::Sphere) {
+        expanded.sphere_radius = expanded.sphere_radius + inflated;
+      } else if (expanded.shape == ColliderShape::Capsule) {
+        expanded.capsule_radius = expanded.capsule_radius + inflated;
+      } else if (expanded.shape == ColliderShape::Box) {
+        expanded.box_half_extents = FixedVec3(expanded.box_half_extents.x + inflated,
+                                              expanded.box_half_extents.y + inflated,
+                                              expanded.box_half_extents.z + inflated);
+      }
+
+      hit = raycastShape(expanded, pose.position, dir, max_distance, t, point, normal);
+      if (!hit && world_shape.shape == ColliderShape::TriangleMesh) {
+        hit = raycastShape(world_shape, pose.position, dir, max_distance, t, point, normal);
+      }
     }
     if (!hit) {
       ColliderWorldShape moved = query;
