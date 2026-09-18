@@ -317,6 +317,10 @@ void RenderSystem::initializeBackend(const RenderSystemInitInfo& info) {
 
 void RenderSystem::initialize(const RenderSystemInitInfo& info) {
   initializeBackend(info);
+  if (!m_backend) {
+    LOG_ERROR("[RenderSystem] backend create failed");
+    return;
+  }
 
   if (m_backend->type() == rhi::RenderBackendType::D3D12) {
     initializeD3D12SkeletonPath(info);

@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -7,6 +9,14 @@
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+#include "runtime/core/base/macro.h"
 #include "runtime/engine.h"
 #include "runtime/function/global/engine_host_mode.h"
 #include "runtime/function/global/global_context.h"
@@ -40,6 +50,42 @@ bool isDebugLaunchBuild() {
 #endif
 }
 
+void mcpBreadcrumb(const char* msg) {
+  const char* path = std::getenv("BLUNDER_LOG_FILE");
+  if (path == nullptr || path[0] == '\0' || msg == nullptr) {
+    return;
+  }
+  FILE* file = nullptr;
+#if defined(_MSC_VER)
+  if (fopen_s(&file, path, "a") != 0 || file == nullptr) {
+    return;
+  }
+#else
+  file = std::fopen(path, "a");
+  if (file == nullptr) {
+    return;
+  }
+#endif
+  std::fputs(msg, file);
+  std::fputc('\n', file);
+  std::fflush(file);
+  std::fclose(file);
+}
+
+#ifdef _WIN32
+LONG CALLBACK mcpAccessViolationVeh(PEXCEPTION_POINTERS info) {
+  if (info != nullptr && info->ExceptionRecord != nullptr &&
+      info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
+    char line[192];
+    std::snprintf(line, sizeof(line), "AV at %p code=%lx",
+                  info->ExceptionRecord->ExceptionAddress,
+                  static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode));
+    mcpBreadcrumb(line);
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 Blunder::MachineAdapterHost makeHost() {
   Blunder::MachineAdapterHost host;
   auto& ctx = Blunder::g_runtime_global_context;
@@ -69,14 +115,26 @@ bool ensureMcpEngine() {
     return false;
   }
   g_mcp_engine_attempted = true;
+#ifdef _WIN32
+  (void)AddVectoredExceptionHandler(1, mcpAccessViolationVeh);
+#endif
+  mcpBreadcrumb("ensureMcpEngine begin");
   try {
     g_engine = new Blunder::BlunderEngine();
+    mcpBreadcrumb("startEngine begin");
     g_engine->startEngine(g_launch.project_root, Blunder::EngineHostMode::Editor,
                           {}, g_launch.headless);
+    mcpBreadcrumb("startEngine done");
+    LOG_INFO("[MCP] startEngine done");
     if (Blunder::g_runtime_global_context.isQuitRequested()) {
+      mcpBreadcrumb("startEngine quit requested");
       return false;
     }
+    mcpBreadcrumb("initialize begin");
+    LOG_INFO("[MCP] initialize begin scene='{}'", g_launch.scene.c_str());
     g_engine->initialize(g_launch.scene, false);
+    mcpBreadcrumb("initialize done");
+    LOG_INFO("[MCP] initialize done");
     return true;
   } catch (const std::exception& e) {
     std::cerr << "MCP engine boot failed: " << e.what() << std::endl;
@@ -228,8 +286,16 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
       return SDL_APP_FAILURE;
     }
     const float delta_time = engine->calculateDeltaTime();
+    static bool s_logged_first_tick = false;
+    if (!s_logged_first_tick) {
+      mcpBreadcrumb("tickOneFrame begin");
+    }
     if (!engine->tickOneFrame(delta_time)) {
       return SDL_APP_SUCCESS;
+    }
+    if (!s_logged_first_tick) {
+      mcpBreadcrumb("tickOneFrame done");
+      s_logged_first_tick = true;
     }
     return SDL_APP_CONTINUE;
   } catch (const std::exception& e) {

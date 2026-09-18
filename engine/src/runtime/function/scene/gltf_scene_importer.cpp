@@ -515,8 +515,12 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
   }
 
   eastl::unordered_map<eastl::string, GltfImportDocument> open_documents;
+  eastl::unordered_map<eastl::string, eastl::shared_ptr<MeshAsset>> mesh_by_ref;
   size_t mesh_asset_binds = 0;
   size_t gltf_imports = 0;
+
+  LOG_INFO("[GltfSceneImporter] attachEntityMeshes begin (entities={})",
+           scene.getEntities().size());
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if (definition.mesh_virtual_path.empty()) {
@@ -545,15 +549,25 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     if (meshRefLooksLikeAsset(definition.mesh_virtual_path) ||
         meshRefLooksLikeAsset(mesh_ref)) {
       eastl::shared_ptr<MeshAsset> mesh;
-      if (isValidGuidFormat(definition.mesh_virtual_path) && registry != nullptr) {
+      if (auto cached = mesh_by_ref.find(definition.mesh_virtual_path);
+          cached != mesh_by_ref.end()) {
+        mesh = cached->second;
+      }
+      if (!mesh && isValidGuidFormat(definition.mesh_virtual_path) &&
+          registry != nullptr) {
         mesh = asset_manager->loadMeshByGuid(definition.mesh_virtual_path, *registry);
       }
       if (!mesh) {
         mesh = asset_manager->loadMesh(mesh_ref);
       }
       if (mesh) {
+        mesh_by_ref[definition.mesh_virtual_path] = mesh;
         bindMeshAssetRenderer(instance, entity_id, mesh);
         ++mesh_asset_binds;
+        if (mesh_asset_binds % 1000 == 0) {
+          LOG_INFO("[GltfSceneImporter] Mesh Asset binds so far: {}",
+                   mesh_asset_binds);
+        }
         continue;
       }
       LOG_WARN(
