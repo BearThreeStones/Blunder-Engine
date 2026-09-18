@@ -164,6 +164,12 @@ bool writeStill(const CaptureResult& still, const EditorSessionLaunch& launch,
   return true;
 }
 
+void refreshPlayObservation(MachineAdapterHost& host);
+void paintCollisionObservation(MachineAdapterHost& host, CaptureResult& still,
+                               const MeshPreviewCameraFrame& framing_hint);
+CaptureResult captureLiveViewport(MachineAdapterHost& host,
+                                  const CaptureRequest& req);
+
 CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
   if (host.capture_override) {
     return host.capture_override(req);
@@ -266,7 +272,7 @@ CaptureResult captureLiveViewport(MachineAdapterHost& host,
                                   const CaptureRequest& req) {
   CaptureResult out{};
   if (g_runtime_global_context.m_render_system) {
-    g_runtime_global_context.m_render_system->markViewportRenderDirty();
+    g_runtime_global_context.m_render_system->requestViewportRedraw();
   }
   for (int i = 0; i < 3; ++i) {
     pumpHost(host);
