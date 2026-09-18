@@ -9,6 +9,7 @@
 
 #ifdef _WIN32
 #include <cstdio>
+#include <cwchar>
 #include <windows.h>
 #endif
 
@@ -16,9 +17,47 @@ namespace Blunder {
 namespace {
 
 #ifdef _WIN32
+bool isCommandLineArgBoundary(wchar_t c) {
+  return c == L'\0' || c == L' ' || c == L'\t' || c == L'\r' || c == L'\n' ||
+         c == L'"';
+}
+
 // WIN32_EXECUTABLE editor has no console. Allocate one so stdout_color_sink_mt
 // / cerr still show (do not AttachConsole: VS F5 parent has no visible window).
+// Skip when `--mcp` (or inherited stdio pipes): AllocConsole + freopen steals
+// MCP pipes, initialize writes fail with EINVAL, and PeekNamedPipe on CONIN$
+// never sees JSON-RPC.
+bool commandLineHasMcpFlag() {
+  const wchar_t* cmd = GetCommandLineW();
+  if (cmd == nullptr || cmd[0] == L'\0') {
+    return false;
+  }
+  const wchar_t* found = cmd;
+  while ((found = wcsstr(found, L"--mcp")) != nullptr) {
+    const bool start_ok = found == cmd || isCommandLineArgBoundary(found[-1]);
+    const bool end_ok = isCommandLineArgBoundary(found[5]);
+    if (start_ok && end_ok) {
+      return true;
+    }
+    found += 5;
+  }
+  return false;
+}
+
+bool stdHandleIsPipe(DWORD std_handle) {
+  HANDLE handle = GetStdHandle(std_handle);
+  if (handle == nullptr || handle == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  return GetFileType(handle) == FILE_TYPE_PIPE;
+}
+
 void ensureWin32StdioConsole() {
+  if (commandLineHasMcpFlag() || stdHandleIsPipe(STD_INPUT_HANDLE) ||
+      stdHandleIsPipe(STD_OUTPUT_HANDLE)) {
+    return;
+  }
+
   if (GetConsoleWindow() != nullptr) {
     return;
   }

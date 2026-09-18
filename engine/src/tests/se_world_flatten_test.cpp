@@ -434,6 +434,69 @@ void testColSkipAndExtrasIgnoredOnImport() {
   fs::remove_all(project);
 }
 
+void testAttachMeshAssetsBindWithoutGraphImport() {
+  using namespace Blunder;
+  ensureLogger();
+  const fs::path project = makeTempRoot("attachguid");
+  fs::create_directories(project / "Assets" / "Meshes");
+  fs::create_directories(project / "Resources" / "Models");
+
+  writeTextFile(project / "Resources" / "Models" / "box.gltf",
+                triangleGltf("[{ \"name\": \"GEO-box\", \"mesh\": 0 }]", "box"));
+  writeTextFile(project / "Assets" / "Meshes" / "box.mesh.yaml",
+                "type: Mesh\n"
+                "guid: aaaaaaaa-bbbb-4ccc-8ddd-333333333333\n"
+                "source: resources/Models/box.gltf\n"
+                "import:\n  materials: true\n  animations: false\n  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  Scene scene;
+  SceneEntityDefinition bush;
+  bush.name = "Bush";
+  bush.position = Vec3(1.0f, 0.0f, 0.0f);
+  bush.mesh_virtual_path = "assets/Meshes/box.mesh.yaml";
+  SceneEntityDefinition bush_1;
+  bush_1.name = "Bush_1";
+  bush_1.position = Vec3(2.0f, 0.0f, 0.0f);
+  bush_1.mesh_virtual_path = "assets/Meshes/box.mesh.yaml";
+  scene.getEntities().push_back(eastl::move(bush));
+  scene.getEntities().push_back(eastl::move(bush_1));
+
+  SceneInstance instance;
+  instance.instantiate(scene);
+  GltfSceneImporter::attachEntityMeshes(&manager, instance, scene);
+
+  expect_true("4.2 entity count stays two", instance.getEntityCount() == 2u);
+  expect_true("4.2 no glTF child explosion",
+              !isValid(instance.findEntityByName("GEO-box")) &&
+                  !isValid(instance.findEntityByName("GEO-box_prim0")));
+  const EntityId a = instance.findEntityByName("Bush");
+  const EntityId b = instance.findEntityByName("Bush_1");
+  expect_true("4.2 Bush MeshRenderer",
+              isValid(a) && instance.getMeshRenderer(a) != nullptr &&
+                  instance.getMeshRenderer(a)->mesh);
+  expect_true("4.2 Bush_1 MeshRenderer",
+              isValid(b) && instance.getMeshRenderer(b) != nullptr &&
+                  instance.getMeshRenderer(b)->mesh);
+  expect_true("4.2 shared Mesh Asset pointer",
+              isValid(a) && isValid(b) &&
+                  instance.getMeshRenderer(a)->mesh ==
+                      instance.getMeshRenderer(b)->mesh);
+  expect_true("4.2 two live renderers", liveMeshRendererCount(instance) == 2u);
+
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 void testSeWorldOpenPath() {
   using namespace Blunder;
   expect_true(
@@ -479,6 +542,7 @@ int main() {
   testMetresAndNegativeScale();
   testBakerOmitsColEntities();
   testColSkipAndExtrasIgnoredOnImport();
+  testAttachMeshAssetsBindWithoutGraphImport();
   testSeWorldOpenPath();
   g_runtime_global_context.m_logger_system.reset();
   if (g_failures != 0) {

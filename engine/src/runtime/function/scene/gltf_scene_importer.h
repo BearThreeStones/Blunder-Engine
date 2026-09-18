@@ -42,7 +42,8 @@ class GltfSceneImporter final {
       AssetManager* asset_manager, GltfImportDocument& document,
       SceneInstance& scene_instance, EntityId parent_entity_id);
 
-  /// Attaches each scene entity's mesh descriptor. Unique glTF sources are parsed once.
+  /// Attaches each scene entity's Mesh Asset (GUID / descriptor) as a
+  /// MeshRenderer on that entity. Unique glTF *path* refs still import once.
   static void attachEntityMeshes(AssetManager* asset_manager,
                                  SceneInstance& instance, const Scene& scene);
 };

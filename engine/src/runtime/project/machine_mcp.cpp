@@ -342,8 +342,129 @@ bool mcpStdinHasBytes() {
 #endif
 }
 
+bool mcpStdinClosed() {
+#ifdef _WIN32
+  HANDLE handle = GetStdHandle(STD_INPUT_HANDLE);
+  if (handle == INVALID_HANDLE_VALUE || handle == nullptr) {
+    return true;
+  }
+  DWORD avail = 0;
+  if (PeekNamedPipe(handle, nullptr, 0, nullptr, &avail, nullptr)) {
+    return false;
+  }
+  const DWORD err = GetLastError();
+  return err == ERROR_BROKEN_PIPE || err == ERROR_PIPE_NOT_CONNECTED;
+#else
+  pollfd fd{};
+  fd.fd = STDIN_FILENO;
+  fd.events = POLLIN;
+  const int r = poll(&fd, 1, 0);
+  if (r < 0) {
+    return true;
+  }
+  return (fd.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0;
+#endif
+}
+
+bool mcpMessageNeedsEngine(const std::string& request) {
+  std::string method;
+  if (!jsonExtractString(request, "method", method)) {
+    return false;
+  }
+  return method == "tools/call";
+}
+
+namespace {
+
+#ifdef _WIN32
+bool mcpReadExact(HANDLE handle, void* buf, DWORD n) {
+  auto* bytes = static_cast<char*>(buf);
+  DWORD got_total = 0;
+  while (got_total < n) {
+    DWORD got = 0;
+    if (!ReadFile(handle, bytes + got_total, n - got_total, &got, nullptr) ||
+        got == 0) {
+      return false;
+    }
+    got_total += got;
+  }
+  return true;
+}
+
+bool mcpReadLine(HANDLE handle, std::string& line) {
+  line.clear();
+  char c = 0;
+  DWORD got = 0;
+  while (ReadFile(handle, &c, 1, &got, nullptr) && got == 1) {
+    if (c == '\n') {
+      if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+      }
+      return true;
+    }
+    line.push_back(c);
+  }
+  return !line.empty();
+}
+
+bool mcpWriteAll(HANDLE handle, const char* data, size_t n) {
+  size_t off = 0;
+  while (off < n) {
+    DWORD chunk = static_cast<DWORD>(n - off);
+    DWORD written = 0;
+    if (!WriteFile(handle, data + off, chunk, &written, nullptr) ||
+        written == 0) {
+      return false;
+    }
+    off += written;
+  }
+  return true;
+}
+
+bool lineStartsWith(const std::string& line, const char* prefix) {
+  const size_t n = std::strlen(prefix);
+  return line.size() >= n && std::strncmp(line.c_str(), prefix, n) == 0;
+}
+#endif
+
+}  // namespace
+
 bool mcpReadMessage(std::string& json) {
   json.clear();
+#ifdef _WIN32
+  HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+  if (hin == nullptr || hin == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  std::string line;
+  if (!mcpReadLine(hin, line)) {
+    return false;
+  }
+  const char* k_content_length = "Content-Length:";
+  if (!lineStartsWith(line, k_content_length)) {
+    json = std::move(line);
+    return !json.empty();
+  }
+  int content_length = std::atoi(line.c_str() + std::strlen(k_content_length));
+  while (true) {
+    std::string header;
+    if (!mcpReadLine(hin, header)) {
+      return false;
+    }
+    if (header.empty()) {
+      break;
+    }
+    if (lineStartsWith(header, k_content_length)) {
+      content_length =
+          std::atoi(header.c_str() + std::strlen(k_content_length));
+    }
+  }
+  if (content_length < 0) {
+    return false;
+  }
+  json.resize(static_cast<size_t>(content_length));
+  return mcpReadExact(hin, json.data(), static_cast<DWORD>(content_length));
+#else
   std::string header;
   char line[1024];
   int content_length = -1;
@@ -366,11 +487,27 @@ bool mcpReadMessage(std::string& json) {
       std::fread(json.data(), 1, static_cast<size_t>(content_length), stdin);
   json.resize(got);
   return got == static_cast<size_t>(content_length);
+#endif
 }
 
 void mcpWriteMessage(const std::string& json) {
+#ifdef _WIN32
+  HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (hout == nullptr || hout == INVALID_HANDLE_VALUE) {
+    return;
+  }
+  char header[64];
+  const int header_n = std::snprintf(
+      header, sizeof(header), "Content-Length: %zu\r\n\r\n", json.size());
+  if (header_n > 0) {
+    (void)mcpWriteAll(hout, header, static_cast<size_t>(header_n));
+  }
+  (void)mcpWriteAll(hout, json.data(), json.size());
+  (void)FlushFileBuffers(hout);
+#else
   std::cout << "Content-Length: " << json.size() << "\r\n\r\n" << json
             << std::flush;
+#endif
 }
 
 std::string mcpHandleMessage(const std::string& request,
@@ -430,6 +567,7 @@ std::string mcpHandleMessage(const std::string& request,
     }
     escaped.push_back('"');
     content += escaped;
+    content += "}";
     if (!result.png.empty()) {
       content += ",{\"type\":\"image\",\"mimeType\":\"image/png\",\"data\":\"";
       content += base64Encode(result.png.data(), result.png.size());
