@@ -11,6 +11,8 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <fcntl.h>
+#include <io.h>
 #include <windows.h>
 #else
 #include <poll.h>
@@ -23,30 +25,47 @@ namespace Blunder {
 namespace {
 HANDLE g_mcp_stdin = INVALID_HANDLE_VALUE;
 HANDLE g_mcp_stdout = INVALID_HANDLE_VALUE;
-bool g_mcp_stdio_captured = false;
+
+bool handleIsPipe(HANDLE handle) {
+  return handle != nullptr && handle != INVALID_HANDLE_VALUE &&
+         GetFileType(handle) == FILE_TYPE_PIPE;
+}
+
+void capturePipeHandle(HANDLE candidate, HANDLE& slot) {
+  if (!handleIsPipe(candidate) || handleIsPipe(slot)) {
+    return;
+  }
+  HANDLE duplicated = INVALID_HANDLE_VALUE;
+  if (DuplicateHandle(GetCurrentProcess(), candidate, GetCurrentProcess(),
+                      &duplicated, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+    slot = duplicated;
+  } else {
+    slot = candidate;
+  }
+}
+
+void captureStdStream(DWORD std_id, FILE* stream, HANDLE& slot) {
+  if (handleIsPipe(slot)) {
+    return;
+  }
+  if (stream != nullptr) {
+    capturePipeHandle(reinterpret_cast<HANDLE>(_get_osfhandle(_fileno(stream))),
+                      slot);
+  }
+  capturePipeHandle(GetStdHandle(std_id), slot);
+}
 }  // namespace
 #endif
 
 void mcpCaptureStdioHandles() {
 #ifdef _WIN32
-  if (g_mcp_stdio_captured) {
-    return;
+  captureStdStream(STD_INPUT_HANDLE, stdin, g_mcp_stdin);
+  captureStdStream(STD_OUTPUT_HANDLE, stdout, g_mcp_stdout);
+  if (handleIsPipe(g_mcp_stdin)) {
+    (void)_setmode(_fileno(stdin), _O_BINARY);
   }
-  g_mcp_stdio_captured = true;
-  HANDLE process = GetCurrentProcess();
-  HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
-  HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-  if (in != nullptr && in != INVALID_HANDLE_VALUE) {
-    if (!DuplicateHandle(process, in, process, &g_mcp_stdin, 0, FALSE,
-                         DUPLICATE_SAME_ACCESS)) {
-      g_mcp_stdin = in;
-    }
-  }
-  if (out != nullptr && out != INVALID_HANDLE_VALUE) {
-    if (!DuplicateHandle(process, out, process, &g_mcp_stdout, 0, FALSE,
-                         DUPLICATE_SAME_ACCESS)) {
-      g_mcp_stdout = out;
-    }
+  if (handleIsPipe(g_mcp_stdout)) {
+    (void)_setmode(_fileno(stdout), _O_BINARY);
   }
 #endif
 }
