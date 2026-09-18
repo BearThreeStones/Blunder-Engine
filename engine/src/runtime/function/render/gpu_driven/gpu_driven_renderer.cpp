@@ -9,6 +9,7 @@
 #include <vk_mem_alloc.h>
 
 #include "EASTL/algorithm.h"
+#include "EASTL/sort.h"
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_shading.h"
@@ -1212,20 +1213,38 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
                                       const ForwardFrameState& frame_state,
                                       bool enable_hiz) {
   frame %= k_frames;
+  eastl::vector<GpuDrivenDraw> sorted;
+  const GpuDrivenDraw* pack_draws = draws;
+  uint32_t pack_count = count;
+  if (draws != nullptr && count > 1) {
+    // One batch per unique GpuMesh. Entity order switches meshes every
+    // instance (SE-world ~10k) and hits k_max_mesh_batches=512 after ~575
+    // draws, dropping the forest and overflowing some record paths.
+    sorted.assign(draws, draws + count);
+    eastl::sort(sorted.begin(), sorted.end(),
+                [](const GpuDrivenDraw& a, const GpuDrivenDraw& b) {
+                  if (a.gpu_mesh != b.gpu_mesh) {
+                    return a.gpu_mesh < b.gpu_mesh;
+                  }
+                  return a.entity_id < b.entity_id;
+                });
+    pack_draws = sorted.data();
+    pack_count = static_cast<uint32_t>(sorted.size());
+  }
   uint64_t identity = m_identity_fingerprint;
   uint64_t transforms = m_transform_fingerprint;
   if (!frame_state.scene_static || identity == 0) {
-    identity = hashDrawIdentity(draws, count);
-    transforms = hashDrawTransforms(draws, count);
+    identity = hashDrawIdentity(pack_draws, pack_count);
+    transforms = hashDrawTransforms(pack_draws, pack_count);
   }
   bool packed_identity_changed = false;
   if (identity != m_identity_fingerprint) {
-    packDraws(draws, count, frame_state);
+    packDraws(pack_draws, pack_count, frame_state);
     m_identity_fingerprint = identity;
     m_transform_fingerprint = transforms;
     packed_identity_changed = true;
   } else if (transforms != m_transform_fingerprint) {
-    updateInstanceTransforms(draws, count);
+    updateInstanceTransforms(pack_draws, pack_count);
     m_transform_fingerprint = transforms;
   }
   if (m_instance_count == 0) {
@@ -1482,7 +1501,8 @@ void GpuDrivenRenderer::recordIndirectBatches(
       break;
     }
     if (batch.mesh == nullptr || batch.meshlet_count == 0 ||
-        batch.mesh->getMeshletIndexBuffer() == nullptr) {
+        batch.mesh->getMeshletIndexBuffer() == nullptr ||
+        batch.mesh->getVertexBuffer() == nullptr) {
       ++batch_i;
       continue;
     }
@@ -1524,11 +1544,15 @@ void GpuDrivenRenderer::recordOpaqueIndirect(VkCommandBuffer cmd, uint32_t frame
     VkDescriptorSet table = m_context->bindlessTextureTable().descriptorSet();
     uint32_t batch_i = 0;
     for (const MeshBatch& batch : m_batches) {
-      if (batch_i >= k_max_mesh_batches || batch.mesh == nullptr ||
+      if (batch_i >= k_max_mesh_batches) {
+        break;
+      }
+      if (batch.mesh == nullptr ||
           batch.mesh->getMeshletVertexBuffer() == nullptr ||
           batch.mesh->getMeshletTriangleBuffer() == nullptr ||
           batch.mesh->getVertexBuffer() == nullptr) {
-        break;
+        ++batch_i;
+        continue;
       }
       VkDescriptorSet set = m_mesh_sets[frame][late ? 1u : 0u][batch_i];
       VkDescriptorBufferInfo ubo{};
