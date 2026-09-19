@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cmath>
 
 #include "runtime/function/scene/gltf_scene_importer.h"
@@ -22,6 +23,7 @@
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/gltf_node_extras.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -232,6 +234,15 @@ GltfSceneImporter::ImportResult importGltfDocument(
     }
 
     const eastl::string node_name = gltfNodeDisplayName(node);
+    // Grill locked: omit COL-* (no MeshRenderer, no inactive placeholder entity).
+    if (gltfNodeNameStartsWith(node, "COL-")) {
+      return;
+    }
+    eastl::string instance_asset_id;
+    // Runtime attach/import is not the flatten bake: ignore instance_asset_id.
+    if (gltfNodeInstanceAssetId(node, instance_asset_id)) {
+      return;
+    }
     Vec3 local_position{};
     Quat local_rotation = glm::identity<Quat>();
     Vec3 local_scale(1.0f);
@@ -453,6 +464,50 @@ GltfSceneImporter::ImportResult GltfSceneImporter::importUnderOpenDocument(
   return result;
 }
 
+namespace {
+
+bool endsWithInsensitive(const eastl::string& value, const char* suffix) {
+  const size_t suffix_length = std::strlen(suffix);
+  if (value.size() < suffix_length) {
+    return false;
+  }
+  for (size_t i = 0; i < suffix_length; ++i) {
+    char a = value[value.size() - suffix_length + i];
+    char b = suffix[i];
+    if (a >= 'A' && a <= 'Z') {
+      a = static_cast<char>(a - 'A' + 'a');
+    }
+    if (b >= 'A' && b <= 'Z') {
+      b = static_cast<char>(b - 'A' + 'a');
+    }
+    if (a != b) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool meshRefLooksLikeAsset(const eastl::string& mesh_ref) {
+  return isValidGuidFormat(mesh_ref) ||
+         endsWithInsensitive(mesh_ref, ".mesh.yaml") ||
+         endsWithInsensitive(mesh_ref, ".mesh.asset");
+}
+
+void bindMeshAssetRenderer(SceneInstance& instance, EntityId entity_id,
+                           const eastl::shared_ptr<MeshAsset>& mesh) {
+  MeshRendererComponent renderer{};
+  renderer.mesh = mesh;
+  renderer.material = mesh->getMaterialAsset();
+  if (renderer.material) {
+    renderer.alpha_mode = renderer.material->getAlphaMode();
+    renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
+    renderer.double_sided = renderer.material->isDoubleSided();
+  }
+  instance.setMeshRenderer(entity_id, eastl::move(renderer));
+}
+
+}  // namespace
+
 void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
                                            SceneInstance& instance,
                                            const Scene& scene) {
@@ -461,6 +516,13 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
   }
 
   eastl::unordered_map<eastl::string, GltfImportDocument> open_documents;
+  eastl::unordered_map<eastl::string, eastl::shared_ptr<MeshAsset>> mesh_by_ref;
+  size_t mesh_asset_binds = 0;
+  size_t gltf_imports = 0;
+
+  LOG_INFO("[GltfSceneImporter] attachEntityMeshes begin (entities={})",
+           scene.getEntities().size());
+  const auto attach_begin = std::chrono::steady_clock::now();
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if (definition.mesh_virtual_path.empty()) {
@@ -474,14 +536,49 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
       continue;
     }
 
+    if (auto cached = mesh_by_ref.find(definition.mesh_virtual_path);
+        cached != mesh_by_ref.end()) {
+      bindMeshAssetRenderer(instance, entity_id, cached->second);
+      ++mesh_asset_binds;
+      continue;
+    }
+
     eastl::string mesh_ref = definition.mesh_virtual_path;
-    if (isValidGuidFormat(mesh_ref) &&
-        g_runtime_global_context.m_asset_registry) {
-      const eastl::string path = asset_manager->resolveGuidPath(
-          mesh_ref, *g_runtime_global_context.m_asset_registry);
+    AssetRegistry* registry = g_runtime_global_context.m_asset_registry.get();
+    if (isValidGuidFormat(mesh_ref) && registry != nullptr) {
+      const eastl::string path = asset_manager->resolveGuidPath(mesh_ref, *registry);
       if (!path.empty()) {
         mesh_ref = path;
       }
+    }
+
+    // Flattened Scene Assets stamp a Mesh Asset GUID on each instance entity.
+    // Re-importing the source glTF graph under every copy walks/ticks the
+    // whole document ~N times (SE-world: ~10k) and never leaves AppInit.
+    if (meshRefLooksLikeAsset(definition.mesh_virtual_path) ||
+        meshRefLooksLikeAsset(mesh_ref)) {
+      eastl::shared_ptr<MeshAsset> mesh;
+      if (isValidGuidFormat(definition.mesh_virtual_path) &&
+          registry != nullptr) {
+        mesh = asset_manager->loadMeshByGuid(definition.mesh_virtual_path, *registry);
+      }
+      if (!mesh) {
+        mesh = asset_manager->loadMesh(mesh_ref);
+      }
+      if (mesh) {
+        mesh_by_ref[definition.mesh_virtual_path] = mesh;
+        bindMeshAssetRenderer(instance, entity_id, mesh);
+        ++mesh_asset_binds;
+        if (mesh_asset_binds % 1000 == 0) {
+          LOG_INFO("[GltfSceneImporter] Mesh Asset binds so far: {}",
+                   mesh_asset_binds);
+        }
+        continue;
+      }
+      LOG_WARN(
+          "[GltfSceneImporter] Mesh Asset bind failed for '{}' ({}); "
+          "falling back to glTF import",
+          definition.name.c_str(), mesh_ref.c_str());
     }
 
     eastl::string gltf_virtual_path;
@@ -510,15 +607,24 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
                 import_result.error_message.c_str());
       continue;
     }
-
-    LOG_INFO("[GltfSceneImporter] attached {} mesh primitives to entity '{}' in '{}'",
-             import_result.mesh_primitive_count, definition.name.c_str(),
-             instance.getSourcePath().c_str());
+    ++gltf_imports;
   }
 
   for (auto& entry : open_documents) {
     asset_manager->closeGltfImportDocument(entry.second);
   }
+
+  const size_t hydrated = asset_manager->tickDeferredGltfMaterials(~0u);
+  instance.rebindMeshRendererMaterialsFromMeshes();
+
+  LOG_INFO(
+      "[GltfSceneImporter] attached MeshRenderers in '{}' (mesh assets={}, "
+      "gltf imports={}, unique={}, deferred_hydrate={}, {:.1f}ms)",
+      instance.getSourcePath().c_str(), mesh_asset_binds, gltf_imports,
+      mesh_by_ref.size(), hydrated,
+      std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - attach_begin)
+          .count());
 }
 
 }  // namespace Blunder

@@ -150,6 +150,13 @@ std::filesystem::path cookedMeshMetaPath(FileSystem& file_system,
   return path;
 }
 
+std::filesystem::path cookedMeshMaterialPath(FileSystem& file_system,
+                                             const eastl::string& guid) {
+  fs::path path = cookedRoot(file_system);
+  path /= eastl::string((guid + ".meshmat.yaml").c_str()).c_str();
+  return path;
+}
+
 std::filesystem::path cookedTexturePath(FileSystem& file_system,
                                         const eastl::string& guid) {
   fs::path path = cookedRoot(file_system);

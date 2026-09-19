@@ -668,11 +668,6 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
         m_thumbnail_generator->probeThumbnailStatus(entry);
     entry.thumbnail_status = thumb.status;
     entry.thumbnail_cache_path = thumb.cache_path;
-    if (entry.thumbnail_status != ThumbnailStatus::CacheHit &&
-        entry.thumbnail_status != ThumbnailStatus::Skipped) {
-      m_thumbnail_generator->enqueueThumbnail(entry,
-                                              ThumbnailQueuePriority::Background);
-    }
     switch (entry.thumbnail_status) {
       case ThumbnailStatus::CacheHit:
         ++stats.thumbnails_cached;

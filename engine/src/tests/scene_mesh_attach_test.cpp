@@ -188,12 +188,20 @@ int main() {
                      }
                      return named;
                    }());
-    expect_true("each shared-mesh entity has primitive renderers",
-                liveMeshRendererCount(*instance) >=
-                    static_cast<size_t>(k_shared_mesh_entity_count) * 2u);
+    expect_true("each mesh.yaml entity has a MeshRenderer",
+                liveMeshRendererCount(*instance) ==
+                    static_cast<size_t>(k_shared_mesh_entity_count));
+    const EntityId box0 = instance->findEntityByName("Box0");
+    const EntityId box1 = instance->findEntityByName("Box1");
+    expect_true("shared Mesh Asset pointer",
+                isValid(box0) && isValid(box1) &&
+                    instance->getMeshRenderer(box0) &&
+                    instance->getMeshRenderer(box1) &&
+                    instance->getMeshRenderer(box0)->mesh ==
+                        instance->getMeshRenderer(box1)->mesh);
   }
-  expect_eq_size("shared mesh glTF parsed once on scene open",
-                 manager.gltfDocumentOpenCount(), 1u);
+  expect_eq_size("mesh.yaml bind skips glTF graph import",
+                 manager.gltfDocumentOpenCount(), 0u);
   expect_true("shared-mesh scene open stays under 500 ms", elapsed_ms < 500);
 
   writeTextFile(project / "Assets" / "Scenes" / "reused_children.scene.asset",
@@ -224,9 +232,10 @@ int main() {
                    reused->getEntityCount(), 4u);
     const EntityId prim0 = reused->findEntityByName("Cube_prim0");
     expect_true("saved primitive entity kept", isValid(prim0));
-    expect_true("saved primitive received renderer",
-                reused->getMeshRenderer(prim0) != nullptr &&
-                    reused->getMeshRenderer(prim0)->mesh);
+    const EntityId box0 = reused->findEntityByName("Box0");
+    expect_true("mesh.yaml entity received MeshRenderer",
+                isValid(box0) && reused->getMeshRenderer(box0) != nullptr &&
+                    reused->getMeshRenderer(box0)->mesh);
   }
 
   reused_system.shutdown();

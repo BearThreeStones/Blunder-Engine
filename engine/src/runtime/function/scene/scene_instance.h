@@ -94,6 +94,9 @@ class SceneInstance final : public IEntityStore {
 
   void setMeshRenderer(EntityId id, MeshRendererComponent renderer);
   const MeshRendererComponent* getMeshRenderer(EntityId id) const;
+  /// Copy MeshAsset materials onto MeshRenderers after deferred hydrate.
+  /// Skips renderers that already hold a textured override.
+  void rebindMeshRendererMaterialsFromMeshes();
   template <typename Fn>
   void forEachMeshRenderer(const Fn& fn) const {
     for (const auto& entry : m_mesh_renderers) {

@@ -28,7 +28,7 @@ namespace {
 constexpr uint32_t k_cpu_pending = 0;
 constexpr uint32_t k_cpu_done = 1;
 constexpr uint32_t k_cpu_failed = 2;
-constexpr VkDeviceSize k_staging_byte_cap = 64ull * 1024ull * 1024ull;
+constexpr VkDeviceSize k_staging_byte_cap = 256ull * 1024ull * 1024ull;
 constexpr VkDeviceSize k_min_staging_capacity = 64ull * 1024ull;
 
 struct RequestRecord {
@@ -324,6 +324,9 @@ void pollCpu(TextureLoaderImpl& impl) {
       continue;
     }
     if (state == k_cpu_failed || record->request_generation != impl.generation) {
+      if (state == k_cpu_failed) {
+        LOG_ERROR("[TextureLoader] CPU decode failed for {}", key.c_str());
+      }
       drop.push_back(key);
       continue;
     }

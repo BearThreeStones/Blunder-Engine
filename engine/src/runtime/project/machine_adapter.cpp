@@ -1,8 +1,12 @@
 #include "runtime/project/machine_adapter.h"
 
+#include "runtime/core/base/macro.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/render/render_system.h"
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
+#include "runtime/project/play_frame.h"
 #include "runtime/project/play_session_controller.h"
 #include "runtime/project/play_step.h"
 
@@ -16,6 +20,15 @@
 namespace Blunder {
 
 namespace {
+
+// SE-world (~10k entities) player AppInit + first GPU-driven tick exceeds the
+// old 15s Play ready wait. Mesh-preview stills also cap at 256 forward draws.
+constexpr int k_play_start_timeout_ms = 180000;
+constexpr int k_play_frame_timeout_ms = 120000;
+constexpr int k_live_capture_warmup_ticks = 24;
+constexpr int k_live_capture_texture_wait_ms = 20000;
+
+void pumpHost(MachineAdapterHost& host);
 
 struct PngWriteBuffer {
   eastl::vector<uint8_t> bytes;
@@ -154,6 +167,44 @@ bool writeStill(const CaptureResult& still, const EditorSessionLaunch& launch,
 CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
   if (host.capture_override) {
     return host.capture_override(req);
+  }
+  if (req.subject == CaptureSubject::live && req.live_scene != nullptr) {
+    if (req.override_framing && req.framing_override.ok &&
+        host.editor_camera != nullptr) {
+      host.editor_camera->snapLookAt(req.framing_override.eye,
+                                    req.framing_override.target);
+    }
+    if (g_runtime_global_context.m_render_system) {
+      g_runtime_global_context.m_render_system->requestViewportRedraw();
+    }
+    for (int i = 0; i < k_live_capture_warmup_ticks; ++i) {
+      pumpHost(host);
+      if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->requestViewportRedraw();
+      }
+    }
+    if (g_runtime_global_context.m_render_system) {
+      waitUntilTextureUploadsIdle(
+          static_cast<uint32_t>(k_live_capture_texture_wait_ms), [&host]() {
+            pumpHost(host);
+            g_runtime_global_context.m_render_system->requestViewportRedraw();
+          });
+    }
+    CaptureResult still;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    if (capturePlayProcessFrame(still.rgba, width, height) && width > 0 &&
+        height > 0 && !still.rgba.empty()) {
+      still.ok = true;
+      still.width = width;
+      still.height = height;
+      still.framing = req.framing_override;
+      LOG_INFO("[MCP] live capture GPU-driven viewport {}x{} ({} bytes)", width,
+               height, still.rgba.size());
+      return still;
+    }
+    LOG_WARN(
+        "[MCP] live viewport readback failed; falling back to mesh-preview still");
   }
   if (host.thumbs == nullptr) {
     CaptureResult failed;
@@ -615,7 +666,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
                       : play.lastRequestFailure().c_str());
         return;
       }
-      if (!waitPlayReady(host, play, 15000)) {
+      if (!waitPlayReady(host, play, k_play_start_timeout_ms)) {
         fail(out, "play.start_timeout");
         return;
       }
@@ -667,7 +718,7 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
                                                             .c_str());
           return;
         }
-        if (!waitPlayReady(host, play, 15000)) {
+        if (!waitPlayReady(host, play, k_play_start_timeout_ms)) {
           play.stop();
           fail(out, "play.start_timeout");
           return;
@@ -681,7 +732,8 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
             return;
           }
         }
-        if (!play.waitForPlayFrame(5000, [&host]() { pumpHost(host); })) {
+        if (!play.waitForPlayFrame(k_play_frame_timeout_ms,
+                                   [&host]() { pumpHost(host); })) {
           play.stop();
           fail(out, "play.frame_timeout");
           return;
@@ -699,7 +751,8 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
         fail(out, k_request_play_not_playing);
         return;
       }
-      if (!play.waitForPlayFrame(5000, [&host]() { pumpHost(host); })) {
+      if (!play.waitForPlayFrame(k_play_frame_timeout_ms,
+                                 [&host]() { pumpHost(host); })) {
         fail(out, "play.frame_timeout");
         return;
       }

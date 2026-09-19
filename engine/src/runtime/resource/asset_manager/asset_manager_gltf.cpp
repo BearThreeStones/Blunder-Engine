@@ -282,7 +282,9 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
         }
         const eastl::string texture_virtual_path = buildResourceVirtualPath(
             m_file_system->getResourcesRoot(), absolute, image->uri);
-        return loadTexture2D(texture_virtual_path);
+        // Stub only: TextureLoader decodes/uploads off the attach path.
+        // loadTexture2D here sync-decoded every PBR map (~48s on SE-world).
+        return bindTexture2D(texture_virtual_path);
       };
 
   if (material.has_pbr_specular_glossiness) {
@@ -317,8 +319,13 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   occlusion_texture_asset = loadGltfImageTexture(material.occlusion_texture.texture);
 
   if (alpha_mode == cgltf_alpha_mode_blend && base_color_factor.a >= 0.999f) {
-    // Blender often tags solid meshes as BLEND; that skips depth write.
-    alpha_mode = cgltf_alpha_mode_opaque;
+    // Blender tags solid meshes as BLEND (skips depth write). Foliage cards
+    // keep a base-color texture with alpha — MASK punches the cutout.
+    if (base_color_texture_asset) {
+      alpha_mode = cgltf_alpha_mode_mask;
+    } else {
+      alpha_mode = cgltf_alpha_mode_opaque;
+    }
   }
 
   if (base_color_texture_asset) {

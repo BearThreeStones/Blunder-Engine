@@ -119,6 +119,7 @@ class RenderSystem final {
   void onEvent(Event& event);
 
   VulkanTexture* ensureTextureUploaded(const Texture2DAsset* texture_asset);
+  uint32_t textureUploadInFlightCount() const;
   /// Scene drop: in-flight Texture Loader completions must not write dropped images.
   void dropInFlightTextures();
   GpuMesh* getOrUploadGpuMesh(const MeshAsset* mesh_asset);

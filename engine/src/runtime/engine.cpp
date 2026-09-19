@@ -77,8 +77,10 @@ void focusEditorCameraOnActiveScene() {
 }
 
 void activateEditorScene(const eastl::string& virtual_path) {
+  LOG_INFO("[BlunderEngine] activateEditorScene '{}'", virtual_path.c_str());
   if (g_runtime_global_context.m_editor_scene_edit) {
     if (!g_runtime_global_context.m_editor_scene_edit->openScene(virtual_path)) {
+      LOG_ERROR("[BlunderEngine] openScene failed for '{}'", virtual_path.c_str());
       return;
     }
   } else if (!g_runtime_global_context.m_scene_system || virtual_path.empty()) {
@@ -95,14 +97,17 @@ void activateEditorScene(const eastl::string& virtual_path) {
 
   if (g_runtime_global_context.m_render_system &&
       g_runtime_global_context.m_scene_system) {
+    LOG_INFO("[BlunderEngine] syncSceneToRender begin");
     syncSceneToRender(g_runtime_global_context.m_render_system.get(),
                       g_runtime_global_context.m_scene_system->getActiveInstance());
+    LOG_INFO("[BlunderEngine] syncSceneToRender done");
   }
   if (g_runtime_global_context.m_slint_system) {
     g_runtime_global_context.m_slint_system->refreshEditorScenePanels();
   }
 
   focusEditorCameraOnActiveScene();
+  LOG_INFO("[BlunderEngine] activateEditorScene done");
 }
 
 }  // namespace
@@ -308,24 +313,15 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
   }
 
   if (g_runtime_global_context.m_content_browser &&
-      g_runtime_global_context.hostMode() != EngineHostMode::Player) {
-    const ContentBrowserRefreshStats stats =
-        g_runtime_global_context.m_content_browser->refresh();
-    LOG_INFO(
-        "[BlunderEngine] content index: {} entries (thumbnails: {} generated, "
-        "{} cached, {} skipped, {} failed)",
-        stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
-        stats.thumbnails_skipped, stats.thumbnails_failed);
-
-    // Mark dirty so UiHost::tickEditorPanels re-pushes models even if the
-    // immediate sync below runs before Slint finishes first layout.
-    if (g_runtime_global_context.m_ui_host) {
-      g_runtime_global_context.m_ui_host->panels().markDirty(
-          EditorPanelDirty::content_browser);
-    }
-    if (g_runtime_global_context.m_slint_system) {
-      g_runtime_global_context.m_slint_system->syncContentBrowser();
-    }
+      g_runtime_global_context.hostMode() != EngineHostMode::Player &&
+      !g_runtime_global_context.isHeadless()) {
+    // Index + thumbs after the Live scene is up. Scanning Resources/ and
+    // enqueueing every missing glTF/scene thumb used to stall SE-world open
+    // (renderSceneAsset instantiates the forest; mesh thumbs parse glTFs).
+    m_content_browser_refresh_pending = true;
+    LOG_INFO("[BlunderEngine] defer content-browser refresh until first tick");
+  } else if (g_runtime_global_context.isHeadless()) {
+    LOG_INFO("[BlunderEngine] skip content-browser refresh (headless)");
   }
 
   if (g_runtime_global_context.m_scene_system) {
@@ -349,8 +345,14 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
           env != nullptr && env[0] != '\0') {
         env_startup = env;
       }
+      eastl::string se_world;
+      if (g_runtime_global_context.m_file_system) {
+        se_world = projectSeWorldScenePathIfExists(
+            *g_runtime_global_context.m_file_system);
+      }
       scene_path = resolveWindowedLiveScenePath(
-          {}, remembered_guid, guid_path, env_startup, k_default_startup_scene_path);
+          {}, remembered_guid, guid_path, env_startup, k_default_startup_scene_path,
+          se_world);
     } else if (scene_path.empty() && use_startup_scene_when_empty) {
       scene_path = resolveStartupScenePath();
     }
@@ -436,14 +438,48 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   s_was_defer_heavy = defer_heavy;
 
   if (!defer_heavy) {
-    if (g_runtime_global_context.m_content_browser &&
+    const bool tick_content_browser = !g_runtime_global_context.isHeadless();
+    if (tick_content_browser && m_content_browser_refresh_pending &&
+        g_runtime_global_context.m_content_browser) {
+      m_content_browser_refresh_pending = false;
+      const ContentBrowserRefreshStats stats =
+          g_runtime_global_context.m_content_browser->refresh();
+      LOG_INFO(
+          "[BlunderEngine] content index: {} entries (thumbnails: {} generated, "
+          "{} cached, {} skipped, {} failed)",
+          stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
+          stats.thumbnails_skipped, stats.thumbnails_failed);
+      if (g_runtime_global_context.m_ui_host) {
+        g_runtime_global_context.m_ui_host->panels().markDirty(
+            EditorPanelDirty::content_browser);
+      }
+      if (slint_system) {
+        slint_system->syncContentBrowser();
+      }
+    }
+    if (g_runtime_global_context.m_asset_manager) {
+      // 2/frame * ~10k leftover hydrates is minutes of checker. Sidecar bind
+      // is cheap; drain the queue in one tick after first present.
+      const size_t hydrated =
+          g_runtime_global_context.m_asset_manager->tickDeferredGltfMaterials(
+              ~0u);
+      if (hydrated > 0) {
+        if (SceneSystem* scenes = g_runtime_global_context.m_scene_system.get()) {
+          if (SceneInstance* active = scenes->getActiveInstance()) {
+            active->rebindMeshRendererMaterialsFromMeshes();
+          }
+        }
+      }
+    }
+    if (tick_content_browser && g_runtime_global_context.m_content_browser &&
         g_runtime_global_context.m_content_browser->tickFileWatch()) {
       g_runtime_global_context.m_content_browser->refresh();
       if (slint_system) {
         slint_system->syncContentBrowser();
       }
     }
-    if (g_runtime_global_context.m_content_browser && slint_system &&
+    if (tick_content_browser && g_runtime_global_context.m_content_browser &&
+        slint_system &&
         g_runtime_global_context.m_content_browser
             ->hasPendingDetectionPrompt()) {
       const int count = static_cast<int>(
@@ -452,7 +488,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       slint_system->showDetectionReimportDialog(count);
     }
 
-    if (g_runtime_global_context.m_content_browser &&
+    if (tick_content_browser && g_runtime_global_context.m_content_browser &&
         g_runtime_global_context.m_content_browser->tickThumbnailQueue()) {
       if (slint_system) {
         slint_system->syncContentBrowser();

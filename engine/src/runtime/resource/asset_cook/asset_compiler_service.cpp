@@ -211,6 +211,7 @@ void AssetCompilerService::markFinalStale(const eastl::string& guid) {
 
   removeIfExists(*m_file_system, cookedMeshPath(*m_file_system, guid));
   removeIfExists(*m_file_system, cookedMeshMetaPath(*m_file_system, guid));
+  removeIfExists(*m_file_system, cookedMeshMaterialPath(*m_file_system, guid));
   removeIfExists(*m_file_system, cookedTexturePath(*m_file_system, guid));
   removeIfExists(*m_file_system, cookedTextureMetaPath(*m_file_system, guid));
 }
@@ -340,6 +341,7 @@ bool AssetCompilerService::cookMeshDescriptor(
   m_asset_registry->registerAsset(descriptor.guid, descriptor_virtual_path);
   LOG_INFO("[AssetCompiler] cooked mesh {} -> {}", descriptor_virtual_path.c_str(),
            cooked_path.generic_string());
+  (void)m_asset_manager->hydrateMeshGltfMaterial(mesh);
   return true;
 }
 

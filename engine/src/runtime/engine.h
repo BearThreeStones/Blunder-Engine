@@ -81,6 +81,7 @@ class BlunderEngine {
 
   bool m_pending_finalize_window_resize{false};
   bool m_skip_renderer_after_defer{false};
+  bool m_content_browser_refresh_pending{false};
 };
 
 }  // namespace Blunder

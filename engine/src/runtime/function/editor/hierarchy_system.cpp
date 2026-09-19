@@ -36,10 +36,15 @@ void HierarchySystem::rebuildVisibleTree(SceneInstance* scene_instance) {
   });
 
   if (m_expanded_entity_ids.empty()) {
-    for (EntityId root : roots) {
-      const auto children = children_by_parent.find(root);
-      if (children != children_by_parent.end() && !children->second.empty()) {
-        m_expanded_entity_ids.insert(root);
+    constexpr size_t k_max_auto_expand_entities = 256;
+    constexpr size_t k_max_auto_expand_children = 24;
+    if (scene_instance->getEntityCount() <= k_max_auto_expand_entities) {
+      for (EntityId root : roots) {
+        const auto children = children_by_parent.find(root);
+        if (children != children_by_parent.end() && !children->second.empty() &&
+            children->second.size() <= k_max_auto_expand_children) {
+          m_expanded_entity_ids.insert(root);
+        }
       }
     }
   }
