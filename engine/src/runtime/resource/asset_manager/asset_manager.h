@@ -170,6 +170,7 @@ class AssetManager final {
   /// (or hydrate once and write that sidecar) so the first draw is not checker.
   void queueDeferredGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
   size_t tickDeferredGltfMaterials(uint32_t max_items);
+  size_t pendingGltfMaterialCount() const { return m_pending_gltf_materials.size(); }
   bool hydrateMeshGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
 
   eastl::shared_ptr<Texture2DAsset> bindTexture2D(

@@ -3,6 +3,8 @@
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_scene_importer.h"
 #include "runtime/function/scene/mesh_renderer_component.h"
+#include "runtime/resource/asset/material_asset.h"
+#include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -589,6 +591,27 @@ void testDogWalkSeWorldOpenTiming() {
               manager.gltfDocumentOpenCount() <= 400u);
   expect_true("se-world open under 10s", open_ms < 10000.0);
 
+  size_t textured_renderers = 0;
+  if (instance) {
+    instance->forEachMeshRenderer(
+        [&](EntityId, const MeshRendererComponent& renderer) {
+          const eastl::shared_ptr<MaterialAsset> material =
+              renderer.material
+                  ? renderer.material
+                  : (renderer.mesh ? renderer.mesh->getMaterialAsset() : nullptr);
+          if (material && material->hasBaseColorTexture()) {
+            ++textured_renderers;
+          }
+        });
+  }
+  std::fprintf(stdout, "DogWalk se-world textured renderers: %zu / %zu\n",
+               textured_renderers,
+               instance ? liveMeshRendererCount(*instance) : 0u);
+  expect_true("se-world trees/ground have albedo after attach",
+              instance &&
+                  textured_renderers * 10u >
+                      liveMeshRendererCount(*instance) * 9u);
+
   auto expectAlbedo = [&](const char* label, const char* virtual_path) {
     const eastl::shared_ptr<MeshAsset> mesh =
         manager.loadMesh(eastl::string(virtual_path));
@@ -614,9 +637,13 @@ void testDogWalkSeWorldOpenTiming() {
   expect_true("pine sidecar reload skips glTF",
               manager.gltfDocumentOpenCount() == opens_after_bind);
 
-  const size_t hydrated = manager.tickDeferredGltfMaterials(8u);
-  std::fprintf(stdout, "DogWalk se-world deferred materials (8): %zu\n",
-               hydrated);
+  const size_t hydrated = manager.tickDeferredGltfMaterials(~0u);
+  std::fprintf(stdout,
+               "DogWalk se-world deferred materials leftover=%zu hydrated=%zu\n",
+               manager.pendingGltfMaterialCount(), hydrated);
+  expect_true("se-world hydrates during attach, not 2/frame",
+              manager.pendingGltfMaterialCount() == 0u);
+  expect_true("se-world deferred drain empty", hydrated == 0u);
 
   scenes.shutdown();
   manager.shutdown();

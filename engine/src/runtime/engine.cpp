@@ -458,7 +458,18 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
       }
     }
     if (g_runtime_global_context.m_asset_manager) {
-      g_runtime_global_context.m_asset_manager->tickDeferredGltfMaterials(2u);
+      // 2/frame * ~10k leftover hydrates is minutes of checker. Sidecar bind
+      // is cheap; drain the queue in one tick after first present.
+      const size_t hydrated =
+          g_runtime_global_context.m_asset_manager->tickDeferredGltfMaterials(
+              ~0u);
+      if (hydrated > 0) {
+        if (SceneSystem* scenes = g_runtime_global_context.m_scene_system.get()) {
+          if (SceneInstance* active = scenes->getActiveInstance()) {
+            active->rebindMeshRendererMaterialsFromMeshes();
+          }
+        }
+      }
     }
     if (tick_content_browser && g_runtime_global_context.m_content_browser &&
         g_runtime_global_context.m_content_browser->tickFileWatch()) {

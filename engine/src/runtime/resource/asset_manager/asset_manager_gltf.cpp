@@ -282,7 +282,9 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
         }
         const eastl::string texture_virtual_path = buildResourceVirtualPath(
             m_file_system->getResourcesRoot(), absolute, image->uri);
-        return loadTexture2D(texture_virtual_path);
+        // Stub only: TextureLoader decodes/uploads off the attach path.
+        // loadTexture2D here sync-decoded every PBR map (~48s on SE-world).
+        return bindTexture2D(texture_virtual_path);
       };
 
   if (material.has_pbr_specular_glossiness) {

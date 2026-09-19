@@ -1907,8 +1907,6 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   if (m_defer_viewport_for_texture_residency) {
     m_defer_viewport_for_texture_residency = false;
     requestViewportRedraw();
-    pollViewportPresent();
-    return;
   }
   if (target_width > 0 && target_height > 0 &&
       (offscreen_extent.width != target_width ||

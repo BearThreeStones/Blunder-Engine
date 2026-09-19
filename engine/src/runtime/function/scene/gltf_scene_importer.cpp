@@ -614,11 +614,14 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     asset_manager->closeGltfImportDocument(entry.second);
   }
 
+  const size_t hydrated = asset_manager->tickDeferredGltfMaterials(~0u);
+  instance.rebindMeshRendererMaterialsFromMeshes();
+
   LOG_INFO(
       "[GltfSceneImporter] attached MeshRenderers in '{}' (mesh assets={}, "
-      "gltf imports={}, unique={}, {:.1f}ms)",
+      "gltf imports={}, unique={}, deferred_hydrate={}, {:.1f}ms)",
       instance.getSourcePath().c_str(), mesh_asset_binds, gltf_imports,
-      mesh_by_ref.size(),
+      mesh_by_ref.size(), hydrated,
       std::chrono::duration<double, std::milli>(
           std::chrono::steady_clock::now() - attach_begin)
           .count());
