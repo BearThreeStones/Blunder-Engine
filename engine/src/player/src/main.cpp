@@ -77,6 +77,13 @@ void sendPlayFrame() {
   if (!g_play_ipc) {
     return;
   }
+  if (g_engine) {
+    Blunder::waitUntilTextureUploadsIdle(20000, []() {
+      if (g_engine) {
+        (void)g_engine->tickOneFrame(g_engine->calculateDeltaTime());
+      }
+    });
+  }
   eastl::vector<uint8_t> rgba;
   uint32_t width = 0;
   uint32_t height = 0;

@@ -1,5 +1,6 @@
 #include "runtime/function/render/forward/forward_shading.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -34,7 +35,8 @@ constexpr float k_light_view_distance = 30.0f;
 void computeDirectionalLightMatrices(
     glm::vec3 light_dir, glm::vec3 focus, float ortho_half_extent,
     float near_plane, float far_plane, glm::mat4& out_light_view,
-    glm::mat4& out_light_projection, glm::mat4& out_light_view_projection) {
+    glm::mat4& out_light_projection, glm::mat4& out_light_view_projection,
+    float view_distance) {
   // `light_dir` is emit / shine (sun onto the scene). lookAt is −Z forward, so
   // the camera sits along −dir from the focus. Passing shading L puts it under
   // the floor and every receiver samples a cleared 1.0 depth.
@@ -48,8 +50,9 @@ void computeDirectionalLightMatrices(
     up = kWorldForward;
   }
 
-  const glm::vec3 light_position =
-      focus - normalized_light_dir * k_light_view_distance;
+  const float distance =
+      view_distance > 0.0001f ? view_distance : k_light_view_distance;
+  const glm::vec3 light_position = focus - normalized_light_dir * distance;
   out_light_view = glm::lookAt(light_position, focus, up);
   // Match extractFrustumPlanes / the rest of classic gpu-driven shadow (OpenGL
   // clip Z). orthoZO here emptied the 1024 map after the emit look-at fix.
@@ -268,6 +271,18 @@ float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
   const float half_v = (max_v - min_v) * 0.5f;
   const float radius = std::sqrt(half_u * half_u + half_v * half_v);
   return std::max(radius * 1.05f, 2.0f);
+}
+
+DirectionalShadowPlacement computeDirectionalShadowPlacementFromAABB(
+    const AABB& bounds, const glm::vec3& light_direction) {
+  DirectionalShadowPlacement place;
+  place.ortho_half_extent =
+      computeShadowOrthoHalfExtentFromAABB(bounds, light_direction);
+  const float radius = glm::length(bounds.extents());
+  place.view_distance = std::max(radius * 1.1f, 8.0f);
+  place.near_plane = 0.1f;
+  place.far_plane = std::max(place.view_distance * 2.0f + 8.0f, 60.0f);
+  return place;
 }
 
 }  // namespace Blunder

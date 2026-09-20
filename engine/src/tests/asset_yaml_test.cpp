@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include <glm/vec4.hpp>
+
 namespace {
 
 int g_failures = 0;
@@ -443,6 +445,29 @@ void rebuildTextureGuidsUnionAndEmptySlotKeepsImport() {
                   "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
 }
 
+void roundTripCookedMeshMaterialSidecar() {
+  using namespace Blunder;
+  MeshCookedMaterialSidecar in;
+  in.base_color_factor = glm::vec4(0.2f, 0.4f, 0.6f, 1.0f);
+  in.metallic_factor = 0.1f;
+  in.roughness_factor = 0.7f;
+  in.alpha_mode = 1;
+  in.double_sided = true;
+  in.base_color_texture = "resources/se-world/assets/lib/textures/pine.png";
+  const eastl::string yaml = AssetYaml::serializeMeshCookedMaterialSidecar(in);
+  expect_true("sidecar yaml has type",
+              yaml.find("CookedMeshMaterial") != eastl::string::npos);
+  MeshCookedMaterialSidecar out;
+  expect_true("parse cooked mesh material sidecar",
+              AssetYaml::parseMeshCookedMaterialSidecar(yaml, out));
+  expect_true("sidecar albedo path",
+              out.base_color_texture == in.base_color_texture);
+  expect_true("sidecar alpha mask", out.alpha_mode == 1u);
+  expect_true("sidecar double sided", out.double_sided);
+  expect_true("sidecar roughness",
+              out.roughness_factor > 0.69f && out.roughness_factor < 0.71f);
+}
+
 }  // namespace
 
 int main() {
@@ -463,6 +488,7 @@ int main() {
   rejectUnknownInterpolation();
   parseSparseMaterialOverrideAndEmptySlot();
   rebuildTextureGuidsUnionAndEmptySlotKeepsImport();
+  roundTripCookedMeshMaterialSidecar();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

@@ -3017,7 +3017,17 @@ void SlintSystem::syncHierarchy() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     auto tree_model = std::make_shared<slint::VectorModel<HierarchyTreeRow>>();
-    for (const EditorHierarchyTreeRow& row : hierarchy.treeRows()) {
+    constexpr size_t k_max_slint_hierarchy_rows = 2048;
+    const eastl::vector<EditorHierarchyTreeRow>& rows = hierarchy.treeRows();
+    const size_t row_count =
+        rows.size() < k_max_slint_hierarchy_rows ? rows.size()
+                                                 : k_max_slint_hierarchy_rows;
+    if (rows.size() > k_max_slint_hierarchy_rows) {
+      LOG_WARN("[SlintSystem::syncHierarchy] truncated {} rows to {}",
+               rows.size(), k_max_slint_hierarchy_rows);
+    }
+    for (size_t i = 0; i < row_count; ++i) {
+      const EditorHierarchyTreeRow& row = rows[i];
       ::HierarchyTreeRow slint_row{};
       slint_row.entity_id = static_cast<int>(row.entity_id);
       slint_row.name = slint::SharedString(row.display_name.c_str());

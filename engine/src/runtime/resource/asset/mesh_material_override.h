@@ -29,8 +29,8 @@ void applyMeshMaterialOverride(
     MaterialAsset& material, const MeshMaterialOverride& overlay,
     const MeshOverrideTextureResolver& resolve_texture);
 
-/// Clone `source` into a descriptor-keyed MeshAsset and overlay the sparse bag
-/// onto a private MaterialAsset. Extra primitives stay Import-built.
+/// Overlay the sparse bag onto a private MaterialAsset clone when the bag is
+/// non-empty. Empty overlay returns `source` so SE-world skips copying cooks.
 eastl::shared_ptr<MeshAsset> instantiateMeshWithMaterialOverride(
     const eastl::shared_ptr<MeshAsset>& source,
     const MeshAssetDescriptor& descriptor, AssetManager* assets,

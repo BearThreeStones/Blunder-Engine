@@ -25,13 +25,20 @@ struct EditorSessionRestoreRecord {
   DockLayoutSnapshot dock;
 };
 
+inline constexpr const char* k_se_world_scene_virtual_path =
+    "assets/Scenes/se-world.scene.asset";
+
 /// Windowed Editor Session Live open order (no adapters): `--scene`, then a
-/// GUID that still resolves, then env startup, then the compiled default.
-eastl::string resolveWindowedLiveScenePath(eastl::string_view cli_scene,
-                                           eastl::string_view remembered_guid,
-                                           eastl::string_view guid_resolved_path,
-                                           eastl::string_view env_startup,
-                                           eastl::string_view compiled_default);
+/// GUID that still resolves, then env startup, then `project_se_world_scene`
+/// when that file exists, then the compiled default (`pick_test`).
+eastl::string resolveWindowedLiveScenePath(
+    eastl::string_view cli_scene, eastl::string_view remembered_guid,
+    eastl::string_view guid_resolved_path, eastl::string_view env_startup,
+    eastl::string_view compiled_default,
+    eastl::string_view project_se_world_scene = {});
+
+/// `assets/Scenes/se-world.scene.asset` when that file exists in the Project.
+eastl::string projectSeWorldScenePathIfExists(const FileSystem& file_system);
 
 bool loadEditorSessionRestore(const std::filesystem::path& path,
                               EditorSessionRestoreRecord& out);

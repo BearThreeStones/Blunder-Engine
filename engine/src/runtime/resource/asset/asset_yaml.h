@@ -43,6 +43,11 @@ class AssetYaml final {
   /// Reads the `source` field from a mesh or texture YAML descriptor.
   static bool parseSourceField(const eastl::string& yaml_text,
                                eastl::string& out_source);
+
+  static bool parseMeshCookedMaterialSidecar(
+      const eastl::string& yaml_text, MeshCookedMaterialSidecar& out_sidecar);
+  static eastl::string serializeMeshCookedMaterialSidecar(
+      const MeshCookedMaterialSidecar& sidecar);
 };
 
 }  // namespace Blunder

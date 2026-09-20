@@ -159,6 +159,30 @@ target_precompile_headers(scene_mesh_attach_test
 add_test(NAME scene_mesh_attach_test
          COMMAND scene_mesh_attach_test)
 
+add_executable(se_world_flatten_test
+    "se_world_flatten_test.cpp"
+)
+
+target_link_libraries(se_world_flatten_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(se_world_flatten_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(se_world_flatten_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(se_world_flatten_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME se_world_flatten_test
+         COMMAND se_world_flatten_test)
+
 add_executable(play_reload_scene_test
     "play_reload_scene_test.cpp"
 )

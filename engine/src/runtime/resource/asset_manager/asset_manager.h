@@ -166,6 +166,16 @@ class AssetManager final {
   void previewMeshMaterialOverride(const eastl::string& descriptor_virtual_path,
                                    const MeshMaterialOverride& overlay);
 
+  /// Cooked Mesh bins store geometry only. Bind glTF albedo from a sidecar
+  /// (or hydrate once and write that sidecar) so the first draw is not checker.
+  void queueDeferredGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
+  size_t tickDeferredGltfMaterials(uint32_t max_items);
+  size_t pendingGltfMaterialCount() const { return m_pending_gltf_materials.size(); }
+  bool hydrateMeshGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
+
+  eastl::shared_ptr<Texture2DAsset> bindTexture2D(
+      const eastl::string& virtual_path);
+
  private:
   template <typename T>
   using Cache = eastl::unordered_map<eastl::string, eastl::weak_ptr<T>>;
@@ -178,6 +188,12 @@ class AssetManager final {
   /// recurse into another cook request.
   void requestCookAfterFastPath(const eastl::string& guid);
 
+  bool applyCookedMeshMaterialSidecar(const eastl::shared_ptr<MeshAsset>& mesh,
+                                      const eastl::string& guid);
+  void writeCookedMeshMaterialSidecar(const eastl::shared_ptr<MeshAsset>& mesh,
+                                      const eastl::string& guid);
+  eastl::string meshDescriptorGuid(const MeshAsset& mesh) const;
+
   FileSystem* m_file_system{nullptr};
   eastl::weak_ptr<AssetCompilerService> m_asset_compiler;
   Cache<Texture2DAsset> m_texture_cache;
@@ -188,6 +204,7 @@ class AssetManager final {
   bool m_is_initialized{false};
   bool m_inside_cook_request{false};
   size_t m_gltf_document_open_count{0};
+  eastl::vector<eastl::weak_ptr<MeshAsset>> m_pending_gltf_materials;
 };
 
 }  // namespace Blunder

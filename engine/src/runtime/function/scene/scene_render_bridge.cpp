@@ -54,6 +54,9 @@ void submitMeshDraw(RenderSystem* render_system, GpuMesh* gpu_mesh,
                     eastl::vector<glm::mat4> gpu_bone_palette,
                     EntityId entity_id) {
   eastl::shared_ptr<MaterialAsset> material = draw_renderer.material;
+  if (!material && draw_renderer.mesh) {
+    material = draw_renderer.mesh->getMaterialAsset();
+  }
   VulkanTexture* base_color_texture = fallback_texture;
   VulkanTexture* metallic_roughness_texture = fallback_texture;
   VulkanTexture* normal_texture = fallback_texture;

@@ -451,6 +451,135 @@ bool AssetYaml::parseSourceField(const eastl::string& yaml_text,
 
 namespace {
 
+bool readSidecarVec3(const YAML::Node& root, const char* key, glm::vec3& out,
+                     const glm::vec3& fallback) {
+  const YAML::Node node = root[key];
+  if (!node || !node.IsSequence() || node.size() < 3) {
+    out = fallback;
+    return false;
+  }
+  out = glm::vec3(node[0].as<float>(), node[1].as<float>(), node[2].as<float>());
+  return true;
+}
+
+bool readSidecarVec4(const YAML::Node& root, const char* key, glm::vec4& out,
+                     const glm::vec4& fallback) {
+  const YAML::Node node = root[key];
+  if (!node || !node.IsSequence() || node.size() < 3) {
+    out = fallback;
+    return false;
+  }
+  const float alpha = node.size() >= 4 ? node[3].as<float>() : 1.0f;
+  out = glm::vec4(node[0].as<float>(), node[1].as<float>(), node[2].as<float>(),
+                  alpha);
+  return true;
+}
+
+void emitSidecarVec3(YAML::Emitter& emitter, const char* key,
+                     const glm::vec3& value) {
+  emitter << YAML::Key << key << YAML::Value << YAML::Flow << YAML::BeginSeq
+          << value.x << value.y << value.z << YAML::EndSeq;
+}
+
+void emitSidecarVec4(YAML::Emitter& emitter, const char* key,
+                     const glm::vec4& value) {
+  emitter << YAML::Key << key << YAML::Value << YAML::Flow << YAML::BeginSeq
+          << value.x << value.y << value.z << value.w << YAML::EndSeq;
+}
+
+void emitSidecarPath(YAML::Emitter& emitter, const char* key,
+                     const eastl::string& value) {
+  if (value.empty()) {
+    return;
+  }
+  emitter << YAML::Key << key << YAML::Value << value.c_str();
+}
+
+}  // namespace
+
+bool AssetYaml::parseMeshCookedMaterialSidecar(
+    const eastl::string& yaml_text, MeshCookedMaterialSidecar& out_sidecar) {
+  try {
+    const YAML::Node root = loadRoot(yaml_text);
+    if (!root || !root.IsMap()) {
+      return false;
+    }
+    const YAML::Node type_node = root["type"];
+    if (!type_node || type_node.as<std::string>() != "CookedMeshMaterial") {
+      return false;
+    }
+    out_sidecar = {};
+    readSidecarVec4(root, "base_color_factor", out_sidecar.base_color_factor,
+                    glm::vec4(1.0f));
+    readSidecarVec3(root, "ambient", out_sidecar.ambient, glm::vec3(0.15f));
+    readSidecarVec3(root, "diffuse", out_sidecar.diffuse, glm::vec3(1.0f));
+    readSidecarVec3(root, "specular", out_sidecar.specular, glm::vec3(0.4f));
+    float shininess = 32.0f;
+    readFloatField(root, "shininess", 32.0f, shininess);
+    out_sidecar.shininess = shininess;
+    float metallic = 1.0f;
+    readFloatField(root, "metallic_factor", 1.0f, metallic);
+    out_sidecar.metallic_factor = metallic;
+    float roughness = 1.0f;
+    readFloatField(root, "roughness_factor", 1.0f, roughness);
+    out_sidecar.roughness_factor = roughness;
+    const YAML::Node alpha_mode = root["alpha_mode"];
+    if (alpha_mode && alpha_mode.IsScalar()) {
+      out_sidecar.alpha_mode = alpha_mode.as<uint32_t>();
+    }
+    float cutoff = 0.5f;
+    readFloatField(root, "alpha_cutoff", 0.5f, cutoff);
+    out_sidecar.alpha_cutoff = cutoff;
+    bool double_sided = false;
+    readBoolField(root, "double_sided", false, double_sided);
+    out_sidecar.double_sided = double_sided;
+    bool unlit = false;
+    readBoolField(root, "unlit", false, unlit);
+    out_sidecar.unlit = unlit;
+    readOptionalStringField(root, "base_color_texture",
+                            out_sidecar.base_color_texture);
+    readOptionalStringField(root, "metallic_roughness_texture",
+                            out_sidecar.metallic_roughness_texture);
+    readOptionalStringField(root, "normal_texture", out_sidecar.normal_texture);
+    readOptionalStringField(root, "occlusion_texture",
+                            out_sidecar.occlusion_texture);
+    return true;
+  } catch (const YAML::Exception& exception) {
+    LOG_WARN("[AssetYaml] parseMeshCookedMaterialSidecar failed: {}",
+             exception.what());
+    return false;
+  }
+}
+
+eastl::string AssetYaml::serializeMeshCookedMaterialSidecar(
+    const MeshCookedMaterialSidecar& sidecar) {
+  YAML::Emitter emitter;
+  emitter << YAML::BeginMap;
+  emitter << YAML::Key << "type" << YAML::Value << "CookedMeshMaterial";
+  emitSidecarVec4(emitter, "base_color_factor", sidecar.base_color_factor);
+  emitSidecarVec3(emitter, "ambient", sidecar.ambient);
+  emitSidecarVec3(emitter, "diffuse", sidecar.diffuse);
+  emitSidecarVec3(emitter, "specular", sidecar.specular);
+  emitter << YAML::Key << "shininess" << YAML::Value << sidecar.shininess;
+  emitter << YAML::Key << "metallic_factor" << YAML::Value
+          << sidecar.metallic_factor;
+  emitter << YAML::Key << "roughness_factor" << YAML::Value
+          << sidecar.roughness_factor;
+  emitter << YAML::Key << "alpha_mode" << YAML::Value << sidecar.alpha_mode;
+  emitter << YAML::Key << "alpha_cutoff" << YAML::Value << sidecar.alpha_cutoff;
+  emitter << YAML::Key << "double_sided" << YAML::Value << sidecar.double_sided;
+  emitter << YAML::Key << "unlit" << YAML::Value << sidecar.unlit;
+  emitSidecarPath(emitter, "base_color_texture", sidecar.base_color_texture);
+  emitSidecarPath(emitter, "metallic_roughness_texture",
+                  sidecar.metallic_roughness_texture);
+  emitSidecarPath(emitter, "normal_texture", sidecar.normal_texture);
+  emitSidecarPath(emitter, "occlusion_texture", sidecar.occlusion_texture);
+  emitter << YAML::EndMap;
+  return eastl::string(emitter.c_str());
+}
+
+namespace {
+
 bool parseAnimationChannel(const std::string& text, AnimationChannel& out_channel) {
   if (text == "translation") {
     out_channel = AnimationChannel::Translation;

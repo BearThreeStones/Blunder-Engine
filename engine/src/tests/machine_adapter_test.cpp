@@ -226,6 +226,20 @@ int main() {
                 listed.find("\"name\":\"pan\"") != std::string::npos);
     expect_true("mcp tools zoom",
                 listed.find("\"name\":\"zoom\"") != std::string::npos);
+    expect_true(
+        "mcp initialize needs no engine",
+        !mcpMessageNeedsEngine(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}"));
+    expect_true("mcp tools/list needs no engine",
+                !mcpMessageNeedsEngine(
+                    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"));
+    expect_true("mcp ping needs no engine",
+                !mcpMessageNeedsEngine(
+                    "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}"));
+    expect_true(
+        "mcp tools/call needs engine",
+        mcpMessageNeedsEngine("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":"
+                              "\"tools/call\",\"params\":{\"name\":\"query\"}}"));
 
     SceneInstance scene;
     DocumentHistory history;

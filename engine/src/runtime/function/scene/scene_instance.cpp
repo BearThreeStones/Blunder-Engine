@@ -17,6 +17,7 @@
 #include "runtime/function/editor/animation_clip_resolve.h"
 #include "runtime/function/editor/inspector_skeleton_modifier_ops.h"
 #include "runtime/function/scene/scene_serializer.h"
+#include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
 
 #include <cstddef>
@@ -466,6 +467,31 @@ void SceneInstance::setMeshRenderer(EntityId id, MeshRendererComponent renderer)
     return;
   }
   m_mesh_renderers[id] = eastl::move(renderer);
+}
+
+void SceneInstance::rebindMeshRendererMaterialsFromMeshes() {
+  for (auto& entry : m_mesh_renderers) {
+    MeshRendererComponent& renderer = entry.second;
+    if (!renderer.mesh) {
+      continue;
+    }
+    const eastl::shared_ptr<MaterialAsset>& mesh_material =
+        renderer.mesh->getMaterialAsset();
+    if (!mesh_material) {
+      continue;
+    }
+    if (renderer.material == mesh_material) {
+      continue;
+    }
+    if (renderer.material && renderer.material->hasBaseColorTexture() &&
+        renderer.material.get() != mesh_material.get()) {
+      continue;
+    }
+    renderer.material = mesh_material;
+    renderer.alpha_mode = mesh_material->getAlphaMode();
+    renderer.alpha_cutoff = mesh_material->getAlphaCutoff();
+    renderer.double_sided = mesh_material->isDoubleSided();
+  }
 }
 
 const MeshRendererComponent* SceneInstance::getMeshRenderer(EntityId id) const {

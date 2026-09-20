@@ -48,6 +48,9 @@ class ThumbnailGenerator final {
   eastl::vector<ThumbnailQueueCompleted> tickThumbnailQueue(uint32_t max_items);
   bool hasQueuedThumbnails() const;
 
+  /// Scene files above this size must not instantiate for a 128px thumb.
+  static bool isHeavySceneThumbnail(uint64_t size_bytes);
+
   /// Synchronous RGBA generation without touching the disk cache (tests / hooks).
   bool generateThumbnailRgba(const ContentEntry& entry,
                              eastl::vector<uint8_t>& out_rgba);
