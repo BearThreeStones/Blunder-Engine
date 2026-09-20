@@ -210,6 +210,13 @@ int main() {
               queued.size() >= 2 && queued[0] == eastl::string(kGuidA) &&
                   queued[1] == eastl::string(kGuidB));
 
+  const uint64_t generation_after_load = loader.generation();
+  scene_system.setActiveInstance(instance.get());
+  expect_true("first activate does not bump generation",
+              loader.generation() == generation_after_load);
+  expect_eq_u32("first activate keeps unique-mesh Jobs", loader.inFlightCount(),
+                3u);
+
   jobs.wait();
   expect_true("Jobs still unpublished until tick", loader.cpuMesh(kGuidA) == nullptr);
 

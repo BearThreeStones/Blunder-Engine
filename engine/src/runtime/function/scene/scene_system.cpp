@@ -305,12 +305,19 @@ void SceneSystem::unloadSceneInstance(SceneInstance* instance) {
 
 void SceneSystem::setActiveInstance(SceneInstance* instance) {
   if (m_active_instance != instance) {
+    // First activate is null → scene. Unique-mesh Jobs were submitted during
+    // loadScene at the current generation; bumping it here discarded every
+    // SE-world GUID before GpuMesh upload (QC: 0 uploaded, grid-only Viewport).
+    if (m_active_instance != nullptr) {
+      if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->dropInFlightTextures();
+        g_runtime_global_context.m_render_system->dropInFlightMeshes();
+      } else if (m_mesh_loader != nullptr) {
+        m_mesh_loader->dropScene();
+      }
+    }
     if (g_runtime_global_context.m_render_system) {
-      g_runtime_global_context.m_render_system->dropInFlightTextures();
-      g_runtime_global_context.m_render_system->dropInFlightMeshes();
       g_runtime_global_context.m_render_system->notifyActiveSceneChanged();
-    } else if (m_mesh_loader != nullptr) {
-      m_mesh_loader->dropScene();
     }
   }
   m_active_instance = instance;
