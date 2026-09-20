@@ -37,6 +37,8 @@ class MeshLoader final {
     std::filesystem::path cooked_path;
     std::filesystem::path source_path;
     std::filesystem::path descriptor_path;
+    uint32_t mesh_index{0};
+    uint32_t primitive_index{0};
   };
 
   MeshLoader();

@@ -4,6 +4,7 @@
 #include <cgltf.h>
 
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -29,6 +30,8 @@
 #include "runtime/function/scene/skeleton_from_gltf.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset/guid.h"
+#include "runtime/resource/asset/asset_descriptor.h"
+#include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset_import/asset_import_service.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
 
@@ -299,26 +302,13 @@ bool nodeHasDrawableMesh(const cgltf_node* node) {
   return true;
 }
 
-bool gltfHasDrawableMesh(const cgltf_data* data) {
-  if (data == nullptr) {
-    return false;
-  }
-  for (cgltf_size i = 0; i < data->nodes_count; ++i) {
-    if (nodeHasDrawableMesh(&data->nodes[i])) {
-      return true;
-    }
-  }
-  return false;
-}
-
 struct FlattenBaker {
   const SeWorldFlattenOptions* options{nullptr};
   SeWorldFlattenStats* stats{nullptr};
   Scene* scene{nullptr};
   eastl::hash_map<eastl::string, AssetIndexEntry> index;
   eastl::hash_map<eastl::string, cgltf_data*> documents;
-  eastl::hash_map<eastl::string, eastl::string> guid_by_asset_id;
-  eastl::hash_map<eastl::string, eastl::string> guid_by_path;
+  eastl::hash_map<eastl::string, eastl::string> guid_by_primitive;
   eastl::hash_set<eastl::string> used_names;
   eastl::vector<eastl::string> expand_stack;
 
@@ -451,63 +441,123 @@ struct FlattenBaker {
     return dest_gltf;
   }
 
-  eastl::string ensureMeshGuid(const eastl::string& asset_id, const fs::path& absolute) {
-    const auto by_id = guid_by_asset_id.find(asset_id);
-    if (by_id != guid_by_asset_id.end()) {
-      return by_id->second;
+  eastl::string meshDescriptorVirtual(const eastl::string& stem) const {
+    eastl::string descriptor = options->mesh_assets_folder;
+    if (!descriptor.empty() && descriptor.back() != '/') {
+      descriptor.push_back('/');
     }
-    const eastl::string path_key(absolute.generic_string().c_str());
-    const auto by_path = guid_by_path.find(path_key);
-    if (by_path != guid_by_path.end()) {
-      guid_by_asset_id[asset_id] = by_path->second;
-      return by_path->second;
+    descriptor.append(stem.c_str());
+    descriptor.append(".mesh.yaml");
+    return descriptor;
+  }
+
+  eastl::string virtualSourceFromStaged(const fs::path& staged) const {
+    if (options->file_system == nullptr) {
+      return {};
+    }
+    std::error_code ec;
+    const fs::path rel =
+        fs::relative(staged, options->file_system->getResourcesRoot(), ec);
+    if (ec || rel.empty() || pathEscapesRoot(rel)) {
+      return {};
+    }
+    eastl::string virtual_path("resources/");
+    virtual_path.append(rel.generic_string().c_str());
+    return virtual_path;
+  }
+
+  eastl::string ensurePrimitiveMeshGuid(const fs::path& godot_absolute,
+                                        size_t mesh_index, size_t prim_index) {
+    const eastl::string path_key(godot_absolute.generic_string().c_str());
+    char suffix[64];
+    std::snprintf(suffix, sizeof(suffix), "#mesh%zu#prim%zu", mesh_index,
+                  prim_index);
+    eastl::string prim_key = path_key;
+    prim_key.append(suffix);
+    const auto found = guid_by_primitive.find(prim_key);
+    if (found != guid_by_primitive.end()) {
+      return found->second;
     }
 
-    fs::path import_path = absolute;
+    fs::path import_path = godot_absolute;
     if (options->import_service != nullptr && options->file_system != nullptr) {
-      import_path = stageGltfWithSidecars(absolute);
+      import_path = stageGltfWithSidecars(godot_absolute);
       if (import_path.empty()) {
-        LOG_WARN("[se-world-flatten] failed to stage glTF {} ({})",
-                 absolute.generic_string().c_str(), asset_id.c_str());
+        LOG_WARN("[se-world-flatten] failed to stage glTF {}",
+                 godot_absolute.generic_string().c_str());
         return {};
       }
     }
 
-    eastl::string guid;
-    if (options->asset_registry != nullptr) {
-      const eastl::string stem(import_path.stem().generic_string().c_str());
-      eastl::string descriptor = options->mesh_assets_folder;
-      if (!descriptor.empty() && descriptor.back() != '/') {
-        descriptor.push_back('/');
-      }
-      descriptor.append(stem.c_str());
-      descriptor.append(".mesh.yaml");
-      guid = options->asset_registry->findGuidForPath(descriptor);
+    const eastl::string file_stem(import_path.stem().generic_string().c_str());
+    eastl::string descriptor_stem = file_stem;
+    if (mesh_index != 0 || prim_index != 0) {
+      char mesh_tag[32];
+      std::snprintf(mesh_tag, sizeof(mesh_tag), "-m%zup%zu", mesh_index,
+                    prim_index);
+      descriptor_stem.append(mesh_tag);
     }
-    if (guid.empty() && options->import_service != nullptr) {
-      MeshImportSettings settings{};
-      settings.animations = false;
-      const ImportResult imported = options->import_service->importMesh(
-          import_path, options->mesh_assets_folder, settings);
-      if (imported.success) {
-        guid = imported.guid;
-        ++stats->imported_mesh_assets;
+
+    eastl::string guid;
+    const eastl::string descriptor_virtual = meshDescriptorVirtual(descriptor_stem);
+    if (options->asset_registry != nullptr) {
+      guid = options->asset_registry->findGuidForPath(descriptor_virtual);
+    }
+
+    if (guid.empty() && options->import_service != nullptr &&
+        options->file_system != nullptr && options->asset_registry != nullptr) {
+      if (mesh_index == 0 && prim_index == 0) {
+        MeshImportSettings settings{};
+        settings.animations = false;
+        const ImportResult imported = options->import_service->importMesh(
+            import_path, options->mesh_assets_folder, settings);
+        if (imported.success) {
+          guid = imported.guid;
+          ++stats->imported_mesh_assets;
+        } else {
+          LOG_WARN("[se-world-flatten] Import failed for {}",
+                   import_path.generic_string().c_str());
+        }
       } else {
-        LOG_WARN("[se-world-flatten] Import failed for {} ({})",
-                 import_path.generic_string().c_str(), asset_id.c_str());
+        const eastl::string source_virtual = virtualSourceFromStaged(import_path);
+        if (source_virtual.empty()) {
+          LOG_WARN("[se-world-flatten] missing staged source for {}",
+                   import_path.generic_string().c_str());
+        } else {
+          MeshAssetDescriptor descriptor{};
+          descriptor.guid = options->asset_registry->allocateGuid();
+          descriptor.source = source_virtual;
+          descriptor.import.materials = true;
+          descriptor.import.animations = false;
+          descriptor.import.mesh_index = static_cast<uint32_t>(mesh_index);
+          descriptor.import.primitive_index = static_cast<uint32_t>(prim_index);
+          eastl::string relative = descriptor_virtual;
+          if (relative.size() >= 7 &&
+              std::strncmp(relative.c_str(), "assets/", 7) == 0) {
+            relative.erase(0, 7);
+          }
+          const fs::path descriptor_absolute =
+              options->file_system->resolveAsset(fs::path(relative.c_str()));
+          options->file_system->ensureParentDirectory(descriptor_absolute);
+          if (options->file_system->writeText(
+                  descriptor_absolute,
+                  AssetYaml::serializeMeshDescriptor(descriptor)) &&
+              options->asset_registry->registerAsset(descriptor.guid,
+                                                     descriptor_virtual)) {
+            guid = descriptor.guid;
+            ++stats->imported_mesh_assets;
+          }
+        }
       }
     } else if (guid.empty()) {
       guid = generateGuidV4();
     }
+
     if (!guid.empty()) {
-      guid_by_asset_id[asset_id] = guid;
-      guid_by_path[path_key] = guid;
+      guid_by_primitive[prim_key] = guid;
     }
     return guid;
   }
-
-  void visitGltf(cgltf_data* data, const eastl::string& parent_name,
-                 FlattenKind parent_kind);
 
   void expandInstance(const cgltf_node* node, const eastl::string& parent_name,
                       FlattenKind parent_kind) {
@@ -553,18 +603,6 @@ struct FlattenBaker {
       return;
     }
 
-    const bool drawable = gltfHasDrawableMesh(child_data);
-    eastl::string mesh_guid;
-    if (drawable) {
-      mesh_guid = ensureMeshGuid(asset_id, absolute);
-      if (mesh_guid.empty() && options->import_service != nullptr) {
-        ++stats->skipped_missing_file;
-        LOG_WARN("[se-world-flatten] skip instance; mesh Import failed {}",
-                 asset_id.c_str());
-        return;
-      }
-    }
-
     FlattenKind child_kind = parent_kind;
     if (isSetFilepath(entry.filepath)) {
       child_kind = FlattenKind::set;
@@ -578,7 +616,7 @@ struct FlattenBaker {
     bakeNodeLocal(node, position, rotation, scale);
     const eastl::string stem = gltfNodeDisplayName(node);
     const eastl::string entity_name =
-        emitEntity(stem, position, rotation, scale, parent_name, mesh_guid);
+        emitEntity(stem, position, rotation, scale, parent_name, {});
 
     if (child_kind == FlattenKind::library) {
       if (parent_kind == FlattenKind::library) {
@@ -588,18 +626,16 @@ struct FlattenBaker {
       }
     } else {
       ++stats->grouping_entities;
-      if (drawable) {
-        ++stats->set_geo_mesh_refs;
-      }
     }
 
     expand_stack.push_back(asset_id);
-    visitGltf(child_data, entity_name, child_kind);
+    visitGltf(child_data, entity_name, child_kind, absolute);
     expand_stack.pop_back();
   }
 
   void visitNode(const cgltf_node* node, const eastl::string& parent_name,
-                 FlattenKind parent_kind) {
+                 FlattenKind parent_kind, cgltf_data* data,
+                 const fs::path& gltf_absolute) {
     if (node == nullptr) {
       return;
     }
@@ -612,29 +648,59 @@ struct FlattenBaker {
       expandInstance(node, parent_name, parent_kind);
       return;
     }
+
+    eastl::string current_parent = parent_name;
+    if (nodeHasDrawableMesh(node) && data != nullptr && node->mesh != nullptr) {
+      const size_t mesh_index = static_cast<size_t>(node->mesh - data->meshes);
+      Vec3 position{};
+      Quat rotation = glm::identity<Quat>();
+      Vec3 scale(1.0f);
+      bakeNodeLocal(node, position, rotation, scale);
+      const eastl::string stem = gltfNodeDisplayName(node);
+      for (cgltf_size prim_index = 0; prim_index < node->mesh->primitives_count;
+           ++prim_index) {
+        if (node->mesh->primitives[prim_index].type !=
+            cgltf_primitive_type_triangles) {
+          continue;
+        }
+        const eastl::string guid = ensurePrimitiveMeshGuid(
+            gltf_absolute, mesh_index, static_cast<size_t>(prim_index));
+        const eastl::string entity_name =
+            emitEntity(stem, position, rotation, scale, parent_name, guid);
+        if (current_parent == parent_name) {
+          current_parent = entity_name;
+        }
+        if (parent_kind == FlattenKind::set) {
+          ++stats->set_geo_mesh_refs;
+        }
+      }
+    }
     for (cgltf_size i = 0; i < node->children_count; ++i) {
-      visitNode(node->children[i], parent_name, parent_kind);
+      visitNode(node->children[i], current_parent, parent_kind, data,
+                gltf_absolute);
+    }
+  }
+
+  void visitGltf(cgltf_data* data, const eastl::string& parent_name,
+                 FlattenKind parent_kind, const fs::path& gltf_absolute) {
+    if (data == nullptr) {
+      return;
+    }
+    if (data->scene != nullptr && data->scene->nodes_count > 0) {
+      for (cgltf_size i = 0; i < data->scene->nodes_count; ++i) {
+        visitNode(data->scene->nodes[i], parent_name, parent_kind, data,
+                  gltf_absolute);
+      }
+      return;
+    }
+    for (cgltf_size i = 0; i < data->nodes_count; ++i) {
+      if (data->nodes[i].parent == nullptr) {
+        visitNode(&data->nodes[i], parent_name, parent_kind, data,
+                  gltf_absolute);
+      }
     }
   }
 };
-
-void FlattenBaker::visitGltf(cgltf_data* data, const eastl::string& parent_name,
-                             FlattenKind parent_kind) {
-  if (data == nullptr) {
-    return;
-  }
-  if (data->scene != nullptr && data->scene->nodes_count > 0) {
-    for (cgltf_size i = 0; i < data->scene->nodes_count; ++i) {
-      visitNode(data->scene->nodes[i], parent_name, parent_kind);
-    }
-    return;
-  }
-  for (cgltf_size i = 0; i < data->nodes_count; ++i) {
-    if (data->nodes[i].parent == nullptr) {
-      visitNode(&data->nodes[i], parent_name, parent_kind);
-    }
-  }
-}
 
 }  // namespace
 
@@ -684,7 +750,7 @@ SeWorldFlattenStats bakeSeWorldFlattenScene(const SeWorldFlattenOptions& options
   const eastl::string root_name = baker.emitEntity(
       root_stem, Vec3(0.0f), glm::identity<Quat>(), Vec3(1.0f), {}, {});
   ++stats.grouping_entities;
-  baker.visitGltf(layout, root_name, FlattenKind::root);
+  baker.visitGltf(layout, root_name, FlattenKind::root, options.layout_gltf);
 
   if (options.asset_registry != nullptr) {
     eastl::string existing = options.asset_registry->findGuidForPath(

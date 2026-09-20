@@ -42,11 +42,14 @@ struct RequestRecord {
   eastl::vector<uint32_t> indices;
   MeshSkinData skin_data;
   MeshletPayload meshlets;
+  uint32_t mesh_index{0};
+  uint32_t primitive_index{0};
 };
 
-bool readFirstGltfPrimitive(const std::filesystem::path& absolute,
-                            eastl::vector<MeshVertex>& out_vertices,
-                            eastl::vector<uint32_t>& out_indices) {
+bool readGltfPrimitive(const std::filesystem::path& absolute,
+                       uint32_t mesh_index, uint32_t primitive_index,
+                       eastl::vector<MeshVertex>& out_vertices,
+                       eastl::vector<uint32_t>& out_indices) {
   std::ifstream stream(absolute, std::ios::binary | std::ios::ate);
   if (!stream.is_open()) {
     return false;
@@ -77,19 +80,17 @@ bool readFirstGltfPrimitive(const std::filesystem::path& absolute,
     return false;
   }
 
-  const cgltf_primitive* primitive = nullptr;
-  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count && primitive == nullptr;
-       ++mesh_index) {
-    const cgltf_mesh& mesh = data->meshes[mesh_index];
-    for (cgltf_size primitive_index = 0; primitive_index < mesh.primitives_count;
-         ++primitive_index) {
-      if (mesh.primitives[primitive_index].type == cgltf_primitive_type_triangles) {
-        primitive = &mesh.primitives[primitive_index];
-        break;
-      }
-    }
+  if (mesh_index >= static_cast<uint32_t>(data->meshes_count)) {
+    cgltf_free(data);
+    return false;
   }
-  if (primitive == nullptr) {
+  const cgltf_mesh& mesh = data->meshes[mesh_index];
+  if (primitive_index >= static_cast<uint32_t>(mesh.primitives_count)) {
+    cgltf_free(data);
+    return false;
+  }
+  const cgltf_primitive* primitive = &mesh.primitives[primitive_index];
+  if (primitive->type != cgltf_primitive_type_triangles) {
     cgltf_free(data);
     return false;
   }
@@ -164,7 +165,8 @@ void cpuReadJob(void* job_data) {
     indices.clear();
     skin_data = {};
     meshlets = {};
-    ok = readFirstGltfPrimitive(record->source_path, vertices, indices);
+    ok = readGltfPrimitive(record->source_path, record->mesh_index,
+                           record->primitive_index, vertices, indices);
   }
   if (!ok) {
     record->cpu_state.store(k_cpu_failed, std::memory_order_release);
@@ -395,6 +397,8 @@ void MeshLoader::request(const Request& request) {
   record->cooked_path = request.cooked_path;
   record->source_path = request.source_path;
   record->descriptor_path = request.descriptor_path;
+  record->mesh_index = request.mesh_index;
+  record->primitive_index = request.primitive_index;
   if (m_impl->job_system == nullptr || !m_impl->job_system->isInitialized()) {
     record->cpu_state.store(k_cpu_failed, std::memory_order_release);
     return;

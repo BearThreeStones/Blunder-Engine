@@ -170,12 +170,19 @@ void testBakerTwoInstancesUniqueNames() {
   expect_true("1.1 Bush", findEntity(scene, "Bush") != nullptr);
   expect_true("1.1 Bush_1", findEntity(scene, "Bush_1") != nullptr);
   expect_true("1.1 Empty skipped", findEntity(scene, "Empty") == nullptr);
+  const SceneEntityDefinition* geo_box = findEntity(scene, "GEO-box");
+  const SceneEntityDefinition* geo_box_1 = findEntity(scene, "GEO-box_1");
+  expect_true("1.1 GEO-box", geo_box != nullptr);
+  expect_true("1.1 GEO-box_1", geo_box_1 != nullptr);
   expect_true("1.1 shared mesh guid",
+              geo_box != nullptr && geo_box_1 != nullptr &&
+                  geo_box->mesh_virtual_path == geo_box_1->mesh_virtual_path &&
+                  !geo_box->mesh_virtual_path.empty());
+  expect_true("1.1 Bush grouping has no mesh",
               findEntity(scene, "Bush") != nullptr &&
-                  findEntity(scene, "Bush_1") != nullptr &&
-                  findEntity(scene, "Bush")->mesh_virtual_path ==
-                      findEntity(scene, "Bush_1")->mesh_virtual_path &&
-                  !findEntity(scene, "Bush")->mesh_virtual_path.empty());
+                  findEntity(scene, "Bush")->mesh_virtual_path.empty());
+  expect_true("1.1 GEO parent is Bush",
+              geo_box != nullptr && geo_box->parent_name == "Bush");
   eastl::string json;
   expect_true("1.1 serialize", SceneSerializer::serialize(scene, json));
   expect_true("1.1 no childScenes", json.find("childScenes") == eastl::string::npos);
@@ -255,18 +262,26 @@ void testNestedLibraryAndMissingFile() {
   const SceneEntityDefinition* needle = findEntity(scene, "Needle");
   const SceneEntityDefinition* needle_1 = findEntity(scene, "Needle_1");
   expect_true("1.3 needles exist", needle != nullptr && needle_1 != nullptr);
+  const SceneEntityDefinition* geo_leaf = findEntity(scene, "GEO-leaf");
+  const SceneEntityDefinition* geo_leaf_1 = findEntity(scene, "GEO-leaf_1");
   expect_true("1.3 nested share guid",
-              needle != nullptr && needle_1 != nullptr &&
-                  needle->mesh_virtual_path == needle_1->mesh_virtual_path &&
-                  !needle->mesh_virtual_path.empty());
+              geo_leaf != nullptr && geo_leaf_1 != nullptr &&
+                  geo_leaf->mesh_virtual_path == geo_leaf_1->mesh_virtual_path &&
+                  !geo_leaf->mesh_virtual_path.empty());
   const SceneEntityDefinition* tree = findEntity(scene, "Tree");
   expect_true("1.3 nested parent is layout",
               needle != nullptr && tree != nullptr && needle->parent_name == tree->name);
-  expect_true("1.3 layout shares tree guid",
-              findEntity(scene, "Tree") != nullptr &&
-                  findEntity(scene, "Tree_1") != nullptr &&
-                  findEntity(scene, "Tree")->mesh_virtual_path ==
-                      findEntity(scene, "Tree_1")->mesh_virtual_path);
+  const SceneEntityDefinition* geo_tree = findEntity(scene, "GEO-tree");
+  const SceneEntityDefinition* geo_tree_1 = findEntity(scene, "GEO-tree_1");
+  expect_true("1.3 GEO-tree parent is layout",
+              geo_tree != nullptr && tree != nullptr &&
+                  geo_tree->parent_name == tree->name);
+  expect_true("1.3 layout GEO share guid",
+              geo_tree != nullptr && geo_tree_1 != nullptr &&
+                  geo_tree->mesh_virtual_path == geo_tree_1->mesh_virtual_path &&
+                  !geo_tree->mesh_virtual_path.empty());
+  expect_true("1.3 Tree grouping has no mesh",
+              tree != nullptr && tree->mesh_virtual_path.empty());
   fs::remove_all(root);
 }
 
@@ -311,9 +326,10 @@ void testBakerOmitsColEntities() {
                 triangleGltfNodes(
                     R"([
                       { "name": "COL-ground", "mesh": 0 },
-                      { "name": "GEO-ground", "mesh": 0, "translation": [1, 0, 0] }
+                      { "name": "GEO-ground", "mesh": 0, "translation": [1, 0, 0] },
+                      { "name": "GEO-water", "mesh": 0, "translation": [0, 0, 2] }
                     ])",
-                    "ground", "[0, 1]"));
+                    "ground", "[0, 1, 2]"));
   writeTextFile(root / "SE-world.gltf", triangleGltfNodes(
       R"([
         { "name": "Ground", "extras": { "instance_asset_id": "1111111111111111" } },
@@ -342,6 +358,31 @@ void testBakerOmitsColEntities() {
   expect_true("2.1 Bush layout exists", findEntity(scene, "Bush") != nullptr);
   expect_true("2.1 COL-ground not spawned", findEntity(scene, "COL-ground") == nullptr);
   expect_true("2.1 COL-layout not spawned", findEntity(scene, "COL-layout") == nullptr);
+  const SceneEntityDefinition* geo_ground = findEntity(scene, "GEO-ground");
+  const SceneEntityDefinition* geo_water = findEntity(scene, "GEO-water");
+  expect_true("2.1 GEO-ground spawned", geo_ground != nullptr);
+  expect_true("2.1 GEO-water spawned", geo_water != nullptr);
+  expect_true("2.1 two set GEO refs", stats.set_geo_mesh_refs == 2);
+  expect_true("2.1 Ground grouping has no mesh",
+              findEntity(scene, "Ground") != nullptr &&
+                  findEntity(scene, "Ground")->mesh_virtual_path.empty());
+  expect_true("2.1 GEO-ground has mesh",
+              geo_ground != nullptr && !geo_ground->mesh_virtual_path.empty());
+  expect_true("2.1 GEO-water has mesh",
+              geo_water != nullptr && !geo_water->mesh_virtual_path.empty());
+  expect_true("2.1 GEO share set mesh guid",
+              geo_ground != nullptr && geo_water != nullptr &&
+                  geo_ground->mesh_virtual_path == geo_water->mesh_virtual_path);
+  expect_true("2.1 GEO-ground parent Ground",
+              geo_ground != nullptr && geo_ground->parent_name == "Ground");
+  if (geo_ground != nullptr) {
+    expect_true("2.1 GEO-ground x metres",
+                std::fabs(geo_ground->position.x - 1.0f) < 1e-4f);
+  }
+  if (geo_water != nullptr) {
+    expect_true("2.1 GEO-water engine Y from glTF Z",
+                std::fabs(geo_water->position.y + 2.0f) < 1e-4f);
+  }
   bool any_col = false;
   bool any_inactive = false;
   for (const SceneEntityDefinition& entity : scene.getEntities()) {

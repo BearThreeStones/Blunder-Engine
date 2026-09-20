@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
@@ -13,6 +15,10 @@ struct MeshImportSettings {
   bool materials{true};
   bool animations{true};
   float scale{1.0f};
+  /// glTF `meshes[mesh_index].primitives[primitive_index]`. Default 0/0 is
+  /// the historical "first triangle primitive in the file" bind.
+  uint32_t mesh_index{0};
+  uint32_t primitive_index{0};
 };
 
 struct TextureImportSettings {
