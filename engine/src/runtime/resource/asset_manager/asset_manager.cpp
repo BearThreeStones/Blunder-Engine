@@ -593,6 +593,20 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   return mesh->getMaterialAsset() != nullptr;
 }
 
+void AssetManager::adoptStreamedMesh(const eastl::shared_ptr<MeshAsset>& mesh,
+                                     const eastl::string& guid) {
+  if (!m_is_initialized || !mesh) {
+    return;
+  }
+  const eastl::string key = canonicalKey(mesh->getVirtualPath());
+  if (!key.empty()) {
+    m_mesh_cache[key] = mesh;
+  }
+  if (!guid.empty()) {
+    (void)applyCookedMeshMaterialSidecar(mesh, guid);
+  }
+}
+
 bool AssetManager::hydrateMeshGltfMaterial(
     const eastl::shared_ptr<MeshAsset>& mesh) {
   if (!mesh) {

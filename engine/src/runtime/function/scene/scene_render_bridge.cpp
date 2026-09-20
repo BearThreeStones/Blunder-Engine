@@ -142,6 +142,8 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
     return;
   }
 
+  render_system->pumpMeshLoader(scene_instance);
+
   if (OverlaySystem* overlay = render_system->getOverlaySystem()) {
     overlay->markPickInstancesDirty();
   }
@@ -222,7 +224,8 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
         }
 
         if (gpu_mesh == nullptr) {
-          gpu_mesh = render_system->getOrUploadGpuMesh(renderer.mesh.get());
+          const eastl::string uploaded_key = meshGpuCacheKey(*renderer.mesh);
+          gpu_mesh = render_system->findUploadedGpuMesh(uploaded_key);
         }
         if (gpu_mesh == nullptr) {
           return;

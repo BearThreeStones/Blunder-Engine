@@ -12,6 +12,7 @@
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/gpu_driven/gpu_driven_renderer.h"
 #include "runtime/function/render/gpu_mesh.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
@@ -149,7 +150,27 @@ bool playFrameAabbRequested() {
   return env != nullptr && (env[0] == '1' || env[0] == 't' || env[0] == 'T');
 }
 
+bool parseLookatEnv(const char* env, Vec3& eye, Vec3& target) {
+  if (env == nullptr || env[0] == '\0') {
+    return false;
+  }
+  float values[6] = {};
+  if (std::sscanf(env, "%f,%f,%f,%f,%f,%f", &values[0], &values[1], &values[2],
+                  &values[3], &values[4], &values[5]) != 6) {
+    return false;
+  }
+  eye = Vec3(values[0], values[1], values[2]);
+  target = Vec3(values[3], values[4], values[5]);
+  return true;
+}
+
 bool playUsesWorldAabbCamera() {
+  Vec3 unused_eye;
+  Vec3 unused_target;
+  if (parseLookatEnv(std::getenv("BLUNDER_PLAY_LOOKAT"), unused_eye,
+                     unused_target)) {
+    return false;
+  }
   return playFrameAabbRequested() ||
          (g_runtime_global_context.hostMode() == EngineHostMode::Player &&
           g_runtime_global_context.isHeadless());
@@ -302,6 +323,10 @@ void RenderSystem::initializeTextureLoader() {
     }
   }
   m_texture_loader->initialize(info);
+  if (g_runtime_global_context.m_mesh_loader) {
+    g_runtime_global_context.m_mesh_loader->enableGpu(
+        info.allocator != nullptr);
+  }
 }
 
 bool RenderSystem::isVulkanBackend() const {
@@ -1327,6 +1352,49 @@ void RenderSystem::dropInFlightTextures() {
   }
 }
 
+void RenderSystem::dropInFlightMeshes() {
+  if (g_runtime_global_context.m_mesh_loader) {
+    g_runtime_global_context.m_mesh_loader->dropScene();
+  }
+}
+
+void RenderSystem::pumpMeshLoader(SceneInstance* scene_instance) {
+  MeshLoader* loader = g_runtime_global_context.m_mesh_loader.get();
+  if (loader == nullptr) {
+    return;
+  }
+  loader->tick();
+  if (scene_instance != nullptr) {
+    scene_instance->bindStreamedMeshes(*loader);
+  }
+  if (!loader->isGpuEnabled() || !isVulkanBackend() || vkAlloc(this) == nullptr) {
+    return;
+  }
+  uint32_t uploaded = 0;
+  const uint32_t budget = loader->gpuBudget();
+  const eastl::vector<eastl::string> pending = loader->gpuPendingKeys();
+  for (const eastl::string& key : pending) {
+    const eastl::shared_ptr<MeshAsset> mesh = loader->cpuMesh(key);
+    if (!mesh) {
+      continue;
+    }
+    const eastl::string cache_key = gpuMeshCacheKey(*mesh);
+    if (findUploadedGpuMesh(cache_key) != nullptr) {
+      loader->markGpuUploaded(key);
+      continue;
+    }
+    if (uploaded >= budget) {
+      break;
+    }
+    if (getOrUploadGpuMesh(mesh.get()) != nullptr) {
+      loader->markGpuUploaded(key);
+      ++uploaded;
+    } else {
+      loader->markGpuFailed(key);
+    }
+  }
+}
+
 void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
   if (width == 0 || height == 0 || !m_offscreen) {
     return;
@@ -1638,6 +1706,11 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     m_texture_loader->tick();
     if (m_texture_loader->consumeResidencyChanged()) {
       m_defer_viewport_for_texture_residency = true;
+    }
+  }
+  if (g_runtime_global_context.m_mesh_loader) {
+    if (g_runtime_global_context.m_mesh_loader->consumeResidencyChanged()) {
+      requestViewportRedraw();
     }
   }
   if (!m_backend || !m_offscreen) {
@@ -1955,9 +2028,32 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     const float aspect =
         static_cast<float>(offscreen_extent.width) /
         static_cast<float>(eastl::max(1u, offscreen_extent.height));
-    bool used_aabb = false;
-    if (playUsesWorldAabbCamera() && m_editor_camera != nullptr &&
-        scene != nullptr) {
+    bool used_play_camera = false;
+    Vec3 play_lookat_eye;
+    Vec3 play_lookat_target;
+    const bool has_play_lookat = parseLookatEnv(
+        std::getenv("BLUNDER_PLAY_LOOKAT"), play_lookat_eye, play_lookat_target);
+    if (has_play_lookat && m_editor_camera != nullptr) {
+      m_editor_camera->setViewportRect(
+          0, 0, static_cast<float>(offscreen_extent.width),
+          static_cast<float>(offscreen_extent.height),
+          static_cast<float>(offscreen_extent.width),
+          static_cast<float>(offscreen_extent.height));
+      m_editor_camera->snapLookAt(play_lookat_eye, play_lookat_target);
+      view = m_editor_camera->getViewMatrix();
+      projection = m_editor_camera->getProjectionMatrix();
+      projection_mode = m_editor_camera->getProjectionMode();
+      camera_position = m_editor_camera->getPosition();
+      camera_forward = m_editor_camera->getForwardDirection();
+      camera_distance = m_editor_camera->getDistance();
+      near_clip = m_editor_camera->getNearClip();
+      far_clip = m_editor_camera->getFarClip();
+      vertical_fov = m_editor_camera->getVerticalFov();
+      ortho_size = m_editor_camera->getOrthoSize();
+      used_play_camera = true;
+    }
+    if (!used_play_camera && playUsesWorldAabbCamera() &&
+        m_editor_camera != nullptr && scene != nullptr) {
       m_editor_camera->setViewportRect(
           0, 0, static_cast<float>(offscreen_extent.width),
           static_cast<float>(offscreen_extent.height),
@@ -1978,10 +2074,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         far_clip = m_editor_camera->getFarClip();
         vertical_fov = m_editor_camera->getVerticalFov();
         ortho_size = m_editor_camera->getOrthoSize();
-        used_aabb = true;
+        used_play_camera = true;
       }
     }
-    if (!used_aabb) {
+    if (!used_play_camera) {
       ResolvedPlayCamera cam =
           scene ? resolvePlayCameraFromScene(*scene, aspect)
                 : ResolvedPlayCamera{};
@@ -2018,14 +2114,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
         static_cast<float>(offscreen_extent.height));
     m_editor_camera->onUpdate(delta_time);
 
-    const char* lookat = std::getenv("BLUNDER_EDITOR_LOOKAT");
-    float lookat_eye_target[6] = {};
-    const bool has_lookat =
-        lookat != nullptr &&
-        std::sscanf(lookat, "%f,%f,%f,%f,%f,%f", &lookat_eye_target[0],
-                    &lookat_eye_target[1], &lookat_eye_target[2],
-                    &lookat_eye_target[3], &lookat_eye_target[4],
-                    &lookat_eye_target[5]) == 6;
+    Vec3 lookat_eye;
+    Vec3 lookat_target;
+    const bool has_lookat = parseLookatEnv(std::getenv("BLUNDER_EDITOR_LOOKAT"),
+                                           lookat_eye, lookat_target);
     const bool wants_scene_focus =
         m_pending_scene_camera_focus || m_refocus_when_mesh_draws_ready;
     if (wants_scene_focus && g_runtime_global_context.m_scene_system != nullptr) {
@@ -2050,9 +2142,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       s_lookat_hold_frames = 12;
       m_pending_scene_camera_focus = false;
       m_refocus_when_mesh_draws_ready = false;
-      m_editor_camera->snapLookAt(
-          Vec3(lookat_eye_target[0], lookat_eye_target[1], lookat_eye_target[2]),
-          Vec3(lookat_eye_target[3], lookat_eye_target[4], lookat_eye_target[5]));
+      m_editor_camera->snapLookAt(lookat_eye, lookat_target);
     }
     if (s_lookat_hold_frames > 0) {
       --s_lookat_hold_frames;
@@ -2113,7 +2203,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
             std::fprintf(dump, " model0 t=(%.2f,%.2f,%.2f) s=(%.5f,%.5f,%.5f)",
                          t.x, t.y, t.z, sx, sy, sz);
           }
-          std::fprintf(dump, " env=%s\n", lookat ? lookat : "null");
+          std::fprintf(dump, " env=%s\n",
+                       has_lookat ? "BLUNDER_EDITOR_LOOKAT" : "null");
           std::fclose(dump);
         }
       }

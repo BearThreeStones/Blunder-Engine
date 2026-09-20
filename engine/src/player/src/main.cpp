@@ -78,11 +78,13 @@ void sendPlayFrame() {
     return;
   }
   if (g_engine) {
-    Blunder::waitUntilTextureUploadsIdle(20000, []() {
+    auto pump = []() {
       if (g_engine) {
         (void)g_engine->tickOneFrame(g_engine->calculateDeltaTime());
       }
-    });
+    };
+    Blunder::waitUntilMeshUploadsIdle(60000, pump);
+    Blunder::waitUntilTextureUploadsIdle(20000, pump);
   }
   eastl::vector<uint8_t> rgba;
   uint32_t width = 0;

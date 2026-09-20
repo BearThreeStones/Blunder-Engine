@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -21,14 +22,18 @@
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_node_extras.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/asset_yaml.h"
 #include "runtime/resource/asset/guid.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_manager/asset_manager_gltf.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -506,19 +511,99 @@ void bindMeshAssetRenderer(SceneInstance& instance, EntityId entity_id,
   instance.setMeshRenderer(entity_id, eastl::move(renderer));
 }
 
+void bindPendingMeshRenderer(SceneInstance& instance, EntityId entity_id,
+                             const eastl::string& key) {
+  MeshRendererComponent renderer{};
+  renderer.pending_mesh_key = key;
+  instance.setMeshRenderer(entity_id, eastl::move(renderer));
+}
+
+bool enqueueUniqueMesh(AssetManager* asset_manager, MeshLoader* mesh_loader,
+                       const eastl::string& definition_ref,
+                       const eastl::string& resolved_ref,
+                       eastl::string& out_key) {
+  out_key.clear();
+  if (asset_manager == nullptr || mesh_loader == nullptr) {
+    return false;
+  }
+  FileSystem* file_system = asset_manager->fileSystem();
+  if (file_system == nullptr) {
+    return false;
+  }
+
+  MeshLoader::Request request{};
+  eastl::string virtual_path = resolved_ref.empty() ? definition_ref : resolved_ref;
+  if (isValidGuidFormat(definition_ref)) {
+    request.key = definition_ref;
+    request.guid = definition_ref;
+    if (!resolved_ref.empty() && !isValidGuidFormat(resolved_ref)) {
+      virtual_path = resolved_ref;
+    }
+  } else {
+    request.key = virtual_path;
+  }
+  request.virtual_path = virtual_path;
+
+  if (endsWithInsensitive(virtual_path, ".mesh.yaml") ||
+      endsWithInsensitive(virtual_path, ".mesh.asset")) {
+    const char* relative = virtual_path.c_str();
+    if (virtual_path.size() >= 7 &&
+        (std::strncmp(relative, "assets/", 7) == 0 ||
+         std::strncmp(relative, "Assets/", 7) == 0)) {
+      relative += 7;
+    }
+    request.descriptor_path =
+        file_system->resolveAsset(std::filesystem::path(relative));
+    eastl::string yaml_text;
+    MeshAssetDescriptor descriptor{};
+    if (file_system->readText(request.descriptor_path, yaml_text) &&
+        AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+      if (request.guid.empty()) {
+        request.guid = descriptor.guid;
+      }
+      if (!descriptor.source.empty()) {
+        const char* source = descriptor.source.c_str();
+        if (descriptor.source.size() >= 10 &&
+            (std::strncmp(source, "resources/", 10) == 0 ||
+             std::strncmp(source, "Resources/", 10) == 0)) {
+          source += 10;
+        }
+        request.source_path =
+            file_system->resolveResource(std::filesystem::path(source));
+      }
+    }
+  }
+
+  if (!request.guid.empty()) {
+    request.cooked_path = cookedMeshPath(*file_system, request.guid);
+    if (!isValidGuidFormat(request.key)) {
+      request.key = request.guid;
+    }
+  }
+  if (request.key.empty()) {
+    request.key = definition_ref;
+  }
+  out_key = request.key;
+  mesh_loader->request(request);
+  return true;
+}
+
 }  // namespace
 
 void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
                                            SceneInstance& instance,
-                                           const Scene& scene) {
+                                           const Scene& scene,
+                                           MeshLoader* mesh_loader) {
   if (asset_manager == nullptr) {
     return;
   }
 
   eastl::unordered_map<eastl::string, GltfImportDocument> open_documents;
   eastl::unordered_map<eastl::string, eastl::shared_ptr<MeshAsset>> mesh_by_ref;
+  eastl::unordered_map<eastl::string, eastl::string> stream_key_by_ref;
   size_t mesh_asset_binds = 0;
   size_t gltf_imports = 0;
+  size_t stream_enqueues = 0;
 
   LOG_INFO("[GltfSceneImporter] attachEntityMeshes begin (entities={})",
            scene.getEntities().size());
@@ -533,6 +618,13 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     if (!isValid(entity_id)) {
       LOG_WARN("[GltfSceneImporter] mesh entity '{}' not found in scene '{}'",
                definition.name.c_str(), instance.getSourcePath().c_str());
+      continue;
+    }
+
+    if (auto streamed = stream_key_by_ref.find(definition.mesh_virtual_path);
+        streamed != stream_key_by_ref.end()) {
+      bindPendingMeshRenderer(instance, entity_id, streamed->second);
+      ++mesh_asset_binds;
       continue;
     }
 
@@ -557,6 +649,18 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     // whole document ~N times (SE-world: ~10k) and never leaves AppInit.
     if (meshRefLooksLikeAsset(definition.mesh_virtual_path) ||
         meshRefLooksLikeAsset(mesh_ref)) {
+      if (mesh_loader != nullptr) {
+        eastl::string stream_key;
+        if (enqueueUniqueMesh(asset_manager, mesh_loader,
+                              definition.mesh_virtual_path, mesh_ref,
+                              stream_key)) {
+          stream_key_by_ref[definition.mesh_virtual_path] = stream_key;
+          bindPendingMeshRenderer(instance, entity_id, stream_key);
+          ++mesh_asset_binds;
+          ++stream_enqueues;
+          continue;
+        }
+      }
       eastl::shared_ptr<MeshAsset> mesh;
       if (isValidGuidFormat(definition.mesh_virtual_path) &&
           registry != nullptr) {
@@ -614,14 +718,17 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
     asset_manager->closeGltfImportDocument(entry.second);
   }
 
-  const size_t hydrated = asset_manager->tickDeferredGltfMaterials(~0u);
-  instance.rebindMeshRendererMaterialsFromMeshes();
+  size_t hydrated = 0;
+  if (mesh_loader == nullptr) {
+    hydrated = asset_manager->tickDeferredGltfMaterials(~0u);
+    instance.rebindMeshRendererMaterialsFromMeshes();
+  }
 
   LOG_INFO(
       "[GltfSceneImporter] attached MeshRenderers in '{}' (mesh assets={}, "
-      "gltf imports={}, unique={}, deferred_hydrate={}, {:.1f}ms)",
+      "gltf imports={}, unique={}, streamed={}, deferred_hydrate={}, {:.1f}ms)",
       instance.getSourcePath().c_str(), mesh_asset_binds, gltf_imports,
-      mesh_by_ref.size(), hydrated,
+      mesh_by_ref.size() + stream_key_by_ref.size(), stream_enqueues, hydrated,
       std::chrono::duration<double, std::milli>(
           std::chrono::steady_clock::now() - attach_begin)
           .count());

@@ -9,6 +9,7 @@
 #include "runtime/core/log/console_ring.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/function/job/job_system.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/engine.h"
 // #include "runtime/function/framework/world/world_manager.h"
@@ -261,6 +262,12 @@ void RuntimeGlobalContext::startSystems(
   asset_init_info.file_system = m_file_system.get();
   m_asset_manager->initialize(asset_init_info);
 
+  m_mesh_loader = eastl::make_unique<MeshLoader>();
+  MeshLoader::InitInfo mesh_loader_init{};
+  mesh_loader_init.job_system = m_job_system.get();
+  mesh_loader_init.asset_manager = m_asset_manager.get();
+  m_mesh_loader->initialize(mesh_loader_init);
+
   m_asset_compiler = eastl::make_shared<AssetCompilerService>();
   m_asset_compiler->initialize(m_file_system.get(), m_asset_manager.get(),
                                  m_asset_registry.get());
@@ -289,6 +296,7 @@ void RuntimeGlobalContext::startSystems(
   m_scene_system = eastl::make_shared<SceneSystem>();
   SceneSystemInitInfo scene_init_info{};
   scene_init_info.asset_manager = m_asset_manager.get();
+  scene_init_info.mesh_loader = m_mesh_loader.get();
   m_scene_system->initialize(scene_init_info);
 
   // Player: resolve the Play entry scene before Vulkan/UI so load is confirmed
@@ -640,6 +648,11 @@ void RuntimeGlobalContext::shutdownSystems() {
   if (m_scene_system) {
     m_scene_system->shutdown();
     m_scene_system.reset();
+  }
+
+  if (m_mesh_loader) {
+    m_mesh_loader->shutdown();
+    m_mesh_loader.reset();
   }
 
   if (m_asset_manager) {
