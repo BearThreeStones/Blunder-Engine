@@ -13,6 +13,7 @@
 namespace Blunder {
 
 class AssetManager;
+class MeshLoader;
 class Scene;
 class SceneInstance;
 
@@ -44,8 +45,11 @@ class GltfSceneImporter final {
 
   /// Attaches each scene entity's Mesh Asset (GUID / descriptor) as a
   /// MeshRenderer on that entity. Unique glTF *path* refs still import once.
+  /// When `mesh_loader` is set, unique Mesh Asset GUIDs enqueue CPU Jobs
+  /// instead of blocking `loadMesh`.
   static void attachEntityMeshes(AssetManager* asset_manager,
-                                 SceneInstance& instance, const Scene& scene);
+                                 SceneInstance& instance, const Scene& scene,
+                                 MeshLoader* mesh_loader = nullptr);
 };
 
 }  // namespace Blunder

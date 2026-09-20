@@ -164,10 +164,20 @@ bool EditorSceneEditSystem::openScene(const eastl::string& virtual_path) {
     }
   }
 
+  // Drop the previous document's Mesh Jobs before enqueue. loadScene then
+  // setActiveInstance used to bump generation and discard the new GUIDs.
+  SceneInstance* previous = m_scene_system->getActiveInstance();
+  if (previous != nullptr) {
+    m_scene_system->setActiveInstance(nullptr);
+  }
+
   const eastl::shared_ptr<SceneInstance> instance =
       m_scene_system->loadScene(virtual_path);
   if (!instance) {
     LOG_ERROR("[EditorSceneEdit] failed to open scene '{}'", virtual_path.c_str());
+    if (previous != nullptr) {
+      m_scene_system->setActiveInstance(previous);
+    }
     return false;
   }
 

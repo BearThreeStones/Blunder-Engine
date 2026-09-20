@@ -18,6 +18,8 @@ class MeshAsset;
 struct MeshRendererComponent final {
   eastl::shared_ptr<MeshAsset> mesh;
   eastl::shared_ptr<MaterialAsset> material;
+  /// Mesh Loader key (GUID or descriptor path) while CPU residency is in flight.
+  eastl::string pending_mesh_key;
   glm::mat4 world_matrix{1.0f};
   cgltf_alpha_mode alpha_mode{cgltf_alpha_mode_opaque};
   float alpha_cutoff{0.5f};

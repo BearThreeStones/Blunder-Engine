@@ -41,6 +41,8 @@ set(RENDER_SOURCES
     "function/render/render_system.h"
     "function/render/texture_loader.cpp"
     "function/render/texture_loader.h"
+    "function/render/mesh_loader.cpp"
+    "function/render/mesh_loader.h"
     "function/render/frame_graph/frame_graph.cpp"
     "function/render/frame_graph/frame_graph.h"
     "function/render/transform_edit_viewport_notify.cpp"

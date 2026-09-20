@@ -1,12 +1,42 @@
 #include "runtime/project/play_frame.h"
 
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/scene_thumbnail/scene_still.h"
 
 #include <chrono>
 
 namespace Blunder {
+
+void waitUntilMeshUploadsIdle(uint32_t timeout_ms,
+                              const std::function<void()>& pump) {
+  auto* render = g_runtime_global_context.m_render_system.get();
+  auto* loader = g_runtime_global_context.m_mesh_loader.get();
+  if (render == nullptr) {
+    return;
+  }
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeout_ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+    const uint32_t inflight = loader != nullptr ? loader->inFlightCount() : 0u;
+    const size_t pending =
+        loader != nullptr ? loader->gpuPendingKeys().size() : 0;
+    if (inflight == 0u && pending == 0) {
+      break;
+    }
+    if (pump) {
+      pump();
+    }
+    render->requestViewportRedraw();
+  }
+  for (int i = 0; i < 4; ++i) {
+    if (pump) {
+      pump();
+    }
+    render->requestViewportRedraw();
+  }
+}
 
 void waitUntilTextureUploadsIdle(uint32_t timeout_ms,
                                  const std::function<void()>& pump) {

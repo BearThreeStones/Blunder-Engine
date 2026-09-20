@@ -408,6 +408,29 @@ target_precompile_headers(texture_loader_test
 add_test(NAME texture_loader_test
          COMMAND texture_loader_test)
 
+add_executable(mesh_loader_test
+    "mesh_loader_test.cpp"
+)
+
+target_link_libraries(mesh_loader_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(mesh_loader_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(mesh_loader_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(mesh_loader_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME mesh_loader_test
+         COMMAND mesh_loader_test)
+
 add_executable(secondary_command_buffer_test
     "secondary_command_buffer_test.cpp"
 )
