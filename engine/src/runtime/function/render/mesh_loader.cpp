@@ -190,6 +190,7 @@ struct MeshLoaderImpl {
   uint32_t gpu_enqueue_count{0};
   bool residency_changed{false};
   eastl::unordered_map<eastl::string, eastl::unique_ptr<RequestRecord>> requests;
+  eastl::unordered_map<eastl::string, MeshLoader::Request> request_args;
   eastl::unordered_map<eastl::string, eastl::shared_ptr<MeshAsset>> cpu_meshes;
   eastl::unordered_set<eastl::string> failed_keys;
   eastl::unordered_set<eastl::string> gpu_uploaded;
@@ -327,6 +328,7 @@ void MeshLoader::shutdown() {
   }
   stopAndWaitCpu();
   m_impl->requests.clear();
+  m_impl->request_args.clear();
   m_impl->cpu_meshes.clear();
   m_impl->failed_keys.clear();
   m_impl->gpu_uploaded.clear();
@@ -350,6 +352,7 @@ void MeshLoader::dropScene() {
     return;
   }
   ++m_impl->generation;
+  m_impl->failed_keys.clear();
 }
 
 void MeshLoader::enableGpu(bool enabled) {
@@ -366,10 +369,23 @@ void MeshLoader::tick() {
   pollCpu(*m_impl);
 }
 
+void MeshLoader::requeue(const eastl::string& key) {
+  if (!m_impl || key.empty()) {
+    return;
+  }
+  auto it = m_impl->request_args.find(key);
+  if (it == m_impl->request_args.end()) {
+    return;
+  }
+  m_impl->failed_keys.erase(key);
+  request(it->second);
+}
+
 void MeshLoader::request(const Request& request) {
   if (!m_impl || request.key.empty()) {
     return;
   }
+  m_impl->request_args[request.key] = request;
   RequestRecord* record = beginRequest(*m_impl, request.key);
   if (record == nullptr) {
     return;

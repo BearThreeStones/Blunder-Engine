@@ -495,6 +495,19 @@ void SceneInstance::bindStreamedMeshes(MeshLoader& loader) {
   }
 }
 
+void SceneInstance::requeuePendingMeshes(MeshLoader& loader) {
+  for (const auto& entry : m_mesh_renderers) {
+    if (isOmittedFromDocument(entry.first)) {
+      continue;
+    }
+    const MeshRendererComponent& renderer = entry.second;
+    if (renderer.mesh || renderer.pending_mesh_key.empty()) {
+      continue;
+    }
+    loader.requeue(renderer.pending_mesh_key);
+  }
+}
+
 void SceneInstance::rebindMeshRendererMaterialsFromMeshes() {
   for (auto& entry : m_mesh_renderers) {
     MeshRendererComponent& renderer = entry.second;

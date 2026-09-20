@@ -217,28 +217,67 @@ int main() {
   expect_eq_u32("first activate keeps unique-mesh Jobs", loader.inFlightCount(),
                 3u);
 
+  const char* kGuidC = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee04";
+  writeMeshYaml(project / "Assets" / "Meshes" / "c.mesh.yaml", kGuidC);
+  expect_true("write meshbin C",
+              writeMeshCookFile(project / ".blunder" / "cooked" /
+                                    (std::string(kGuidC) + ".meshbin"),
+                                makeTriangle(4.0f), makeTriangleIndices()));
+  writeTextFile(project / "Assets" / "Scenes" / "other.scene.asset",
+                "{\n  \"type\": \"Scene\",\n"
+                "  \"guid\": \"cccccccc-cccc-4ddd-8eee-ffffffffffff\",\n"
+                "  \"entities\": [\n"
+                "    { \"name\": \"C0\", \"position\": [4, 0, 0], "
+                "\"rotation\": [0, 0, 0], \"rotationMode\": \"euler_degrees\", "
+                "\"mesh\": \"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee04\" }\n"
+                "  ]\n}\n");
+  const eastl::shared_ptr<SceneInstance> other =
+      scene_system.loadScene(eastl::string("assets/Scenes/other.scene.asset"));
+  expect_true("load other scene", other != nullptr);
+  const uint64_t generation_before_switch = loader.generation();
+  scene_system.setActiveInstance(other.get());
+  expect_true("scene switch bumps generation",
+              loader.generation() == generation_before_switch + 1u);
+  expect_true("switch requeues other-scene Jobs", loader.inFlightCount() >= 1u);
+  expect_eq_u32("other pending renderer kept",
+                static_cast<uint32_t>(pendingMeshCount(*other)), 1u);
+
+  const uint64_t generation_before_reload = loader.generation();
+  scene_system.setActiveInstance(instance.get());
+  expect_true("reload while Jobs in flight",
+              scene_system.reloadActiveFromDisk());
+  expect_true("reload bumps generation",
+              loader.generation() > generation_before_reload);
+  expect_true("reload requeues unique-mesh Jobs", loader.inFlightCount() >= 3u);
+  SceneInstance* reloaded = scene_system.getActiveInstance();
+  expect_true("reload swapped instance", reloaded != nullptr &&
+                                            reloaded != instance.get());
+  expect_eq_u32("reloaded pending renderers",
+                static_cast<uint32_t>(pendingMeshCount(*reloaded)), 4u);
+
   jobs.wait();
   expect_true("Jobs still unpublished until tick", loader.cpuMesh(kGuidA) == nullptr);
 
   loader.tick();
-  instance->bindStreamedMeshes(loader);
+  reloaded->bindStreamedMeshes(loader);
   expect_true("GUID A CPU-resident", loader.cpuMesh(kGuidA) != nullptr);
   expect_true("GUID B CPU-resident", loader.cpuMesh(kGuidB) != nullptr);
   expect_true("missing GUID failed", loader.isFailed(kGuidMissing));
   expect_eq_u32("valid renderers bound",
-                static_cast<uint32_t>(boundMeshCount(*instance)), 3u);
+                static_cast<uint32_t>(boundMeshCount(*reloaded)), 3u);
   expect_true("shared GUID A pointer",
-              instance->getMeshRenderer(instance->findEntityByName("A0")) &&
-                  instance->getMeshRenderer(instance->findEntityByName("A1")) &&
-                  instance->getMeshRenderer(instance->findEntityByName("A0"))
+              reloaded->getMeshRenderer(reloaded->findEntityByName("A0")) &&
+                  reloaded->getMeshRenderer(reloaded->findEntityByName("A1")) &&
+                  reloaded->getMeshRenderer(reloaded->findEntityByName("A0"))
                           ->mesh ==
-                      instance->getMeshRenderer(instance->findEntityByName("A1"))
+                      reloaded->getMeshRenderer(reloaded->findEntityByName("A1"))
                           ->mesh);
   expect_true("failed GUID has no mesh",
-              instance->getMeshRenderer(instance->findEntityByName("Missing")) &&
-                  instance->getMeshRenderer(instance->findEntityByName("Missing"))
+              reloaded->getMeshRenderer(reloaded->findEntityByName("Missing")) &&
+                  reloaded->getMeshRenderer(reloaded->findEntityByName("Missing"))
                           ->mesh == nullptr);
-  expect_true("scene instance kept after one fail", instance->getEntityCount() == 4u);
+  expect_true("scene instance kept after one fail",
+              reloaded->getEntityCount() == 4u);
 
   const eastl::vector<eastl::string> first_budget = loader.gpuPendingKeys();
   expect_true("GPU pending has unique CPU meshes", first_budget.size() >= 2);

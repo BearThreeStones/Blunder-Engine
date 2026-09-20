@@ -258,12 +258,19 @@ bool SceneSystem::reloadActiveFromDisk() {
     return false;
   }
 
+  // Drop old Jobs before enqueue. setActiveInstance(neu) after instantiate
+  // used to bump generation and discard the new unique-mesh Jobs.
+  setActiveInstance(nullptr);
+
+  auto restore_old = [&]() { setActiveInstance(old); };
+
   m_asset_manager->invalidateSceneCache(path);
   const eastl::shared_ptr<SceneAsset> scene_asset =
       m_asset_manager->loadScene(path);
   if (!scene_asset) {
     LOG_ERROR("[SceneSystem] reloadActiveFromDisk: failed to load '{}'",
               path.c_str());
+    restore_old();
     return false;
   }
 
@@ -272,6 +279,7 @@ bool SceneSystem::reloadActiveFromDisk() {
   if (!neu) {
     LOG_ERROR("[SceneSystem] reloadActiveFromDisk: instantiate failed for '{}'",
               path.c_str());
+    restore_old();
     return false;
   }
 
@@ -308,7 +316,8 @@ void SceneSystem::setActiveInstance(SceneInstance* instance) {
     // First activate is null → scene. Unique-mesh Jobs were submitted during
     // loadScene at the current generation; bumping it here discarded every
     // SE-world GUID before GpuMesh upload (QC: 0 uploaded, grid-only Viewport).
-    if (m_active_instance != nullptr) {
+    const bool leaving_scene = m_active_instance != nullptr;
+    if (leaving_scene) {
       if (g_runtime_global_context.m_render_system) {
         g_runtime_global_context.m_render_system->dropInFlightTextures();
         g_runtime_global_context.m_render_system->dropInFlightMeshes();
@@ -319,9 +328,15 @@ void SceneSystem::setActiveInstance(SceneInstance* instance) {
     if (g_runtime_global_context.m_render_system) {
       g_runtime_global_context.m_render_system->notifyActiveSceneChanged();
     }
+    m_active_instance = instance;
+    ObjectDB::setEntityStore(instance);
+    if (instance != nullptr && m_mesh_loader != nullptr) {
+      instance->requeuePendingMeshes(*m_mesh_loader);
+    }
+  } else {
+    m_active_instance = instance;
+    ObjectDB::setEntityStore(instance);
   }
-  m_active_instance = instance;
-  ObjectDB::setEntityStore(instance);
   if (instance != nullptr) {
     LOG_INFO("[SceneSystem] active scene set to '{}'", instance->getSourcePath().c_str());
   }

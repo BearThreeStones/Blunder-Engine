@@ -53,6 +53,8 @@ class MeshLoader final {
 
   /// Scene drop / replace: stale completions do not publish CPU meshes.
   void dropScene();
+  /// Restamp an in-flight Job to the current generation, or submit again.
+  void requeue(const eastl::string& key);
 
   /// Stop new work, wait remaining CPU Jobs.
   void stopAndWaitCpu();

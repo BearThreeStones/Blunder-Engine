@@ -97,6 +97,8 @@ class SceneInstance final : public IEntityStore {
   const MeshRendererComponent* getMeshRenderer(EntityId id) const;
   /// Bind pending Mesh Loader keys once those unique meshes are CPU-resident.
   void bindStreamedMeshes(MeshLoader& loader);
+  /// After dropScene, restamp or re-submit unique keys still pending on this instance.
+  void requeuePendingMeshes(MeshLoader& loader);
   /// Copy MeshAsset materials onto MeshRenderers after deferred hydrate.
   /// Skips renderers that already hold a textured override.
   void rebindMeshRendererMaterialsFromMeshes();
