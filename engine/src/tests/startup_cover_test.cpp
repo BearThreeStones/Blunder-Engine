@@ -39,6 +39,17 @@ int main() {
       "starting stage name",
       std::strcmp(startupCoverStageName(StartupCoverPhase::startingEditor),
                   "Starting editor") == 0);
+  expect_true("cooking name has no percent",
+              std::strchr(startupCoverStageName(StartupCoverPhase::cookingAssets),
+                          '%') == nullptr);
+  expect_true(
+      "preparing name has no percent",
+      std::strchr(startupCoverStageName(StartupCoverPhase::preparingEditor),
+                  '%') == nullptr);
+  expect_true(
+      "starting name has no percent",
+      std::strchr(startupCoverStageName(StartupCoverPhase::startingEditor),
+                  '%') == nullptr);
 
   expect_true("cover inactive before begin", !startupCoverIsActive());
 

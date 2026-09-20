@@ -236,6 +236,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char** argv) {
     const bool use_startup =
         g_launch.adapter == Blunder::MachineAdapterKind::none;
     g_engine->initialize(g_launch.scene, use_startup);
+    if (Blunder::g_runtime_global_context.isQuitRequested()) {
+      return SDL_APP_SUCCESS;
+    }
 
     if (g_launch.adapter == Blunder::MachineAdapterKind::cli) {
       for (int i = 0; i < 8; ++i) {

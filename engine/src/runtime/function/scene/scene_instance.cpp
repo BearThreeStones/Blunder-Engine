@@ -2,6 +2,7 @@
 #include "runtime/function/scene/scene_instance.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/boot_work_heartbeat.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
@@ -268,6 +269,9 @@ void SceneInstance::instantiate(const Scene& scene) {
   ids.reserve(scene.getEntities().size());
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
+    if ((ids.size() & 0xFFu) == 0u && !bootWorkHeartbeatContinue()) {
+      return;
+    }
     const EntityId id = createEntity(definition.name, definition.position,
                                      definition.rotation, definition.scale);
     ids.push_back(id);

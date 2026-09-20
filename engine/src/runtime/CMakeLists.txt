@@ -30,6 +30,10 @@ add_library(engine_runtime STATIC
     "function/ui/active_scene_display.h"
     "function/ui/startup_cover.cpp"
     "function/ui/startup_cover.h"
+    "function/ui/engine_open_progress.cpp"
+    "function/ui/engine_open_progress.h"
+    "core/boot_work_heartbeat.cpp"
+    "core/boot_work_heartbeat.h"
     "function/ui/view_models/editor_panels_view_model.cpp"
     "function/ui/view_models/editor_panels_view_model.h"
     "function/ui/viewport/viewport_cpu_frame.h"
@@ -374,6 +378,7 @@ slint_target_sources(engine_runtime NAMESPACE BlunderPm
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
     "function/slint/import_mesh_dialog.slint"
+    "function/slint/engine_open_progress_dialog.slint"
     "function/slint/play_dirty_scene_dialog.slint"
     "function/slint/browser_delete_dialog.slint"
     "function/slint/detection_reimport_dialog.slint"

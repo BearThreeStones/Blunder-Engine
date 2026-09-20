@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "runtime/core/boot_work_heartbeat.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/content/content_entry.h"
@@ -57,6 +58,9 @@ eastl::vector<ContentEntry> ContentIndex::scan(const FileSystem& file_system,
         file_system.listDirectoryRecursive(absolute_root, absolute_root,
                                            max_depth);
     for (const DirectoryEntry& dir_entry : discovered) {
+      if ((entries.size() & 0xFFu) == 0u && !bootWorkHeartbeatContinue()) {
+        return;
+      }
       if (shouldSkipEntry(dir_entry)) {
         continue;
       }
