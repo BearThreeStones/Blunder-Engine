@@ -45,15 +45,6 @@ void hideAndUnbind() {
   unbindHost();
 }
 
-void hideAndUnbind() {
-  const bool was_visible = g_visible;
-  g_visible = false;
-  if (was_visible && g_present) {
-    g_present();
-  }
-  unbindHost();
-}
-
 }  // namespace
 
 bool engineOpenProgressShouldMount(EngineHostMode mode, bool headless,
