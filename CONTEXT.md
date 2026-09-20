@@ -344,6 +344,26 @@ _Avoid_: Submesh as this; calling a whole MeshRenderer a meshlet; Nanite cluster
 A hierarchical depth pyramid built from the previous frame’s offscreen depth, used to occlude Meshlets on the GPU. Early cull uses this pyramid; a late pass draws Meshlets that failed Hi-Z last frame. The first frame has an empty pyramid and draws frustum-visible Meshlets.
 _Avoid_: A depth prepass as this slice’s occlusion method; treating SSAO as this; a visibility buffer as this
 
+**Frame timing HUD**:
+Slint overlay on the windowed editor Viewport **and** windowed Player showing FPS, CPU frame ms, GPU frame ms, main Pass times, and instance / light counts. Same numbers on both hosts. Default off (F3, editor Viewport menu), not persisted, not a product settings page. Headless / MCP / Project Manager have none. Shipping keeps this HUD and turns Tracy off. Distinct from **Editor Overlay**, from the **Viewport tool strip**, from the **Profiler dock**, and from the 2027-01 game shell. Decision record: [ADR 0075](docs/adr/0075-frame-timing-hud-and-tracy.md).
+_Avoid_: Title-bar FPS as the only Player readout; treating this as an Editor Overlay; Headless HUD; a Tracy window as this layer; persisting the toggle; a second UI toolkit
+
+**Profiler dock**:
+Editor-only self-drawn Slint bottom dock (Animation Window / Console rhythm): frame strip, thread / GPU Pass lanes, click a zone for name and ms. Binds the **Frame timing ring**. Player does not have this dock. Not Tracy View, not ImGui, not egui, not Qt, not a WebView. Not Insights. Decision record: [ADR 0075](docs/adr/0075-frame-timing-hud-and-tracy.md).
+_Avoid_: Embedding Tracy Server; puffin_egui; requiring `TRACY_ENABLE` for the strip; covering the Viewport as an overlay; hanging this dock on Player
+
+**Frame timing ring**:
+Engine-owned readable history of about 120 `tickOneFrame` slots: CPU dt, GPU query ms, named Passes, a few CPU zones (tick / Job / scene sync), instance / light / draw counts. HUD and Profiler dock bind this ring. Works with Tracy compiled out. Not Tracy’s internal buffer, not the Tracy protocol, not a `.tracy` file.
+_Avoid_: Parsing Tracy sockets for the panel; Insights-length history; per-draw GPU slots
+
+**Tracy Client**:
+Optional dual-write of the same instrumentation (`ZoneScoped`, `FrameMark` at `tickOneFrame`, Pass-level `TracyVkZone`, count plots) to a standalone `Tracy.exe` on localhost. Not a product layer and not the HUD/dock source. Dev: `TRACY_ENABLE` + `TRACY_ON_DEMAND` + localhost-only + no broadcast. Absence of `TRACY_ENABLE` is off (`=0` does not disable). CI and shipping do not define it. Client links into static `engine_runtime` only. `Tracy.exe` is not in the install package. Decision record: [ADR 0075](docs/adr/0075-frame-timing-hud-and-tracy.md).
+_Avoid_: Embedding Tracy View; HUD reading Tracy internals; UDP broadcast; a second `TracyClient.cpp` in the SHARED C ABI DLL; always-on capture without ON_DEMAND
+
+**GPU timestamp query**:
+Engine-owned Vulkan timestamp queries for HUD/ring Pass times. Independent of Tracy’s query pool. Named Frame graph Passes plus a few internals (shadow / cull / froxel / lighting triangle). Never per-draw, per instance, or per Spot. Non-DISCRETE devices: HUD marks GPU timings unreliable. Linux CI GPU milliseconds are not a budget gate.
+_Avoid_: One GPU zone per MeshRenderer; trusting iGPU timestamps for 138 Spot; using Nsight Frame duration to prove `FrameMark`
+
 ### Reflection & scripting
 
 **Gameplay scripting language**:
@@ -743,8 +763,8 @@ The Editor Shell strip at the top of the Editor Session window (~48px). It is Ba
 _Avoid_: Top toolbar; treating a window Toolbar as the Application Bar; moving Save/Undo into menus as part of this Shell pass; leaving Play in the left-aligned button row; giving every App Bar button a filled background; moving Move/Rotate/Scale onto this bar as part of this Shell pass; word faces on Save/Undo/Redo or the Play cluster once those Godot glyphs are wired; using the wordmark for Scene identity or Project switch/open-folder actions
 
 **Viewport tool strip**:
-Slint overlay bars on the editor viewport (transform tools, projection toggle). They stay overlays in this pass. They read as floating: translucent Base 3 fill, hairline, 10px radius, soft shadow, and **Editor accent** on the checked tool. Transform **Move / Rotate / Scale** and the global/local space toggle are **Editor Icon**-only (**Icon-first chrome**). Distinct from **Editor Overlay** (3D draw) and from Application Bar / a Scene Window Toolbar. The overlay **animation preview** toolbar is replaced by the **Animation Window**.
-_Avoid_: Relocating these strips under the Scene tab as a Window Toolbar in this pass; treating them as Editor Overlays; opaque bevelled bars flush against the viewport; word faces on Move/Rotate/Scale
+Slint overlay bars on the editor viewport (transform tools, projection toggle). They stay overlays in this pass. They read as floating: translucent Base 3 fill, hairline, 10px radius, soft shadow, and **Editor accent** on the checked tool. Transform **Move / Rotate / Scale** and the global/local space toggle are **Editor Icon**-only (**Icon-first chrome**). Distinct from **Editor Overlay** (3D draw), from the **Frame timing HUD**, and from Application Bar / a Scene Window Toolbar. The overlay **animation preview** toolbar is replaced by the **Animation Window**.
+_Avoid_: Relocating these strips under the Scene tab as a Window Toolbar in this pass; treating them as Editor Overlays; treating Frame timing HUD as this strip; opaque bevelled bars flush against the viewport; word faces on Move/Rotate/Scale
 
 **Editor modal**:
 Authored Slint dialogs (Import Mesh, dirty Play/Open, Detection reimport, Browser Delete, Project Manager Create/Import, **Editor open progress**) use Editor Theme modal chrome — 14px radius, no titlebar divider, blurred dim layer, actions bottom-right with the confirming action as the **Editor accent** primary when the dialog has actions — plus Editor controls. Copy and button sets stay as authored. The open-progress overlay has **no** Cancel/Retry. Not native OS dialogs for these flows.
@@ -935,12 +955,12 @@ The separate OS process that runs Play Mode for the open Project. It owns the li
 _Avoid_: Second editor window in the same process as the product Play boundary; in-process PIE as a second product Play; treating env-gated in-editor DotNetHost as Play Mode
 
 **Player**:
-The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI. It may be **Headless** (no OS window) and is still Player. In a windowed Player, only Gameplay Input (plus system window chrome such as close) is accepted; authorship input (Editor Camera, Editor Overlays / gizmos, viewport pick, Editor Commands) is off. Headless Player has no window chrome; session control is the Play control channel.
-_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play; treating Player as a second editor viewport; mounting Authorship System in the Player because it is Headless
+The dedicated Play Process executable (`engine_player`) — a thin entrypoint over the shared engine runtime, not the editor shell. It runs Play Mode only; it is not an authorship UI. It may be **Headless** (no OS window) and is still Player. In a windowed Player, only Gameplay Input (plus system window chrome such as close) is accepted; authorship input (Editor Camera, Editor Overlays / gizmos, viewport pick, Editor Commands) is off. A windowed Player MAY show the **Frame timing HUD** (HUD-only Slint root; not the editor shell; not the **Profiler dock**). Headless Player has no window chrome and no HUD; session control is the Play control channel.
+_Avoid_: Reusing `engine_editor` with a play flag as the long-term Player; a fully forked second engine tree for Play; treating Player as a second editor viewport; mounting Authorship System in the Player because it is Headless; hanging the Profiler dock on Player; treating title-bar FPS as the only timing readout
 
 **Editor Overlay**:
-Authorship-only viewport chrome that is drawn and hit-tested in the editor viewport — ground grid, Transform gizmo, Navigate gizmo, selection outline, world axes, origins, wireframe, Camera Gizmo (scene Camera Component visualization), Light Gizmo (scene Light Component visualization), and similar tools. The Player never shows or interacts with Editor Overlays in Play Mode (including while Play Pause is active). The editor viewport keeps Editor Overlays while a Play Session runs.
-_Avoid_: Game HUD; debug draw as product Overlay; “game mode chrome”; hiding editor-viewport overlays merely because a Play Session is open; a Player debug toggle to force Editor Overlays on in the first slice; treating Editor Camera orbit as Player gameplay
+Authorship-only viewport chrome that is drawn and hit-tested in the editor viewport — ground grid, Transform gizmo, Navigate gizmo, selection outline, world axes, origins, wireframe, Camera Gizmo (scene Camera Component visualization), Light Gizmo (scene Light Component visualization), and similar tools. The Player never shows or interacts with Editor Overlays in Play Mode (including while Play Pause is active). The editor viewport keeps Editor Overlays while a Play Session runs. **Frame timing HUD** is not this.
+_Avoid_: Game HUD; treating Frame timing HUD as this; debug draw as product Overlay; “game mode chrome”; hiding editor-viewport overlays merely because a Play Session is open; a Player debug toggle to force Editor Overlays on in the first slice; treating Editor Camera orbit as Player gameplay
 
 **Camera Gizmo**:
 The Editor Overlay that visualizes and interacts with a scene **Camera Component** in the editor viewport. Visual language matches Blender’s camera wire: origin point, four frustum edges, a **view frame** rectangle, and an **up triangle** on the frame’s top edge. Unselected cameras draw the same shape in a muted color; a **single** selected camera uses the selection color and exposes FOV / clip interaction handles (multi-select draws bodies/frames but not those handles). Frame aspect follows the current editor viewport; frame depth is a fixed local display distance (not a stored sensor aspect). Hit-testing the Camera Gizmo takes priority over mesh viewport pick. It is not the **Editor Camera** and is never shown or driven in the Player.
