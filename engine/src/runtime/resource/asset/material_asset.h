@@ -8,6 +8,7 @@
 #include <cgltf.h>
 
 #include "EASTL/shared_ptr.h"
+#include "EASTL/string.h"
 
 #include "runtime/resource/asset/asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
@@ -125,7 +126,32 @@ class MaterialAsset final : public Asset {
   void setShininess(float value) { m_shininess = value; }
   void setMetallicFactor(float value) { m_metallic_factor = value; }
   void setRoughnessFactor(float value) { m_roughness_factor = value; }
+  void setAlphaMode(cgltf_alpha_mode value) { m_alpha_mode = value; }
   void setUnlit(bool value) { m_unlit = value; }
+
+  /// Godot water films are BLEND with albedo alpha 0.2–0.4 over a vertex-colored
+  /// bed. Blunder does not import COLOR_0 or the paper shader, so that film is
+  /// nearly invisible and does not write depth (editor grid shows in the hole).
+  /// Promote those textured films to opaque diffuse so the cyan/water albedo
+  /// fills the set. Bubbles stay transparent (texture path does not match).
+  void promoteWaterSurfaceFilmToOpaque() {
+    if (m_alpha_mode != cgltf_alpha_mode_blend ||
+        m_base_color_factor.a >= 0.999f) {
+      return;
+    }
+    eastl::string path;
+    if (m_base_color_texture_asset) {
+      path = m_base_color_texture_asset->getVirtualPath();
+    }
+    if (path.find("ice_surface_squiggles") == eastl::string::npos &&
+        path.find("creek_water_surface") == eastl::string::npos) {
+      return;
+    }
+    m_alpha_mode = cgltf_alpha_mode_opaque;
+    m_base_color_factor.a = 1.0f;
+    m_metallic_factor = 0.0f;
+    m_specular_color = glm::vec3(0.04f);
+  }
 
  private:
   glm::vec4 m_base_color_factor{1.0f};

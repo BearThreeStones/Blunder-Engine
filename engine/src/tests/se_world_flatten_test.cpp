@@ -5,6 +5,7 @@
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -680,6 +681,44 @@ void testDogWalkSeWorldOpenTiming() {
   file_system.shutdown();
 }
 
+void testPromotePondIceFilmToOpaque() {
+  using namespace Blunder;
+  Asset::Meta tex_meta;
+  tex_meta.virtual_path =
+      "resources/se-world/assets/textures/ice_surface_squiggles-albedo.png";
+  auto tex = eastl::make_shared<Texture2DAsset>(
+      eastl::move(tex_meta), 1u, 1u, 4u, eastl::vector<uint8_t>{0, 0, 0, 0});
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "pond_water_surface";
+  auto ice = eastl::make_shared<MaterialAsset>(
+      eastl::move(mat_meta), glm::vec4(1.0f, 1.0f, 1.0f, 0.2f), AssetHandle{},
+      tex, nullptr, nullptr, nullptr, glm::vec3(0.15f), glm::vec3(1.0f),
+      glm::vec3(0.9f), 8.0f, 0.9f, 1.0f, cgltf_alpha_mode_blend, 0.5f, true,
+      false);
+  expect_true("ice film starts transparent", ice->usesForwardTransparentPass());
+  ice->promoteWaterSurfaceFilmToOpaque();
+  expect_true("ice film becomes opaque", !ice->usesForwardTransparentPass());
+  expect_true("ice film alpha 1", ice->getBaseColorFactor().a >= 0.999f);
+  expect_true("ice film dielectric", ice->getMetallicFactor() < 0.01f);
+
+  Asset::Meta bubble_tex_meta;
+  bubble_tex_meta.virtual_path =
+      "resources/se-world/assets/textures/pond_underwater_bubbles.png";
+  auto bubble_tex = eastl::make_shared<Texture2DAsset>(
+      eastl::move(bubble_tex_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{0, 0, 0, 0});
+  Asset::Meta bubble_meta;
+  bubble_meta.virtual_path = "pond_underwater_bubbles";
+  auto bubbles = eastl::make_shared<MaterialAsset>(
+      eastl::move(bubble_meta), glm::vec4(0.68f, 0.77f, 1.0f, 0.2f),
+      AssetHandle{}, bubble_tex, nullptr, nullptr, nullptr, glm::vec3(0.15f),
+      glm::vec3(1.0f), glm::vec3(0.4f), 32.0f, 0.0f, 0.9f,
+      cgltf_alpha_mode_blend, 0.5f, true, false);
+  bubbles->promoteWaterSurfaceFilmToOpaque();
+  expect_true("bubbles stay transparent",
+              bubbles->usesForwardTransparentPass());
+}
+
 }  // namespace
 
 int main() {
@@ -694,6 +733,7 @@ int main() {
   testAttachMeshAssetsBindWithoutGraphImport();
   testSeWorldOpenPath();
   testDogWalkSeWorldOpenTiming();
+  testPromotePondIceFilmToOpaque();
   g_runtime_global_context.m_logger_system.reset();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

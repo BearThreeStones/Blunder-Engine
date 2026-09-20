@@ -584,6 +584,7 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
+  material->promoteWaterSurfaceFilmToOpaque();
   mesh->setMaterialAsset(eastl::move(material));
   if (!sidecar.base_color_texture.empty() && mesh->getMaterialAsset() &&
       !mesh->getMaterialAsset()->hasBaseColorTexture()) {

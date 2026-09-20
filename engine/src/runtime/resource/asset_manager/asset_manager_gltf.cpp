@@ -343,6 +343,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
       normal_texture_asset, occlusion_texture_asset, ambient_color, diffuse_color,
       specular_color, shininess, metallic_factor, roughness_factor, alpha_mode,
       alpha_cutoff, double_sided, unlit);
+  material_asset->promoteWaterSurfaceFilmToOpaque();
   m_material_cache[material_key] = material_asset;
   return material_asset;
 }
