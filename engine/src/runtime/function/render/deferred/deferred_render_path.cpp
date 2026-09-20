@@ -1246,6 +1246,16 @@ void DeferredRenderPath::destroySlots() {
   if (m_vk_context == nullptr) {
     return;
   }
+  // Each lighting_vrs_framebuffer samples the other FIF slot's rate_view.
+  // Destroy every VRS framebuffer before any rate view/image.
+  VkDevice device = m_vk_context->getDevice();
+  for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
+    GBufferSlot& data = m_slots[slot];
+    if (data.lighting_vrs_framebuffer != VK_NULL_HANDLE) {
+      vkDestroyFramebuffer(device, data.lighting_vrs_framebuffer, nullptr);
+      data.lighting_vrs_framebuffer = VK_NULL_HANDLE;
+    }
+  }
   for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
     destroySlot(slot);
   }
