@@ -226,6 +226,12 @@ int main() {
                 listed.find("\"name\":\"pan\"") != std::string::npos);
     expect_true("mcp tools zoom",
                 listed.find("\"name\":\"zoom\"") != std::string::npos);
+    expect_true("mcp tools vrs-status",
+                listed.find("vrs-status") != std::string::npos);
+    expect_true("mcp tools set-vrs-rate-mask",
+                listed.find("set-vrs-rate-mask") != std::string::npos);
+    expect_true("mcp tools select",
+                listed.find("\"name\":\"select\"") != std::string::npos);
     expect_true(
         "mcp initialize needs no engine",
         !mcpMessageNeedsEngine(

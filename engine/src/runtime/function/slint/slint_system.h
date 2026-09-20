@@ -229,6 +229,7 @@ class SlintSystem final : public IEditorUiPresentation {
 
   /// Viewport-only VRS rate-mask overlay (not persisted).
   bool vrsRateMaskEnabled() const;
+  void setVrsRateMaskEnabled(bool enabled);
 
   /// Clears a stale 3D readback (e.g. after viewport resize) before the next render upload.
   void applyPendingViewportInvalidate();

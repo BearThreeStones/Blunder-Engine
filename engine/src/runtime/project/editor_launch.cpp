@@ -209,12 +209,14 @@ EditorSessionLaunch resolveEditorSessionLaunch(
   }
 
   const bool adapter = mcp || cli_adapter;
-  if (adapter && windowed) {
+  if (cli_adapter && windowed) {
     return failLaunch(k_request_adapter_windowed_forbidden,
-                      "CLI/MCP Editor Session cannot be windowed.");
+                      "CLI Editor Session cannot be windowed.");
   }
 
-  if (adapter) {
+  if (mcp && windowed) {
+    headless = false;
+  } else if (adapter) {
     headless = true;
   }
 

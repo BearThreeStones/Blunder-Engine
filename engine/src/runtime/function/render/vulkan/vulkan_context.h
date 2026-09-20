@@ -44,6 +44,9 @@ class VulkanContext final {
 
   VkInstance getInstance() const { return m_instance; }
   VkPhysicalDevice getPhysicalDevice() const { return m_physical_device; }
+  const char* physicalDeviceName() const {
+    return m_physical_device_properties.deviceName;
+  }
   VkDevice getDevice() const { return m_device; }
   VkQueue getGraphicsQueue() const { return m_graphics_queue; }
   VkQueue getPresentQueue() const { return m_present_queue; }

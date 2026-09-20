@@ -184,6 +184,10 @@ class DeferredRenderPath final {
     return m_froxel_dropped_light_assignments_total;
   }
 
+  bool vrsAttachmentEnabled() const;
+  bool vrsDevice() const { return m_vrs_device; }
+  VkExtent2D fragmentShadingRateTexelSize() const { return m_fsr_texel; }
+
  private:
   struct GBufferSlot {
     VkImage images[k_gbuffer_plane_count]{};
@@ -212,7 +216,6 @@ class DeferredRenderPath final {
 
   bool prepareViewportRecord(uint32_t frame_index, VkExtent2D* extent,
                              uint32_t* slot_index) const;
-  bool vrsAttachmentEnabled() const;
   void drawGBufferList(VkCommandBuffer cmd, const ForwardFrameState& frame_state,
                        const ForwardOpaqueDraw* opaque_draws,
                        uint32_t opaque_draw_count, uint32_t frame_index);

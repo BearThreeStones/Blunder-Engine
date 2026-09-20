@@ -2,16 +2,20 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
+#include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/render/scene_thumbnail/scene_thumbnail_render.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/slint/slint_system.h"
 #include "runtime/project/play_frame.h"
 #include "runtime/project/play_session_controller.h"
 #include "runtime/project/play_step.h"
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 
@@ -269,6 +273,31 @@ void fillCameraResult(const EditorCamera& camera, MachineResult& out) {
   out.camera_far = camera.getFarClip();
 }
 
+bool editorVrsEnvForcedOff() {
+  const char* env = std::getenv("BLUNDER_EDITOR_VRS");
+  return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
+}
+
+void fillVrsStatus(MachineResult& out) {
+  out.has_vrs = true;
+  out.software_vrs = false;
+  out.vrs_forced_off = editorVrsEnvForcedOff();
+  out.headless_host = g_runtime_global_context.isHeadless();
+  if (SlintSystem* slint = g_runtime_global_context.m_slint_system.get()) {
+    out.vrs_rate_mask = slint->vrsRateMaskEnabled();
+    out.camera_preview_visible = slint->isCameraPreviewVisible();
+  }
+  RenderSystem* render = g_runtime_global_context.m_render_system.get();
+  if (render == nullptr) {
+    return;
+  }
+  out.viewport_deferred = render->viewportUsesDeferredPath();
+  out.vrs_extension = render->fragmentShadingRateExtensionEnabled();
+  out.vrs_attachment = render->vrsAttachmentEnabled();
+  render->vrsTexelSize(&out.vrs_texel_w, &out.vrs_texel_h);
+  out.gpu_name = render->physicalDeviceName();
+}
+
 void jsonAppendVec3(std::string& out, const Vec3& v) {
   out += '[';
   out += std::to_string(v.x);
@@ -494,6 +523,31 @@ std::string machineResultJson(const MachineResult& result) {
     out += std::to_string(result.camera_far);
     out += '}';
   }
+  if (result.has_vrs) {
+    out += ",\"vrs\":{\"extension\":";
+    out += result.vrs_extension ? "true" : "false";
+    out += ",\"attachment\":";
+    out += result.vrs_attachment ? "true" : "false";
+    out += ",\"forced_off\":";
+    out += result.vrs_forced_off ? "true" : "false";
+    out += ",\"rate_mask\":";
+    out += result.vrs_rate_mask ? "true" : "false";
+    out += ",\"viewport_deferred\":";
+    out += result.viewport_deferred ? "true" : "false";
+    out += ",\"software_vrs\":";
+    out += result.software_vrs ? "true" : "false";
+    out += ",\"camera_preview_visible\":";
+    out += result.camera_preview_visible ? "true" : "false";
+    out += ",\"headless\":";
+    out += result.headless_host ? "true" : "false";
+    out += ",\"texel\":[";
+    out += std::to_string(result.vrs_texel_w);
+    out += ',';
+    out += std::to_string(result.vrs_texel_h);
+    out += "],\"gpu\":";
+    jsonAppendEscaped(out, result.gpu_name);
+    out += '}';
+  }
   out += ",\"width\":";
   out += std::to_string(result.width);
   out += ",\"height\":";
@@ -511,6 +565,61 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
     return;
   }
   if (dispatchViewportCamera(launch, host, out)) {
+    return;
+  }
+  if (verb == "vrs-status") {
+    fillVrsStatus(out);
+    succeed(out);
+    return;
+  }
+  if (verb == "set-vrs-rate-mask") {
+    SlintSystem* slint = g_runtime_global_context.m_slint_system.get();
+    if (slint == nullptr) {
+      fail(out, k_request_vrs_window_required);
+      return;
+    }
+    bool enabled = launch.cli.enabled;
+    if (!launch.cli.has_enabled) {
+      enabled = !slint->vrsRateMaskEnabled();
+    }
+    slint->setVrsRateMaskEnabled(enabled);
+    if (RenderSystem* render = g_runtime_global_context.m_render_system.get()) {
+      render->requestViewportRedraw();
+    }
+    fillVrsStatus(out);
+    succeed(out);
+    return;
+  }
+  if (verb == "select") {
+    eastl::string name = launch.cli.entity;
+    if (name.empty()) {
+      name = launch.cli.asset;
+    }
+    if (name.empty()) {
+      fail(out, k_request_select_name_required);
+      return;
+    }
+    if (host.live_scene == nullptr) {
+      fail(out, k_request_subject_no_live_document);
+      return;
+    }
+    EditorSelectionSystem* selection =
+        g_runtime_global_context.m_editor_selection.get();
+    if (selection == nullptr) {
+      fail(out, k_request_select_unknown);
+      return;
+    }
+    const EntityId id = host.live_scene->findEntityByName(name);
+    if (!isValid(id)) {
+      fail(out, k_request_select_unknown);
+      return;
+    }
+    selection->setSelection(id);
+    if (RenderSystem* render = g_runtime_global_context.m_render_system.get()) {
+      render->requestViewportRedraw();
+    }
+    fillVrsStatus(out);
+    succeed(out);
     return;
   }
   if (verb == "save") {

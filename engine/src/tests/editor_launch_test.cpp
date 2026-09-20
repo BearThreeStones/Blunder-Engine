@@ -144,8 +144,21 @@ int main() {
     auto argv = makeArgv(args);
     const EditorSessionLaunch opts = resolveEditorSessionLaunch(
         static_cast<int>(argv.size()), argv.data(), false, fs::path{});
-    expect_true("windowed mcp fails", !opts.ok);
-    expect_true("windowed mcp code",
+    expect_true("windowed mcp ok", opts.ok);
+    expect_true("windowed mcp not headless", !opts.headless);
+    expect_true("windowed mcp kind", opts.adapter == MachineAdapterKind::mcp);
+  }
+
+  {
+    std::vector<std::string> args = {
+        "engine_editor", "--project-root", "C:/Games/Demo", "--scene",
+        "assets/Scenes/main.scene.asset", "capture", "--subject", "live",
+        "--windowed"};
+    auto argv = makeArgv(args);
+    const EditorSessionLaunch opts = resolveEditorSessionLaunch(
+        static_cast<int>(argv.size()), argv.data(), false, fs::path{});
+    expect_true("windowed cli fails", !opts.ok);
+    expect_true("windowed cli code",
                 opts.failure_code == k_request_adapter_windowed_forbidden);
   }
 

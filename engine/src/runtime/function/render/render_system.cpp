@@ -384,6 +384,48 @@ SharedVulkanHandles RenderSystem::getSharedVulkanHandles() const {
   return handles;
 }
 
+bool RenderSystem::vrsAttachmentEnabled() const {
+  return m_deferred_path != nullptr && m_deferred_path->vrsAttachmentEnabled();
+}
+
+bool RenderSystem::fragmentShadingRateExtensionEnabled() const {
+  if (!isVulkanBackend()) {
+    return false;
+  }
+  VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+  return ctx != nullptr && ctx->fragmentShadingRateEnabled();
+}
+
+void RenderSystem::vrsTexelSize(uint32_t* width, uint32_t* height) const {
+  uint32_t w = 1;
+  uint32_t h = 1;
+  if (isVulkanBackend()) {
+    VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+    if (ctx != nullptr) {
+      const VkExtent2D texel = ctx->fragmentShadingRateTexelSize();
+      w = texel.width == 0 ? 1 : texel.width;
+      h = texel.height == 0 ? 1 : texel.height;
+    }
+  }
+  if (width != nullptr) {
+    *width = w;
+  }
+  if (height != nullptr) {
+    *height = h;
+  }
+}
+
+eastl::string RenderSystem::physicalDeviceName() const {
+  if (!isVulkanBackend()) {
+    return {};
+  }
+  VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+  if (ctx == nullptr || ctx->physicalDeviceName() == nullptr) {
+    return {};
+  }
+  return eastl::string(ctx->physicalDeviceName());
+}
+
 void RenderSystem::initializeD3D12SkeletonPath(
     const RenderSystemInitInfo& info) {
   LOG_WARN(

@@ -207,6 +207,11 @@ class RenderSystem final {
                              uint32_t& out_height);
   bool isVulkanBackend() const;
   OverlaySystem* getOverlaySystem() const { return m_overlay_system.get(); }
+  bool viewportUsesDeferredPath() const { return m_deferred_path != nullptr; }
+  bool vrsAttachmentEnabled() const;
+  bool fragmentShadingRateExtensionEnabled() const;
+  void vrsTexelSize(uint32_t* width, uint32_t* height) const;
+  eastl::string physicalDeviceName() const;
 
  private:
   void initializeVulkanPath(const RenderSystemInitInfo& info);

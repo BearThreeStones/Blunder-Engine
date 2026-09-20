@@ -34,6 +34,11 @@ inline constexpr const char* k_request_play_not_playing = "play.not_playing";
 inline constexpr const char* k_request_viewport_no_camera = "viewport.no_camera";
 inline constexpr const char* k_request_viewport_lookat_required =
     "viewport.lookat_required";
+inline constexpr const char* k_request_vrs_window_required =
+    "vrs.window_required";
+inline constexpr const char* k_request_select_name_required =
+    "select.name_required";
+inline constexpr const char* k_request_select_unknown = "select.unknown";
 
 struct MachineAdapterHost {
   std::filesystem::path project_root;
@@ -71,6 +76,18 @@ struct MachineResult {
   float camera_fov{0.0f};
   float camera_near{0.0f};
   float camera_far{0.0f};
+  bool has_vrs{false};
+  bool vrs_extension{false};
+  bool vrs_attachment{false};
+  bool vrs_forced_off{false};
+  bool vrs_rate_mask{false};
+  bool viewport_deferred{false};
+  bool software_vrs{false};
+  bool camera_preview_visible{false};
+  bool headless_host{false};
+  uint32_t vrs_texel_w{0};
+  uint32_t vrs_texel_h{0};
+  eastl::string gpu_name;
   int exit_code{1};
 };
 
