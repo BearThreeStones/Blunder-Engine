@@ -26,6 +26,7 @@ namespace {
 constexpr int k_play_start_timeout_ms = 180000;
 constexpr int k_play_frame_timeout_ms = 120000;
 constexpr int k_live_capture_warmup_ticks = 24;
+constexpr int k_live_capture_mesh_wait_ms = 60000;
 constexpr int k_live_capture_texture_wait_ms = 20000;
 
 void pumpHost(MachineAdapterHost& host);
@@ -184,11 +185,14 @@ CaptureResult runCapture(MachineAdapterHost& host, const CaptureRequest& req) {
       }
     }
     if (g_runtime_global_context.m_render_system) {
+      auto pump_uploads = [&host]() {
+        pumpHost(host);
+        g_runtime_global_context.m_render_system->requestViewportRedraw();
+      };
+      waitUntilMeshUploadsIdle(
+          static_cast<uint32_t>(k_live_capture_mesh_wait_ms), pump_uploads);
       waitUntilTextureUploadsIdle(
-          static_cast<uint32_t>(k_live_capture_texture_wait_ms), [&host]() {
-            pumpHost(host);
-            g_runtime_global_context.m_render_system->requestViewportRedraw();
-          });
+          static_cast<uint32_t>(k_live_capture_texture_wait_ms), pump_uploads);
     }
     CaptureResult still;
     uint32_t width = 0;
