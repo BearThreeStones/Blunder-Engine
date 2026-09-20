@@ -262,7 +262,7 @@ SceneInstance::~SceneInstance() {
   clear();
 }
 
-void SceneInstance::instantiate(const Scene& scene) {
+bool SceneInstance::instantiate(const Scene& scene) {
   clear();
 
   eastl::vector<EntityId> ids;
@@ -270,7 +270,7 @@ void SceneInstance::instantiate(const Scene& scene) {
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if ((ids.size() & 0xFFu) == 0u && !bootWorkHeartbeatContinue()) {
-      return;
+      return false;
     }
     const EntityId id = createEntity(definition.name, definition.position,
                                      definition.rotation, definition.scale);
@@ -442,6 +442,9 @@ void SceneInstance::instantiate(const Scene& scene) {
     sanitizeFogComponent(fog);
     setFog(ids[i], eastl::move(fog));
   }
+
+  m_instantiate_completed = true;
+  return true;
 }
 
 void SceneInstance::clear() {
@@ -462,6 +465,7 @@ void SceneInstance::clear() {
   m_lights.clear();
   m_fogs.clear();
   m_has_world_bounds = false;
+  m_instantiate_completed = false;
   m_world_bounds = AABB{};
   m_world_matrices_dirty = true;
 }

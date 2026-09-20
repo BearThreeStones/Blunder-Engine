@@ -1,5 +1,12 @@
 #include "runtime/function/ui/engine_open_progress.h"
 
+#include "runtime/core/boot_work_heartbeat.h"
+#include "runtime/function/global/global_context.h"
+#include "runtime/function/scene/entity_id.h"
+#include "runtime/function/scene/scene.h"
+#include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/scene/scene_system.h"
+
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -143,6 +150,9 @@ int main() {
               engineOpenProgressSessionEndedByClose());
   expect_true("close hides overlay", !engineOpenProgressIsVisible());
   expect_true("close has no Retry", !engineOpenProgressOffersRetry());
+  expect_true("pump returns false after close", !engineOpenProgressPump());
+  expect_true("heartbeat stays stopped after close",
+              !bootWorkHeartbeatContinue());
 
   engineOpenProgressResetForTest();
   expect_true(
@@ -154,6 +164,51 @@ int main() {
       "project manager try-show fails",
       !engineOpenProgressTryShow(EngineHostMode::Editor, false, true, nullptr,
                                  {}));
+
+  {
+    Scene scene;
+    constexpr int k_count = 300;
+    for (int i = 0; i < k_count; ++i) {
+      SceneEntityDefinition def;
+      char name[16];
+      std::snprintf(name, sizeof(name), "e%03d", i);
+      def.name = name;
+      def.mesh_virtual_path = "missing-mesh";
+      if (i == 0 || i == k_count - 1) {
+        def.has_camera = true;
+      }
+      scene.getEntities().push_back(eastl::move(def));
+    }
+
+    int beats = 0;
+    setBootWorkHeartbeat([&beats]() {
+      ++beats;
+      if (beats >= 2) {
+        g_runtime_global_context.requestQuit();
+        return false;
+      }
+      return true;
+    });
+
+    SceneInstance instance;
+    expect_true("instantiate aborts after first 256",
+                !instance.instantiate(scene));
+    expect_true("partial entity table is 256",
+                instance.getEntityCount() == 256);
+    expect_true("instantiate not completed", !instance.instantiateCompleted());
+    expect_true("quit requested before attach",
+                g_runtime_global_context.isQuitRequested());
+
+    completeSceneDocumentInstantiate(nullptr, instance, scene, nullptr);
+    const EntityId first = instance.findEntityByName("e000");
+    expect_true("first entity exists", isValid(first));
+    expect_true("complete skipped camera attach on abort",
+                instance.getCamera(first) == nullptr);
+    expect_true("missing tail entity not created",
+                !isValid(instance.findEntityByName("e299")));
+
+    setBootWorkHeartbeat({});
+  }
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

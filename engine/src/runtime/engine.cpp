@@ -78,6 +78,9 @@ void focusEditorCameraOnActiveScene() {
 }
 
 void activateEditorScene(const eastl::string& virtual_path) {
+  if (g_runtime_global_context.isQuitRequested()) {
+    return;
+  }
   LOG_INFO("[BlunderEngine] activateEditorScene '{}'", virtual_path.c_str());
   if (g_runtime_global_context.m_editor_scene_edit) {
     if (!g_runtime_global_context.m_editor_scene_edit->openScene(virtual_path)) {

@@ -594,7 +594,7 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
                                            SceneInstance& instance,
                                            const Scene& scene,
                                            MeshLoader* mesh_loader) {
-  if (asset_manager == nullptr) {
+  if (asset_manager == nullptr || !instance.instantiateCompleted()) {
     return;
   }
 

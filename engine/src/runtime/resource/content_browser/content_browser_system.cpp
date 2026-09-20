@@ -654,7 +654,7 @@ void ContentBrowserSystem::enqueueVisibleGridThumbnails() {
 
 ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
   ContentBrowserRefreshStats stats{};
-  if (!m_is_initialized) {
+  if (!m_is_initialized || g_runtime_global_context.isQuitRequested()) {
     return stats;
   }
 
@@ -664,6 +664,9 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
 
   m_entries = ContentIndex::scan(*m_file_system);
   stats.entry_count = static_cast<uint32_t>(m_entries.size());
+  if (g_runtime_global_context.isQuitRequested()) {
+    return stats;
+  }
   for (uint32_t i = 0; i < m_entries.size(); ++i) {
     if ((i & 0xFFu) == 0u && !bootWorkHeartbeatContinue()) {
       break;
@@ -683,6 +686,11 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
       default:
         break;
     }
+  }
+
+  if (g_runtime_global_context.isQuitRequested() ||
+      !bootWorkHeartbeatContinue()) {
+    return stats;
   }
 
   indexEntries();

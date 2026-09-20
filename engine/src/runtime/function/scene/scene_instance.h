@@ -29,7 +29,10 @@ class SceneInstance final : public IEntityStore {
   SceneInstance() = default;
   ~SceneInstance();
 
-  void instantiate(const Scene& scene);
+  /// False when the entity loop aborted (overlay close / heartbeat stop).
+  bool instantiate(const Scene& scene);
+  /// True only after a full `instantiate` pass. Attach must not run otherwise.
+  bool instantiateCompleted() const { return m_instantiate_completed; }
   void clear();
 
   void setParent(SceneInstance* parent);
@@ -194,6 +197,7 @@ class SceneInstance final : public IEntityStore {
   AABB m_world_bounds{};
   bool m_has_world_bounds{false};
   bool m_world_matrices_dirty{true};
+  bool m_instantiate_completed{false};
 };
 
 /// Prefer Main camera; else first camera in ascending EntityId order (stable).

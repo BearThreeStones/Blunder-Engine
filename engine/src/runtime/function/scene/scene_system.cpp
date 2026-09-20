@@ -100,14 +100,24 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
     return nullptr;
   }
 
+  if (g_runtime_global_context.isQuitRequested()) {
+    return nullptr;
+  }
+
   auto instance = eastl::make_shared<SceneInstance>();
   instance->setSourcePath(virtual_path);
   const auto instantiate_begin = std::chrono::steady_clock::now();
-  instance->instantiate(scene_asset->getScene());
+  const bool instantiate_ok = instance->instantiate(scene_asset->getScene());
   const double instantiate_ms =
       std::chrono::duration<double, std::milli>(
           std::chrono::steady_clock::now() - instantiate_begin)
           .count();
+  if (!instantiate_ok || !instance->instantiateCompleted() ||
+      g_runtime_global_context.isQuitRequested()) {
+    LOG_INFO("[SceneSystem] instantiate aborted '{}' entities={}",
+             virtual_path.c_str(), instance->getEntityCount());
+    return nullptr;
+  }
 
   if (g_runtime_global_context.m_dotnet_host != nullptr) {
     mountSceneBehaviours(*instance, *g_runtime_global_context.m_dotnet_host,
@@ -133,6 +143,11 @@ void completeSceneDocumentInstantiate(AssetManager* asset_manager,
                                       SceneInstance& instance,
                                       const Scene& scene,
                                       MeshLoader* mesh_loader) {
+  if (!instance.instantiateCompleted() ||
+      g_runtime_global_context.isQuitRequested()) {
+    return;
+  }
+
   if (asset_manager != nullptr) {
     GltfSceneImporter::attachEntityMeshes(asset_manager, instance, scene,
                                           mesh_loader);

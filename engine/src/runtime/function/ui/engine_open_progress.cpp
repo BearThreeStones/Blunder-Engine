@@ -33,7 +33,13 @@ void presentNow() {
 void unbindHost() {
   g_window = nullptr;
   g_present = {};
-  setBootWorkHeartbeat({});
+  // Close must pin stop. Clearing the callback makes later loops continue
+  // (unset heartbeat returns true) and attach a half-built scene.
+  if (g_session_ended_by_close) {
+    setBootWorkHeartbeat([]() { return false; });
+  } else {
+    setBootWorkHeartbeat({});
+  }
 }
 
 void hideAndUnbind() {
@@ -198,6 +204,9 @@ void engineOpenProgressNoteCloseRequested() {
 }
 
 bool engineOpenProgressPump() {
+  if (g_session_ended_by_close) {
+    return false;
+  }
   if (!g_visible) {
     return true;
   }
