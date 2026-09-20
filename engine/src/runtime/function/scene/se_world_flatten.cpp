@@ -559,6 +559,51 @@ struct FlattenBaker {
     return guid;
   }
 
+  eastl::string firstDrawableMeshGuid(cgltf_data* data,
+                                      const fs::path& gltf_absolute) {
+    if (data == nullptr) {
+      return {};
+    }
+    eastl::vector<const cgltf_node*> stack;
+    if (data->scene != nullptr && data->scene->nodes_count > 0) {
+      for (cgltf_size i = 0; i < data->scene->nodes_count; ++i) {
+        stack.push_back(data->scene->nodes[i]);
+      }
+    } else {
+      for (cgltf_size i = 0; i < data->nodes_count; ++i) {
+        if (data->nodes[i].parent == nullptr) {
+          stack.push_back(&data->nodes[i]);
+        }
+      }
+    }
+    for (size_t i = 0; i < stack.size(); ++i) {
+      const cgltf_node* node = stack[i];
+      if (node == nullptr) {
+        continue;
+      }
+      eastl::string instance_id;
+      if (gltfNodeInstanceAssetId(node, instance_id)) {
+        continue;
+      }
+      if (nodeHasDrawableMesh(node) && node->mesh != nullptr && data != nullptr) {
+        const size_t mesh_index = static_cast<size_t>(node->mesh - data->meshes);
+        for (cgltf_size prim_index = 0; prim_index < node->mesh->primitives_count;
+             ++prim_index) {
+          if (node->mesh->primitives[prim_index].type !=
+              cgltf_primitive_type_triangles) {
+            continue;
+          }
+          return ensurePrimitiveMeshGuid(gltf_absolute, mesh_index,
+                                         static_cast<size_t>(prim_index));
+        }
+      }
+      for (cgltf_size c = 0; c < node->children_count; ++c) {
+        stack.push_back(node->children[c]);
+      }
+    }
+    return {};
+  }
+
   void expandInstance(const cgltf_node* node, const eastl::string& parent_name,
                       FlattenKind parent_kind) {
     eastl::string asset_id;
@@ -615,8 +660,15 @@ struct FlattenBaker {
     Vec3 scale(1.0f);
     bakeNodeLocal(node, position, rotation, scale);
     const eastl::string stem = gltfNodeDisplayName(node);
+    eastl::string mesh_guid;
+    if (child_kind == FlattenKind::library) {
+      // Layout LI/PR keep one MeshRenderer on the instance (pre-pond bake).
+      // Expanding every library GEO as a child exploded SE-world to 41k
+      // entities and AV'd GPU-driven capture. Set GEO still expands below.
+      mesh_guid = firstDrawableMeshGuid(child_data, absolute);
+    }
     const eastl::string entity_name =
-        emitEntity(stem, position, rotation, scale, parent_name, {});
+        emitEntity(stem, position, rotation, scale, parent_name, mesh_guid);
 
     if (child_kind == FlattenKind::library) {
       if (parent_kind == FlattenKind::library) {
@@ -650,7 +702,8 @@ struct FlattenBaker {
     }
 
     eastl::string current_parent = parent_name;
-    if (nodeHasDrawableMesh(node) && data != nullptr && node->mesh != nullptr) {
+    if (parent_kind != FlattenKind::library && nodeHasDrawableMesh(node) &&
+        data != nullptr && node->mesh != nullptr) {
       const size_t mesh_index = static_cast<size_t>(node->mesh - data->meshes);
       Vec3 position{};
       Quat rotation = glm::identity<Quat>();

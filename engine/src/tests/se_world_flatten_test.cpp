@@ -170,19 +170,14 @@ void testBakerTwoInstancesUniqueNames() {
   expect_true("1.1 Bush", findEntity(scene, "Bush") != nullptr);
   expect_true("1.1 Bush_1", findEntity(scene, "Bush_1") != nullptr);
   expect_true("1.1 Empty skipped", findEntity(scene, "Empty") == nullptr);
-  const SceneEntityDefinition* geo_box = findEntity(scene, "GEO-box");
-  const SceneEntityDefinition* geo_box_1 = findEntity(scene, "GEO-box_1");
-  expect_true("1.1 GEO-box", geo_box != nullptr);
-  expect_true("1.1 GEO-box_1", geo_box_1 != nullptr);
-  expect_true("1.1 shared mesh guid",
-              geo_box != nullptr && geo_box_1 != nullptr &&
-                  geo_box->mesh_virtual_path == geo_box_1->mesh_virtual_path &&
-                  !geo_box->mesh_virtual_path.empty());
-  expect_true("1.1 Bush grouping has no mesh",
+  expect_true("1.1 GEO-box not exploded under library",
+              findEntity(scene, "GEO-box") == nullptr);
+  expect_true("1.1 shared mesh guid on instances",
               findEntity(scene, "Bush") != nullptr &&
-                  findEntity(scene, "Bush")->mesh_virtual_path.empty());
-  expect_true("1.1 GEO parent is Bush",
-              geo_box != nullptr && geo_box->parent_name == "Bush");
+                  findEntity(scene, "Bush_1") != nullptr &&
+                  findEntity(scene, "Bush")->mesh_virtual_path ==
+                      findEntity(scene, "Bush_1")->mesh_virtual_path &&
+                  !findEntity(scene, "Bush")->mesh_virtual_path.empty());
   eastl::string json;
   expect_true("1.1 serialize", SceneSerializer::serialize(scene, json));
   expect_true("1.1 no childScenes", json.find("childScenes") == eastl::string::npos);
@@ -262,26 +257,18 @@ void testNestedLibraryAndMissingFile() {
   const SceneEntityDefinition* needle = findEntity(scene, "Needle");
   const SceneEntityDefinition* needle_1 = findEntity(scene, "Needle_1");
   expect_true("1.3 needles exist", needle != nullptr && needle_1 != nullptr);
-  const SceneEntityDefinition* geo_leaf = findEntity(scene, "GEO-leaf");
-  const SceneEntityDefinition* geo_leaf_1 = findEntity(scene, "GEO-leaf_1");
-  expect_true("1.3 nested share guid",
-              geo_leaf != nullptr && geo_leaf_1 != nullptr &&
-                  geo_leaf->mesh_virtual_path == geo_leaf_1->mesh_virtual_path &&
-                  !geo_leaf->mesh_virtual_path.empty());
+  expect_true("1.3 nested share guid on instances",
+              needle != nullptr && needle_1 != nullptr &&
+                  needle->mesh_virtual_path == needle_1->mesh_virtual_path &&
+                  !needle->mesh_virtual_path.empty());
   const SceneEntityDefinition* tree = findEntity(scene, "Tree");
   expect_true("1.3 nested parent is layout",
               needle != nullptr && tree != nullptr && needle->parent_name == tree->name);
-  const SceneEntityDefinition* geo_tree = findEntity(scene, "GEO-tree");
-  const SceneEntityDefinition* geo_tree_1 = findEntity(scene, "GEO-tree_1");
-  expect_true("1.3 GEO-tree parent is layout",
-              geo_tree != nullptr && tree != nullptr &&
-                  geo_tree->parent_name == tree->name);
-  expect_true("1.3 layout GEO share guid",
-              geo_tree != nullptr && geo_tree_1 != nullptr &&
-                  geo_tree->mesh_virtual_path == geo_tree_1->mesh_virtual_path &&
-                  !geo_tree->mesh_virtual_path.empty());
-  expect_true("1.3 Tree grouping has no mesh",
-              tree != nullptr && tree->mesh_virtual_path.empty());
+  expect_true("1.3 Tree instance has mesh",
+              tree != nullptr && !tree->mesh_virtual_path.empty());
+  expect_true("1.3 library GEO not exploded",
+              findEntity(scene, "GEO-leaf") == nullptr &&
+                  findEntity(scene, "GEO-tree") == nullptr);
   fs::remove_all(root);
 }
 
