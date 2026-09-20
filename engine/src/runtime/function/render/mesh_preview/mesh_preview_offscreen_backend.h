@@ -7,6 +7,8 @@
 #include "EASTL/unordered_map.h"
 #include "EASTL/vector.h"
 
+#include "runtime/function/render/forward/forward_frame_state.h"
+#include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_draw_builder.h"
 #include "runtime/function/render/preview_render_target_owner.h"
@@ -15,6 +17,7 @@
 namespace Blunder {
 
 class AssetManager;
+class DeferredRenderPath;
 class ForwardRenderPath;
 class GpuMesh;
 class Texture2DAsset;
@@ -32,7 +35,7 @@ class VulkanGraphicsPipeline;
 
 class SceneInstance;
 
-/// Owns the dedicated Mesh Preview RT, forward draw path, and CPU readback.
+/// Owns the dedicated Mesh Preview RT, deferred lighting path, and CPU readback.
 /// Separate from RenderSystem's Camera Preview and main viewport targets.
 class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
                                           public ISceneStillGpuBackend {
@@ -81,11 +84,18 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
     return m_last_textures_incomplete;
   }
 
+  bool submitDeferredPreview(const ForwardFrameState& frame_state,
+                             const eastl::vector<ForwardOpaqueDraw>& opaque_draws,
+                             const eastl::vector<ForwardOpaqueDraw>& transparent_draws,
+                             uint32_t width, uint32_t height,
+                             eastl::vector<uint8_t>& out_rgba);
+
   rhi::IRenderBackend* m_render_backend{nullptr};
   AssetManager* m_asset_manager{nullptr};
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_offscreen;
   eastl::unique_ptr<VulkanBuffer> m_readback_staging;
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;
+  eastl::unique_ptr<DeferredRenderPath> m_deferred_path;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_mesh_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_transparent_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_skinned_mesh_pipeline;
@@ -99,6 +109,7 @@ class MeshPreviewOffscreenBackend final : public IMeshPreviewRenderBackend,
   uint32_t m_pipeline_height{0};
   uint32_t m_last_submitted_draw_count{0};
   bool m_last_textures_incomplete{false};
+  uint32_t m_preview_slot{0};
 };
 
 }  // namespace Blunder

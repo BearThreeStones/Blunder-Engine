@@ -10,6 +10,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/function/render/slang/engine_gpu_cache.h"
+#include "runtime/function/render/vrs/vrs_rate.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/platform/window/window_system.h"
 #include "runtime/resource/asset/texture2d_asset.h"
@@ -711,9 +712,14 @@ void VulkanContext::createLogicalDevice() {
   supported_timeline.sType =
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
 
+  VkPhysicalDeviceFragmentShadingRateFeaturesKHR supported_fsr{};
+  supported_fsr.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR;
+  supported_fsr.pNext = &supported_timeline;
+
   VkPhysicalDeviceMeshShaderFeaturesEXT supported_mesh{};
   supported_mesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-  supported_mesh.pNext = &supported_timeline;
+  supported_mesh.pNext = &supported_fsr;
 
   VkPhysicalDeviceVulkan12Features supported_vulkan12_features{};
   supported_vulkan12_features.sType =
@@ -812,12 +818,43 @@ void VulkanContext::createLogicalDevice() {
       supported_mesh.taskShader == VK_TRUE &&
       supported_mesh.meshShader == VK_TRUE;
 
+  const bool has_fsr_ext = hasDeviceExtension(
+      m_physical_device, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+  const bool has_renderpass2 =
+      device_vulkan12 ||
+      hasDeviceExtension(m_physical_device,
+                         VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
+  const bool want_fsr = fragmentShadingRateWanted(
+      has_fsr_ext, supported_fsr.attachmentFragmentShadingRate == VK_TRUE,
+      supported_fsr.pipelineFragmentShadingRate == VK_TRUE, has_renderpass2);
+
+  VkPhysicalDeviceFragmentShadingRatePropertiesKHR fsr_props{};
+  fsr_props.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_PROPERTIES_KHR;
+  if (has_fsr_ext) {
+    VkPhysicalDeviceProperties2 props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &fsr_props;
+    vkGetPhysicalDeviceProperties2(m_physical_device, &props2);
+  }
+
   VkPhysicalDeviceMeshShaderFeaturesEXT enabled_mesh{};
   enabled_mesh.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
   enabled_mesh.taskShader = VK_TRUE;
   enabled_mesh.meshShader = VK_TRUE;
   if (want_mesh_shaders) {
     enabled_mesh.pNext = &enabled_vulkan11_features;
+  }
+
+  VkPhysicalDeviceFragmentShadingRateFeaturesKHR enabled_fsr{};
+  enabled_fsr.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR;
+  enabled_fsr.attachmentFragmentShadingRate = VK_TRUE;
+  enabled_fsr.pipelineFragmentShadingRate = VK_TRUE;
+  if (want_fsr) {
+    enabled_fsr.pNext = want_mesh_shaders
+                            ? static_cast<void*>(&enabled_mesh)
+                            : static_cast<void*>(&enabled_vulkan11_features);
   }
 
   VkDeviceQueueCreateInfo queue_create_info{};
@@ -829,8 +866,9 @@ void VulkanContext::createLogicalDevice() {
   VkDeviceCreateInfo create_info{};
   create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   create_info.pNext =
-      want_mesh_shaders ? static_cast<void*>(&enabled_mesh)
-                        : static_cast<void*>(&enabled_vulkan11_features);
+      want_fsr ? static_cast<void*>(&enabled_fsr)
+               : (want_mesh_shaders ? static_cast<void*>(&enabled_mesh)
+                                    : static_cast<void*>(&enabled_vulkan11_features));
   create_info.queueCreateInfoCount = 1;
   create_info.pQueueCreateInfos = &queue_create_info;
   create_info.pEnabledFeatures = &enabled_features;
@@ -854,6 +892,14 @@ void VulkanContext::createLogicalDevice() {
   }
   if (want_mesh_shaders) {
     device_extensions.push_back(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+  }
+  if (want_fsr) {
+    device_extensions.push_back(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+    if (!device_vulkan12 &&
+        hasDeviceExtension(m_physical_device,
+                           VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME)) {
+      device_extensions.push_back(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
+    }
   }
   const bool want_khr_draw_indirect_count =
       !device_vulkan12 || supported_vulkan12_features.drawIndirectCount != VK_TRUE;
@@ -900,6 +946,50 @@ void VulkanContext::createLogicalDevice() {
     LOG_INFO(
         "[VulkanContext] VK_EXT_mesh_shader absent; GPU-driven uses "
         "compute+VS/FS");
+  }
+
+  m_fragment_shading_rate_enabled = want_fsr;
+  if (m_fragment_shading_rate_enabled) {
+    m_cmd_set_fragment_shading_rate_khr =
+        reinterpret_cast<PFN_vkCmdSetFragmentShadingRateKHR>(
+            vkGetDeviceProcAddr(m_device, "vkCmdSetFragmentShadingRateKHR"));
+    m_create_render_pass2 = reinterpret_cast<PFN_vkCreateRenderPass2>(
+        vkGetDeviceProcAddr(m_device, "vkCreateRenderPass2"));
+    if (m_create_render_pass2 == nullptr) {
+      m_create_render_pass2 = reinterpret_cast<PFN_vkCreateRenderPass2>(
+          vkGetDeviceProcAddr(m_device, "vkCreateRenderPass2KHR"));
+    }
+    if (m_cmd_set_fragment_shading_rate_khr == nullptr ||
+        m_create_render_pass2 == nullptr) {
+      LOG_WARN(
+          "[VulkanContext] VK_KHR_fragment_shading_rate enabled but "
+          "vkCmdSetFragmentShadingRateKHR or vkCreateRenderPass2 is null; "
+          "lighting stays 1×1");
+      m_fragment_shading_rate_enabled = false;
+      m_cmd_set_fragment_shading_rate_khr = nullptr;
+      m_create_render_pass2 = nullptr;
+    } else {
+      uint32_t texel_w = 1;
+      uint32_t texel_h = 1;
+      chooseFragmentShadingRateTexelSize(
+          fsr_props.minFragmentShadingRateAttachmentTexelSize.width,
+          fsr_props.minFragmentShadingRateAttachmentTexelSize.height,
+          fsr_props.maxFragmentShadingRateAttachmentTexelSize.width,
+          fsr_props.maxFragmentShadingRateAttachmentTexelSize.height, &texel_w,
+          &texel_h);
+      m_fragment_shading_rate_min_texel =
+          fsr_props.minFragmentShadingRateAttachmentTexelSize;
+      m_fragment_shading_rate_max_texel =
+          fsr_props.maxFragmentShadingRateAttachmentTexelSize;
+      m_fragment_shading_rate_texel = {texel_w, texel_h};
+      LOG_INFO(
+          "[VulkanContext] VK_KHR_fragment_shading_rate enabled (texel {}x{})",
+          texel_w, texel_h);
+    }
+  } else {
+    LOG_INFO(
+        "[VulkanContext] VK_KHR_fragment_shading_rate absent; lighting stays "
+        "1×1");
   }
 
   m_cmd_draw_indexed_indirect_count =

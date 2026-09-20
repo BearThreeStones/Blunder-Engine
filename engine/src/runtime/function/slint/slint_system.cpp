@@ -2645,6 +2645,17 @@ void SlintSystem::syncFroxelViewportStats(uint32_t dropped_this_frame,
   }
 }
 
+bool SlintSystem::vrsRateMaskEnabled() const {
+  if (!m_window_component) {
+    return false;
+  }
+  try {
+    return m_window_component->operator->()->get_vrs_rate_mask();
+  } catch (...) {
+    return false;
+  }
+}
+
 BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
   BlinnPhongEditorSettings settings{};
   if (!m_window_component) {

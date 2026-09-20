@@ -15,6 +15,7 @@ set(RENDER_SOURCES
     "function/render/clustered/froxel_grid.cpp"
     "function/render/clustered/froxel_grid.h"
     "function/render/clustered/froxel_debug.h"
+    "function/render/vrs/vrs_rate.h"
     "function/render/opaque_mesh_draw.h"
     "function/render/forward/forward_render_path.h"
     "function/render/forward/forward_shading.cpp"

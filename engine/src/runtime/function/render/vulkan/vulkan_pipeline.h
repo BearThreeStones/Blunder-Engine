@@ -35,6 +35,7 @@ struct VulkanPipelineCreateInfo {
   uintptr_t shared_descriptor_set_layout{0};
   bool depth_only_subpass{false};
   uint32_t color_attachment_count{1};
+  bool enable_fragment_shading_rate{false};
 };
 
 constexpr uint32_t k_max_pipeline_color_attachments = 4;

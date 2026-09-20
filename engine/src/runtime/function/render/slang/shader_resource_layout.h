@@ -45,6 +45,8 @@ constexpr uint32_t k_skinned_gbuffer_descriptor_binding_count = 4;
 /// receiver-mask SSBO.
 constexpr uint32_t k_deferred_lighting_descriptor_binding_count = 16;
 constexpr uint32_t k_froxel_fill_descriptor_binding_count = 5;
+constexpr uint32_t k_vrs_sobel_descriptor_binding_count = 3;
+constexpr uint32_t k_vrs_rate_mask_descriptor_binding_count = 2;
 constexpr uint32_t k_gpu_driven_pbr_descriptor_binding_count = 10;
 constexpr uint32_t k_gpu_driven_gbuffer_descriptor_binding_count = 4;
 constexpr uint32_t k_gpu_driven_shadow_descriptor_binding_count = 2;
@@ -82,6 +84,14 @@ void fillDeferredLightingExpectedBindings(uint32_t* bindings, uint32_t* sets,
 void fillFroxelFillExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                     uint32_t* count,
                                     ShaderDescriptorKind* kinds);
+
+void fillVrsSobelExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                  uint32_t* count,
+                                  ShaderDescriptorKind* kinds);
+
+void fillVrsRateMaskExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                     uint32_t* count,
+                                     ShaderDescriptorKind* kinds);
 
 void fillGpuDrivenPbrExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                       uint32_t* count,

@@ -2646,6 +2646,32 @@ target_precompile_headers(froxel_grid_test
 add_test(NAME froxel_grid_test
          COMMAND froxel_grid_test)
 
+add_executable(vrs_rate_test
+    "vrs_rate_test.cpp"
+)
+
+target_link_libraries(vrs_rate_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(vrs_rate_test
+    PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(vrs_rate_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(vrs_rate_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME vrs_rate_test
+         COMMAND vrs_rate_test)
+
 add_executable(volumetric_fog_math_test
     "volumetric_fog_math_test.cpp"
 )

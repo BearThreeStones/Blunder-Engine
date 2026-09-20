@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <glm/gtc/matrix_inverse.hpp>
@@ -24,6 +25,7 @@
 #include "runtime/function/render/slang/shader_resource_layout.h"
 #include "runtime/function/render/slang/slang_compiler.h"
 #include "runtime/function/render/viewport_style.h"
+#include "runtime/function/render/vrs/vrs_rate.h"
 #include "runtime/function/render/vulkan/bindless_texture_table.h"
 #include "runtime/function/render/vulkan/vulkan_allocator.h"
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
@@ -88,6 +90,34 @@ void cmdBufferBarrier(VkCommandBuffer cmd, VkBuffer buffer, VkAccessFlags src,
   barrier.size = VK_WHOLE_SIZE;
   vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 1, &barrier, 0,
                        nullptr);
+}
+
+void cmdImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout,
+                     VkImageLayout new_layout, VkAccessFlags src,
+                     VkAccessFlags dst, VkPipelineStageFlags src_stage,
+                     VkPipelineStageFlags dst_stage) {
+  if (cmd == VK_NULL_HANDLE || image == VK_NULL_HANDLE) {
+    return;
+  }
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.srcAccessMask = src;
+  barrier.dstAccessMask = dst;
+  barrier.oldLayout = old_layout;
+  barrier.newLayout = new_layout;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.layerCount = 1;
+  vkCmdPipelineBarrier(cmd, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1,
+                       &barrier);
+}
+
+bool editorVrsForcedOff() {
+  const char* env = std::getenv("BLUNDER_EDITOR_VRS");
+  return env != nullptr && (env[0] == '0' || env[0] == 'f' || env[0] == 'F');
 }
 
 VkPipeline createVkComputePipeline(VkDevice device, VkPipelineLayout layout,
@@ -223,6 +253,14 @@ void DeferredRenderPath::initialize(const DeferredRenderPathInit& init) {
   m_fallback_texture = init.fallback_texture;
   m_mesh_shadows = init.mesh_shadows;
   m_receiver_format = pickDeferredReceiverFormat(m_vk_context->getPhysicalDevice());
+  m_vrs_device = m_vk_context->fragmentShadingRateEnabled();
+  m_fsr_texel = m_vk_context->fragmentShadingRateTexelSize();
+  if (m_fsr_texel.width == 0) {
+    m_fsr_texel.width = 1;
+  }
+  if (m_fsr_texel.height == 0) {
+    m_fsr_texel.height = 1;
+  }
 
   createRenderPasses();
   createPipelines();
@@ -234,9 +272,10 @@ void DeferredRenderPath::initialize(const DeferredRenderPathInit& init) {
   LOG_INFO(
       "[DeferredRenderPath] ready: G-buffer {} planes (RGBA8 albedo+AO, RGBA8 "
       "oct-normal+metal+rough, UINT receiver format {}), light list cap {}, "
-      "receiver slots {}",
+      "receiver slots {}, VRS {}",
       k_gbuffer_plane_count, static_cast<int>(m_receiver_format),
-      static_cast<uint32_t>(k_max_deferred_light_list), k_max_receiver_slots);
+      static_cast<uint32_t>(k_max_deferred_light_list), k_max_receiver_slots,
+      m_vrs_device ? 1 : 0);
 }
 
 void DeferredRenderPath::shutdown() {
@@ -407,6 +446,10 @@ void DeferredRenderPath::createRenderPasses() {
                 static_cast<int>(result));
     }
   }
+
+  if (m_vrs_device) {
+    createLightingVrsRenderPass();
+  }
 }
 
 void DeferredRenderPath::destroyRenderPasses() {
@@ -414,6 +457,14 @@ void DeferredRenderPath::destroyRenderPasses() {
     return;
   }
   VkDevice device = m_vk_context->getDevice();
+  if (m_rate_mask_render_pass != VK_NULL_HANDLE) {
+    vkDestroyRenderPass(device, m_rate_mask_render_pass, nullptr);
+    m_rate_mask_render_pass = VK_NULL_HANDLE;
+  }
+  if (m_lighting_vrs_render_pass != VK_NULL_HANDLE) {
+    vkDestroyRenderPass(device, m_lighting_vrs_render_pass, nullptr);
+    m_lighting_vrs_render_pass = VK_NULL_HANDLE;
+  }
   if (m_lighting_render_pass != VK_NULL_HANDLE) {
     vkDestroyRenderPass(device, m_lighting_render_pass, nullptr);
     m_lighting_render_pass = VK_NULL_HANDLE;
@@ -421,6 +472,171 @@ void DeferredRenderPath::destroyRenderPasses() {
   if (m_gbuffer_render_pass != VK_NULL_HANDLE) {
     vkDestroyRenderPass(device, m_gbuffer_render_pass, nullptr);
     m_gbuffer_render_pass = VK_NULL_HANDLE;
+  }
+}
+
+void DeferredRenderPath::createLightingVrsRenderPass() {
+  PFN_vkCreateRenderPass2 create_rp2 = m_vk_context->createRenderPass2();
+  if (create_rp2 == nullptr) {
+    m_vrs_device = false;
+    return;
+  }
+  VkDevice device = m_vk_context->getDevice();
+
+  VkAttachmentDescription2 attachments[2]{};
+  attachments[0].sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
+  attachments[0].format = m_offscreen->getFormat();
+  attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+  attachments[1].sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
+  attachments[1].format = VK_FORMAT_R8_UINT;
+  attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+  attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  attachments[1].initialLayout =
+      VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+  attachments[1].finalLayout =
+      VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+
+  VkAttachmentReference2 color_ref{};
+  color_ref.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+  color_ref.attachment = 0;
+  color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+  VkAttachmentReference2 fsr_ref{};
+  fsr_ref.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+  fsr_ref.attachment = 1;
+  fsr_ref.layout = VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+
+  VkFragmentShadingRateAttachmentInfoKHR fsr_info{};
+  fsr_info.sType = VK_STRUCTURE_TYPE_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR;
+  fsr_info.pFragmentShadingRateAttachment = &fsr_ref;
+  fsr_info.shadingRateAttachmentTexelSize = m_fsr_texel;
+
+  VkSubpassDescription2 subpass{};
+  subpass.sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2;
+  subpass.pNext = &fsr_info;
+  subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  subpass.colorAttachmentCount = 1;
+  subpass.pColorAttachments = &color_ref;
+
+  VkSubpassDependency2 dependencies[2]{};
+  dependencies[0].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
+  dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+  dependencies[0].dstSubpass = 0;
+  dependencies[0].srcStageMask =
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+      VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+  dependencies[0].dstStageMask =
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+      VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+  dependencies[0].srcAccessMask =
+      VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+      VK_ACCESS_TRANSFER_READ_BIT |
+      VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR;
+  dependencies[0].dstAccessMask =
+      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+      VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR;
+  dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+  dependencies[1].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
+  dependencies[1].srcSubpass = 0;
+  dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+  dependencies[1].srcStageMask =
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+      VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+  dependencies[1].dstStageMask =
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+      VK_PIPELINE_STAGE_TRANSFER_BIT;
+  dependencies[1].srcAccessMask =
+      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+      VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR;
+  dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                                  VK_ACCESS_SHADER_WRITE_BIT |
+                                  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                  VK_ACCESS_TRANSFER_READ_BIT;
+  dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+  VkRenderPassCreateInfo2 rp_info{};
+  rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
+  rp_info.attachmentCount = 2;
+  rp_info.pAttachments = attachments;
+  rp_info.subpassCount = 1;
+  rp_info.pSubpasses = &subpass;
+  rp_info.dependencyCount = 2;
+  rp_info.pDependencies = dependencies;
+
+  const VkResult result =
+      create_rp2(device, &rp_info, nullptr, &m_lighting_vrs_render_pass);
+  if (result != VK_SUCCESS) {
+    LOG_WARN(
+        "[DeferredRenderPath] lighting VRS vkCreateRenderPass2 failed ({}); "
+        "lighting stays 1×1",
+        static_cast<int>(result));
+    m_lighting_vrs_render_pass = VK_NULL_HANDLE;
+    m_vrs_device = false;
+    return;
+  }
+
+  VkAttachmentDescription mask_color{};
+  mask_color.format = m_offscreen->getFormat();
+  mask_color.samples = VK_SAMPLE_COUNT_1_BIT;
+  mask_color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+  mask_color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  mask_color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  mask_color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  mask_color.initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  mask_color.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  VkAttachmentReference mask_ref{};
+  mask_ref.attachment = 0;
+  mask_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  VkSubpassDescription mask_subpass{};
+  mask_subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  mask_subpass.colorAttachmentCount = 1;
+  mask_subpass.pColorAttachments = &mask_ref;
+  VkSubpassDependency mask_deps[2]{};
+  mask_deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+  mask_deps[0].dstSubpass = 0;
+  mask_deps[0].srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+  mask_deps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  mask_deps[0].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  mask_deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  mask_deps[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+  mask_deps[1].srcSubpass = 0;
+  mask_deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+  mask_deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+  mask_deps[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_TRANSFER_BIT;
+  mask_deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  mask_deps[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_TRANSFER_READ_BIT;
+  mask_deps[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+  VkRenderPassCreateInfo mask_info{};
+  mask_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+  mask_info.attachmentCount = 1;
+  mask_info.pAttachments = &mask_color;
+  mask_info.subpassCount = 1;
+  mask_info.pSubpasses = &mask_subpass;
+  mask_info.dependencyCount = 2;
+  mask_info.pDependencies = mask_deps;
+  const VkResult mask_result =
+      vkCreateRenderPass(device, &mask_info, nullptr, &m_rate_mask_render_pass);
+  if (mask_result != VK_SUCCESS) {
+    LOG_FATAL("[DeferredRenderPath] VRS mask vkCreateRenderPass failed: {}",
+              static_cast<int>(mask_result));
   }
 }
 
@@ -482,11 +698,57 @@ void DeferredRenderPath::createPipelines() {
         "[DeferredRenderPath] deferred_lighting.slang must not bind the "
         "Bindless texture table");
   }
+  if (m_lighting_vrs_render_pass != VK_NULL_HANDLE) {
+    rhi::GraphicsPipelineDesc lighting_vrs_desc = lighting_desc;
+    lighting_vrs_desc.enable_fragment_shading_rate = true;
+    lighting_vrs_desc.shared_descriptor_set_layout = reinterpret_cast<uint64_t>(
+        m_lighting_pipeline->nativePipeline()->getDescriptorSetLayout());
+    m_lighting_vrs_pipeline =
+        eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+    m_lighting_vrs_pipeline->bind(m_vk_context, m_slang_compiler);
+    m_lighting_vrs_pipeline->initializeWithRenderPass(m_lighting_vrs_render_pass,
+                                                      lighting_vrs_desc);
+  }
+  if (m_rate_mask_render_pass != VK_NULL_HANDLE) {
+    rhi::GraphicsPipelineDesc mask_desc{};
+    mask_desc.shader_path = "engine/shaders/vrs_rate_mask.slang";
+    mask_desc.enable_vertex_input = false;
+    mask_desc.cull_mode = rhi::CullMode::None;
+    mask_desc.enable_depth_test = false;
+    mask_desc.enable_depth_write = false;
+    mask_desc.color_attachment_count = 1;
+    fillVrsRateMaskExpectedBindings(
+        mask_desc.expected_descriptor_bindings, mask_desc.expected_descriptor_sets,
+        &mask_desc.expected_descriptor_binding_count,
+        mask_desc.expected_descriptor_kinds);
+    m_rate_mask_pipeline =
+        eastl::make_unique<vulkan_backend::VulkanGraphicsPipeline>();
+    m_rate_mask_pipeline->bind(m_vk_context, m_slang_compiler);
+    m_rate_mask_pipeline->initializeWithRenderPass(m_rate_mask_render_pass,
+                                                   mask_desc);
+    if (m_rate_mask_pipeline->nativePipeline()->usesBindlessTextureTable()) {
+      LOG_FATAL(
+          "[DeferredRenderPath] vrs_rate_mask.slang must not bind the Bindless "
+          "texture table");
+    }
+  }
   createFroxelFillPipeline();
+  if (m_vrs_device) {
+    createVrsSobelPipeline();
+  }
 }
 
 void DeferredRenderPath::destroyPipelines() {
+  destroyVrsSobelPipeline();
   destroyFroxelFillPipeline();
+  if (m_rate_mask_pipeline) {
+    m_rate_mask_pipeline->shutdown();
+    m_rate_mask_pipeline.reset();
+  }
+  if (m_lighting_vrs_pipeline) {
+    m_lighting_vrs_pipeline->shutdown();
+    m_lighting_vrs_pipeline.reset();
+  }
   if (m_lighting_pipeline) {
     m_lighting_pipeline->shutdown();
     m_lighting_pipeline.reset();
@@ -529,6 +791,10 @@ void DeferredRenderPath::createDescriptorResources() {
   m_froxel_overflow_buffers.resize(kDeferredDescriptorFrames);
   m_froxel_overflow_readbacks.resize(kDeferredDescriptorFrames);
   m_clustered_mask_buffers.resize(kDeferredDescriptorFrames);
+  if (m_vrs_device) {
+    m_vrs_sobel_ubos.resize(kDeferredDescriptorFrames);
+    m_vrs_mask_ubos.resize(kDeferredDescriptorFrames);
+  }
   for (uint32_t i = 0; i < kDeferredDescriptorFrames; ++i) {
     m_lighting_uniform_buffers[i] = eastl::make_unique<VulkanBuffer>();
     m_lighting_uniform_buffers[i]->create(
@@ -566,27 +832,47 @@ void DeferredRenderPath::createDescriptorResources() {
         sizeof(uint32_t) * k_gpu_driven_receiver_slot_count *
             k_clustered_mask_words,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    if (m_vrs_device) {
+      m_vrs_sobel_ubos[i] = eastl::make_unique<VulkanBuffer>();
+      m_vrs_sobel_ubos[i]->create(m_vk_allocator, sizeof(VrsSobelUniformData),
+                                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                  VMA_MEMORY_USAGE_CPU_TO_GPU);
+      m_vrs_mask_ubos[i] = eastl::make_unique<VulkanBuffer>();
+      m_vrs_mask_ubos[i]->create(m_vk_allocator, sizeof(VrsRateMaskUniformData),
+                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                 VMA_MEMORY_USAGE_CPU_TO_GPU);
+    }
   }
   recreateFroxelGridBuffers(std::max(1u, m_width), std::max(1u, m_height));
 
-  // static: 1 UBO; skinned: 2 UBO; lighting: 1 UBO; fill: 1 UBO.
+  // static: 1 UBO; skinned: 2 UBO; lighting: 1 UBO; fill: 1 UBO; VRS: 2 UBO.
   // lighting images: 5 sampled + 1 sampler; lighting SSBO: 5; fill SSBO: 4.
-  VkDescriptorPoolSize pool_sizes[4]{};
+  // Sobel: sampled color + storage rate; mask: sampled rate.
+  const uint32_t vrs_sets = m_vrs_device ? kDeferredDescriptorFrames * 2u : 0u;
+  VkDescriptorPoolSize pool_sizes[5]{};
+  uint32_t pool_size_count = 4;
   pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   pool_sizes[0].descriptorCount =
-      total_slot_sets * 3u + kDeferredDescriptorFrames * 2u;
+      total_slot_sets * 3u + kDeferredDescriptorFrames * 2u +
+      (m_vrs_device ? kDeferredDescriptorFrames * 2u : 0u);
   pool_sizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  pool_sizes[1].descriptorCount = kDeferredDescriptorFrames * 8u;
+  pool_sizes[1].descriptorCount = kDeferredDescriptorFrames * 8u +
+                                  (m_vrs_device ? kDeferredDescriptorFrames * 2u : 0u);
   pool_sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
   pool_sizes[2].descriptorCount = kDeferredDescriptorFrames;
   pool_sizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   pool_sizes[3].descriptorCount = kDeferredDescriptorFrames * 10u;
+  if (m_vrs_device) {
+    pool_sizes[4].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    pool_sizes[4].descriptorCount = kDeferredDescriptorFrames;
+    pool_size_count = 5;
+  }
 
   VkDescriptorPoolCreateInfo pool_info{};
   pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  pool_info.poolSizeCount = 4;
+  pool_info.poolSizeCount = pool_size_count;
   pool_info.pPoolSizes = pool_sizes;
-  pool_info.maxSets = total_slot_sets * 2u + kDeferredDescriptorFrames * 2u;
+  pool_info.maxSets = total_slot_sets * 2u + kDeferredDescriptorFrames * 2u + vrs_sets;
   const VkResult pool_result =
       vkCreateDescriptorPool(device, &pool_info, nullptr, &m_descriptor_pool);
   if (pool_result != VK_SUCCESS) {
@@ -623,6 +909,15 @@ void DeferredRenderPath::createDescriptorResources() {
                 "lighting");
   allocate_sets(m_froxel_fill_set_layout, kDeferredDescriptorFrames,
                 m_froxel_fill_descriptor_sets.data(), "froxel fill");
+  if (m_vrs_device && m_vrs_sobel_set_layout != VK_NULL_HANDLE) {
+    allocate_sets(m_vrs_sobel_set_layout, kDeferredDescriptorFrames,
+                  m_vrs_sobel_descriptor_sets.data(), "vrs sobel");
+  }
+  if (m_rate_mask_pipeline) {
+    allocate_sets(m_rate_mask_pipeline->nativePipeline()->getDescriptorSetLayout(),
+                  kDeferredDescriptorFrames, m_vrs_mask_descriptor_sets.data(),
+                  "vrs mask");
+  }
 
   for (uint32_t i = 0; i < total_slot_sets; ++i) {
     VkDescriptorBufferInfo mesh_info{};
@@ -674,6 +969,12 @@ void DeferredRenderPath::destroyDescriptorResources() {
   for (VkDescriptorSet& set : m_froxel_fill_descriptor_sets) {
     set = VK_NULL_HANDLE;
   }
+  for (VkDescriptorSet& set : m_vrs_sobel_descriptor_sets) {
+    set = VK_NULL_HANDLE;
+  }
+  for (VkDescriptorSet& set : m_vrs_mask_descriptor_sets) {
+    set = VK_NULL_HANDLE;
+  }
   if (m_descriptor_pool != VK_NULL_HANDLE) {
     vkDestroyDescriptorPool(device, m_descriptor_pool, nullptr);
     m_descriptor_pool = VK_NULL_HANDLE;
@@ -700,6 +1001,8 @@ void DeferredRenderPath::destroyDescriptorResources() {
   destroy_buffers(m_froxel_overflow_buffers);
   destroy_buffers(m_froxel_overflow_readbacks);
   destroy_buffers(m_clustered_mask_buffers);
+  destroy_buffers(m_vrs_sobel_ubos);
+  destroy_buffers(m_vrs_mask_ubos);
   m_lighting_desc_slot.fill(~0u);
   m_froxel_desc_written.fill(0);
 }
@@ -711,12 +1014,26 @@ void DeferredRenderPath::resize(uint32_t width, uint32_t height) {
   destroySlots();
   m_width = width;
   m_height = height;
+  m_rate_width = (width + m_fsr_texel.width - 1) / m_fsr_texel.width;
+  m_rate_height = (height + m_fsr_texel.height - 1) / m_fsr_texel.height;
+  if (m_rate_width == 0) {
+    m_rate_width = 1;
+  }
+  if (m_rate_height == 0) {
+    m_rate_height = 1;
+  }
   recreateFroxelGridBuffers(width, height);
   for (uint32_t frame = 0; frame < kDeferredDescriptorFrames; ++frame) {
     writeFroxelDescriptors(frame);
   }
   for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
     createSlot(slot);
+  }
+  if (m_vrs_device && m_lighting_vrs_render_pass != VK_NULL_HANDLE) {
+    for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
+      createSlotFramebuffers(slot);
+    }
+    clearRateImages();
   }
 }
 
@@ -776,6 +1093,112 @@ void DeferredRenderPath::createSlot(uint32_t slot_index) {
         "[DeferredRenderPath] lighting vkCreateFramebuffer failed (slot {}): {}",
         slot_index, static_cast<int>(result));
   }
+
+  if (m_vrs_device && m_lighting_vrs_render_pass != VK_NULL_HANDLE) {
+    VkImageCreateInfo rate_info{};
+    rate_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    rate_info.imageType = VK_IMAGE_TYPE_2D;
+    rate_info.extent = {m_rate_width, m_rate_height, 1};
+    rate_info.mipLevels = 1;
+    rate_info.arrayLayers = 1;
+    rate_info.format = VK_FORMAT_R8_UINT;
+    rate_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    rate_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    rate_info.usage = VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR |
+                      VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                      VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    rate_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    rate_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VmaAllocationCreateInfo alloc_info{};
+    alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+    result = vmaCreateImage(m_vk_allocator->getAllocator(), &rate_info,
+                            &alloc_info, &slot.rate_image, &slot.rate_allocation,
+                            nullptr);
+    if (result != VK_SUCCESS) {
+      LOG_FATAL("[DeferredRenderPath] VRS rate vmaCreateImage failed (slot {}): {}",
+                slot_index, static_cast<int>(result));
+    }
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.image = slot.rate_image;
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = VK_FORMAT_R8_UINT;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.layerCount = 1;
+    result = vkCreateImageView(device, &view_info, nullptr, &slot.rate_view);
+    if (result != VK_SUCCESS) {
+      LOG_FATAL(
+          "[DeferredRenderPath] VRS rate vkCreateImageView failed (slot {}): {}",
+          slot_index, static_cast<int>(result));
+    }
+  }
+}
+
+void DeferredRenderPath::createSlotFramebuffers(uint32_t slot_index) {
+  ASSERT(slot_index < OffscreenRenderTarget::k_buffer_count);
+  if (m_lighting_vrs_render_pass == VK_NULL_HANDLE) {
+    return;
+  }
+  GBufferSlot& slot = m_slots[slot_index];
+  const uint32_t prev =
+      (slot_index + OffscreenRenderTarget::k_buffer_count - 1) %
+      OffscreenRenderTarget::k_buffer_count;
+  if (slot.rate_view == VK_NULL_HANDLE || m_slots[prev].rate_view == VK_NULL_HANDLE) {
+    return;
+  }
+  VkDevice device = m_vk_context->getDevice();
+  VkImageView attachments[2] = {m_offscreen->getImageView(slot_index),
+                                m_slots[prev].rate_view};
+  VkFramebufferCreateInfo fb{};
+  fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+  fb.renderPass = m_lighting_vrs_render_pass;
+  fb.attachmentCount = 2;
+  fb.pAttachments = attachments;
+  fb.width = m_width;
+  fb.height = m_height;
+  fb.layers = 1;
+  const VkResult result =
+      vkCreateFramebuffer(device, &fb, nullptr, &slot.lighting_vrs_framebuffer);
+  if (result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[DeferredRenderPath] lighting VRS vkCreateFramebuffer failed (slot {}): "
+        "{}",
+        slot_index, static_cast<int>(result));
+  }
+}
+
+void DeferredRenderPath::clearRateImages() {
+  if (!m_vrs_device || m_vk_context == nullptr) {
+    return;
+  }
+  VkCommandBuffer cmd = m_vk_context->beginImmediateCommands();
+  VkClearColorValue clear{};
+  clear.uint32[0] = k_vrs_texel_1x1;
+  VkImageSubresourceRange range{};
+  range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  range.levelCount = 1;
+  range.layerCount = 1;
+  for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
+    GBufferSlot& data = m_slots[slot];
+    if (data.rate_image == VK_NULL_HANDLE) {
+      continue;
+    }
+    cmdImageBarrier(cmd, data.rate_image, VK_IMAGE_LAYOUT_UNDEFINED,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT);
+    vkCmdClearColorImage(cmd, data.rate_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &clear, 1, &range);
+    cmdImageBarrier(
+        cmd, data.rate_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR);
+  }
+  m_vk_context->endImmediateCommands(cmd);
 }
 
 void DeferredRenderPath::destroySlot(uint32_t slot_index) {
@@ -783,6 +1206,10 @@ void DeferredRenderPath::destroySlot(uint32_t slot_index) {
   GBufferSlot& slot = m_slots[slot_index];
   VkDevice device = m_vk_context->getDevice();
 
+  if (slot.lighting_vrs_framebuffer != VK_NULL_HANDLE) {
+    vkDestroyFramebuffer(device, slot.lighting_vrs_framebuffer, nullptr);
+    slot.lighting_vrs_framebuffer = VK_NULL_HANDLE;
+  }
   if (slot.lighting_framebuffer != VK_NULL_HANDLE) {
     vkDestroyFramebuffer(device, slot.lighting_framebuffer, nullptr);
     slot.lighting_framebuffer = VK_NULL_HANDLE;
@@ -790,6 +1217,16 @@ void DeferredRenderPath::destroySlot(uint32_t slot_index) {
   if (slot.gbuffer_framebuffer != VK_NULL_HANDLE) {
     vkDestroyFramebuffer(device, slot.gbuffer_framebuffer, nullptr);
     slot.gbuffer_framebuffer = VK_NULL_HANDLE;
+  }
+  if (slot.rate_view != VK_NULL_HANDLE) {
+    vkDestroyImageView(device, slot.rate_view, nullptr);
+    slot.rate_view = VK_NULL_HANDLE;
+  }
+  if (slot.rate_image != VK_NULL_HANDLE) {
+    vmaDestroyImage(m_vk_allocator->getAllocator(), slot.rate_image,
+                    slot.rate_allocation);
+    slot.rate_image = VK_NULL_HANDLE;
+    slot.rate_allocation = VK_NULL_HANDLE;
   }
   for (uint32_t i = 0; i < k_gbuffer_plane_count; ++i) {
     if (slot.views[i] != VK_NULL_HANDLE) {
@@ -814,6 +1251,8 @@ void DeferredRenderPath::destroySlots() {
   }
   m_width = 0;
   m_height = 0;
+  m_rate_width = 0;
+  m_rate_height = 0;
   m_lighting_desc_slot.fill(~0u);
 }
 
@@ -1008,16 +1447,32 @@ void DeferredRenderPath::uploadLightingUniforms(
   ubo.froxel_screen = froxel_screen;
   ubo.froxel_z = froxel_z;
 
-  EvaluatedLight list[k_max_deferred_light_list];
+  EvaluatedLight list[k_max_deferred_light_list]{};
   size_t list_count = 0;
   if (scene != nullptr) {
     list_count = buildDeferredFullscreenLightList(
         *scene, list, k_max_deferred_light_list);
-  }
-  ubo.light_count = glm::vec4(static_cast<float>(list_count), 0.0f, 0.0f, 0.0f);
-  for (size_t i = 0; i < list_count; ++i) {
-    packEvaluatedLight(ubo.lights[i], list[i], frame_state.shadow_caster_id,
-                       frame_state.shadows_enabled, &frame_state.local_shadows);
+    ubo.light_count = glm::vec4(static_cast<float>(list_count), 0.0f, 0.0f, 0.0f);
+    for (size_t i = 0; i < list_count; ++i) {
+      packEvaluatedLight(ubo.lights[i], list[i], frame_state.shadow_caster_id,
+                         frame_state.shadows_enabled, &frame_state.local_shadows);
+    }
+  } else {
+    const float light_dir_length = glm::length(frame_state.shading.light_direction);
+    const glm::vec3 light_dir =
+        light_dir_length > 0.0001f
+            ? frame_state.shading.light_direction / light_dir_length
+            : glm::normalize(glm::vec3(0.45f, 0.7f, 0.55f));
+    GpuSceneLight& gpu = ubo.lights[0];
+    gpu.position_type = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+    gpu.color_flags = glm::vec4(frame_state.shading.light_color, 1.0f);
+    gpu.emit_range = glm::vec4(-light_dir, 0.0f);
+    gpu.cone_area = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
+    gpu.axis_x = glm::vec4(1.0f, 0.0f, 0.0f,
+                           frame_state.shadows_enabled ? 1.0f : 0.0f);
+    list_count = 1;
+    ubo.light_count = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+    ubo.ambient_color = glm::vec4(frame_state.shading.ambient_color, 0.0f);
   }
 
   EvaluatedLight clustered[k_max_clustered_lights];
@@ -1144,6 +1599,13 @@ void DeferredRenderPath::uploadLightingUniforms(
       for (const GpuDrivenDraw& draw : packed) {
         fill_masks(draw.receiver_id, draw.entity_id);
       }
+    }
+    if (scene == nullptr && list_count > 0) {
+      uint32_t studio_mask = 0;
+      for (size_t i = 0; i < list_count && i < 32; ++i) {
+        studio_mask |= 1u << static_cast<uint32_t>(i);
+      }
+      m_receiver_mask_cpu.assign(k_gpu_driven_receiver_slot_count, studio_mask);
     }
     std::memcpy(m_cached_clustered_gpu, clustered_gpu, sizeof(clustered_gpu));
     m_lighting_mask_fingerprint = mask_fp;
@@ -1437,6 +1899,274 @@ void DeferredRenderPath::destroyFroxelFillPipeline() {
   }
 }
 
+void DeferredRenderPath::createVrsSobelPipeline() {
+  ASSERT(m_vk_context);
+  ASSERT(m_slang_compiler);
+  uint32_t bindings[k_max_expected_descriptor_bindings];
+  uint32_t sets[k_max_expected_descriptor_bindings];
+  ShaderDescriptorKind kinds[k_max_expected_descriptor_bindings]{};
+  uint32_t binding_count = 0;
+  fillVrsSobelExpectedBindings(bindings, sets, &binding_count, kinds);
+
+  const SlangCompiler::ComputeProgramResult program =
+      m_slang_compiler->compileComputeProgram("engine/shaders/vrs_sobel.slang",
+                                              "main");
+  if (!shaderResourceBindingsMatch(program.layout, bindings, binding_count, sets,
+                                   kinds)) {
+    LOG_FATAL(
+        "[DeferredRenderPath] vrs_sobel.slang resource layout does not match "
+        "record-path bindings (extracted {}, expected {})",
+        program.layout.count, binding_count);
+  }
+
+  eastl::vector<VkDescriptorSetLayoutBinding> layout_bindings;
+  for (uint32_t i = 0; i < program.layout.count; ++i) {
+    const ShaderResourceBinding& resource = program.layout.bindings[i];
+    if (resource.set != 0) {
+      continue;
+    }
+    VkDescriptorSetLayoutBinding b{};
+    b.binding = resource.binding;
+    b.descriptorType = descriptorType(resource.kind);
+    b.descriptorCount = 1;
+    b.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    layout_bindings.push_back(b);
+  }
+
+  VkDevice device = m_vk_context->getDevice();
+  VkDescriptorSetLayoutCreateInfo layout_info{};
+  layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layout_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+  layout_info.pBindings = layout_bindings.data();
+  const VkResult layout_result = vkCreateDescriptorSetLayout(
+      device, &layout_info, nullptr, &m_vrs_sobel_set_layout);
+  if (layout_result != VK_SUCCESS) {
+    LOG_FATAL(
+        "[DeferredRenderPath] VRS Sobel vkCreateDescriptorSetLayout failed: {}",
+        static_cast<int>(layout_result));
+  }
+
+  VkPipelineLayoutCreateInfo pipe_layout_info{};
+  pipe_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipe_layout_info.setLayoutCount = 1;
+  pipe_layout_info.pSetLayouts = &m_vrs_sobel_set_layout;
+  const VkResult pipe_layout_result = vkCreatePipelineLayout(
+      device, &pipe_layout_info, nullptr, &m_vrs_sobel_pipe_layout);
+  if (pipe_layout_result != VK_SUCCESS) {
+    LOG_FATAL("[DeferredRenderPath] VRS Sobel vkCreatePipelineLayout failed: {}",
+              static_cast<int>(pipe_layout_result));
+  }
+
+  VkShaderModuleCreateInfo module_info{};
+  module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  module_info.codeSize = program.compute.spirv_code.size();
+  module_info.pCode =
+      reinterpret_cast<const uint32_t*>(program.compute.spirv_code.data());
+  VkShaderModule module = VK_NULL_HANDLE;
+  const VkResult module_result =
+      vkCreateShaderModule(device, &module_info, nullptr, &module);
+  if (module_result != VK_SUCCESS) {
+    LOG_FATAL("[DeferredRenderPath] VRS Sobel vkCreateShaderModule failed: {}",
+              static_cast<int>(module_result));
+  }
+  m_vrs_sobel_pipeline = createVkComputePipeline(
+      device, m_vrs_sobel_pipe_layout, module,
+      program.compute.entry_point_name.c_str());
+  vkDestroyShaderModule(device, module, nullptr);
+}
+
+void DeferredRenderPath::destroyVrsSobelPipeline() {
+  if (m_vk_context == nullptr) {
+    return;
+  }
+  VkDevice device = m_vk_context->getDevice();
+  if (m_vrs_sobel_pipeline != VK_NULL_HANDLE) {
+    vkDestroyPipeline(device, m_vrs_sobel_pipeline, nullptr);
+    m_vrs_sobel_pipeline = VK_NULL_HANDLE;
+  }
+  if (m_vrs_sobel_pipe_layout != VK_NULL_HANDLE) {
+    vkDestroyPipelineLayout(device, m_vrs_sobel_pipe_layout, nullptr);
+    m_vrs_sobel_pipe_layout = VK_NULL_HANDLE;
+  }
+  if (m_vrs_sobel_set_layout != VK_NULL_HANDLE) {
+    vkDestroyDescriptorSetLayout(device, m_vrs_sobel_set_layout, nullptr);
+    m_vrs_sobel_set_layout = VK_NULL_HANDLE;
+  }
+}
+
+bool DeferredRenderPath::vrsAttachmentEnabled() const {
+  return m_vrs_device && !editorVrsForcedOff() &&
+         m_lighting_vrs_render_pass != VK_NULL_HANDLE &&
+         m_lighting_vrs_pipeline != nullptr && m_vk_context != nullptr &&
+         m_vk_context->cmdSetFragmentShadingRateKHR() != nullptr;
+}
+
+void DeferredRenderPath::writeVrsDescriptors(uint32_t frame_index,
+                                             uint32_t slot_index) {
+  if (frame_index >= kDeferredDescriptorFrames || m_vk_context == nullptr) {
+    return;
+  }
+  const GBufferSlot& slot = m_slots[slot_index];
+  VkDevice device = m_vk_context->getDevice();
+
+  if (m_vrs_sobel_descriptor_sets[frame_index] != VK_NULL_HANDLE &&
+      frame_index < m_vrs_sobel_ubos.size() && m_vrs_sobel_ubos[frame_index] &&
+      slot.rate_view != VK_NULL_HANDLE) {
+    VkDescriptorBufferInfo ubo{};
+    ubo.buffer = m_vrs_sobel_ubos[frame_index]->getBuffer();
+    ubo.range = VK_WHOLE_SIZE;
+    VkDescriptorImageInfo color{};
+    color.imageView = m_offscreen->getImageView(slot_index);
+    color.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkDescriptorImageInfo rate{};
+    rate.imageView = slot.rate_view;
+    rate.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writes[3]{};
+    for (VkWriteDescriptorSet& write : writes) {
+      write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write.dstSet = m_vrs_sobel_descriptor_sets[frame_index];
+      write.descriptorCount = 1;
+    }
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &ubo;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[1].pImageInfo = &color;
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[2].pImageInfo = &rate;
+    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+  }
+
+  if (m_vrs_mask_descriptor_sets[frame_index] != VK_NULL_HANDLE &&
+      frame_index < m_vrs_mask_ubos.size() && m_vrs_mask_ubos[frame_index] &&
+      slot.rate_view != VK_NULL_HANDLE) {
+    VkDescriptorBufferInfo ubo{};
+    ubo.buffer = m_vrs_mask_ubos[frame_index]->getBuffer();
+    ubo.range = VK_WHOLE_SIZE;
+    VkDescriptorImageInfo rate{};
+    rate.imageView = slot.rate_view;
+    rate.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet writes[2]{};
+    for (VkWriteDescriptorSet& write : writes) {
+      write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      write.dstSet = m_vrs_mask_descriptor_sets[frame_index];
+      write.descriptorCount = 1;
+    }
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &ubo;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    writes[1].pImageInfo = &rate;
+    vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+  }
+}
+
+void DeferredRenderPath::recordVrsSobel(VkCommandBuffer cmd, uint32_t frame_index,
+                                        uint32_t slot_index) {
+  if (cmd == VK_NULL_HANDLE || m_vrs_sobel_pipeline == VK_NULL_HANDLE ||
+      frame_index >= kDeferredDescriptorFrames) {
+    return;
+  }
+  const GBufferSlot& slot = m_slots[slot_index];
+  if (slot.rate_image == VK_NULL_HANDLE ||
+      m_vrs_sobel_descriptor_sets[frame_index] == VK_NULL_HANDLE) {
+    return;
+  }
+
+  VrsSobelUniformData ubo{};
+  ubo.sizes = glm::uvec4(m_width, m_height, m_rate_width, m_rate_height);
+  ubo.texel = glm::vec4(static_cast<float>(m_fsr_texel.width),
+                        static_cast<float>(m_fsr_texel.height),
+                        k_vrs_sobel_threshold, 0.0f);
+  m_vrs_sobel_ubos[frame_index]->upload(&ubo, sizeof(ubo));
+  writeVrsDescriptors(frame_index, slot_index);
+
+  cmdImageBarrier(cmd, slot.rate_image,
+                  VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
+                  VK_IMAGE_LAYOUT_GENERAL,
+                  VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR,
+                  VK_ACCESS_SHADER_WRITE_BIT,
+                  VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR,
+                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_vrs_sobel_pipeline);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          m_vrs_sobel_pipe_layout, 0, 1,
+                          &m_vrs_sobel_descriptor_sets[frame_index], 0, nullptr);
+  const uint32_t groups_x = (m_rate_width + 15u) / 16u;
+  const uint32_t groups_y = (m_rate_height + 15u) / 16u;
+  vkCmdDispatch(cmd, std::max(1u, groups_x), std::max(1u, groups_y), 1);
+
+  cmdImageBarrier(cmd, slot.rate_image, VK_IMAGE_LAYOUT_GENERAL,
+                  VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
+                  VK_ACCESS_SHADER_WRITE_BIT,
+                  VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR,
+                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                  VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR);
+}
+
+void DeferredRenderPath::recordVrsRateMask(VkCommandBuffer cmd,
+                                           uint32_t frame_index,
+                                           uint32_t slot_index,
+                                           VkExtent2D extent) {
+  if (cmd == VK_NULL_HANDLE || m_rate_mask_pipeline == nullptr ||
+      m_rate_mask_render_pass == VK_NULL_HANDLE ||
+      frame_index >= kDeferredDescriptorFrames) {
+    return;
+  }
+  const GBufferSlot& slot = m_slots[slot_index];
+  if (slot.rate_image == VK_NULL_HANDLE ||
+      slot.lighting_framebuffer == VK_NULL_HANDLE ||
+      m_vrs_mask_descriptor_sets[frame_index] == VK_NULL_HANDLE) {
+    return;
+  }
+
+  VrsRateMaskUniformData ubo{};
+  ubo.sizes = glm::uvec4(m_width, m_height, m_rate_width, m_rate_height);
+  ubo.texel = glm::vec4(static_cast<float>(m_fsr_texel.width),
+                        static_cast<float>(m_fsr_texel.height), 0.0f, 0.0f);
+  m_vrs_mask_ubos[frame_index]->upload(&ubo, sizeof(ubo));
+  writeVrsDescriptors(frame_index, slot_index);
+
+  cmdImageBarrier(
+      cmd, slot.rate_image,
+      VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR,
+      VK_ACCESS_SHADER_READ_BIT,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+  VkRenderPassBeginInfo rp_begin{};
+  rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  rp_begin.renderPass = m_rate_mask_render_pass;
+  rp_begin.framebuffer = slot.lighting_framebuffer;
+  rp_begin.renderArea.extent = extent;
+  vkCmdBeginRenderPass(cmd, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+  VulkanPipeline* native = m_rate_mask_pipeline->nativePipeline();
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    native->getGraphicsPipeline());
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          native->getPipelineLayout(), 0, 1,
+                          &m_vrs_mask_descriptor_sets[frame_index], 0, nullptr);
+  bindViewportScissor(cmd, extent.width, extent.height);
+  vkCmdDraw(cmd, 3, 1, 0, 0);
+  vkCmdEndRenderPass(cmd);
+
+  cmdImageBarrier(
+      cmd, slot.rate_image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR,
+      VK_ACCESS_SHADER_READ_BIT,
+      VK_ACCESS_FRAGMENT_SHADING_RATE_ATTACHMENT_READ_BIT_KHR,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR);
+}
+
 void DeferredRenderPath::recreateFroxelGridBuffers(uint32_t width,
                                                    uint32_t height) {
   if (m_vk_allocator == nullptr) {
@@ -1667,7 +2397,8 @@ void DeferredRenderPath::recordGBufferPass(
     VkCommandBuffer command_buffer, const ForwardFrameState& frame_state,
     const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
     uint32_t frame_index, GpuDrivenRenderer* gpu_driven,
-    const GpuDrivenDraw* gpu_draws, uint32_t gpu_draw_count) {
+    const GpuDrivenDraw* gpu_draws, uint32_t gpu_draw_count,
+    SecondaryStream stream) {
   VkExtent2D extent{};
   uint32_t slot_index = 0;
   if (!prepareViewportRecord(frame_index, &extent, &slot_index)) {
@@ -1680,7 +2411,6 @@ void DeferredRenderPath::recordGBufferPass(
   const GBufferSlot& slot = m_slots[slot_index];
   SecondaryCommandBufferPool& pool = m_vk_context->secondaryCommandBuffers();
   ASSERT(pool.isAllocated());
-  constexpr SecondaryStream stream = SecondaryStream::viewport;
 
   const bool record_gpu = gpu_driven != nullptr && gpu_draws != nullptr &&
                           gpu_draw_count > 0;
@@ -1754,7 +2484,7 @@ void DeferredRenderPath::recordLightingPass(
     const ForwardOpaqueDraw* opaque_draws, uint32_t opaque_draw_count,
     const ForwardOpaqueDraw* transparent_draws,
     uint32_t transparent_draw_count, uint32_t frame_index,
-    GpuDrivenRenderer* gpu_driven) {
+    GpuDrivenRenderer* gpu_driven, SecondaryStream stream, bool draw_overlays) {
   VkExtent2D extent{};
   uint32_t slot_index = 0;
   if (!prepareViewportRecord(frame_index, &extent, &slot_index)) {
@@ -1767,7 +2497,17 @@ void DeferredRenderPath::recordLightingPass(
   const GBufferSlot& slot = m_slots[slot_index];
   SecondaryCommandBufferPool& pool = m_vk_context->secondaryCommandBuffers();
   ASSERT(pool.isAllocated());
-  constexpr SecondaryStream stream = SecondaryStream::viewport;
+
+  const bool use_vrs = vrsAttachmentEnabled() &&
+                       slot.lighting_vrs_framebuffer != VK_NULL_HANDLE &&
+                       m_lighting_vrs_pipeline != nullptr;
+  VkRenderPass lighting_rp =
+      use_vrs ? m_lighting_vrs_render_pass : m_lighting_render_pass;
+  VkFramebuffer lighting_fb =
+      use_vrs ? slot.lighting_vrs_framebuffer : slot.lighting_framebuffer;
+  vulkan_backend::VulkanGraphicsPipeline* lighting_pipe =
+      use_vrs ? m_lighting_vrs_pipeline.get() : m_lighting_pipeline.get();
+  ASSERT(lighting_pipe != nullptr && lighting_pipe->nativePipeline() != nullptr);
 
   // Lighting: fullscreen triangle into the offscreen color (CLEAR).
   {
@@ -1782,8 +2522,8 @@ void DeferredRenderPath::recordLightingPass(
                     kViewportBackgroundRgb, 1.0f}};
     VkRenderPassBeginInfo rp_begin{};
     rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rp_begin.renderPass = m_lighting_render_pass;
-    rp_begin.framebuffer = slot.lighting_framebuffer;
+    rp_begin.renderPass = lighting_rp;
+    rp_begin.framebuffer = lighting_fb;
     rp_begin.renderArea.extent = extent;
     rp_begin.clearValueCount = 1;
     rp_begin.pClearValues = &clear;
@@ -1793,20 +2533,40 @@ void DeferredRenderPath::recordLightingPass(
 
     const VkCommandBuffer lighting_secondary =
         pool.begin(stream, SecondaryPass::deferred_lighting, frame_index,
-                   m_lighting_render_pass, slot.lighting_framebuffer);
-    VulkanPipeline* native = m_lighting_pipeline->nativePipeline();
+                   lighting_rp, lighting_fb);
+    VulkanPipeline* native = lighting_pipe->nativePipeline();
     vkCmdBindPipeline(lighting_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       native->getGraphicsPipeline());
     vkCmdBindDescriptorSets(lighting_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             native->getPipelineLayout(), 0, 1,
                             &m_lighting_descriptor_sets[frame_index], 0,
                             nullptr);
+    if (use_vrs) {
+      VkExtent2D fragment_size{1, 1};
+      VkFragmentShadingRateCombinerOpKHR combiners[2] = {
+          VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+          VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR};
+      m_vk_context->cmdSetFragmentShadingRateKHR()(lighting_secondary,
+                                                   &fragment_size, combiners);
+    }
     bindViewportScissor(lighting_secondary, extent.width, extent.height);
     vkCmdDraw(lighting_secondary, 3, 1, 0, 0);
     pool.end(stream, SecondaryPass::deferred_lighting, frame_index);
     SecondaryCommandBufferPool::execute(command_buffer, lighting_secondary);
     vkCmdEndRenderPass(command_buffer);
     m_offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
+
+  const bool run_sobel = use_vrs && !frame_state.shading.froxel_occupancy_heatmap;
+  if (run_sobel) {
+    recordVrsSobel(command_buffer, frame_index, slot_index);
+  }
+  const bool run_mask =
+      draw_overlays && stream == SecondaryStream::viewport &&
+      frame_state.shading.vrs_rate_mask && use_vrs &&
+      !frame_state.shading.froxel_occupancy_heatmap;
+  if (run_mask) {
+    recordVrsRateMask(command_buffer, frame_index, slot_index, extent);
   }
 
   // Barriers on the PRIMARY, then LOAD color + depth for scene overlays and
@@ -1817,8 +2577,7 @@ void DeferredRenderPath::recordLightingPass(
   m_forward_path->recordSceneOverlayAndTransparent(
       command_buffer, m_offscreen->getLoadRenderPass(),
       m_offscreen->getFramebuffer(), extent, frame_state, transparent_draws,
-      transparent_draw_count, frame_index, /*draw_overlays=*/true, stream,
-      frame_index);
+      transparent_draw_count, frame_index, draw_overlays, stream, frame_index);
   m_offscreen->endLoadRenderPass(command_buffer);
 }
 
