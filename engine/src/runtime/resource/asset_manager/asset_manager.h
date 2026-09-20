@@ -173,6 +173,13 @@ class AssetManager final {
   size_t pendingGltfMaterialCount() const { return m_pending_gltf_materials.size(); }
   bool hydrateMeshGltfMaterial(const eastl::shared_ptr<MeshAsset>& mesh);
 
+  /// Publish a Mesh Loader CPU mesh into the Mesh cache and bind the cooked
+  /// material sidecar on the owner thread.
+  void adoptStreamedMesh(const eastl::shared_ptr<MeshAsset>& mesh,
+                         const eastl::string& guid);
+
+  FileSystem* fileSystem() const { return m_file_system; }
+
   eastl::shared_ptr<Texture2DAsset> bindTexture2D(
       const eastl::string& virtual_path);
 

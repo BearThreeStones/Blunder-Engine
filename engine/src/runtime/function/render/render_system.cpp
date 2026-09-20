@@ -12,6 +12,7 @@
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/gpu_driven/gpu_driven_renderer.h"
 #include "runtime/function/render/gpu_mesh.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
@@ -302,6 +303,10 @@ void RenderSystem::initializeTextureLoader() {
     }
   }
   m_texture_loader->initialize(info);
+  if (g_runtime_global_context.m_mesh_loader) {
+    g_runtime_global_context.m_mesh_loader->enableGpu(
+        info.allocator != nullptr);
+  }
 }
 
 bool RenderSystem::isVulkanBackend() const {
@@ -1327,6 +1332,49 @@ void RenderSystem::dropInFlightTextures() {
   }
 }
 
+void RenderSystem::dropInFlightMeshes() {
+  if (g_runtime_global_context.m_mesh_loader) {
+    g_runtime_global_context.m_mesh_loader->dropScene();
+  }
+}
+
+void RenderSystem::pumpMeshLoader(SceneInstance* scene_instance) {
+  MeshLoader* loader = g_runtime_global_context.m_mesh_loader.get();
+  if (loader == nullptr) {
+    return;
+  }
+  loader->tick();
+  if (scene_instance != nullptr) {
+    scene_instance->bindStreamedMeshes(*loader);
+  }
+  if (!loader->isGpuEnabled() || !isVulkanBackend() || vkAlloc(this) == nullptr) {
+    return;
+  }
+  uint32_t uploaded = 0;
+  const uint32_t budget = loader->gpuBudget();
+  const eastl::vector<eastl::string> pending = loader->gpuPendingKeys();
+  for (const eastl::string& key : pending) {
+    const eastl::shared_ptr<MeshAsset> mesh = loader->cpuMesh(key);
+    if (!mesh) {
+      continue;
+    }
+    const eastl::string cache_key = gpuMeshCacheKey(*mesh);
+    if (findUploadedGpuMesh(cache_key) != nullptr) {
+      loader->markGpuUploaded(key);
+      continue;
+    }
+    if (uploaded >= budget) {
+      break;
+    }
+    if (getOrUploadGpuMesh(mesh.get()) != nullptr) {
+      loader->markGpuUploaded(key);
+      ++uploaded;
+    } else {
+      loader->markGpuFailed(key);
+    }
+  }
+}
+
 void RenderSystem::resizeOffscreenIfNeeded(uint32_t width, uint32_t height) {
   if (width == 0 || height == 0 || !m_offscreen) {
     return;
@@ -1638,6 +1686,11 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     m_texture_loader->tick();
     if (m_texture_loader->consumeResidencyChanged()) {
       m_defer_viewport_for_texture_residency = true;
+    }
+  }
+  if (g_runtime_global_context.m_mesh_loader) {
+    if (g_runtime_global_context.m_mesh_loader->consumeResidencyChanged()) {
+      requestViewportRedraw();
     }
   }
   if (!m_backend || !m_offscreen) {

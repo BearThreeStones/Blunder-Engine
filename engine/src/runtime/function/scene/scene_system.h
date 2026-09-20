@@ -9,6 +9,7 @@
 namespace Blunder {
 
 class AssetManager;
+class MeshLoader;
 class SceneAsset;
 class SceneInstance;
 
@@ -16,10 +17,12 @@ class SceneInstance;
 /// Scene Thumbnail so every scene-document instantiate fills bones (ADR 0034).
 void completeSceneDocumentInstantiate(AssetManager* asset_manager,
                                       SceneInstance& instance,
-                                      const Scene& scene);
+                                      const Scene& scene,
+                                      MeshLoader* mesh_loader = nullptr);
 
 struct SceneSystemInitInfo {
   AssetManager* asset_manager{nullptr};
+  MeshLoader* mesh_loader{nullptr};
 };
 
 /// Loads scene assets, owns SceneInstance lifetimes, and ticks the active instance.
@@ -58,6 +61,7 @@ class SceneSystem final {
       const eastl::string& virtual_path);
 
   AssetManager* m_asset_manager{nullptr};
+  MeshLoader* m_mesh_loader{nullptr};
   eastl::vector<eastl::shared_ptr<SceneInstance>> m_loaded_instances;
   SceneInstance* m_active_instance{nullptr};
   bool m_is_initialized{false};

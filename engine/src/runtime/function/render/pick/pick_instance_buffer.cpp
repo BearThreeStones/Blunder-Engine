@@ -14,6 +14,7 @@
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset/texture2d_asset.h"
 
 namespace Blunder {
@@ -88,7 +89,16 @@ void PickInstanceBuffer::rebuild(SceneInstance& scene, RenderSystem* render_syst
     PickOverlay::PickDraw draw{};
     bool has_draw = false;
     if (render_system != nullptr) {
-      GpuMesh* gpu_mesh = render_system->getOrUploadGpuMesh(renderer.mesh.get());
+      GpuMesh* gpu_mesh = render_system->findUploadedGpuMesh(
+          renderer.mesh->getVirtualPath());
+      if (gpu_mesh == nullptr) {
+        const std::filesystem::path& absolute_path =
+            renderer.mesh->getAbsolutePath();
+        if (!absolute_path.empty()) {
+          gpu_mesh = render_system->findUploadedGpuMesh(
+              eastl::string(absolute_path.generic_string().c_str()));
+        }
+      }
       if (gpu_mesh == nullptr || gpu_mesh->getVertexBuffer() == nullptr ||
           gpu_mesh->getIndexBuffer() == nullptr || gpu_mesh->getIndexCount() == 0) {
         return;

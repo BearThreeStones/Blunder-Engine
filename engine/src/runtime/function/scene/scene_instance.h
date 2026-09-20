@@ -19,6 +19,7 @@
 
 namespace Blunder {
 
+class MeshLoader;
 class Object;
 class Skeleton;
 
@@ -94,6 +95,8 @@ class SceneInstance final : public IEntityStore {
 
   void setMeshRenderer(EntityId id, MeshRendererComponent renderer);
   const MeshRendererComponent* getMeshRenderer(EntityId id) const;
+  /// Bind pending Mesh Loader keys once those unique meshes are CPU-resident.
+  void bindStreamedMeshes(MeshLoader& loader);
   /// Copy MeshAsset materials onto MeshRenderers after deferred hydrate.
   /// Skips renderers that already hold a textured override.
   void rebindMeshRendererMaterialsFromMeshes();

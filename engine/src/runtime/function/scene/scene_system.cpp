@@ -7,6 +7,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
@@ -28,7 +29,7 @@ void coverMeshRendererAncestors(const SceneInstance& instance,
                                 eastl::unordered_set<EntityId>& covered) {
   instance.forEachMeshRenderer([&](EntityId entity_id,
                                    const MeshRendererComponent& renderer) {
-    if (!renderer.mesh) {
+    if (!renderer.mesh && renderer.pending_mesh_key.empty()) {
       return;
     }
     EntityId current = entity_id;
@@ -77,6 +78,7 @@ bool SceneSystem::needsMeshAttach(const SceneInstance& instance) const {
 
 void SceneSystem::initialize(const SceneSystemInitInfo& info) {
   m_asset_manager = info.asset_manager;
+  m_mesh_loader = info.mesh_loader;
   m_is_initialized = m_asset_manager != nullptr;
   if (!m_is_initialized) {
     LOG_ERROR("[SceneSystem] initialize requires AssetManager");
@@ -86,6 +88,7 @@ void SceneSystem::initialize(const SceneSystemInitInfo& info) {
 void SceneSystem::shutdown() {
   setActiveInstance(nullptr);
   m_loaded_instances.clear();
+  m_mesh_loader = nullptr;
   m_asset_manager = nullptr;
   m_is_initialized = false;
 }
@@ -113,7 +116,7 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
 
   const auto attach_begin = std::chrono::steady_clock::now();
   completeSceneDocumentInstantiate(m_asset_manager, *instance,
-                                   scene_asset->getScene());
+                                   scene_asset->getScene(), m_mesh_loader);
   const double attach_ms =
       std::chrono::duration<double, std::milli>(
           std::chrono::steady_clock::now() - attach_begin)
@@ -128,9 +131,11 @@ eastl::shared_ptr<SceneInstance> SceneSystem::instantiateScene(
 
 void completeSceneDocumentInstantiate(AssetManager* asset_manager,
                                       SceneInstance& instance,
-                                      const Scene& scene) {
+                                      const Scene& scene,
+                                      MeshLoader* mesh_loader) {
   if (asset_manager != nullptr) {
-    GltfSceneImporter::attachEntityMeshes(asset_manager, instance, scene);
+    GltfSceneImporter::attachEntityMeshes(asset_manager, instance, scene,
+                                          mesh_loader);
   }
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
@@ -302,7 +307,10 @@ void SceneSystem::setActiveInstance(SceneInstance* instance) {
   if (m_active_instance != instance) {
     if (g_runtime_global_context.m_render_system) {
       g_runtime_global_context.m_render_system->dropInFlightTextures();
+      g_runtime_global_context.m_render_system->dropInFlightMeshes();
       g_runtime_global_context.m_render_system->notifyActiveSceneChanged();
+    } else if (m_mesh_loader != nullptr) {
+      m_mesh_loader->dropScene();
     }
   }
   m_active_instance = instance;
@@ -313,6 +321,12 @@ void SceneSystem::setActiveInstance(SceneInstance* instance) {
 }
 
 void SceneSystem::tick(float delta_time) {
+  if (m_mesh_loader != nullptr) {
+    m_mesh_loader->tick();
+    if (m_active_instance != nullptr) {
+      m_active_instance->bindStreamedMeshes(*m_mesh_loader);
+    }
+  }
   if (m_active_instance == nullptr) {
     return;
   }

@@ -1,4 +1,4 @@
-#include "EASTL/unique_ptr.h"
+#include "runtime/function/render/mesh_loader.h"
 #include "runtime/function/scene/scene_instance.h"
 
 #include "runtime/core/base/macro.h"
@@ -467,6 +467,32 @@ void SceneInstance::setMeshRenderer(EntityId id, MeshRendererComponent renderer)
     return;
   }
   m_mesh_renderers[id] = eastl::move(renderer);
+}
+
+void SceneInstance::bindStreamedMeshes(MeshLoader& loader) {
+  for (auto& entry : m_mesh_renderers) {
+    if (isOmittedFromDocument(entry.first)) {
+      continue;
+    }
+    MeshRendererComponent& renderer = entry.second;
+    if (renderer.mesh || renderer.pending_mesh_key.empty()) {
+      continue;
+    }
+    if (loader.isFailed(renderer.pending_mesh_key)) {
+      continue;
+    }
+    eastl::shared_ptr<MeshAsset> mesh = loader.cpuMesh(renderer.pending_mesh_key);
+    if (!mesh) {
+      continue;
+    }
+    renderer.mesh = mesh;
+    renderer.material = mesh->getMaterialAsset();
+    if (renderer.material) {
+      renderer.alpha_mode = renderer.material->getAlphaMode();
+      renderer.alpha_cutoff = renderer.material->getAlphaCutoff();
+      renderer.double_sided = renderer.material->isDoubleSided();
+    }
+  }
 }
 
 void SceneInstance::rebindMeshRendererMaterialsFromMeshes() {

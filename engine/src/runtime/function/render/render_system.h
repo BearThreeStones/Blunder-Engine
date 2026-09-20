@@ -41,6 +41,7 @@ class MaterialAsset;
 class MeshAsset;
 class Texture2DAsset;
 class TextureLoader;
+class MeshLoader;
 class VulkanBuffer;
 class VulkanPipeline;
 class VulkanTexture;
@@ -122,6 +123,9 @@ class RenderSystem final {
   uint32_t textureUploadInFlightCount() const;
   /// Scene drop: in-flight Texture Loader completions must not write dropped images.
   void dropInFlightTextures();
+  /// Scene drop: in-flight Mesh Loader completions must not bind dropped meshes.
+  void dropInFlightMeshes();
+  void pumpMeshLoader(SceneInstance* scene_instance);
   GpuMesh* getOrUploadGpuMesh(const MeshAsset* mesh_asset);
   GpuMesh* getOrUploadGpuMeshByKey(const eastl::string& cache_key,
                                    const void* vertex_bytes,
