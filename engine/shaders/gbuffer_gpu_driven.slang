@@ -122,7 +122,11 @@ float3 getNormalFromMap(VertexOutput input, GpuDrivenInstanceGpu inst)
 GBufferOutput fragmentMain(VertexOutput input)
 {
     GpuDrivenInstanceGpu inst = instances[input.instanceId];
-    float4 baseSample = sampleBindless(inst.bindlessTextureIndices.x, input.uv);
+    float4 baseSample = float4(1.0, 1.0, 1.0, 1.0);
+    if (inst.materialFlags.y > 0.5)
+    {
+        baseSample = sampleBindless(inst.bindlessTextureIndices.x, input.uv);
+    }
     float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb;
     float alpha = baseSample.a * inst.baseColorFactor.a;
 

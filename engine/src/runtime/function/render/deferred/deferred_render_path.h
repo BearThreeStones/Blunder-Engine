@@ -61,7 +61,7 @@ struct GBufferMeshUniformData {
   glm::mat4 projection{1.0f};
   glm::mat4 normal_matrix{1.0f};
   glm::vec4 base_color_factor{1.0f};
-  glm::vec4 material_flags{0.0f};
+  glm::vec4 material_flags{0.0f};  // x unlit, y has base-color texture
   glm::vec4 metallic_roughness_factors{1.0f, 1.0f, 0.5f, 0.0f};
   glm::vec4 pbr_texture_flags{0.0f};
   glm::uvec4 bindless_texture_indices{0};

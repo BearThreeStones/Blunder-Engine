@@ -334,7 +334,11 @@ float3 shadeAreaLight(GpuSceneLight light, float3 worldPos, float3 normal, float
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    float4 baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
+    float4 baseSample = float4(1.0, 1.0, 1.0, 1.0);
+    if (ubo.materialFlags.y > 0.5)
+    {
+        baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
+    }
     float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
     float alpha = baseSample.a * ubo.baseColorFactor.a;
 

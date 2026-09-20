@@ -47,7 +47,7 @@ struct ForwardMeshUniformData {
   glm::vec4 ambient_color{0.15f, 0.15f, 0.15f, 0.0f};
   glm::vec4 diffuse_color{0.85f, 0.85f, 0.85f, 0.0f};
   glm::vec4 specular_color_and_shininess{0.4f, 0.4f, 0.4f, 32.0f};
-  glm::vec4 material_flags{0.0f};
+  glm::vec4 material_flags{0.0f};  // x unlit, y has base-color texture
   glm::mat4 normal_matrix{1.0f};
   glm::mat4 light_view_projection{1.0f};
   glm::vec4 shadow_params{0.0f};

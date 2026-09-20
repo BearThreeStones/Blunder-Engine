@@ -17,7 +17,7 @@ struct GBufferUniformData
     float4x4 projection;
     float4x4 normalMatrix;
     float4 baseColorFactor;
-    float4 materialFlags;            // x = unlit
+    float4 materialFlags;            // x = unlit, y = has albedo map
     float4 metallicRoughnessFactors; // x metallic, y roughness, z cutoff, w alpha mode
     float4 pbrTextureFlags;          // x mr map, y normal map, z ao map, w two-sided
     uint4 bindlessTextureIndices;    // x base, y mr, z normal, w ao
@@ -126,7 +126,11 @@ float2 encodeOctNormal(float3 n)
 [shader("fragment")]
 GBufferOutput fragmentMain(VertexOutput input)
 {
-    float4 baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
+    float4 baseSample = float4(1.0, 1.0, 1.0, 1.0);
+    if (ubo.materialFlags.y > 0.5)
+    {
+        baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
+    }
     float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
     float alpha = baseSample.a * ubo.baseColorFactor.a;
 

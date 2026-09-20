@@ -6,6 +6,7 @@
 #include "runtime/function/render/forward/forward_shading.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/texture2d_asset.h"
 
 #include "EASTL/unique_ptr.h"
 
@@ -128,6 +129,43 @@ void gltfSpecDefaultMetalWithoutMrMapShadesAsDielectric() {
               chrome_ubo.metallic_roughness_factors.x > 0.99f &&
                   std::fabs(chrome_ubo.metallic_roughness_factors.y - 0.2f) <
                       1e-4f);
+  expect_true("factor-only material skips albedo bindless",
+              ubo.material_flags.y == 0.0f);
+}
+
+void untexturedMaterialDoesNotSampleAlbedoBindless() {
+  using namespace Blunder;
+  Asset::Meta factor_meta;
+  factor_meta.virtual_path = "assets/Meshes/snow_patch.mesh.yaml#mat";
+  MaterialAsset factor_only(
+      eastl::move(factor_meta), glm::vec4(0.8f, 0.8f, 0.8f, 1.0f), AssetHandle{},
+      nullptr, nullptr, nullptr, nullptr, glm::vec3(0.15f), glm::vec3(1.0f),
+      glm::vec3(0.04f), 156.8f, 0.0f, 0.4f, cgltf_alpha_mode_opaque, 0.5f, true,
+      false);
+
+  ForwardMeshUniformData factor_ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(factor_ubo, &factor_only, {}, frame,
+                         cgltf_alpha_mode_opaque, 0.5f, true);
+  expect_true("snow patch factor-only albedo flag off",
+              factor_ubo.material_flags.y == 0.0f);
+
+  Asset::Meta tex_meta;
+  tex_meta.virtual_path = "resources/se-world/snow.png";
+  auto albedo = eastl::make_shared<Texture2DAsset>(
+      eastl::move(tex_meta), 1u, 1u, 4u, eastl::vector<uint8_t>{255, 255, 255, 255});
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "assets/Meshes/pine.mesh.yaml#mat";
+  MaterialAsset textured(eastl::move(mat_meta), glm::vec4(1.0f), AssetHandle{},
+                         albedo, nullptr, nullptr, nullptr, glm::vec3(0.15f),
+                         glm::vec3(1.0f), glm::vec3(0.4f), 32.0f, 0.0f, 1.0f,
+                         cgltf_alpha_mode_opaque, 0.5f, false, false);
+  ForwardMeshUniformData textured_ubo{};
+  applyPbrToMeshUniforms(textured_ubo, &textured, {}, frame,
+                         cgltf_alpha_mode_opaque, 0.5f, false);
+  expect_true("textured material albedo flag on",
+              textured_ubo.material_flags.y == 1.0f);
 }
 
 void extraMaterialStaysImport() {
@@ -240,6 +278,7 @@ int main() {
   extraMaterialStaysImport();
   applyBlinnPhongIgnoresEditorBag();
   gltfSpecDefaultMetalWithoutMrMapShadesAsDielectric();
+  untexturedMaterialDoesNotSampleAlbedoBindless();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();
   if (g_failures != 0) {
