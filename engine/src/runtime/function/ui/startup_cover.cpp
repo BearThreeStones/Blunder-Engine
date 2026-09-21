@@ -1,8 +1,11 @@
 #include "runtime/function/ui/startup_cover.h"
 
+#include <chrono>
+
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
 
+#include "runtime/function/ui/engine_open_progress.h"
 #include "runtime/platform/window/window_system.h"
 
 #ifdef _WIN32
@@ -163,6 +166,7 @@ void startupCoverBegin(WindowSystem* window, const eastl::string& wordmark) {
   if (!window) {
     return;
   }
+  engineOpenProgressNoteSessionStart(std::chrono::steady_clock::now());
   g_window = window;
   g_wordmark = wordmark;
   g_phase = StartupCoverPhase::preparingEditor;

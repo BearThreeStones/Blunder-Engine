@@ -1,0 +1,62 @@
+import { EditorTheme, EditorModalPanel } from "editor_controls.slint";
+
+export component EngineOpenProgressDialog inherits Rectangle {
+    in property <bool> show-dialog: false;
+    in property <int> percent: 70;
+    in property <string> caption: "Opening scene";
+    in property <int> elapsed-seconds: 0;
+
+    visible: root.show-dialog;
+    background: EditorTheme.modal-dim;
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+    }
+
+    EditorModalPanel {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        panel-width: 360px;
+
+        Text {
+            text: "Opening editor";
+            color: EditorTheme.default-text;
+            font-size: EditorTheme.font-lg;
+        }
+
+        Rectangle {
+            width: 100%;
+            height: 8px;
+            background: EditorTheme.field;
+            border-radius: 4px;
+
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                height: 100%;
+                width: parent.width * root.percent * 0.01;
+                background: EditorTheme.accent;
+                border-radius: 4px;
+            }
+        }
+
+        Text {
+            text: "\{root.percent}%";
+            color: EditorTheme.accent-sel-text;
+            font-size: EditorTheme.font;
+        }
+
+        Text {
+            text: root.caption;
+            color: EditorTheme.window-text;
+            font-size: EditorTheme.font;
+        }
+
+        Text {
+            text: "Elapsed \{root.elapsed-seconds}s";
+            color: EditorTheme.muted;
+            font-size: EditorTheme.font-sm;
+        }
+    }
+}

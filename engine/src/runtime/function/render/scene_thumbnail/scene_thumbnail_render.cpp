@@ -27,7 +27,10 @@ eastl::shared_ptr<SceneInstance> instantiateScene(
 
   auto instance = eastl::make_shared<SceneInstance>();
   instance->setSourcePath(virtual_path);
-  instance->instantiate(scene_asset->getScene());
+  if (!instance->instantiate(scene_asset->getScene()) ||
+      !instance->instantiateCompleted()) {
+    return nullptr;
+  }
   completeSceneDocumentInstantiate(asset_manager, *instance,
                                    scene_asset->getScene());
 

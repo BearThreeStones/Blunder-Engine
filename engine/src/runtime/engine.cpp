@@ -30,6 +30,7 @@
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/project/editor_session_restore.h"
 #include "runtime/function/ui/active_scene_display.h"
+#include "runtime/function/ui/engine_open_progress.h"
 #include "runtime/function/editor/animation_preview_controller.h"
 #include "runtime/function/editor/animation_sync_cine_preview_controller.h"
 #include "runtime/function/render/transform_edit_viewport_notify.h"
@@ -77,6 +78,9 @@ void focusEditorCameraOnActiveScene() {
 }
 
 void activateEditorScene(const eastl::string& virtual_path) {
+  if (g_runtime_global_context.isQuitRequested()) {
+    return;
+  }
   LOG_INFO("[BlunderEngine] activateEditorScene '{}'", virtual_path.c_str());
   if (g_runtime_global_context.m_editor_scene_edit) {
     if (!g_runtime_global_context.m_editor_scene_edit->openScene(virtual_path)) {
@@ -309,6 +313,7 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
   if (!g_runtime_global_context.m_asset_manager ||
       !g_runtime_global_context.m_render_system) {
     LOG_WARN("[BlunderEngine] initialize skipped startup asset verification because required systems are unavailable");
+    engineOpenProgressDismiss();
     return;
   }
 
@@ -359,11 +364,39 @@ void BlunderEngine::initialize(const eastl::string& play_scene,
     if (!scene_path.empty()) {
       activateEditorScene(scene_path);
     }
+    if (g_runtime_global_context.isQuitRequested()) {
+      return;
+    }
+    if (engineOpenProgressIsVisible()) {
+      engineOpenProgressCompleteOpeningScene();
+    }
     if (SceneInstance* active =
             g_runtime_global_context.m_scene_system->getActiveInstance()) {
       LOG_INFO("[BlunderEngine] active scene '{}' (entities={})",
                active->getSourcePath().c_str(), active->getEntityCount());
     }
+  }
+
+  if (engineOpenProgressIsVisible() && m_content_browser_refresh_pending &&
+      g_runtime_global_context.m_content_browser) {
+    m_content_browser_refresh_pending = false;
+    const ContentBrowserRefreshStats stats =
+        g_runtime_global_context.m_content_browser->refresh();
+    LOG_INFO(
+        "[BlunderEngine] content index: {} entries (thumbnails: {} generated, "
+        "{} cached, {} skipped, {} failed)",
+        stats.entry_count, stats.thumbnails_generated, stats.thumbnails_cached,
+        stats.thumbnails_skipped, stats.thumbnails_failed);
+    if (g_runtime_global_context.m_ui_host) {
+      g_runtime_global_context.m_ui_host->panels().markDirty(
+          EditorPanelDirty::content_browser);
+    }
+    if (g_runtime_global_context.m_slint_system) {
+      g_runtime_global_context.m_slint_system->syncContentBrowser();
+    }
+  }
+  if (engineOpenProgressIsVisible()) {
+    engineOpenProgressCompleteIndexing();
   }
 }
 void BlunderEngine::clear() {}

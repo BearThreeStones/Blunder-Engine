@@ -21,6 +21,7 @@
 #include "runtime/function/scene/scene_render_bridge.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/ui/editor_ui_presentation.h"
+#include "runtime/function/ui/engine_open_progress.h"
 #include "runtime/resource/content_browser/content_browser_system.h"
 #include "runtime/project/play_session_controller.h"
 #include "runtime/project/play_preflight.h"
@@ -176,6 +177,7 @@ void UiHost::setPresentation(IEditorUiPresentation* presentation) {
 
 void UiHost::openSceneAssetPath(const UiContext::LockedServices& services,
                                 const eastl::string& path) {
+  engineOpenProgressNotifyLaterOpenScene();
   if (!services.editor_scene_edit || path.empty()) {
     return;
   }

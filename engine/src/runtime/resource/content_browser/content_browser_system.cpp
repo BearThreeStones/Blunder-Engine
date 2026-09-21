@@ -6,6 +6,7 @@
 #include <filesystem>
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/boot_work_heartbeat.h"
 #include "runtime/project/editor_detection_settings.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
 #include "runtime/resource/asset_registry/asset_registry.h"
@@ -653,7 +654,7 @@ void ContentBrowserSystem::enqueueVisibleGridThumbnails() {
 
 ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
   ContentBrowserRefreshStats stats{};
-  if (!m_is_initialized) {
+  if (!m_is_initialized || g_runtime_global_context.isQuitRequested()) {
     return stats;
   }
 
@@ -663,7 +664,14 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
 
   m_entries = ContentIndex::scan(*m_file_system);
   stats.entry_count = static_cast<uint32_t>(m_entries.size());
-  for (ContentEntry& entry : m_entries) {
+  if (g_runtime_global_context.isQuitRequested()) {
+    return stats;
+  }
+  for (uint32_t i = 0; i < m_entries.size(); ++i) {
+    if ((i & 0xFFu) == 0u && !bootWorkHeartbeatContinue()) {
+      break;
+    }
+    ContentEntry& entry = m_entries[i];
     const ThumbnailResult thumb =
         m_thumbnail_generator->probeThumbnailStatus(entry);
     entry.thumbnail_status = thumb.status;
@@ -678,6 +686,11 @@ ContentBrowserRefreshStats ContentBrowserSystem::refresh() {
       default:
         break;
     }
+  }
+
+  if (g_runtime_global_context.isQuitRequested() ||
+      !bootWorkHeartbeatContinue()) {
+    return stats;
   }
 
   indexEntries();

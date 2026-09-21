@@ -2,6 +2,7 @@
 #include "runtime/function/scene/scene_instance.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/boot_work_heartbeat.h"
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
@@ -261,13 +262,16 @@ SceneInstance::~SceneInstance() {
   clear();
 }
 
-void SceneInstance::instantiate(const Scene& scene) {
+bool SceneInstance::instantiate(const Scene& scene) {
   clear();
 
   eastl::vector<EntityId> ids;
   ids.reserve(scene.getEntities().size());
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
+    if ((ids.size() & 0xFFu) == 0u && !bootWorkHeartbeatContinue()) {
+      return false;
+    }
     const EntityId id = createEntity(definition.name, definition.position,
                                      definition.rotation, definition.scale);
     ids.push_back(id);
@@ -438,6 +442,9 @@ void SceneInstance::instantiate(const Scene& scene) {
     sanitizeFogComponent(fog);
     setFog(ids[i], eastl::move(fog));
   }
+
+  m_instantiate_completed = true;
+  return true;
 }
 
 void SceneInstance::clear() {
@@ -458,6 +465,7 @@ void SceneInstance::clear() {
   m_lights.clear();
   m_fogs.clear();
   m_has_world_bounds = false;
+  m_instantiate_completed = false;
   m_world_bounds = AABB{};
   m_world_matrices_dirty = true;
 }

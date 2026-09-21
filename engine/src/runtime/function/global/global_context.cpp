@@ -25,6 +25,7 @@
 #include "runtime/function/ui/ui_host.h"
 #include "runtime/function/ui/active_scene_display.h"
 #include "runtime/function/ui/startup_cover.h"
+#include "runtime/function/ui/engine_open_progress.h"
 #include "runtime/function/ui/viewport/sdl_viewport_sink.h"
 #include "runtime/function/ui/viewport/slint_viewport_sink.h"
 #include "runtime/function/ui/viewport/ui_viewport_bridge.h"
@@ -185,14 +186,21 @@ void wireMeshPreviewThumbnails(RuntimeGlobalContext& ctx) {
 }
 
 bool abortStartupCoverBoot() {
-  if (!startupCoverIsActive()) {
-    return false;
+  if (startupCoverIsActive()) {
+    if (startupCoverPump()) {
+      return false;
+    }
+    g_runtime_global_context.requestQuit();
+    return true;
   }
-  if (startupCoverPump()) {
-    return false;
+  if (engineOpenProgressIsVisible()) {
+    if (engineOpenProgressPump()) {
+      return false;
+    }
+    g_runtime_global_context.requestQuit();
+    return true;
   }
-  g_runtime_global_context.requestQuit();
-  return true;
+  return false;
 }
 
 }  // namespace
@@ -498,6 +506,9 @@ void RuntimeGlobalContext::startSystems(
 
     // 3) Finish render system init (offscreen target, pipelines, overlays, ...).
     m_render_system->initialize(render_init_info);
+    if (abortStartupCoverBoot()) {
+      return;
+    }
     wireMeshPreviewThumbnails(*this);
 
     EditorServiceHandles ui_handles{};
@@ -510,6 +521,9 @@ void RuntimeGlobalContext::startSystems(
     ui_handles.asset_compiler = m_asset_compiler;
     ui_handles.asset_import = m_asset_import;
     m_ui_host->bindEditorServices(ui_handles);
+    if (abortStartupCoverBoot()) {
+      return;
+    }
 
     m_play_session = eastl::make_unique<PlaySessionController>();
     m_animation_preview = eastl::make_unique<AnimationPreviewController>();
@@ -532,6 +546,7 @@ void RuntimeGlobalContext::startSystems(
 }
 
 void RuntimeGlobalContext::shutdownSystems() {
+  engineOpenProgressDismiss();
   startupCoverDismiss();
   // Tear down Play session before UI/render so the child Player exits first.
   if (m_play_session) {

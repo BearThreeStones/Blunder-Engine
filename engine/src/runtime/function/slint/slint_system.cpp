@@ -34,6 +34,7 @@
 #include "EASTL/utility.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/core/boot_work_heartbeat.h"
 #include "runtime/core/log/console_ring.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
@@ -46,6 +47,7 @@
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/ui/startup_cover.h"
+#include "runtime/function/ui/engine_open_progress.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/align_camera_actions.h"
@@ -1972,6 +1974,38 @@ void SlintSystem::presentStartupShell() {
     LOG_WARN(
         "[SlintSystem] Startup cover still active after present; dismissing");
     startupCoverDismiss();
+  }
+
+  auto present_open_progress = [this]() {
+    if (!m_window_component) {
+      return;
+    }
+    m_window_component->operator->()->set_open_progress_visible(
+        engineOpenProgressIsVisible());
+    m_window_component->operator->()->set_open_progress_percent(
+        engineOpenProgressPercent());
+    m_window_component->operator->()->set_open_progress_caption(
+        slint::SharedString(engineOpenProgressCaption()));
+    m_window_component->operator->()->set_open_progress_elapsed_seconds(
+        engineOpenProgressElapsedSeconds());
+    if (m_window_adapter) {
+      m_window_adapter->clearPresentSuppress();
+      m_window_adapter->renderIfNeeded();
+    }
+  };
+
+  if (engineOpenProgressTryShow(g_runtime_global_context.hostMode(),
+                                g_runtime_global_context.isHeadless(),
+                                m_project_manager_mode, m_window_system,
+                                present_open_progress)) {
+    setBootWorkHeartbeat([]() {
+      if (engineOpenProgressPump()) {
+        return true;
+      }
+      g_runtime_global_context.requestQuit();
+      return false;
+    });
+    LOG_INFO("[SlintSystem] Editor open progress overlay shown");
   }
 }
 

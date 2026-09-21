@@ -1375,6 +1375,29 @@ target_precompile_headers(startup_cover_test
 add_test(NAME startup_cover_test
          COMMAND startup_cover_test)
 
+add_executable(engine_open_progress_test
+    "engine_open_progress_test.cpp"
+)
+
+target_link_libraries(engine_open_progress_test
+    PRIVATE engine_runtime
+)
+
+target_include_directories(engine_open_progress_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(engine_open_progress_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(engine_open_progress_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME engine_open_progress_test
+         COMMAND engine_open_progress_test)
+
 add_executable(player_launch_test
     "player_launch_test.cpp"
     "../runtime/project/player_launch.cpp"
