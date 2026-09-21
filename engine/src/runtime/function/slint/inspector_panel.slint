@@ -12,6 +12,8 @@ import {
     EditorIconCamera3D,
     EditorIconLight,
     EditorIconFogVolume,
+    EditorIconCollisionShape3D,
+    EditorIconCharacterBody3D,
     EditorIconSkeleton3D,
     EditorIconAnimationPlayer,
     EditorIconAnimationTree,
@@ -223,6 +225,34 @@ export component InspectorPanel inherits Rectangle {
     in-out property <float> fog-g: 0.2;
     in-out property <bool> fog-expanded: true;
     callback fog-edited(bool);
+
+    in property <bool> has-collider: false;
+    in-out property <int> collider-shape: 0;
+    in-out property <int> collider-body: 0;
+    in-out property <float> collider-layer: 1.0;
+    in-out property <float> collider-mask: -1.0;
+    in-out property <float> collider-box-x: 1.0;
+    in-out property <float> collider-box-y: 1.0;
+    in-out property <float> collider-box-z: 1.0;
+    in-out property <float> collider-sphere-radius: 0.5;
+    in-out property <float> collider-capsule-radius: 0.5;
+    in-out property <float> collider-capsule-height: 2.0;
+    in-out property <bool> collider-expanded: true;
+    callback collider-edited(bool);
+
+    in property <bool> has-character-controller: false;
+    in-out property <float> cct-radius: 0.4;
+    in-out property <float> cct-height: 1.8;
+    in-out property <float> cct-slope-limit: 45.0;
+    in-out property <float> cct-step-height: 0.3;
+    in-out property <float> cct-snap: 0.2;
+    in-out property <float> cct-skin: 0.04;
+    in-out property <float> cct-mask: -1.0;
+    in-out property <bool> character-controller-expanded: true;
+    callback character-controller-edited(bool);
+
+    in-out property <string> groups-text: "";
+    callback groups-edited();
 
     in property <bool> add-menu-enabled: false;
     in property <bool> has-skeleton: false;
@@ -885,6 +915,20 @@ export component InspectorPanel inherits Rectangle {
                     }
                 }
 
+                if root.has-selection && !root.multi-edit-visible: HorizontalBox {
+                    spacing: 6px;
+                    Text { text: "Groups"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
+                    groups-input := EditorCompactField {
+                        horizontal-stretch: 1;
+                        text: root.groups-text;
+                        placeholder-text: "comma-separated";
+                        accepted => { root.groups-text = self.text; root.groups-edited(); }
+                        changed has-focus => {
+                            if (!self.has-focus) { root.groups-text = self.text; root.groups-edited(); }
+                        }
+                    }
+                }
+
                 Rectangle { background: EditorTheme.hairline; height: 1px; }
 
                 Rectangle {
@@ -1046,6 +1090,78 @@ export component InspectorPanel inherits Rectangle {
                                             clicked => {
                                                 if !root.has-fog {
                                                     root.add-unique-attachment("Fog");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    unique-collider-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-collider-touch.has-hover && !root.has-collider ? EditorTheme.button-hover : transparent;
+                                        border-radius: 2px;
+                                        HorizontalLayout {
+                                            width: 100%;
+                                            height: 100%;
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 6px;
+                                            EditorIconCollisionShape3D {
+                                                icon-size: 14px;
+                                                icon-color: root.has-collider ? EditorTheme.muted : EditorTheme.default-text;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            Text {
+                                                vertical-alignment: center;
+                                                text: "Collider";
+                                                color: root.has-collider ? EditorTheme.muted : EditorTheme.default-text;
+                                                font-size: 11px;
+                                                horizontal-stretch: 1;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        unique-collider-touch := TouchArea {
+                                            width: 100%;
+                                            height: 100%;
+                                            mouse-cursor: root.has-collider ? default : pointer;
+                                            clicked => {
+                                                if !root.has-collider {
+                                                    root.add-unique-attachment("Collider");
+                                                    add-menu-popup.close();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    unique-cct-row := Rectangle {
+                                        height: 22px;
+                                        background: unique-cct-touch.has-hover && !root.has-character-controller ? EditorTheme.button-hover : transparent;
+                                        border-radius: 2px;
+                                        HorizontalLayout {
+                                            width: 100%;
+                                            height: 100%;
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 6px;
+                                            EditorIconCharacterBody3D {
+                                                icon-size: 14px;
+                                                icon-color: root.has-character-controller ? EditorTheme.muted : EditorTheme.default-text;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            Text {
+                                                vertical-alignment: center;
+                                                text: "Character Controller";
+                                                color: root.has-character-controller ? EditorTheme.muted : EditorTheme.default-text;
+                                                font-size: 11px;
+                                                horizontal-stretch: 1;
+                                                overflow: elide;
+                                            }
+                                        }
+                                        unique-cct-touch := TouchArea {
+                                            width: 100%;
+                                            height: 100%;
+                                            mouse-cursor: root.has-character-controller ? default : pointer;
+                                            clicked => {
+                                                if !root.has-character-controller {
+                                                    root.add-unique-attachment("CharacterController");
                                                     add-menu-popup.close();
                                                 }
                                             }
@@ -1991,6 +2107,183 @@ export component InspectorPanel inherits Rectangle {
                             reset-value: 0.2;
                             live-edited => { root.fog-edited(false); }
                             committed => { root.fog-edited(true); }
+                        }
+                    }
+                }
+
+                if root.has-collider: Rectangle { background: EditorTheme.hairline; height: 1px; }
+
+                if root.has-collider: EditorFoldout {
+                    title: "Collider";
+                    icon: EditorGlyphs.collider;
+                    expanded <=> root.collider-expanded;
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.remove-unique-attachment("Collider"); }
+                    }
+                }
+
+                if root.has-collider && root.collider-expanded: VerticalBox {
+                    spacing: 6px;
+                    if root.has-selection && !root.multi-edit-visible && root.has-collider: VerticalBox {
+                        spacing: 6px;
+                        HorizontalBox {
+                            spacing: 6px;
+                            Text { text: "Shape"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.collider-shape = root.collider-shape >= 3 ? 0 : root.collider-shape + 1;
+                                    root.collider-edited(true);
+                                }
+                                Text {
+                                    text: root.collider-shape == 0 ? "Box" : (root.collider-shape == 1 ? "Sphere" : (root.collider-shape == 2 ? "Capsule" : "Triangle Mesh"));
+                                    color: EditorTheme.default-text;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 6px;
+                            Text { text: "Body"; color: EditorTheme.muted; font-size: 11px; width: 96px; vertical-alignment: center; }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.collider-body = root.collider-body >= 2 ? 0 : root.collider-body + 1;
+                                    root.collider-edited(true);
+                                }
+                                Text {
+                                    text: root.collider-body == 0 ? "Static" : (root.collider-body == 1 ? "Kinematic" : "Area");
+                                    color: EditorTheme.default-text;
+                                    font-size: 11px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        InspectorScalarRow {
+                            label: "Layer";
+                            value <=> root.collider-layer;
+                            reset-value: 1.0;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Mask";
+                            value <=> root.collider-mask;
+                            reset-value: -1.0;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        if root.collider-shape == 0: InspectorScalarRow {
+                            label: "Half X";
+                            value <=> root.collider-box-x;
+                            reset-value: 1.0;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        if root.collider-shape == 0: InspectorScalarRow {
+                            label: "Half Y";
+                            value <=> root.collider-box-y;
+                            reset-value: 1.0;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        if root.collider-shape == 0: InspectorScalarRow {
+                            label: "Half Z";
+                            value <=> root.collider-box-z;
+                            reset-value: 1.0;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        if root.collider-shape == 1: InspectorScalarRow {
+                            label: "Radius";
+                            value <=> root.collider-sphere-radius;
+                            reset-value: 0.5;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        if root.collider-shape == 2: InspectorScalarRow {
+                            label: "Radius";
+                            value <=> root.collider-capsule-radius;
+                            reset-value: 0.5;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                        if root.collider-shape == 2: InspectorScalarRow {
+                            label: "Height";
+                            value <=> root.collider-capsule-height;
+                            reset-value: 2.0;
+                            live-edited => { root.collider-edited(false); }
+                            committed => { root.collider-edited(true); }
+                        }
+                    }
+                }
+
+                if root.has-character-controller: Rectangle { background: EditorTheme.hairline; height: 1px; }
+
+                if root.has-character-controller: EditorFoldout {
+                    title: "Character Controller";
+                    icon: EditorGlyphs.character-controller;
+                    expanded <=> root.character-controller-expanded;
+                    EditorButton {
+                        text: "Remove";
+                        clicked => { root.remove-unique-attachment("CharacterController"); }
+                    }
+                }
+
+                if root.has-character-controller && root.character-controller-expanded: VerticalBox {
+                    spacing: 6px;
+                    if root.has-selection && !root.multi-edit-visible && root.has-character-controller: VerticalBox {
+                        spacing: 6px;
+                        InspectorScalarRow {
+                            label: "Radius";
+                            value <=> root.cct-radius;
+                            reset-value: 0.4;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Height";
+                            value <=> root.cct-height;
+                            reset-value: 1.8;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Slope Limit";
+                            value <=> root.cct-slope-limit;
+                            reset-value: 45.0;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Step Height";
+                            value <=> root.cct-step-height;
+                            reset-value: 0.3;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Snap";
+                            value <=> root.cct-snap;
+                            reset-value: 0.2;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Skin";
+                            value <=> root.cct-skin;
+                            reset-value: 0.04;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
+                        }
+                        InspectorScalarRow {
+                            label: "Mask";
+                            value <=> root.cct-mask;
+                            reset-value: -1.0;
+                            live-edited => { root.character-controller-edited(false); }
+                            committed => { root.character-controller-edited(true); }
                         }
                     }
                 }

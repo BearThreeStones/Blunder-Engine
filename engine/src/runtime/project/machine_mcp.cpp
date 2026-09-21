@@ -238,6 +238,8 @@ void applyArgString(EditorSessionLaunch& launch, const std::string& key,
     launch.cli.out_path = value.c_str();
   } else if (key == "name" || key == "entity") {
     launch.cli.entity = value.c_str();
+  } else if (key == "shape") {
+    launch.cli.sweep_shape = value.c_str();
   } else if (key == "asset") {
     launch.cli.asset = value.c_str();
   } else if (key == "scene") {
@@ -294,6 +296,30 @@ void applyArgNumber(EditorSessionLaunch& launch, const std::string& key,
   } else if (key == "target_z") {
     launch.cli.target_z = std::strtof(value.c_str(), &end);
     launch.cli.has_target = true;
+  } else if (key == "ox") {
+    launch.cli.ox = std::strtof(value.c_str(), &end);
+  } else if (key == "oy") {
+    launch.cli.oy = std::strtof(value.c_str(), &end);
+  } else if (key == "oz") {
+    launch.cli.oz = std::strtof(value.c_str(), &end);
+  } else if (key == "dz") {
+    launch.cli.dz = std::strtof(value.c_str(), &end);
+  } else if (key == "max_distance") {
+    launch.cli.max_distance = std::strtof(value.c_str(), &end);
+  } else if (key == "mask") {
+    launch.cli.mask = static_cast<uint32_t>(std::strtoul(value.c_str(), &end, 0));
+  } else if (key == "hx") {
+    launch.cli.hx = std::strtof(value.c_str(), &end);
+  } else if (key == "hy") {
+    launch.cli.hy = std::strtof(value.c_str(), &end);
+  } else if (key == "hz") {
+    launch.cli.hz = std::strtof(value.c_str(), &end);
+  } else if (key == "sphere_radius") {
+    launch.cli.sphere_radius = std::strtof(value.c_str(), &end);
+  } else if (key == "capsule_radius") {
+    launch.cli.capsule_radius = std::strtof(value.c_str(), &end);
+  } else if (key == "capsule_half_height") {
+    launch.cli.capsule_half_height = std::strtof(value.c_str(), &end);
   }
 }
 
@@ -301,8 +327,11 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
   const char* keys[] = {"subject", "out",     "name", "entity", "asset", "scene",
                         "steps",   "tx",      "ty",   "tz",     "qx",    "qy",
                         "qz",      "qw",      "sx",   "sy",     "sz",    "dx",
-                        "dy",      "wheel",   "eye_x", "eye_y", "eye_z",
-                        "target_x", "target_y", "target_z"};
+                        "dy",      "dz",      "wheel", "eye_x", "eye_y", "eye_z",
+                        "target_x", "target_y", "target_z", "ox", "oy", "oz",
+                        "max_distance", "mask", "shape", "hx", "hy", "hz",
+                        "sphere_radius", "capsule_radius",
+                        "capsule_half_height"};
   for (const char* key : keys) {
     std::string value;
     if (jsonExtractString(src, key, value)) {
@@ -344,6 +373,10 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
              src.find("\"enabled\": false") != std::string::npos) {
     launch.cli.enabled = false;
     launch.cli.has_enabled = true;
+  }
+  if (src.find("\"collide_with_areas\":true") != std::string::npos ||
+      src.find("\"collide_with_areas\": true") != std::string::npos) {
+    launch.cli.collide_with_areas = true;
   }
 }
 
@@ -413,6 +446,34 @@ const char* k_tools_list =
     "\"boolean\"}}}},"
     "{\"name\":\"select\",\"description\":\"Select a Live entity by name so "
     "Camera Preview / Mesh Preview chrome can show.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}},"
+    "{\"name\":\"ray\",\"description\":\"Physics raycast in SI metres (Play/Edit "
+    "same query). origin ox/oy/oz, direction dx/dy/dz, max_distance, mask, "
+    "collide_with_areas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"ox\":{\"type\":"
+    "\"number\"},\"oy\":{\"type\":\"number\"},\"oz\":{\"type\":\"number\"},"
+    "\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":\"number\"},\"dz\":{\"type\":"
+    "\"number\"},\"max_distance\":{\"type\":\"number\"},\"mask\":{\"type\":"
+    "\"integer\"},\"collide_with_areas\":{\"type\":\"boolean\"}}}},"
+    "{\"name\":\"shapecast\",\"description\":\"Physics box/sphere/capsule "
+    "shapecast in SI metres (same query as Play). shape, origin ox/oy/oz, "
+    "direction dx/dy/dz, hx/hy/hz, sphere_radius, capsule_radius, "
+    "capsule_half_height, max_distance, mask, collide_with_areas.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"shape\":{\"type\":"
+    "\"string\"},\"ox\":{\"type\":\"number\"},\"oy\":{\"type\":\"number\"},"
+    "\"oz\":{\"type\":\"number\"},\"dx\":{\"type\":\"number\"},\"dy\":{\"type\":"
+    "\"number\"},\"dz\":{\"type\":\"number\"},\"hx\":{\"type\":\"number\"},"
+    "\"hy\":{\"type\":\"number\"},\"hz\":{\"type\":\"number\"},"
+    "\"sphere_radius\":{\"type\":\"number\"},\"capsule_radius\":{\"type\":"
+    "\"number\"},\"capsule_half_height\":{\"type\":\"number\"},"
+    "\"max_distance\":{\"type\":\"number\"},\"mask\":{\"type\":\"integer\"},"
+    "\"collide_with_areas\":{\"type\":\"boolean\"}}}},"
+    "{\"name\":\"group\",\"description\":\"List entity names in a scene group.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}},"
+    "{\"name\":\"collider\",\"description\":\"Read Collider Unique shape/body for "
+    "an entity name.\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
     "\"string\"}}}}"
     "]}";

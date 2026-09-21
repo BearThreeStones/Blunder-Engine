@@ -86,6 +86,8 @@
 #include "runtime/function/scene/camera_component.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/fog_component.h"
+#include "runtime/function/scene/collider_component.h"
+#include "runtime/function/scene/character_controller_component.h"
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/scene_render_bridge.h"
@@ -1215,6 +1217,22 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
                           view_distance, albedo_r, albedo_g, albedo_b, scattering_g,
                           commit);
         });
+    component->on_attachment_preview_collider_edited(
+        [this](int entity_id, int kind, int index, int shape, int body, float layer,
+               float mask, float box_x, float box_y, float box_z, float sphere_radius,
+               float capsule_radius, float capsule_height, bool commit) {
+          applyPreviewCollider(entity_id, kind, index, shape, body, layer, mask, box_x,
+                               box_y, box_z, sphere_radius, capsule_radius, capsule_height,
+                               commit);
+        });
+    component->on_attachment_preview_character_controller_edited(
+        [this](int entity_id, int kind, int index, float radius, float height,
+               float slope_limit, float step_height, float snap, float skin, float mask,
+               bool commit) {
+          applyPreviewCharacterController(entity_id, kind, index, radius, height,
+                                          slope_limit, step_height, snap, skin, mask,
+                                          commit);
+        });
     component->on_attachment_preview_color_hex_entered(
         [this](int entity_id, int kind, int index, const slint::SharedString& hex) {
           applyPreviewColorHex(entity_id, kind, index, hex);
@@ -1442,6 +1460,11 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
     component->on_inspector_camera_edited([this](bool commit) { applyInspectorCamera(commit); });
     component->on_inspector_light_edited([this](bool commit) { applyInspectorLight(commit); });
     component->on_inspector_fog_edited([this](bool commit) { applyInspectorFog(commit); });
+    component->on_inspector_collider_edited(
+        [this](bool commit) { applyInspectorCollider(commit); });
+    component->on_inspector_character_controller_edited(
+        [this](bool commit) { applyInspectorCharacterController(commit); });
+    component->on_inspector_groups_edited([this]() { applyInspectorGroups(); });
     component->on_inspector_add_unique_attachment(
         [this](const slint::SharedString& kind) {
           applyInspectorAddUniqueAttachment(eastl::string(kind.data()));
@@ -3770,7 +3793,10 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorLightFromSelection();
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       syncInspectorUniqueAttachmentsFromSelection();
       return;
@@ -3793,7 +3819,10 @@ void SlintSystem::syncInspectorFromSelection() {
       syncInspectorSkeletonModifiersFromSelection();
       syncInspectorCameraFromSelection();
       syncInspectorLightFromSelection();
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
       syncInspectorAnimationPlayerFromSelection();
       syncInspectorUniqueAttachmentsFromSelection();
       return;
@@ -3941,7 +3970,10 @@ void SlintSystem::syncInspectorFromSelection() {
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorLightFromSelection();
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
   } catch (const std::exception& e) {
@@ -4638,6 +4670,128 @@ bool lightsEqual(const LightComponent& a, const LightComponent& b) {
   return true;
 }
 
+uint32_t inspectorMaskFromScalar(float v) {
+  if (v < 0.0f) {
+    return 0xFFFFFFFFu;
+  }
+  const long long rounded = std::llround(static_cast<double>(v));
+  if (rounded < 0) {
+    return 0xFFFFFFFFu;
+  }
+  if (rounded > static_cast<long long>(0xFFFFFFFFu)) {
+    return 0xFFFFFFFFu;
+  }
+  return static_cast<uint32_t>(rounded);
+}
+
+float inspectorScalarFromMask(uint32_t v) {
+  if (v == 0xFFFFFFFFu) {
+    return -1.0f;
+  }
+  return static_cast<float>(v);
+}
+
+uint32_t inspectorLayerFromScalar(float v) {
+  const long rounded = std::lround(static_cast<double>(v));
+  if (rounded <= 0) {
+    return 1u;
+  }
+  return static_cast<uint32_t>(rounded);
+}
+
+int clampColliderShape(int v) {
+  if (v < 0) {
+    return 0;
+  }
+  if (v > 3) {
+    return 3;
+  }
+  return v;
+}
+
+int clampColliderBody(int v) {
+  if (v < 0) {
+    return 0;
+  }
+  if (v > 2) {
+    return 2;
+  }
+  return v;
+}
+
+void applyColliderFields(ColliderComponent& after, int shape, int body, float layer,
+                         float mask, float box_x, float box_y, float box_z,
+                         float sphere_radius, float capsule_radius, float capsule_height) {
+  after.shape = static_cast<ColliderShapeKind>(clampColliderShape(shape));
+  after.body_kind = static_cast<ColliderBodyKind>(clampColliderBody(body));
+  after.layer = inspectorLayerFromScalar(layer);
+  after.mask = inspectorMaskFromScalar(mask);
+  after.box_half_extents = Vec3(box_x, box_y, box_z);
+  after.sphere_radius = sphere_radius;
+  after.capsule_radius = capsule_radius;
+  after.capsule_height = capsule_height;
+  sanitizeColliderComponent(after);
+}
+
+void applyCctFields(CharacterControllerComponent& after, float radius, float height,
+                    float slope_limit, float step_height, float snap, float skin,
+                    float mask) {
+  after.radius = radius;
+  after.height = height;
+  after.slope_limit_degrees = slope_limit;
+  after.step_height = step_height;
+  after.snap_length = snap;
+  after.skin = skin;
+  after.mask = inspectorMaskFromScalar(mask);
+  sanitizeCharacterControllerComponent(after);
+}
+
+eastl::string formatEntityGroupsText(const eastl::vector<eastl::string>& groups) {
+  eastl::string out;
+  for (const eastl::string& name : groups) {
+    if (name.empty()) {
+      continue;
+    }
+    if (!out.empty()) {
+      out += ", ";
+    }
+    out += name;
+  }
+  return out;
+}
+
+void parseEntityGroupsText(const eastl::string& text, eastl::vector<eastl::string>& out) {
+  out.clear();
+  size_t i = 0;
+  while (i < text.size()) {
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t' || text[i] == ',')) {
+      ++i;
+    }
+    const size_t start = i;
+    while (i < text.size() && text[i] != ',') {
+      ++i;
+    }
+    size_t end = i;
+    while (end > start && (text[end - 1] == ' ' || text[end - 1] == '\t')) {
+      --end;
+    }
+    if (end <= start) {
+      continue;
+    }
+    const eastl::string name = text.substr(start, end - start);
+    bool duplicate = false;
+    for (const eastl::string& existing : out) {
+      if (existing == name) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (!duplicate) {
+      out.push_back(name);
+    }
+  }
+}
+
 }  // namespace
 
 void SlintSystem::syncInspectorCameraFromSelection() {
@@ -4885,7 +5039,10 @@ void SlintSystem::applyInspectorLight(bool commit) {
     }
     notifyViewportAfterInspectorLightEdit(services->render_system.get(), this);
     syncInspectorLightFromSelection();
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorLight] {}", e.what());
   } catch (...) {
@@ -5005,11 +5162,329 @@ void SlintSystem::applyInspectorFog(bool commit) {
     if (services->editor_scene_edit) {
       services->editor_scene_edit->markDirty();
     }
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::applyInspectorFog] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::applyInspectorFog] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorColliderFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_has_collider(false);
+      return;
+    }
+
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    if (ids.size() != 1) {
+      ui->set_inspector_has_collider(false);
+      return;
+    }
+
+    if (const ColliderComponent* collider = scene->getCollider(ids[0])) {
+      ui->set_inspector_has_collider(true);
+      ui->set_inspector_collider_shape(static_cast<int>(collider->shape));
+      ui->set_inspector_collider_body(static_cast<int>(collider->body_kind));
+      ui->set_inspector_collider_layer(static_cast<float>(collider->layer));
+      ui->set_inspector_collider_mask(inspectorScalarFromMask(collider->mask));
+      ui->set_inspector_collider_box_x(collider->box_half_extents.x);
+      ui->set_inspector_collider_box_y(collider->box_half_extents.y);
+      ui->set_inspector_collider_box_z(collider->box_half_extents.z);
+      ui->set_inspector_collider_sphere_radius(collider->sphere_radius);
+      ui->set_inspector_collider_capsule_radius(collider->capsule_radius);
+      ui->set_inspector_collider_capsule_height(collider->capsule_height);
+    } else {
+      ui->set_inspector_has_collider(false);
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorColliderFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorColliderFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorCollider(bool commit) {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  const ColliderComponent* existing_collider = scene->getCollider(entity_id);
+  if (existing_collider == nullptr) {
+    return;
+  }
+
+  try {
+    const auto& ui = *m_window_component;
+    const ColliderComponent existing = *existing_collider;
+    ColliderComponent after = existing;
+    applyColliderFields(after, ui->get_inspector_collider_shape(),
+                        ui->get_inspector_collider_body(),
+                        ui->get_inspector_collider_layer(),
+                        ui->get_inspector_collider_mask(),
+                        ui->get_inspector_collider_box_x(),
+                        ui->get_inspector_collider_box_y(),
+                        ui->get_inspector_collider_box_z(),
+                        ui->get_inspector_collider_sphere_radius(),
+                        ui->get_inspector_collider_capsule_radius(),
+                        ui->get_inspector_collider_capsule_height());
+    if (colliderComponentsEqual(existing, after) && !m_inspector_collider_edit_open) {
+      return;
+    }
+    if (!commit) {
+      if (!m_inspector_collider_edit_open) {
+        m_inspector_collider_edit_before = existing;
+        m_inspector_collider_edit_open = true;
+      }
+      if (!colliderComponentsEqual(existing, after)) {
+        scene->setCollider(entity_id, after);
+      }
+      return;
+    }
+    const ColliderComponent command_before =
+        m_inspector_collider_edit_open ? m_inspector_collider_edit_before : existing;
+    m_inspector_collider_edit_open = false;
+    if (colliderComponentsEqual(command_before, after)) {
+      return;
+    }
+    scene->setCollider(entity_id, after);
+    pushDocumentCommand(makeSetColliderComponentCommand(
+        scene, entity_id, command_before, after, SelectionSnapshot{entity_id},
+        SelectionSnapshot{entity_id}));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
+    syncInspectorColliderFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorCollider] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorCollider] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorCharacterControllerFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_has_character_controller(false);
+      return;
+    }
+
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    if (ids.size() != 1) {
+      ui->set_inspector_has_character_controller(false);
+      return;
+    }
+
+    if (const CharacterControllerComponent* cct = scene->getCharacterController(ids[0])) {
+      ui->set_inspector_has_character_controller(true);
+      ui->set_inspector_cct_radius(cct->radius);
+      ui->set_inspector_cct_height(cct->height);
+      ui->set_inspector_cct_slope_limit(cct->slope_limit_degrees);
+      ui->set_inspector_cct_step_height(cct->step_height);
+      ui->set_inspector_cct_snap(cct->snap_length);
+      ui->set_inspector_cct_skin(cct->skin);
+      ui->set_inspector_cct_mask(inspectorScalarFromMask(cct->mask));
+    } else {
+      ui->set_inspector_has_character_controller(false);
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorCharacterControllerFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorCharacterControllerFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorCharacterController(bool commit) {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+  const CharacterControllerComponent* existing_cct = scene->getCharacterController(entity_id);
+  if (existing_cct == nullptr) {
+    return;
+  }
+
+  try {
+    const auto& ui = *m_window_component;
+    const CharacterControllerComponent existing = *existing_cct;
+    CharacterControllerComponent after = existing;
+    applyCctFields(after, ui->get_inspector_cct_radius(), ui->get_inspector_cct_height(),
+                   ui->get_inspector_cct_slope_limit(), ui->get_inspector_cct_step_height(),
+                   ui->get_inspector_cct_snap(), ui->get_inspector_cct_skin(),
+                   ui->get_inspector_cct_mask());
+    if (characterControllerAuthoredEqual(existing, after) && !m_inspector_cct_edit_open) {
+      return;
+    }
+    if (!commit) {
+      if (!m_inspector_cct_edit_open) {
+        m_inspector_cct_edit_before = existing;
+        m_inspector_cct_edit_open = true;
+      }
+      if (!characterControllerAuthoredEqual(existing, after)) {
+        scene->setCharacterController(entity_id, after);
+      }
+      return;
+    }
+    const CharacterControllerComponent command_before =
+        m_inspector_cct_edit_open ? m_inspector_cct_edit_before : existing;
+    m_inspector_cct_edit_open = false;
+    if (characterControllerAuthoredEqual(command_before, after)) {
+      return;
+    }
+    scene->setCharacterController(entity_id, after);
+    pushDocumentCommand(makeSetCharacterControllerComponentCommand(
+        scene, entity_id, command_before, after, SelectionSnapshot{entity_id},
+        SelectionSnapshot{entity_id}));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
+    syncInspectorCharacterControllerFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorCharacterController] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorCharacterController] unknown exception");
+  }
+}
+
+void SlintSystem::syncInspectorGroupsFromSelection() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene =
+      services->scene ? services->scene->getActiveInstance() : nullptr;
+
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+
+    if (!selection || !scene || !selection->hasSelection()) {
+      ui->set_inspector_groups_text(slint::SharedString(""));
+      return;
+    }
+
+    const eastl::vector<EntityId> ids = selection->getSelectedIds();
+    if (ids.size() != 1) {
+      ui->set_inspector_groups_text(slint::SharedString(""));
+      return;
+    }
+
+    ui->set_inspector_groups_text(
+        slint::SharedString(formatEntityGroupsText(scene->getGroups(ids[0])).c_str()));
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncInspectorGroupsFromSelection] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::syncInspectorGroupsFromSelection] unknown exception");
+  }
+}
+
+void SlintSystem::applyInspectorGroups() {
+  if (!m_window_component || m_applying_inspector_sync) {
+    return;
+  }
+
+  const auto services = lockServices();
+  if (!services || !services->selection || !services->scene) {
+    return;
+  }
+  EditorSelectionSystem* selection = services->selection.get();
+  SceneInstance* scene = services->scene->getActiveInstance();
+  if (selection == nullptr || scene == nullptr || !selection->hasSelection()) {
+    return;
+  }
+  const eastl::vector<EntityId> ids = selection->getSelectedIds();
+  if (ids.size() != 1) {
+    return;
+  }
+  const EntityId entity_id = ids[0];
+
+  try {
+    const auto& ui = *m_window_component;
+    eastl::vector<eastl::string> before = scene->getGroups(entity_id);
+    eastl::vector<eastl::string> after;
+    parseEntityGroupsText(eastl::string(ui->get_inspector_groups_text().data()), after);
+    if (before == after) {
+      return;
+    }
+    scene->setGroups(entity_id, after);
+    pushDocumentCommand(makeSetEntityGroupsCommand(
+        scene, entity_id, eastl::move(before), eastl::move(after),
+        SelectionSnapshot{entity_id}, SelectionSnapshot{entity_id}));
+    if (services->editor_scene_edit) {
+      services->editor_scene_edit->markDirty();
+    }
+    syncInspectorGroupsFromSelection();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::applyInspectorGroups] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::applyInspectorGroups] unknown exception");
   }
 }
 
@@ -5050,7 +5525,8 @@ void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_na
     const bool created_anything =
         result.created_object || result.created_skeleton || result.created_player ||
         result.created_tree || result.created_camera || result.created_light ||
-        result.created_fog;
+        result.created_fog || result.created_collider ||
+        result.created_character_controller;
     if (!created_anything) {
       return;
     }
@@ -5061,7 +5537,10 @@ void SlintSystem::applyInspectorAddUniqueAttachment(const eastl::string& kind_na
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorLightFromSelection();
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
@@ -5272,7 +5751,10 @@ void SlintSystem::applyInspectorRemoveUniqueAttachment(const eastl::string& kind
     syncInspectorSkeletonModifiersFromSelection();
     syncInspectorCameraFromSelection();
     syncInspectorLightFromSelection();
-    syncInspectorFogFromSelection();
+      syncInspectorFogFromSelection();
+      syncInspectorColliderFromSelection();
+      syncInspectorCharacterControllerFromSelection();
+      syncInspectorGroupsFromSelection();
     syncInspectorAnimationPlayerFromSelection();
     syncInspectorUniqueAttachmentsFromSelection();
     notifyAnimationPreviewAfterSkeletonModifierEdit(services->render_system.get());
@@ -9121,6 +9603,33 @@ void SlintSystem::syncNativeFloatingWindows(const DockLayoutModel& model) {
         snapshot.inspector_fog_albedo_b = main.get_inspector_fog_albedo_b();
         snapshot.inspector_fog_g = main.get_inspector_fog_g();
         snapshot.inspector_fog_expanded = main.get_inspector_fog_expanded();
+        snapshot.inspector_has_collider = main.get_inspector_has_collider();
+        snapshot.inspector_collider_shape = main.get_inspector_collider_shape();
+        snapshot.inspector_collider_body = main.get_inspector_collider_body();
+        snapshot.inspector_collider_layer = main.get_inspector_collider_layer();
+        snapshot.inspector_collider_mask = main.get_inspector_collider_mask();
+        snapshot.inspector_collider_box_x = main.get_inspector_collider_box_x();
+        snapshot.inspector_collider_box_y = main.get_inspector_collider_box_y();
+        snapshot.inspector_collider_box_z = main.get_inspector_collider_box_z();
+        snapshot.inspector_collider_sphere_radius =
+            main.get_inspector_collider_sphere_radius();
+        snapshot.inspector_collider_capsule_radius =
+            main.get_inspector_collider_capsule_radius();
+        snapshot.inspector_collider_capsule_height =
+            main.get_inspector_collider_capsule_height();
+        snapshot.inspector_collider_expanded = main.get_inspector_collider_expanded();
+        snapshot.inspector_has_character_controller =
+            main.get_inspector_has_character_controller();
+        snapshot.inspector_cct_radius = main.get_inspector_cct_radius();
+        snapshot.inspector_cct_height = main.get_inspector_cct_height();
+        snapshot.inspector_cct_slope_limit = main.get_inspector_cct_slope_limit();
+        snapshot.inspector_cct_step_height = main.get_inspector_cct_step_height();
+        snapshot.inspector_cct_snap = main.get_inspector_cct_snap();
+        snapshot.inspector_cct_skin = main.get_inspector_cct_skin();
+        snapshot.inspector_cct_mask = main.get_inspector_cct_mask();
+        snapshot.inspector_character_controller_expanded =
+            main.get_inspector_character_controller_expanded();
+        snapshot.inspector_groups_text = main.get_inspector_groups_text().data();
         snapshot.inspector_has_animation_player =
             main.get_inspector_has_animation_player();
         snapshot.inspector_animation_clips.clear();
@@ -9567,6 +10076,13 @@ void SlintSystem::wireNativeFloatingCallbacks() {
   callbacks.on_inspector_camera_edited = [this](bool commit) { applyInspectorCamera(commit); };
   callbacks.on_inspector_light_edited = [this](bool commit) { applyInspectorLight(commit); };
   callbacks.on_inspector_fog_edited = [this](bool commit) { applyInspectorFog(commit); };
+  callbacks.on_inspector_collider_edited = [this](bool commit) {
+    applyInspectorCollider(commit);
+  };
+  callbacks.on_inspector_character_controller_edited = [this](bool commit) {
+    applyInspectorCharacterController(commit);
+  };
+  callbacks.on_inspector_groups_edited = [this]() { applyInspectorGroups(); };
   callbacks.on_inspector_add_unique_attachment =
       [this](const slint::SharedString& kind) {
         applyInspectorAddUniqueAttachment(eastl::string(kind.data()));

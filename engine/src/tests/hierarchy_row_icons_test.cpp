@@ -97,6 +97,22 @@ int main() {
   {
     SceneInstance scene;
     const EntityId id =
+        scene.createEntity("ColliderRow", Vec3(0, 0, 0), glm::identity<Quat>(),
+                           Vec3(1));
+    applyInspectorUniqueAdd(nullptr, scene, id, InspectorUniqueKind::Collider);
+    applyInspectorUniqueAdd(nullptr, scene, id,
+                            InspectorUniqueKind::CharacterController);
+    eastl::vector<HierarchyRowIconSlot> icons;
+    fillHierarchyRowIcons(scene, id, icons);
+    expect_true("collider icon", hasKind(icons, HierarchyRowIconKind::Collider));
+    expect_true("cct icon",
+                hasKind(icons, HierarchyRowIconKind::CharacterController));
+    expect_true("collider+cct plus transform", icons.size() == 3);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId id =
         scene.createEntity("Behaviours", Vec3(0, 0, 0), glm::identity<Quat>(),
                            Vec3(1));
     Object* object = scene.ensureBoundObject(id);

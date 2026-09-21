@@ -1438,6 +1438,26 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
       &blunder_cine_is_gameplay_input_suppressed;
   out->log = &blunder_log;
   out->animation_tree_play = &blunder_animation_tree_play;
+  out->physics_raycast = &blunder_physics_raycast;
+  out->physics_shapecast = &blunder_physics_shapecast;
+  out->object_add_group = &blunder_object_add_group;
+  out->object_remove_group = &blunder_object_remove_group;
+  out->object_is_in_group = &blunder_object_is_in_group;
+  out->object_group_count = &blunder_object_group_count;
+  out->object_group_at = &blunder_object_group_at;
+  out->find_objects_in_group = &blunder_find_objects_in_group;
+  out->object_has_character_controller = &blunder_object_has_character_controller;
+  out->character_controller_move_and_slide =
+      &blunder_character_controller_move_and_slide;
+  out->character_controller_set_velocity =
+      &blunder_character_controller_set_velocity;
+  out->character_controller_get_velocity =
+      &blunder_character_controller_get_velocity;
+  out->character_controller_is_on_floor =
+      &blunder_character_controller_is_on_floor;
+  out->character_controller_is_on_wall = &blunder_character_controller_is_on_wall;
+  out->character_controller_is_on_ceiling =
+      &blunder_character_controller_is_on_ceiling;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -1615,6 +1635,28 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_cine_is_gameplay_input_suppressed");
   BLUNDER_NATIVE_ABI_LOAD(log, "blunder_log");
   BLUNDER_NATIVE_ABI_LOAD(animation_tree_play, "blunder_animation_tree_play");
+  BLUNDER_NATIVE_ABI_LOAD(physics_raycast, "blunder_physics_raycast");
+  BLUNDER_NATIVE_ABI_LOAD(physics_shapecast, "blunder_physics_shapecast");
+  BLUNDER_NATIVE_ABI_LOAD(object_add_group, "blunder_object_add_group");
+  BLUNDER_NATIVE_ABI_LOAD(object_remove_group, "blunder_object_remove_group");
+  BLUNDER_NATIVE_ABI_LOAD(object_is_in_group, "blunder_object_is_in_group");
+  BLUNDER_NATIVE_ABI_LOAD(object_group_count, "blunder_object_group_count");
+  BLUNDER_NATIVE_ABI_LOAD(object_group_at, "blunder_object_group_at");
+  BLUNDER_NATIVE_ABI_LOAD(find_objects_in_group, "blunder_find_objects_in_group");
+  BLUNDER_NATIVE_ABI_LOAD(object_has_character_controller,
+                          "blunder_object_has_character_controller");
+  BLUNDER_NATIVE_ABI_LOAD(character_controller_move_and_slide,
+                          "blunder_character_controller_move_and_slide");
+  BLUNDER_NATIVE_ABI_LOAD(character_controller_set_velocity,
+                          "blunder_character_controller_set_velocity");
+  BLUNDER_NATIVE_ABI_LOAD(character_controller_get_velocity,
+                          "blunder_character_controller_get_velocity");
+  BLUNDER_NATIVE_ABI_LOAD(character_controller_is_on_floor,
+                          "blunder_character_controller_is_on_floor");
+  BLUNDER_NATIVE_ABI_LOAD(character_controller_is_on_wall,
+                          "blunder_character_controller_is_on_wall");
+  BLUNDER_NATIVE_ABI_LOAD(character_controller_is_on_ceiling,
+                          "blunder_character_controller_is_on_ceiling");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

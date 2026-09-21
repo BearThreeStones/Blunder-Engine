@@ -17,6 +17,8 @@ enum class HierarchyRowIconKind : uint8_t {
   Behaviour = 6,
   SkeletonModifier = 7,
   Fog = 8,
+  Collider = 9,
+  CharacterController = 10,
 };
 
 struct HierarchyRowIconSlot {

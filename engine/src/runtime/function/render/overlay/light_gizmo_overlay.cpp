@@ -14,6 +14,9 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/render/overlay/collision_gizmo_geometry.h"
+#include "runtime/project/play_pose_preview.h"
+#include "runtime/project/play_session_controller.h"
 #include "runtime/function/render/overlay/light_gizmo_geometry.h"
 #include "runtime/function/render/overlay/light_gizmo_hit_test.h"
 #include "runtime/function/render/overlay/overlay_resources.h"
@@ -26,6 +29,8 @@
 #include "runtime/function/render/vulkan/vulkan_sync.h"
 #include "runtime/function/render/vulkan_backend/vulkan_command_list.h"
 #include "runtime/function/render/vulkan_backend/vulkan_graphics_pipeline.h"
+#include "runtime/function/scene/character_controller_component.h"
+#include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/entity.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/gltf_unit_scale.h"
@@ -48,6 +53,23 @@ constexpr float k_line_width_px = 0.75f;
 
 const glm::vec4 k_muted_color{0.0f, 0.0f, 0.0f, 0.9f};
 const glm::vec4 k_selected_color{1.0f, 0.6f, 0.1f, 0.9f};
+const glm::vec4 k_collision_color{0.15f, 0.85f, 1.0f, 1.0f};
+const glm::vec4 k_collision_selected{1.0f, 0.6f, 0.1f, 1.0f};
+
+const PlayPoseOverlayMap* activePlayPoseOverlay() {
+  PlaySessionController* session = g_runtime_global_context.m_play_session.get();
+  if (session == nullptr) {
+    return nullptr;
+  }
+  if (session->state() != PlaySessionState::Playing &&
+      session->state() != PlaySessionState::Paused) {
+    return nullptr;
+  }
+  if (session->poseOverlay().empty()) {
+    return nullptr;
+  }
+  return &session->poseOverlay();
+}
 
 struct LightGizmoUniformData {
   glm::mat4 view{1.0f};
@@ -361,6 +383,45 @@ void LightGizmoOverlay::draw_screen(VkCommandBuffer cmd,
                  transformPoint(world, b), glm::vec3(0.0f), color);
     });
   });
+
+  const PlayPoseOverlayMap* pose_overlay = activePlayPoseOverlay();
+  scene->forEachCollider([&](EntityId entity_id, const ColliderComponent& collider) {
+    if (!scene->isActiveInHierarchy(entity_id)) {
+      return;
+    }
+    if (m_next_draw_slot >= k_max_draws_per_frame) {
+      return;
+    }
+
+    const bool selected = selection != nullptr && selection->isSelected(entity_id);
+    const glm::vec4 color = selected ? k_collision_selected : k_collision_color;
+    const glm::mat4 world =
+        worldMatrixWithPlayPoseOverlay(*scene, entity_id, pose_overlay);
+    forEachColliderWireSegment(collider, [&](const Vec3& a, const Vec3& b) {
+      recordDraw(cmd, state, DrawStyle::line, transformPoint(world, a),
+                 transformPoint(world, b), glm::vec3(0.0f), color);
+    });
+  });
+
+  scene->forEachCharacterController(
+      [&](EntityId entity_id, const CharacterControllerComponent& cct) {
+        if (!scene->isActiveInHierarchy(entity_id)) {
+          return;
+        }
+        if (m_next_draw_slot >= k_max_draws_per_frame) {
+          return;
+        }
+
+        const bool selected =
+            selection != nullptr && selection->isSelected(entity_id);
+        const glm::vec4 color = selected ? k_collision_selected : k_collision_color;
+        const glm::mat4 world =
+            worldMatrixWithPlayPoseOverlay(*scene, entity_id, pose_overlay);
+        forEachCharacterControllerWireSegment(cct, [&](const Vec3& a, const Vec3& b) {
+          recordDraw(cmd, state, DrawStyle::line, transformPoint(world, a),
+                     transformPoint(world, b), glm::vec3(0.0f), color);
+        });
+      });
 }
 
 std::optional<OverlayGizmoPickHit> LightGizmoOverlay::hitTest(

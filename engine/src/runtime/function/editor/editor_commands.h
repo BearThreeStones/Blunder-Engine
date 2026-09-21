@@ -11,6 +11,8 @@
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/editor/inspector_add_ops.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/character_controller_component.h"
+#include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/entity_id.h"
@@ -41,6 +43,22 @@ eastl::unique_ptr<IEditorCommand> makeSetLightComponentCommand(
 eastl::unique_ptr<IEditorCommand> makeSetFogComponentCommand(
     SceneInstance* scene, EntityId entity_id, const FogComponent& before_fog,
     const FogComponent& after_fog, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetColliderComponentCommand(
+    SceneInstance* scene, EntityId entity_id, const ColliderComponent& before_collider,
+    const ColliderComponent& after_collider, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetCharacterControllerComponentCommand(
+    SceneInstance* scene, EntityId entity_id,
+    const CharacterControllerComponent& before_cct,
+    const CharacterControllerComponent& after_cct, SelectionSnapshot selection_before,
+    SelectionSnapshot selection_after);
+
+eastl::unique_ptr<IEditorCommand> makeSetEntityGroupsCommand(
+    SceneInstance* scene, EntityId entity_id, eastl::vector<eastl::string> before_groups,
+    eastl::vector<eastl::string> after_groups, SelectionSnapshot selection_before,
     SelectionSnapshot selection_after);
 
 eastl::unique_ptr<IEditorCommand> makeSetAnimationPlayerClipBindingsCommand(

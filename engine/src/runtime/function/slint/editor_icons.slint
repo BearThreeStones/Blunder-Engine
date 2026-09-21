@@ -292,6 +292,40 @@ export component EditorIconFogVolume inherits Rectangle {
     }
 }
 
+export component EditorIconCollisionShape3D inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/CollisionShape3D.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
+export component EditorIconCharacterBody3D inherits Rectangle {
+    in property <color> icon-color: EditorTheme.icon;
+    in property <length> icon-size: 14px;
+
+    width: icon-size;
+    height: icon-size;
+    background: transparent;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: @image-url("../../../../3rdparty/godot-icons/CharacterBody3D.svg");
+        colorize: root.icon-color;
+        image-fit: contain;
+    }
+}
+
 export component EditorIconSkeleton3D inherits Rectangle {
     in property <color> icon-color: EditorTheme.icon;
     in property <length> icon-size: 14px;
@@ -420,6 +454,8 @@ export global EditorGlyphs {
     out property <image> camera: @image-url("../../../../3rdparty/godot-icons/Camera3D.svg");
     out property <image> light: @image-url("../../../../3rdparty/godot-icons/GizmoLight.svg");
     out property <image> fog: @image-url("../../../../3rdparty/godot-icons/FogVolume.svg");
+    out property <image> collider: @image-url("../../../../3rdparty/godot-icons/CollisionShape3D.svg");
+    out property <image> character-controller: @image-url("../../../../3rdparty/godot-icons/CharacterBody3D.svg");
     out property <image> skeleton: @image-url("../../../../3rdparty/godot-icons/Skeleton3D.svg");
     out property <image> animation-player: @image-url("../../../../3rdparty/godot-icons/AnimationPlayer.svg");
     out property <image> animation-tree: @image-url("../../../../3rdparty/godot-icons/AnimationTree.svg");

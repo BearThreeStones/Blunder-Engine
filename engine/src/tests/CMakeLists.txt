@@ -1593,6 +1593,29 @@ endif()
 add_test(NAME light_gizmo_geometry_test
          COMMAND light_gizmo_geometry_test)
 
+add_executable(collision_gizmo_geometry_test
+    "collision_gizmo_geometry_test.cpp"
+)
+
+target_include_directories(collision_gizmo_geometry_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+
+target_link_libraries(collision_gizmo_geometry_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(collision_gizmo_geometry_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(collision_gizmo_geometry_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME collision_gizmo_geometry_test
+         COMMAND collision_gizmo_geometry_test)
+
 add_executable(light_gizmo_hit_test_test
     "light_gizmo_hit_test_test.cpp"
 )
@@ -3773,6 +3796,90 @@ endif()
 
 add_test(NAME physics_collision_test
          COMMAND physics_collision_test)
+
+add_executable(physics_trimesh_test
+    "physics_trimesh_test.cpp"
+)
+target_link_libraries(physics_trimesh_test
+    PRIVATE blunder_physics
+)
+if(MSVC)
+    target_compile_options(physics_trimesh_test PRIVATE /Zc:preprocessor)
+endif()
+add_test(NAME physics_trimesh_test
+         COMMAND physics_trimesh_test)
+
+add_executable(physics_query_test
+    "physics_query_test.cpp"
+)
+target_link_libraries(physics_query_test
+    PRIVATE blunder_physics
+)
+if(MSVC)
+    target_compile_options(physics_query_test PRIVATE /Zc:preprocessor)
+endif()
+add_test(NAME physics_query_test
+         COMMAND physics_query_test)
+
+add_executable(physics_host_test
+    "physics_host_test.cpp"
+)
+target_link_libraries(physics_host_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+target_include_directories(physics_host_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+if(MSVC)
+    target_compile_options(physics_host_test PRIVATE /Zc:preprocessor)
+endif()
+target_precompile_headers(physics_host_test
+    REUSE_FROM engine_runtime
+)
+add_test(NAME physics_host_test
+         COMMAND physics_host_test)
+
+add_executable(physics_c_abi_test
+    "physics_c_abi_test.cpp"
+)
+target_link_libraries(physics_c_abi_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+target_include_directories(physics_c_abi_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+if(MSVC)
+    target_compile_options(physics_c_abi_test PRIVATE /Zc:preprocessor)
+endif()
+target_precompile_headers(physics_c_abi_test
+    REUSE_FROM engine_runtime
+)
+add_test(NAME physics_c_abi_test
+         COMMAND physics_c_abi_test)
+
+add_executable(gltf_collision_extras_test
+    "gltf_collision_extras_test.cpp"
+)
+target_link_libraries(gltf_collision_extras_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+target_include_directories(gltf_collision_extras_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+if(MSVC)
+    target_compile_options(gltf_collision_extras_test PRIVATE /Zc:preprocessor)
+endif()
+target_precompile_headers(gltf_collision_extras_test
+    REUSE_FROM engine_runtime
+)
+add_test(NAME gltf_collision_extras_test
+         COMMAND gltf_collision_extras_test)
 
 # Physics kernel v0 golden suite 鈥?headless Done gate for all 8 required scenarios.
 # Cross-platform bit-identical peer: Linux Clang or GCC x64 must match Win MSVC x64 dumps.

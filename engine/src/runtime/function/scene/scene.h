@@ -8,6 +8,8 @@
 #include "runtime/core/reflection/variant.h"
 #include "runtime/core/object/skeleton_modifier_extra_field.h"
 #include "runtime/function/scene/camera_component.h"
+#include "runtime/function/scene/character_controller_component.h"
+#include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/fog_component.h"
 #include "runtime/function/scene/light_component.h"
 
@@ -122,6 +124,11 @@ struct SceneEntityDefinition final {
   eastl::vector<eastl::string> light_linking_names;
   bool has_fog{false};
   FogComponent fog{};
+  bool has_collider{false};
+  ColliderComponent collider{};
+  bool has_character_controller{false};
+  CharacterControllerComponent character_controller{};
+  eastl::vector<eastl::string> groups;
 };
 
 /// Static scene data: entity templates (flat Scene Asset — no nested scenes).

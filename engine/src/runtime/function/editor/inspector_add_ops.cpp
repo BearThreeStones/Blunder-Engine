@@ -62,6 +62,14 @@ bool parseInspectorUniqueKind(const eastl::string& name,
     out_kind = InspectorUniqueKind::Fog;
     return true;
   }
+  if (name == "Collider") {
+    out_kind = InspectorUniqueKind::Collider;
+    return true;
+  }
+  if (name == "CharacterController") {
+    out_kind = InspectorUniqueKind::CharacterController;
+    return true;
+  }
   if (name == "Skeleton") {
     out_kind = InspectorUniqueKind::Skeleton;
     return true;
@@ -128,6 +136,26 @@ InspectorUniqueAddResult applyInspectorUniqueAdd(
     return result;
   }
 
+  if (kind == InspectorUniqueKind::Collider) {
+    if (scene.getCollider(entity_id) != nullptr) {
+      result.already_present = true;
+      return result;
+    }
+    scene.setCollider(entity_id, ColliderComponent{});
+    result.created_collider = true;
+    return result;
+  }
+
+  if (kind == InspectorUniqueKind::CharacterController) {
+    if (scene.getCharacterController(entity_id) != nullptr) {
+      result.already_present = true;
+      return result;
+    }
+    scene.setCharacterController(entity_id, CharacterControllerComponent{});
+    result.created_character_controller = true;
+    return result;
+  }
+
   const bool had_object = scene.findBoundObject(entity_id) != nullptr;
   Object* object = scene.ensureBoundObject(entity_id);
   if (object == nullptr) {
@@ -190,6 +218,12 @@ void undoInspectorUniqueAdd(SceneInstance& scene, EntityId entity_id,
   if (created.created_fog) {
     scene.clearFog(entity_id);
   }
+  if (created.created_collider) {
+    scene.clearCollider(entity_id);
+  }
+  if (created.created_character_controller) {
+    scene.clearCharacterController(entity_id);
+  }
 
   Object* object = scene.findBoundObject(entity_id);
   if (object != nullptr) {
@@ -243,6 +277,26 @@ bool applyInspectorUniqueRemove(AssetManager* /*asset_manager*/, SceneInstance& 
     return true;
   }
 
+  if (kind == InspectorUniqueKind::Collider) {
+    const ColliderComponent* collider = scene.getCollider(entity_id);
+    if (collider == nullptr) {
+      return false;
+    }
+    out_snapshot.collider = *collider;
+    scene.clearCollider(entity_id);
+    return true;
+  }
+
+  if (kind == InspectorUniqueKind::CharacterController) {
+    const CharacterControllerComponent* cct = scene.getCharacterController(entity_id);
+    if (cct == nullptr) {
+      return false;
+    }
+    out_snapshot.character_controller = *cct;
+    scene.clearCharacterController(entity_id);
+    return true;
+  }
+
   Object* object = scene.findBoundObject(entity_id);
   if (object == nullptr) {
     return false;
@@ -292,6 +346,14 @@ void undoInspectorUniqueRemove(AssetManager* asset_manager, SceneInstance& scene
   }
   if (kind == InspectorUniqueKind::Fog) {
     scene.setFog(entity_id, snapshot.fog);
+    return;
+  }
+  if (kind == InspectorUniqueKind::Collider) {
+    scene.setCollider(entity_id, snapshot.collider);
+    return;
+  }
+  if (kind == InspectorUniqueKind::CharacterController) {
+    scene.setCharacterController(entity_id, snapshot.character_controller);
     return;
   }
 

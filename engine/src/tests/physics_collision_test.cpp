@@ -29,6 +29,15 @@ ColliderWorldShape makeSphere(FixedVec3 position, Fixed radius) {
   return shape;
 }
 
+ColliderWorldShape makeCapsule(FixedVec3 position, Fixed radius, Fixed half_height) {
+  ColliderWorldShape shape{};
+  shape.shape = ColliderShape::Capsule;
+  shape.pose.position = position;
+  shape.capsule_radius = radius;
+  shape.capsule_half_height = half_height;
+  return shape;
+}
+
 void overlapping_boxes_generate_contact() {
   const ColliderWorldShape box_a = makeBox(FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::zero()),
                                            FixedVec3(Fixed::from_int(1), Fixed::from_int(1), Fixed::from_int(1)));
@@ -78,6 +87,56 @@ void stable_pair_order_independent() {
   assert(ab.normal.x == -ba.normal.x);
 }
 
+void ray_hits_capsule_shaft() {
+  const ColliderWorldShape cap =
+      makeCapsule(FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::zero()),
+                  Fixed::from_int(1) / Fixed::from_int(2), Fixed::from_int(1));
+  Fixed t = Fixed::zero();
+  FixedVec3 point{};
+  FixedVec3 normal{};
+  const bool hit =
+      Blunder::raycastShape(cap, FixedVec3(Fixed::from_int(5), Fixed::zero(), Fixed::zero()),
+                            FixedVec3(Fixed::from_int(-1), Fixed::zero(), Fixed::zero()),
+                            Fixed::from_int(20), t, point, normal);
+  assert(hit);
+  const Fixed expected = Fixed::from_int(5) - Fixed::from_int(1) / Fixed::from_int(2);
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(10);
+  assert(t.raw() > (expected - slop).raw());
+  assert(t.raw() < (expected + slop).raw());
+}
+
+void ray_misses_beside_capsule() {
+  const ColliderWorldShape cap =
+      makeCapsule(FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::zero()),
+                  Fixed::from_int(1) / Fixed::from_int(2), Fixed::from_int(1));
+  Fixed t = Fixed::zero();
+  FixedVec3 point{};
+  FixedVec3 normal{};
+  const bool hit =
+      Blunder::raycastShape(cap, FixedVec3(Fixed::from_int(5), Fixed::from_int(2), Fixed::zero()),
+                            FixedVec3(Fixed::from_int(-1), Fixed::zero(), Fixed::zero()),
+                            Fixed::from_int(20), t, point, normal);
+  assert(!hit);
+}
+
+void ray_hits_capsule_end_sphere() {
+  const ColliderWorldShape cap =
+      makeCapsule(FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::zero()),
+                  Fixed::from_int(1) / Fixed::from_int(2), Fixed::from_int(1));
+  Fixed t = Fixed::zero();
+  FixedVec3 point{};
+  FixedVec3 normal{};
+  const bool hit =
+      Blunder::raycastShape(cap, FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(5)),
+                            FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(-1)),
+                            Fixed::from_int(20), t, point, normal);
+  assert(hit);
+  const Fixed expected = Fixed::from_int(5) - (Fixed::from_int(1) + Fixed::from_int(1) / Fixed::from_int(2));
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(10);
+  assert(t.raw() > (expected - slop).raw());
+  assert(t.raw() < (expected + slop).raw());
+}
+
 }  // namespace
 
 int main() {
@@ -86,5 +145,8 @@ int main() {
   overlapping_spheres_generate_contact();
   sphere_on_box_generates_contact();
   stable_pair_order_independent();
+  ray_hits_capsule_shaft();
+  ray_misses_beside_capsule();
+  ray_hits_capsule_end_sphere();
   return 0;
 }

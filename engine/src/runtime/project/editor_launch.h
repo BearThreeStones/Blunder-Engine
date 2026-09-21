@@ -51,6 +51,20 @@ struct MachineCliArgs {
   bool has_target{false};
   bool enabled{false};
   bool has_enabled{false};
+  float ox{0.0f};
+  float oy{0.0f};
+  float oz{0.0f};
+  float dz{0.0f};
+  float max_distance{100.0f};
+  uint32_t mask{0xFFFFFFFFu};
+  bool collide_with_areas{false};
+  eastl::string sweep_shape;
+  float hx{0.5f};
+  float hy{0.5f};
+  float hz{0.5f};
+  float sphere_radius{0.5f};
+  float capsule_radius{0.5f};
+  float capsule_half_height{0.5f};
 };
 
 struct EditorSessionLaunch {

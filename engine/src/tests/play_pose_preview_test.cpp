@@ -67,6 +67,17 @@ int main() {
     expect_true("overlay does not dirty history",
                 !history.isDirtyRelativeToSave());
     expect_true("overlay command count 0", history.commandCount() == 0);
+
+    Vec3 position{0, 0, 1.8f};
+    Quat rotation = glm::identity<Quat>();
+    Vec3 scale{1, 1, 1};
+    expect_true("named pose applies to query fields",
+                applyNamedPlayPose(overlay, eastl::string("Hero"), position,
+                                   rotation, scale));
+    expect_true("query x from play pose", nearly(position.x, 10.f));
+    expect_true("missing pose keeps live",
+                !applyNamedPlayPose(overlay, eastl::string("Missing"), position,
+                                    rotation, scale));
   }
 
   if (g_failures != 0) {

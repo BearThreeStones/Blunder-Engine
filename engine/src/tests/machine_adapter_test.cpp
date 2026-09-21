@@ -4,13 +4,18 @@
 #include "runtime/function/editor/document_history.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/editor_camera.h"
+#include "runtime/function/physics/physics_manager.h"
+#include "runtime/function/scene/character_controller_component.h"
+#include "runtime/function/scene/collider_component.h"
 #include "runtime/function/scene/entity_id.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/project/machine_adapter.h"
+#include "runtime/function/render/scene_thumbnail/capture.h"
 #include "runtime/project/machine_mcp.h"
 #include "runtime/project/play_session_controller.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cstdio>
 #include <cmath>
@@ -246,6 +251,14 @@ int main() {
         "mcp tools/call needs engine",
         mcpMessageNeedsEngine("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":"
                               "\"tools/call\",\"params\":{\"name\":\"query\"}}"));
+    expect_true("mcp tools ray",
+                listed.find("\"name\":\"ray\"") != std::string::npos);
+    expect_true("mcp tools shapecast",
+                listed.find("\"name\":\"shapecast\"") != std::string::npos);
+    expect_true("mcp tools group",
+                listed.find("\"name\":\"group\"") != std::string::npos);
+    expect_true("mcp tools collider",
+                listed.find("\"name\":\"collider\"") != std::string::npos);
 
     SceneInstance scene;
     DocumentHistory history;
@@ -488,6 +501,122 @@ int main() {
     dispatchMachineAdapter(launch, host, result);
     expect_true("mcp live capture uses editor camera", used_editor_view);
     expect_true("mcp live capture ok", result.ok);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId id =
+        scene.createEntity("IceArea", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    scene.addGroup(id, "TerrainIce");
+    ColliderComponent collider{};
+    collider.body_kind = ColliderBodyKind::Area;
+    scene.setCollider(id, collider);
+
+    EditorSessionLaunch launch = cliLaunch("group");
+    launch.scene = "assets/Scenes/root.scene.asset";
+    launch.cli.entity = "TerrainIce";
+    MachineAdapterHost host;
+    host.live_scene = &scene;
+    MachineResult result;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("group ok", result.ok);
+    expect_true("group names", result.names.size() == 1 &&
+                                   result.names[0] == "IceArea");
+
+    launch.cli.verb = "collider";
+    launch.cli.entity = "IceArea";
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("collider ok", result.ok);
+    expect_true("collider body area", result.collider_body == "area");
+    expect_true("collider shape box", result.collider_shape == "box");
+
+    launch.cli.verb = "ray";
+    launch.cli.oz = 5.0f;
+    launch.cli.dz = -1.0f;
+    launch.cli.max_distance = 20.0f;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("ray without physics host fails", !result.ok);
+    expect_true("ray physics code", result.failure_code == "physics.unavailable");
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId floor_id =
+        scene.createEntity("Floor", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    ColliderComponent floor{};
+    floor.box_half_extents = Vec3(1.0f, 1.0f, 1.0f);
+    scene.setCollider(floor_id, floor);
+    scene.addGroup(floor_id, "TerrainIce");
+
+    PhysicsManager physics;
+    EditorSessionLaunch launch = cliLaunch("ray");
+    launch.cli.oz = 5.0f;
+    launch.cli.dz = -1.0f;
+    launch.cli.max_distance = 20.0f;
+    MachineAdapterHost host;
+    host.live_scene = &scene;
+    host.physics = &physics;
+    MachineResult result;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("ray with physics host hits", result.ok && result.physics_hit);
+    expect_true("ray groups csv", result.physics_groups.find("TerrainIce") !=
+                                      eastl::string::npos);
+
+    EditorSessionLaunch session;
+    session.ok = true;
+    session.headless = true;
+    session.adapter = MachineAdapterKind::mcp;
+    session.scene = "assets/Scenes/root.scene.asset";
+    const std::string rayed = mcpHandleMessage(
+        "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{"
+        "\"name\":\"ray\",\"arguments\":{\"ox\":0,\"oy\":0,\"oz\":5,\"dz\":-1,"
+        "\"max_distance\":20}}}",
+        session, host);
+    expect_true("mcp ray not error",
+                rayed.find("\"isError\":false") != std::string::npos);
+    expect_true("mcp ray hit json",
+                rayed.find("\\\"hit\\\":true") != std::string::npos);
+    expect_true("mcp tools/call closes text content object",
+                rayed.find(R"(}"}],"isError")") != std::string::npos);
+
+    launch.cli.verb = "shapecast";
+    launch.cli.sweep_shape = "sphere";
+    launch.cli.sphere_radius = 0.2f;
+    launch.cli.oz = 5.0f;
+    launch.cli.dz = -1.0f;
+    launch.cli.max_distance = 20.0f;
+    dispatchMachineAdapter(launch, host, result);
+    expect_true("shapecast hits floor", result.ok && result.physics_hit);
+  }
+
+  {
+    SceneInstance scene;
+    const EntityId floor_id =
+        scene.createEntity("Floor", Vec3(0, 0, 0), glm::identity<Quat>(), Vec3(1));
+    ColliderComponent floor{};
+    floor.box_half_extents = Vec3(8.0f, 8.0f, 0.25f);
+    scene.setCollider(floor_id, floor);
+    CharacterControllerComponent cct{};
+    const EntityId walker_id =
+        scene.createEntity("Walker", Vec3(0, 0, 1.8f), glm::identity<Quat>(),
+                           Vec3(1));
+    scene.setCharacterController(walker_id, cct);
+
+    EditorSessionLaunch session;
+    session.ok = true;
+    session.headless = true;
+    session.adapter = MachineAdapterKind::mcp;
+    session.scene = "assets/Scenes/root.scene.asset";
+    session.cli.verb = "capture";
+    session.cli.subject = "live";
+    MachineAdapterHost host;
+    host.live_scene = &scene;
+    MachineResult result;
+    dispatchMachineAdapter(session, host, result);
+    expect_true("live collider capture without thumbs", result.ok);
+    expect_true("live collider capture has png", !result.png.empty());
+    expect_true("live collider capture not unreadable",
+                result.failure_code != k_request_capture_scene_unreadable);
   }
 
   g_runtime_global_context.m_logger_system.reset();
