@@ -11491,6 +11491,11 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               !g_runtime_global_context.inlineRenameActive()) {
             toggleFrameTimingHud();
           }
+          if (!event.key.repeat && event.key.key == SDLK_F4 &&
+              !g_runtime_global_context.inlineRenameActive() &&
+              !m_player_hud_mode) {
+            toggleProfilerDock();
+          }
           if (!event.key.repeat && event.key.key == SDLK_H &&
               !g_runtime_global_context.inlineRenameActive() &&
               !m_player_hud_mode) {

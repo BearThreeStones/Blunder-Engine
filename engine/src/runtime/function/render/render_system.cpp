@@ -139,6 +139,18 @@ void publishFrameTimingCounts(const ForwardFrameState& frame_state,
   timing->setCounts(instance_count, lights, draw_count);
 }
 
+void harvestReadyGpuTimestamps(VulkanSync* sync) {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  if (timing == nullptr || sync == nullptr) {
+    return;
+  }
+  for (uint32_t slot = 0; slot < VulkanSync::k_max_frames_in_flight; ++slot) {
+    if (sync->slotReached(slot)) {
+      timing->harvestGpuSlot(slot);
+    }
+  }
+}
+
 void defaultOffscreenExtent(const RenderSystemInitInfo& info, uint32_t& width,
                             uint32_t& height) {
   if (info.window_system == nullptr) {
@@ -2509,6 +2521,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       !camera_changed && !scene_changed && !heatmap_changed &&
       !vrs_mask_changed) {
     phases.flag("skip", 1);
+    harvestReadyGpuTimestamps(vkSync(this));
     pollViewportPresent();
     return;
   }

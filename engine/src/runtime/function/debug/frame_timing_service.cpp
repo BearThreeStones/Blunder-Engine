@@ -90,8 +90,11 @@ void FrameTimingService::beginGpuSlot(VkCommandBuffer command_buffer,
 }
 
 void FrameTimingService::harvestGpuSlot(uint32_t slot) {
-  m_pending_gpu = {};
-  m_gpu.harvestSlot(slot, m_pending_gpu);
+  FrameTimingSlot harvested{};
+  m_gpu.harvestSlot(slot, harvested);
+  if (harvested.pass_count > 0) {
+    m_pending_gpu = harvested;
+  }
 }
 
 void FrameTimingService::collectTracy(VkCommandBuffer command_buffer) {
