@@ -1,4 +1,5 @@
 #include "gpu_driven_common.slang"
+#include "vertex_color.slang"
 
 struct GpuSceneLight
 {
@@ -340,8 +341,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 sampledNormal = sampleBindless(inst.bindlessTextureIndices.z, input.uv);
     float4 sampledAo = sampleBindless(inst.bindlessTextureIndices.w, input.uv);
     float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
-    float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb * input.color.rgb;
+    float3 albedo = applyVertexColorToAlbedo(
+        baseSample.rgb * inst.baseColorFactor.rgb, input.color.rgb,
+        inst.materialFlags.y);
     float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
+    clipPackedVertexColorCoverage(input.color.rgb, inst.materialFlags.y);
     if (inst.materialFlags.x > 0.5)
     {
         return float4(albedo, alpha);

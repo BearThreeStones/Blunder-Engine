@@ -8,6 +8,7 @@ struct GpuSceneLight
 };
 
 #include "shadow_sampling_ubo.slang"
+#include "vertex_color.slang"
 
 struct GlobalUniformData
 {
@@ -344,8 +345,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 sampledNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv);
     float4 sampledAo = sampleBindless(ubo.bindlessTextureIndices.w, input.uv);
     float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
-    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb * input.color.rgb;
+    float3 albedo = applyVertexColorToAlbedo(
+        baseSample.rgb * ubo.baseColorFactor.rgb, input.color.rgb,
+        ubo.materialFlags.y);
     float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
+    clipPackedVertexColorCoverage(input.color.rgb, ubo.materialFlags.y);
 
     if (ubo.materialFlags.x > 0.5)
     {
