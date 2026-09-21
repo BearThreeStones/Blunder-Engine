@@ -2488,17 +2488,20 @@ void DeferredRenderPath::recordGBufferPass(
 
   const bool record_gpu = gpu_driven != nullptr && gpu_draws != nullptr &&
                           gpu_draw_count > 0;
+  const bool viewport_stream = stream == SecondaryStream::viewport;
   if (record_gpu) {
-    gpu_driven->uploadAndCull(command_buffer, frame_index, gpu_draws,
-                              gpu_draw_count, frame_state,
-                              frame_state.camera_distance < 2000.0f);
+    gpu_driven->uploadAndCull(
+        command_buffer, frame_index, gpu_draws, gpu_draw_count, frame_state,
+        viewport_stream && frame_state.camera_distance < 2000.0f);
   }
 
-  m_forward_path->recordShadowPass(command_buffer, frame_state, opaque_draws,
-                                   opaque_draw_count, frame_index, stream,
-                                   frame_index,
-                                   record_gpu ? gpu_driven : nullptr, gpu_draws,
-                                   gpu_draw_count);
+  if (viewport_stream || stream == SecondaryStream::immediate) {
+    m_forward_path->recordShadowPass(command_buffer, frame_state, opaque_draws,
+                                     opaque_draw_count, frame_index, stream,
+                                     frame_index,
+                                     record_gpu ? gpu_driven : nullptr, gpu_draws,
+                                     gpu_draw_count);
+  }
 
   {
     VkClearValue clears[k_gbuffer_plane_count + 1]{};
@@ -2545,7 +2548,7 @@ void DeferredRenderPath::recordGBufferPass(
         glm::inverse(frame_state.projection * frame_state.view), frame_index);
   }
 
-  if (record_gpu) {
+  if (record_gpu && viewport_stream) {
     gpu_driven->recordBuildHiZ(command_buffer, frame_index,
                                m_offscreen->getDepthImageView(slot_index),
                                extent.width, extent.height,

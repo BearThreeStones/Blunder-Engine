@@ -585,8 +585,9 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
     }
     appendForwardDraw(submesh_draw, gpu_mesh, base_color_texture,
                       metallic_roughness_texture, normal_texture,
-                      occlusion_texture, slot_index, opaque_draws,
-                      transparent_draws);
+                      occlusion_texture,
+                      slot_index % DeferredRenderPath::k_max_receiver_slots,
+                      opaque_draws, transparent_draws);
     ++slot_index;
   }
 
@@ -670,8 +671,9 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
     }
     appendForwardDraw(submesh_draw, gpu_mesh, base_color_texture,
                       metallic_roughness_texture, normal_texture,
-                      occlusion_texture, slot_index, opaque_draws,
-                      transparent_draws);
+                      occlusion_texture,
+                      slot_index % DeferredRenderPath::k_max_receiver_slots,
+                      opaque_draws, transparent_draws);
     ++slot_index;
   }
 

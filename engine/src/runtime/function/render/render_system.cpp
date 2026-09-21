@@ -1362,14 +1362,17 @@ bool RenderSystem::recordCameraPreviewPass(
       frame_index % VulkanSync::k_max_frames_in_flight;
   m_camera_preview_deferred->recordGBufferPass(
       command_buffer, preview_state, opaque_draws.data(),
-      static_cast<uint32_t>(opaque_draws.size()), preview_frame, nullptr, nullptr,
-      0, SecondaryStream::camera_preview);
+      static_cast<uint32_t>(opaque_draws.size()), preview_frame,
+      m_gpu_driven_renderer.get(), m_gpu_driven_draws.data(),
+      static_cast<uint32_t>(m_gpu_driven_draws.size()),
+      SecondaryStream::camera_preview);
   m_camera_preview_deferred->recordLightingPass(
       command_buffer, preview_state, opaque_draws.data(),
       static_cast<uint32_t>(opaque_draws.size()),
       preview_transparent_draws.data(),
       static_cast<uint32_t>(preview_transparent_draws.size()), preview_frame,
-      nullptr, SecondaryStream::camera_preview, /*draw_overlays=*/false);
+      m_gpu_driven_renderer.get(), SecondaryStream::camera_preview,
+      /*draw_overlays=*/false);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
