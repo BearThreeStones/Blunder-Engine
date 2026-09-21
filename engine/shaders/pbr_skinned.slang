@@ -86,6 +86,8 @@ struct VertexInput
     int4 inJointIndices;
     [[vk::location(5)]]
     float4 inWeights;
+    [[vk::location(6)]]
+    float4 inColor;
 };
 
 struct VertexOutput
@@ -101,6 +103,8 @@ struct VertexOutput
     float3 worldTangent;
     [[vk::location(4)]]
     float tangentSign;
+    [[vk::location(5)]]
+    float4 color;
 };
 
 float4 sampleBindless(uint index, float2 uv)
@@ -164,6 +168,7 @@ VertexOutput vertexMain(VertexInput input)
     output.tangentSign = input.inTangent.w;
     output.worldPos = worldPos.xyz;
     output.uv = input.inUv;
+    output.color = input.inColor;
     return output;
 }
 
@@ -339,8 +344,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 sampledNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv);
     float4 sampledAo = sampleBindless(ubo.bindlessTextureIndices.w, input.uv);
     float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
-    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
-    float alpha = baseSample.a * ubo.baseColorFactor.a;
+    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb * input.color.rgb;
+    float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
 
     if (ubo.materialFlags.x > 0.5)
     {

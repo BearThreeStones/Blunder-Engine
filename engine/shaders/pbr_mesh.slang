@@ -103,26 +103,33 @@ struct VertexOutput
     float tangentSign;
     [[vk::location(5)]]
     nointerpolation uint instanceId;
+    [[vk::location(6)]]
+    float4 color;
 };
 
 float3 loadPosition(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load3(vertexIndex * 48u));
+    return asfloat(vertexBytes.Load3(vertexIndex * kMeshVertexStride));
 }
 
 float3 loadNormal(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load3(vertexIndex * 48u + 12u));
+    return asfloat(vertexBytes.Load3(vertexIndex * kMeshVertexStride + kMeshVertexNormalOffset));
 }
 
 float2 loadUv(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load2(vertexIndex * 48u + 24u));
+    return asfloat(vertexBytes.Load2(vertexIndex * kMeshVertexStride + kMeshVertexUvOffset));
 }
 
 float4 loadTangent(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load4(vertexIndex * 48u + 32u));
+    return asfloat(vertexBytes.Load4(vertexIndex * kMeshVertexStride + kMeshVertexTangentOffset));
+}
+
+float4 loadColor(uint vertexIndex)
+{
+    return asfloat(vertexBytes.Load4(vertexIndex * kMeshVertexStride + kMeshVertexColorOffset));
 }
 
 uint loadMeshletVertex(uint offset)
@@ -190,6 +197,7 @@ void meshMain(uint gtid : SV_GroupThreadID, in payload MeshPayload payload,
         verts[gtid].tangentSign = tan.w;
         verts[gtid].worldPos = worldPos.xyz;
         verts[gtid].uv = uv;
+        verts[gtid].color = loadColor(index);
         verts[gtid].instanceId = payload.instanceIndex;
     }
     if (gtid < triCount)
@@ -332,8 +340,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 sampledNormal = sampleBindless(inst.bindlessTextureIndices.z, input.uv);
     float4 sampledAo = sampleBindless(inst.bindlessTextureIndices.w, input.uv);
     float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
-    float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb;
-    float alpha = baseSample.a * inst.baseColorFactor.a;
+    float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb * input.color.rgb;
+    float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
     if (inst.materialFlags.x > 0.5)
     {
         return float4(albedo, alpha);

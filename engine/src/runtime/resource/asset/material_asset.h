@@ -130,8 +130,9 @@ class MaterialAsset final : public Asset {
   void setUnlit(bool value) { m_unlit = value; }
 
   /// Godot water films are BLEND with albedo alpha 0.2–0.4 over a vertex-colored
-  /// bed. Blunder does not import COLOR_0 or the paper shader, so that film is
-  /// nearly invisible and does not write depth (editor grid shows in the hole).
+  /// bed. COLOR_0 now multiplies albedo, but the paper shader is still missing,
+  /// so that film is nearly invisible and does not write depth (editor grid
+  /// shows in the hole).
   /// Promote those textured films to opaque diffuse so the cyan/water albedo
   /// fills the set. Bubbles stay transparent (texture path does not match).
   void promoteWaterSurfaceFilmToOpaque() {

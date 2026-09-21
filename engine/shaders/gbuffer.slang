@@ -47,6 +47,8 @@ struct VertexInput
     float2 inUv;
     [[vk::location(3)]]
     float4 inTangent;
+    [[vk::location(4)]]
+    float4 inColor;
 };
 
 struct VertexOutput
@@ -60,6 +62,8 @@ struct VertexOutput
     float3 worldTangent;
     [[vk::location(3)]]
     float tangentSign;
+    [[vk::location(4)]]
+    float4 color;
 };
 
 struct GBufferOutput
@@ -88,6 +92,7 @@ VertexOutput vertexMain(VertexInput input)
         normalize(mul((float3x3)ubo.normalMatrix, input.inTangent.xyz));
     output.tangentSign = input.inTangent.w;
     output.uv = input.inUv;
+    output.color = input.inColor;
     return output;
 }
 
@@ -131,8 +136,8 @@ GBufferOutput fragmentMain(VertexOutput input)
     float4 sampledNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv);
     float4 sampledAo = sampleBindless(ubo.bindlessTextureIndices.w, input.uv);
     float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
-    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
-    float alpha = baseSample.a * ubo.baseColorFactor.a;
+    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb * input.color.rgb;
+    float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
 
     // cgltf_alpha_mode: opaque=0, mask=1, blend=2. Clip MASK only.
     if (ubo.metallicRoughnessFactors.w > 0.5 &&

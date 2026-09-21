@@ -59,6 +59,10 @@ eastl::vector<Blunder::MeshVertex> makeQuadVertices() {
   vertices[1].position = glm::vec3(1.0f, 0.0f, 0.0f);
   vertices[2].position = glm::vec3(1.0f, 1.0f, 0.0f);
   vertices[3].position = glm::vec3(0.0f, 1.0f, 0.0f);
+  vertices[0].color = glm::vec4(0.25f, 0.5f, 0.75f, 1.0f);
+  vertices[1].color = glm::vec4(1.0f, 0.2f, 0.1f, 1.0f);
+  vertices[2].color = glm::vec4(0.1f, 1.0f, 0.2f, 1.0f);
+  vertices[3].color = glm::vec4(0.4f, 0.4f, 0.9f, 0.8f);
   return vertices;
 }
 
@@ -111,6 +115,11 @@ void staticMeshletsRoundTripThroughCookFile() {
                       meshlets.meshlets[0].cone_axis[0] &&
                   read_meshlets.meshlets[0].cone_cutoff ==
                       meshlets.meshlets[0].cone_cutoff);
+  expect_true("round-trip COLOR_0",
+              read_vertices.size() == vertices.size() &&
+                  read_vertices[0].color.x == vertices[0].color.x &&
+                  read_vertices[2].color.y == vertices[2].color.y &&
+                  read_vertices[3].color.w == vertices[3].color.w);
 
   fs::remove_all(temp);
 }

@@ -19,9 +19,10 @@ struct Vertex {
   glm::vec3 normal;
   glm::vec2 uv;
   glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
+  glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
 
   static VkVertexInputBindingDescription getBindingDescription();
-  static eastl::array<VkVertexInputAttributeDescription, 4>
+  static eastl::array<VkVertexInputAttributeDescription, 5>
   getAttributeDescriptions();
 };
 
@@ -32,9 +33,10 @@ struct SkinnedVertex {
   glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
   glm::ivec4 joint_indices{0, 0, 0, 0};
   glm::vec4 weights{1.0f, 0.0f, 0.0f, 0.0f};
+  glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f};
 
   static VkVertexInputBindingDescription getBindingDescription();
-  static eastl::array<VkVertexInputAttributeDescription, 6>
+  static eastl::array<VkVertexInputAttributeDescription, 7>
   getAttributeDescriptions();
 };
 

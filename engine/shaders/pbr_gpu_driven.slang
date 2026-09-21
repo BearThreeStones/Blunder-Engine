@@ -77,6 +77,8 @@ struct VertexInput
     float2 inUv;
     [[vk::location(3)]]
     float4 inTangent;
+    [[vk::location(4)]]
+    float4 inColor;
 };
 
 struct VertexOutput
@@ -94,6 +96,8 @@ struct VertexOutput
     float tangentSign;
     [[vk::location(5)]]
     nointerpolation uint instanceId;
+    [[vk::location(6)]]
+    float4 color;
 };
 
 float4 sampleBindless(uint index, float2 uv)
@@ -118,6 +122,7 @@ VertexOutput vertexMain(VertexInput input, uint instanceId : SV_VulkanInstanceID
     output.worldPos = worldPos.xyz;
     output.uv = input.inUv;
     output.instanceId = instanceId;
+    output.color = input.inColor;
     return output;
 }
 
@@ -257,8 +262,8 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 sampledNormal = sampleBindless(inst.bindlessTextureIndices.z, input.uv);
     float4 sampledAo = sampleBindless(inst.bindlessTextureIndices.w, input.uv);
     float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
-    float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb;
-    float alpha = baseSample.a * inst.baseColorFactor.a;
+    float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb * input.color.rgb;
+    float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
 
     if (inst.materialFlags.x > 0.5)
     {

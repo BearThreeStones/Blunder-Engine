@@ -118,6 +118,7 @@ void packSkinnedMeshVertices(const MeshAsset& mesh_asset,
     out_vertex.tangent = bind_vertex.tangent;
     out_vertex.joint_indices = influence.joint_indices;
     out_vertex.weights = influence.weights;
+    out_vertex.color = bind_vertex.color;
   }
 }
 

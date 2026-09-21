@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 
+#include <cgltf.h>
 #include <glm/glm.hpp>
 
 #include "runtime/core/base/macro.h"
@@ -216,6 +217,120 @@ MeshSkinData buildMeshSkinData(const cgltf_primitive& primitive,
 
 }  // namespace
 
+bool readGltfPrimitiveGeometry(const cgltf_primitive& primitive,
+                               eastl::vector<MeshVertex>& out_vertices,
+                               eastl::vector<uint32_t>& out_indices) {
+  out_vertices.clear();
+  out_indices.clear();
+  if (primitive.type != cgltf_primitive_type_triangles ||
+      primitive.has_draco_mesh_compression) {
+    return false;
+  }
+
+  const cgltf_attribute* position_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_position, 0);
+  const cgltf_attribute* normal_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_normal, 0);
+  const cgltf_attribute* uv_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_texcoord, 0);
+  const cgltf_attribute* tangent_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_tangent, 0);
+  const cgltf_attribute* color_attribute =
+      findPrimitiveAttribute(primitive, cgltf_attribute_type_color, 0);
+  if (position_attribute == nullptr || position_attribute->data == nullptr) {
+    return false;
+  }
+
+  const cgltf_accessor* position_accessor = position_attribute->data;
+  const cgltf_accessor* normal_accessor =
+      normal_attribute != nullptr ? normal_attribute->data : nullptr;
+  const cgltf_accessor* uv_accessor =
+      uv_attribute != nullptr ? uv_attribute->data : nullptr;
+  const cgltf_accessor* tangent_accessor =
+      tangent_attribute != nullptr ? tangent_attribute->data : nullptr;
+  const cgltf_accessor* color_accessor =
+      color_attribute != nullptr ? color_attribute->data : nullptr;
+  const size_t vertex_count = static_cast<size_t>(position_accessor->count);
+  if (vertex_count == 0u) {
+    return false;
+  }
+
+  eastl::vector<MeshVertex> vertices(vertex_count);
+  for (size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    if (!cgltf_accessor_read_float(position_accessor, vertex_index, position,
+                                   3)) {
+      return false;
+    }
+    vertices[vertex_index].position = transformPointGltfToEngine(
+        glm::vec3(position[0], position[1], position[2]));
+
+    if (normal_accessor != nullptr) {
+      float normal[3] = {0.0f, 1.0f, 0.0f};
+      if (cgltf_accessor_read_float(normal_accessor, vertex_index, normal, 3)) {
+        const Vec3 transformed_normal = transformDirectionGltfToEngine(
+            glm::vec3(normal[0], normal[1], normal[2]));
+        const float normal_length = glm::length(transformed_normal);
+        if (normal_length > 1e-6f) {
+          vertices[vertex_index].normal = transformed_normal / normal_length;
+        }
+      }
+    }
+
+    if (uv_accessor != nullptr) {
+      float uv[2] = {0.0f, 0.0f};
+      if (cgltf_accessor_read_float(uv_accessor, vertex_index, uv, 2)) {
+        vertices[vertex_index].uv = glm::vec2(uv[0], uv[1]);
+      }
+    }
+
+    if (tangent_accessor != nullptr) {
+      float tangent[4] = {1.0f, 0.0f, 0.0f, 1.0f};
+      if (cgltf_accessor_read_float(tangent_accessor, vertex_index, tangent, 4)) {
+        const Vec3 tangent_xyz = transformDirectionGltfToEngine(
+            glm::vec3(tangent[0], tangent[1], tangent[2]));
+        vertices[vertex_index].tangent =
+            glm::vec4(glm::normalize(tangent_xyz), tangent[3]);
+      }
+    }
+
+    if (color_accessor != nullptr) {
+      float color[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+      if (cgltf_accessor_read_float(color_accessor, vertex_index, color, 4)) {
+        vertices[vertex_index].color =
+            glm::vec4(color[0], color[1], color[2], color[3]);
+      }
+    }
+  }
+
+  eastl::vector<uint32_t> indices;
+  if (primitive.indices != nullptr) {
+    const size_t index_count = static_cast<size_t>(primitive.indices->count);
+    indices.resize(index_count);
+    for (size_t index = 0; index < index_count; ++index) {
+      const cgltf_size value =
+          cgltf_accessor_read_index(primitive.indices, index);
+      if (value > std::numeric_limits<uint32_t>::max()) {
+        return false;
+      }
+      indices[index] = static_cast<uint32_t>(value);
+    }
+  } else {
+    indices.resize(vertex_count);
+    for (size_t index = 0; index < vertex_count; ++index) {
+      indices[index] = static_cast<uint32_t>(index);
+    }
+  }
+
+  if (tangent_accessor == nullptr) {
+    computeMeshTangents(vertices, indices);
+  }
+
+  out_vertices = eastl::move(vertices);
+  out_indices = eastl::move(indices);
+  return !out_vertices.empty() && !out_indices.empty();
+}
+
 eastl::string makeMeshPrimitiveCacheKey(const eastl::string& gltf_canonical_key,
                                         size_t mesh_index, size_t primitive_index) {
   char suffix[64];
@@ -383,103 +498,10 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMeshPrimitive(
     return nullptr;
   }
 
-  const cgltf_attribute* position_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_position, 0);
-  const cgltf_attribute* normal_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_normal, 0);
-  const cgltf_attribute* uv_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_texcoord, 0);
-  const cgltf_attribute* tangent_attribute =
-      findPrimitiveAttribute(primitive, cgltf_attribute_type_tangent, 0);
-  if (position_attribute == nullptr || position_attribute->data == nullptr) {
-    return nullptr;
-  }
-
-  const cgltf_accessor* position_accessor = position_attribute->data;
-  const cgltf_accessor* normal_accessor =
-      normal_attribute != nullptr ? normal_attribute->data : nullptr;
-  const cgltf_accessor* uv_accessor =
-      uv_attribute != nullptr ? uv_attribute->data : nullptr;
-  const cgltf_accessor* tangent_accessor =
-      tangent_attribute != nullptr ? tangent_attribute->data : nullptr;
-  const size_t vertex_count = static_cast<size_t>(position_accessor->count);
-  if (vertex_count == 0u) {
-    return nullptr;
-  }
-
-  eastl::vector<MeshVertex> vertices(vertex_count);
-  for (size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-    float position[3] = {0.0f, 0.0f, 0.0f};
-    if (!cgltf_accessor_read_float(position_accessor, vertex_index, position, 3)) {
-      return nullptr;
-    }
-    vertices[vertex_index].position = transformPointGltfToEngine(
-        glm::vec3(position[0], position[1], position[2]));
-
-    if (normal_accessor != nullptr) {
-      float normal[3] = {0.0f, 1.0f, 0.0f};
-      if (cgltf_accessor_read_float(normal_accessor, vertex_index, normal, 3)) {
-        const Vec3 transformed_normal = transformDirectionGltfToEngine(
-            glm::vec3(normal[0], normal[1], normal[2]));
-        const float normal_length = glm::length(transformed_normal);
-        if (normal_length > 1e-6f) {
-          vertices[vertex_index].normal = transformed_normal / normal_length;
-        }
-      }
-    }
-
-    if (uv_accessor != nullptr) {
-      float uv[2] = {0.0f, 0.0f};
-      if (cgltf_accessor_read_float(uv_accessor, vertex_index, uv, 2)) {
-        vertices[vertex_index].uv = glm::vec2(uv[0], uv[1]);
-      }
-    }
-
-    if (tangent_accessor != nullptr) {
-      float tangent[4] = {1.0f, 0.0f, 0.0f, 1.0f};
-      if (cgltf_accessor_read_float(tangent_accessor, vertex_index, tangent, 4)) {
-        const Vec3 tangent_xyz = transformDirectionGltfToEngine(
-            glm::vec3(tangent[0], tangent[1], tangent[2]));
-        vertices[vertex_index].tangent =
-            glm::vec4(glm::normalize(tangent_xyz), tangent[3]);
-      }
-    }
-  }
-
-  if (tangent_accessor == nullptr) {
-    eastl::vector<uint32_t> provisional_indices;
-    if (primitive.indices != nullptr) {
-      const size_t index_count = static_cast<size_t>(primitive.indices->count);
-      provisional_indices.resize(index_count);
-      for (size_t index = 0; index < index_count; ++index) {
-        provisional_indices[index] =
-            static_cast<uint32_t>(cgltf_accessor_read_index(primitive.indices, index));
-      }
-    } else {
-      provisional_indices.resize(vertex_count);
-      for (size_t index = 0; index < vertex_count; ++index) {
-        provisional_indices[index] = static_cast<uint32_t>(index);
-      }
-    }
-    computeMeshTangents(vertices, provisional_indices);
-  }
-
+  eastl::vector<MeshVertex> vertices;
   eastl::vector<uint32_t> indices;
-  if (primitive.indices != nullptr) {
-    const size_t index_count = static_cast<size_t>(primitive.indices->count);
-    indices.resize(index_count);
-    for (size_t index = 0; index < index_count; ++index) {
-      const cgltf_size value = cgltf_accessor_read_index(primitive.indices, index);
-      if (value > std::numeric_limits<uint32_t>::max()) {
-        return nullptr;
-      }
-      indices[index] = static_cast<uint32_t>(value);
-    }
-  } else {
-    indices.resize(vertex_count);
-    for (size_t index = 0; index < vertex_count; ++index) {
-      indices[index] = static_cast<uint32_t>(index);
-    }
+  if (!readGltfPrimitiveGeometry(primitive, vertices, indices)) {
+    return nullptr;
   }
 
   eastl::shared_ptr<MaterialAsset> material_asset;
@@ -498,7 +520,8 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMeshPrimitive(
   meta.virtual_path = cache_key;
   meta.absolute_path = absolute;
   meta.source_timestamp = querySourceTimestamp(absolute);
-  MeshSkinData skin_data = buildMeshSkinData(primitive, skin, vertex_count);
+  MeshSkinData skin_data =
+      buildMeshSkinData(primitive, skin, vertices.size());
   auto asset = eastl::make_shared<MeshAsset>(
       eastl::move(meta), eastl::move(vertices), eastl::move(indices), material_handle,
       material_asset, eastl::move(skin_data));
