@@ -1383,6 +1383,10 @@ target_link_libraries(engine_open_progress_test
     PRIVATE engine_runtime
 )
 
+target_include_directories(engine_open_progress_test
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
 if(MSVC)
     target_compile_options(engine_open_progress_test PRIVATE /Zc:preprocessor)
 endif()
