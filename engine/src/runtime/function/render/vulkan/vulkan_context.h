@@ -44,6 +44,9 @@ class VulkanContext final {
 
   VkInstance getInstance() const { return m_instance; }
   VkPhysicalDevice getPhysicalDevice() const { return m_physical_device; }
+  const char* physicalDeviceName() const {
+    return m_physical_device_properties.deviceName;
+  }
   VkDevice getDevice() const { return m_device; }
   VkQueue getGraphicsQueue() const { return m_graphics_queue; }
   VkQueue getPresentQueue() const { return m_present_queue; }
@@ -70,6 +73,24 @@ class VulkanContext final {
   }
   PFN_vkCmdDrawIndexedIndirectCount cmdDrawIndexedIndirectCount() const {
     return m_cmd_draw_indexed_indirect_count;
+  }
+  bool fragmentShadingRateEnabled() const {
+    return m_fragment_shading_rate_enabled;
+  }
+  VkExtent2D fragmentShadingRateTexelSize() const {
+    return m_fragment_shading_rate_texel;
+  }
+  VkExtent2D fragmentShadingRateMinTexelSize() const {
+    return m_fragment_shading_rate_min_texel;
+  }
+  VkExtent2D fragmentShadingRateMaxTexelSize() const {
+    return m_fragment_shading_rate_max_texel;
+  }
+  PFN_vkCmdSetFragmentShadingRateKHR cmdSetFragmentShadingRateKHR() const {
+    return m_cmd_set_fragment_shading_rate_khr;
+  }
+  PFN_vkCreateRenderPass2 createRenderPass2() const {
+    return m_create_render_pass2;
   }
 
   VkResult createGraphicsPipelines(
@@ -129,6 +150,12 @@ class VulkanContext final {
   uint32_t m_max_draw_indirect_count{1};
   PFN_vkCmdDrawMeshTasksEXT m_cmd_draw_mesh_tasks_ext{nullptr};
   PFN_vkCmdDrawIndexedIndirectCount m_cmd_draw_indexed_indirect_count{nullptr};
+  bool m_fragment_shading_rate_enabled{false};
+  VkExtent2D m_fragment_shading_rate_texel{1, 1};
+  VkExtent2D m_fragment_shading_rate_min_texel{1, 1};
+  VkExtent2D m_fragment_shading_rate_max_texel{1, 1};
+  PFN_vkCmdSetFragmentShadingRateKHR m_cmd_set_fragment_shading_rate_khr{nullptr};
+  PFN_vkCreateRenderPass2 m_create_render_pass2{nullptr};
 
   VkInstance m_instance{VK_NULL_HANDLE};
   VkDebugUtilsMessengerEXT m_debug_messenger{VK_NULL_HANDLE};

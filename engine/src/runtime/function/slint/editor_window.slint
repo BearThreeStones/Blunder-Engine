@@ -405,6 +405,7 @@ export component MainEditorWindow inherits Window {
 
     in-out property <bool> viewport-is-perspective: true;
     in-out property <bool> froxel-occupancy-heatmap: false;
+    in-out property <bool> vrs-rate-mask: false;
     in property <int> froxel-dropped-lights: 0;
     in property <bool> viewport-image-ready: false;
     callback viewport-projection-toggled();
@@ -1643,7 +1644,7 @@ export component MainEditorWindow inherits Window {
             x: root.view-menu-anchor-x;
             y: root.view-menu-anchor-y;
             width: 240px;
-            height: 112px;
+            height: 138px;
             background: EditorTheme.window;
             border-color: EditorTheme.hairline;
             border-width: 1px;
@@ -1679,6 +1680,32 @@ export component MainEditorWindow inherits Window {
                             vertical-alignment: center;
                             overflow: elide;
                             text: root.froxel-occupancy-heatmap ? "Froxel Occupancy Heatmap ✓" : "Froxel Occupancy Heatmap";
+                            color: EditorTheme.default-text;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 26px;
+                    background: vrs-mask-touch.has-hover ? EditorTheme.tab-hover : transparent;
+                    border-radius: 2px;
+
+                    vrs-mask-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.view-menu-visible = false;
+                            root.vrs-rate-mask = !root.vrs-rate-mask;
+                        }
+
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: root.vrs-rate-mask ? "VRS Rate Mask ✓" : "VRS Rate Mask";
                             color: EditorTheme.default-text;
                             font-size: 12px;
                         }

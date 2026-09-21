@@ -227,6 +227,10 @@ class SlintSystem final : public IEditorUiPresentation {
   void toggleFroxelOccupancyHeatmap();
   void syncFroxelViewportStats(uint32_t dropped_this_frame, uint64_t dropped_total);
 
+  /// Viewport-only VRS rate-mask overlay (not persisted).
+  bool vrsRateMaskEnabled() const;
+  void setVrsRateMaskEnabled(bool enabled);
+
   /// Clears a stale 3D readback (e.g. after viewport resize) before the next render upload.
   void applyPendingViewportInvalidate();
 

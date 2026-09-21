@@ -9,6 +9,7 @@
 
 #include <cgltf.h>
 
+#include "runtime/function/render/deferred/deferred_render_path.h"
 #include "runtime/function/render/forward/forward_frame_state.h"
 #include "runtime/function/render/forward/forward_opaque_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
@@ -129,6 +130,10 @@ bool MeshPreviewOffscreenBackend::initialize(rhi::IRenderBackend* render_backend
 }
 
 void MeshPreviewOffscreenBackend::shutdownRenderPath() {
+  if (m_deferred_path) {
+    m_deferred_path->shutdown();
+    m_deferred_path.reset();
+  }
   if (m_forward_path) {
     m_forward_path->shutdown();
     m_forward_path.reset();
@@ -196,6 +201,9 @@ bool MeshPreviewOffscreenBackend::ensureResources(uint32_t width, uint32_t heigh
     desc.height = height;
     m_offscreen = backend->device().createOffscreenTarget(desc);
   } else if (m_width != width || m_height != height) {
+    if (m_deferred_path) {
+      m_deferred_path->dropGpuTargets();
+    }
     m_offscreen->resize(width, height);
   }
 
@@ -231,7 +239,7 @@ bool MeshPreviewOffscreenBackend::ensureRenderPath(uint32_t width, uint32_t heig
   }
 
   if (m_pipeline_width == width && m_pipeline_height == height &&
-      m_forward_path && m_mesh_pipeline) {
+      m_forward_path && m_deferred_path && m_mesh_pipeline) {
     return true;
   }
 
@@ -300,6 +308,23 @@ bool MeshPreviewOffscreenBackend::ensureRenderPath(uint32_t width, uint32_t heig
   forward_init.skinned_transparent_pipeline = m_skinned_transparent_pipeline.get();
   forward_init.fallback_texture = getFallbackTexture();
   m_forward_path->initialize(forward_init);
+
+  auto* vk_target =
+      static_cast<vulkan_backend::VulkanOffscreenTarget*>(m_offscreen.get());
+  OffscreenRenderTarget* native = vk_target ? vk_target->nativeTarget() : nullptr;
+  if (native == nullptr) {
+    shutdownRenderPath();
+    return false;
+  }
+  m_deferred_path = eastl::make_unique<DeferredRenderPath>();
+  DeferredRenderPathInit deferred_init{};
+  deferred_init.vk_context = context;
+  deferred_init.vk_allocator = backend->nativeAllocator();
+  deferred_init.slang_compiler = backend->nativeSlangCompiler();
+  deferred_init.offscreen = native;
+  deferred_init.forward_path = m_forward_path.get();
+  deferred_init.fallback_texture = getFallbackTexture();
+  m_deferred_path->initialize(deferred_init);
 
   m_pipeline_width = width;
   m_pipeline_height = height;
@@ -400,6 +425,86 @@ GpuMesh* MeshPreviewOffscreenBackend::getOrUploadGpuMesh(
   return uploaded_mesh_ptr;
 }
 
+bool MeshPreviewOffscreenBackend::submitDeferredPreview(
+    const ForwardFrameState& frame_state,
+    const eastl::vector<ForwardOpaqueDraw>& opaque_draws,
+    const eastl::vector<ForwardOpaqueDraw>& transparent_draws, uint32_t width,
+    uint32_t height, eastl::vector<uint8_t>& out_rgba) {
+  auto* backend =
+      static_cast<vulkan_backend::VulkanRenderBackend*>(m_render_backend);
+  VulkanContext* context = backend->nativeVulkanContext();
+  VulkanAllocator* allocator = backend->nativeAllocator();
+  if (context == nullptr || allocator == nullptr || m_deferred_path == nullptr ||
+      m_offscreen == nullptr) {
+    return false;
+  }
+
+  auto* vk_target =
+      static_cast<vulkan_backend::VulkanOffscreenTarget*>(m_offscreen.get());
+  if (vk_target == nullptr) {
+    return false;
+  }
+  vk_target->setActiveBufferIndex(m_preview_slot);
+  m_preview_slot = (m_preview_slot + 1u) % OffscreenRenderTarget::k_buffer_count;
+
+  ForwardFrameState deferred_state = frame_state;
+  deferred_state.shading.froxel_occupancy_heatmap = false;
+  deferred_state.shading.vrs_rate_mask = false;
+
+  VkCommandBuffer command_buffer = context->beginImmediateCommands();
+  m_deferred_path->recordGBufferPass(
+      command_buffer, deferred_state, opaque_draws.data(),
+      static_cast<uint32_t>(opaque_draws.size()), 0u, nullptr, nullptr, 0,
+      SecondaryStream::immediate);
+  m_deferred_path->recordLightingPass(
+      command_buffer, deferred_state, opaque_draws.data(),
+      static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
+      static_cast<uint32_t>(transparent_draws.size()), 0u, nullptr,
+      SecondaryStream::immediate, /*draw_overlays=*/false);
+
+  vulkan_backend::VulkanCommandList command_list;
+  command_list.bind(context, command_buffer);
+  m_offscreen->transitionToCopySource(command_list);
+
+  OffscreenRenderTarget* native_target = vk_target->nativeTarget();
+  if (native_target == nullptr) {
+    context->endImmediateCommands(command_buffer);
+    context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
+    return false;
+  }
+
+  VkBufferImageCopy copy_region{};
+  copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  copy_region.imageSubresource.mipLevel = 0;
+  copy_region.imageSubresource.baseArrayLayer = 0;
+  copy_region.imageSubresource.layerCount = 1;
+  copy_region.imageExtent = {width, height, 1};
+  vkCmdCopyImageToBuffer(command_buffer, native_target->getImage(),
+                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                         m_readback_staging->getBuffer(), 1, &copy_region);
+  m_offscreen->transitionToShaderRead(command_list);
+  context->endImmediateCommands(command_buffer);
+  context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
+
+  const VkDeviceSize byte_count =
+      static_cast<VkDeviceSize>(width) * height * 4u;
+  vmaInvalidateAllocation(allocator->getAllocator(),
+                          m_readback_staging->getAllocation(), 0, byte_count);
+  void* mapped = nullptr;
+  if (vmaMapMemory(allocator->getAllocator(),
+                   m_readback_staging->getAllocation(),
+                   &mapped) != VK_SUCCESS ||
+      mapped == nullptr) {
+    return false;
+  }
+
+  out_rgba.resize(static_cast<size_t>(byte_count));
+  std::memcpy(out_rgba.data(), mapped, static_cast<size_t>(byte_count));
+  vmaUnmapMemory(allocator->getAllocator(),
+                 m_readback_staging->getAllocation());
+  return true;
+}
+
 bool MeshPreviewOffscreenBackend::renderMeshPreview(
     const MeshAsset& mesh, const MeshPreviewRenderRequest& request,
     const MeshPreviewCameraFrame& framing,
@@ -411,7 +516,7 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
   m_last_submitted_draw_count = 0;
   m_last_textures_incomplete = false;
   if (!framing.ok || !ensureResources(request.width, request.height) ||
-      m_forward_path == nullptr) {
+      m_deferred_path == nullptr) {
     return false;
   }
 
@@ -480,8 +585,9 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
     }
     appendForwardDraw(submesh_draw, gpu_mesh, base_color_texture,
                       metallic_roughness_texture, normal_texture,
-                      occlusion_texture, slot_index, opaque_draws,
-                      transparent_draws);
+                      occlusion_texture,
+                      slot_index % DeferredRenderPath::k_max_receiver_slots,
+                      opaque_draws, transparent_draws);
     ++slot_index;
   }
 
@@ -491,56 +597,9 @@ bool MeshPreviewOffscreenBackend::renderMeshPreview(
   const ForwardFrameState frame_state = buildMeshPreviewForwardFrameState(
       framing, lights, request.width, request.height);
 
-  VkCommandBuffer command_buffer = context->beginImmediateCommands();
-  m_forward_path->renderFrameTo(
-      m_offscreen.get(), command_buffer, frame_state, opaque_draws.data(),
-      static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
-      static_cast<uint32_t>(transparent_draws.size()), 0u, false,
-      SecondaryStream::immediate, 0u);
-
-  vulkan_backend::VulkanCommandList command_list;
-  command_list.bind(context, command_buffer);
-  m_offscreen->transitionToCopySource(command_list);
-
-  auto* vk_target = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
-      m_offscreen.get());
-  OffscreenRenderTarget* native_target = vk_target->nativeTarget();
-  if (native_target == nullptr) {
-    context->endImmediateCommands(command_buffer);
-    context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
-    return false;
-  }
-
-  VkBufferImageCopy copy_region{};
-  copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  copy_region.imageSubresource.mipLevel = 0;
-  copy_region.imageSubresource.baseArrayLayer = 0;
-  copy_region.imageSubresource.layerCount = 1;
-  copy_region.imageExtent = {request.width, request.height, 1};
-  vkCmdCopyImageToBuffer(command_buffer, native_target->getImage(),
-                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                         m_readback_staging->getBuffer(), 1, &copy_region);
-  m_offscreen->transitionToShaderRead(command_list);
-  context->endImmediateCommands(command_buffer);
-  context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
-
-  const VkDeviceSize byte_count =
-      static_cast<VkDeviceSize>(request.width) * request.height * 4u;
-  vmaInvalidateAllocation(allocator->getAllocator(),
-                          m_readback_staging->getAllocation(), 0, byte_count);
-  void* mapped = nullptr;
-  if (vmaMapMemory(allocator->getAllocator(),
-                   m_readback_staging->getAllocation(),
-                   &mapped) != VK_SUCCESS ||
-      mapped == nullptr) {
-    return false;
-  }
-
-  out_rgba.resize(static_cast<size_t>(byte_count));
-  std::memcpy(out_rgba.data(), mapped, static_cast<size_t>(byte_count));
-  vmaUnmapMemory(allocator->getAllocator(),
-                 m_readback_staging->getAllocation());
-  return true;
+  return submitDeferredPreview(
+      frame_state, opaque_draws, transparent_draws, request.width,
+      request.height, out_rgba);
 }
 
 bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
@@ -552,7 +611,7 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
   m_last_submitted_draw_count = 0;
   m_last_textures_incomplete = false;
   if (!framing.ok || draws.empty() || !ensureResources(width, height) ||
-      m_forward_path == nullptr) {
+      m_deferred_path == nullptr) {
     return false;
   }
 
@@ -612,8 +671,9 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
     }
     appendForwardDraw(submesh_draw, gpu_mesh, base_color_texture,
                       metallic_roughness_texture, normal_texture,
-                      occlusion_texture, slot_index, opaque_draws,
-                      transparent_draws);
+                      occlusion_texture,
+                      slot_index % DeferredRenderPath::k_max_receiver_slots,
+                      opaque_draws, transparent_draws);
     ++slot_index;
   }
 
@@ -639,56 +699,8 @@ bool MeshPreviewOffscreenBackend::renderSubmeshDraws(
     }
   }
 
-  VkCommandBuffer command_buffer = context->beginImmediateCommands();
-  m_forward_path->renderFrameTo(
-      m_offscreen.get(), command_buffer, frame_state, opaque_draws.data(),
-      static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
-      static_cast<uint32_t>(transparent_draws.size()), 0u, false,
-      SecondaryStream::immediate, 0u);
-
-  vulkan_backend::VulkanCommandList command_list;
-  command_list.bind(context, command_buffer);
-  m_offscreen->transitionToCopySource(command_list);
-
-  auto* vk_target = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
-      m_offscreen.get());
-  OffscreenRenderTarget* native_target = vk_target->nativeTarget();
-  if (native_target == nullptr) {
-    context->endImmediateCommands(command_buffer);
-    context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
-    return false;
-  }
-
-  VkBufferImageCopy copy_region{};
-  copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  copy_region.imageSubresource.mipLevel = 0;
-  copy_region.imageSubresource.baseArrayLayer = 0;
-  copy_region.imageSubresource.layerCount = 1;
-  copy_region.imageExtent = {width, height, 1};
-  vkCmdCopyImageToBuffer(command_buffer, native_target->getImage(),
-                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                         m_readback_staging->getBuffer(), 1, &copy_region);
-  m_offscreen->transitionToShaderRead(command_list);
-  context->endImmediateCommands(command_buffer);
-  context->secondaryCommandBuffers().resetFrame(SecondaryStream::immediate, 0);
-
-  const VkDeviceSize byte_count =
-      static_cast<VkDeviceSize>(width) * height * 4u;
-  vmaInvalidateAllocation(allocator->getAllocator(),
-                          m_readback_staging->getAllocation(), 0, byte_count);
-  void* mapped = nullptr;
-  if (vmaMapMemory(allocator->getAllocator(),
-                   m_readback_staging->getAllocation(),
-                   &mapped) != VK_SUCCESS ||
-      mapped == nullptr) {
-    return false;
-  }
-
-  out_rgba.resize(static_cast<size_t>(byte_count));
-  std::memcpy(out_rgba.data(), mapped, static_cast<size_t>(byte_count));
-  vmaUnmapMemory(allocator->getAllocator(),
-                 m_readback_staging->getAllocation());
-  return true;
+  return submitDeferredPreview(frame_state, opaque_draws, transparent_draws,
+                               width, height, out_rgba);
 }
 
 }  // namespace Blunder

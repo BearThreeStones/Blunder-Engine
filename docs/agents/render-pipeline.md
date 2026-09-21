@@ -14,7 +14,7 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    │     + GPU instance buffer (static opaque/alpha-clip MeshRenderers with Meshlets)
    ├─► Frame graph execute (shading + overlays + Copy Sink; Vulkan recorder)
    │     ([ADR 0067](../adr/0067-frame-graph-viewport-wire.md), [ADR 0068](../adr/0068-frame-graph-viewport-overlays.md), [ADR 0069](../adr/0069-frame-graph-deferred-split.md))
-   │     ├─ Scene callback ForwardRenderPath::renderFrame            (default; Player always)
+   │     ├─ Scene callback ForwardRenderPath::renderFrame            (editor Viewport when BLUNDER_EDITOR_DEFERRED=0; Placement Preview)
    │     │     ├─ shadow pass: mesh-shader VSM pages + point cubes + spot 2D
    │     │     │     (VS/FS classic 1024² directional when mesh shaders are absent;
    │     │     │      GPU-driven static casters are opaque meshlets only; no Hi-Z)
@@ -24,13 +24,15 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    │     │     ├─ execute opaque secondary: GPU-driven early + late (indirect or task/mesh),
    │     │     │     then CPU `vkCmdDrawIndexed` list; scene-overlay secondary; transparent secondary
    │     │     └─ RHI endRenderPass → SHADER_READ_ONLY; depth feeds next frame's Hi-Z pyramid
-   │     ├─ or editor Deferred: viewport.gbuffer then viewport.lighting (BLUNDER_EDITOR_DEFERRED=1)
+   │     ├─ or Deferred: viewport.gbuffer then viewport.lighting (editor default; Player always)
    │     │     ├─ G-buffer callback: shadow fill (VSM/locals or classic 1024), then G-buffer RP
    │     │     │     After G-buffer: VSM page mark from offscreen depth (not froxel lists)
    │     │     │     (GPU-driven static early/late + CPU skinned, alpha clip, Bindless set 1; no offscreen color)
    │     │     └─ Lighting callback: offscreen color CLEAR, `deferred_lighting` secondary
    │     │           (fullscreen triangle; Deferred light list 32 + mask SSBO 16384 slots, ≤ 8 lights/slot;
    │     │            Directional VSM PCF + Point cube / Spot 2D PCF; no Bindless)
+   │     │           optional image-based VRS (`VK_KHR_fragment_shading_rate` attachment, previous-frame Sobel 1×1/2×2)
+   │     │           then Sobel compute writes this FIF's rate image; editor Viewport may blit the rate-mask overlay
    │     │           then PRIMARY barriers → OffscreenRenderTarget LOAD color + depth
    │     │           execute scene-overlay secondary, then transparent secondary (Forward PBR)
    │     │           endLoadRenderPass → SHADER_READ_ONLY / DEPTH_STENCIL_READ_ONLY
@@ -39,7 +41,7 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    │     ├─ SSAO (optional; `ssao_enabled`)
    │     ├─ Screen overlays (when OverlaySystem exists)
    │     └─ Copy Sink (zero-copy shader-read vs CPU copy then shader-read)
-   ├─ Camera Preview (Forward `renderFrameTo`; after this execute)
+   ├─ Camera Preview (dedicated DeferredRenderPath on the 480px RT; after this execute)
    ├─ submit (fence, no stall)
    └─ pollAndPresent → tryMapSlot(vkGetFenceStatus) → present previous frame
 
@@ -83,7 +85,7 @@ and not Bindless.
 | Directional shadows | Mesh-shader clipmap (128² pages, 512 physical D32 pages, FirstLevel 6…LastLevel 10) filled from opaque meshlets. Fallback device: classic 1024² ortho VS fill. Skinned / alpha / foliage do not cast. |
 | Point / Spot shadows | Up to 8 cubemaps and 8 perspective 2D maps per view, same opaque-meshlet fill, 2×2 PCF. Not VSM. |
 | Deferred | GPU-driven static writes the G-buffer (alpha clip in geometry). Receiver plane is `R16_UINT` with a 14-bit MeshRenderer slot + unlit + two-sided bits; Meshlets inherit their MeshRenderer id (no per-Meshlet id). `deferred_lighting.slang` decodes that packing. |
-| CPU list remainder | Skinned, blend-transparent, pick, outline, Mesh Preview, Camera Preview, and Scene Thumbnail / Capture stay on the CPU draw list with the Forward mesh draw cap (256 per-draw constant slots). GPU-driven static does not use that cap. |
+| CPU list remainder | Skinned, blend-transparent, pick, outline stay on the CPU draw list with the Forward mesh draw cap (256 per-draw constant slots). GPU-driven static does not use that cap. Camera Preview / Mesh Preview / Thumbnail are deferred lighting but still gather CPU draws (no GPU-driven on those surfaces). |
 | Cook | Meshlets (64 verts / 124 tris, sphere + cone via MeshOptimizer) are appended to the mesh Final at Cook (`kMeshCookVersion` = 3). `.meshbin.meta` records `cook_format` (missing key reads as 0); `AssetCompilerService` treats a mesh Final as stale when that value differs from `kMeshCookVersion` and recooks it. Texture metas do not require `cook_format`. |
 | Demo scene | Sponza lives in the **Test project only**: `Assets/Scenes/sponza.scene.asset` (Main Camera, Directional Light, existing `Sponza.mesh.yaml` through the glTF importer). No Crytek files are copied into the engine repo and no engine test cooks Sponza. GPU-driven is the default path, not a per-scene switch. |
 
@@ -99,27 +101,29 @@ and not Bindless.
 | Line AA | `draw_overlay_aa` | Same Line+AA Pass, before SSAO; Blender-style cross-neighbor line composite when `BLUNDER_EDITOR_OVERLAY_AA=1` |
 | Screen | `draw_screen_overlays` | Frame graph Pass after SSAO; LOAD pass (`ScreenOverlayPass`); Copy is the Sink |
 
-### Deferred Render Path (opt-in)
+### Deferred Render Path
 
 `DeferredRenderPath` (`function/render/deferred/`) is a hardcoded sibling of
 `ForwardRenderPath` for G-buffer vs lighting ([ADR 0062](../adr/0062-deferred-render-path.md)).
-Editor Deferred dispatch is a G-buffer Pass then a Lighting Pass
-([ADR 0069](../adr/0069-frame-graph-deferred-split.md)); Forward and the Player still
-use one Scene Pass ([ADR 0067](../adr/0067-frame-graph-viewport-wire.md)). Overlay,
+Editor and Player Deferred dispatch is a G-buffer Pass then a Lighting Pass
+([ADR 0069](../adr/0069-frame-graph-deferred-split.md)); Placement Preview stays
+one Forward Scene Pass ([ADR 0067](../adr/0067-frame-graph-viewport-wire.md)). Overlay,
 SSAO, and copy are later Passes on that same graph; Copy is the Sink
 ([ADR 0068](../adr/0068-frame-graph-viewport-overlays.md)). `RenderSystem` creates
-the Deferred path only when `BLUNDER_EDITOR_DEFERRED` is truthy and the
-host is not the Player; Camera Preview, Mesh Preview, Scene Thumbnail / Capture
-still call `ForwardRenderPath::renderFrameTo`.
+the Viewport/Player Deferred path unless the host is the editor **and**
+`BLUNDER_EDITOR_DEFERRED=0`. Camera Preview, Mesh Preview, and Scene Thumbnail /
+Capture each own a Deferred path on their Offscreen (VRS attaches to that lighting
+RP). Image-based VRS: [ADR 0074](../adr/0074-image-based-variable-rate-shading.md).
 
 | Piece | Detail |
 |-------|--------|
 | G-buffer | Path-owned extra images, one set per `OffscreenRenderTarget::k_buffer_count` slot: `RGBA8` albedo+AO, `RGBA8` oct-normal.xy+metallic+roughness, `R16_UINT` receiver (14-bit MeshRenderer slot bits 0–13, unlit bit 14, two-sided bit 15; clear `0xFFFF` = no geometry). Meshlets inherit their MeshRenderer id. Depth attachment is the offscreen depth of that slot. Not an `OffscreenRenderTarget` MRT. |
 | Geometry shaders | `gbuffer.slang` / `gbuffer_skinned.slang` (Bindless set 1 like Forward opaque; same Matrix Palette UBO as `pbr_skinned.slang`; alpha clip in geometry). GPU-driven static uses the same G-buffer fragment through indirect / mesh-shader geometry; skinned stays `vkCmdDrawIndexed`. Pipelines use `GraphicsPipelineDesc::color_attachment_count = 3`. |
 | Lighting | `deferred_lighting.slang` fullscreen triangle into the offscreen color (CLEAR to `kViewportBackgroundRgb`). UBO = Deferred light list (`buildDeferredFullscreenLightList`, cap 32) + shadow sampling uniforms. Per-slot 32-bit masks from `evaluateLightsForReceiver` (Light linking + cap 8) live in an SSBO of 16384 uints (CPU slots 0–255, GPU-driven 256–16383). Reconstructs world position from depth; samples directional VSM (or classic 1024) plus Point cubemaps and Spot 2D maps with 2×2 `SampleCmp` PCF. Clustered point/spot sample those maps. No Bindless. |
-| After lighting | PRIMARY barriers, then `OffscreenRenderTarget::beginLoadRenderPass` (LOAD color + depth) executing `forward_scene_overlay` then `forward_transparent` secondaries via `ForwardRenderPath::recordSceneOverlayAndTransparent`. Outline / lines / AA / SSAO / screen overlays / copy are Frame graph Passes after this Lighting Pass ([ADR 0068](../adr/0068-frame-graph-viewport-overlays.md)). |
+| After lighting | Sobel compute (when VRS is on) writes this FIF's `R8_UINT` rate image. Editor Viewport may blit the two-colour rate-mask overlay. Then PRIMARY barriers, then `OffscreenRenderTarget::beginLoadRenderPass` (LOAD color + depth) executing `forward_scene_overlay` then `forward_transparent` secondaries via `ForwardRenderPath::recordSceneOverlayAndTransparent`. Outline / lines / AA / SSAO / screen overlays / copy are Frame graph Passes after this Lighting Pass ([ADR 0068](../adr/0068-frame-graph-viewport-overlays.md)). |
+| VRS | Optional `VK_KHR_fragment_shading_rate` lighting attachment ([ADR 0074](../adr/0074-image-based-variable-rate-shading.md)). Previous-frame Sobel Rec.709 `G > 0.1` → 1×1 else 2×2. `BLUNDER_EDITOR_VRS=0` force-off. No software VRS. Missing extension logs, no FATAL. |
 | Secondaries | New `SecondaryPass::gbuffer_opaque` and `SecondaryPass::deferred_lighting`; layout barriers stay on the PRIMARY (ADR 0059). |
-| Layout | Exact-match FATAL via `fillGBufferExpectedBindings` / `fillDeferredLightingExpectedBindings`; covered by `shader_resource_layout_test`. |
+| Layout | Exact-match FATAL via `fillGBufferExpectedBindings` / `fillDeferredLightingExpectedBindings` / `fillVrsSobelExpectedBindings` / `fillVrsRateMaskExpectedBindings`; covered by `shader_resource_layout_test`. CPU twin: `vrs_rate_test`. |
 
 Translate handle drags and `G` grab entry both enter `TranslateModalSession`,
 which owns screen-space motion, constraint projection, confirm/cancel, and session
@@ -293,7 +297,8 @@ Sponza demo (Test project): set `BLUNDER_STARTUP_SCENE=assets/Scenes/sponza.scen
   coverage with `SLINT_SKIA_PARTIAL_RENDERING=log` (or `visualize`).
 - **Editor performance toggles:**
   - `BLUNDER_EDITOR_SHADOWS=0` — debug *off* switch for Viewport shadows (default is on when casters exist). Player ignores this.
-  - `BLUNDER_EDITOR_DEFERRED=0` — force the editor viewport onto the Forward Render Path. Default Deferred. Player, Camera Preview, Mesh Preview, and Thumbnail stay Forward. See [ADR 0062](../adr/0062-deferred-render-path.md).
+  - `BLUNDER_EDITOR_DEFERRED=0` — force the editor viewport onto the Forward Render Path. Default Deferred. Player always Deferred. Camera Preview / Mesh Preview / Thumbnail are deferred on their own offscreen. Placement Preview stays Forward. See [ADR 0062](../adr/0062-deferred-render-path.md).
+  - `BLUNDER_EDITOR_VRS=0` — force-off image-based VRS on deferred lighting even when `VK_KHR_fragment_shading_rate` exists. Missing extension already skips VRS (no FATAL). See [ADR 0074](../adr/0074-image-based-variable-rate-shading.md).
   - `BLUNDER_EDITOR_OVERLAY_AA=1` — full-scene overlay anti-aliasing pass.
   - `BLUNDER_VIEWPORT_ZERO_COPY=0` — force CPU readback even when shared device works.
   - `BLUNDER_EDITOR_RENDER_SCALE=0.75` — render 3D at reduced resolution (0.25–1.0,

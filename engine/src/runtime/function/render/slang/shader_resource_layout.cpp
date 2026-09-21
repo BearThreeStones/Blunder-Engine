@@ -215,6 +215,47 @@ void fillFroxelFillExpectedBindings(uint32_t* bindings, uint32_t* sets,
   ASSERT(n == k_froxel_fill_descriptor_binding_count);
 }
 
+void fillVrsSobelExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                  uint32_t* count,
+                                  ShaderDescriptorKind* kinds) {
+  if (bindings == nullptr || sets == nullptr || count == nullptr ||
+      kinds == nullptr) {
+    return;
+  }
+  uint32_t n = 0;
+  auto push = [&](uint32_t binding, ShaderDescriptorKind kind) {
+    bindings[n] = binding;
+    sets[n] = 0;
+    kinds[n] = kind;
+    ++n;
+  };
+  push(0, ShaderDescriptorKind::UniformBuffer);
+  push(1, ShaderDescriptorKind::SampledImage);
+  push(2, ShaderDescriptorKind::StorageImage);
+  *count = n;
+  ASSERT(n == k_vrs_sobel_descriptor_binding_count);
+}
+
+void fillVrsRateMaskExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                     uint32_t* count,
+                                     ShaderDescriptorKind* kinds) {
+  if (bindings == nullptr || sets == nullptr || count == nullptr ||
+      kinds == nullptr) {
+    return;
+  }
+  uint32_t n = 0;
+  auto push = [&](uint32_t binding, ShaderDescriptorKind kind) {
+    bindings[n] = binding;
+    sets[n] = 0;
+    kinds[n] = kind;
+    ++n;
+  };
+  push(0, ShaderDescriptorKind::UniformBuffer);
+  push(1, ShaderDescriptorKind::SampledImage);
+  *count = n;
+  ASSERT(n == k_vrs_rate_mask_descriptor_binding_count);
+}
+
 void fillGpuDrivenPbrExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                       uint32_t* count,
                                       ShaderDescriptorKind* kinds) {

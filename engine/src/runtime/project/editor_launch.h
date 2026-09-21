@@ -49,6 +49,8 @@ struct MachineCliArgs {
   float target_z{0.0f};
   bool has_eye{false};
   bool has_target{false};
+  bool enabled{false};
+  bool has_enabled{false};
 };
 
 struct EditorSessionLaunch {
@@ -68,7 +70,8 @@ bool isMachineCliVerb(const char* arg);
 /// Prefer `--project-root` (unquoted paths with spaces are rejoined while
 /// the joined path exists); else Debug `compiled_project_root` when allowed
 /// and this is not a CLI/MCP adapter launch.
-/// `--mcp` or a CLI verb implies Headless. Adapters require `--project-root`.
+/// `--mcp` or a CLI verb implies Headless unless `--mcp --windowed`.
+/// Adapters require `--project-root`. CLI + `--windowed` stays forbidden.
 EditorSessionLaunch resolveEditorSessionLaunch(
     int argc, char** argv, bool debug_build,
     const std::filesystem::path& compiled_project_root);

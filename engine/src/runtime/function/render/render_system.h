@@ -207,6 +207,11 @@ class RenderSystem final {
                              uint32_t& out_height);
   bool isVulkanBackend() const;
   OverlaySystem* getOverlaySystem() const { return m_overlay_system.get(); }
+  bool viewportUsesDeferredPath() const { return m_deferred_path != nullptr; }
+  bool vrsAttachmentEnabled() const;
+  bool fragmentShadingRateExtensionEnabled() const;
+  void vrsTexelSize(uint32_t* width, uint32_t* height) const;
+  eastl::string physicalDeviceName() const;
 
  private:
   void initializeVulkanPath(const RenderSystemInitInfo& info);
@@ -252,8 +257,8 @@ class RenderSystem final {
   eastl::unique_ptr<EditorCamera> m_editor_camera;
   eastl::unique_ptr<RenderDocCapture> m_renderdoc_capture;
   eastl::unique_ptr<ForwardRenderPath> m_forward_path;
-  /// Editor viewport only, created unless `BLUNDER_EDITOR_DEFERRED=0`
-  /// (never in Player). Previews keep `ForwardRenderPath::renderFrameTo`.
+  /// Editor Viewport unless `BLUNDER_EDITOR_DEFERRED=0`. Player always.
+  /// Camera Preview / Mesh Preview / Thumbnail own separate paths.
   eastl::unique_ptr<DeferredRenderPath> m_deferred_path;
   eastl::unique_ptr<SsaOPass> m_ssao_pass;
   eastl::unique_ptr<VolumetricFogPass> m_volumetric_fog_pass;
@@ -281,6 +286,7 @@ class RenderSystem final {
   uint32_t m_viewport_render_generation{0};
   uint32_t m_last_rendered_viewport_generation{0};
   bool m_last_rendered_froxel_heatmap{false};
+  bool m_last_rendered_vrs_rate_mask{false};
   bool m_force_viewport_render{true};
   SceneInstance* m_last_rendered_scene_instance{nullptr};
   bool m_defer_viewport_for_texture_residency{false};
@@ -321,6 +327,7 @@ class RenderSystem final {
   void tryPresentCameraPreview();
 
   eastl::unique_ptr<rhi::IOffscreenRenderTarget> m_camera_preview_offscreen;
+  eastl::unique_ptr<DeferredRenderPath> m_camera_preview_deferred;
   eastl::unique_ptr<VulkanBuffer> m_camera_preview_staging;
   void* m_camera_preview_staging_map{nullptr};
   uint32_t m_camera_preview_staging_w{0};

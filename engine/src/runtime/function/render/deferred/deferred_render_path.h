@@ -87,6 +87,18 @@ struct DeferredLightingUniformData {
   ShadowSamplingUniform shadow_sampling{};
 };
 
+/// Compute UBO shared with engine/shaders/vrs_sobel.slang (std140).
+struct VrsSobelUniformData {
+  glm::uvec4 sizes{1, 1, 1, 1};
+  glm::vec4 texel{1.0f, 1.0f, 0.1f, 0.0f};
+};
+
+/// Graphics UBO shared with engine/shaders/vrs_rate_mask.slang (std140).
+struct VrsRateMaskUniformData {
+  glm::uvec4 sizes{1, 1, 1, 1};
+  glm::vec4 texel{1.0f, 1.0f, 0.0f, 0.0f};
+};
+
 /// Compute UBO shared with engine/shaders/froxel_fill.slang (std140).
 struct FroxelFillUniformData {
   glm::mat4 view{1.0f};
@@ -105,8 +117,9 @@ static_assert(ForwardRenderPath::k_max_opaque_draws % 4 == 0);
 /// path-owned planes sharing the viewport offscreen depth), a fullscreen
 /// lighting pass writes the offscreen color, then scene overlays and
 /// blend-transparent draws run Forward inside an offscreen LOAD pass. Editor
-/// viewport only (`BLUNDER_EDITOR_DEFERRED`); previews and the Player stay on
-/// `ForwardRenderPath`. Decision: docs/adr/0062-deferred-render-path.md.
+/// Viewport, Player, Camera Preview, Mesh Preview, and Thumbnail use this path.
+/// `BLUNDER_EDITOR_DEFERRED=0` forces only the editor Viewport back to Forward.
+/// Decision: docs/adr/0062-deferred-render-path.md. VRS: docs/adr/0074.
 class DeferredRenderPath final {
  public:
   static constexpr uint32_t k_max_receiver_slots =
@@ -145,7 +158,8 @@ class DeferredRenderPath final {
                          uint32_t opaque_draw_count, uint32_t frame_index,
                          GpuDrivenRenderer* gpu_driven = nullptr,
                          const GpuDrivenDraw* gpu_draws = nullptr,
-                         uint32_t gpu_draw_count = 0);
+                         uint32_t gpu_draw_count = 0,
+                         SecondaryStream stream = SecondaryStream::viewport);
 
   /// Records lighting into the offscreen color, then LOAD scene overlay +
   /// transparent. Frame graph Lighting Pass callback (ADR 0069).
@@ -155,7 +169,9 @@ class DeferredRenderPath final {
                           uint32_t opaque_draw_count,
                           const ForwardOpaqueDraw* transparent_draws,
                           uint32_t transparent_draw_count, uint32_t frame_index,
-                          GpuDrivenRenderer* gpu_driven = nullptr);
+                          GpuDrivenRenderer* gpu_driven = nullptr,
+                          SecondaryStream stream = SecondaryStream::viewport,
+                          bool draw_overlays = true);
 
   VkRenderPass gbufferRenderPass() const { return m_gbuffer_render_pass; }
   VkRenderPass lightingRenderPass() const { return m_lighting_render_pass; }
@@ -168,6 +184,10 @@ class DeferredRenderPath final {
     return m_froxel_dropped_light_assignments_total;
   }
 
+  bool vrsAttachmentEnabled() const;
+  bool vrsDevice() const { return m_vrs_device; }
+  VkExtent2D fragmentShadingRateTexelSize() const { return m_fsr_texel; }
+
  private:
   struct GBufferSlot {
     VkImage images[k_gbuffer_plane_count]{};
@@ -175,17 +195,26 @@ class DeferredRenderPath final {
     VkImageView views[k_gbuffer_plane_count]{};
     VkFramebuffer gbuffer_framebuffer{VK_NULL_HANDLE};
     VkFramebuffer lighting_framebuffer{VK_NULL_HANDLE};
+    VkImage rate_image{VK_NULL_HANDLE};
+    VmaAllocation rate_allocation{VK_NULL_HANDLE};
+    VkImageView rate_view{VK_NULL_HANDLE};
+    VkFramebuffer lighting_vrs_framebuffer{VK_NULL_HANDLE};
   };
 
   void createRenderPasses();
   void destroyRenderPasses();
+  void createLightingVrsRenderPass();
+  /// Drop rate images, VRS FBs/pipelines/RPs, and keep 1×1 lighting. Never FATAL.
+  void teardownAttachmentVrs();
   void createPipelines();
   void destroyPipelines();
   void createDescriptorResources();
   void destroyDescriptorResources();
   void createSlot(uint32_t slot_index);
+  void createSlotFramebuffers(uint32_t slot_index);
   void destroySlot(uint32_t slot_index);
   void destroySlots();
+  void clearRateImages();
 
   bool prepareViewportRecord(uint32_t frame_index, VkExtent2D* extent,
                              uint32_t* slot_index) const;
@@ -198,11 +227,18 @@ class DeferredRenderPath final {
                               GpuDrivenRenderer* gpu_driven);
   void writeLightingDescriptors(uint32_t frame_index, uint32_t slot_index);
   void writeFroxelDescriptors(uint32_t frame_index);
+  void writeVrsDescriptors(uint32_t frame_index, uint32_t slot_index);
   void createFroxelFillPipeline();
   void destroyFroxelFillPipeline();
+  void createVrsSobelPipeline();
+  void destroyVrsSobelPipeline();
   void recreateFroxelGridBuffers(uint32_t width, uint32_t height);
   void recordFroxelFill(VkCommandBuffer cmd, const ForwardFrameState& frame_state,
                         uint32_t frame_index);
+  void recordVrsSobel(VkCommandBuffer cmd, uint32_t frame_index,
+                      uint32_t slot_index);
+  void recordVrsRateMask(VkCommandBuffer cmd, uint32_t frame_index,
+                         uint32_t slot_index, VkExtent2D extent);
   void cmdBarrierForLoadPass(VkCommandBuffer cmd);
 
   VulkanContext* m_vk_context{nullptr};
@@ -220,12 +256,21 @@ class DeferredRenderPath final {
 
   VkRenderPass m_gbuffer_render_pass{VK_NULL_HANDLE};
   VkRenderPass m_lighting_render_pass{VK_NULL_HANDLE};
+  VkRenderPass m_lighting_vrs_render_pass{VK_NULL_HANDLE};
+  VkRenderPass m_rate_mask_render_pass{VK_NULL_HANDLE};
   eastl::array<GBufferSlot, OffscreenRenderTarget::k_buffer_count> m_slots{};
+  bool m_vrs_device{false};
+  VkExtent2D m_fsr_texel{1, 1};
+  uint32_t m_rate_width{0};
+  uint32_t m_rate_height{0};
 
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_gbuffer_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline>
       m_skinned_gbuffer_pipeline;
   eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_lighting_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline>
+      m_lighting_vrs_pipeline;
+  eastl::unique_ptr<vulkan_backend::VulkanGraphicsPipeline> m_rate_mask_pipeline;
 
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_gbuffer_uniform_buffers;
   eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_skinned_gbuffer_uniform_buffers;
@@ -263,6 +308,16 @@ class DeferredRenderPath final {
   eastl::array<uint32_t, VulkanSync::k_max_frames_in_flight> m_lighting_desc_slot{
       ~0u, ~0u};
   eastl::array<uint8_t, VulkanSync::k_max_frames_in_flight> m_froxel_desc_written{};
+
+  VkDescriptorSetLayout m_vrs_sobel_set_layout{VK_NULL_HANDLE};
+  VkPipelineLayout m_vrs_sobel_pipe_layout{VK_NULL_HANDLE};
+  VkPipeline m_vrs_sobel_pipeline{VK_NULL_HANDLE};
+  eastl::array<VkDescriptorSet, VulkanSync::k_max_frames_in_flight>
+      m_vrs_sobel_descriptor_sets{};
+  eastl::array<VkDescriptorSet, VulkanSync::k_max_frames_in_flight>
+      m_vrs_mask_descriptor_sets{};
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_vrs_sobel_ubos;
+  eastl::vector<eastl::unique_ptr<VulkanBuffer>> m_vrs_mask_ubos;
 };
 
 }  // namespace Blunder

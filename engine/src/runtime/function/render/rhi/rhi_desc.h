@@ -51,6 +51,7 @@ struct GraphicsPipelineDesc {
   /// Color attachments in the target subpass (G-buffer MRT uses 3). Ignored
   /// when `depth_only_subpass` is set.
   uint32_t color_attachment_count{1};
+  bool enable_fragment_shading_rate{false};
 };
 
 struct RenderBackendInitInfo {

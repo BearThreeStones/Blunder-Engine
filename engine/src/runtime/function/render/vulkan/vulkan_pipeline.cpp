@@ -252,12 +252,16 @@ void VulkanPipeline::createGraphicsPipeline(
     color_blending.pAttachments = color_blend_attachments;
   }
 
-  VkDynamicState dynamic_states[3] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                      VK_DYNAMIC_STATE_SCISSOR,
-                                      VK_DYNAMIC_STATE_DEPTH_BIAS};
-  uint32_t dynamic_state_count = 2;
+  VkDynamicState dynamic_states[4];
+  uint32_t dynamic_state_count = 0;
+  dynamic_states[dynamic_state_count++] = VK_DYNAMIC_STATE_VIEWPORT;
+  dynamic_states[dynamic_state_count++] = VK_DYNAMIC_STATE_SCISSOR;
   if (m_create_info.enable_depth_bias) {
-    dynamic_state_count = 3;
+    dynamic_states[dynamic_state_count++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
+  }
+  if (m_create_info.enable_fragment_shading_rate) {
+    dynamic_states[dynamic_state_count++] =
+        VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR;
   }
   VkPipelineDynamicStateCreateInfo dynamic_state{};
   dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;

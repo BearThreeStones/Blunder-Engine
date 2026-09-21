@@ -336,6 +336,15 @@ void scrapeArguments(const std::string& src, EditorSessionLaunch& launch) {
       src.find("\"save\": true") != std::string::npos) {
     launch.cli.save = true;
   }
+  if (src.find("\"enabled\":true") != std::string::npos ||
+      src.find("\"enabled\": true") != std::string::npos) {
+    launch.cli.enabled = true;
+    launch.cli.has_enabled = true;
+  } else if (src.find("\"enabled\":false") != std::string::npos ||
+             src.find("\"enabled\": false") != std::string::npos) {
+    launch.cli.enabled = false;
+    launch.cli.has_enabled = true;
+  }
 }
 
 const char* k_tools_list =
@@ -393,7 +402,19 @@ const char* k_tools_list =
     "{\"name\":\"play-frame\",\"description\":\"Play frame\","
     "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
     "{\"name\":\"save\",\"description\":\"Persist Live document\","
-    "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}}"
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
+    "{\"name\":\"vrs-status\",\"description\":\"Viewport VRS / deferred status "
+    "(extension, attachment, overlay, GPU). Windowed or headless.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{}}},"
+    "{\"name\":\"set-vrs-rate-mask\",\"description\":\"Toggle Viewport VRS "
+    "rate-mask overlay (Figure 9.4 colours). Default off. Windowed editor only; "
+    "not Player / Preview / Thumbnail.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"enabled\":{\"type\":"
+    "\"boolean\"}}}},"
+    "{\"name\":\"select\",\"description\":\"Select a Live entity by name so "
+    "Camera Preview / Mesh Preview chrome can show.\","
+    "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"name\":{\"type\":"
+    "\"string\"}}}}"
     "]}";
 
 }  // namespace

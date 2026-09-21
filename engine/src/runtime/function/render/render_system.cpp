@@ -182,7 +182,8 @@ bool editorOverlayAaEnabled() {
 }
 
 /// Editor Viewport uses Deferred (GBuffer + clustered froxels). Set
-/// `BLUNDER_EDITOR_DEFERRED=0` to force Forward. Player / previews ignore this.
+/// `BLUNDER_EDITOR_DEFERRED=0` to force Forward. Player always constructs
+/// Deferred. Camera Preview / Mesh Preview / Thumbnail own deferred paths.
 bool editorDeferredEnabled() {
   const char* env = std::getenv("BLUNDER_EDITOR_DEFERRED");
   if (env == nullptr || env[0] == '\0') {
@@ -383,6 +384,48 @@ SharedVulkanHandles RenderSystem::getSharedVulkanHandles() const {
   return handles;
 }
 
+bool RenderSystem::vrsAttachmentEnabled() const {
+  return m_deferred_path != nullptr && m_deferred_path->vrsAttachmentEnabled();
+}
+
+bool RenderSystem::fragmentShadingRateExtensionEnabled() const {
+  if (!isVulkanBackend()) {
+    return false;
+  }
+  VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+  return ctx != nullptr && ctx->fragmentShadingRateEnabled();
+}
+
+void RenderSystem::vrsTexelSize(uint32_t* width, uint32_t* height) const {
+  uint32_t w = 1;
+  uint32_t h = 1;
+  if (isVulkanBackend()) {
+    VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+    if (ctx != nullptr) {
+      const VkExtent2D texel = ctx->fragmentShadingRateTexelSize();
+      w = texel.width == 0 ? 1 : texel.width;
+      h = texel.height == 0 ? 1 : texel.height;
+    }
+  }
+  if (width != nullptr) {
+    *width = w;
+  }
+  if (height != nullptr) {
+    *height = h;
+  }
+}
+
+eastl::string RenderSystem::physicalDeviceName() const {
+  if (!isVulkanBackend()) {
+    return {};
+  }
+  VulkanContext* ctx = vkCtx(const_cast<RenderSystem*>(this));
+  if (ctx == nullptr || ctx->physicalDeviceName() == nullptr) {
+    return {};
+  }
+  return eastl::string(ctx->physicalDeviceName());
+}
+
 void RenderSystem::initializeD3D12SkeletonPath(
     const RenderSystemInitInfo& info) {
   LOG_WARN(
@@ -546,7 +589,7 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
 
   const bool host_is_player =
       g_runtime_global_context.hostMode() == EngineHostMode::Player;
-  if (!host_is_player && editorDeferredEnabled()) {
+  if (host_is_player || editorDeferredEnabled()) {
     m_deferred_path = eastl::make_unique<DeferredRenderPath>();
     DeferredRenderPathInit deferred_init{};
     deferred_init.vk_context = vkCtx(this);
@@ -559,9 +602,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
     deferred_init.mesh_shadows = m_mesh_shadows.get();
     m_deferred_path->initialize(deferred_init);
     LOG_INFO(
-        "[RenderSystem] editor viewport uses the Deferred Render Path "
-        "(previews and Player stay Forward; BLUNDER_EDITOR_DEFERRED=0 forces "
-        "Forward)");
+        "[RenderSystem] {} uses the Deferred Render Path "
+        "(Placement Preview stays Forward; BLUNDER_EDITOR_DEFERRED=0 forces "
+        "only the editor Viewport to Forward)",
+        host_is_player ? "Player" : "editor viewport");
   }
 
   m_ssao_pass = eastl::make_unique<SsaOPass>();
@@ -994,6 +1038,10 @@ void RenderSystem::shutdownCameraPreviewResources() {
   if (isVulkanBackend() && vkCtx(this)) {
     vkDeviceWaitIdle(vkCtx(this)->getDevice());
   }
+  if (m_camera_preview_deferred) {
+    m_camera_preview_deferred->shutdown();
+    m_camera_preview_deferred.reset();
+  }
   if (m_camera_preview_staging_map && m_camera_preview_staging && vkAlloc(this)) {
     vmaUnmapMemory(vkAlloc(this)->getAllocator(),
                    m_camera_preview_staging->getAllocation());
@@ -1019,6 +1067,30 @@ void RenderSystem::ensureCameraPreviewOffscreen(uint32_t width, uint32_t height)
   if (!isVulkanBackend() || width == 0 || height == 0) {
     return;
   }
+  auto ensure_deferred = [this]() {
+    if (m_camera_preview_deferred || !m_camera_preview_offscreen ||
+        !m_forward_path) {
+      return;
+    }
+    auto* vk_target = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
+        m_camera_preview_offscreen.get());
+    OffscreenRenderTarget* native = vk_target ? vk_target->nativeTarget() : nullptr;
+    if (native == nullptr) {
+      return;
+    }
+    m_camera_preview_deferred = eastl::make_unique<DeferredRenderPath>();
+    DeferredRenderPathInit deferred_init{};
+    deferred_init.vk_context = vkCtx(this);
+    deferred_init.vk_allocator = vkAlloc(this);
+    deferred_init.slang_compiler = vkBackend(this)->nativeSlangCompiler();
+    deferred_init.offscreen = native;
+    deferred_init.forward_path = m_forward_path.get();
+    deferred_init.shadow_map = m_shadow_map.get();
+    deferred_init.fallback_texture = m_fallback_texture;
+    deferred_init.mesh_shadows = nullptr;
+    m_camera_preview_deferred->initialize(deferred_init);
+  };
+
   if (!m_camera_preview_offscreen) {
     rhi::OffscreenTargetDesc desc{};
     desc.width = width;
@@ -1026,15 +1098,24 @@ void RenderSystem::ensureCameraPreviewOffscreen(uint32_t width, uint32_t height)
     m_camera_preview_offscreen =
         vkBackend(this)->device().createOffscreenTarget(desc);
     resizeCameraPreviewReadback(width, height);
+    ensure_deferred();
     return;
   }
   const rhi::Extent2D current = m_camera_preview_offscreen->extent();
   if (current.width == width && current.height == height) {
+    ensure_deferred();
     return;
   }
   vkDeviceWaitIdle(vkCtx(this)->getDevice());
+  if (m_camera_preview_deferred) {
+    m_camera_preview_deferred->dropGpuTargets();
+  }
   m_camera_preview_offscreen->resize(width, height);
+  if (m_camera_preview_deferred) {
+    m_camera_preview_deferred->resize(width, height);
+  }
   resizeCameraPreviewReadback(width, height);
+  ensure_deferred();
 }
 
 void RenderSystem::resizeCameraPreviewReadback(uint32_t width, uint32_t height) {
@@ -1220,6 +1301,8 @@ bool RenderSystem::recordCameraPreviewPass(
   preview_state.shadows_enabled = false;
   preview_state.viewport_width = rt_size.width;
   preview_state.viewport_height = rt_size.height;
+  preview_state.shading.froxel_occupancy_heatmap = false;
+  preview_state.shading.vrs_rate_mask = false;
 
   eastl::vector<OpaqueMeshDraw> sorted_transparent = m_transparent_mesh_draws;
   for (OpaqueMeshDraw& mesh_draw : sorted_transparent) {
@@ -1264,20 +1347,37 @@ bool RenderSystem::recordCameraPreviewPass(
     preview_transparent_draws.push_back(draw);
   }
 
-  m_forward_path->renderFrameTo(
-      m_camera_preview_offscreen.get(), command_buffer, preview_state,
-      opaque_draws.data(), static_cast<uint32_t>(opaque_draws.size()),
+  if (!m_camera_preview_deferred) {
+    clearCameraPreviewPresentation();
+    return false;
+  }
+
+  auto* preview_rt = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
+      m_camera_preview_offscreen.get());
+  if (preview_rt != nullptr) {
+    preview_rt->setActiveBufferIndex(frame_index %
+                                    OffscreenRenderTarget::k_buffer_count);
+  }
+  const uint32_t preview_frame =
+      frame_index % VulkanSync::k_max_frames_in_flight;
+  m_camera_preview_deferred->recordGBufferPass(
+      command_buffer, preview_state, opaque_draws.data(),
+      static_cast<uint32_t>(opaque_draws.size()), preview_frame,
+      m_gpu_driven_renderer.get(), m_gpu_driven_draws.data(),
+      static_cast<uint32_t>(m_gpu_driven_draws.size()),
+      SecondaryStream::camera_preview);
+  m_camera_preview_deferred->recordLightingPass(
+      command_buffer, preview_state, opaque_draws.data(),
+      static_cast<uint32_t>(opaque_draws.size()),
       preview_transparent_draws.data(),
-      static_cast<uint32_t>(preview_transparent_draws.size()),
-      ForwardRenderPath::cameraPreviewDescriptorFrame(frame_index), false,
-      SecondaryStream::camera_preview, frame_index);
+      static_cast<uint32_t>(preview_transparent_draws.size()), preview_frame,
+      m_gpu_driven_renderer.get(), SecondaryStream::camera_preview,
+      /*draw_overlays=*/false);
 
   vulkan_backend::VulkanCommandList command_list;
   command_list.bind(vkCtx(this), command_buffer);
   m_camera_preview_offscreen->transitionToCopySource(command_list);
 
-  auto* preview_rt = static_cast<vulkan_backend::VulkanOffscreenTarget*>(
-      m_camera_preview_offscreen.get());
   OffscreenRenderTarget* native_rt = preview_rt ? preview_rt->nativeTarget() : nullptr;
   if (native_rt != nullptr) {
     VkBufferImageCopy copy_region{};
@@ -1806,8 +1906,8 @@ void RenderSystem::recordViewportGraph(
     builder.read(pass, color, FrameGraphUsage::Sampled);
   };
 
-  const bool editor_deferred = m_deferred_path && !host_is_player;
-  if (editor_deferred) {
+  const bool use_deferred = m_deferred_path != nullptr;
+  if (use_deferred) {
     const FrameGraphPassHandle gbuffer = builder.addPass("viewport.gbuffer");
     builder.write(gbuffer, depth, FrameGraphUsage::DepthAttachment);
     builder.read(gbuffer, depth, FrameGraphUsage::Sampled);
@@ -1815,7 +1915,8 @@ void RenderSystem::recordViewportGraph(
       m_deferred_path->recordGBufferPass(
           command_buffer, frame_state, opaque_draws, opaque_draw_count,
           frame_index, m_gpu_driven_renderer.get(), m_gpu_driven_draws.data(),
-          static_cast<uint32_t>(m_gpu_driven_draws.size()));
+          static_cast<uint32_t>(m_gpu_driven_draws.size()),
+          SecondaryStream::viewport);
     });
 
     const FrameGraphPassHandle lighting = builder.addPass("viewport.lighting");
@@ -1827,7 +1928,8 @@ void RenderSystem::recordViewportGraph(
       m_deferred_path->recordLightingPass(
           command_buffer, frame_state, opaque_draws, opaque_draw_count,
           transparent_draws, transparent_draw_count, frame_index,
-          m_gpu_driven_renderer.get());
+          m_gpu_driven_renderer.get(), SecondaryStream::viewport,
+          /*draw_overlays=*/!host_is_player);
     });
   } else if (m_forward_path) {
     const FrameGraphPassHandle scene = builder.addPass("viewport.scene");
@@ -2256,6 +2358,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
     auto* slint_layout = static_cast<SlintSystem*>(m_viewport_layout_source);
     frame_state.shading.froxel_occupancy_heatmap =
         slint_layout->froxelOccupancyHeatmapEnabled();
+    frame_state.shading.vrs_rate_mask = slint_layout->vrsRateMaskEnabled();
     if (frame_state.shading.froxel_occupancy_heatmap && !m_deferred_path) {
       static bool s_logged_heatmap_without_deferred = false;
       if (!s_logged_heatmap_without_deferred) {
@@ -2332,6 +2435,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   frame_state.scene_static = !host_is_player && !scene_changed;
   const bool heatmap_changed = frame_state.shading.froxel_occupancy_heatmap !=
                                m_last_rendered_froxel_heatmap;
+  const bool vrs_mask_changed =
+      frame_state.shading.vrs_rate_mask != m_last_rendered_vrs_rate_mask;
   // Programmatic LOOKAT / AABB snaps change the view without pointer
   // interaction. Skipping that record keeps presenting the origin-grid
   // frame while Unique gizmos sit on the courtyard.
@@ -2340,7 +2445,8 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   // Behaviour TRS and CPU skin still update the draw list; without a record the
   // last presented swapchain image stays frozen.
   if (!host_is_player && !m_force_viewport_render && !viewport_target_changed &&
-      !camera_changed && !scene_changed && !heatmap_changed) {
+      !camera_changed && !scene_changed && !heatmap_changed &&
+      !vrs_mask_changed) {
     phases.flag("skip", 1);
     pollViewportPresent();
     return;
@@ -2465,7 +2571,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   }
 
   // Editor viewport shading + overlays + Copy Sink (ADR 0067 / 0068 / 0069).
-  // Camera Preview below still uses ForwardRenderPath::renderFrameTo.
+  // Camera Preview below uses a dedicated DeferredRenderPath after execute.
   recordViewportGraph(
       command_buffer, frame_state, opaque_draws.data(),
       static_cast<uint32_t>(opaque_draws.size()), transparent_draws.data(),
@@ -2532,6 +2638,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   m_last_viewport_target_h = target_height;
   m_last_rendered_viewport_generation = m_viewport_render_generation;
   m_last_rendered_froxel_heatmap = frame_state.shading.froxel_occupancy_heatmap;
+  m_last_rendered_vrs_rate_mask = frame_state.shading.vrs_rate_mask;
   m_last_rendered_scene_instance = active_scene;
   m_force_viewport_render = false;
 

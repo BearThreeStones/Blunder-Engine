@@ -20,6 +20,8 @@ struct BlinnPhongEditorSettings {
   float ssao_strength{0.5f};
   /// Viewport-only froxel occupancy overlay. Off by default; not persisted.
   bool froxel_occupancy_heatmap{false};
+  /// Viewport-only VRS rate-mask overlay. Off by default; not persisted.
+  bool vrs_rate_mask{false};
 };
 
 }  // namespace Blunder

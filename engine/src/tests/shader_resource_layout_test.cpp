@@ -433,6 +433,38 @@ int main() {
     uint32_t sets[k_max_expected_descriptor_bindings];
     ShaderDescriptorKind kinds[k_max_expected_descriptor_bindings]{};
     uint32_t count = 0;
+    fillVrsSobelExpectedBindings(bindings, sets, &count, kinds);
+    const SlangCompiler::ComputeProgramResult sobel =
+        compiler.compileComputeProgram("engine/shaders/vrs_sobel.slang");
+    if (!shaderResourceBindingsMatch(sobel.layout, bindings, count, sets,
+                                     kinds)) {
+      dumpBindings("vrs_sobel.slang", sobel.layout);
+    }
+    expect_true("vrs_sobel.slang layout",
+                shaderResourceBindingsMatch(sobel.layout, bindings, count, sets,
+                                            kinds));
+    expect_true("vrs_sobel.slang does not bind the Bindless set 1",
+                !layoutUsesSet(sobel.layout, 1));
+
+    fillVrsRateMaskExpectedBindings(bindings, sets, &count, kinds);
+    const SlangCompiler::GraphicsProgramResult mask =
+        compiler.compileGraphicsProgram("engine/shaders/vrs_rate_mask.slang");
+    if (!shaderResourceBindingsMatch(mask.layout, bindings, count, sets,
+                                     kinds)) {
+      dumpBindings("vrs_rate_mask.slang", mask.layout);
+    }
+    expect_true("vrs_rate_mask.slang layout",
+                shaderResourceBindingsMatch(mask.layout, bindings, count, sets,
+                                            kinds));
+    expect_true("vrs_rate_mask.slang does not bind the Bindless set 1",
+                !layoutUsesSet(mask.layout, 1));
+  }
+
+  {
+    uint32_t bindings[k_max_expected_descriptor_bindings];
+    uint32_t sets[k_max_expected_descriptor_bindings];
+    ShaderDescriptorKind kinds[k_max_expected_descriptor_bindings]{};
+    uint32_t count = 0;
     fillGpuDrivenPbrExpectedBindings(bindings, sets, &count, kinds);
     const SlangCompiler::GraphicsProgramResult gpu_pbr =
         compiler.compileGraphicsProgram("engine/shaders/pbr_gpu_driven.slang");

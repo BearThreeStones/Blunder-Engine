@@ -2645,6 +2645,33 @@ void SlintSystem::syncFroxelViewportStats(uint32_t dropped_this_frame,
   }
 }
 
+bool SlintSystem::vrsRateMaskEnabled() const {
+  if (!m_window_component) {
+    return false;
+  }
+  try {
+    return m_window_component->operator->()->get_vrs_rate_mask();
+  } catch (...) {
+    return false;
+  }
+}
+
+void SlintSystem::setVrsRateMaskEnabled(bool enabled) {
+  if (!m_window_component) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto& ui = *m_window_component;
+    ui->set_vrs_rate_mask(enabled);
+    markFullSkiaRefresh();
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::setVrsRateMaskEnabled] {}", e.what());
+  } catch (...) {
+    LOG_ERROR("[SlintSystem::setVrsRateMaskEnabled] unknown exception");
+  }
+}
+
 BlinnPhongEditorSettings SlintSystem::getBlinnPhongEditorSettings() const {
   BlinnPhongEditorSettings settings{};
   if (!m_window_component) {

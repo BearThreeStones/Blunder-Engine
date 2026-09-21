@@ -47,6 +47,7 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
       static_cast<uintptr_t>(desc.shared_descriptor_set_layout);
   info.depth_only_subpass = desc.depth_only_subpass;
   info.color_attachment_count = desc.color_attachment_count;
+  info.enable_fragment_shading_rate = desc.enable_fragment_shading_rate;
   info.depth_compare_op = desc.depth_compare_op == rhi::CompareOp::Less
                               ? VK_COMPARE_OP_LESS
                               : VK_COMPARE_OP_LESS_OR_EQUAL;
