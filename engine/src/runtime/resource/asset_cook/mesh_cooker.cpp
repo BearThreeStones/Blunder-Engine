@@ -241,9 +241,8 @@ bool readMeshCookFile(const fs::path& input_path,
   }
   if (std::memcmp(header.magic, kMeshCookMagic, sizeof(header.magic)) != 0 ||
       header.vertex_stride != sizeof(MeshVertex) ||
-      (header.version != kMeshCookVersionLegacy &&
-       header.version != kMeshCookVersionSkin &&
-       header.version != kMeshCookVersion)) {
+      header.version < kMeshCookVersionLegacy ||
+      header.version > kMeshCookVersion) {
     return false;
   }
 

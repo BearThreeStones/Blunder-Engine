@@ -584,6 +584,7 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
+  material->promoteWaterSurfaceFilmToOpaque();
   mesh->setMaterialAsset(eastl::move(material));
   if (!sidecar.base_color_texture.empty() && mesh->getMaterialAsset() &&
       !mesh->getMaterialAsset()->hasBaseColorTexture()) {
@@ -602,8 +603,14 @@ void AssetManager::adoptStreamedMesh(const eastl::shared_ptr<MeshAsset>& mesh,
   if (!key.empty()) {
     m_mesh_cache[key] = mesh;
   }
-  if (!guid.empty()) {
-    (void)applyCookedMeshMaterialSidecar(mesh, guid);
+  if (!guid.empty() && applyCookedMeshMaterialSidecar(mesh, guid)) {
+    return;
+  }
+  // New primitive Mesh yaml (pond underwater, creek water, …) has no sidecar
+  // yet. MeshLoader only reads vertices; without this bind the hole stays
+  // untextured and the Godot pond_underwater.png never shows.
+  if (!hydrateMeshGltfMaterial(mesh)) {
+    queueDeferredGltfMaterial(mesh);
   }
 }
 
@@ -626,6 +633,17 @@ bool AssetManager::hydrateMeshGltfMaterial(
     return false;
   }
 
+  uint32_t mesh_index = 0;
+  uint32_t primitive_index = 0;
+  MeshAssetDescriptor descriptor{};
+  eastl::string yaml_text;
+  if (!mesh->getAbsolutePath().empty() &&
+      m_file_system->readText(mesh->getAbsolutePath(), yaml_text) &&
+      AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+    mesh_index = descriptor.import.mesh_index;
+    primitive_index = descriptor.import.primitive_index;
+  }
+
   GltfImportDocument document{};
   if (!openGltfImportDocument(gltf_virtual, document) ||
       document.data == nullptr) {
@@ -635,32 +653,45 @@ bool AssetManager::hydrateMeshGltfMaterial(
   eastl::shared_ptr<MaterialAsset> material;
   eastl::shared_ptr<MaterialAsset> textured;
   cgltf_data* data = document.data;
-  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count;
-       ++mesh_index) {
-    const cgltf_mesh& gltf_mesh = data->meshes[mesh_index];
-    for (cgltf_size primitive_index = 0;
-         primitive_index < gltf_mesh.primitives_count; ++primitive_index) {
-      const cgltf_primitive& primitive = gltf_mesh.primitives[primitive_index];
-      if (primitive.material == nullptr) {
-        continue;
+  const auto tryLoadPrimitiveMaterial =
+      [&](size_t candidate_mesh, size_t candidate_prim) {
+        if (candidate_mesh >= static_cast<size_t>(data->meshes_count)) {
+          return;
+        }
+        const cgltf_mesh& gltf_mesh = data->meshes[candidate_mesh];
+        if (candidate_prim >= static_cast<size_t>(gltf_mesh.primitives_count)) {
+          return;
+        }
+        const cgltf_primitive& primitive = gltf_mesh.primitives[candidate_prim];
+        if (primitive.material == nullptr) {
+          return;
+        }
+        const size_t material_index =
+            static_cast<size_t>(primitive.material - data->materials);
+        eastl::shared_ptr<MaterialAsset> candidate = loadGltfMaterial(
+            data, material_index, document.absolute, document.canonical_key);
+        if (!candidate) {
+          return;
+        }
+        if (!material) {
+          material = candidate;
+        }
+        if (candidate->hasBaseColorTexture()) {
+          textured = candidate;
+        }
+      };
+
+  tryLoadPrimitiveMaterial(static_cast<size_t>(mesh_index),
+                           static_cast<size_t>(primitive_index));
+  if (!material) {
+    for (cgltf_size gi = 0; gi < data->meshes_count && !textured; ++gi) {
+      const cgltf_mesh& gltf_mesh = data->meshes[gi];
+      for (cgltf_size primitive_i = 0;
+           primitive_i < gltf_mesh.primitives_count && !textured;
+           ++primitive_i) {
+        tryLoadPrimitiveMaterial(static_cast<size_t>(gi),
+                                 static_cast<size_t>(primitive_i));
       }
-      const size_t material_index =
-          static_cast<size_t>(primitive.material - data->materials);
-      eastl::shared_ptr<MaterialAsset> candidate = loadGltfMaterial(
-          data, material_index, document.absolute, document.canonical_key);
-      if (!candidate) {
-        continue;
-      }
-      if (!material) {
-        material = candidate;
-      }
-      if (candidate->hasBaseColorTexture()) {
-        textured = candidate;
-        break;
-      }
-    }
-    if (textured) {
-      break;
     }
   }
   closeGltfImportDocument(document);
@@ -1011,7 +1042,13 @@ bool AssetManager::resolveGltfSourcePath(const eastl::string& virtual_path,
     return false;
   }
 
-  const eastl::string request_key = canonicalKey(virtual_path);
+  eastl::string request_key = canonicalKey(virtual_path);
+  const char* mesh_frag = std::strstr(request_key.c_str(), "#mesh");
+  if (mesh_frag != nullptr) {
+    request_key = eastl::string(
+        request_key.c_str(),
+        static_cast<size_t>(mesh_frag - request_key.c_str()));
+  }
   if (endsWithSuffix(request_key, ".mesh.yaml")) {
     const ResolvedContentPath descriptor_path =
         resolveContentPath(m_file_system, virtual_path, false);
@@ -1047,7 +1084,7 @@ bool AssetManager::resolveGltfSourcePath(const eastl::string& virtual_path,
   }
 
   if (endsWithSuffix(request_key, ".gltf") || endsWithSuffix(request_key, ".glb")) {
-    out_gltf_source = virtual_path;
+    out_gltf_source = request_key;
     return true;
   }
 
@@ -1167,8 +1204,17 @@ eastl::shared_ptr<MeshAsset> AssetManager::loadMesh(
           "[AssetManager] cooked mesh missing/stale for {}, Fast Path "
           "Intermediate + request Cook",
           key.c_str());
-      (void)descriptor.import;
-      loaded = loadMesh(descriptor.source);
+      GltfImportDocument document{};
+      if (openGltfImportDocument(descriptor.source, document) &&
+          document.data != nullptr) {
+        const cgltf_skin* skin = findSkinForMeshIndex(
+            *document.data, static_cast<size_t>(descriptor.import.mesh_index));
+        loaded = loadMeshPrimitive(
+            document.data, static_cast<size_t>(descriptor.import.mesh_index),
+            static_cast<size_t>(descriptor.import.primitive_index),
+            document.absolute, document.canonical_key, skin);
+        closeGltfImportDocument(document);
+      }
       if (loaded) {
         requestCookAfterFastPath(descriptor.guid);
       }

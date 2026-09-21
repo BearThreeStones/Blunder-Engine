@@ -209,6 +209,10 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
     roughness = material->getRoughnessFactor();
     has_metallic_roughness_texture = material->hasMetallicRoughnessTexture();
     mesh_ubo.material_flags.x = material->isUnlit() ? 1.0f : 0.0f;
+    // y = has albedo map. Slot 0 is the smoke checker; untextured GEO
+    // (snow patches, paths) must use baseColorFactor, not bindless 0.
+    mesh_ubo.material_flags.y =
+        material->hasBaseColorTexture() ? 1.0f : 0.0f;
   }
 
   // glTF defaults both factors to 1.0 when omitted, so an unauthored material

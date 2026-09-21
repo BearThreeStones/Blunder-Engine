@@ -62,7 +62,7 @@ struct VertexOutputLayered
 
 float3 loadPosition(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load3(vertexIndex * 48u));
+    return asfloat(vertexBytes.Load3(vertexIndex * kMeshVertexStride));
 }
 
 uint loadMeshletVertex(uint offset)

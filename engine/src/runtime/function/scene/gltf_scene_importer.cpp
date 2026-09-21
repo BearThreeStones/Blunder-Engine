@@ -571,6 +571,8 @@ bool enqueueUniqueMesh(AssetManager* asset_manager, MeshLoader* mesh_loader,
         request.source_path =
             file_system->resolveResource(std::filesystem::path(source));
       }
+      request.mesh_index = descriptor.import.mesh_index;
+      request.primitive_index = descriptor.import.primitive_index;
     }
   }
 

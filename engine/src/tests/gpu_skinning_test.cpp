@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include <glm/vec4.hpp>
+
 namespace {
 
 int g_failures = 0;
@@ -79,6 +81,7 @@ void pack_skinned_vertices_preserves_influences() {
   Asset::Meta meta;
   eastl::vector<MeshVertex> vertices(1);
   vertices[0].position = Vec3(1.0f, 2.0f, 3.0f);
+  vertices[0].color = glm::vec4(0.2f, 0.4f, 0.6f, 0.8f);
   MeshSkinData skin_data;
   skin_data.joint_to_bone = {0, 1};
   skin_data.influences.push_back({});
@@ -95,6 +98,8 @@ void pack_skinned_vertices_preserves_influences() {
   expect_true("packed joint indices",
               packed[0].joint_indices.x == 0 && packed[0].joint_indices.y == 1);
   expect_true("packed weights", packed[0].weights.x == 0.6f);
+  expect_true("packed COLOR_0", packed[0].color.z == 0.6f &&
+                                    packed[0].color.w == 0.8f);
 }
 
 }  // namespace

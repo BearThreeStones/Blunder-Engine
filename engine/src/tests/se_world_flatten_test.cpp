@@ -5,6 +5,7 @@
 #include "runtime/function/scene/mesh_renderer_component.h"
 #include "runtime/resource/asset/material_asset.h"
 #include "runtime/resource/asset/mesh_asset.h"
+#include "runtime/resource/asset/texture2d_asset.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -170,7 +171,9 @@ void testBakerTwoInstancesUniqueNames() {
   expect_true("1.1 Bush", findEntity(scene, "Bush") != nullptr);
   expect_true("1.1 Bush_1", findEntity(scene, "Bush_1") != nullptr);
   expect_true("1.1 Empty skipped", findEntity(scene, "Empty") == nullptr);
-  expect_true("1.1 shared mesh guid",
+  expect_true("1.1 GEO-box not exploded under library",
+              findEntity(scene, "GEO-box") == nullptr);
+  expect_true("1.1 shared mesh guid on instances",
               findEntity(scene, "Bush") != nullptr &&
                   findEntity(scene, "Bush_1") != nullptr &&
                   findEntity(scene, "Bush")->mesh_virtual_path ==
@@ -255,18 +258,18 @@ void testNestedLibraryAndMissingFile() {
   const SceneEntityDefinition* needle = findEntity(scene, "Needle");
   const SceneEntityDefinition* needle_1 = findEntity(scene, "Needle_1");
   expect_true("1.3 needles exist", needle != nullptr && needle_1 != nullptr);
-  expect_true("1.3 nested share guid",
+  expect_true("1.3 nested share guid on instances",
               needle != nullptr && needle_1 != nullptr &&
                   needle->mesh_virtual_path == needle_1->mesh_virtual_path &&
                   !needle->mesh_virtual_path.empty());
   const SceneEntityDefinition* tree = findEntity(scene, "Tree");
   expect_true("1.3 nested parent is layout",
               needle != nullptr && tree != nullptr && needle->parent_name == tree->name);
-  expect_true("1.3 layout shares tree guid",
-              findEntity(scene, "Tree") != nullptr &&
-                  findEntity(scene, "Tree_1") != nullptr &&
-                  findEntity(scene, "Tree")->mesh_virtual_path ==
-                      findEntity(scene, "Tree_1")->mesh_virtual_path);
+  expect_true("1.3 Tree instance has mesh",
+              tree != nullptr && !tree->mesh_virtual_path.empty());
+  expect_true("1.3 library GEO not exploded",
+              findEntity(scene, "GEO-leaf") == nullptr &&
+                  findEntity(scene, "GEO-tree") == nullptr);
   fs::remove_all(root);
 }
 
@@ -311,9 +314,10 @@ void testBakerOmitsColEntities() {
                 triangleGltfNodes(
                     R"([
                       { "name": "COL-ground", "mesh": 0 },
-                      { "name": "GEO-ground", "mesh": 0, "translation": [1, 0, 0] }
+                      { "name": "GEO-ground", "mesh": 0, "translation": [1, 0, 0] },
+                      { "name": "GEO-water", "mesh": 0, "translation": [0, 0, 2] }
                     ])",
-                    "ground", "[0, 1]"));
+                    "ground", "[0, 1, 2]"));
   writeTextFile(root / "SE-world.gltf", triangleGltfNodes(
       R"([
         { "name": "Ground", "extras": { "instance_asset_id": "1111111111111111" } },
@@ -342,6 +346,31 @@ void testBakerOmitsColEntities() {
   expect_true("2.1 Bush layout exists", findEntity(scene, "Bush") != nullptr);
   expect_true("2.1 COL-ground not spawned", findEntity(scene, "COL-ground") == nullptr);
   expect_true("2.1 COL-layout not spawned", findEntity(scene, "COL-layout") == nullptr);
+  const SceneEntityDefinition* geo_ground = findEntity(scene, "GEO-ground");
+  const SceneEntityDefinition* geo_water = findEntity(scene, "GEO-water");
+  expect_true("2.1 GEO-ground spawned", geo_ground != nullptr);
+  expect_true("2.1 GEO-water spawned", geo_water != nullptr);
+  expect_true("2.1 two set GEO refs", stats.set_geo_mesh_refs == 2);
+  expect_true("2.1 Ground grouping has no mesh",
+              findEntity(scene, "Ground") != nullptr &&
+                  findEntity(scene, "Ground")->mesh_virtual_path.empty());
+  expect_true("2.1 GEO-ground has mesh",
+              geo_ground != nullptr && !geo_ground->mesh_virtual_path.empty());
+  expect_true("2.1 GEO-water has mesh",
+              geo_water != nullptr && !geo_water->mesh_virtual_path.empty());
+  expect_true("2.1 GEO share set mesh guid",
+              geo_ground != nullptr && geo_water != nullptr &&
+                  geo_ground->mesh_virtual_path == geo_water->mesh_virtual_path);
+  expect_true("2.1 GEO-ground parent Ground",
+              geo_ground != nullptr && geo_ground->parent_name == "Ground");
+  if (geo_ground != nullptr) {
+    expect_true("2.1 GEO-ground x metres",
+                std::fabs(geo_ground->position.x - 1.0f) < 1e-4f);
+  }
+  if (geo_water != nullptr) {
+    expect_true("2.1 GEO-water engine Y from glTF Z",
+                std::fabs(geo_water->position.y + 2.0f) < 1e-4f);
+  }
   bool any_col = false;
   bool any_inactive = false;
   for (const SceneEntityDefinition& entity : scene.getEntities()) {
@@ -652,6 +681,44 @@ void testDogWalkSeWorldOpenTiming() {
   file_system.shutdown();
 }
 
+void testPromotePondIceFilmToOpaque() {
+  using namespace Blunder;
+  Asset::Meta tex_meta;
+  tex_meta.virtual_path =
+      "resources/se-world/assets/textures/ice_surface_squiggles-albedo.png";
+  auto tex = eastl::make_shared<Texture2DAsset>(
+      eastl::move(tex_meta), 1u, 1u, 4u, eastl::vector<uint8_t>{0, 0, 0, 0});
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "pond_water_surface";
+  auto ice = eastl::make_shared<MaterialAsset>(
+      eastl::move(mat_meta), glm::vec4(1.0f, 1.0f, 1.0f, 0.2f), AssetHandle{},
+      tex, nullptr, nullptr, nullptr, glm::vec3(0.15f), glm::vec3(1.0f),
+      glm::vec3(0.9f), 8.0f, 0.9f, 1.0f, cgltf_alpha_mode_blend, 0.5f, true,
+      false);
+  expect_true("ice film starts transparent", ice->usesForwardTransparentPass());
+  ice->promoteWaterSurfaceFilmToOpaque();
+  expect_true("ice film becomes opaque", !ice->usesForwardTransparentPass());
+  expect_true("ice film alpha 1", ice->getBaseColorFactor().a >= 0.999f);
+  expect_true("ice film dielectric", ice->getMetallicFactor() < 0.01f);
+
+  Asset::Meta bubble_tex_meta;
+  bubble_tex_meta.virtual_path =
+      "resources/se-world/assets/textures/pond_underwater_bubbles.png";
+  auto bubble_tex = eastl::make_shared<Texture2DAsset>(
+      eastl::move(bubble_tex_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{0, 0, 0, 0});
+  Asset::Meta bubble_meta;
+  bubble_meta.virtual_path = "pond_underwater_bubbles";
+  auto bubbles = eastl::make_shared<MaterialAsset>(
+      eastl::move(bubble_meta), glm::vec4(0.68f, 0.77f, 1.0f, 0.2f),
+      AssetHandle{}, bubble_tex, nullptr, nullptr, nullptr, glm::vec3(0.15f),
+      glm::vec3(1.0f), glm::vec3(0.4f), 32.0f, 0.0f, 0.9f,
+      cgltf_alpha_mode_blend, 0.5f, true, false);
+  bubbles->promoteWaterSurfaceFilmToOpaque();
+  expect_true("bubbles stay transparent",
+              bubbles->usesForwardTransparentPass());
+}
+
 }  // namespace
 
 int main() {
@@ -666,6 +733,7 @@ int main() {
   testAttachMeshAssetsBindWithoutGraphImport();
   testSeWorldOpenPath();
   testDogWalkSeWorldOpenTiming();
+  testPromotePondIceFilmToOpaque();
   g_runtime_global_context.m_logger_system.reset();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);

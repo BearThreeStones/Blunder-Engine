@@ -3,11 +3,9 @@
 #include <atomic>
 #include <cstring>
 #include <fstream>
-#include <limits>
 #include <string>
 
 #include <cgltf.h>
-#include <glm/vec3.hpp>
 
 #include "EASTL/unordered_map.h"
 #include "EASTL/unordered_set.h"
@@ -15,11 +13,11 @@
 #include "EASTL/vector.h"
 
 #include "runtime/core/base/macro.h"
-#include "runtime/core/math/coordinate_system.h"
 #include "runtime/function/job/job_system.h"
 #include "runtime/resource/asset/mesh_asset.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
 #include "runtime/resource/asset_manager/asset_manager.h"
+#include "runtime/resource/asset_manager/asset_manager_gltf.h"
 
 namespace Blunder {
 
@@ -42,11 +40,14 @@ struct RequestRecord {
   eastl::vector<uint32_t> indices;
   MeshSkinData skin_data;
   MeshletPayload meshlets;
+  uint32_t mesh_index{0};
+  uint32_t primitive_index{0};
 };
 
-bool readFirstGltfPrimitive(const std::filesystem::path& absolute,
-                            eastl::vector<MeshVertex>& out_vertices,
-                            eastl::vector<uint32_t>& out_indices) {
+bool readGltfPrimitive(const std::filesystem::path& absolute,
+                       uint32_t mesh_index, uint32_t primitive_index,
+                       eastl::vector<MeshVertex>& out_vertices,
+                       eastl::vector<uint32_t>& out_indices) {
   std::ifstream stream(absolute, std::ios::binary | std::ios::ate);
   if (!stream.is_open()) {
     return false;
@@ -77,74 +78,19 @@ bool readFirstGltfPrimitive(const std::filesystem::path& absolute,
     return false;
   }
 
-  const cgltf_primitive* primitive = nullptr;
-  for (cgltf_size mesh_index = 0; mesh_index < data->meshes_count && primitive == nullptr;
-       ++mesh_index) {
-    const cgltf_mesh& mesh = data->meshes[mesh_index];
-    for (cgltf_size primitive_index = 0; primitive_index < mesh.primitives_count;
-         ++primitive_index) {
-      if (mesh.primitives[primitive_index].type == cgltf_primitive_type_triangles) {
-        primitive = &mesh.primitives[primitive_index];
-        break;
-      }
-    }
-  }
-  if (primitive == nullptr) {
+  if (mesh_index >= static_cast<uint32_t>(data->meshes_count)) {
     cgltf_free(data);
     return false;
   }
-
-  const cgltf_attribute* position_attribute = nullptr;
-  for (cgltf_size i = 0; i < primitive->attributes_count; ++i) {
-    if (primitive->attributes[i].type == cgltf_attribute_type_position) {
-      position_attribute = &primitive->attributes[i];
-      break;
-    }
-  }
-  if (position_attribute == nullptr || position_attribute->data == nullptr) {
+  const cgltf_mesh& mesh = data->meshes[mesh_index];
+  if (primitive_index >= static_cast<uint32_t>(mesh.primitives_count)) {
     cgltf_free(data);
     return false;
   }
-
-  const cgltf_accessor* position_accessor = position_attribute->data;
-  const size_t vertex_count = static_cast<size_t>(position_accessor->count);
-  if (vertex_count == 0) {
-    cgltf_free(data);
-    return false;
-  }
-
-  out_vertices.resize(vertex_count);
-  for (size_t vertex_index = 0; vertex_index < vertex_count; ++vertex_index) {
-    float position[3] = {0.0f, 0.0f, 0.0f};
-    if (!cgltf_accessor_read_float(position_accessor, vertex_index, position, 3)) {
-      cgltf_free(data);
-      return false;
-    }
-    out_vertices[vertex_index].position = transformPointGltfToEngine(
-        glm::vec3(position[0], position[1], position[2]));
-  }
-
-  if (primitive->indices != nullptr) {
-    const size_t index_count = static_cast<size_t>(primitive->indices->count);
-    out_indices.resize(index_count);
-    for (size_t index = 0; index < index_count; ++index) {
-      const cgltf_size value =
-          cgltf_accessor_read_index(primitive->indices, index);
-      if (value > std::numeric_limits<uint32_t>::max()) {
-        cgltf_free(data);
-        return false;
-      }
-      out_indices[index] = static_cast<uint32_t>(value);
-    }
-  } else {
-    out_indices.resize(vertex_count);
-    for (size_t index = 0; index < vertex_count; ++index) {
-      out_indices[index] = static_cast<uint32_t>(index);
-    }
-  }
-
+  const cgltf_primitive* primitive = &mesh.primitives[primitive_index];
+  const bool ok = readGltfPrimitiveGeometry(*primitive, out_vertices, out_indices);
   cgltf_free(data);
-  return !out_vertices.empty() && !out_indices.empty();
+  return ok;
 }
 
 void cpuReadJob(void* job_data) {
@@ -164,7 +110,8 @@ void cpuReadJob(void* job_data) {
     indices.clear();
     skin_data = {};
     meshlets = {};
-    ok = readFirstGltfPrimitive(record->source_path, vertices, indices);
+    ok = readGltfPrimitive(record->source_path, record->mesh_index,
+                           record->primitive_index, vertices, indices);
   }
   if (!ok) {
     record->cpu_state.store(k_cpu_failed, std::memory_order_release);
@@ -395,6 +342,8 @@ void MeshLoader::request(const Request& request) {
   record->cooked_path = request.cooked_path;
   record->source_path = request.source_path;
   record->descriptor_path = request.descriptor_path;
+  record->mesh_index = request.mesh_index;
+  record->primitive_index = request.primitive_index;
   if (m_impl->job_system == nullptr || !m_impl->job_system->isInitialized()) {
     record->cpu_state.store(k_cpu_failed, std::memory_order_release);
     return;

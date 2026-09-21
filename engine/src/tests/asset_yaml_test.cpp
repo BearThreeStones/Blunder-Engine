@@ -58,6 +58,44 @@ void parseMeshWithoutArchivedSourceLegacy() {
   expect_true("legacy archived_source empty", desc.archived_source.empty());
 }
 
+void roundTripMeshPrimitiveIndex() {
+  using namespace Blunder;
+  MeshAssetDescriptor in;
+  in.guid = "44444444-4444-4444-4444-444444444444";
+  in.source = "Resources/Models/Pond.gltf";
+  in.import.materials = true;
+  in.import.animations = false;
+  in.import.scale = 1.0f;
+  in.import.mesh_index = 9;
+  in.import.primitive_index = 0;
+
+  const eastl::string yaml = AssetYaml::serializeMeshDescriptor(in);
+  expect_true("meshIndex key written", yaml.find("meshIndex:") != eastl::string::npos);
+  expect_true("primitiveIndex key written",
+              yaml.find("primitiveIndex:") != eastl::string::npos);
+
+  MeshAssetDescriptor out;
+  expect_true("meshIndex round-trip parse",
+              AssetYaml::parseMeshDescriptor(yaml, out));
+  expect_true("meshIndex round-trip value", out.import.mesh_index == 9);
+  expect_true("primitiveIndex round-trip value", out.import.primitive_index == 0);
+
+  MeshAssetDescriptor legacy;
+  const eastl::string legacy_yaml =
+      "type: Mesh\n"
+      "guid: 55555555-5555-5555-5555-555555555555\n"
+      "source: Resources/Models/Cube.gltf\n"
+      "import:\n"
+      "  materials: true\n"
+      "  animations: false\n"
+      "  scale: 1.0\n";
+  expect_true("legacy yaml parse without meshIndex",
+              AssetYaml::parseMeshDescriptor(legacy_yaml, legacy));
+  expect_true("legacy meshIndex defaults 0", legacy.import.mesh_index == 0);
+  expect_true("legacy primitiveIndex defaults 0",
+              legacy.import.primitive_index == 0);
+}
+
 void roundTripMeshArchivedSource() {
   using namespace Blunder;
   MeshAssetDescriptor in;
@@ -473,6 +511,7 @@ void roundTripCookedMeshMaterialSidecar() {
 int main() {
   parseMeshWithArchivedSource();
   parseMeshWithoutArchivedSourceLegacy();
+  roundTripMeshPrimitiveIndex();
   roundTripMeshArchivedSource();
   roundTripTextureArchivedSource();
   omitEmptyArchivedSourceFromSerializedYaml();

@@ -16,9 +16,9 @@ VkVertexInputBindingDescription Vertex::getBindingDescription() {
   return binding_description;
 }
 
-eastl::array<VkVertexInputAttributeDescription, 4>
+eastl::array<VkVertexInputAttributeDescription, 5>
 Vertex::getAttributeDescriptions() {
-  eastl::array<VkVertexInputAttributeDescription, 4> attribute_descriptions{};
+  eastl::array<VkVertexInputAttributeDescription, 5> attribute_descriptions{};
 
   attribute_descriptions[0].binding = 0;
   attribute_descriptions[0].location = 0;
@@ -44,6 +44,12 @@ Vertex::getAttributeDescriptions() {
   attribute_descriptions[3].offset =
       static_cast<uint32_t>(offsetof(Vertex, tangent));
 
+  attribute_descriptions[4].binding = 0;
+  attribute_descriptions[4].location = 4;
+  attribute_descriptions[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  attribute_descriptions[4].offset =
+      static_cast<uint32_t>(offsetof(Vertex, color));
+
   return attribute_descriptions;
 }
 
@@ -55,9 +61,9 @@ VkVertexInputBindingDescription SkinnedVertex::getBindingDescription() {
   return binding_description;
 }
 
-eastl::array<VkVertexInputAttributeDescription, 6>
+eastl::array<VkVertexInputAttributeDescription, 7>
 SkinnedVertex::getAttributeDescriptions() {
-  eastl::array<VkVertexInputAttributeDescription, 6> attribute_descriptions{};
+  eastl::array<VkVertexInputAttributeDescription, 7> attribute_descriptions{};
 
   attribute_descriptions[0].binding = 0;
   attribute_descriptions[0].location = 0;
@@ -94,6 +100,12 @@ SkinnedVertex::getAttributeDescriptions() {
   attribute_descriptions[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
   attribute_descriptions[5].offset =
       static_cast<uint32_t>(offsetof(SkinnedVertex, weights));
+
+  attribute_descriptions[6].binding = 0;
+  attribute_descriptions[6].location = 6;
+  attribute_descriptions[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  attribute_descriptions[6].offset =
+      static_cast<uint32_t>(offsetof(SkinnedVertex, color));
 
   return attribute_descriptions;
 }

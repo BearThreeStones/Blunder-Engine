@@ -1,4 +1,5 @@
 #include "gpu_driven_common.slang"
+#include "vertex_color.slang"
 
 struct GpuSceneLight
 {
@@ -103,26 +104,33 @@ struct VertexOutput
     float tangentSign;
     [[vk::location(5)]]
     nointerpolation uint instanceId;
+    [[vk::location(6)]]
+    float4 color;
 };
 
 float3 loadPosition(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load3(vertexIndex * 48u));
+    return asfloat(vertexBytes.Load3(vertexIndex * kMeshVertexStride));
 }
 
 float3 loadNormal(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load3(vertexIndex * 48u + 12u));
+    return asfloat(vertexBytes.Load3(vertexIndex * kMeshVertexStride + kMeshVertexNormalOffset));
 }
 
 float2 loadUv(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load2(vertexIndex * 48u + 24u));
+    return asfloat(vertexBytes.Load2(vertexIndex * kMeshVertexStride + kMeshVertexUvOffset));
 }
 
 float4 loadTangent(uint vertexIndex)
 {
-    return asfloat(vertexBytes.Load4(vertexIndex * 48u + 32u));
+    return asfloat(vertexBytes.Load4(vertexIndex * kMeshVertexStride + kMeshVertexTangentOffset));
+}
+
+float4 loadColor(uint vertexIndex)
+{
+    return asfloat(vertexBytes.Load4(vertexIndex * kMeshVertexStride + kMeshVertexColorOffset));
 }
 
 uint loadMeshletVertex(uint offset)
@@ -190,6 +198,7 @@ void meshMain(uint gtid : SV_GroupThreadID, in payload MeshPayload payload,
         verts[gtid].tangentSign = tan.w;
         verts[gtid].worldPos = worldPos.xyz;
         verts[gtid].uv = uv;
+        verts[gtid].color = loadColor(index);
         verts[gtid].instanceId = payload.instanceIndex;
     }
     if (gtid < triCount)
@@ -226,7 +235,7 @@ float sampleShadowPCF(float3 worldPos)
     return shadow * 0.25;
 }
 
-float3 getNormalFromMap(VertexOutput input, GpuDrivenInstanceGpu inst)
+float3 getNormalFromMap(VertexOutput input, GpuDrivenInstanceGpu inst, float4 sampledNormal)
 {
     if (inst.pbrTextureFlags.y < 0.5)
     {
@@ -240,7 +249,7 @@ float3 getNormalFromMap(VertexOutput input, GpuDrivenInstanceGpu inst)
     tangent = normalize(tangent);
     float3 bitangent = normalize(cross(input.worldNormal, tangent)) * input.tangentSign;
     float3x3 tbn = float3x3(tangent, bitangent, normalize(input.worldNormal));
-    float3 mapNormal = sampleBindless(inst.bindlessTextureIndices.z, input.uv).xyz * 2.0 - 1.0;
+    float3 mapNormal = sampledNormal.xyz * 2.0 - 1.0;
     return normalize(mul(tbn, mapNormal));
 }
 
@@ -327,9 +336,16 @@ float3 shadePbrLight(float ndotlScale, float3 L, float3 radiance, float3 normal,
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
     GpuDrivenInstanceGpu inst = instances[input.instanceId];
-    float4 baseSample = sampleBindless(inst.bindlessTextureIndices.x, input.uv);
-    float3 albedo = baseSample.rgb * inst.baseColorFactor.rgb;
-    float alpha = baseSample.a * inst.baseColorFactor.a;
+    float4 sampledAlbedo = sampleBindless(inst.bindlessTextureIndices.x, input.uv);
+    float4 sampledMr = sampleBindless(inst.bindlessTextureIndices.y, input.uv);
+    float4 sampledNormal = sampleBindless(inst.bindlessTextureIndices.z, input.uv);
+    float4 sampledAo = sampleBindless(inst.bindlessTextureIndices.w, input.uv);
+    float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
+    float3 albedo = applyVertexColorToAlbedo(
+        baseSample.rgb * inst.baseColorFactor.rgb, input.color.rgb,
+        inst.materialFlags.y);
+    float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
+    clipPackedVertexColorCoverage(input.color.rgb, inst.materialFlags.y);
     if (inst.materialFlags.x > 0.5)
     {
         return float4(albedo, alpha);
@@ -343,16 +359,11 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float roughness = inst.metallicRoughnessFactors.y;
     if (inst.pbrTextureFlags.x > 0.5)
     {
-        float4 mr = sampleBindless(inst.bindlessTextureIndices.y, input.uv);
-        roughness *= mr.g;
-        metallic *= mr.b;
+        roughness *= sampledMr.g;
+        metallic *= sampledMr.b;
     }
-    float ao = 1.0;
-    if (inst.pbrTextureFlags.z > 0.5)
-    {
-        ao = sampleBindless(inst.bindlessTextureIndices.w, input.uv).r;
-    }
-    float3 normal = getNormalFromMap(input, inst);
+    float ao = inst.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;
+    float3 normal = getNormalFromMap(input, inst, sampledNormal);
     float3 viewDir = normalize(ubo.cameraPosition.xyz - input.worldPos);
     float shadow = sampleShadowPCF(input.worldPos);
     bool twoSided = inst.pbrTextureFlags.w > 0.5;

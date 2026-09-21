@@ -22,6 +22,14 @@ static_assert(offsetof(MeshVertex, uv) == offsetof(Vertex, uv),
               "MeshVertex/Vertex uv offset mismatch");
 static_assert(offsetof(MeshVertex, tangent) == offsetof(Vertex, tangent),
               "MeshVertex/Vertex tangent offset mismatch");
+static_assert(offsetof(MeshVertex, color) == offsetof(Vertex, color),
+              "MeshVertex/Vertex color offset mismatch");
+static_assert(sizeof(MeshVertex) == 64,
+              "MeshVertex stride must match mesh shaders (64)");
+static_assert(offsetof(MeshVertex, color) == 48,
+              "MeshVertex COLOR_0 packed at byte 48");
+static_assert(offsetof(SkinnedMeshVertex, color) == offsetof(SkinnedVertex, color),
+              "SkinnedMeshVertex/SkinnedVertex color offset mismatch");
 
 eastl::unique_ptr<GpuMesh> GpuMesh::createInternal(
     VulkanAllocator* allocator, const void* vertex_bytes,

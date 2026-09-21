@@ -8,6 +8,7 @@ struct GpuSceneLight
 };
 
 #include "shadow_sampling_ubo.slang"
+#include "vertex_color.slang"
 
 struct GlobalUniformData
 {
@@ -72,6 +73,8 @@ struct VertexInput
     float2 inUv;
     [[vk::location(3)]]
     float4 inTangent;
+    [[vk::location(4)]]
+    float4 inColor;
 };
 
 struct VertexOutput
@@ -87,6 +90,8 @@ struct VertexOutput
     float3 worldTangent;
     [[vk::location(4)]]
     float tangentSign;
+    [[vk::location(5)]]
+    float4 color;
 };
 
 float4 sampleBindless(uint index, float2 uv)
@@ -109,6 +114,7 @@ VertexOutput vertexMain(VertexInput input)
     output.tangentSign = input.inTangent.w;
     output.worldPos = worldPos.xyz;
     output.uv = input.inUv;
+    output.color = input.inColor;
     return output;
 }
 
@@ -141,7 +147,7 @@ float sampleShadowPCF(float3 worldPos)
     return shadow * 0.25;
 }
 
-float3 getNormalFromMap(VertexOutput input)
+float3 getNormalFromMap(VertexOutput input, float4 sampledNormal)
 {
     if (ubo.pbrTextureFlags.y < 0.5)
     {
@@ -156,7 +162,7 @@ float3 getNormalFromMap(VertexOutput input)
     tangent = normalize(tangent);
     float3 bitangent = normalize(cross(input.worldNormal, tangent)) * input.tangentSign;
     float3x3 tbn = float3x3(tangent, bitangent, normalize(input.worldNormal));
-    float3 mapNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv).xyz * 2.0 - 1.0;
+    float3 mapNormal = sampledNormal.xyz * 2.0 - 1.0;
     return normalize(mul(tbn, mapNormal));
 }
 
@@ -279,9 +285,16 @@ float3 shadeAreaLight(GpuSceneLight light, float3 worldPos, float3 normal, float
 [shader("fragment")]
 float4 fragmentMain(VertexOutput input) : SV_Target
 {
-    float4 baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
-    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
-    float alpha = baseSample.a * ubo.baseColorFactor.a;
+    float4 sampledAlbedo = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
+    float4 sampledMr = sampleBindless(ubo.bindlessTextureIndices.y, input.uv);
+    float4 sampledNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv);
+    float4 sampledAo = sampleBindless(ubo.bindlessTextureIndices.w, input.uv);
+    float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
+    float3 albedo = applyVertexColorToAlbedo(
+        baseSample.rgb * ubo.baseColorFactor.rgb, input.color.rgb,
+        ubo.materialFlags.y);
+    float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
+    clipPackedVertexColorCoverage(input.color.rgb, ubo.materialFlags.y);
 
     if (ubo.materialFlags.x > 0.5)
     {
@@ -299,18 +312,12 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float roughness = ubo.metallicRoughnessFactors.y;
     if (ubo.pbrTextureFlags.x > 0.5)
     {
-        float4 mr = sampleBindless(ubo.bindlessTextureIndices.y, input.uv);
-        roughness *= mr.g;
-        metallic *= mr.b;
+        roughness *= sampledMr.g;
+        metallic *= sampledMr.b;
     }
 
-    float ao = 1.0;
-    if (ubo.pbrTextureFlags.z > 0.5)
-    {
-        ao = sampleBindless(ubo.bindlessTextureIndices.w, input.uv).r;
-    }
-
-    float3 normal = getNormalFromMap(input);
+    float ao = ubo.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;
+    float3 normal = getNormalFromMap(input, sampledNormal);
     float3 viewDir = normalize(ubo.cameraPosition.xyz - input.worldPos);
     float shadow = sampleShadowPCF(input.worldPos);
 

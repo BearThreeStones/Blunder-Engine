@@ -1,5 +1,6 @@
 #include "runtime/resource/asset/asset_yaml.h"
 
+#include <cstdint>
 #include <string>
 
 #include <glm/vec3.hpp>
@@ -51,6 +52,17 @@ bool readFloatField(const YAML::Node& root, const char* key, float default_value
     return false;
   }
   out_value = node.as<float>();
+  return true;
+}
+
+bool readUInt32Field(const YAML::Node& root, const char* key,
+                     uint32_t default_value, uint32_t& out_value) {
+  const YAML::Node node = root[key];
+  if (!node || !node.IsScalar()) {
+    out_value = default_value;
+    return false;
+  }
+  out_value = node.as<uint32_t>();
   return true;
 }
 
@@ -328,6 +340,10 @@ bool AssetYaml::parseMeshDescriptor(const eastl::string& yaml_text,
       readBoolField(import, "animations", true,
                     out_descriptor.import.animations);
       readFloatField(import, "scale", 1.0f, out_descriptor.import.scale);
+      readUInt32Field(import, "meshIndex", 0,
+                      out_descriptor.import.mesh_index);
+      readUInt32Field(import, "primitiveIndex", 0,
+                      out_descriptor.import.primitive_index);
     }
     return true;
   } catch (const YAML::Exception& exception) {
@@ -404,6 +420,13 @@ eastl::string AssetYaml::serializeMeshDescriptor(
   emitter << YAML::Key << "animations" << YAML::Value
           << descriptor.import.animations;
   emitter << YAML::Key << "scale" << YAML::Value << descriptor.import.scale;
+  if (descriptor.import.mesh_index != 0 ||
+      descriptor.import.primitive_index != 0) {
+    emitter << YAML::Key << "meshIndex" << YAML::Value
+            << descriptor.import.mesh_index;
+    emitter << YAML::Key << "primitiveIndex" << YAML::Value
+            << descriptor.import.primitive_index;
+  }
   emitter << YAML::EndMap;
   serializeMaterialOverride(emitter, descriptor.material_override);
   for (const auto& field : descriptor.unknown_root_fields) {

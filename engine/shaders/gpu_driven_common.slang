@@ -9,7 +9,7 @@ struct GpuDrivenInstanceGpu
     float4 baseColorFactor;
     float4 metallicRoughnessFactors;
     float4 pbrTextureFlags;
-    float4 materialFlags;
+    float4 materialFlags;  // x unlit, y has albedo map
     uint receiverId;
     uint flags;
     uint meshletOffset;
@@ -65,3 +65,10 @@ struct DrawIndexedIndirectCommand
 static const uint kGpuDrivenFlagTwoSided = 1u;
 static const uint kGpuDrivenFlagSkipCone = 2u;
 static const uint kGpuDrivenMeshletBatchShift = 16u;
+
+// Packed MeshVertex / Vertex. Must match mesh_asset.h and vulkan_buffer.h.
+static const uint kMeshVertexStride = 64u;
+static const uint kMeshVertexNormalOffset = 12u;
+static const uint kMeshVertexUvOffset = 24u;
+static const uint kMeshVertexTangentOffset = 32u;
+static const uint kMeshVertexColorOffset = 48u;

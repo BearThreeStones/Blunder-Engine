@@ -4,6 +4,8 @@
 // the same Matrix Palette UBO as pbr_skinned.slang (binding 1 here because the
 // G-buffer set 0 has no shadow map).
 
+#include "vertex_color.slang"
+
 struct GBufferUniformData
 {
     float4x4 model;
@@ -11,7 +13,7 @@ struct GBufferUniformData
     float4x4 projection;
     float4x4 normalMatrix;
     float4 baseColorFactor;
-    float4 materialFlags;            // x = unlit
+    float4 materialFlags;            // x = unlit, y = has albedo map
     float4 metallicRoughnessFactors; // x metallic, y roughness, z cutoff, w alpha mode
     float4 pbrTextureFlags;          // x mr map, y normal map, z ao map, w two-sided
     uint4 bindlessTextureIndices;    // x base, y mr, z normal, w ao
@@ -55,6 +57,8 @@ struct VertexInput
     int4 inJointIndices;
     [[vk::location(5)]]
     float4 inWeights;
+    [[vk::location(6)]]
+    float4 inColor;
 };
 
 struct VertexOutput
@@ -68,6 +72,8 @@ struct VertexOutput
     float3 worldTangent;
     [[vk::location(3)]]
     float tangentSign;
+    [[vk::location(4)]]
+    float4 color;
 };
 
 struct GBufferOutput
@@ -137,10 +143,11 @@ VertexOutput vertexMain(VertexInput input)
         normalize(mul((float3x3)ubo.normalMatrix, input.inTangent.xyz));
     output.tangentSign = input.inTangent.w;
     output.uv = input.inUv;
+    output.color = input.inColor;
     return output;
 }
 
-float3 getNormalFromMap(VertexOutput input)
+float3 getNormalFromMap(VertexOutput input, float4 sampledNormal)
 {
     if (ubo.pbrTextureFlags.y < 0.5)
     {
@@ -155,7 +162,7 @@ float3 getNormalFromMap(VertexOutput input)
     tangent = normalize(tangent);
     float3 bitangent = normalize(cross(input.worldNormal, tangent)) * input.tangentSign;
     float3x3 tbn = float3x3(tangent, bitangent, normalize(input.worldNormal));
-    float3 mapNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv).xyz * 2.0 - 1.0;
+    float3 mapNormal = sampledNormal.xyz * 2.0 - 1.0;
     return normalize(mul(tbn, mapNormal));
 }
 
@@ -174,9 +181,16 @@ float2 encodeOctNormal(float3 n)
 [shader("fragment")]
 GBufferOutput fragmentMain(VertexOutput input)
 {
-    float4 baseSample = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
-    float3 albedo = baseSample.rgb * ubo.baseColorFactor.rgb;
-    float alpha = baseSample.a * ubo.baseColorFactor.a;
+    float4 sampledAlbedo = sampleBindless(ubo.bindlessTextureIndices.x, input.uv);
+    float4 sampledMr = sampleBindless(ubo.bindlessTextureIndices.y, input.uv);
+    float4 sampledNormal = sampleBindless(ubo.bindlessTextureIndices.z, input.uv);
+    float4 sampledAo = sampleBindless(ubo.bindlessTextureIndices.w, input.uv);
+    float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
+    float3 albedo = applyVertexColorToAlbedo(
+        baseSample.rgb * ubo.baseColorFactor.rgb, input.color.rgb,
+        ubo.materialFlags.y);
+    float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
+    clipPackedVertexColorCoverage(input.color.rgb, ubo.materialFlags.y);
 
     if (ubo.metallicRoughnessFactors.w > 0.5 &&
         ubo.metallicRoughnessFactors.w < 1.5)
@@ -188,18 +202,12 @@ GBufferOutput fragmentMain(VertexOutput input)
     float roughness = ubo.metallicRoughnessFactors.y;
     if (ubo.pbrTextureFlags.x > 0.5)
     {
-        float4 mr = sampleBindless(ubo.bindlessTextureIndices.y, input.uv);
-        roughness *= mr.g;
-        metallic *= mr.b;
+        roughness *= sampledMr.g;
+        metallic *= sampledMr.b;
     }
 
-    float ao = 1.0;
-    if (ubo.pbrTextureFlags.z > 0.5)
-    {
-        ao = sampleBindless(ubo.bindlessTextureIndices.w, input.uv).r;
-    }
-
-    float3 normal = getNormalFromMap(input);
+    float ao = ubo.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;
+    float3 normal = getNormalFromMap(input, sampledNormal);
 
     uint receiver = ubo.receiver.x & kReceiverSlotMask;
     if (ubo.materialFlags.x > 0.5)
