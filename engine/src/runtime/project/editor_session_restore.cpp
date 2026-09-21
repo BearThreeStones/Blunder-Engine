@@ -35,6 +35,8 @@ const char* panelKindYaml(DockPanelKind kind) {
       return "animation";
     case DockPanelKind::console:
       return "console";
+    case DockPanelKind::profiler:
+      return "profiler";
     case DockPanelKind::custom:
     default:
       return "custom";
@@ -143,6 +145,9 @@ void emitNode(YAML::Emitter& emitter, const DockLayoutNodeSnapshot& node) {
     emitter << YAML::Key << "active" << YAML::Value << node.active_index;
     emitter << YAML::Key << "widgets" << YAML::Value << YAML::BeginSeq;
     for (const DockPanelKind kind : node.widgets) {
+      if (kind == DockPanelKind::profiler) {
+        continue;
+      }
       emitter << panelKindYaml(kind);
     }
     emitter << YAML::EndSeq;
@@ -283,6 +288,9 @@ void emitDock(YAML::Emitter& emitter, const DockLayoutSnapshot& dock) {
   emitter << YAML::EndSeq;
   emitter << YAML::Key << "auto_hide" << YAML::Value << YAML::BeginSeq;
   for (const DockAutoHideSnapshot& entry : dock.auto_hide) {
+    if (entry.kind == DockPanelKind::profiler) {
+      continue;
+    }
     emitter << YAML::BeginMap;
     emitter << YAML::Key << "kind" << YAML::Value << panelKindYaml(entry.kind);
     emitter << YAML::Key << "edge" << YAML::Value << dockEdgeYaml(entry.edge);

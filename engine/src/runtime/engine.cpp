@@ -38,6 +38,8 @@
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/function/script/animation_frame.h"
 #include "runtime/function/physics/physics_manager.h"
+#include "runtime/function/debug/frame_timing_service.h"
+#include "runtime/function/debug/tracy_instrument.h"
 
 #include <SDL3/SDL.h>
 #if defined(_WIN32)
@@ -442,6 +444,13 @@ void BlunderEngine::run() {
 float BlunderEngine::calculateDeltaTime() { return m_frame_timer.tick(); }
 
 bool BlunderEngine::tickOneFrame(float delta_time) {
+  ZoneScoped;
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  if (timing != nullptr) {
+    timing->beginTick(delta_time);
+  }
+  CpuZoneScope tick_zone(timing, "tick");
+
   InputPresentPhaseTrace phases("frame-phases");
   finalizePendingWindowResize();
 
@@ -640,20 +649,23 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     phases.mark("sceneMs");
 
     // Rebuild world matrices after Behaviour TRS, then snapshot the draw list.
-    if (g_runtime_global_context.m_scene_system &&
-        g_runtime_global_context.m_render_system) {
-      g_runtime_global_context.m_scene_system->tick(delta_time);
-      SceneInstance* instance =
-          g_runtime_global_context.m_scene_system->getActiveInstance();
-      PlacementPreviewController* preview =
-          g_runtime_global_context.m_placement_preview.get();
-      const bool preview_visible = preview != nullptr && preview->isVisible();
-      if (instance != nullptr || preview_visible) {
-        syncSceneToRender(g_runtime_global_context.m_render_system.get(),
-                          instance);
-        if (preview_visible) {
-          preview->submitToRender(
-              g_runtime_global_context.m_render_system.get());
+    {
+      CpuZoneScope scene_sync_zone(timing, "scene-sync");
+      if (g_runtime_global_context.m_scene_system &&
+          g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_scene_system->tick(delta_time);
+        SceneInstance* instance =
+            g_runtime_global_context.m_scene_system->getActiveInstance();
+        PlacementPreviewController* preview =
+            g_runtime_global_context.m_placement_preview.get();
+        const bool preview_visible = preview != nullptr && preview->isVisible();
+        if (instance != nullptr || preview_visible) {
+          syncSceneToRender(g_runtime_global_context.m_render_system.get(),
+                            instance);
+          if (preview_visible) {
+            preview->submitToRender(
+                g_runtime_global_context.m_render_system.get());
+          }
         }
       }
     }
@@ -689,8 +701,10 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   }
 #endif
 
-  if (!defer_heavy && !slint_system &&
-      g_runtime_global_context.m_window_system) {
+  const bool player_title_fps =
+      slint_system != nullptr && slint_system->isPlayerHudMode();
+  if (!defer_heavy && g_runtime_global_context.m_window_system &&
+      (slint_system == nullptr || player_title_fps)) {
     eastl::string title = "Blunder";
     if (g_runtime_global_context.m_editor_scene_edit) {
       const eastl::string& scene_path =
@@ -707,6 +721,11 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     title += std::to_string(getFPS()).c_str();
     title += " FPS";
     g_runtime_global_context.m_window_system->setTitle(title.c_str());
+  }
+
+  FrameMark;
+  if (timing != nullptr) {
+    timing->endTick(getFPS());
   }
 
   // Smoke / automated exit: BLUNDER_PLAYER_MAX_FRAMES=N leaves after N frames

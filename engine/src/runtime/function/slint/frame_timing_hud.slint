@@ -1,0 +1,68 @@
+import { EditorTheme } from "editor_controls.slint";
+
+export struct FrameTimingPassRow {
+    name: string,
+    ms-text: string,
+}
+
+/// Layer 1 Frame timing HUD. Display-only: no TouchArea so gameplay / viewport
+/// camera keep the pointer.
+export component FrameTimingHud inherits Rectangle {
+    in property <bool> hud-visible: false;
+    in property <int> fps: 0;
+    in property <string> cpu-text: "0.00";
+    in property <string> gpu-text: "0.00";
+    in property <int> instance-count: 0;
+    in property <int> light-count: 0;
+    in property <int> draw-count: 0;
+    in property <bool> gpu-unreliable: false;
+    in property <[FrameTimingPassRow]> passes: [];
+
+    visible: root.hud-visible;
+    width: 252px;
+    height: 96px + 14px * root.passes.length + (root.gpu-unreliable ? 32px : 0px);
+    background: #141414aa;
+    border-width: 1px;
+    border-color: EditorTheme.hairline;
+    border-radius: EditorTheme.radius-ctl;
+    clip: true;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 3px;
+
+        Text {
+            text: "FPS  " + root.fps;
+            color: EditorTheme.default-text;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        Text {
+            text: "CPU  " + root.cpu-text + " ms";
+            color: EditorTheme.default-text;
+            font-size: 12px;
+        }
+        Text {
+            text: "GPU  " + root.gpu-text + " ms";
+            color: root.gpu-unreliable ? #E8A84A : EditorTheme.default-text;
+            font-size: 12px;
+        }
+        if root.gpu-unreliable: Text {
+            text: "GPU timings unreliable (not discrete)";
+            color: #E8A84A;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "inst " + root.instance-count + "   lights " + root.light-count + "   draws " + root.draw-count;
+            color: EditorTheme.muted;
+            font-size: 11px;
+        }
+        for pass in root.passes: Text {
+            text: pass.name + "  " + pass.ms-text + " ms";
+            color: EditorTheme.muted;
+            font-size: 11px;
+            overflow: elide;
+        }
+    }
+}

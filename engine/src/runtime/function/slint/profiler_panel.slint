@@ -1,0 +1,121 @@
+import { EditorTheme } from "editor_controls.slint";
+
+export struct ProfilerFrameBar {
+    cpu-t: float,
+    gpu-t: float,
+}
+
+export struct ProfilerLaneRow {
+    name: string,
+    ms-text: string,
+    is-gpu: bool,
+}
+
+/// Layer 2 editor Profiler dock. Binds the engine Frame timing ring.
+export component ProfilerPanel inherits Rectangle {
+    in property <[ProfilerFrameBar]> frames: [];
+    in property <[ProfilerLaneRow]> lanes: [];
+    in property <int> selected-index: -1;
+    in property <string> inspect-name: "";
+    in property <string> inspect-detail: "";
+    callback frame-clicked(int);
+
+    background: EditorTheme.window;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
+
+        Text {
+            text: "Frame strip";
+            color: EditorTheme.muted;
+            font-size: 11px;
+        }
+
+        Rectangle {
+            height: 56px;
+            background: EditorTheme.app-bar;
+            border-radius: 2px;
+            clip: true;
+
+            HorizontalLayout {
+                padding: 4px;
+                spacing: 1px;
+                alignment: end;
+
+                for bar[index] in root.frames: TouchArea {
+                    width: 4px;
+                    height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => { root.frame-clicked(index); }
+
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: transparent;
+
+                        Rectangle {
+                            width: 2px;
+                            x: 1px;
+                            height: parent.height * bar.cpu-t;
+                            y: parent.height - self.height;
+                            background: index == root.selected-index ? EditorTheme.accent : EditorTheme.default-text;
+                        }
+                        Rectangle {
+                            width: 2px;
+                            x: 1px;
+                            height: parent.height * bar.gpu-t * 0.5;
+                            y: 0px;
+                            background: #4C8DFF88;
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: "Lanes";
+            color: EditorTheme.muted;
+            font-size: 11px;
+        }
+
+        for lane in root.lanes: Rectangle {
+            height: 18px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: lane.is-gpu ? "GPU" : "CPU";
+                    color: EditorTheme.muted;
+                    font-size: 10px;
+                    width: 28px;
+                }
+                Text {
+                    text: lane.name;
+                    color: EditorTheme.default-text;
+                    font-size: 11px;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: lane.ms-text + " ms";
+                    color: EditorTheme.default-text;
+                    font-size: 11px;
+                }
+            }
+        }
+
+        Text {
+            text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
+            color: EditorTheme.default-text;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        Text {
+            text: root.inspect-detail;
+            color: EditorTheme.muted;
+            font-size: 11px;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+    }
+}

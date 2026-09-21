@@ -24,6 +24,8 @@ inline const char* defaultDockPanelTitle(DockPanelKind kind) {
       return "Animation";
     case DockPanelKind::console:
       return "Console";
+    case DockPanelKind::profiler:
+      return "Profiler";
     case DockPanelKind::custom:
     default:
       return "Panel";

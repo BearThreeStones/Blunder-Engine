@@ -66,6 +66,9 @@
 #include "runtime/function/editor/editor_selection_system.h"
 #include "runtime/function/editor/viewport_pick_system.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/debug/frame_timing_service.h"
+#include "runtime/function/debug/gpu_timestamp_queries.h"
+#include "runtime/function/debug/tracy_vk_instrument.h"
 #include "runtime/function/scene/scene_instance.h"
 #include "runtime/function/scene/scene_system.h"
 #include "runtime/function/scene/light_eval.h"
@@ -109,6 +112,32 @@ constexpr uint32_t k_smoke_texture_size = 64;
 constexpr float k_shadow_ortho_half_extent = 14.0f;
 constexpr float k_shadow_near_plane = 0.1f;
 constexpr float k_shadow_far_plane = 60.0f;
+
+GpuTimestampQueries* frameGpuQueries() {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  return timing != nullptr ? timing->gpuQueries() : nullptr;
+}
+
+#ifdef TRACY_ENABLE
+TracyVkCtx frameTracyVk() {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  return timing != nullptr ? timing->tracyVk() : nullptr;
+}
+#endif
+
+void publishFrameTimingCounts(const ForwardFrameState& frame_state,
+                              uint32_t instance_count, uint32_t draw_count) {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  if (timing == nullptr) {
+    return;
+  }
+  uint32_t lights = 0;
+  if (frame_state.lighting_scene != nullptr) {
+    frame_state.lighting_scene->forEachLight(
+        [&](EntityId, const LightComponent&) { ++lights; });
+  }
+  timing->setCounts(instance_count, lights, draw_count);
+}
 
 void defaultOffscreenExtent(const RenderSystemInitInfo& info, uint32_t& width,
                             uint32_t& height) {
@@ -640,6 +669,10 @@ void RenderSystem::initializeVulkanPath(const RenderSystemInitInfo& info) {
   // RenderDoc, this is a silent no-op; otherwise F11 will capture one frame.
   m_renderdoc_capture = eastl::make_unique<RenderDocCapture>();
   m_renderdoc_capture->initialize();
+
+  if (g_runtime_global_context.m_frame_timing) {
+    g_runtime_global_context.m_frame_timing->attachGpu(vkCtx(this));
+  }
 }
 
 GpuMesh* RenderSystem::getOrUploadGpuMesh(const MeshAsset* mesh_asset) {
@@ -989,6 +1022,9 @@ bool RenderSystem::tryBeginRecordingSlot(const uint32_t slot) {
       vkSync(this)->waitSlot(slot, k_fence_wait_timeout_ns);
   if (wait_result != VK_SUCCESS) {
     return false;
+  }
+  if (FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get()) {
+    timing->harvestGpuSlot(slot);
   }
   vkCtx(this)->onInFlightFenceRetired(slot);
   SecondaryCommandBufferPool& secondary_pool =
@@ -1912,6 +1948,9 @@ void RenderSystem::recordViewportGraph(
     builder.write(gbuffer, depth, FrameGraphUsage::DepthAttachment);
     builder.read(gbuffer, depth, FrameGraphUsage::Sampled);
     builder.setExecute(gbuffer, [&](IFrameGraphRecorder&) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::viewport_gbuffer);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "viewport.gbuffer");
       m_deferred_path->recordGBufferPass(
           command_buffer, frame_state, opaque_draws, opaque_draw_count,
           frame_index, m_gpu_driven_renderer.get(), m_gpu_driven_draws.data(),
@@ -1925,6 +1964,9 @@ void RenderSystem::recordViewportGraph(
     builder.write(lighting, color, FrameGraphUsage::ColorAttachment);
     builder.read(lighting, color, FrameGraphUsage::Sampled);
     builder.setExecute(lighting, [&](IFrameGraphRecorder&) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::viewport_lighting);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "viewport.lighting");
       m_deferred_path->recordLightingPass(
           command_buffer, frame_state, opaque_draws, opaque_draw_count,
           transparent_draws, transparent_draw_count, frame_index,
@@ -1939,6 +1981,9 @@ void RenderSystem::recordViewportGraph(
     builder.read(scene, depth, FrameGraphUsage::Sampled);
     builder.read(scene, shadow, FrameGraphUsage::Sampled);
     builder.setExecute(scene, [&](IFrameGraphRecorder&) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::viewport_scene);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "viewport.scene");
       m_forward_path->renderFrame(
           command_buffer, frame_state, opaque_draws, opaque_draw_count,
           transparent_draws, transparent_draw_count, frame_index,
@@ -1969,6 +2014,9 @@ void RenderSystem::recordViewportGraph(
     color_handshake(ssao);
     builder.read(ssao, depth, FrameGraphUsage::Sampled);
     builder.setExecute(ssao, [&](IFrameGraphRecorder&) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::viewport_ssao);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "viewport.ssao");
       m_ssao_pass->apply(command_buffer, offscreen, frame_state.shading,
                          frame_state.projection, frame_state.near_clip,
                          frame_state.far_clip, frame_index);
@@ -1986,6 +2034,10 @@ void RenderSystem::recordViewportGraph(
     color_handshake(fog_pass);
     builder.read(fog_pass, depth, FrameGraphUsage::Sampled);
     builder.setExecute(fog_pass, [&, active_fog](IFrameGraphRecorder&) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::viewport_volumetric_fog);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer,
+                           "viewport.volumetric_fog");
       m_volumetric_fog_pass->apply(command_buffer, offscreen, frame_state, active_fog,
                                    frame_index);
     });
@@ -2002,6 +2054,9 @@ void RenderSystem::recordViewportGraph(
   builder.read(copy, color, FrameGraphUsage::Sampled);
   builder.markSink(copy);
   builder.setExecute(copy, [&](IFrameGraphRecorder&) {
+    GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                     GpuTimestampZone::viewport_copy);
+    BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "viewport.copy");
     vulkan_backend::VulkanCommandList command_list;
     command_list.bind(vkCtx(this), command_buffer);
     const bool zero_copy_viewport = usesZeroCopyViewport();
@@ -2437,6 +2492,12 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                m_last_rendered_froxel_heatmap;
   const bool vrs_mask_changed =
       frame_state.shading.vrs_rate_mask != m_last_rendered_vrs_rate_mask;
+  publishFrameTimingCounts(
+      frame_state,
+      static_cast<uint32_t>(m_gpu_driven_draws.size() + m_opaque_mesh_draws.size() +
+                            m_transparent_mesh_draws.size()),
+      static_cast<uint32_t>(m_gpu_driven_draws.size() + m_opaque_mesh_draws.size() +
+                            m_transparent_mesh_draws.size()));
   // Programmatic LOOKAT / AABB snaps change the view without pointer
   // interaction. Skipping that record keeps presenting the origin-grid
   // frame while Unique gizmos sit on the courtyard.
@@ -2565,6 +2626,9 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   VkCommandBufferBeginInfo begin_info{};
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   vkBeginCommandBuffer(command_buffer, &begin_info);
+  if (FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get()) {
+    timing->beginGpuSlot(command_buffer, m_current_frame);
+  }
 
   if (m_overlay_system) {
     m_overlay_system->begin_sync(frame_state, m_current_frame);
@@ -2589,6 +2653,10 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
   const bool preview_recorded = recordCameraPreviewPass(
       command_buffer, frame_state, opaque_draws, transparent_draws, m_current_frame,
       preview_width, preview_height);
+
+  if (FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get()) {
+    timing->collectTracy(command_buffer);
+  }
 
   vkEndCommandBuffer(command_buffer);
   phases.mark("recordMs");

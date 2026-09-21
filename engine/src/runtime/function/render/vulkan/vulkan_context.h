@@ -47,6 +47,16 @@ class VulkanContext final {
   const char* physicalDeviceName() const {
     return m_physical_device_properties.deviceName;
   }
+  VkPhysicalDeviceType physicalDeviceType() const {
+    return m_physical_device_properties.deviceType;
+  }
+  float timestampPeriod() const {
+    return m_physical_device_properties.limits.timestampPeriod;
+  }
+  uint32_t timestampValidBits() const { return m_timestamp_valid_bits; }
+  bool calibratedTimestampsEnabled() const {
+    return m_calibrated_timestamps_enabled;
+  }
   VkDevice getDevice() const { return m_device; }
   VkQueue getGraphicsQueue() const { return m_graphics_queue; }
   VkQueue getPresentQueue() const { return m_present_queue; }
@@ -168,6 +178,8 @@ class VulkanContext final {
   VkCommandPool m_immediate_command_pool{VK_NULL_HANDLE};
   uint32_t m_graphics_queue_family{0};
   uint32_t m_present_queue_family{0};
+  uint32_t m_timestamp_valid_bits{0};
+  bool m_calibrated_timestamps_enabled{false};
   uint32_t m_api_version{VK_API_VERSION_1_1};
   VkPipelineCache m_pipeline_cache{VK_NULL_HANDLE};
   eastl::string m_slang_build_tag;

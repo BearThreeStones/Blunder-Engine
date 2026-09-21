@@ -11,6 +11,7 @@
 #include "runtime/function/global/engine_host_mode.h"
 
 namespace Blunder {
+class FrameTimingService;
 class LogSystem;
 class JobSystem;
 class MeshLoader;
@@ -141,6 +142,7 @@ class RuntimeGlobalContext {
   // eastl::shared_ptr<ConfigManager> m_config_manager;
   // eastl::shared_ptr<WorldManager> m_world_manager;
   eastl::shared_ptr<PhysicsManager> m_physics_manager;
+  eastl::unique_ptr<FrameTimingService> m_frame_timing;
   eastl::shared_ptr<WindowSystem> m_window_system;
   eastl::shared_ptr<RenderSystem> m_render_system;
   eastl::shared_ptr<UiHost> m_ui_host;

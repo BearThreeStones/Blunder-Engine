@@ -64,6 +64,15 @@ SlintSystem::update()
 | UI composite + Present | `SlintSystem` + `SkiaRenderer` |
 | 3D viewport size     | Slint `viewport-width/height` ► `RenderSystem` |
 | 3D pixels into UI    | `SlintSystem::setViewportImage`  |
+| Frame timing HUD / Profiler dock | Slint overlay + editor dock on the engine Frame timing ring ([ADR 0075](../adr/0075-frame-timing-hud-and-tracy.md)). GPU timestamps: engine `VkQueryPool`. Optional Tracy Client dual-write (`TRACY_ENABLE`, on-demand, localhost). `FrameMark` at `tickOneFrame`, not Present. |
+
+## Frame timing (HUD, dock, Tracy dual-write)
+
+Layer 1 is a Slint **Frame timing HUD** on the editor Viewport and windowed Player (F3, default off, not persisted). Layer 2 is an editor-only Slint **Profiler dock** (kind 7) bound to the same ~120-frame ring. Headless / MCP / Project Manager have neither.
+
+Named GPU timestamps cover live viewport Passes (`viewport.gbuffer` / `viewport.lighting`, or Forward `viewport.scene`; optional `ssao` / `volumetric_fog`; Sink `viewport.copy`) plus internals `shadow` / `cull` / `froxel` / `lighting.triangle`. No per-draw or per-Spot GPU zones. `TracyVkCollect` runs after graph `execute` (and Camera Preview record), before `vkQueueSubmit`, on PRIMARY, outside a render pass.
+
+Default configure does not define `TRACY_ENABLE`. Client links only into static `engine_runtime`. Windowed Player uses a HUD-only Slint root on the shared Vulkan device; Headless Player stays windowless.
 
 ## GPU-driven rendering (static opaque / alpha clip)
 

@@ -35,6 +35,7 @@ DockEdge defaultAutoHideEdgeForPanel(DockPanelKind panel_kind) {
     case DockPanelKind::content_browser:
     case DockPanelKind::animation:
     case DockPanelKind::console:
+    case DockPanelKind::profiler:
       return DockEdge::bottom;
     default:
       return DockEdge::right;

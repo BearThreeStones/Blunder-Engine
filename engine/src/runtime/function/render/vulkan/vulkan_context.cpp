@@ -694,6 +694,42 @@ void VulkanContext::selectPhysicalDevice() {
   m_physical_device = selected_device;
   vkGetPhysicalDeviceProperties(m_physical_device, &m_physical_device_properties);
   m_graphics_queue_family = selected_graphics_family;
+  uint32_t selected_queue_count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(m_physical_device, &selected_queue_count,
+                                           nullptr);
+  eastl::vector<VkQueueFamilyProperties> selected_queues(selected_queue_count);
+  vkGetPhysicalDeviceQueueFamilyProperties(
+      m_physical_device, &selected_queue_count, selected_queues.data());
+  if (m_graphics_queue_family < selected_queue_count) {
+    m_timestamp_valid_bits =
+        selected_queues[m_graphics_queue_family].timestampValidBits;
+  }
+  const char* type_name = "OTHER";
+  switch (m_physical_device_properties.deviceType) {
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+      type_name = "INTEGRATED";
+      break;
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+      type_name = "DISCRETE";
+      break;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+      type_name = "VIRTUAL";
+      break;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+      type_name = "CPU";
+      break;
+    default:
+      break;
+  }
+  LOG_INFO("[VulkanContext] selected device '{}' type={} ({})",
+           m_physical_device_properties.deviceName,
+           static_cast<int>(m_physical_device_properties.deviceType), type_name);
+  if (m_physical_device_properties.deviceType !=
+      VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+    LOG_WARN(
+        "[VulkanContext] selected device is not DISCRETE; GPU timings are "
+        "unreliable");
+  }
   // Headless mode: there is no present queue. We keep m_present_queue_family
   // mirroring the graphics family so any legacy callers do not crash, but it
   // is not actually used for present operations.
@@ -907,6 +943,11 @@ void VulkanContext::createLogicalDevice() {
       hasDeviceExtension(m_physical_device,
                          VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME)) {
     device_extensions.push_back(VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME);
+  }
+  m_calibrated_timestamps_enabled = hasDeviceExtension(
+      m_physical_device, VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
+  if (m_calibrated_timestamps_enabled) {
+    device_extensions.push_back(VK_EXT_CALIBRATED_TIMESTAMPS_EXTENSION_NAME);
   }
   create_info.enabledExtensionCount =
       static_cast<uint32_t>(device_extensions.size());

@@ -1,7 +1,11 @@
 #include "runtime/function/job/job_system.h"
 
 #include "runtime/core/base/macro.h"
+#include "runtime/function/debug/frame_timing_service.h"
+#include "runtime/function/debug/tracy_instrument.h"
+#include "runtime/function/global/global_context.h"
 
+#include <cstdio>
 #include <cstdlib>
 
 namespace Blunder {
@@ -58,7 +62,14 @@ void JobSystem::initialize(uint32_t dedicated_worker_count) {
   m_workers.reserve(dedicated_worker_count);
   try {
     for (uint32_t i = 0; i < dedicated_worker_count; ++i) {
-      m_workers.emplace_back([this]() { workerLoop(); });
+      m_workers.emplace_back([this, i]() {
+#ifdef TRACY_ENABLE
+        char name[32];
+        std::snprintf(name, sizeof(name), "Job %u", i);
+        tracy::SetThreadName(name);
+#endif
+        workerLoop();
+      });
     }
   } catch (...) {
     joinWorkers();
@@ -98,6 +109,8 @@ void JobSystem::submit(JobFunction function, void* job_data) {
 void JobSystem::wait() {
   ASSERT(m_initialized);
   assertOwner();
+  CpuZoneScope job_zone(g_runtime_global_context.m_frame_timing.get(), "Job");
+  ZoneScopedN("Job");
   for (;;) {
     JobItem item{};
     {

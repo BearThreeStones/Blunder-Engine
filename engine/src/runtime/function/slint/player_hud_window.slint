@@ -1,0 +1,44 @@
+import { EditorTheme } from "editor_controls.slint";
+import { FrameTimingHud, FrameTimingPassRow } from "frame_timing_hud.slint";
+
+/// HUD-only Slint root for windowed Player. Not the editor shell.
+export component PlayerHudWindow inherits Window {
+    title: "Blunder Player";
+    preferred-width: 1280px;
+    preferred-height: 720px;
+    background: #383838;
+
+    in property <image> viewport-image;
+    in property <bool> viewport-image-ready: false;
+    in-out property <bool> frame-timing-hud-visible: false;
+    in property <int> hud-fps: 0;
+    in property <string> hud-cpu-text: "0.00";
+    in property <string> hud-gpu-text: "0.00";
+    in property <int> hud-instance-count: 0;
+    in property <int> hud-light-count: 0;
+    in property <int> hud-draw-count: 0;
+    in property <bool> hud-gpu-unreliable: false;
+    in property <[FrameTimingPassRow]> hud-passes: [];
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.viewport-image;
+        image-fit: fill;
+        visible: root.viewport-image-ready;
+    }
+
+    FrameTimingHud {
+        x: parent.width - self.width - 8px;
+        y: 8px;
+        hud-visible: root.frame-timing-hud-visible;
+        fps: root.hud-fps;
+        cpu-text: root.hud-cpu-text;
+        gpu-text: root.hud-gpu-text;
+        instance-count: root.hud-instance-count;
+        light-count: root.hud-light-count;
+        draw-count: root.hud-draw-count;
+        gpu-unreliable: root.hud-gpu-unreliable;
+        passes: root.hud-passes;
+    }
+}

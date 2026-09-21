@@ -39,6 +39,7 @@ enum class DockPanelKind : uint8_t {
   content_browser,
   animation,
   console,
+  profiler,
 };
 
 enum class DockDragState : uint8_t {
