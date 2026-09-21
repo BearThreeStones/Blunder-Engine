@@ -584,7 +584,7 @@ void DeferredRenderPath::createLightingVrsRenderPass() {
         "lighting stays 1×1",
         static_cast<int>(result));
     m_lighting_vrs_render_pass = VK_NULL_HANDLE;
-    m_vrs_device = false;
+    teardownAttachmentVrs();
     return;
   }
 
@@ -635,9 +635,61 @@ void DeferredRenderPath::createLightingVrsRenderPass() {
   const VkResult mask_result =
       vkCreateRenderPass(device, &mask_info, nullptr, &m_rate_mask_render_pass);
   if (mask_result != VK_SUCCESS) {
-    LOG_FATAL("[DeferredRenderPath] VRS mask vkCreateRenderPass failed: {}",
-              static_cast<int>(mask_result));
+    LOG_WARN(
+        "[DeferredRenderPath] VRS mask vkCreateRenderPass failed ({}); lighting "
+        "stays 1×1",
+        static_cast<int>(mask_result));
+    m_rate_mask_render_pass = VK_NULL_HANDLE;
+    teardownAttachmentVrs();
+    return;
   }
+}
+
+void DeferredRenderPath::teardownAttachmentVrs() {
+  if (m_vk_context != nullptr) {
+    VkDevice device = m_vk_context->getDevice();
+    for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
+      GBufferSlot& data = m_slots[slot];
+      if (data.lighting_vrs_framebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device, data.lighting_vrs_framebuffer, nullptr);
+        data.lighting_vrs_framebuffer = VK_NULL_HANDLE;
+      }
+    }
+    for (uint32_t slot = 0; slot < OffscreenRenderTarget::k_buffer_count; ++slot) {
+      GBufferSlot& data = m_slots[slot];
+      if (data.rate_view != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, data.rate_view, nullptr);
+        data.rate_view = VK_NULL_HANDLE;
+      }
+      if (data.rate_image != VK_NULL_HANDLE && m_vk_allocator != nullptr) {
+        vmaDestroyImage(m_vk_allocator->getAllocator(), data.rate_image,
+                        data.rate_allocation);
+        data.rate_image = VK_NULL_HANDLE;
+        data.rate_allocation = VK_NULL_HANDLE;
+      }
+    }
+  }
+  if (m_rate_mask_pipeline) {
+    m_rate_mask_pipeline->shutdown();
+    m_rate_mask_pipeline.reset();
+  }
+  if (m_lighting_vrs_pipeline) {
+    m_lighting_vrs_pipeline->shutdown();
+    m_lighting_vrs_pipeline.reset();
+  }
+  destroyVrsSobelPipeline();
+  if (m_vk_context != nullptr) {
+    VkDevice device = m_vk_context->getDevice();
+    if (m_rate_mask_render_pass != VK_NULL_HANDLE) {
+      vkDestroyRenderPass(device, m_rate_mask_render_pass, nullptr);
+      m_rate_mask_render_pass = VK_NULL_HANDLE;
+    }
+    if (m_lighting_vrs_render_pass != VK_NULL_HANDLE) {
+      vkDestroyRenderPass(device, m_lighting_vrs_render_pass, nullptr);
+      m_lighting_vrs_render_pass = VK_NULL_HANDLE;
+    }
+  }
+  m_vrs_device = false;
 }
 
 void DeferredRenderPath::createPipelines() {
@@ -1115,8 +1167,14 @@ void DeferredRenderPath::createSlot(uint32_t slot_index) {
                             &alloc_info, &slot.rate_image, &slot.rate_allocation,
                             nullptr);
     if (result != VK_SUCCESS) {
-      LOG_FATAL("[DeferredRenderPath] VRS rate vmaCreateImage failed (slot {}): {}",
-                slot_index, static_cast<int>(result));
+      LOG_WARN(
+          "[DeferredRenderPath] VRS rate vmaCreateImage failed (slot {}): {}; "
+          "lighting stays 1×1",
+          slot_index, static_cast<int>(result));
+      slot.rate_image = VK_NULL_HANDLE;
+      slot.rate_allocation = VK_NULL_HANDLE;
+      teardownAttachmentVrs();
+      return;
     }
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1128,9 +1186,13 @@ void DeferredRenderPath::createSlot(uint32_t slot_index) {
     view_info.subresourceRange.layerCount = 1;
     result = vkCreateImageView(device, &view_info, nullptr, &slot.rate_view);
     if (result != VK_SUCCESS) {
-      LOG_FATAL(
-          "[DeferredRenderPath] VRS rate vkCreateImageView failed (slot {}): {}",
+      LOG_WARN(
+          "[DeferredRenderPath] VRS rate vkCreateImageView failed (slot {}): {}; "
+          "lighting stays 1×1",
           slot_index, static_cast<int>(result));
+      slot.rate_view = VK_NULL_HANDLE;
+      teardownAttachmentVrs();
+      return;
     }
   }
 }
@@ -1161,10 +1223,12 @@ void DeferredRenderPath::createSlotFramebuffers(uint32_t slot_index) {
   const VkResult result =
       vkCreateFramebuffer(device, &fb, nullptr, &slot.lighting_vrs_framebuffer);
   if (result != VK_SUCCESS) {
-    LOG_FATAL(
+    LOG_WARN(
         "[DeferredRenderPath] lighting VRS vkCreateFramebuffer failed (slot {}): "
-        "{}",
+        "{}; lighting stays 1×1",
         slot_index, static_cast<int>(result));
+    slot.lighting_vrs_framebuffer = VK_NULL_HANDLE;
+    teardownAttachmentVrs();
   }
 }
 

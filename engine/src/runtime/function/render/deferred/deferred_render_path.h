@@ -204,6 +204,8 @@ class DeferredRenderPath final {
   void createRenderPasses();
   void destroyRenderPasses();
   void createLightingVrsRenderPass();
+  /// Drop rate images, VRS FBs/pipelines/RPs, and keep 1×1 lighting. Never FATAL.
+  void teardownAttachmentVrs();
   void createPipelines();
   void destroyPipelines();
   void createDescriptorResources();
