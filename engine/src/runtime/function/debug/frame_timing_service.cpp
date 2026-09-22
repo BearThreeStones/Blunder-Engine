@@ -22,6 +22,13 @@ void FrameTimingService::beginTick(float delta_seconds) {
   }
 }
 
+void FrameTimingService::addJobWorkNs(uint64_t ns) {
+  if (ns == 0) {
+    return;
+  }
+  m_job_work_ns.fetch_add(ns, std::memory_order_relaxed);
+}
+
 void FrameTimingService::addCpuZone(const char* name, float cpu_ms) {
   if (name == nullptr) {
     return;
@@ -53,6 +60,10 @@ void FrameTimingService::setCounts(uint32_t instance_count, uint32_t light_count
 }
 
 void FrameTimingService::endTick(int fps) {
+  const uint64_t job_ns = m_job_work_ns.exchange(0, std::memory_order_relaxed);
+  if (job_ns > 0) {
+    addCpuZone("Job", static_cast<float>(job_ns) * 1.0e-6f);
+  }
   m_building.fps = static_cast<float>(fps);
   m_building.gpu_ms = m_pending_gpu.gpu_ms;
   m_building.pass_count = m_pending_gpu.pass_count;

@@ -5,6 +5,7 @@
 #include "runtime/function/debug/tracy_instrument.h"
 #include "runtime/function/global/global_context.h"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 
@@ -109,8 +110,6 @@ void JobSystem::submit(JobFunction function, void* job_data) {
 void JobSystem::wait() {
   ASSERT(m_initialized);
   assertOwner();
-  CpuZoneScope job_zone(g_runtime_global_context.m_frame_timing.get(), "Job");
-  ZoneScopedN("Job");
   for (;;) {
     JobItem item{};
     {
@@ -189,10 +188,21 @@ void JobSystem::workerLoop() {
 }
 
 void JobSystem::runJob(const JobItem& item) {
+  ZoneScopedN("Job");
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  const auto start = std::chrono::steady_clock::now();
   try {
     item.function(item.job_data);
   } catch (...) {
     std::abort();
+  }
+  if (timing != nullptr) {
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start)
+                        .count();
+    if (ns > 0) {
+      timing->addJobWorkNs(static_cast<uint64_t>(ns));
+    }
   }
   {
     std::lock_guard lock(m_mutex);

@@ -1056,7 +1056,7 @@ std::shared_ptr<DockNode> DockManager::makeFloatingFor(
   auto floating = DockNode::makeFloating(nextId(), rect, container);
   m_floating_nodes.push_back(floating);
   if (testFloatingFlag(m_floating_config, DockFloatingFlag::native_os_window) &&
-      widget->panelKind() != DockPanelKind::viewport) {
+      dockPanelOpensNativeOsWindow(widget->panelKind())) {
     m_native_floating_ids.insert(floating->id());
   }
   return floating;
@@ -1540,7 +1540,9 @@ bool DockManager::applyLayoutSnapshot(const DockLayoutSnapshot& snapshot) {
     }
     auto node = DockNode::makeFloating(nextId(), floating.rect, content);
     m_floating_nodes.push_back(node);
-    if (floating.native &&
+    const auto restored_widget = content->activeWidget();
+    if (floating.native && restored_widget &&
+        dockPanelOpensNativeOsWindow(restored_widget->panelKind()) &&
         testFloatingFlag(m_floating_config, DockFloatingFlag::native_os_window)) {
       m_native_floating_ids.insert(node->id());
     }

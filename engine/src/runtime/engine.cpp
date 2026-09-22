@@ -653,6 +653,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     // Rebuild world matrices after Behaviour TRS, then snapshot the draw list.
     {
       CpuZoneScope scene_sync_zone(timing, "scene-sync");
+      ZoneScopedN("scene-sync");
       if (g_runtime_global_context.m_scene_system &&
           g_runtime_global_context.m_render_system) {
         g_runtime_global_context.m_scene_system->tick(delta_time);

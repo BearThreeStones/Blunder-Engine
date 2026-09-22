@@ -2,7 +2,7 @@
 
 The 2026-10 DogWalk line needs a **basic profiler** (CPU / GPU frame time, main Passes, readable in the editor, later instance/light budgets and the install package) — not Insights. We decided two **Slint** product layers on an **engine Frame timing ring** and GPU timestamp queries: a **Frame timing HUD** on windowed editor Viewport **and** windowed Player, and an editor **Profiler dock** (frame strip / lanes / zone inspect). Tracy Client is optional **dual-write** to standalone `Tracy.exe` only. It is not a product layer and not the panel source. HUD and dock work with `TRACY_ENABLE` undefined. Dev Client uses `TRACY_ON_DEMAND` + localhost. CI and shipping do not define `TRACY_ENABLE`. `FrameMark` is `tickOneFrame`, not Present. GPU zones are named Frame graph Passes plus a few internals, never per-draw. Domain: [CONTEXT.md — Frame timing HUD](../../CONTEXT.md).
 
-**Status:** proposed
+**Status:** accepted
 
 ## Considered Options
 

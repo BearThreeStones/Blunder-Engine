@@ -42,6 +42,11 @@ enum class DockPanelKind : uint8_t {
   profiler,
 };
 
+/// Viewport and Profiler stay in-host. Native OS float has no ProfilerPanel.
+inline bool dockPanelOpensNativeOsWindow(DockPanelKind kind) {
+  return kind != DockPanelKind::viewport && kind != DockPanelKind::profiler;
+}
+
 enum class DockDragState : uint8_t {
   idle = 0,
   dragging,

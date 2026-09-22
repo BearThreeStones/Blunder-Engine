@@ -3,6 +3,8 @@
 #include "runtime/function/ui/docking/dock_node.h"
 #include "runtime/function/ui/docking/dock_widget.h"
 
+#include <glm/vec2.hpp>
+
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -85,6 +87,49 @@ int main() {
                 tileForPanel(after, DockPanelKind::content_browser) != nullptr);
     expect_true("console is no longer the active tab",
                 tileForPanel(after, DockPanelKind::console) == nullptr);
+  }
+
+  {
+    expect_true("viewport skips native OS float",
+                !dockPanelOpensNativeOsWindow(DockPanelKind::viewport));
+    expect_true("profiler skips native OS float",
+                !dockPanelOpensNativeOsWindow(DockPanelKind::profiler));
+    expect_true("console uses native OS float",
+                dockPanelOpensNativeOsWindow(DockPanelKind::console));
+
+    DockManager manager;
+    manager.setHostRect(makeDockRect(0.0f, 0.0f, 1920.0f, 1080.0f));
+    manager.setFloatingConfig(DockFloatingFlag::drag_preview |
+                              DockFloatingFlag::native_os_window);
+
+    auto viewport = manager.createWidget("Viewport", DockPanelKind::viewport);
+    manager.dockToRoot(viewport, DockSlot::center);
+    auto profiler =
+        manager.createWidget("Profiler", DockPanelKind::profiler);
+    manager.dockToRoot(profiler, DockSlot::bottom);
+
+    const DockLayoutModel laid = manager.buildLayoutModel();
+    const DockTabView* profiler_tab = nullptr;
+    for (const DockTabView& tab : laid.tabs) {
+      if (tab.panel_kind == DockPanelKind::profiler) {
+        profiler_tab = &tab;
+        break;
+      }
+    }
+    expect_true("profiler tab exists", profiler_tab != nullptr);
+    if (profiler_tab != nullptr) {
+      const glm::vec2 start{profiler_tab->rect.x + profiler_tab->rect.width * 0.5f,
+                            profiler_tab->rect.y + profiler_tab->rect.height * 0.5f};
+      manager.beginDrag(profiler->id(), start);
+      manager.handleDragMove({start.x + 24.0f, start.y});
+      manager.endDrag();
+    }
+    expect_true("undocking profiler creates a float",
+                manager.floatingNodes().size() == 1u);
+    if (!manager.floatingNodes().empty()) {
+      expect_true("profiler float is in-host, not native OS window",
+                  !manager.isNativeFloating(manager.floatingNodes()[0]->id()));
+    }
   }
 
   const fs::path slint_dir = fs::path(BLUNDER_REPO_ROOT) / "engine" / "src" /

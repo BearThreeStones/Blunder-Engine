@@ -45,8 +45,16 @@ void GpuTimestampQueries::initialize(VulkanContext* context) {
     m_timestamp_period_ns = 1.0f;
   }
   const uint32_t valid_bits = context->timestampValidBits();
-  if (valid_bits > 0 && valid_bits < 64) {
-    m_timestamp_mask = (valid_bits == 64) ? ~0ull : ((1ull << valid_bits) - 1ull);
+  // Spec: timestampValidBits == 0 means vkCmdWriteTimestamp is invalid on
+  // this queue family. Leave the pool null so gpuQueries() stays null.
+  if (valid_bits == 0) {
+    LOG_WARN(
+        "[GpuTimestampQueries] graphics queue timestampValidBits==0; "
+        "skipping timestamp pool");
+    return;
+  }
+  if (valid_bits < 64) {
+    m_timestamp_mask = (1ull << valid_bits) - 1ull;
   } else {
     m_timestamp_mask = ~0ull;
   }
