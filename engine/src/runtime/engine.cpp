@@ -514,6 +514,11 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
             active->rebindMeshRendererMaterialsFromMeshes();
           }
         }
+        // GPU-driven pack is sticky while scene_static. Hydrate after the
+        // first pack used to leave chrome/BLEND on the instance SSBO.
+        if (g_runtime_global_context.m_render_system) {
+          g_runtime_global_context.m_render_system->requestViewportRedraw();
+        }
       }
     }
     if (tick_content_browser && g_runtime_global_context.m_content_browser &&

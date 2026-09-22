@@ -64,7 +64,7 @@ struct GpuDrivenInstanceGpu {
   glm::vec4 base_color_factor{1.0f};
   glm::vec4 metallic_roughness_factors{1.0f, 1.0f, 0.5f, 0.0f};
   glm::vec4 pbr_texture_flags{0.0f};
-  glm::vec4 material_flags{0.0f};  // x unlit, y has base-color texture
+  glm::vec4 material_flags{0.0f};  // x unlit, y albedo map, z roughness-only MR
   uint32_t receiver_id{0};
   uint32_t flags{0};
   uint32_t meshlet_offset{0};

@@ -1412,9 +1412,13 @@ void DeferredRenderPath::drawGBufferList(VkCommandBuffer cmd,
     }
 
     ForwardMeshUniformData material{};
-    applyPbrToMeshUniforms(material, draw.material, frame_state.shading,
-                           material_state, draw.alpha_mode, draw.alpha_cutoff,
-                           draw.double_sided, draw.entity_id);
+    applyPbrToMeshUniforms(
+        material, draw.material, frame_state.shading, material_state,
+        draw.material != nullptr ? draw.material->getAlphaMode()
+                                 : draw.alpha_mode,
+        draw.material != nullptr ? draw.material->getAlphaCutoff()
+                                 : draw.alpha_cutoff,
+        draw.double_sided, draw.entity_id);
 
     GBufferMeshUniformData mesh_ubo{};
     mesh_ubo.model = draw.model;
@@ -1431,6 +1435,7 @@ void DeferredRenderPath::drawGBufferList(VkCommandBuffer cmd,
         bindlessIndex(draw.normal_texture),
         bindlessIndex(draw.occlusion_texture));
     // Overflow returns index 0; do not treat slot-0 pixels as extra PBR maps.
+    // material_flags.z (roughness-only) stays so B is not ORM metal.
     mesh_ubo.pbr_texture_flags.x =
         mesh_ubo.bindless_texture_indices.y != 0 ? 1.0f : 0.0f;
     mesh_ubo.pbr_texture_flags.y =

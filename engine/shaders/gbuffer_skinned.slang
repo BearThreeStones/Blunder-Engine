@@ -13,7 +13,7 @@ struct GBufferUniformData
     float4x4 projection;
     float4x4 normalMatrix;
     float4 baseColorFactor;
-    float4 materialFlags;            // x = unlit, y = has albedo map
+    float4 materialFlags;            // x unlit, y albedo map, z roughness-only MR
     float4 metallicRoughnessFactors; // x metallic, y roughness, z cutoff, w alpha mode
     float4 pbrTextureFlags;          // x mr map, y normal map, z ao map, w two-sided
     uint4 bindlessTextureIndices;    // x base, y mr, z normal, w ao
@@ -203,7 +203,10 @@ GBufferOutput fragmentMain(VertexOutput input)
     if (ubo.pbrTextureFlags.x > 0.5)
     {
         roughness *= sampledMr.g;
-        metallic *= sampledMr.b;
+        if (ubo.materialFlags.z < 0.5)
+        {
+            metallic *= sampledMr.b;
+        }
     }
 
     float ao = ubo.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;

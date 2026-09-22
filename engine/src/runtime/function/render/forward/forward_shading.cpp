@@ -19,7 +19,11 @@
 #include "runtime/function/render/shadow/shadow_map_target.h"
 #include "runtime/function/scene/light_eval.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/resource/asset/gltf_material_extras.h"
 #include "runtime/resource/asset/material_asset.h"
+#include "runtime/resource/asset/texture2d_asset.h"
+
+#include "EASTL/shared_ptr.h"
 
 namespace Blunder {
 
@@ -192,6 +196,43 @@ void applyBlinnPhongToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
   }
 }
 
+void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
+                                 const MaterialAsset* material) {
+  if (material == nullptr) {
+    return;
+  }
+
+  const char* mr_uri = nullptr;
+  if (const eastl::shared_ptr<Texture2DAsset>& mr =
+          material->getMetallicRoughnessTextureAsset()) {
+    mr_uri = mr->getVirtualPath().c_str();
+  }
+  const bool roughness_only = metallicRoughnessUriIsRoughnessOnly(mr_uri);
+  if (roughness_only) {
+    // Sidecar metallic=0 never reached the instance SSBO (hydrate after first
+    // pack, or bindless overwrite treating the atlas as ORM). Re-apply the
+    // import heuristic here so `metallic *= sampledMr.b` cannot chrome cards.
+    mesh_ubo.metallic_roughness_factors.x = resolveImportedMetallicFactor(
+        mesh_ubo.metallic_roughness_factors.x, GltfMaterialExtras{}, mr_uri);
+    mesh_ubo.material_flags.z = 1.0f;
+    mesh_ubo.pbr_texture_flags.w = 1.0f;
+    if (material->hasBaseColorTexture()) {
+      mesh_ubo.metallic_roughness_factors.w =
+          static_cast<float>(cgltf_alpha_mode_mask);
+      mesh_ubo.metallic_roughness_factors.z = material->getAlphaCutoff();
+    }
+  }
+
+  if (material->getAlphaMode() == cgltf_alpha_mode_mask ||
+      (material->getAlphaMode() == cgltf_alpha_mode_blend &&
+       material->getBaseColorFactor().a >= 0.999f &&
+       material->hasBaseColorTexture())) {
+    mesh_ubo.metallic_roughness_factors.w =
+        static_cast<float>(cgltf_alpha_mode_mask);
+    mesh_ubo.metallic_roughness_factors.z = material->getAlphaCutoff();
+  }
+}
+
 void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                               const MaterialAsset* material,
                               const BlinnPhongEditorSettings& editor,
@@ -204,15 +245,21 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
   float metallic = 1.0f;
   float roughness = 1.0f;
   bool has_metallic_roughness_texture = false;
+  const char* mr_uri = nullptr;
   if (material != nullptr) {
     metallic = material->getMetallicFactor();
     roughness = material->getRoughnessFactor();
     has_metallic_roughness_texture = material->hasMetallicRoughnessTexture();
+    if (const eastl::shared_ptr<Texture2DAsset>& mr =
+            material->getMetallicRoughnessTextureAsset()) {
+      mr_uri = mr->getVirtualPath().c_str();
+    }
     mesh_ubo.material_flags.x = material->isUnlit() ? 1.0f : 0.0f;
     // y = has albedo map. Slot 0 is the smoke checker; untextured GEO
     // (snow patches, paths) must use baseColorFactor, not bindless 0.
     mesh_ubo.material_flags.y =
         material->hasBaseColorTexture() ? 1.0f : 0.0f;
+    mesh_ubo.material_flags.z = 0.0f;
   }
 
   // glTF defaults both factors to 1.0 when omitted, so an unauthored material
@@ -221,6 +268,10 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
   if (!has_metallic_roughness_texture && metallic > 0.999f &&
       roughness > 0.999f) {
     metallic = 0.0f;
+  }
+  if (has_metallic_roughness_texture) {
+    metallic = resolveImportedMetallicFactor(metallic, GltfMaterialExtras{},
+                                             mr_uri);
   }
 
   mesh_ubo.metallic_roughness_factors =
@@ -231,6 +282,7 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
       material != nullptr && material->hasNormalTexture() ? 1.0f : 0.0f,
       material != nullptr && material->hasOcclusionTexture() ? 1.0f : 0.0f,
       double_sided ? 1.0f : 0.0f);
+  finalizeImportedPbrSampling(mesh_ubo, material);
 }
 
 float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,

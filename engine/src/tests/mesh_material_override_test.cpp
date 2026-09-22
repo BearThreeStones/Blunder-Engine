@@ -193,6 +193,81 @@ void foliageMrMapWithZeroMetallicStaysDielectric() {
               ubo.metallic_roughness_factors.x < 0.01f);
   expect_true("foliage MASK alpha mode packed",
               std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
+  expect_true("foliage roughness atlas skips ORM metal",
+              ubo.material_flags.z > 0.5f);
+  expect_true("foliage cards are two-sided", ubo.pbr_texture_flags.w > 0.5f);
+}
+
+void foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack() {
+  using namespace Blunder;
+  Asset::Meta mr_meta;
+  mr_meta.virtual_path =
+      "resources/se-world/assets/lib/textures/pine_leaves_roughness_01.png";
+  auto mr = eastl::make_shared<Texture2DAsset>(
+      eastl::move(mr_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{255, 205, 255, 255});
+  Asset::Meta albedo_meta;
+  albedo_meta.virtual_path =
+      "resources/se-world/assets/lib/textures/pine_leaves_albedo_01.png";
+  auto albedo = eastl::make_shared<Texture2DAsset>(
+      eastl::move(albedo_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{160, 176, 140, 255});
+  AssetHandle albedo_handle;
+  albedo_handle.type = Asset::Type::Texture2D;
+  albedo_handle.key = albedo->getVirtualPath();
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "assets/Meshes/pine.mesh.yaml#mat";
+  MaterialAsset foliage(eastl::move(mat_meta), glm::vec4(1.0f), albedo_handle,
+                        albedo, mr, nullptr, nullptr, glm::vec3(0.15f),
+                        glm::vec3(1.0f), glm::vec3(0.04f), 32.0f, 1.0f, 1.0f,
+                        cgltf_alpha_mode_opaque, 0.5f, false, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &foliage, {}, frame, cgltf_alpha_mode_opaque, 0.5f,
+                         false);
+  expect_true("GPU pack zeros spec-default metal on roughness atlas",
+              ubo.metallic_roughness_factors.x < 0.01f);
+  expect_true("GPU pack skips ORM B", ubo.material_flags.z > 0.5f);
+  expect_true("GPU pack MASK cutout even if draw alpha was opaque",
+              std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
+  expect_true("GPU pack two-sided foliage cards",
+              ubo.pbr_texture_flags.w > 0.5f);
+
+  // Bindless overwrite used to force ORM sampling; z must survive.
+  ubo.pbr_texture_flags.x = 1.0f;
+  expect_true("bindless MR flag does not clear roughness-only",
+              ubo.material_flags.z > 0.5f);
+  expect_true("metallic stays 0 after bindless MR flag",
+              ubo.metallic_roughness_factors.x < 0.01f);
+}
+
+void packedOrmMapKeepsMetalChannel() {
+  using namespace Blunder;
+  Asset::Meta mr_meta;
+  mr_meta.virtual_path = "resources/se-world/packed_metallic_roughness.png";
+  auto mr = eastl::make_shared<Texture2DAsset>(
+      eastl::move(mr_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{0, 128, 255, 255});
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "assets/Meshes/helmet.mesh.yaml#mat";
+  MaterialAsset chrome(eastl::move(mat_meta), glm::vec4(1.0f), AssetHandle{},
+                       nullptr, mr, nullptr, nullptr, glm::vec3(0.0f),
+                       glm::vec3(1.0f), glm::vec3(1.0f), 256.0f, 1.0f, 0.2f,
+                       cgltf_alpha_mode_opaque, 0.5f, false, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &chrome, {}, frame, cgltf_alpha_mode_opaque, 0.5f,
+                         false);
+  expect_true("packed ORM keeps metallic factor",
+              ubo.metallic_roughness_factors.x > 0.99f);
+  expect_true("packed ORM still samples B as metal",
+              ubo.material_flags.z < 0.5f);
+  expect_true("packed ORM stays opaque",
+              ubo.metallic_roughness_factors.w < 0.5f);
 }
 
 void extraMaterialStaysImport() {
@@ -307,6 +382,8 @@ int main() {
   gltfSpecDefaultMetalWithoutMrMapShadesAsDielectric();
   untexturedMaterialDoesNotSampleAlbedoBindless();
   foliageMrMapWithZeroMetallicStaysDielectric();
+  foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack();
+  packedOrmMapKeepsMetalChannel();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();
   if (g_failures != 0) {

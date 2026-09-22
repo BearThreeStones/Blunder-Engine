@@ -657,9 +657,13 @@ void drawMeshList(VkCommandBuffer cmd, VulkanContext* context,
     mesh_ubo.view = frame_state.view;
     mesh_ubo.projection = frame_state.projection;
     mesh_ubo.camera_position = glm::vec4(frame_state.camera_position, 1.0f);
-    applyPbrToMeshUniforms(mesh_ubo, draw.material, frame_state.shading, frame_state,
-                             draw.alpha_mode, draw.alpha_cutoff, draw.double_sided,
-                             draw.entity_id);
+    applyPbrToMeshUniforms(
+        mesh_ubo, draw.material, frame_state.shading, frame_state,
+        draw.material != nullptr ? draw.material->getAlphaMode()
+                                 : draw.alpha_mode,
+        draw.material != nullptr ? draw.material->getAlphaCutoff()
+                                 : draw.alpha_cutoff,
+        draw.double_sided, draw.entity_id);
 
     auto bindlessIndex = [&](VulkanTexture* texture) -> uint32_t {
       if (table == nullptr || texture == nullptr || texture == fallback_texture) {
@@ -673,6 +677,7 @@ void drawMeshList(VkCommandBuffer cmd, VulkanContext* context,
         bindlessIndex(draw.normal_texture),
         bindlessIndex(draw.occlusion_texture));
     // Overflow returns index 0; do not treat slot-0 pixels as extra PBR maps.
+    // material_flags.z (roughness-only) stays so B is not ORM metal.
     mesh_ubo.pbr_texture_flags.x =
         mesh_ubo.bindless_texture_indices.y != 0 ? 1.0f : 0.0f;
     mesh_ubo.pbr_texture_flags.y =

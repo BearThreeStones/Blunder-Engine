@@ -289,7 +289,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     if (inst.pbrTextureFlags.x > 0.5)
     {
         roughness *= sampledMr.g;
-        metallic *= sampledMr.b;
+        if (inst.materialFlags.z < 0.5)
+        {
+            metallic *= sampledMr.b;
+        }
     }
 
     float ao = inst.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;
