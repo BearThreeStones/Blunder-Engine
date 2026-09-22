@@ -14,13 +14,15 @@ export component FrameTimingHud inherits Rectangle {
     in property <string> gpu-text: "0.00";
     in property <int> instance-count: 0;
     in property <int> light-count: 0;
+    in property <int> batch-count: 0;
+    /// Surviving meshlet indirect commands (early + late compact). Not vkCmd*.
     in property <int> draw-count: 0;
     in property <bool> gpu-unreliable: false;
     in property <[FrameTimingPassRow]> passes: [];
 
     visible: root.hud-visible;
-    width: 252px;
-    height: 96px + 14px * root.passes.length + (root.gpu-unreliable ? 32px : 0px);
+    width: 268px;
+    height: 110px + 14px * root.passes.length + (root.gpu-unreliable ? 32px : 0px);
     background: #141414aa;
     border-width: 1px;
     border-color: EditorTheme.hairline;
@@ -54,7 +56,12 @@ export component FrameTimingHud inherits Rectangle {
             wrap: word-wrap;
         }
         Text {
-            text: "inst " + root.instance-count + "   lights " + root.light-count + "   draws " + root.draw-count;
+            text: "inst " + root.instance-count + "   lights " + root.light-count;
+            color: EditorTheme.muted;
+            font-size: 11px;
+        }
+        Text {
+            text: "batches " + root.batch-count + "   cmds " + root.draw-count;
             color: EditorTheme.muted;
             font-size: 11px;
         }

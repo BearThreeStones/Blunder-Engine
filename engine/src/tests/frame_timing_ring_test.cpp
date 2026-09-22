@@ -47,6 +47,21 @@ int main() {
   expect_near("latest cpu", ring.latest().cpu_ms, 16.0f, 0.01f);
   expect_near("latest pass gpu", ring.latest().passes[0].gpu_ms, 3.5f, 0.01f);
 
+  FrameTimingSlot counts{};
+  counts.instance_count = 10927;
+  counts.batch_count = 252;
+  counts.draw_count = 48001;
+  ring.push(counts);
+  expect_true("inst is packed instances",
+              ring.latest().instance_count == 10927);
+  expect_true("batches is MeshBatch count", ring.latest().batch_count == 252);
+  expect_true("cmds is surviving indirect not inst",
+              ring.latest().draw_count == 48001);
+  expect_true("inst != cmds",
+              ring.latest().instance_count != ring.latest().draw_count);
+  expect_true("batches != inst",
+              ring.latest().batch_count != ring.latest().instance_count);
+
   for (size_t i = 0; i < k_frame_timing_ring_capacity + 17; ++i) {
     FrameTimingSlot slot{};
     slot.cpu_ms = static_cast<float>(i + 1);

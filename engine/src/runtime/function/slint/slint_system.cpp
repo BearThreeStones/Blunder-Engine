@@ -2851,6 +2851,7 @@ void SlintSystem::syncFrameTimingUi() {
       ui.set_hud_gpu_text(formatHudMs(latest.gpu_ms));
       ui.set_hud_instance_count(static_cast<int>(latest.instance_count));
       ui.set_hud_light_count(static_cast<int>(latest.light_count));
+      ui.set_hud_batch_count(static_cast<int>(latest.batch_count));
       ui.set_hud_draw_count(static_cast<int>(latest.draw_count));
       ui.set_hud_gpu_unreliable(timing->gpuTimingsUnreliable());
     };
@@ -2905,10 +2906,10 @@ void SlintSystem::syncFrameTimingUi() {
             slint::SharedString(selected >= 0 ? "frame" : "latest"));
         char detail[160];
         std::snprintf(detail, sizeof(detail),
-                      "CPU %.2f ms  GPU %.2f ms  inst %u  lights %u  draws %u",
+                      "CPU %.2f ms  GPU %.2f ms  inst %u  batches %u  cmds %u",
                       static_cast<double>(inspect->cpu_ms),
                       static_cast<double>(inspect->gpu_ms),
-                      inspect->instance_count, inspect->light_count,
+                      inspect->instance_count, inspect->batch_count,
                       inspect->draw_count);
         m_window_component->operator->()->set_profiler_inspect_detail(
             slint::SharedString(detail));

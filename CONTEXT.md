@@ -345,7 +345,7 @@ A hierarchical depth pyramid built from the previous frame’s offscreen depth, 
 _Avoid_: A depth prepass as this slice’s occlusion method; treating SSAO as this; a visibility buffer as this
 
 **Frame timing HUD**:
-Slint overlay on the windowed editor Viewport **and** windowed Player showing FPS, CPU frame ms, GPU frame ms, main Pass times, and instance / light counts. Same numbers on both hosts. Default off (F3, editor Viewport menu), not persisted, not a product settings page. Headless / MCP / Project Manager have none. Shipping keeps this HUD and turns Tracy off. Distinct from **Editor Overlay**, from the **Viewport tool strip**, from the **Profiler dock**, and from the 2027-01 game shell. Decision record: [ADR 0075](docs/adr/0075-frame-timing-hud-and-tracy.md).
+Slint overlay on the windowed editor Viewport **and** windowed Player showing FPS, CPU frame ms, GPU frame ms, main Pass times, packed GPU-driven `inst`, MeshBatch `batches`, and surviving meshlet indirect `cmds` (early+late compact counts; not `vkCmd*`), plus light count. `inst` and `cmds` MUST NOT be the same CPU submit-list length. Same numbers on both hosts. Default off (F3, editor Viewport menu), not persisted, not a product settings page. Headless / MCP / Project Manager have none. Shipping keeps this HUD and turns Tracy off. Distinct from **Editor Overlay**, from the **Viewport tool strip**, from the **Profiler dock**, and from the 2027-01 game shell. Decision record: [ADR 0075](docs/adr/0075-frame-timing-hud-and-tracy.md).
 _Avoid_: Title-bar FPS as the only Player readout; treating this as an Editor Overlay; Headless HUD; a Tracy window as this layer; persisting the toggle; a second UI toolkit
 
 **Profiler dock**:
@@ -353,7 +353,7 @@ Editor-only self-drawn Slint bottom dock (Animation Window / Console rhythm): fr
 _Avoid_: Embedding Tracy Server; puffin_egui; requiring `TRACY_ENABLE` for the strip; covering the Viewport as an overlay; hanging this dock on Player
 
 **Frame timing ring**:
-Engine-owned readable history of about 120 `tickOneFrame` slots: CPU dt, GPU query ms, named Passes, a few CPU zones (tick / Job / scene sync), instance / light / draw counts. HUD and Profiler dock bind this ring. Works with Tracy compiled out. Not Tracy’s internal buffer, not the Tracy protocol, not a `.tracy` file.
+Engine-owned readable history of about 120 `tickOneFrame` slots: CPU dt, GPU query ms, named Passes, a few CPU zones (tick / Job / scene sync), packed instance / MeshBatch / surviving meshlet-cmd counts. HUD and Profiler dock bind this ring. Works with Tracy compiled out. Not Tracy’s internal buffer, not the Tracy protocol, not a `.tracy` file.
 _Avoid_: Parsing Tracy sockets for the panel; Insights-length history; per-draw GPU slots
 
 **Tracy Client**:

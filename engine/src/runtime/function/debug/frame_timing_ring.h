@@ -27,6 +27,8 @@ struct FrameTimingSlot {
   float fps{0.0f};
   uint32_t instance_count{0};
   uint32_t light_count{0};
+  uint32_t batch_count{0};
+  /// Surviving meshlet indirect commands (early + late compact counts).
   uint32_t draw_count{0};
   uint32_t pass_count{0};
   uint32_t cpu_zone_count{0};

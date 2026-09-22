@@ -68,7 +68,7 @@ SlintSystem::update()
 
 ## Frame timing (HUD, dock, Tracy dual-write)
 
-Layer 1 is a Slint **Frame timing HUD** on the editor Viewport and windowed Player (F3, default off, not persisted). Layer 2 is an editor-only Slint **Profiler dock** (kind 7) bound to the same ~120-frame ring. Headless / MCP / Project Manager have neither.
+Layer 1 is a Slint **Frame timing HUD** on the editor Viewport and windowed Player (F3, default off, not persisted). Counts: packed GPU-driven `inst`, unique-mesh `batches`, surviving meshlet indirect `cmds` (not the old `inst == draws` submit-list tautology). Layer 2 is an editor-only Slint **Profiler dock** (kind 7) bound to the same ~120-frame ring. Headless / MCP / Project Manager have neither.
 
 Named GPU timestamps cover live viewport Passes (`viewport.gbuffer` / `viewport.lighting`, or Forward `viewport.scene`; optional `ssao` / `volumetric_fog`; Sink `viewport.copy`) plus internals `shadow` / `cull` / `froxel` / `lighting.triangle`. No per-draw or per-Spot GPU zones. `TracyVkCollect` runs after graph `execute` (and Camera Preview record), before `vkQueueSubmit`, on PRIMARY, outside a render pass.
 

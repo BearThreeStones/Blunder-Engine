@@ -29,7 +29,7 @@ class FrameTimingService final {
   void addCpuZone(const char* name, float cpu_ms);
   void addJobWorkNs(uint64_t ns);
   void setCounts(uint32_t instance_count, uint32_t light_count,
-                 uint32_t draw_count);
+                 uint32_t batch_count, uint32_t draw_count);
   void endTick(int fps);
 
   void attachGpu(VulkanContext* context);

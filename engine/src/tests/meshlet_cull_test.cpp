@@ -57,6 +57,14 @@ int main() {
   expect_true("courtyard meshlet keeps Hi-Z",
               !meshletSkipHiZWhenFar(80.0f, 50.0f));
 
+  const uint32_t compact[4] = {3u, 0u, 11u, 2u};
+  expect_true("sum compact counts",
+              sumCompactCountBuffer(compact, 4) == 16u);
+  expect_true("sum compact null is 0",
+              sumCompactCountBuffer(nullptr, 4) == 0u);
+  expect_true("sum compact empty is 0",
+              sumCompactCountBuffer(compact, 0) == 0u);
+
   glm::mat4 sponza_view = glm::lookAt(glm::vec3(0.0f, -1500.0f, 8000.0f),
                                      glm::vec3(0.0f, 0.0f, 500.0f),
                                      glm::vec3(0.0f, 0.0f, 1.0f));
