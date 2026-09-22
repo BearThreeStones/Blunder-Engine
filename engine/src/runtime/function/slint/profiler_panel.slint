@@ -21,11 +21,12 @@ export component ProfilerPanel inherits Rectangle {
     callback frame-clicked(int);
 
     background: EditorTheme.window;
-    min-height: 220px;
+    min-height: 240px;
+    clip: false;
 
     VerticalLayout {
         padding: 8px;
-        spacing: 8px;
+        spacing: 6px;
 
         Text {
             text: "Frame strip";
@@ -85,56 +86,48 @@ export component ProfilerPanel inherits Rectangle {
             }
         }
 
-        Flickable {
-            vertical-stretch: 1;
+        Text {
+            text: "Lanes";
+            color: EditorTheme.muted;
+            font-size: 11px;
+        }
 
-            VerticalLayout {
+        for lane in root.lanes: Rectangle {
+            height: 18px;
+            HorizontalLayout {
                 spacing: 8px;
-
                 Text {
-                    text: "Lanes";
+                    text: lane.is-gpu ? "GPU" : "CPU";
                     color: EditorTheme.muted;
-                    font-size: 11px;
+                    font-size: 10px;
+                    width: 28px;
                 }
-
-                for lane in root.lanes: Rectangle {
-                    height: 18px;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Text {
-                            text: lane.is-gpu ? "GPU" : "CPU";
-                            color: EditorTheme.muted;
-                            font-size: 10px;
-                            width: 28px;
-                        }
-                        Text {
-                            text: lane.name;
-                            color: EditorTheme.default-text;
-                            font-size: 11px;
-                            horizontal-stretch: 1;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: lane.ms-text + " ms";
-                            color: EditorTheme.default-text;
-                            font-size: 11px;
-                        }
-                    }
-                }
-
                 Text {
-                    text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
+                    text: lane.name;
                     color: EditorTheme.default-text;
-                    font-size: 12px;
-                    font-weight: 600;
+                    font-size: 11px;
+                    horizontal-stretch: 1;
+                    overflow: elide;
                 }
                 Text {
-                    text: root.inspect-detail;
-                    color: EditorTheme.muted;
+                    text: lane.ms-text + " ms";
+                    color: EditorTheme.default-text;
                     font-size: 11px;
-                    wrap: word-wrap;
                 }
             }
+        }
+
+        Text {
+            text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
+            color: EditorTheme.default-text;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        Text {
+            text: root.inspect-detail;
+            color: EditorTheme.muted;
+            font-size: 11px;
+            wrap: word-wrap;
         }
     }
 }

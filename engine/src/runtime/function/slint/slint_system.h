@@ -600,6 +600,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void seedDockingWorkspace();
   void noteDockLayoutSettled();
   void syncDockingWorkspace();
+  void enlargeProfilerDock();
   void applyAnimationPreviewLiveTimeScale();
   void commitAnimationPreviewTimeScale();
   void applyAnimationPreviewSeek(float seconds);

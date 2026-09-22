@@ -2451,7 +2451,8 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
         s_logged_first_zero_copy = true;
       }
       static bool s_zero_copy_needs_initial_full_refresh = true;
-      if (size_changed || s_zero_copy_needs_initial_full_refresh) {
+      if (size_changed || s_zero_copy_needs_initial_full_refresh ||
+          (m_player_hud_mode && frameTimingHudVisible())) {
         markFullSkiaRefresh();
         s_zero_copy_needs_initial_full_refresh = false;
       } else if (slintPartialCompositeEnabled()) {
@@ -2607,7 +2608,7 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     }
     if (request_skia_composite) {
       logViewportPresentPathOnce(false);
-      if (size_changed) {
+      if (size_changed || (m_player_hud_mode && frameTimingHudVisible())) {
         markFullSkiaRefresh();
       } else if (slintPartialCompositeEnabled()) {
         markViewportDirtyRegion();
@@ -2773,6 +2774,33 @@ void SlintSystem::toggleFrameTimingHud() {
   }
 }
 
+void SlintSystem::enlargeProfilerDock() {
+  const auto widget =
+      m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler);
+  if (!widget) {
+    return;
+  }
+  auto node = widget->ownerContainer();
+  if (!node) {
+    return;
+  }
+  const float host_h = eastl::max(m_dock_manager.hostRect().height,
+                                  eastl::max(m_docking_host_h, 1.0f));
+  constexpr float k_min_profiler_h = 280.0f;
+  for (auto parent = node->parent(); parent; parent = parent->parent()) {
+    if (parent->isSplit() &&
+        parent->splitDirection() == SplitDirection::vertical &&
+        parent->second() == node) {
+      const float ratio =
+          std::clamp(1.0f - k_min_profiler_h / host_h, 0.42f, 0.70f);
+      parent->setSplitRatio(ratio);
+      LOG_INFO("[FrameTiming] profiler split ratio {:.2f} host_h {:.0f}",
+               static_cast<double>(ratio), static_cast<double>(host_h));
+    }
+    node = parent;
+  }
+}
+
 void SlintSystem::toggleProfilerDock() {
   if (m_player_hud_mode || m_project_manager_mode) {
     return;
@@ -2786,14 +2814,7 @@ void SlintSystem::toggleProfilerDock() {
       auto widget = m_dock_manager.createWidget(
           defaultDockPanelTitle(DockPanelKind::profiler), DockPanelKind::profiler);
       m_dock_manager.dockToRoot(widget, DockSlot::bottom);
-      if (const auto& root = m_dock_manager.root()) {
-        if (root->isSplit() &&
-            root->splitDirection() == SplitDirection::vertical) {
-          // Keep enough height for Frame strip + Lanes + inspect (not the
-          // animation-dock 14% strip).
-          root->setSplitRatio(0.62f);
-        }
-      }
+      enlargeProfilerDock();
     }
     m_docking_model_dirty = true;
     const bool dock_open =
@@ -9407,6 +9428,7 @@ void SlintSystem::syncDockingWorkspace() {
     component->set_docking_tiles(tile_model);
   }
   size_t tile_idx = 0;
+  float profiler_content_h = 0.0f;
   for (const DockTileView& view : model.tiles) {
     DockTile row{};
     row.node_id = static_cast<int>(view.node_id);
@@ -9421,6 +9443,9 @@ void SlintSystem::syncDockingWorkspace() {
     row.active_widget_id = static_cast<int>(view.active_widget_id);
     row.active_panel_kind = static_cast<int>(view.active_panel_kind);
     row.floating = view.floating;
+    if (view.active_panel_kind == DockPanelKind::profiler) {
+      profiler_content_h = view.content_rect.height;
+    }
 
     if (tile_idx < tile_model->row_count()) {
       tile_model->set_row_data(tile_idx, row);
@@ -9431,6 +9456,18 @@ void SlintSystem::syncDockingWorkspace() {
   }
   while (tile_model->row_count() > model.tiles.size()) {
     tile_model->erase(tile_model->row_count() - 1);
+  }
+  if (profiler_content_h > 0.0f) {
+    LOG_INFO("[FrameTiming] profiler pane {:.0f}px",
+             static_cast<double>(profiler_content_h));
+    if (profiler_content_h < 220.0f) {
+      static float s_last_short_profiler_h = -1.0f;
+      if (std::fabs(profiler_content_h - s_last_short_profiler_h) > 1.0f) {
+        s_last_short_profiler_h = profiler_content_h;
+        enlargeProfilerDock();
+        m_docking_model_dirty = true;
+      }
+    }
   }
 
   auto tab_existing = component->get_docking_tabs();

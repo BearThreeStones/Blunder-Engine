@@ -20,26 +20,35 @@ export component PlayerHudWindow inherits Window {
     in property <bool> hud-gpu-unreliable: false;
     in property <[FrameTimingPassRow]> hud-passes: [];
 
-    Image {
+    // Match editor Viewport tile: overlay HUD inside a sized Rectangle so
+    // parent.width is the window, not a zero Window layout box.
+    Rectangle {
         width: 100%;
         height: 100%;
-        source: root.viewport-image;
-        image-fit: fill;
-        visible: root.viewport-image-ready;
-    }
+        background: #383838;
+        clip: true;
 
-    if root.frame-timing-hud-visible: FrameTimingHud {
-        x: parent.width - self.width - 8px;
-        y: 8px;
-        z: 1000;
-        hud-visible: true;
-        fps: root.hud-fps;
-        cpu-text: root.hud-cpu-text;
-        gpu-text: root.hud-gpu-text;
-        instance-count: root.hud-instance-count;
-        light-count: root.hud-light-count;
-        draw-count: root.hud-draw-count;
-        gpu-unreliable: root.hud-gpu-unreliable;
-        passes: root.hud-passes;
+        Image {
+            width: 100%;
+            height: 100%;
+            source: root.viewport-image;
+            image-fit: fill;
+            visible: root.viewport-image-ready;
+        }
+
+        FrameTimingHud {
+            x: parent.width - self.width - 8px;
+            y: 8px;
+            z: 1000;
+            hud-visible: root.frame-timing-hud-visible;
+            fps: root.hud-fps;
+            cpu-text: root.hud-cpu-text;
+            gpu-text: root.hud-gpu-text;
+            instance-count: root.hud-instance-count;
+            light-count: root.hud-light-count;
+            draw-count: root.hud-draw-count;
+            gpu-unreliable: root.hud-gpu-unreliable;
+            passes: root.hud-passes;
+        }
     }
 }
