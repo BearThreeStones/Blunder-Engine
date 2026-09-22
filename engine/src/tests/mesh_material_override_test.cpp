@@ -168,6 +168,33 @@ void untexturedMaterialDoesNotSampleAlbedoBindless() {
               textured_ubo.material_flags.y == 1.0f);
 }
 
+void foliageMrMapWithZeroMetallicStaysDielectric() {
+  using namespace Blunder;
+  Asset::Meta mr_meta;
+  mr_meta.virtual_path =
+      "resources/se-world/assets/lib/textures/pine_leaves_roughness_01.png";
+  auto mr = eastl::make_shared<Texture2DAsset>(
+      eastl::move(mr_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{255, 205, 255, 255});
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "assets/Meshes/pine.mesh.yaml#mat";
+  MaterialAsset foliage(eastl::move(mat_meta), glm::vec4(1.0f), AssetHandle{},
+                        nullptr, mr, nullptr, nullptr, glm::vec3(0.15f),
+                        glm::vec3(1.0f), glm::vec3(0.04f), 32.0f, 0.0f, 1.0f,
+                        cgltf_alpha_mode_mask, 0.5f, true, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &foliage, {}, frame, cgltf_alpha_mode_mask, 0.5f,
+                         true);
+  expect_true("foliage MR map still sampled", ubo.pbr_texture_flags.x == 1.0f);
+  expect_true("foliage extras metallic 0 stays dielectric",
+              ubo.metallic_roughness_factors.x < 0.01f);
+  expect_true("foliage MASK alpha mode packed",
+              std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
+}
+
 void extraMaterialStaysImport() {
   using namespace Blunder;
   Asset::Meta first_meta;
@@ -279,6 +306,7 @@ int main() {
   applyBlinnPhongIgnoresEditorBag();
   gltfSpecDefaultMetalWithoutMrMapShadesAsDielectric();
   untexturedMaterialDoesNotSampleAlbedoBindless();
+  foliageMrMapWithZeroMetallicStaysDielectric();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();
   if (g_failures != 0) {

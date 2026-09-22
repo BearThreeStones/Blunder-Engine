@@ -3,6 +3,7 @@
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset/gltf_material_extras.h"
 #include "runtime/resource/asset/mesh_material_override.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
@@ -553,6 +554,9 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   if (!AssetYaml::parseMeshCookedMaterialSidecar(yaml_text, sidecar)) {
     return false;
   }
+  sidecar.metallic_factor = resolveImportedMetallicFactor(
+      sidecar.metallic_factor, GltfMaterialExtras{},
+      sidecar.metallic_roughness_texture.c_str());
 
   auto loadSlot = [this](const eastl::string& virtual_path)
       -> eastl::shared_ptr<Texture2DAsset> {
@@ -563,9 +567,11 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   };
   eastl::shared_ptr<Texture2DAsset> base_color =
       loadSlot(sidecar.base_color_texture);
-  eastl::shared_ptr<Texture2DAsset> metallic_roughness;
-  eastl::shared_ptr<Texture2DAsset> normal;
-  eastl::shared_ptr<Texture2DAsset> occlusion;
+  eastl::shared_ptr<Texture2DAsset> metallic_roughness =
+      loadSlot(sidecar.metallic_roughness_texture);
+  eastl::shared_ptr<Texture2DAsset> normal = loadSlot(sidecar.normal_texture);
+  eastl::shared_ptr<Texture2DAsset> occlusion =
+      loadSlot(sidecar.occlusion_texture);
   AssetHandle base_color_handle;
   if (base_color) {
     base_color_handle =
@@ -584,6 +590,7 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
+  material->promoteOpaqueTexturedBlendToMask();
   material->promoteWaterSurfaceFilmToOpaque();
   mesh->setMaterialAsset(eastl::move(material));
   if (!sidecar.base_color_texture.empty() && mesh->getMaterialAsset() &&

@@ -15,6 +15,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/gltf_material_extras.h"
 #include "runtime/resource/asset/mesh_asset.h"
 
 namespace Blunder {
@@ -75,6 +76,35 @@ const cgltf_attribute* findPrimitiveAttribute(const cgltf_primitive& primitive,
 
 bool isDataUri(const char* uri) {
   return uri != nullptr && std::strncmp(uri, "data:", 5) == 0;
+}
+
+bool copyGltfMaterialExtrasJson(const cgltf_data* data, const cgltf_extras& extras,
+                                eastl::string& out_json) {
+  if (data == nullptr) {
+    return false;
+  }
+  cgltf_size size = 0;
+  cgltf_copy_extras_json(data, &extras, nullptr, &size);
+  if (size <= 1) {
+    return false;
+  }
+  out_json.resize(size);
+  if (cgltf_copy_extras_json(data, &extras, out_json.data(), &size) !=
+      cgltf_result_success) {
+    out_json.clear();
+    return false;
+  }
+  if (!out_json.empty() && out_json.back() == '\0') {
+    out_json.pop_back();
+  }
+  return !out_json.empty();
+}
+
+const char* gltfTextureImageUri(const cgltf_texture* texture) {
+  if (texture == nullptr || texture->image == nullptr) {
+    return nullptr;
+  }
+  return texture->image->uri;
 }
 
 void computeMeshTangents(eastl::vector<MeshVertex>& vertices,
@@ -402,6 +432,8 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
         return bindTexture2D(texture_virtual_path);
       };
 
+  const char* metallic_roughness_uri = nullptr;
+  bool used_pbr_metallic_roughness = false;
   if (material.has_pbr_specular_glossiness) {
     const cgltf_pbr_specular_glossiness& sg = material.pbr_specular_glossiness;
     base_color_factor =
@@ -413,35 +445,39 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     base_color_texture_asset = loadGltfImageTexture(sg.diffuse_texture.texture);
   } else if (material.has_pbr_metallic_roughness) {
     const cgltf_pbr_metallic_roughness& pbr = material.pbr_metallic_roughness;
+    used_pbr_metallic_roughness = true;
     base_color_factor =
         glm::vec4(pbr.base_color_factor[0], pbr.base_color_factor[1],
                   pbr.base_color_factor[2], pbr.base_color_factor[3]);
     metallic_factor = pbr.metallic_factor;
     roughness_factor = pbr.roughness_factor;
+    base_color_texture_asset =
+        loadGltfImageTexture(pbr.base_color_texture.texture);
+    metallic_roughness_texture_asset =
+        loadGltfImageTexture(pbr.metallic_roughness_texture.texture);
+    metallic_roughness_uri =
+        gltfTextureImageUri(pbr.metallic_roughness_texture.texture);
+  }
+
+  GltfMaterialExtras extras{};
+  eastl::string extras_json;
+  if (copyGltfMaterialExtrasJson(data, material.extras, extras_json)) {
+    parseGltfMaterialExtrasJson(extras_json.c_str(), extras_json.size(), extras);
+  }
+  metallic_factor = resolveImportedMetallicFactor(
+      metallic_factor, extras, metallic_roughness_uri);
+  roughness_factor = resolveImportedRoughnessFactor(roughness_factor, extras);
+  if (used_pbr_metallic_roughness) {
     const float metallic = metallic_factor;
     specular_color =
         glm::vec3(0.04f) * (1.0f - metallic) +
         glm::vec3(base_color_factor.x, base_color_factor.y, base_color_factor.z) *
             metallic;
     shininess = 8.0f + (256.0f - 8.0f) * (1.0f - roughness_factor);
-    base_color_texture_asset =
-        loadGltfImageTexture(pbr.base_color_texture.texture);
-    metallic_roughness_texture_asset =
-        loadGltfImageTexture(pbr.metallic_roughness_texture.texture);
   }
 
   normal_texture_asset = loadGltfImageTexture(material.normal_texture.texture);
   occlusion_texture_asset = loadGltfImageTexture(material.occlusion_texture.texture);
-
-  if (alpha_mode == cgltf_alpha_mode_blend && base_color_factor.a >= 0.999f) {
-    // Blender tags solid meshes as BLEND (skips depth write). Foliage cards
-    // keep a base-color texture with alpha — MASK punches the cutout.
-    if (base_color_texture_asset) {
-      alpha_mode = cgltf_alpha_mode_mask;
-    } else {
-      alpha_mode = cgltf_alpha_mode_opaque;
-    }
-  }
 
   if (base_color_texture_asset) {
     base_color_texture_handle =
@@ -458,6 +494,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
       normal_texture_asset, occlusion_texture_asset, ambient_color, diffuse_color,
       specular_color, shininess, metallic_factor, roughness_factor, alpha_mode,
       alpha_cutoff, double_sided, unlit);
+  material_asset->promoteOpaqueTexturedBlendToMask();
   material_asset->promoteWaterSurfaceFilmToOpaque();
   m_material_cache[material_key] = material_asset;
   return material_asset;

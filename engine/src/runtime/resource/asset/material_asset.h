@@ -104,6 +104,17 @@ class MaterialAsset final : public Asset {
            m_base_color_factor.a < 0.999f;
   }
 
+  /// Godot foliage cards are BLEND + opaque factor + albedo atlas. MASK so
+  /// G-buffer `clip(alpha - cutoff)` punches the black atlas background.
+  void promoteOpaqueTexturedBlendToMask() {
+    if (m_alpha_mode != cgltf_alpha_mode_blend ||
+        m_base_color_factor.a < 0.999f) {
+      return;
+    }
+    m_alpha_mode = hasBaseColorTexture() ? cgltf_alpha_mode_mask
+                                         : cgltf_alpha_mode_opaque;
+  }
+
   void setBaseColorFactor(const glm::vec4& value) { m_base_color_factor = value; }
   void setBaseColorTexture(AssetHandle handle,
                            eastl::shared_ptr<Texture2DAsset> asset) {
