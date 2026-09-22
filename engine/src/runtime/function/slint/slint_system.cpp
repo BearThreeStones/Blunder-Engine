@@ -2749,15 +2749,24 @@ bool SlintSystem::frameTimingHudVisible() const {
 void SlintSystem::toggleFrameTimingHud() {
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    bool visible = false;
     if (m_window_component) {
       auto& ui = *m_window_component;
-      ui->set_frame_timing_hud_visible(!ui->get_frame_timing_hud_visible());
+      visible = !ui->get_frame_timing_hud_visible();
+      ui->set_frame_timing_hud_visible(visible);
       markFullSkiaRefresh();
     } else if (m_player_hud_component) {
       auto& ui = *m_player_hud_component;
-      ui->set_frame_timing_hud_visible(!ui->get_frame_timing_hud_visible());
+      visible = !ui->get_frame_timing_hud_visible();
+      ui->set_frame_timing_hud_visible(visible);
       markFullSkiaRefresh();
+    } else {
+      return;
     }
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+    LOG_INFO("[FrameTiming] HUD {}", visible ? "on" : "off");
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::toggleFrameTimingHud] {}", e.what());
   }
@@ -2778,12 +2787,16 @@ void SlintSystem::toggleProfilerDock() {
       m_dock_manager.dockToRoot(widget, DockSlot::bottom);
     }
     m_docking_model_dirty = true;
+    const bool dock_open =
+        m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler) != nullptr;
     if (m_window_component) {
-      m_window_component->operator->()->set_profiler_dock_open(
-          m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler) !=
-          nullptr);
+      m_window_component->operator->()->set_profiler_dock_open(dock_open);
     }
     markFullSkiaRefresh();
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+    LOG_INFO("[FrameTiming] profiler dock {}", dock_open ? "on" : "off");
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::toggleProfilerDock] {}", e.what());
   }
@@ -11467,50 +11480,62 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               wheel_x * 20.0f, wheel_y * 20.0f);
         }
         break;
-      case SDL_EVENT_KEY_DOWN:
-        if (event.key.windowID == window_id) {
-          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
-              m_dock_manager.drag().isActive()) {
-            m_dock_manager.cancelDrag();
-            m_docking_model_dirty = true;
-            break;
-          }
-          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
-              isContentBrowserDragActive()) {
-            cancelContentBrowserDrag();
-            break;
-          }
-          if (!event.key.repeat && event.key.key == SDLK_F2) {
-            requestBrowserInlineRename();
-          }
-          if (!event.key.repeat && event.key.key == SDLK_P &&
-              !g_runtime_global_context.inlineRenameActive()) {
-            requestViewportProjectionToggle("keyboard_p");
-          }
-          if (!event.key.repeat && event.key.key == SDLK_F3 &&
-              !g_runtime_global_context.inlineRenameActive()) {
+      case SDL_EVENT_KEY_DOWN: {
+        const bool for_this_window = event.key.windowID == window_id;
+        // SDL stamps key.windowID from keyboard focus. Win32 PostMessage still
+        // reaches this HWND after focus returns to another process, but the
+        // event id is 0, so a focus-only check drops every press after the
+        // first foreground grab. Hotkeys only; do not route text that way.
+        const bool unfocused_hotkey = event.key.windowID == 0 && !event.key.repeat;
+        if ((for_this_window || unfocused_hotkey) && !event.key.repeat &&
+            !g_runtime_global_context.inlineRenameActive()) {
+          const bool f3 = event.key.key == SDLK_F3 ||
+                          event.key.scancode == SDL_SCANCODE_F3;
+          const bool f4 = event.key.key == SDLK_F4 ||
+                          event.key.scancode == SDL_SCANCODE_F4;
+          const bool alt = (event.key.mod & SDL_KMOD_ALT) != 0;
+          if (f3) {
             toggleFrameTimingHud();
-          }
-          if (!event.key.repeat && event.key.key == SDLK_F4 &&
-              !g_runtime_global_context.inlineRenameActive() &&
-              !m_player_hud_mode) {
+          } else if (f4 && !alt && !m_player_hud_mode) {
             toggleProfilerDock();
           }
-          if (!event.key.repeat && event.key.key == SDLK_H &&
-              !g_runtime_global_context.inlineRenameActive() &&
-              !m_player_hud_mode) {
-            toggleFroxelOccupancyHeatmap();
-          }
-          const slint::SharedString key_text = mapKeycode(event.key.key);
-          if (!key_text.empty() && isSpecialKey(event.key.key)) {
-            if (event.key.repeat) {
-              window.dispatch_key_press_repeat_event(key_text);
-            } else {
-              window.dispatch_key_press_event(key_text);
-            }
+        }
+        if (!for_this_window) {
+          break;
+        }
+        if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+            m_dock_manager.drag().isActive()) {
+          m_dock_manager.cancelDrag();
+          m_docking_model_dirty = true;
+          break;
+        }
+        if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+            isContentBrowserDragActive()) {
+          cancelContentBrowserDrag();
+          break;
+        }
+        if (!event.key.repeat && event.key.key == SDLK_F2) {
+          requestBrowserInlineRename();
+        }
+        if (!event.key.repeat && event.key.key == SDLK_P &&
+            !g_runtime_global_context.inlineRenameActive()) {
+          requestViewportProjectionToggle("keyboard_p");
+        }
+        if (!event.key.repeat && event.key.key == SDLK_H &&
+            !g_runtime_global_context.inlineRenameActive() &&
+            !m_player_hud_mode) {
+          toggleFroxelOccupancyHeatmap();
+        }
+        const slint::SharedString key_text = mapKeycode(event.key.key);
+        if (!key_text.empty() && isSpecialKey(event.key.key)) {
+          if (event.key.repeat) {
+            window.dispatch_key_press_repeat_event(key_text);
+          } else {
+            window.dispatch_key_press_event(key_text);
           }
         }
         break;
+      }
       case SDL_EVENT_KEY_UP:
         if (event.key.windowID == window_id) {
           const slint::SharedString key_text = mapKeycode(event.key.key);
