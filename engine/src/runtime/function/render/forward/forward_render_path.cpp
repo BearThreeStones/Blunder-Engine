@@ -677,13 +677,11 @@ void drawMeshList(VkCommandBuffer cmd, VulkanContext* context,
         bindlessIndex(draw.normal_texture),
         bindlessIndex(draw.occlusion_texture));
     // Overflow returns index 0; do not treat slot-0 pixels as extra PBR maps.
-    // material_flags.z (roughness-only) stays so B is not ORM metal.
-    mesh_ubo.pbr_texture_flags.x =
-        mesh_ubo.bindless_texture_indices.y != 0 ? 1.0f : 0.0f;
-    mesh_ubo.pbr_texture_flags.y =
-        mesh_ubo.bindless_texture_indices.z != 0 ? 1.0f : 0.0f;
-    mesh_ubo.pbr_texture_flags.z =
-        mesh_ubo.bindless_texture_indices.w != 0 ? 1.0f : 0.0f;
+    // material_flags.z (roughness-only) stays so B is not ORM metal and
+    // paper_rough is not sampled as a tangent normal.
+    applyBindlessPbrMapFlags(mesh_ubo.pbr_texture_flags,
+                             mesh_ubo.bindless_texture_indices,
+                             mesh_ubo.material_flags);
 
     const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
         gpu_skinned ? skinned_descriptor_sets[descriptor_index]

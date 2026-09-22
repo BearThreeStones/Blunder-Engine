@@ -569,7 +569,10 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       loadSlot(sidecar.base_color_texture);
   eastl::shared_ptr<Texture2DAsset> metallic_roughness =
       loadSlot(sidecar.metallic_roughness_texture);
-  eastl::shared_ptr<Texture2DAsset> normal = loadSlot(sidecar.normal_texture);
+  eastl::shared_ptr<Texture2DAsset> normal =
+      textureUriIsPaperGrain(sidecar.normal_texture.c_str())
+          ? nullptr
+          : loadSlot(sidecar.normal_texture);
   eastl::shared_ptr<Texture2DAsset> occlusion =
       loadSlot(sidecar.occlusion_texture);
   AssetHandle base_color_handle;
@@ -590,6 +593,11 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
+  if (textureUriIsPaperGrain(sidecar.normal_texture.c_str()) ||
+      metallicRoughnessUriIsRoughnessOnly(
+          sidecar.metallic_roughness_texture.c_str())) {
+    material->markPaperCard();
+  }
   material->promoteOpaqueTexturedBlendToMask();
   material->promoteWaterSurfaceFilmToOpaque();
   mesh->setMaterialAsset(eastl::move(material));

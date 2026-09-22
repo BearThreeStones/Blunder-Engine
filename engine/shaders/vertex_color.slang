@@ -10,8 +10,15 @@ bool packedSingleChannelMask(float3 vc)
     return mn < 0.02 && (mx - mn) > 0.04;
 }
 
-float3 applyVertexColorToAlbedo(float3 albedo, float3 vc, float hasAlbedoMap)
+float3 applyVertexColorToAlbedo(float3 albedo, float3 vc, float hasAlbedoMap,
+                                float skipVertexTint)
 {
+    // Paper / roughness-only cards pack COLOR_0 that is not a G-mask
+    // (often RGB~0 with coverage in A). RGB multiply zeros mint albedo.
+    if (hasAlbedoMap > 0.5 && skipVertexTint > 0.5)
+    {
+        return albedo;
+    }
     if (packedSingleChannelMask(vc))
     {
         if (hasAlbedoMap > 0.5)

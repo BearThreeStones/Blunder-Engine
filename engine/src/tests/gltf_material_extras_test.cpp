@@ -189,7 +189,12 @@ void parserHonorsMaterialInfoMetallic() {
               parseGltfMaterialExtrasJson(json, std::strlen(json), extras));
   expect_true("extras has metallic", extras.has_metallic);
   expect_true("extras metallic 0", extras.metallic < 0.01f);
-  expect_true("paper_color not required", !extras.has_roughness);
+  expect_true("extras paper_color", extras.has_paper_color);
+  expect_true("extras paper_color rgb",
+              std::fabs(extras.paper_color[0] - 0.65f) < 1e-4f &&
+                  std::fabs(extras.paper_color[1] - 0.69f) < 1e-4f &&
+                  std::fabs(extras.paper_color[2] - 0.57f) < 1e-4f);
+  expect_true("paper_color not roughness", !extras.has_roughness);
 }
 
 void parserHonorsTopLevelMetallic() {
@@ -246,6 +251,11 @@ void resolvePolicy() {
                   "resources/se-world/pine_leaves_roughness_01.png"));
   expect_true("packed orm helper false",
               !metallicRoughnessUriIsRoughnessOnly("packed_orm.png"));
+  expect_true("paper_rough is paper grain",
+              textureUriIsPaperGrain(
+                  "resources/se-world/assets/textures/paper_rough_256.png"));
+  expect_true("albedo is not paper grain",
+              !textureUriIsPaperGrain("pine_leaves_albedo_01.png"));
 }
 
 void maskPromotion() {
@@ -285,6 +295,8 @@ void importExtrasMetallicZero() {
                 material->hasMetallicRoughnessTexture());
     expect_true("extras pine MASK cutout",
                 material->getAlphaMode() == cgltf_alpha_mode_mask);
+    expect_true("extras pine paper_color", material->hasPaperColor());
+    expect_true("extras pine paper card", material->isPaperCard());
   }
   g_runtime_global_context.m_logger_system.reset();
   fs::remove_all(project);
@@ -304,6 +316,7 @@ void importRoughnessAtlasWithoutExtras() {
   if (material != nullptr) {
     expect_true("roughness-atlas dielectric",
                 material->getMetallicFactor() < 0.01f);
+    expect_true("roughness-atlas paper card", material->isPaperCard());
   }
   g_runtime_global_context.m_logger_system.reset();
   fs::remove_all(project);

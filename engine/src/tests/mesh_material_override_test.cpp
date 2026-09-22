@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 
+#include <glm/ext/vector_uint4.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
@@ -196,6 +197,7 @@ void foliageMrMapWithZeroMetallicStaysDielectric() {
   expect_true("foliage roughness atlas skips ORM metal",
               ubo.material_flags.z > 0.5f);
   expect_true("foliage cards are two-sided", ubo.pbr_texture_flags.w > 0.5f);
+  expect_true("foliage cards pack unlit paper", ubo.material_flags.x > 0.5f);
 }
 
 void foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack() {
@@ -234,6 +236,7 @@ void foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack() {
               std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
   expect_true("GPU pack two-sided foliage cards",
               ubo.pbr_texture_flags.w > 0.5f);
+  expect_true("GPU pack unlit paper foliage", ubo.material_flags.x > 0.5f);
 
   // Bindless overwrite used to force ORM sampling; z must survive.
   ubo.pbr_texture_flags.x = 1.0f;
@@ -241,6 +244,57 @@ void foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack() {
               ubo.material_flags.z > 0.5f);
   expect_true("metallic stays 0 after bindless MR flag",
               ubo.metallic_roughness_factors.x < 0.01f);
+}
+
+void paperGrainNormalIsNotSampledAndPaperColorTints() {
+  using namespace Blunder;
+  Asset::Meta nrm_meta;
+  nrm_meta.virtual_path = "resources/se-world/assets/textures/paper_rough_256.png";
+  auto paper_rough = eastl::make_shared<Texture2DAsset>(
+      eastl::move(nrm_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{128, 128, 128, 255});
+  Asset::Meta mr_meta;
+  mr_meta.virtual_path =
+      "resources/se-world/assets/lib/textures/pine_leaves_roughness_01.png";
+  auto mr = eastl::make_shared<Texture2DAsset>(
+      eastl::move(mr_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{255, 205, 255, 255});
+  Asset::Meta albedo_meta;
+  albedo_meta.virtual_path =
+      "resources/se-world/assets/lib/textures/pine_leaves_albedo_01.png";
+  auto albedo = eastl::make_shared<Texture2DAsset>(
+      eastl::move(albedo_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{160, 176, 140, 255});
+  AssetHandle albedo_handle;
+  albedo_handle.type = Asset::Type::Texture2D;
+  albedo_handle.key = albedo->getVirtualPath();
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "assets/Meshes/pine.mesh.yaml#mat";
+  MaterialAsset foliage(eastl::move(mat_meta), glm::vec4(1.0f), albedo_handle,
+                        albedo, mr, paper_rough, nullptr, glm::vec3(0.15f),
+                        glm::vec3(1.0f), glm::vec3(0.04f), 32.0f, 0.0f, 1.0f,
+                        cgltf_alpha_mode_mask, 0.5f, true, false);
+  foliage.setPaperColor(glm::vec3(0.65f, 0.69f, 0.57f));
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &foliage, {}, frame, cgltf_alpha_mode_mask, 0.5f,
+                         true);
+  expect_true("paper grain not sampled as tangent normal",
+              ubo.pbr_texture_flags.y < 0.5f);
+  expect_true("paper card unlit", ubo.material_flags.x > 0.5f);
+  expect_true("paper_color tints albedo r",
+              std::fabs(ubo.base_color_factor.x - 0.65f) < 1e-4f);
+  expect_true("paper_color tints albedo g",
+              std::fabs(ubo.base_color_factor.y - 0.69f) < 1e-4f);
+
+  glm::uvec4 bindless{3u, 4u, 5u, 0u};
+  applyBindlessPbrMapFlags(ubo.pbr_texture_flags, bindless, ubo.material_flags);
+  expect_true("bindless paper_rough cannot re-enable normals",
+              ubo.pbr_texture_flags.y < 0.5f);
+  expect_true("bindless still samples roughness atlas",
+              ubo.pbr_texture_flags.x > 0.5f);
 }
 
 void packedOrmMapKeepsMetalChannel() {
@@ -268,6 +322,10 @@ void packedOrmMapKeepsMetalChannel() {
               ubo.material_flags.z < 0.5f);
   expect_true("packed ORM stays opaque",
               ubo.metallic_roughness_factors.w < 0.5f);
+  glm::uvec4 bindless{1u, 2u, 3u, 0u};
+  applyBindlessPbrMapFlags(ubo.pbr_texture_flags, bindless, ubo.material_flags);
+  expect_true("packed ORM still samples tangent normals",
+              ubo.pbr_texture_flags.y > 0.5f);
 }
 
 void extraMaterialStaysImport() {
@@ -383,6 +441,7 @@ int main() {
   untexturedMaterialDoesNotSampleAlbedoBindless();
   foliageMrMapWithZeroMetallicStaysDielectric();
   foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack();
+  paperGrainNormalIsNotSampledAndPaperColorTints();
   packedOrmMapKeepsMetalChannel();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();

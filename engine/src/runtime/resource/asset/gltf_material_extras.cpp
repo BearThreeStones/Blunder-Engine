@@ -43,6 +43,65 @@ bool findJsonObjectAfterKey(const char* json, const char* end, const char* key,
   return true;
 }
 
+bool parseVec3ArrayAfterQuotedKey(const char* begin, const char* end,
+                                  const char* key, float out[3]) {
+  if (begin == nullptr || end == nullptr || key == nullptr || out == nullptr ||
+      begin >= end) {
+    return false;
+  }
+  const size_t key_len = std::strlen(key);
+  const char* p = begin;
+  while (p < end) {
+    const size_t remaining = static_cast<size_t>(end - p);
+    if (remaining < key_len) {
+      return false;
+    }
+    const char* found = std::strstr(p, key);
+    if (found == nullptr || found >= end) {
+      return false;
+    }
+    p = found + key_len;
+    p = skipWs(p, end);
+    if (p >= end || *p != ':') {
+      continue;
+    }
+    ++p;
+    p = skipWs(p, end);
+    if (p >= end || *p != '[') {
+      continue;
+    }
+    ++p;
+    bool ok = true;
+    for (int i = 0; i < 3; ++i) {
+      p = skipWs(p, end);
+      if (p >= end) {
+        ok = false;
+        break;
+      }
+      char* num_end = nullptr;
+      const float value = std::strtof(p, &num_end);
+      if (num_end == p || num_end > end) {
+        ok = false;
+        break;
+      }
+      out[i] = value;
+      p = num_end;
+      p = skipWs(p, end);
+      if (i < 2) {
+        if (p >= end || *p != ',') {
+          ok = false;
+          break;
+        }
+        ++p;
+      }
+    }
+    if (ok) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool parseFloatAfterQuotedKey(const char* begin, const char* end, const char* key,
                               float& out) {
   if (begin == nullptr || end == nullptr || key == nullptr || begin >= end) {
@@ -127,7 +186,23 @@ bool parseGltfMaterialExtrasJson(const char* json, size_t length,
   if (out.has_roughness) {
     out.roughness = roughness;
   }
-  return out.has_metallic || out.has_roughness;
+
+  float paper[3] = {1.0f, 1.0f, 1.0f};
+  if (has_info) {
+    out.has_paper_color =
+        parseVec3ArrayAfterQuotedKey(info_begin, info_end, "\"paper_color\"",
+                                     paper);
+  }
+  if (!out.has_paper_color) {
+    out.has_paper_color =
+        parseVec3ArrayAfterQuotedKey(json, end, "\"paper_color\"", paper);
+  }
+  if (out.has_paper_color) {
+    out.paper_color[0] = paper[0];
+    out.paper_color[1] = paper[1];
+    out.paper_color[2] = paper[2];
+  }
+  return out.has_metallic || out.has_roughness || out.has_paper_color;
 }
 
 bool metallicRoughnessUriIsRoughnessOnly(const char* uri) {
@@ -155,6 +230,30 @@ bool metallicRoughnessUriIsRoughnessOnly(const char* uri) {
     return false;
   }
   return true;
+}
+
+bool textureUriIsPaperGrain(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "paper_rough") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "paper-rough") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "paper_grain") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "papergrain") != nullptr;
 }
 
 float resolveImportedMetallicFactor(float gltf_metallic_factor,

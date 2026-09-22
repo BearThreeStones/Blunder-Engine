@@ -139,7 +139,7 @@ GBufferOutput fragmentMain(VertexOutput input)
     float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
     float3 albedo = applyVertexColorToAlbedo(
         baseSample.rgb * inst.baseColorFactor.rgb, input.color.rgb,
-        inst.materialFlags.y);
+        inst.materialFlags.y, inst.materialFlags.z);
     float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
     clipPackedVertexColorCoverage(input.color.rgb, inst.materialFlags.y);
 

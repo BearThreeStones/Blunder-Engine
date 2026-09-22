@@ -292,20 +292,20 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
     float3 albedo = applyVertexColorToAlbedo(
         baseSample.rgb * ubo.baseColorFactor.rgb, input.color.rgb,
-        ubo.materialFlags.y);
+        ubo.materialFlags.y, ubo.materialFlags.z);
     float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
     clipPackedVertexColorCoverage(input.color.rgb, ubo.materialFlags.y);
-
-    if (ubo.materialFlags.x > 0.5)
-    {
-        return float4(albedo, alpha);
-    }
 
     // cgltf_alpha_mode: opaque=0, mask=1, blend=2. Clip MASK only.
     if (ubo.metallicRoughnessFactors.w > 0.5 &&
         ubo.metallicRoughnessFactors.w < 1.5)
     {
         clip(alpha - ubo.metallicRoughnessFactors.z);
+    }
+
+    if (ubo.materialFlags.x > 0.5)
+    {
+        return float4(albedo, alpha);
     }
 
     float metallic = ubo.metallicRoughnessFactors.x;

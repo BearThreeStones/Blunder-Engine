@@ -91,6 +91,11 @@ class MaterialAsset final : public Asset {
   float getAlphaCutoff() const { return m_alpha_cutoff; }
   bool isDoubleSided() const { return m_double_sided; }
   bool isUnlit() const { return m_unlit; }
+  bool hasPaperColor() const { return m_has_paper_color; }
+  bool isPaperCard() const {
+    return m_paper_card || m_has_paper_color;
+  }
+  const glm::vec3& getPaperColor() const { return m_paper_color; }
   bool isBlendTransparent() const {
     return m_alpha_mode == cgltf_alpha_mode_blend;
   }
@@ -139,6 +144,12 @@ class MaterialAsset final : public Asset {
   void setRoughnessFactor(float value) { m_roughness_factor = value; }
   void setAlphaMode(cgltf_alpha_mode value) { m_alpha_mode = value; }
   void setUnlit(bool value) { m_unlit = value; }
+  void setPaperColor(const glm::vec3& value) {
+    m_has_paper_color = true;
+    m_paper_card = true;
+    m_paper_color = value;
+  }
+  void markPaperCard() { m_paper_card = true; }
 
   /// Godot water films are BLEND with albedo alpha 0.2–0.4 over a vertex-colored
   /// bed. COLOR_0 now multiplies albedo, but the paper shader is still missing,
@@ -182,6 +193,9 @@ class MaterialAsset final : public Asset {
   float m_alpha_cutoff{0.5f};
   bool m_double_sided{false};
   bool m_unlit{false};
+  bool m_paper_card{false};
+  bool m_has_paper_color{false};
+  glm::vec3 m_paper_color{1.0f};
 };
 
 }  // namespace Blunder

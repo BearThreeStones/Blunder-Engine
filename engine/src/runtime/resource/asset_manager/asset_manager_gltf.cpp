@@ -467,6 +467,9 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   metallic_factor = resolveImportedMetallicFactor(
       metallic_factor, extras, metallic_roughness_uri);
   roughness_factor = resolveImportedRoughnessFactor(roughness_factor, extras);
+  const char* normal_uri =
+      gltfTextureImageUri(material.normal_texture.texture);
+  const bool paper_grain_normal = textureUriIsPaperGrain(normal_uri);
   if (used_pbr_metallic_roughness) {
     const float metallic = metallic_factor;
     specular_color =
@@ -476,7 +479,9 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     shininess = 8.0f + (256.0f - 8.0f) * (1.0f - roughness_factor);
   }
 
-  normal_texture_asset = loadGltfImageTexture(material.normal_texture.texture);
+  if (!paper_grain_normal) {
+    normal_texture_asset = loadGltfImageTexture(material.normal_texture.texture);
+  }
   occlusion_texture_asset = loadGltfImageTexture(material.occlusion_texture.texture);
 
   if (base_color_texture_asset) {
@@ -496,6 +501,14 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
       alpha_cutoff, double_sided, unlit);
   material_asset->promoteOpaqueTexturedBlendToMask();
   material_asset->promoteWaterSurfaceFilmToOpaque();
+  if (extras.has_paper_color) {
+    material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
+                                           extras.paper_color[1],
+                                           extras.paper_color[2]));
+  } else if (paper_grain_normal ||
+             metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri)) {
+    material_asset->markPaperCard();
+  }
   m_material_cache[material_key] = material_asset;
   return material_asset;
 }

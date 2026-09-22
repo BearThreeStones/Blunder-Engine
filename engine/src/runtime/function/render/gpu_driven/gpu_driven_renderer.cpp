@@ -178,6 +178,7 @@ uint64_t hashDrawIdentity(const GpuDrivenDraw* draws, uint32_t count) {
       hash = hashFloatBits(hash, material->getAlphaCutoff());
       hash = hashMix(hash, static_cast<uint32_t>(material->getAlphaMode()));
       hash = hashMix(hash, material->isUnlit() ? 1u : 0u);
+      hash = hashMix(hash, material->isPaperCard() ? 1u : 0u);
     }
   }
   return hash;
@@ -251,13 +252,10 @@ void fillInstance(GpuDrivenInstanceGpu& inst, const GpuDrivenDraw& draw,
   inst.pbr_texture_flags = ubo.pbr_texture_flags;
   inst.material_flags = ubo.material_flags;
   // Bindless 0 is the checker fallback, not a PBR map. Keep material_flags.z
-  // (roughness-only) so the shader still skips ORM B-as-metal.
-  inst.pbr_texture_flags.x =
-      inst.bindless_texture_indices.y != 0 ? 1.0f : 0.0f;
-  inst.pbr_texture_flags.y =
-      inst.bindless_texture_indices.z != 0 ? 1.0f : 0.0f;
-  inst.pbr_texture_flags.z =
-      inst.bindless_texture_indices.w != 0 ? 1.0f : 0.0f;
+  // (roughness-only) so the shader still skips ORM B-as-metal, and do not
+  // re-enable paper_rough as a tangent normal.
+  applyBindlessPbrMapFlags(inst.pbr_texture_flags, inst.bindless_texture_indices,
+                           inst.material_flags);
   inst.receiver_id = draw.receiver_id;
   inst.flags = draw.double_sided ? k_gpu_driven_flag_two_sided : 0u;
 }

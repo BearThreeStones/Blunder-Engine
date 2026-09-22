@@ -188,7 +188,7 @@ GBufferOutput fragmentMain(VertexOutput input)
     float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
     float3 albedo = applyVertexColorToAlbedo(
         baseSample.rgb * ubo.baseColorFactor.rgb, input.color.rgb,
-        ubo.materialFlags.y);
+        ubo.materialFlags.y, ubo.materialFlags.z);
     float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
     clipPackedVertexColorCoverage(input.color.rgb, ubo.materialFlags.y);
 

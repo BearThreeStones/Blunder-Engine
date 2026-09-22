@@ -8,6 +8,7 @@
 #include "runtime/core/math/geometry.h"
 
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_uint4.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/vec3.hpp>
@@ -207,15 +208,33 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
           material->getMetallicRoughnessTextureAsset()) {
     mr_uri = mr->getVirtualPath().c_str();
   }
+  const char* normal_uri = nullptr;
+  if (const eastl::shared_ptr<Texture2DAsset>& normal =
+          material->getNormalTextureAsset()) {
+    normal_uri = normal->getVirtualPath().c_str();
+  }
   const bool roughness_only = metallicRoughnessUriIsRoughnessOnly(mr_uri);
-  if (roughness_only) {
-    // Sidecar metallic=0 never reached the instance SSBO (hydrate after first
-    // pack, or bindless overwrite treating the atlas as ORM). Re-apply the
-    // import heuristic here so `metallic *= sampledMr.b` cannot chrome cards.
+  const bool paper_grain = textureUriIsPaperGrain(normal_uri);
+  const bool paper_card =
+      roughness_only || paper_grain || material->isPaperCard();
+  if (paper_card) {
     mesh_ubo.metallic_roughness_factors.x = resolveImportedMetallicFactor(
         mesh_ubo.metallic_roughness_factors.x, GltfMaterialExtras{}, mr_uri);
+    if (mesh_ubo.metallic_roughness_factors.x > 0.999f) {
+      mesh_ubo.metallic_roughness_factors.x = 0.0f;
+    }
     mesh_ubo.material_flags.z = 1.0f;
     mesh_ubo.pbr_texture_flags.w = 1.0f;
+    mesh_ubo.pbr_texture_flags.y = 0.0f;
+    // Godot paper cards: albedo * paper_color, no Lambert. VSM overflow and
+    // paper_rough-as-normal used to zero the pond foliage even at metallic=0.
+    mesh_ubo.material_flags.x = 1.0f;
+    if (material->hasPaperColor()) {
+      const glm::vec3& paper = material->getPaperColor();
+      mesh_ubo.base_color_factor.x *= paper.x;
+      mesh_ubo.base_color_factor.y *= paper.y;
+      mesh_ubo.base_color_factor.z *= paper.z;
+    }
     if (material->hasBaseColorTexture()) {
       mesh_ubo.metallic_roughness_factors.w =
           static_cast<float>(cgltf_alpha_mode_mask);
@@ -230,6 +249,18 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
     mesh_ubo.metallic_roughness_factors.w =
         static_cast<float>(cgltf_alpha_mode_mask);
     mesh_ubo.metallic_roughness_factors.z = material->getAlphaCutoff();
+  }
+}
+
+void applyBindlessPbrMapFlags(glm::vec4& pbr_texture_flags,
+                              const glm::uvec4& bindless_indices,
+                              const glm::vec4& material_flags) {
+  pbr_texture_flags.x = bindless_indices.y != 0 ? 1.0f : 0.0f;
+  pbr_texture_flags.z = bindless_indices.w != 0 ? 1.0f : 0.0f;
+  if (material_flags.z > 0.5f) {
+    pbr_texture_flags.y = 0.0f;
+  } else {
+    pbr_texture_flags.y = bindless_indices.z != 0 ? 1.0f : 0.0f;
   }
 }
 
