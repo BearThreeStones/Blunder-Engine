@@ -16,6 +16,7 @@ export component PlayerHudWindow inherits Window {
     in property <string> hud-gpu-text: "0.00";
     in property <int> hud-instance-count: 0;
     in property <int> hud-light-count: 0;
+    in property <int> hud-batch-count: 0;
     in property <int> hud-draw-count: 0;
     in property <bool> hud-gpu-unreliable: false;
     in property <[FrameTimingPassRow]> hud-passes: [];
@@ -48,6 +49,7 @@ export component PlayerHudWindow inherits Window {
             gpu-text: root.hud-gpu-text;
             instance-count: root.hud-instance-count;
             light-count: root.hud-light-count;
+            batch-count: root.hud-batch-count;
             draw-count: root.hud-draw-count;
             gpu-unreliable: root.hud-gpu-unreliable;
             passes: root.hud-passes;

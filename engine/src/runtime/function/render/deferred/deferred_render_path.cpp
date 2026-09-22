@@ -2511,11 +2511,13 @@ void DeferredRenderPath::recordGBufferPass(
       BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "cull");
       gpu_driven->uploadAndCull(
           command_buffer, frame_index, gpu_draws, gpu_draw_count, frame_state,
-          viewport_stream && frame_state.camera_distance < 2000.0f);
+          viewport_stream && frame_state.camera_distance < 2000.0f,
+          /*copy_hud_counts=*/true);
     } else {
       gpu_driven->uploadAndCull(
           command_buffer, frame_index, gpu_draws, gpu_draw_count, frame_state,
-          viewport_stream && frame_state.camera_distance < 2000.0f);
+          viewport_stream && frame_state.camera_distance < 2000.0f,
+          /*copy_hud_counts=*/false);
     }
   }
 

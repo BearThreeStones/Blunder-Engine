@@ -48,14 +48,16 @@ void FrameTimingService::addCpuZone(const char* name, float cpu_ms) {
 }
 
 void FrameTimingService::setCounts(uint32_t instance_count, uint32_t light_count,
-                                   uint32_t draw_count) {
+                                   uint32_t batch_count, uint32_t draw_count) {
   m_building.instance_count = instance_count;
   m_building.light_count = light_count;
+  m_building.batch_count = batch_count;
   m_building.draw_count = draw_count;
 #ifdef TRACY_ENABLE
   TracyPlot("instances", static_cast<int64_t>(instance_count));
   TracyPlot("lights", static_cast<int64_t>(light_count));
-  TracyPlot("draws", static_cast<int64_t>(draw_count));
+  TracyPlot("batches", static_cast<int64_t>(batch_count));
+  TracyPlot("cmds", static_cast<int64_t>(draw_count));
 #endif
 }
 

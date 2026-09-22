@@ -184,6 +184,7 @@ void main(uint3 id : SV_DispatchThreadID)
     cmd.pad2 = 0;
 
     const bool compact = ubo.compactCommands != 0u;
+    uint batchIndex = meshlet.flags >> kGpuDrivenMeshletBatchShift;
     if (!visible)
     {
         if (!compact)
@@ -198,7 +199,6 @@ void main(uint3 id : SV_DispatchThreadID)
     bool occluded = hizOccluded(clip, radius, worldCenter);
     if (compact)
     {
-        uint batchIndex = meshlet.flags >> kGpuDrivenMeshletBatchShift;
         uint base = batchBases[batchIndex];
         uint dst;
         if (occluded)
@@ -214,13 +214,16 @@ void main(uint3 id : SV_DispatchThreadID)
         return;
     }
 
+    uint unused;
     if (occluded)
     {
+        InterlockedAdd(lateCounts[batchIndex], 1u, unused);
         earlyCommands[index] = emptyCmd;
         lateCommands[index] = cmd;
     }
     else
     {
+        InterlockedAdd(earlyCounts[batchIndex], 1u, unused);
         earlyCommands[index] = cmd;
         lateCommands[index] = emptyCmd;
     }

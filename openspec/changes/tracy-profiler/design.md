@@ -32,7 +32,7 @@ Today: `HighPrecisionTimer` + EMA FPS (`calculateFPS`). Player without Slint wri
    *Alternatives:* ImGui / egui / Qt / WebView / Tracy View (`TRACY_NO_ROOT_WINDOW` is ImGui-in-ImGui). Forbidden.
 
 3. **HUD and dock read the engine ring, never Tracy internals.**  
-   One ring slot per `tickOneFrame`: CPU dt, GPU frame ms, named Pass GPU ms, a few CPU zones (tick / Job / scene sync), instance / light / draw counts. Capacity **~120** frames. Panels bind this ring. Tracy has no `getLastFrames()`.  
+   One ring slot per `tickOneFrame`: CPU dt, GPU frame ms, named Pass GPU ms, a few CPU zones (tick / Job / scene sync), packed instance / MeshBatch / surviving meshlet-cmd counts plus lights. Capacity **~120** frames. Panels bind this ring. Tracy has no `getLastFrames()`.  
    *Alternatives:* parse Tracy protocol / `.tracy` (forbidden); puffin in-process buffer (Rust + egui).
 
 4. **Engine query pool + Tracy’s pool when Client is on.**  

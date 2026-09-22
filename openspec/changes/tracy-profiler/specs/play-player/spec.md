@@ -16,7 +16,7 @@ A windowed Player SHALL present the Play-rule camera color through a HUD-only Sl
 - **AND** a Play frame SHALL still be sent on the Play control channel
 
 ### Requirement: Windowed Player Frame timing HUD
-A windowed Player SHALL offer the same Frame timing HUD readout as the editor Viewport (FPS, CPU ms, GPU ms, main Pass table, instance / light counts). F3 SHALL toggle it. Default SHALL be off and SHALL NOT persist. Title-bar FPS MAY remain. Title-bar FPS SHALL NOT be the only frame-time readout. The Player SHALL NOT show the Profiler dock.
+A windowed Player SHALL offer the same Frame timing HUD readout as the editor Viewport (FPS, CPU ms, GPU ms, main Pass table, packed `inst` / `batches` / surviving `cmds`, lights). F3 SHALL toggle it. Default SHALL be off and SHALL NOT persist. Title-bar FPS MAY remain. Title-bar FPS SHALL NOT be the only frame-time readout. The Player SHALL NOT show the Profiler dock.
 
 #### Scenario: Player HUD is togglable
 - **WHEN** the author presses F3 in a windowed Player

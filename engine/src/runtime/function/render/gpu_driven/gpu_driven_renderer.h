@@ -44,7 +44,8 @@ class GpuDrivenRenderer final {
 
   void uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
                      const GpuDrivenDraw* draws, uint32_t count,
-                     const ForwardFrameState& frame_state, bool enable_hiz);
+                     const ForwardFrameState& frame_state, bool enable_hiz,
+                     bool copy_hud_counts);
   void recordShadowCull(VkCommandBuffer cmd, uint32_t frame,
                         const ForwardFrameState& frame_state);
 
@@ -63,6 +64,15 @@ class GpuDrivenRenderer final {
   bool meshShadersEnabled() const { return m_mesh_shaders_enabled; }
   bool latePassEnabled() const;
   uint32_t instanceCount() const { return m_instance_count; }
+  uint32_t batchCount() const {
+    return static_cast<uint32_t>(m_batches.size());
+  }
+  /// Early + late compact surviving meshlet indirect commands (last harvested
+  /// in-flight slot). Not a vkCmd* count.
+  uint32_t survivingIndirectCount() const {
+    return m_surviving_early + m_surviving_late;
+  }
+  void harvestHudCounts(uint32_t frame);
   const eastl::vector<GpuDrivenDraw>& packedDraws() const {
     return m_packed_draws;
   }
@@ -89,6 +99,8 @@ class GpuDrivenRenderer final {
     eastl::unique_ptr<VulkanBuffer> late_counts;
     eastl::unique_ptr<VulkanBuffer> shadow_counts;
     eastl::unique_ptr<VulkanBuffer> dummy_counts;
+    eastl::unique_ptr<VulkanBuffer> early_count_readback;
+    eastl::unique_ptr<VulkanBuffer> late_count_readback;
     eastl::unique_ptr<VulkanBuffer> batch_bases;
     eastl::unique_ptr<VulkanBuffer> cull_ubo;
     eastl::unique_ptr<VulkanBuffer> shadow_cull_ubo;
@@ -131,12 +143,13 @@ class GpuDrivenRenderer final {
                              VkBuffer early_cmds, VkBuffer late_cmds,
                              VkBuffer early_counts, VkBuffer late_counts,
                              VkImageView hiz_view, bool hiz_enabled);
-  void dispatchCull(VkCommandBuffer cmd, uint32_t frame, VkDescriptorSet set,
+  bool dispatchCull(VkCommandBuffer cmd, uint32_t frame, VkDescriptorSet set,
                     VulkanBuffer* ubo, const glm::mat4& view_projection,
                     const glm::vec3& camera, bool hiz_enabled, bool skip_cone,
                     VkBuffer early_cmds, VkBuffer late_cmds, VkBuffer early_counts,
                     VkBuffer late_counts);
   bool compactIndirectEnabled() const;
+  void copyHudCounts(VkCommandBuffer cmd, uint32_t frame);
   void recordIndirectBatches(VkCommandBuffer cmd, uint32_t frame, bool late,
                              bool gbuffer, bool shadow, ShadowMapTarget* shadow_map,
                              VulkanTexture* fallback);
@@ -188,6 +201,9 @@ class GpuDrivenRenderer final {
   eastl::vector<uint32_t> m_batch_base_cpu;
   uint32_t m_instance_count{0};
   uint32_t m_meshlet_count{0};
+  uint32_t m_surviving_early{0};
+  uint32_t m_surviving_late{0};
+  uint32_t m_hud_copied_batches[k_frames]{};
   uint32_t m_hiz_width{0};
   uint32_t m_hiz_height{0};
   bool m_late_pass_enabled{false};

@@ -126,7 +126,8 @@ TracyVkCtx frameTracyVk() {
 #endif
 
 void publishFrameTimingCounts(const ForwardFrameState& frame_state,
-                              uint32_t instance_count, uint32_t draw_count) {
+                              uint32_t instance_count, uint32_t batch_count,
+                              uint32_t draw_count) {
   FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
   if (timing == nullptr) {
     return;
@@ -136,10 +137,11 @@ void publishFrameTimingCounts(const ForwardFrameState& frame_state,
     frame_state.lighting_scene->forEachLight(
         [&](EntityId, const LightComponent&) { ++lights; });
   }
-  timing->setCounts(instance_count, lights, draw_count);
+  timing->setCounts(instance_count, lights, batch_count, draw_count);
 }
 
-void harvestReadyGpuTimestamps(VulkanSync* sync) {
+void harvestReadyGpuTimestamps(VulkanSync* sync,
+                               GpuDrivenRenderer* gpu_driven) {
   FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
   if (timing == nullptr || sync == nullptr) {
     return;
@@ -147,6 +149,9 @@ void harvestReadyGpuTimestamps(VulkanSync* sync) {
   for (uint32_t slot = 0; slot < VulkanSync::k_max_frames_in_flight; ++slot) {
     if (sync->slotReached(slot)) {
       timing->harvestGpuSlot(slot);
+      if (gpu_driven != nullptr) {
+        gpu_driven->harvestHudCounts(slot);
+      }
     }
   }
 }
@@ -1037,6 +1042,9 @@ bool RenderSystem::tryBeginRecordingSlot(const uint32_t slot) {
   }
   if (FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get()) {
     timing->harvestGpuSlot(slot);
+  }
+  if (m_gpu_driven_renderer) {
+    m_gpu_driven_renderer->harvestHudCounts(slot);
   }
   vkCtx(this)->onInFlightFenceRetired(slot);
   SecondaryCommandBufferPool& secondary_pool =
@@ -2504,12 +2512,19 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
                                m_last_rendered_froxel_heatmap;
   const bool vrs_mask_changed =
       frame_state.shading.vrs_rate_mask != m_last_rendered_vrs_rate_mask;
-  publishFrameTimingCounts(
-      frame_state,
-      static_cast<uint32_t>(m_gpu_driven_draws.size() + m_opaque_mesh_draws.size() +
-                            m_transparent_mesh_draws.size()),
-      static_cast<uint32_t>(m_gpu_driven_draws.size() + m_opaque_mesh_draws.size() +
-                            m_transparent_mesh_draws.size()));
+  uint32_t packed_instances = 0;
+  uint32_t packed_batches = 0;
+  uint32_t surviving_cmds = 0;
+  if (m_gpu_driven_renderer) {
+    packed_instances = m_gpu_driven_renderer->instanceCount();
+    packed_batches = m_gpu_driven_renderer->batchCount();
+    surviving_cmds = m_gpu_driven_renderer->survivingIndirectCount();
+    if (packed_instances == 0) {
+      surviving_cmds = 0;
+    }
+  }
+  publishFrameTimingCounts(frame_state, packed_instances, packed_batches,
+                           surviving_cmds);
   // Programmatic LOOKAT / AABB snaps change the view without pointer
   // interaction. Skipping that record keeps presenting the origin-grid
   // frame while Unique gizmos sit on the courtyard.
@@ -2521,7 +2536,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
       !camera_changed && !scene_changed && !heatmap_changed &&
       !vrs_mask_changed) {
     phases.flag("skip", 1);
-    harvestReadyGpuTimestamps(vkSync(this));
+    harvestReadyGpuTimestamps(vkSync(this), m_gpu_driven_renderer.get());
     pollViewportPresent();
     return;
   }
@@ -2561,7 +2576,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
 
   if (!tryBeginRecordingSlot(m_current_frame)) {
     phases.flag("skip", 3);
-    harvestReadyGpuTimestamps(vkSync(this));
+    harvestReadyGpuTimestamps(vkSync(this), m_gpu_driven_renderer.get());
     pollViewportPresent();
     if (m_viewport_render_generation != m_last_rendered_viewport_generation) {
       m_force_viewport_render = true;
