@@ -39,7 +39,7 @@ struct GlobalUniformData
 struct MeshPayload
 {
     uint meshletIndex;
-    uint instanceIndex;
+    uint compactFirst;
 };
 
 [[vk::binding(0, 0)]]
@@ -80,6 +80,9 @@ TextureCubeArray<float> pointCubes;
 
 [[vk::binding(12, 0)]]
 Texture2DArray<float> spotMaps;
+
+[[vk::binding(13, 0)]]
+StructuredBuffer<uint> compactIds;
 
 [[vk::binding(0, 1)]]
 Texture2D<float4> bindlessTextures[];
@@ -152,22 +155,21 @@ void taskMain(uint3 dtid : SV_DispatchThreadID)
     DrawIndexedIndirectCommand cmd = commands[dtid.x];
     MeshPayload payload;
     payload.meshletIndex = cmd.pad0;
-    payload.instanceIndex = cmd.firstInstance;
-    // Cull writes 0 or 1. Clamp so a stale/garbage command cannot launch a
-    // huge mesh-shader dispatch (editor orbit hitch).
-    uint visible = cmd.instanceCount;
-    if (visible > 1u)
+    payload.compactFirst = cmd.firstInstance;
+    uint n = cmd.instanceCount;
+    if (n > 16128u)
     {
-        visible = 1u;
+        n = 16128u;
     }
-    DispatchMesh(visible, 1, 1, payload);
+    DispatchMesh(n, 1, 1, payload);
 }
 
 [shader("mesh")]
 [outputtopology("triangle")]
 [numthreads(128, 1, 1)]
-void meshMain(uint gtid : SV_GroupThreadID, in payload MeshPayload payload,
-              out vertices VertexOutput verts[64], out indices uint3 tris[124])
+void meshMain(uint gtid : SV_GroupThreadID, uint3 gid : SV_GroupID,
+              in payload MeshPayload payload, out vertices VertexOutput verts[64],
+              out indices uint3 tris[124])
 {
     GpuDrivenMeshletGpu meshlet = meshlets[payload.meshletIndex];
     uint vertCount = meshlet.vertexCount;
@@ -182,7 +184,8 @@ void meshMain(uint gtid : SV_GroupThreadID, in payload MeshPayload payload,
     }
     SetMeshOutputCounts(vertCount, triCount);
 
-    GpuDrivenInstanceGpu inst = instances[payload.instanceIndex];
+    uint instIndex = compactIds[payload.compactFirst + gid.x];
+    GpuDrivenInstanceGpu inst = instances[instIndex];
     if (gtid < vertCount)
     {
         uint index = loadMeshletVertex(meshlet.vertexOffset + gtid);
@@ -199,7 +202,7 @@ void meshMain(uint gtid : SV_GroupThreadID, in payload MeshPayload payload,
         verts[gtid].worldPos = worldPos.xyz;
         verts[gtid].uv = uv;
         verts[gtid].color = loadColor(index);
-        verts[gtid].instanceId = payload.instanceIndex;
+        verts[gtid].instanceId = instIndex;
     }
     if (gtid < triCount)
     {

@@ -34,6 +34,13 @@ inline constexpr uint32_t k_gpu_driven_flag_skip_cone = 2u;
 inline constexpr uint32_t k_gpu_driven_flag_early = 4u;
 inline constexpr uint32_t k_gpu_driven_meshlet_batch_shift = 16u;
 
+struct GpuDrivenEmitUniforms {
+  uint32_t unique_count{0};
+  uint32_t compact_commands{0};
+  uint32_t pad0{0};
+  uint32_t pad1{0};
+};
+
 /// CPU draw submitted to GPU-driven static opaque/alpha-clip.
 struct GpuDrivenDraw {
   GpuMesh* gpu_mesh{nullptr};

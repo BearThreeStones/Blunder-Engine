@@ -278,6 +278,7 @@ void fillGpuDrivenPbrExpectedBindings(uint32_t* bindings, uint32_t* sets,
   push(0, 5, ShaderDescriptorKind::StorageBuffer);
   push(0, 6, ShaderDescriptorKind::SampledImage);
   push(0, 7, ShaderDescriptorKind::SampledImage);
+  push(0, 8, ShaderDescriptorKind::StorageBuffer);
   push(1, 0, ShaderDescriptorKind::SampledImage);
   push(1, 1, ShaderDescriptorKind::Sampler);
   *count = n;
@@ -300,6 +301,7 @@ void fillGpuDrivenGBufferExpectedBindings(uint32_t* bindings, uint32_t* sets,
   };
   push(0, 0, ShaderDescriptorKind::UniformBuffer);
   push(0, 1, ShaderDescriptorKind::StorageBuffer);
+  push(0, 2, ShaderDescriptorKind::StorageBuffer);
   push(1, 0, ShaderDescriptorKind::SampledImage);
   push(1, 1, ShaderDescriptorKind::Sampler);
   *count = n;
@@ -322,6 +324,7 @@ void fillGpuDrivenShadowExpectedBindings(uint32_t* bindings, uint32_t* sets,
   };
   push(0, 0, ShaderDescriptorKind::UniformBuffer);
   push(0, 1, ShaderDescriptorKind::StorageBuffer);
+  push(0, 2, ShaderDescriptorKind::StorageBuffer);
   *count = n;
   ASSERT(n == k_gpu_driven_shadow_descriptor_binding_count);
 }
@@ -343,15 +346,40 @@ void fillMeshletCullExpectedBindings(uint32_t* bindings, uint32_t* sets,
   push(0, ShaderDescriptorKind::UniformBuffer);
   push(1, ShaderDescriptorKind::StorageBuffer);
   push(2, ShaderDescriptorKind::StorageBuffer);
-  push(3, ShaderDescriptorKind::StorageBuffer);
-  push(4, ShaderDescriptorKind::StorageBuffer);
-  push(5, ShaderDescriptorKind::SampledImage);
-  push(6, ShaderDescriptorKind::Sampler);
+  push(3, ShaderDescriptorKind::SampledImage);
+  push(4, ShaderDescriptorKind::Sampler);
+  push(5, ShaderDescriptorKind::StorageBuffer);
+  push(6, ShaderDescriptorKind::StorageBuffer);
   push(7, ShaderDescriptorKind::StorageBuffer);
   push(8, ShaderDescriptorKind::StorageBuffer);
   push(9, ShaderDescriptorKind::StorageBuffer);
+  push(10, ShaderDescriptorKind::StorageBuffer);
+  push(11, ShaderDescriptorKind::StorageBuffer);
+  push(12, ShaderDescriptorKind::StorageBuffer);
   *count = n;
   ASSERT(n == k_meshlet_cull_descriptor_binding_count);
+}
+
+void fillMeshletEmitExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                     uint32_t* count,
+                                     ShaderDescriptorKind* kinds) {
+  if (bindings == nullptr || sets == nullptr || count == nullptr ||
+      kinds == nullptr) {
+    return;
+  }
+  uint32_t n = 0;
+  auto push = [&](uint32_t binding, ShaderDescriptorKind kind) {
+    bindings[n] = binding;
+    sets[n] = 0;
+    kinds[n] = kind;
+    ++n;
+  };
+  push(0, ShaderDescriptorKind::UniformBuffer);
+  for (uint32_t b = 1; b <= 12; ++b) {
+    push(b, ShaderDescriptorKind::StorageBuffer);
+  }
+  *count = n;
+  ASSERT(n == k_meshlet_emit_descriptor_binding_count);
 }
 
 void fillHizPyramidExpectedBindings(uint32_t* bindings, uint32_t* sets,
@@ -403,6 +431,7 @@ void fillGpuDrivenMeshExpectedBindings(uint32_t* bindings, uint32_t* sets,
   push(0, 10, ShaderDescriptorKind::StorageBuffer);
   push(0, 11, ShaderDescriptorKind::SampledImage);
   push(0, 12, ShaderDescriptorKind::SampledImage);
+  push(0, 13, ShaderDescriptorKind::StorageBuffer);
   push(1, 0, ShaderDescriptorKind::SampledImage);
   push(1, 1, ShaderDescriptorKind::Sampler);
   *count = n;

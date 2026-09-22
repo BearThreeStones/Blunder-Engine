@@ -333,9 +333,35 @@ void GpuDrivenRenderer::createBuffers() {
                                       VMA_MEMORY_USAGE_GPU_TO_CPU);
     frame.batch_bases =
         make_host_buf(count_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    frame.unique_counts =
+        make_host_buf(count_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    frame.unique_firsts =
+        make_host_buf(count_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    const VkDeviceSize unique_bytes =
+        sizeof(uint32_t) * k_max_gpu_driven_meshlets;
+    const VkBufferUsageFlags id_usage =
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    frame.compact_bases =
+        make_host_buf(unique_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    frame.unique_batch =
+        make_host_buf(unique_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    frame.unique_expanded =
+        make_host_buf(unique_bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    frame.early_instance_counts = make_device_buf(unique_bytes, id_usage);
+    frame.late_instance_counts = make_device_buf(unique_bytes, id_usage);
+    frame.shadow_instance_counts = make_device_buf(unique_bytes, id_usage);
+    frame.dummy_instance_counts = make_device_buf(unique_bytes, id_usage);
+    frame.early_compact_ids = make_device_buf(unique_bytes, id_usage);
+    frame.late_compact_ids = make_device_buf(unique_bytes, id_usage);
+    frame.shadow_compact_ids = make_device_buf(unique_bytes, id_usage);
+    frame.dummy_compact_ids = make_device_buf(unique_bytes, id_usage);
     frame.cull_ubo = make_host_buf(sizeof(GpuDrivenCullUniforms),
                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     frame.shadow_cull_ubo = make_host_buf(sizeof(GpuDrivenCullUniforms),
+                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    frame.emit_ubo = make_host_buf(sizeof(GpuDrivenEmitUniforms),
+                                   VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    frame.shadow_emit_ubo = make_host_buf(sizeof(GpuDrivenEmitUniforms),
                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     frame.view_ubo = make_host_buf(sizeof(ForwardMeshUniformData),
                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -372,8 +398,23 @@ void GpuDrivenRenderer::destroyBuffers() {
     drop(frame.early_count_readback);
     drop(frame.late_count_readback);
     drop(frame.batch_bases);
+    drop(frame.unique_counts);
+    drop(frame.unique_firsts);
+    drop(frame.compact_bases);
+    drop(frame.unique_batch);
+    drop(frame.unique_expanded);
+    drop(frame.early_instance_counts);
+    drop(frame.late_instance_counts);
+    drop(frame.shadow_instance_counts);
+    drop(frame.dummy_instance_counts);
+    drop(frame.early_compact_ids);
+    drop(frame.late_compact_ids);
+    drop(frame.shadow_compact_ids);
+    drop(frame.dummy_compact_ids);
     drop(frame.cull_ubo);
     drop(frame.shadow_cull_ubo);
+    drop(frame.emit_ubo);
+    drop(frame.shadow_emit_ubo);
     drop(frame.view_ubo);
     drop(frame.gbuffer_ubo);
     drop(frame.shadow_ubo);
@@ -492,6 +533,15 @@ void GpuDrivenRenderer::createPipelines(VkRenderPass offscreen_pass,
   createComputePipeline("engine/shaders/meshlet_cull.slang", cull_bindings, cull_sets,
                         cull_count, cull_kinds, &m_cull_layout, &m_cull_pipe_layout,
                         &m_cull_pipeline);
+
+  uint32_t emit_bindings[k_max_expected_descriptor_bindings];
+  uint32_t emit_sets[k_max_expected_descriptor_bindings];
+  ShaderDescriptorKind emit_kinds[k_max_expected_descriptor_bindings];
+  uint32_t emit_count = 0;
+  fillMeshletEmitExpectedBindings(emit_bindings, emit_sets, &emit_count, emit_kinds);
+  createComputePipeline("engine/shaders/meshlet_emit.slang", emit_bindings, emit_sets,
+                        emit_count, emit_kinds, &m_emit_layout, &m_emit_pipe_layout,
+                        &m_emit_pipeline);
 
   uint32_t hiz_bindings[k_max_expected_descriptor_bindings];
   uint32_t hiz_sets[k_max_expected_descriptor_bindings];
@@ -665,6 +715,9 @@ void GpuDrivenRenderer::destroyPipelines() {
   drop_pipe(m_cull_pipeline);
   drop_layout(m_cull_pipe_layout);
   drop_set_layout(m_cull_layout);
+  drop_pipe(m_emit_pipeline);
+  drop_layout(m_emit_pipe_layout);
+  drop_set_layout(m_emit_layout);
   if (m_gbuffer_pipeline) {
     m_gbuffer_pipeline->shutdown();
     m_gbuffer_pipeline.reset();
@@ -685,9 +738,9 @@ void GpuDrivenRenderer::createDescriptors() {
   const uint32_t hiz_set_count = k_frames * k_max_hiz_mips;
   VkDescriptorPoolSize sizes[5]{};
   sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  sizes[0].descriptorCount = 64u + hiz_set_count + k_frames * 4u;
+  sizes[0].descriptorCount = 64u + hiz_set_count + k_frames * 8u;
   sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  sizes[1].descriptorCount = 64u + mesh_set_count * 7u + k_frames * 32u;
+  sizes[1].descriptorCount = 128u + mesh_set_count * 10u + k_frames * 80u;
   sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   sizes[2].descriptorCount = 64u + hiz_set_count + mesh_set_count * 3u + k_frames * 16u;
   sizes[3].type = VK_DESCRIPTOR_TYPE_SAMPLER;
@@ -718,6 +771,8 @@ void GpuDrivenRenderer::createDescriptors() {
   };
   alloc(m_cull_layout, k_frames, m_cull_sets);
   alloc(m_cull_layout, k_frames, m_shadow_cull_sets);
+  alloc(m_emit_layout, k_frames, m_emit_sets);
+  alloc(m_emit_layout, k_frames, m_shadow_emit_sets);
   for (uint32_t f = 0; f < k_frames; ++f) {
     alloc(m_hiz_layout, k_max_hiz_mips, m_hiz_sets[f]);
   }
@@ -934,8 +989,14 @@ void GpuDrivenRenderer::packDraws(const GpuDrivenDraw* draws, uint32_t count,
   m_instance_cpu.clear();
   m_meshlet_cpu.clear();
   m_batch_base_cpu.clear();
+  m_unique_count_cpu.clear();
+  m_unique_first_cpu.clear();
+  m_compact_base_cpu.clear();
+  m_unique_batch_cpu.clear();
+  m_unique_expanded_cpu.clear();
   m_instance_count = 0;
   m_meshlet_count = 0;
+  m_unique_meshlet_count = 0;
   if (draws == nullptr || count == 0) {
     return;
   }
@@ -964,6 +1025,10 @@ void GpuDrivenRenderer::packDraws(const GpuDrivenDraw* draws, uint32_t count,
           k_max_mesh_batches);
       break;
     }
+    if (new_batch &&
+        m_unique_meshlet_count + records.size() > k_max_gpu_driven_meshlets) {
+      break;
+    }
     GpuDrivenDraw packed = draw;
     packed.receiver_id = k_gpu_driven_cpu_receiver_slots + m_instance_count;
     m_packed_draws.push_back(packed);
@@ -977,11 +1042,15 @@ void GpuDrivenRenderer::packDraws(const GpuDrivenDraw* draws, uint32_t count,
     if (new_batch) {
       MeshBatch batch{};
       batch.mesh = draw.gpu_mesh;
-      batch.meshlet_first = m_meshlet_count;
-      batch.meshlet_count = 0;
+      batch.expanded_first = m_meshlet_count;
+      batch.meshlet_first = m_unique_meshlet_count;
+      batch.meshlet_count = static_cast<uint32_t>(records.size());
+      batch.instance_first = m_instance_count;
+      batch.instance_count = 0;
       m_batches.push_back(batch);
       current_mesh = draw.gpu_mesh;
     }
+    m_batches.back().instance_count += 1;
     const uint32_t batch_index = static_cast<uint32_t>(m_batches.size() - 1u);
     const uint32_t skip_cone_bit =
         draw.double_sided ? k_gpu_driven_flag_skip_cone : 0u;
@@ -1000,18 +1069,34 @@ void GpuDrivenRenderer::packDraws(const GpuDrivenDraw* draws, uint32_t count,
       meshlet.triangle_count = rec.triangle_count;
       m_meshlet_cpu.push_back(meshlet);
       ++m_meshlet_count;
-      m_batches.back().meshlet_count += 1;
     }
     ++m_instance_count;
   }
+
   m_batch_base_cpu.resize(m_batches.size());
-  for (uint32_t i = 0; i < m_batches.size(); ++i) {
-    m_batch_base_cpu[i] = m_batches[i].meshlet_first;
+  m_unique_count_cpu.resize(m_batches.size());
+  m_unique_first_cpu.resize(m_batches.size());
+  m_unique_meshlet_count = 0;
+  uint32_t compact_cursor = 0;
+  for (uint32_t b = 0; b < m_batches.size(); ++b) {
+    MeshBatch& batch = m_batches[b];
+    m_batch_base_cpu[b] = batch.expanded_first;
+    m_unique_first_cpu[b] = m_unique_meshlet_count;
+    m_unique_count_cpu[b] = batch.meshlet_count;
+    batch.meshlet_first = m_unique_meshlet_count;
+    for (uint32_t m = 0; m < batch.meshlet_count; ++m) {
+      m_compact_base_cpu.push_back(compact_cursor);
+      m_unique_batch_cpu.push_back(b);
+      m_unique_expanded_cpu.push_back(batch.expanded_first + m);
+      compact_cursor += batch.instance_count;
+      ++m_unique_meshlet_count;
+    }
   }
+  ASSERT(compact_cursor <= k_max_gpu_driven_meshlets);
   LOG_INFO(
-      "[GpuDrivenRenderer] packed {} instances, {} meshlets, {} batches; "
-      "compact_indirect={}",
-      m_instance_count, m_meshlet_count,
+      "[GpuDrivenRenderer] packed {} instances, {} meshlets, {} unique, {} "
+      "batches; compact_indirect={}",
+      m_instance_count, m_meshlet_count, m_unique_meshlet_count,
       static_cast<uint32_t>(m_batches.size()),
       compactIndirectEnabled() ? 1 : 0);
 }
@@ -1031,10 +1116,8 @@ void GpuDrivenRenderer::updateInstanceTransforms(const GpuDrivenDraw* draws,
 }
 
 void GpuDrivenRenderer::updateCullDescriptors(uint32_t frame, VkDescriptorSet set,
-                                              VulkanBuffer* ubo, VkBuffer early_cmds,
-                                              VkBuffer late_cmds, VkBuffer early_counts,
-                                              VkBuffer late_counts, VkImageView hiz_view,
-                                              bool hiz_enabled) {
+                                              VulkanBuffer* ubo, VkImageView hiz_view,
+                                              bool hiz_enabled, bool shadow) {
   ASSERT(set != VK_NULL_HANDLE);
   ASSERT(ubo != nullptr);
   FrameBuffers& buffers = m_frames[frame];
@@ -1047,67 +1130,69 @@ void GpuDrivenRenderer::updateCullDescriptors(uint32_t frame, VkDescriptorSet se
   VkDescriptorBufferInfo meshlets{};
   meshlets.buffer = buffers.meshlets->getBuffer();
   meshlets.range = VK_WHOLE_SIZE;
-  VkDescriptorBufferInfo early{};
-  early.buffer = early_cmds;
-  early.range = VK_WHOLE_SIZE;
-  VkDescriptorBufferInfo late{};
-  late.buffer = late_cmds;
-  late.range = VK_WHOLE_SIZE;
   VkDescriptorImageInfo hiz{};
   hiz.imageView = hiz_enabled ? hiz_view : m_dummy_hiz_view;
   hiz.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   hiz.sampler = m_hiz_sampler;
-  VkDescriptorBufferInfo early_count_info{};
-  early_count_info.buffer = early_counts;
-  early_count_info.range = VK_WHOLE_SIZE;
-  VkDescriptorBufferInfo late_count_info{};
-  late_count_info.buffer = late_counts;
-  late_count_info.range = VK_WHOLE_SIZE;
-  VkDescriptorBufferInfo batch_bases{};
-  batch_bases.buffer = buffers.batch_bases->getBuffer();
-  batch_bases.range = VK_WHOLE_SIZE;
-  VkWriteDescriptorSet writes[10]{};
-  for (uint32_t i = 0; i < 10; ++i) {
+  auto ssbo = [](VulkanBuffer* buf) {
+    VkDescriptorBufferInfo info{};
+    info.buffer = buf->getBuffer();
+    info.range = VK_WHOLE_SIZE;
+    return info;
+  };
+  VkDescriptorBufferInfo batch_bases = ssbo(buffers.batch_bases.get());
+  VkDescriptorBufferInfo unique_counts = ssbo(buffers.unique_counts.get());
+  VkDescriptorBufferInfo unique_firsts = ssbo(buffers.unique_firsts.get());
+  VkDescriptorBufferInfo compact_bases = ssbo(buffers.compact_bases.get());
+  VkDescriptorBufferInfo early_inst =
+      ssbo(shadow ? buffers.shadow_instance_counts.get()
+                  : buffers.early_instance_counts.get());
+  VkDescriptorBufferInfo late_inst =
+      ssbo(shadow ? buffers.dummy_instance_counts.get()
+                  : buffers.late_instance_counts.get());
+  VkDescriptorBufferInfo early_ids =
+      ssbo(shadow ? buffers.shadow_compact_ids.get()
+                  : buffers.early_compact_ids.get());
+  VkDescriptorBufferInfo late_ids =
+      ssbo(shadow ? buffers.dummy_compact_ids.get()
+                  : buffers.late_compact_ids.get());
+  VkWriteDescriptorSet writes[13]{};
+  for (uint32_t i = 0; i < 13; ++i) {
     writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[i].dstSet = set;
     writes[i].descriptorCount = 1;
+    writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   }
   writes[0].dstBinding = 0;
   writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   writes[0].pBufferInfo = &ubo_info;
   writes[1].dstBinding = 1;
-  writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   writes[1].pBufferInfo = &instances;
   writes[2].dstBinding = 2;
-  writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   writes[2].pBufferInfo = &meshlets;
   writes[3].dstBinding = 3;
-  writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  writes[3].pBufferInfo = &early;
+  writes[3].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+  writes[3].pImageInfo = &hiz;
   writes[4].dstBinding = 4;
-  writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  writes[4].pBufferInfo = &late;
+  writes[4].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+  writes[4].pImageInfo = &hiz;
   writes[5].dstBinding = 5;
-  writes[5].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  writes[5].pImageInfo = &hiz;
+  writes[5].pBufferInfo = &batch_bases;
   writes[6].dstBinding = 6;
-  writes[6].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-  writes[6].pImageInfo = &hiz;
+  writes[6].pBufferInfo = &unique_counts;
   writes[7].dstBinding = 7;
-  writes[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  writes[7].pBufferInfo = &early_count_info;
+  writes[7].pBufferInfo = &unique_firsts;
   writes[8].dstBinding = 8;
-  writes[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  writes[8].pBufferInfo = &late_count_info;
+  writes[8].pBufferInfo = &compact_bases;
   writes[9].dstBinding = 9;
-  writes[9].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  writes[9].pBufferInfo = &batch_bases;
-  VkImageView* bound = (set == m_cull_sets[frame]) ? &m_cull_hiz_bound[frame]
-                                                   : &m_shadow_cull_hiz_bound[frame];
-  if (*bound != hiz.imageView) {
-    vkUpdateDescriptorSets(m_context->getDevice(), 10, writes, 0, nullptr);
-    *bound = hiz.imageView;
-  }
+  writes[9].pBufferInfo = &early_inst;
+  writes[10].dstBinding = 10;
+  writes[10].pBufferInfo = &late_inst;
+  writes[11].dstBinding = 11;
+  writes[11].pBufferInfo = &early_ids;
+  writes[12].dstBinding = 12;
+  writes[12].pBufferInfo = &late_ids;
+  vkUpdateDescriptorSets(m_context->getDevice(), 13, writes, 0, nullptr);
 }
 
 bool GpuDrivenRenderer::compactIndirectEnabled() const {
@@ -1163,39 +1248,120 @@ void GpuDrivenRenderer::harvestHudCounts(uint32_t frame) {
   m_surviving_late = sumCompactCountBuffer(late, n);
 }
 
-bool GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
+void GpuDrivenRenderer::updateEmitDescriptors(uint32_t frame, bool shadow) {
+  FrameBuffers& buffers = m_frames[frame];
+  VkDescriptorSet set = shadow ? m_shadow_emit_sets[frame] : m_emit_sets[frame];
+  VulkanBuffer* ubo =
+      shadow ? buffers.shadow_emit_ubo.get() : buffers.emit_ubo.get();
+  ASSERT(set != VK_NULL_HANDLE);
+  ASSERT(ubo != nullptr);
+  auto ssbo = [](VulkanBuffer* buf) {
+    VkDescriptorBufferInfo info{};
+    info.buffer = buf->getBuffer();
+    info.range = VK_WHOLE_SIZE;
+    return info;
+  };
+  VkDescriptorBufferInfo ubo_info{};
+  ubo_info.buffer = ubo->getBuffer();
+  ubo_info.range = sizeof(GpuDrivenEmitUniforms);
+  VkDescriptorBufferInfo meshlets = ssbo(buffers.meshlets.get());
+  VkDescriptorBufferInfo unique_expanded = ssbo(buffers.unique_expanded.get());
+  VkDescriptorBufferInfo unique_batch = ssbo(buffers.unique_batch.get());
+  VkDescriptorBufferInfo batch_bases = ssbo(buffers.batch_bases.get());
+  VkDescriptorBufferInfo unique_firsts = ssbo(buffers.unique_firsts.get());
+  VkDescriptorBufferInfo compact_bases = ssbo(buffers.compact_bases.get());
+  VkDescriptorBufferInfo early_inst =
+      ssbo(shadow ? buffers.shadow_instance_counts.get()
+                  : buffers.early_instance_counts.get());
+  VkDescriptorBufferInfo late_inst =
+      ssbo(shadow ? buffers.dummy_instance_counts.get()
+                  : buffers.late_instance_counts.get());
+  VkDescriptorBufferInfo early_cmds =
+      ssbo(shadow ? buffers.shadow_cmds.get() : buffers.early_cmds.get());
+  VkDescriptorBufferInfo late_cmds =
+      ssbo(shadow ? buffers.dummy_cmds.get() : buffers.late_cmds.get());
+  VkDescriptorBufferInfo early_counts =
+      ssbo(shadow ? buffers.shadow_counts.get() : buffers.early_counts.get());
+  VkDescriptorBufferInfo late_counts =
+      ssbo(shadow ? buffers.dummy_counts.get() : buffers.late_counts.get());
+  VkWriteDescriptorSet writes[13]{};
+  for (uint32_t i = 0; i < 13; ++i) {
+    writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[i].dstSet = set;
+    writes[i].descriptorCount = 1;
+    writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  }
+  writes[0].dstBinding = 0;
+  writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writes[0].pBufferInfo = &ubo_info;
+  writes[1].dstBinding = 1;
+  writes[1].pBufferInfo = &meshlets;
+  writes[2].dstBinding = 2;
+  writes[2].pBufferInfo = &unique_expanded;
+  writes[3].dstBinding = 3;
+  writes[3].pBufferInfo = &unique_batch;
+  writes[4].dstBinding = 4;
+  writes[4].pBufferInfo = &batch_bases;
+  writes[5].dstBinding = 5;
+  writes[5].pBufferInfo = &unique_firsts;
+  writes[6].dstBinding = 6;
+  writes[6].pBufferInfo = &compact_bases;
+  writes[7].dstBinding = 7;
+  writes[7].pBufferInfo = &early_inst;
+  writes[8].dstBinding = 8;
+  writes[8].pBufferInfo = &late_inst;
+  writes[9].dstBinding = 9;
+  writes[9].pBufferInfo = &early_cmds;
+  writes[10].dstBinding = 10;
+  writes[10].pBufferInfo = &late_cmds;
+  writes[11].dstBinding = 11;
+  writes[11].pBufferInfo = &early_counts;
+  writes[12].dstBinding = 12;
+  writes[12].pBufferInfo = &late_counts;
+  vkUpdateDescriptorSets(m_context->getDevice(), 13, writes, 0, nullptr);
+}
+
+void GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
                                      VkDescriptorSet set, VulkanBuffer* ubo,
                                      const glm::mat4& view_projection,
                                      const glm::vec3& camera, bool hiz_enabled,
-                                     bool skip_cone, VkBuffer early_cmds,
-                                     VkBuffer late_cmds, VkBuffer early_counts,
-                                     VkBuffer late_counts) {
-  if (m_meshlet_count == 0 || m_cull_pipeline == VK_NULL_HANDLE ||
-      set == VK_NULL_HANDLE || ubo == nullptr) {
-    return false;
+                                     bool skip_cone, bool shadow) {
+  if (m_meshlet_count == 0 || m_unique_meshlet_count == 0 ||
+      m_cull_pipeline == VK_NULL_HANDLE || set == VK_NULL_HANDLE ||
+      ubo == nullptr) {
+    return;
   }
-  // Same PRIMARY may already have Viewport G-buffer INDIRECT_COMMAND_READ and
-  // a HUD vkCmdCopyBuffer TRANSFER_READ on these buffers (Camera Preview recull).
+  FrameBuffers& buffers = m_frames[frame];
+  VkBuffer early_inst = shadow ? buffers.shadow_instance_counts->getBuffer()
+                               : buffers.early_instance_counts->getBuffer();
+  VkBuffer late_inst = shadow ? buffers.dummy_instance_counts->getBuffer()
+                              : buffers.late_instance_counts->getBuffer();
+  VkBuffer early_ids = shadow ? buffers.shadow_compact_ids->getBuffer()
+                              : buffers.early_compact_ids->getBuffer();
+  VkBuffer late_ids = shadow ? buffers.dummy_compact_ids->getBuffer()
+                             : buffers.late_compact_ids->getBuffer();
   const VkAccessFlags fill_src_access =
-      VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+      VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
   const VkPipelineStageFlags fill_src_stage =
-      VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
-  cmdBufferBarrier(cmd, early_cmds, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+      VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT |
+      VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT;
+  cmdBufferBarrier(cmd, early_inst, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
                    fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  cmdBufferBarrier(cmd, late_cmds, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+  cmdBufferBarrier(cmd, late_inst, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
                    fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  cmdBufferBarrier(cmd, early_counts, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
-                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
-  cmdBufferBarrier(cmd, late_counts, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
-                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, early_ids, fill_src_access, VK_ACCESS_SHADER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, late_ids, fill_src_access, VK_ACCESS_SHADER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
   const uint32_t prev = (frame + k_frames - 1u) % k_frames;
   const bool can_hiz = hiz_enabled && m_hiz[prev].built;
-  const bool compact = compactIndirectEnabled();
-  if (late_cmds != m_frames[frame].dummy_cmds->getBuffer()) {
+  if (!shadow) {
     m_late_pass_enabled = can_hiz;
   }
-  updateCullDescriptors(frame, set, ubo, early_cmds, late_cmds, early_counts,
-                        late_counts, m_hiz[prev].sampled_view, can_hiz);
+  updateCullDescriptors(frame, set, ubo, m_hiz[prev].sampled_view, can_hiz,
+                        shadow);
 
   GpuDrivenCullUniforms uniforms{};
   uniforms.view_projection = view_projection;
@@ -1205,9 +1371,116 @@ bool GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
   uniforms.hiz_enabled = can_hiz ? 1u : 0u;
   uniforms.hiz_mip_count = m_hiz[prev].mip_count;
   uniforms.skip_cone = skip_cone ? 1u : 0u;
-  uniforms.compact_commands = compact ? 1u : 0u;
+  uniforms.compact_commands = compactIndirectEnabled() ? 1u : 0u;
   uniforms.hiz_size = glm::vec4(static_cast<float>(m_hiz[prev].width),
                                 static_cast<float>(m_hiz[prev].height), 0.0f, 0.0f);
+  ubo->upload(&uniforms, sizeof(uniforms));
+
+  const VkDeviceSize inst_bytes =
+      static_cast<VkDeviceSize>(sizeof(uint32_t) * m_unique_meshlet_count);
+  vkCmdFillBuffer(cmd, early_inst, 0, inst_bytes, 0);
+  vkCmdFillBuffer(cmd, late_inst, 0, inst_bytes, 0);
+  cmdBufferBarrier(cmd, early_inst, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, late_inst, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+  const VkPipelineStageFlags graphics_shader_stages =
+      VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+      VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT |
+      VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT;
+  cmdBufferBarrier(cmd, buffers.instances->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
+                   VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | graphics_shader_stages);
+  cmdBufferBarrier(cmd, buffers.meshlets->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
+                   VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                       VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT |
+                       VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT);
+  cmdBufferBarrier(cmd, buffers.batch_bases->getBuffer(),
+                   VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                   VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, buffers.unique_counts->getBuffer(),
+                   VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                   VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, buffers.unique_firsts->getBuffer(),
+                   VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                   VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, buffers.compact_bases->getBuffer(),
+                   VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                   VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, ubo->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
+                   VK_ACCESS_UNIFORM_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_cull_pipeline);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_cull_pipe_layout, 0,
+                          1, &set, 0, nullptr);
+  const uint32_t groups = (m_meshlet_count + 63u) / 64u;
+  vkCmdDispatch(cmd, groups, 1, 1);
+  const VkAccessFlags compact_dst_access = VK_ACCESS_SHADER_READ_BIT;
+  const VkPipelineStageFlags compact_dst_stage =
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | graphics_shader_stages;
+  cmdBufferBarrier(cmd, early_inst, VK_ACCESS_SHADER_WRITE_BIT, compact_dst_access,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, compact_dst_stage);
+  cmdBufferBarrier(cmd, late_inst, VK_ACCESS_SHADER_WRITE_BIT, compact_dst_access,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, compact_dst_stage);
+  cmdBufferBarrier(cmd, early_ids, VK_ACCESS_SHADER_WRITE_BIT, compact_dst_access,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, compact_dst_stage);
+  cmdBufferBarrier(cmd, late_ids, VK_ACCESS_SHADER_WRITE_BIT, compact_dst_access,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, compact_dst_stage);
+  cmdBufferBarrier(cmd, buffers.instances->getBuffer(), VK_ACCESS_SHADER_READ_BIT,
+                   VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   graphics_shader_stages);
+}
+
+void GpuDrivenRenderer::dispatchEmit(VkCommandBuffer cmd, uint32_t frame,
+                                     bool shadow) {
+  if (m_unique_meshlet_count == 0 || m_emit_pipeline == VK_NULL_HANDLE) {
+    return;
+  }
+  FrameBuffers& buffers = m_frames[frame];
+  VkDescriptorSet set = shadow ? m_shadow_emit_sets[frame] : m_emit_sets[frame];
+  VulkanBuffer* ubo =
+      shadow ? buffers.shadow_emit_ubo.get() : buffers.emit_ubo.get();
+  if (set == VK_NULL_HANDLE || ubo == nullptr) {
+    return;
+  }
+  VkBuffer early_cmds = shadow ? buffers.shadow_cmds->getBuffer()
+                               : buffers.early_cmds->getBuffer();
+  VkBuffer late_cmds = shadow ? buffers.dummy_cmds->getBuffer()
+                              : buffers.late_cmds->getBuffer();
+  VkBuffer early_counts = shadow ? buffers.shadow_counts->getBuffer()
+                                 : buffers.early_counts->getBuffer();
+  VkBuffer late_counts = shadow ? buffers.dummy_counts->getBuffer()
+                                : buffers.late_counts->getBuffer();
+  // Same PRIMARY may already have Viewport G-buffer INDIRECT_COMMAND_READ and
+  // a HUD vkCmdCopyBuffer TRANSFER_READ on these buffers (Camera Preview recull).
+  const VkAccessFlags fill_src_access = VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
+                                        VK_ACCESS_TRANSFER_READ_BIT |
+                                        VK_ACCESS_SHADER_READ_BIT |
+                                        VK_ACCESS_SHADER_WRITE_BIT;
+  const VkPipelineStageFlags fill_src_stage =
+      VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+      VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT |
+      VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT |
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+  cmdBufferBarrier(cmd, early_cmds, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, late_cmds, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, early_counts, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, late_counts, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+  updateEmitDescriptors(frame, shadow);
+
+  GpuDrivenEmitUniforms uniforms{};
+  uniforms.unique_count = m_unique_meshlet_count;
+  uniforms.compact_commands = compactIndirectEnabled() ? 1u : 0u;
   ubo->upload(&uniforms, sizeof(uniforms));
 
   const uint32_t batch_count =
@@ -1223,7 +1496,7 @@ bool GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
                    VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
   const VkDeviceSize cmd_bytes = static_cast<VkDeviceSize>(
-      sizeof(DrawIndexedIndirectCommand) * m_meshlet_count);
+      sizeof(DrawIndexedIndirectCommand) * m_unique_meshlet_count);
   vkCmdFillBuffer(cmd, early_cmds, 0, cmd_bytes, 0);
   vkCmdFillBuffer(cmd, late_cmds, 0, cmd_bytes, 0);
   cmdBufferBarrier(cmd, early_cmds, VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -1232,31 +1505,20 @@ bool GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
   cmdBufferBarrier(cmd, late_cmds, VK_ACCESS_TRANSFER_WRITE_BIT,
                    VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-  const VkPipelineStageFlags graphics_shader_stages =
-      VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-      VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT |
-      VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT;
-  cmdBufferBarrier(cmd, m_frames[frame].instances->getBuffer(),
+  cmdBufferBarrier(cmd, buffers.unique_expanded->getBuffer(),
                    VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                   VK_PIPELINE_STAGE_HOST_BIT,
-                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | graphics_shader_stages);
-  cmdBufferBarrier(cmd, m_frames[frame].meshlets->getBuffer(),
-                   VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
-                   VK_PIPELINE_STAGE_HOST_BIT,
-                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-                       VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT |
-                       VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT);
-  cmdBufferBarrier(cmd, m_frames[frame].batch_bases->getBuffer(),
+                   VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, buffers.unique_batch->getBuffer(),
                    VK_ACCESS_HOST_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
                    VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
   cmdBufferBarrier(cmd, ubo->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
                    VK_ACCESS_UNIFORM_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_cull_pipeline);
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_cull_pipe_layout, 0,
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_emit_pipeline);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_emit_pipe_layout, 0,
                           1, &set, 0, nullptr);
-  const uint32_t groups = (m_meshlet_count + 63u) / 64u;
+  const uint32_t groups = (m_unique_meshlet_count + 63u) / 64u;
   vkCmdDispatch(cmd, groups, 1, 1);
   const VkAccessFlags cmd_dst_access =
       VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
@@ -1277,10 +1539,6 @@ bool GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                    VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
                        VK_PIPELINE_STAGE_TRANSFER_BIT);
-  cmdBufferBarrier(cmd, m_frames[frame].instances->getBuffer(),
-                   VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
-                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, graphics_shader_stages);
-  return true;
 }
 
 void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
@@ -1385,6 +1643,22 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
       buffers.batch_bases->upload(m_batch_base_cpu.data(),
                                   sizeof(uint32_t) * m_batch_base_cpu.size());
     }
+    if (!m_unique_count_cpu.empty()) {
+      buffers.unique_counts->upload(m_unique_count_cpu.data(),
+                                    sizeof(uint32_t) * m_unique_count_cpu.size());
+      buffers.unique_firsts->upload(m_unique_first_cpu.data(),
+                                    sizeof(uint32_t) * m_unique_first_cpu.size());
+    }
+    if (!m_compact_base_cpu.empty()) {
+      buffers.compact_bases->upload(
+          m_compact_base_cpu.data(),
+          sizeof(uint32_t) * m_compact_base_cpu.size());
+      buffers.unique_batch->upload(m_unique_batch_cpu.data(),
+                                   sizeof(uint32_t) * m_unique_batch_cpu.size());
+      buffers.unique_expanded->upload(
+          m_unique_expanded_cpu.data(),
+          sizeof(uint32_t) * m_unique_expanded_cpu.size());
+    }
     m_uploaded_identity_fingerprint[frame] = m_identity_fingerprint;
   }
 
@@ -1400,14 +1674,19 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
   shadow_ubo.light_projection = frame_state.light_projection;
   buffers.shadow_ubo->upload(&shadow_ubo, sizeof(shadow_ubo));
 
-  const bool cull_recorded = dispatchCull(
-      cmd, frame, m_cull_sets[frame], buffers.cull_ubo.get(),
-      frame_state.projection * frame_state.view, frame_state.camera_position,
-      enable_hiz, false, buffers.early_cmds->getBuffer(),
-      buffers.late_cmds->getBuffer(), buffers.early_counts->getBuffer(),
-      buffers.late_counts->getBuffer());
-  if (copy_hud_counts && cull_recorded) {
-    copyHudCounts(cmd, frame);
+  const bool can_cull = m_meshlet_count > 0 && m_unique_meshlet_count > 0 &&
+                       m_cull_pipeline != VK_NULL_HANDLE &&
+                       m_emit_pipeline != VK_NULL_HANDLE;
+  if (can_cull) {
+    dispatchCull(cmd, frame, m_cull_sets[frame], buffers.cull_ubo.get(),
+                 frame_state.projection * frame_state.view,
+                 frame_state.camera_position, enable_hiz, false, false);
+    dispatchEmit(cmd, frame, false);
+    if (copy_hud_counts) {
+      copyHudCounts(cmd, frame);
+    }
+  } else if (copy_hud_counts) {
+    m_hud_copied_batches[frame] = 0;
   }
   cmdBufferBarrier(cmd, buffers.view_ubo->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
                    VK_ACCESS_UNIFORM_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
@@ -1428,20 +1707,18 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
 void GpuDrivenRenderer::recordShadowCull(VkCommandBuffer cmd, uint32_t frame,
                                          const ForwardFrameState& frame_state) {
   frame %= k_frames;
-  if (m_meshlet_count == 0) {
+  if (m_meshlet_count == 0 || m_unique_meshlet_count == 0) {
     return;
   }
   dispatchCull(cmd, frame, m_shadow_cull_sets[frame],
                m_frames[frame].shadow_cull_ubo.get(),
                frame_state.light_view_projection, frame_state.camera_position,
-               false, true, m_frames[frame].shadow_cmds->getBuffer(),
-               m_frames[frame].dummy_cmds->getBuffer(),
-               m_frames[frame].shadow_counts->getBuffer(),
-               m_frames[frame].dummy_counts->getBuffer());
+               false, true, true);
+  dispatchEmit(cmd, frame, true);
 }
 
 void GpuDrivenRenderer::writePbrDescriptors(uint32_t frame, ShadowMapTarget* shadow,
-                                            VulkanTexture* fallback) {
+                                            VulkanTexture* fallback, bool late) {
   FrameBuffers& buffers = m_frames[frame];
   VkDescriptorBufferInfo ubo{};
   ubo.buffer = buffers.view_ubo->getBuffer();
@@ -1460,8 +1737,12 @@ void GpuDrivenRenderer::writePbrDescriptors(uint32_t frame, ShadowMapTarget* sha
   VkDescriptorBufferInfo instances{};
   instances.buffer = buffers.instances->getBuffer();
   instances.range = VK_WHOLE_SIZE;
-  VkWriteDescriptorSet writes[4]{};
-  for (uint32_t i = 0; i < 4; ++i) {
+  VkDescriptorBufferInfo compact{};
+  compact.buffer = late ? buffers.late_compact_ids->getBuffer()
+                        : buffers.early_compact_ids->getBuffer();
+  compact.range = VK_WHOLE_SIZE;
+  VkWriteDescriptorSet writes[5]{};
+  for (uint32_t i = 0; i < 5; ++i) {
     writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[i].dstSet = m_pbr_sets[frame];
     writes[i].descriptorCount = 1;
@@ -1478,14 +1759,17 @@ void GpuDrivenRenderer::writePbrDescriptors(uint32_t frame, ShadowMapTarget* sha
   writes[3].dstBinding = 3;
   writes[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   writes[3].pBufferInfo = &instances;
-  vkUpdateDescriptorSets(m_context->getDevice(), 4, writes, 0, nullptr);
+  writes[4].dstBinding = 8;
+  writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  writes[4].pBufferInfo = &compact;
+  vkUpdateDescriptorSets(m_context->getDevice(), 5, writes, 0, nullptr);
   if (m_mesh_shadows != nullptr) {
     m_mesh_shadows->writeSamplingDescriptors(m_context->getDevice(),
                                             m_pbr_sets[frame], 4);
   }
 }
 
-void GpuDrivenRenderer::writeGBufferDescriptors(uint32_t frame) {
+void GpuDrivenRenderer::writeGBufferDescriptors(uint32_t frame, bool late) {
   if (m_gbuffer_sets[frame] == VK_NULL_HANDLE) {
     return;
   }
@@ -1496,7 +1780,11 @@ void GpuDrivenRenderer::writeGBufferDescriptors(uint32_t frame) {
   VkDescriptorBufferInfo instances{};
   instances.buffer = buffers.instances->getBuffer();
   instances.range = VK_WHOLE_SIZE;
-  VkWriteDescriptorSet writes[2]{};
+  VkDescriptorBufferInfo compact{};
+  compact.buffer = late ? buffers.late_compact_ids->getBuffer()
+                        : buffers.early_compact_ids->getBuffer();
+  compact.range = VK_WHOLE_SIZE;
+  VkWriteDescriptorSet writes[3]{};
   writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   writes[0].dstSet = m_gbuffer_sets[frame];
   writes[0].dstBinding = 0;
@@ -1507,7 +1795,10 @@ void GpuDrivenRenderer::writeGBufferDescriptors(uint32_t frame) {
   writes[1].dstBinding = 1;
   writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   writes[1].pBufferInfo = &instances;
-  vkUpdateDescriptorSets(m_context->getDevice(), 2, writes, 0, nullptr);
+  writes[2] = writes[1];
+  writes[2].dstBinding = 2;
+  writes[2].pBufferInfo = &compact;
+  vkUpdateDescriptorSets(m_context->getDevice(), 3, writes, 0, nullptr);
 }
 
 void GpuDrivenRenderer::writeShadowDescriptors(uint32_t frame) {
@@ -1521,7 +1812,10 @@ void GpuDrivenRenderer::writeShadowDescriptors(uint32_t frame) {
   VkDescriptorBufferInfo instances{};
   instances.buffer = buffers.instances->getBuffer();
   instances.range = VK_WHOLE_SIZE;
-  VkWriteDescriptorSet writes[2]{};
+  VkDescriptorBufferInfo compact{};
+  compact.buffer = buffers.shadow_compact_ids->getBuffer();
+  compact.range = VK_WHOLE_SIZE;
+  VkWriteDescriptorSet writes[3]{};
   writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   writes[0].dstSet = m_shadow_sets[frame];
   writes[0].dstBinding = 0;
@@ -1532,7 +1826,10 @@ void GpuDrivenRenderer::writeShadowDescriptors(uint32_t frame) {
   writes[1].dstBinding = 1;
   writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   writes[1].pBufferInfo = &instances;
-  vkUpdateDescriptorSets(m_context->getDevice(), 2, writes, 0, nullptr);
+  writes[2] = writes[1];
+  writes[2].dstBinding = 2;
+  writes[2].pBufferInfo = &compact;
+  vkUpdateDescriptorSets(m_context->getDevice(), 3, writes, 0, nullptr);
 }
 
 void GpuDrivenRenderer::recordIndirectBatches(
@@ -1549,9 +1846,9 @@ void GpuDrivenRenderer::recordIndirectBatches(
     return;
   }
   if (!gbuffer && !shadow) {
-    writePbrDescriptors(frame, shadow_map, fallback);
+    writePbrDescriptors(frame, shadow_map, fallback, late);
   } else if (gbuffer) {
-    writeGBufferDescriptors(frame);
+    writeGBufferDescriptors(frame, late);
   } else {
     writeShadowDescriptors(frame);
   }
@@ -1626,7 +1923,7 @@ void GpuDrivenRenderer::recordOpaqueIndirect(VkCommandBuffer cmd, uint32_t frame
   if (m_mesh_shaders_enabled && m_mesh_pipeline != VK_NULL_HANDLE &&
       m_context->cmdDrawMeshTasksEXT() != nullptr) {
     FrameBuffers& buffers = m_frames[frame];
-    writePbrDescriptors(frame, shadow, fallback);
+    writePbrDescriptors(frame, shadow, fallback, late);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipeline);
     VkDescriptorSet table = m_context->bindlessTextureTable().descriptorSet();
     uint32_t batch_i = 0;
@@ -1677,12 +1974,16 @@ void GpuDrivenRenderer::recordOpaqueIndirect(VkCommandBuffer cmd, uint32_t frame
       meshlet_tris.range = VK_WHOLE_SIZE;
       VkDescriptorBufferInfo meshlets{};
       meshlets.buffer = buffers.meshlets->getBuffer();
-      meshlets.offset = static_cast<VkDeviceSize>(batch.meshlet_first) *
+      meshlets.offset = static_cast<VkDeviceSize>(batch.expanded_first) *
                         sizeof(GpuDrivenMeshletGpu);
       meshlets.range = static_cast<VkDeviceSize>(batch.meshlet_count) *
                        sizeof(GpuDrivenMeshletGpu);
-      VkWriteDescriptorSet writes[9]{};
-      for (uint32_t i = 0; i < 9; ++i) {
+      VkDescriptorBufferInfo compact{};
+      compact.buffer = late ? buffers.late_compact_ids->getBuffer()
+                            : buffers.early_compact_ids->getBuffer();
+      compact.range = VK_WHOLE_SIZE;
+      VkWriteDescriptorSet writes[10]{};
+      for (uint32_t i = 0; i < 10; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet = set;
         writes[i].descriptorCount = 1;
@@ -1709,7 +2010,9 @@ void GpuDrivenRenderer::recordOpaqueIndirect(VkCommandBuffer cmd, uint32_t frame
       writes[7].pBufferInfo = &meshlet_tris;
       writes[8].dstBinding = 8;
       writes[8].pBufferInfo = &meshlets;
-      vkUpdateDescriptorSets(m_context->getDevice(), 9, writes, 0, nullptr);
+      writes[9].dstBinding = 13;
+      writes[9].pBufferInfo = &compact;
+      vkUpdateDescriptorSets(m_context->getDevice(), 10, writes, 0, nullptr);
       if (m_mesh_shadows != nullptr) {
         m_mesh_shadows->writeSamplingDescriptors(m_context->getDevice(), set, 9);
       }

@@ -21,6 +21,9 @@ ConstantBuffer<GBufferUniformData> ubo;
 [[vk::binding(1, 0)]]
 StructuredBuffer<GpuDrivenInstanceGpu> instances;
 
+[[vk::binding(2, 0)]]
+StructuredBuffer<uint> compactIds;
+
 [[vk::binding(0, 1)]]
 Texture2D<float4> bindlessTextures[];
 
@@ -78,7 +81,8 @@ float4 sampleBindless(uint index, float2 uv)
 [shader("vertex")]
 VertexOutput vertexMain(VertexInput input, uint instanceId : SV_VulkanInstanceID)
 {
-    GpuDrivenInstanceGpu inst = instances[instanceId];
+    uint instIndex = compactIds[instanceId];
+    GpuDrivenInstanceGpu inst = instances[instIndex];
     VertexOutput output;
     float4 worldPos = mul(inst.world, float4(input.inPosition, 1.0));
     float4 viewPos = mul(ubo.view, worldPos);
@@ -89,7 +93,7 @@ VertexOutput vertexMain(VertexInput input, uint instanceId : SV_VulkanInstanceID
         normalize(mul((float3x3)inst.normalMatrix, input.inTangent.xyz));
     output.tangentSign = input.inTangent.w;
     output.uv = input.inUv;
-    output.instanceId = instanceId;
+    output.instanceId = instIndex;
     output.color = input.inColor;
     return output;
 }

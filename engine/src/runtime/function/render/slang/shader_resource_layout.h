@@ -47,12 +47,13 @@ constexpr uint32_t k_deferred_lighting_descriptor_binding_count = 16;
 constexpr uint32_t k_froxel_fill_descriptor_binding_count = 5;
 constexpr uint32_t k_vrs_sobel_descriptor_binding_count = 3;
 constexpr uint32_t k_vrs_rate_mask_descriptor_binding_count = 2;
-constexpr uint32_t k_gpu_driven_pbr_descriptor_binding_count = 10;
-constexpr uint32_t k_gpu_driven_gbuffer_descriptor_binding_count = 4;
-constexpr uint32_t k_gpu_driven_shadow_descriptor_binding_count = 2;
-constexpr uint32_t k_meshlet_cull_descriptor_binding_count = 10;
+constexpr uint32_t k_gpu_driven_pbr_descriptor_binding_count = 11;
+constexpr uint32_t k_gpu_driven_gbuffer_descriptor_binding_count = 5;
+constexpr uint32_t k_gpu_driven_shadow_descriptor_binding_count = 3;
+constexpr uint32_t k_meshlet_cull_descriptor_binding_count = 13;
+constexpr uint32_t k_meshlet_emit_descriptor_binding_count = 13;
 constexpr uint32_t k_hiz_pyramid_descriptor_binding_count = 4;
-constexpr uint32_t k_gpu_driven_mesh_descriptor_binding_count = 15;
+constexpr uint32_t k_gpu_driven_mesh_descriptor_binding_count = 16;
 
 /// True when extracted (set, binding[, kind]) tuples equal expected tuples.
 /// `expected_sets` nullptr means every expected binding is set 0.
@@ -106,6 +107,10 @@ void fillGpuDrivenShadowExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                          ShaderDescriptorKind* kinds);
 
 void fillMeshletCullExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                     uint32_t* count,
+                                     ShaderDescriptorKind* kinds);
+
+void fillMeshletEmitExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                      uint32_t* count,
                                      ShaderDescriptorKind* kinds);
 

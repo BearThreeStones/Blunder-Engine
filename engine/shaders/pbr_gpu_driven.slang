@@ -48,6 +48,9 @@ SamplerComparisonState shadowSampler;
 [[vk::binding(3, 0)]]
 StructuredBuffer<GpuDrivenInstanceGpu> instances;
 
+[[vk::binding(8, 0)]]
+StructuredBuffer<uint> compactIds;
+
 [[vk::binding(4, 0)]]
 Texture2DArray<float> vsmPages;
 
@@ -110,7 +113,8 @@ float4 sampleBindless(uint index, float2 uv)
 [shader("vertex")]
 VertexOutput vertexMain(VertexInput input, uint instanceId : SV_VulkanInstanceID)
 {
-    GpuDrivenInstanceGpu inst = instances[instanceId];
+    uint instIndex = compactIds[instanceId];
+    GpuDrivenInstanceGpu inst = instances[instIndex];
     VertexOutput output;
     float4 worldPos = mul(inst.world, float4(input.inPosition, 1.0));
     float4 viewPos = mul(ubo.view, worldPos);
@@ -122,7 +126,7 @@ VertexOutput vertexMain(VertexInput input, uint instanceId : SV_VulkanInstanceID
     output.tangentSign = input.inTangent.w;
     output.worldPos = worldPos.xyz;
     output.uv = input.inUv;
-    output.instanceId = instanceId;
+    output.instanceId = instIndex;
     output.color = input.inColor;
     return output;
 }

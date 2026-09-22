@@ -13,6 +13,9 @@ ConstantBuffer<ShadowUniformData> ubo;
 [[vk::binding(1, 0)]]
 StructuredBuffer<GpuDrivenInstanceGpu> instances;
 
+[[vk::binding(2, 0)]]
+StructuredBuffer<uint> compactIds;
+
 struct VertexInput
 {
     [[vk::location(0)]]
@@ -31,7 +34,7 @@ struct VertexOutput
 [shader("vertex")]
 VertexOutput vertexMain(VertexInput input, uint instanceId : SV_VulkanInstanceID)
 {
-    GpuDrivenInstanceGpu inst = instances[instanceId];
+    GpuDrivenInstanceGpu inst = instances[compactIds[instanceId]];
     VertexOutput output;
     float4 worldPos = mul(inst.world, float4(input.inPosition, 1.0));
     float4 lightViewPos = mul(ubo.lightView, worldPos);
