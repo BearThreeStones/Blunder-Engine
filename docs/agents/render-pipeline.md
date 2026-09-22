@@ -19,7 +19,8 @@ RenderSystem::tick(dt, viewport_w, viewport_h)
    │     │     │     (VS/FS classic 1024² directional when mesh shaders are absent;
    │     │     │      GPU-driven static casters are opaque meshlets only; no Hi-Z)
    │     │     ├─ GPU-driven cull (graphics-queue compute): frustum + cone + previous-frame Hi-Z
-   │     │     │     → early indirect command list; late list retests last frame's Hi-Z rejects
+   │     │     │     → compact visible instance IDs per unique meshlet; emit CS packs early/late
+   │     │     │       indirect cmds (`instanceCount = N`); late list is last-frame Hi-Z rejects
    │     │     ├─ RHI beginRenderPass (color + depth clear) with SECONDARY contents
    │     │     ├─ execute opaque secondary: GPU-driven early + late (indirect or task/mesh),
    │     │     │     then CPU `vkCmdDrawIndexed` list; scene-overlay secondary; transparent secondary
@@ -86,7 +87,7 @@ and not Bindless.
 | Piece | Detail |
 |-------|--------|
 | Instance buffer | Per-frame GPU buffer of static opaque/alpha-clip MeshRenderers with Meshlets: world matrix, Bindless texture indices, Meshlet range, MeshRenderer receiver id. Meshes cooked without Meshlets (version ≤ 2 Finals, skinned) stay on the CPU `ForwardOpaqueDraw` list. |
-| Cull | Graphics-queue compute (no dedicated compute queue): frustum + Meshlet cone cull, then previous-frame Hi-Z. Writes indirect draw commands / Meshlet lists. Exact-match FATAL on the compute layout. |
+| Cull | Graphics-queue compute (no dedicated compute queue): frustum + Meshlet cone cull, then previous-frame Hi-Z. Writes compact instance IDs and per-unique counts (not the command buffer). `meshlet_emit.slang` packs unique-meshlet `DrawIndexedIndirectCommand`s with `instanceCount = N`. Exact-match FATAL on cull and emit layouts. |
 | Hi-Z | Path-owned depth pyramid built from the **previous** frame's offscreen depth, one per `OffscreenRenderTarget::k_buffer_count` slot (FIF like the G-buffer). Not a Frame graph Transient. First frame: empty pyramid, frustum-visible Meshlets draw. **Not** a depth prepass and **not** a visibility buffer. |
 | Early / late | Early pass draws Meshlets that pass frustum + cone + previous-frame Hi-Z. Late pass draws the Hi-Z rejects that still pass frustum + cone, in the **same** opaque secondary (no split of the CLEAR pass). The pyramid is built **after** the pass for the **next** frame. First frame: `hiz_enabled=0`. |
 | Draw | `vkCmdDrawIndexedIndirect` (count variant when available) with the existing PBR / G-buffer fragment shaders + Bindless set 1. With `VK_EXT_mesh_shader`: task + mesh shaders consume the early/late Meshlet lists and emit the same fragment inputs as the VS path. |
