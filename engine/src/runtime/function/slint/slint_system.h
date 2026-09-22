@@ -13,6 +13,7 @@
 #include "EASTL/vector.h"
 
 #include "editor_window.h"
+#include "player_hud_window.h"
 #include "project_manager.h"
 
 #include "runtime/platform/window/child_window_registry.h"
@@ -65,6 +66,8 @@ struct SlintSystemInitInfo {
   uint32_t shared_vk_queue_family{0};
   /// When true, initialize ProjectManagerWindow instead of MainEditorWindow.
   bool project_manager_mode{false};
+  /// Windowed Player HUD-only Slint root (not the editor shell).
+  bool player_hud_mode{false};
 };
 
 class SlintSystem final : public IEditorUiPresentation {
@@ -228,6 +231,12 @@ class SlintSystem final : public IEditorUiPresentation {
   bool froxelOccupancyHeatmapEnabled() const;
   void toggleFroxelOccupancyHeatmap();
   void syncFroxelViewportStats(uint32_t dropped_this_frame, uint64_t dropped_total);
+
+  bool isPlayerHudMode() const { return m_player_hud_mode; }
+  bool frameTimingHudVisible() const;
+  void toggleFrameTimingHud();
+  void toggleProfilerDock();
+  void syncFrameTimingUi();
 
   /// Viewport-only VRS rate-mask overlay (not persisted).
   bool vrsRateMaskEnabled() const;
@@ -591,6 +600,7 @@ class SlintSystem final : public IEditorUiPresentation {
   void seedDockingWorkspace();
   void noteDockLayoutSettled();
   void syncDockingWorkspace();
+  void enlargeProfilerDock();
   void applyAnimationPreviewLiveTimeScale();
   void commitAnimationPreviewTimeScale();
   void applyAnimationPreviewSeek(float seconds);
@@ -658,9 +668,13 @@ class SlintSystem final : public IEditorUiPresentation {
   WindowSystem* m_window_system{nullptr};
   SlintWindowAdapter* m_window_adapter{nullptr};
   std::optional<slint::ComponentHandle<MainEditorWindow>> m_window_component;
+  std::optional<slint::ComponentHandle<::BlunderPlayerHud::PlayerHudWindow>>
+      m_player_hud_component;
   std::optional<slint::ComponentHandle<::BlunderPm::ProjectManagerWindow>>
       m_project_manager_component;
   bool m_project_manager_mode{false};
+  bool m_player_hud_mode{false};
+  int m_profiler_selected_index{-1};
   ViewportLogicalRect m_cached_viewport_logical_rect{};
   BrowserLogicalRect m_cached_browser_logical_rect{};
   BrowserLogicalRect m_cached_hierarchy_logical_rect{};

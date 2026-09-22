@@ -8,6 +8,7 @@
 #include "runtime/core/layer/layer_stack.h"
 #include "runtime/core/log/console_ring.h"
 #include "runtime/core/log/log_system.h"
+#include "runtime/function/debug/frame_timing_service.h"
 #include "runtime/function/job/job_system.h"
 #include "runtime/function/render/mesh_loader.h"
 #include "runtime/core/reflection/class_db.h"
@@ -229,6 +230,7 @@ void RuntimeGlobalContext::startSystems(
   m_logger_system = eastl::make_shared<LogSystem>();
   m_job_system = eastl::make_shared<JobSystem>();
   m_job_system->initialize();
+  m_frame_timing = eastl::make_unique<FrameTimingService>();
   // Player: Console Messages flush to the editor over Play IPC.
   ConsoleRing::instance().setForwardEnabled(player_host);
 
@@ -431,23 +433,43 @@ void RuntimeGlobalContext::startSystems(
 
   if (!mount_editor_shell) {
     if (player_host) {
-      LOG_INFO(
-          "[RuntimeGlobalContext] Player host mode — skipping Slint editor "
-          "shell");
       if (m_window_system) {
+        LOG_INFO(
+            "[RuntimeGlobalContext] Player host mode — HUD-only Slint root");
+        m_slint_system = eastl::make_shared<SlintSystem>();
         m_viewport_sink =
-            eastl::make_unique<SdlViewportSink>(m_window_system.get());
+            eastl::make_unique<SlintViewportSink>(m_slint_system.get());
         m_viewport_bridge = eastl::make_unique<UIViewportBridge>();
+        render_init_info.viewport_layout_source = m_slint_system.get();
         render_init_info.viewport_bridge = m_viewport_bridge.get();
         render_init_info.viewport_sink = m_viewport_sink.get();
+        m_render_system->initializeBackend(render_init_info);
+        SlintSystemInitInfo slint_init_info;
+        slint_init_info.window_system = m_window_system.get();
+        slint_init_info.player_hud_mode = true;
+        const SharedVulkanHandles shared_vk =
+            m_render_system->getSharedVulkanHandles();
+        if (shared_vk.valid) {
+          slint_init_info.shared_vk_instance = shared_vk.instance;
+          slint_init_info.shared_vk_physical_device = shared_vk.physical_device;
+          slint_init_info.shared_vk_device = shared_vk.device;
+          slint_init_info.shared_vk_queue_family = shared_vk.graphics_queue_family;
+        }
+        m_slint_system->initialize(slint_init_info);
+        m_render_system->initialize(render_init_info);
+      } else {
+        LOG_INFO(
+            "[RuntimeGlobalContext] Headless Player — skipping window and HUD");
+        m_render_system->initializeBackend(render_init_info);
+        m_render_system->initialize(render_init_info);
       }
     } else {
       LOG_INFO(
           "[RuntimeGlobalContext] Headless Editor — skipping window, Slint, "
           "UiHost, viewport sink/bridge");
+      m_render_system->initializeBackend(render_init_info);
+      m_render_system->initialize(render_init_info);
     }
-    m_render_system->initializeBackend(render_init_info);
-    m_render_system->initialize(render_init_info);
     wireMeshPreviewThumbnails(*this);
     if (hostMountsPlaySession(host_mode)) {
       m_play_session = eastl::make_unique<PlaySessionController>();
@@ -613,9 +635,13 @@ void RuntimeGlobalContext::shutdownSystems() {
   }
 
   if (m_render_system) {
+    if (m_frame_timing) {
+      m_frame_timing->detachGpu();
+    }
     m_render_system->shutdown();
     m_render_system.reset();
   }
+  m_frame_timing.reset();
 
   if (m_input_system) {
     m_input_system->shutdown();

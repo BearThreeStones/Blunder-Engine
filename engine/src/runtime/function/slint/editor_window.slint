@@ -16,6 +16,8 @@ import { TransformToolbar } from "transform_toolbar.slint";
 import { AnimationWindowPanel, ClipAnatomyRow, ClipAnatomyKey } from "animation_window_panel.slint";
 import { ConsolePanel, ConsoleRow } from "console_panel.slint";
 import { CameraPreviewPanel } from "camera_preview_panel.slint";
+import { FrameTimingHud, FrameTimingPassRow } from "frame_timing_hud.slint";
+import { ProfilerPanel, ProfilerFrameBar, ProfilerLaneRow } from "profiler_panel.slint";
 import { InspectorPanel, BehaviourRow, SkeletonModifierRow, AnimationClipRow, AnimationClipPickerRow } from "inspector_panel.slint";
 import { AnimationTreeCanvasPanel, AnimationTreeCanvasNodeRow, AnimationTreeCanvasEdgeRow } from "animation_tree_canvas_panel.slint";
 import { FloatingPanelWindow } from "floating_panel_window.slint";
@@ -436,6 +438,23 @@ export component MainEditorWindow inherits Window {
     in-out property <bool> viewport-is-perspective: true;
     in-out property <bool> froxel-occupancy-heatmap: false;
     in-out property <bool> vrs-rate-mask: false;
+    in-out property <bool> frame-timing-hud-visible: false;
+    in-out property <bool> profiler-dock-open: false;
+    in property <int> hud-fps: 0;
+    in property <string> hud-cpu-text: "0.00";
+    in property <string> hud-gpu-text: "0.00";
+    in property <int> hud-instance-count: 0;
+    in property <int> hud-light-count: 0;
+    in property <int> hud-draw-count: 0;
+    in property <bool> hud-gpu-unreliable: false;
+    in property <[FrameTimingPassRow]> hud-passes: [];
+    in property <[ProfilerFrameBar]> profiler-frames: [];
+    in property <[ProfilerLaneRow]> profiler-lanes: [];
+    in property <int> profiler-selected-index: -1;
+    in property <string> profiler-inspect-name: "";
+    in property <string> profiler-inspect-detail: "";
+    callback profiler-dock-toggled();
+    callback profiler-frame-clicked(int);
     in property <int> froxel-dropped-lights: 0;
     in property <bool> viewport-image-ready: false;
     callback viewport-projection-toggled();
@@ -722,6 +741,20 @@ export component MainEditorWindow inherits Window {
                             collapse-toggled => {
                                 root.camera-preview-collapse-toggled();
                             }
+                        }
+
+                        FrameTimingHud {
+                            x: parent.width - self.width - 8px;
+                            y: 8px;
+                            hud-visible: root.frame-timing-hud-visible;
+                            fps: root.hud-fps;
+                            cpu-text: root.hud-cpu-text;
+                            gpu-text: root.hud-gpu-text;
+                            instance-count: root.hud-instance-count;
+                            light-count: root.hud-light-count;
+                            draw-count: root.hud-draw-count;
+                            gpu-unreliable: root.hud-gpu-unreliable;
+                            passes: root.hud-passes;
                         }
                     }
 
@@ -1065,6 +1098,17 @@ export component MainEditorWindow inherits Window {
                         timescale-committed => { root.anim-preview-params-edited(); }
                         seeked(t) => { root.anim-preview-seeked(t); }
                         fire-target-changed(name) => { root.anim-preview-fire-target-changed(name); }
+                    }
+
+                    if tile.active-panel-kind == 7: ProfilerPanel {
+                        width: 100%;
+                        height: 100%;
+                        frames: root.profiler-frames;
+                        lanes: root.profiler-lanes;
+                        selected-index: root.profiler-selected-index;
+                        inspect-name: root.profiler-inspect-name;
+                        inspect-detail: root.profiler-inspect-detail;
+                        frame-clicked(index) => { root.profiler-frame-clicked(index); }
                     }
 
                     if tile.active-panel-kind == 0: Text {
@@ -1734,7 +1778,7 @@ export component MainEditorWindow inherits Window {
             x: root.view-menu-anchor-x;
             y: root.view-menu-anchor-y;
             width: 240px;
-            height: 138px;
+            height: 190px;
             background: EditorTheme.window;
             border-color: EditorTheme.hairline;
             border-width: 1px;
@@ -1796,6 +1840,58 @@ export component MainEditorWindow inherits Window {
                             vertical-alignment: center;
                             overflow: elide;
                             text: root.vrs-rate-mask ? "VRS Rate Mask ✓" : "VRS Rate Mask";
+                            color: EditorTheme.default-text;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 26px;
+                    background: hud-touch.has-hover ? EditorTheme.tab-hover : transparent;
+                    border-radius: 2px;
+
+                    hud-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.view-menu-visible = false;
+                            root.frame-timing-hud-visible = !root.frame-timing-hud-visible;
+                        }
+
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: root.frame-timing-hud-visible ? "Frame Timing HUD ✓" : "Frame Timing HUD (F3)";
+                            color: EditorTheme.default-text;
+                            font-size: 12px;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 26px;
+                    background: profiler-touch.has-hover ? EditorTheme.tab-hover : transparent;
+                    border-radius: 2px;
+
+                    profiler-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        clicked => {
+                            root.view-menu-visible = false;
+                            root.profiler-dock-toggled();
+                        }
+
+                        Text {
+                            x: 8px;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            text: root.profiler-dock-open ? "Profiler Dock ✓" : "Profiler Dock (F4)";
                             color: EditorTheme.default-text;
                             font-size: 12px;
                         }

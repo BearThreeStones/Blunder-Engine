@@ -46,6 +46,10 @@
 #include "runtime/resource/asset_registry/asset_registry.h"
 #include "runtime/platform/file_system/file_system.h"
 #include "runtime/function/global/global_context.h"
+#include "runtime/function/debug/frame_timing_service.h"
+#include "runtime/function/debug/tracy_instrument.h"
+#include "runtime/function/ui/docking/dock_types.h"
+#include "runtime/function/ui/docking/dock_layout_snapshot.h"
 #include "runtime/function/ui/startup_cover.h"
 #include "runtime/function/ui/engine_open_progress.h"
 #include "runtime/function/render/mesh_preview/mesh_preview_render.h"
@@ -683,8 +687,10 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     }
   }
 
+  const bool player_hud_overlay =
+      m_owner && m_owner->isPlayerHudMode() && m_owner->frameTimingHudVisible();
   const bool forced_full_refresh =
-      m_owner && m_owner->consumePendingFullSkiaRefresh();
+      (m_owner && m_owner->consumePendingFullSkiaRefresh()) || player_hud_overlay;
   if (forced_full_refresh) {
 #if BLUNDER_SLINT_FORK_SKIA
     m_renderer->force_full_refresh();
@@ -883,6 +889,25 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       m_window_adapter->pollDrawableSize();
       m_window_adapter->commitWindowSize(true);
       LOG_INFO("[SlintSystem] project manager initialized");
+      return;
+    }
+
+    if (init_info.player_hud_mode) {
+      LOG_INFO("[SlintSystem::initialize] creating Player HUD window");
+      m_player_hud_mode = true;
+      auto component = ::BlunderPlayerHud::PlayerHudWindow::create();
+      component->show();
+      m_player_hud_component = component;
+      m_window_adapter = g_slint_platform_instance->getWindowAdapter();
+      ASSERT(m_window_adapter);
+      m_window_adapter->setOwner(this);
+      m_window_system->setNativeEventCallback(
+          [this](const SDL_Event& event) { processEvent(event); });
+      syncWindowChromeSize();
+      m_force_window_commit = true;
+      m_window_adapter->pollDrawableSize();
+      m_window_adapter->commitWindowSize(true);
+      LOG_INFO("[SlintSystem] player HUD initialized");
       return;
     }
 
@@ -1685,6 +1710,11 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
         m_ui_host, [](UiHost& host) {
           host.enqueue(UiEvent::simple(UiEventKind::alignCameraToView));
         }));
+    component->on_profiler_dock_toggled([this]() { toggleProfilerDock(); });
+    component->on_profiler_frame_clicked([this](int index) {
+      m_profiler_selected_index = index;
+      syncFrameTimingUi();
+    });
     component->on_browser_folder_selected(UiCallbackBinder::bind(
         m_ui_host, [this](UiHost& host, const slint::SharedString& path) {
           g_runtime_global_context.setContentBrowserHasInputFocus(true);
@@ -1966,8 +1996,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::initialize] {}", e.what());
     m_window_component.reset();
+    m_player_hud_component.reset();
     m_project_manager_component.reset();
     m_project_manager_mode = false;
+    m_player_hud_mode = false;
     m_window_adapter = nullptr;
     if (m_window_system) {
       m_window_system->requestClose();
@@ -1975,8 +2007,10 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
   } catch (...) {
     LOG_ERROR("[SlintSystem::initialize] unknown exception");
     m_window_component.reset();
+    m_player_hud_component.reset();
     m_project_manager_component.reset();
     m_project_manager_mode = false;
+    m_player_hud_mode = false;
     m_window_adapter = nullptr;
     if (m_window_system) {
       m_window_system->requestClose();
@@ -2048,6 +2082,11 @@ void SlintSystem::shutdown() {
     m_project_manager_component.reset();
   }
 
+  if (m_player_hud_component) {
+    m_player_hud_component->operator->()->hide();
+    m_player_hud_component.reset();
+  }
+
   if (m_window_component) {
     m_window_component->operator->()->hide();
     m_window_component.reset();
@@ -2060,6 +2099,7 @@ void SlintSystem::shutdown() {
   m_window_adapter = nullptr;
   m_window_system = nullptr;
   m_project_manager_mode = false;
+  m_player_hud_mode = false;
 }
 
 void SlintSystem::clearBorrowedViewportImageCache() {
@@ -2119,7 +2159,8 @@ void SlintSystem::logViewportPresentPathOnce(const bool zero_copy_present) const
 }
 
 void SlintSystem::applyPendingViewportInvalidate() {
-  if (!m_pending_viewport_invalidate || !m_window_component) {
+  if (!m_pending_viewport_invalidate ||
+      (!m_window_component && !m_player_hud_component)) {
     return;
   }
   m_pending_viewport_invalidate = false;
@@ -2140,6 +2181,9 @@ void SlintSystem::applyPendingViewportInvalidate() {
 }
 
 bool SlintSystem::slintPartialCompositeEnabled() const {
+  if (m_player_hud_mode) {
+    return false;
+  }
   return slintPartialCompositeEnabledEnv();
 }
 
@@ -2348,7 +2392,8 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
                                              uint32_t height,
                                              bool request_composite) {
   m_last_viewport_external_bind_ok = false;
-  if (!m_window_component || image == 0 || width == 0 || height == 0) {
+  if ((!m_window_component && !m_player_hud_component) || image == 0 ||
+      width == 0 || height == 0) {
     return;
   }
   if (m_slint_dispatch_depth > 0) {
@@ -2357,7 +2402,6 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
   static bool s_logged_first_zero_copy = false;
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
-    MainEditorWindow& ui = *m_window_component->operator->();
     const bool size_changed =
         width != m_viewport_upload_width || height != m_viewport_upload_height;
     logViewportPresentPathOnce(true);
@@ -2376,8 +2420,16 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
         force_rebind || !m_borrowed_viewport_image_bound ||
         m_borrowed_viewport_vk_image != image;
     if (image_changed) {
-      ui.set_viewport_image(viewport_image);
-      ui.set_viewport_image_ready(true);
+      if (m_window_component) {
+        MainEditorWindow& ui = *m_window_component->operator->();
+        ui.set_viewport_image(viewport_image);
+        ui.set_viewport_image_ready(true);
+      } else if (m_player_hud_component) {
+        ::BlunderPlayerHud::PlayerHudWindow& ui =
+            *m_player_hud_component->operator->();
+        ui.set_viewport_image(viewport_image);
+        ui.set_viewport_image_ready(true);
+      }
       m_borrowed_viewport_image_bound = true;
       m_borrowed_viewport_vk_image = image;
       m_force_viewport_image_bind = false;
@@ -2404,7 +2456,8 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
         s_logged_first_zero_copy = true;
       }
       static bool s_zero_copy_needs_initial_full_refresh = true;
-      if (size_changed || s_zero_copy_needs_initial_full_refresh) {
+      if (size_changed || s_zero_copy_needs_initial_full_refresh ||
+          (m_player_hud_mode && frameTimingHudVisible())) {
         markFullSkiaRefresh();
         s_zero_copy_needs_initial_full_refresh = false;
       } else if (slintPartialCompositeEnabled()) {
@@ -2509,7 +2562,8 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
                                            uint32_t width, uint32_t height,
                                            bool allow_during_dispatch,
                                            bool request_composite) {
-  if (!m_window_component || !pixels_rgba || width == 0 || height == 0) {
+  if ((!m_window_component && !m_player_hud_component) || !pixels_rgba ||
+      width == 0 || height == 0) {
     return;
   }
   if (!allow_during_dispatch && m_slint_dispatch_depth > 0) {
@@ -2521,7 +2575,6 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
   const bool image_ready = width > 1u && height > 1u;
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
-    MainEditorWindow& ui = *m_window_component->operator->();
     const bool size_changed =
         width != m_viewport_upload_width || height != m_viewport_upload_height;
     const size_t pixel_bytes =
@@ -2533,10 +2586,19 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     }
     std::memcpy(m_viewport_cpu_pixel_buffer->begin(), pixels_rgba, pixel_bytes);
     if (!m_cpu_viewport_slint_image_bound) {
-      ui.set_viewport_image(slint::Image(*m_viewport_cpu_pixel_buffer));
+      const slint::Image image(*m_viewport_cpu_pixel_buffer);
+      if (m_window_component) {
+        m_window_component->operator->()->set_viewport_image(image);
+      } else if (m_player_hud_component) {
+        m_player_hud_component->operator->()->set_viewport_image(image);
+      }
       m_cpu_viewport_slint_image_bound = true;
     }
-    ui.set_viewport_image_ready(image_ready);
+    if (m_window_component) {
+      m_window_component->operator->()->set_viewport_image_ready(image_ready);
+    } else if (m_player_hud_component) {
+      m_player_hud_component->operator->()->set_viewport_image_ready(image_ready);
+    }
     m_viewport_image_dirty = size_changed;
     m_viewport_image_stale = !image_ready;
     m_viewport_upload_width = width;
@@ -2551,7 +2613,7 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     }
     if (request_skia_composite) {
       logViewportPresentPathOnce(false);
-      if (size_changed) {
+      if (size_changed || (m_player_hud_mode && frameTimingHudVisible())) {
         markFullSkiaRefresh();
       } else if (slintPartialCompositeEnabled()) {
         markViewportDirtyRegion();
@@ -2652,6 +2714,213 @@ void SlintSystem::toggleFroxelOccupancyHeatmap() {
     LOG_ERROR("[SlintSystem::toggleFroxelOccupancyHeatmap] {}", e.what());
   } catch (...) {
     LOG_ERROR("[SlintSystem::toggleFroxelOccupancyHeatmap] unknown exception");
+  }
+}
+
+namespace {
+
+slint::SharedString formatHudMs(float ms) {
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%.2f", static_cast<double>(ms));
+  return slint::SharedString(buf);
+}
+
+template <typename Row>
+std::shared_ptr<slint::VectorModel<Row>> makeHudPasses(const FrameTimingSlot& slot) {
+  auto model = std::make_shared<slint::VectorModel<Row>>();
+  for (uint32_t i = 0; i < slot.pass_count; ++i) {
+    Row row{};
+    row.name = slint::SharedString(slot.passes[i].name);
+    row.ms_text = formatHudMs(slot.passes[i].gpu_ms);
+    model->push_back(row);
+  }
+  return model;
+}
+
+}  // namespace
+
+bool SlintSystem::frameTimingHudVisible() const {
+  try {
+    if (m_window_component) {
+      return m_window_component->operator->()->get_frame_timing_hud_visible();
+    }
+    if (m_player_hud_component) {
+      return m_player_hud_component->operator->()->get_frame_timing_hud_visible();
+    }
+  } catch (...) {
+  }
+  return false;
+}
+
+void SlintSystem::toggleFrameTimingHud() {
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    bool visible = false;
+    if (m_window_component) {
+      auto& ui = *m_window_component;
+      visible = !ui->get_frame_timing_hud_visible();
+      ui->set_frame_timing_hud_visible(visible);
+      markFullSkiaRefresh();
+    } else if (m_player_hud_component) {
+      auto& ui = *m_player_hud_component;
+      visible = !ui->get_frame_timing_hud_visible();
+      ui->set_frame_timing_hud_visible(visible);
+      markFullSkiaRefresh();
+    } else {
+      return;
+    }
+    if (m_window_adapter) {
+      m_window_adapter->forceSkiaFullRefresh();
+      m_window_adapter->request_redraw();
+    }
+    LOG_INFO("[FrameTiming] HUD {}", visible ? "on" : "off");
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::toggleFrameTimingHud] {}", e.what());
+  }
+}
+
+void SlintSystem::enlargeProfilerDock() {
+  const auto widget =
+      m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler);
+  if (!widget) {
+    return;
+  }
+  auto node = widget->ownerContainer();
+  if (!node) {
+    return;
+  }
+  const float host_h = eastl::max(m_dock_manager.hostRect().height,
+                                  eastl::max(m_docking_host_h, 1.0f));
+  constexpr float k_min_profiler_h = 260.0f;
+  for (auto parent = node->parent(); parent; parent = parent->parent()) {
+    if (parent->isSplit() &&
+        parent->splitDirection() == SplitDirection::vertical &&
+        parent->second() == node) {
+      const float ratio =
+          std::clamp(1.0f - k_min_profiler_h / host_h, 0.50f, 0.70f);
+      parent->setSplitRatio(ratio);
+      LOG_INFO("[FrameTiming] profiler split ratio {:.2f} host_h {:.0f}",
+               static_cast<double>(ratio), static_cast<double>(host_h));
+    }
+    node = parent;
+  }
+}
+
+void SlintSystem::toggleProfilerDock() {
+  if (m_player_hud_mode || m_project_manager_mode) {
+    return;
+  }
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    if (const auto existing =
+            m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler)) {
+      m_dock_manager.closeWidget(existing->id());
+    } else {
+      auto widget = m_dock_manager.createWidget(
+          defaultDockPanelTitle(DockPanelKind::profiler), DockPanelKind::profiler);
+      m_dock_manager.dockToRoot(widget, DockSlot::bottom);
+      enlargeProfilerDock();
+    }
+    m_docking_model_dirty = true;
+    const bool dock_open =
+        m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler) != nullptr;
+    if (m_window_component) {
+      m_window_component->operator->()->set_profiler_dock_open(dock_open);
+    }
+    markFullSkiaRefresh();
+    if (m_window_adapter) {
+      m_window_adapter->request_redraw();
+    }
+    LOG_INFO("[FrameTiming] profiler dock {}", dock_open ? "on" : "off");
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::toggleProfilerDock] {}", e.what());
+  }
+}
+
+void SlintSystem::syncFrameTimingUi() {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  if (timing == nullptr) {
+    return;
+  }
+  const FrameTimingSlot& latest = timing->ring().latest();
+  try {
+    ScopedDispatchGuard guard(m_slint_dispatch_depth);
+    auto apply_hud_scalars = [&](auto& ui) {
+      ui.set_hud_fps(static_cast<int>(latest.fps));
+      ui.set_hud_cpu_text(formatHudMs(latest.cpu_ms));
+      ui.set_hud_gpu_text(formatHudMs(latest.gpu_ms));
+      ui.set_hud_instance_count(static_cast<int>(latest.instance_count));
+      ui.set_hud_light_count(static_cast<int>(latest.light_count));
+      ui.set_hud_draw_count(static_cast<int>(latest.draw_count));
+      ui.set_hud_gpu_unreliable(timing->gpuTimingsUnreliable());
+    };
+    if (m_window_component) {
+      apply_hud_scalars(*m_window_component->operator->());
+      m_window_component->operator->()->set_hud_passes(
+          makeHudPasses<FrameTimingPassRow>(latest));
+      const bool dock_open =
+          m_dock_manager.findWidgetByPanelKind(DockPanelKind::profiler) != nullptr;
+      m_window_component->operator->()->set_profiler_dock_open(dock_open);
+      if (dock_open) {
+        FrameTimingSlot chrono[k_frame_timing_ring_capacity];
+        size_t count = 0;
+        timing->ring().copyChronological(chrono, k_frame_timing_ring_capacity,
+                                         &count);
+        float peak = 1.0f;
+        for (size_t i = 0; i < count; ++i) {
+          peak = eastl::max(peak, chrono[i].cpu_ms);
+          peak = eastl::max(peak, chrono[i].gpu_ms);
+        }
+        auto frames = std::make_shared<slint::VectorModel<ProfilerFrameBar>>();
+        for (size_t i = 0; i < count; ++i) {
+          ProfilerFrameBar bar{};
+          bar.cpu_t = std::clamp(chrono[i].cpu_ms / peak, 0.0f, 1.0f);
+          bar.gpu_t = std::clamp(chrono[i].gpu_ms / peak, 0.0f, 1.0f);
+          frames->push_back(bar);
+        }
+        m_window_component->operator->()->set_profiler_frames(frames);
+        const int selected = m_profiler_selected_index;
+        const FrameTimingSlot* inspect = &latest;
+        if (selected >= 0 && static_cast<size_t>(selected) < count) {
+          inspect = &chrono[static_cast<size_t>(selected)];
+        }
+        auto lanes = std::make_shared<slint::VectorModel<ProfilerLaneRow>>();
+        for (uint32_t z = 0; z < inspect->cpu_zone_count; ++z) {
+          ProfilerLaneRow row{};
+          row.name = slint::SharedString(inspect->cpu_zones[z].name);
+          row.ms_text = formatHudMs(inspect->cpu_zones[z].cpu_ms);
+          row.is_gpu = false;
+          lanes->push_back(row);
+        }
+        for (uint32_t z = 0; z < inspect->pass_count; ++z) {
+          ProfilerLaneRow row{};
+          row.name = slint::SharedString(inspect->passes[z].name);
+          row.ms_text = formatHudMs(inspect->passes[z].gpu_ms);
+          row.is_gpu = true;
+          lanes->push_back(row);
+        }
+        m_window_component->operator->()->set_profiler_lanes(lanes);
+        m_window_component->operator->()->set_profiler_selected_index(selected);
+        m_window_component->operator->()->set_profiler_inspect_name(
+            slint::SharedString(selected >= 0 ? "frame" : "latest"));
+        char detail[160];
+        std::snprintf(detail, sizeof(detail),
+                      "CPU %.2f ms  GPU %.2f ms  inst %u  lights %u  draws %u",
+                      static_cast<double>(inspect->cpu_ms),
+                      static_cast<double>(inspect->gpu_ms),
+                      inspect->instance_count, inspect->light_count,
+                      inspect->draw_count);
+        m_window_component->operator->()->set_profiler_inspect_detail(
+            slint::SharedString(detail));
+      }
+    }
+    if (m_player_hud_component) {
+      apply_hud_scalars(*m_player_hud_component->operator->());
+      m_player_hud_component->operator->()->set_hud_passes(
+          makeHudPasses<::BlunderPlayerHud::FrameTimingPassRow>(latest));
+    }
+  } catch (const std::exception& e) {
+    LOG_ERROR("[SlintSystem::syncFrameTimingUi] {}", e.what());
   }
 }
 
@@ -8042,9 +8311,9 @@ bool SlintSystem::isEditorCameraInteracting() const {
 }
 
 bool SlintSystem::shouldDeferHeavyFrameWork() const {
-  // Orbit/pan must keep Vulkan+present on the UI thread. Interaction is set on
-  // RMB/MMB press — before focus-mode hide-cursor — so a leftover layout
-  // cooldown cannot skip rendererTick until mouse-up.
+  if (m_player_hud_mode || m_project_manager_mode) {
+    return false;
+  }
   if (m_window_system && m_window_system->getFocusMode()) {
     return false;
   }
@@ -9164,6 +9433,7 @@ void SlintSystem::syncDockingWorkspace() {
     component->set_docking_tiles(tile_model);
   }
   size_t tile_idx = 0;
+  float profiler_content_h = 0.0f;
   for (const DockTileView& view : model.tiles) {
     DockTile row{};
     row.node_id = static_cast<int>(view.node_id);
@@ -9178,6 +9448,9 @@ void SlintSystem::syncDockingWorkspace() {
     row.active_widget_id = static_cast<int>(view.active_widget_id);
     row.active_panel_kind = static_cast<int>(view.active_panel_kind);
     row.floating = view.floating;
+    if (view.active_panel_kind == DockPanelKind::profiler) {
+      profiler_content_h = view.content_rect.height;
+    }
 
     if (tile_idx < tile_model->row_count()) {
       tile_model->set_row_data(tile_idx, row);
@@ -9188,6 +9461,18 @@ void SlintSystem::syncDockingWorkspace() {
   }
   while (tile_model->row_count() > model.tiles.size()) {
     tile_model->erase(tile_model->row_count() - 1);
+  }
+  if (profiler_content_h > 0.0f) {
+    LOG_INFO("[FrameTiming] profiler pane {:.0f}px",
+             static_cast<double>(profiler_content_h));
+    if (profiler_content_h < 160.0f) {
+      static float s_last_short_profiler_h = -1.0f;
+      if (std::fabs(profiler_content_h - s_last_short_profiler_h) > 1.0f) {
+        s_last_short_profiler_h = profiler_content_h;
+        enlargeProfilerDock();
+        m_docking_model_dirty = true;
+      }
+    }
   }
 
   auto tab_existing = component->get_docking_tabs();
@@ -10621,6 +10906,41 @@ void SlintSystem::beginFrame() {
     return;
   }
 
+  if (m_player_hud_mode) {
+    try {
+      ScopedDispatchGuard guard(m_slint_dispatch_depth);
+      ++m_frame_counter;
+      slint::platform::update_timers_and_animations();
+      if (m_window_adapter) {
+        m_window_adapter->pollDrawableSize();
+        syncWindowChromeSize();
+        m_window_adapter->commitWindowSize(m_force_window_commit);
+        m_force_window_commit = false;
+      }
+      if (m_window_system) {
+        eastl::array<int, 2> size = m_window_system->getWindowSize();
+        m_cached_viewport_logical_rect.x = 0;
+        m_cached_viewport_logical_rect.y = 0;
+        m_cached_viewport_logical_rect.width =
+            static_cast<uint32_t>(size[0] > 0 ? size[0] : 1);
+        m_cached_viewport_logical_rect.height =
+            static_cast<uint32_t>(size[1] > 0 ? size[1] : 1);
+      }
+      syncFrameTimingUi();
+      if (frameTimingHudVisible()) {
+        markFullSkiaRefresh();
+        if (m_window_adapter) {
+          m_window_adapter->request_redraw();
+        }
+      }
+    } catch (const std::exception& e) {
+      LOG_ERROR("[SlintSystem::beginFrame] player HUD: {}", e.what());
+    } catch (...) {
+      LOG_ERROR("[SlintSystem::beginFrame] player HUD: unknown exception");
+    }
+    return;
+  }
+
   if (PlaySessionController* session =
           g_runtime_global_context.m_play_session.get()) {
     session->poll();
@@ -10751,6 +11071,7 @@ void SlintSystem::beginFrame() {
         phases.mark("settingsMs");
       }
     }
+    syncFrameTimingUi();
   } catch (const std::exception& e) {
     LOG_ERROR("[SlintSystem::beginFrame] {}", e.what());
     if (m_window_system) {
@@ -10782,12 +11103,35 @@ void SlintSystem::endFrame() {
     return;
   }
 
+  if (m_player_hud_mode) {
+    try {
+      ScopedDispatchGuard guard(m_slint_dispatch_depth);
+      if (m_window_adapter &&
+          (m_viewport_frame_ready || m_window_adapter->needsRedraw() ||
+           m_pending_full_skia_refresh)) {
+        FrameMarkStart("slint-present");
+        m_window_adapter->compositeFrame();
+        FrameMarkEnd("slint-present");
+        m_viewport_image_dirty = false;
+        m_viewport_frame_ready = false;
+      }
+      m_window_resize_active = false;
+    } catch (const std::exception& e) {
+      LOG_ERROR("[SlintSystem::endFrame] player HUD: {}", e.what());
+    } catch (...) {
+      LOG_ERROR("[SlintSystem::endFrame] player HUD: unknown exception");
+    }
+    return;
+  }
+
   try {
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     if (m_window_adapter) {
       if (m_pending_dock_layout_present) {
         m_pending_dock_layout_present = false;
+        FrameMarkStart("slint-present");
         m_window_adapter->compositeFrame();
+        FrameMarkEnd("slint-present");
         m_viewport_image_dirty = false;
         m_viewport_frame_ready = false;
         cacheViewportLogicalRectOnly();
@@ -10804,7 +11148,9 @@ void SlintSystem::endFrame() {
             if (s_last_splitter_present_ns == 0 ||
                 now_ns - s_last_splitter_present_ns >= 16'000'000) {
               s_last_splitter_present_ns = now_ns;
+              FrameMarkStart("slint-present");
               m_window_adapter->compositeFrame();
+              FrameMarkEnd("slint-present");
               m_viewport_image_dirty = false;
               m_viewport_frame_ready = false;
             } else {
@@ -10816,7 +11162,9 @@ void SlintSystem::endFrame() {
             if (s_last_defer_present_ns == 0 ||
                 now_ns - s_last_defer_present_ns >= 50'000'000) {
               s_last_defer_present_ns = now_ns;
+              FrameMarkStart("slint-present");
               m_window_adapter->compositeFrame();
+              FrameMarkEnd("slint-present");
               m_viewport_image_dirty = false;
               m_viewport_frame_ready = false;
             } else {
@@ -10846,7 +11194,9 @@ void SlintSystem::endFrame() {
           if (m_pending_full_skia_refresh || s_last_full_composite_ns == 0 ||
               now_ns - s_last_full_composite_ns >= min_interval_ns) {
             s_last_full_composite_ns = now_ns;
+            FrameMarkStart("slint-present");
             m_window_adapter->compositeFrame();
+            FrameMarkEnd("slint-present");
             m_viewport_image_dirty = false;
             m_viewport_frame_ready = false;
             cacheLayoutRects();
@@ -10949,7 +11299,8 @@ void SlintSystem::processEvent(const SDL_Event& event) {
   }
 
   if (!m_window_adapter ||
-      (!m_window_component && !m_project_manager_component)) {
+      (!m_window_component && !m_project_manager_component &&
+       !m_player_hud_component)) {
     return;
   }
   try {
@@ -11185,40 +11536,62 @@ void SlintSystem::processEvent(const SDL_Event& event) {
               wheel_x * 20.0f, wheel_y * 20.0f);
         }
         break;
-      case SDL_EVENT_KEY_DOWN:
-        if (event.key.windowID == window_id) {
-          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
-              m_dock_manager.drag().isActive()) {
-            m_dock_manager.cancelDrag();
-            m_docking_model_dirty = true;
-            break;
+      case SDL_EVENT_KEY_DOWN: {
+        const bool for_this_window = event.key.windowID == window_id;
+        // SDL stamps key.windowID from keyboard focus. Win32 PostMessage still
+        // reaches this HWND after focus returns to another process, but the
+        // event id is 0, so a focus-only check drops every press after the
+        // first foreground grab. Hotkeys only; do not route text that way.
+        const bool unfocused_hotkey = event.key.windowID == 0 && !event.key.repeat;
+        if ((for_this_window || unfocused_hotkey) && !event.key.repeat &&
+            !g_runtime_global_context.inlineRenameActive()) {
+          const bool f3 = event.key.key == SDLK_F3 ||
+                          event.key.scancode == SDL_SCANCODE_F3;
+          const bool f4 = event.key.key == SDLK_F4 ||
+                          event.key.scancode == SDL_SCANCODE_F4;
+          const bool alt = (event.key.mod & SDL_KMOD_ALT) != 0;
+          if (f3) {
+            toggleFrameTimingHud();
+          } else if (f4 && !alt && !m_player_hud_mode) {
+            toggleProfilerDock();
           }
-          if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
-              isContentBrowserDragActive()) {
-            cancelContentBrowserDrag();
-            break;
-          }
-          if (!event.key.repeat && event.key.key == SDLK_F2) {
-            requestBrowserInlineRename();
-          }
-          if (!event.key.repeat && event.key.key == SDLK_P &&
-              !g_runtime_global_context.inlineRenameActive()) {
-            requestViewportProjectionToggle("keyboard_p");
-          }
-          if (!event.key.repeat && event.key.key == SDLK_H &&
-              !g_runtime_global_context.inlineRenameActive()) {
-            toggleFroxelOccupancyHeatmap();
-          }
-          const slint::SharedString key_text = mapKeycode(event.key.key);
-          if (!key_text.empty() && isSpecialKey(event.key.key)) {
-            if (event.key.repeat) {
-              window.dispatch_key_press_repeat_event(key_text);
-            } else {
-              window.dispatch_key_press_event(key_text);
-            }
+        }
+        if (!for_this_window) {
+          break;
+        }
+        if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+            m_dock_manager.drag().isActive()) {
+          m_dock_manager.cancelDrag();
+          m_docking_model_dirty = true;
+          break;
+        }
+        if (!event.key.repeat && event.key.key == SDLK_ESCAPE &&
+            isContentBrowserDragActive()) {
+          cancelContentBrowserDrag();
+          break;
+        }
+        if (!event.key.repeat && event.key.key == SDLK_F2) {
+          requestBrowserInlineRename();
+        }
+        if (!event.key.repeat && event.key.key == SDLK_P &&
+            !g_runtime_global_context.inlineRenameActive()) {
+          requestViewportProjectionToggle("keyboard_p");
+        }
+        if (!event.key.repeat && event.key.key == SDLK_H &&
+            !g_runtime_global_context.inlineRenameActive() &&
+            !m_player_hud_mode) {
+          toggleFroxelOccupancyHeatmap();
+        }
+        const slint::SharedString key_text = mapKeycode(event.key.key);
+        if (!key_text.empty() && isSpecialKey(event.key.key)) {
+          if (event.key.repeat) {
+            window.dispatch_key_press_repeat_event(key_text);
+          } else {
+            window.dispatch_key_press_event(key_text);
           }
         }
         break;
+      }
       case SDL_EVENT_KEY_UP:
         if (event.key.windowID == window_id) {
           const slint::SharedString key_text = mapKeycode(event.key.key);

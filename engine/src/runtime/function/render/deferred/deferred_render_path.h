@@ -183,6 +183,9 @@ class DeferredRenderPath final {
   uint64_t froxelDroppedLightAssignmentsTotal() const {
     return m_froxel_dropped_light_assignments_total;
   }
+  uint32_t uploadedClusteredLightCount() const {
+    return m_uploaded_clustered_light_count;
+  }
 
   bool vrsAttachmentEnabled() const;
   bool vrsDevice() const { return m_vrs_device; }

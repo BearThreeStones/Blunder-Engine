@@ -131,3 +131,24 @@ else()
         "[3rdparty] RecastNavigation submodule not present. Run: git submodule update --init --recursive engine/3rdparty/recastnavigation"
     )
 endif()
+
+# Tracy Client: optional dual-write. Default OFF so Merge CI / shipping never
+# define TRACY_ENABLE. Presence of the macro is on; TRACY_ENABLE=0 is not off.
+option(TRACY_ENABLE "Enable Tracy Client dual-write (dev only)" OFF)
+if(TRACY_ENABLE)
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
+    set(TRACY_NO_BROADCAST ON CACHE BOOL "" FORCE)
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tracy/CMakeLists.txt")
+    add_subdirectory(tracy EXCLUDE_FROM_ALL)
+    if(TRACY_ENABLE)
+        message(STATUS "[Blunder] Tracy Client ON (on-demand, localhost)")
+    else()
+        message(STATUS "[Blunder] Tracy Client OFF")
+    endif()
+else()
+    message(STATUS
+        "[3rdparty] tracy submodule not present. Run: git submodule update --init engine/3rdparty/tracy"
+    )
+endif()

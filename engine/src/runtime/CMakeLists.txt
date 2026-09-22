@@ -79,6 +79,14 @@ add_library(engine_runtime STATIC
     "core/debug/input_present_trace.h"
     "core/base/high_precision_timer.h"
     "core/base/high_precision_timer.cpp"
+    "function/debug/frame_timing_ring.h"
+    "function/debug/frame_timing_ring.cpp"
+    "function/debug/gpu_timestamp_queries.h"
+    "function/debug/gpu_timestamp_queries.cpp"
+    "function/debug/frame_timing_service.h"
+    "function/debug/frame_timing_service.cpp"
+    "function/debug/tracy_instrument.h"
+    "function/debug/tracy_vk_instrument.h"
     "core/base/macro.h"
     "core/memory/allocators.h"
     "core/memory/allocators.cpp"
@@ -381,6 +389,9 @@ add_subdirectory(function/render)
 slint_target_sources(engine_runtime NAMESPACE BlunderPm
     "function/slint/project_manager.slint"
 )
+slint_target_sources(engine_runtime NAMESPACE BlunderPlayerHud
+    "function/slint/player_hud_window.slint"
+)
 slint_target_sources(engine_runtime
     "function/slint/content_browser.slint"
     "function/slint/import_mesh_dialog.slint"
@@ -397,6 +408,8 @@ slint_target_sources(engine_runtime
     "function/slint/color_picker.slint"
     "function/slint/inspector_color_cell.slint"
     "function/slint/viewport_projection_toggle.slint"
+    "function/slint/frame_timing_hud.slint"
+    "function/slint/profiler_panel.slint"
     "function/slint/editor_window.slint"
     "function/slint/transform_toolbar.slint"
     "function/slint/animation_window_panel.slint"
@@ -524,6 +537,17 @@ endif()
 
 if(WIN32)
     target_link_libraries(engine_runtime PRIVATE d3d12 dxgi ws2_32)
+endif()
+
+if(TRACY_ENABLE)
+    target_link_libraries(engine_runtime PRIVATE TracyClient)
+    target_compile_definitions(engine_runtime PRIVATE
+        TRACY_ENABLE
+        TRACY_ON_DEMAND
+        TRACY_ONLY_LOCALHOST
+        TRACY_NO_BROADCAST
+    )
+    message(STATUS "[Blunder] Tracy Client linked into engine_runtime (on-demand, localhost)")
 endif()
 
 # C-ABI lives outside engine_runtime so SHARED and static consumers do not

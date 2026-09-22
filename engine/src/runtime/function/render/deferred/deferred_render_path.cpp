@@ -38,12 +38,27 @@
 #include "runtime/function/scene/light_component.h"
 #include "runtime/function/scene/light_eval.h"
 #include "runtime/function/scene/scene_instance.h"
+#include "runtime/function/debug/frame_timing_service.h"
+#include "runtime/function/debug/gpu_timestamp_queries.h"
+#include "runtime/function/debug/tracy_vk_instrument.h"
 
 namespace Blunder {
 
 namespace {
 
 constexpr uint32_t kDeferredDescriptorFrames = VulkanSync::k_max_frames_in_flight;
+
+GpuTimestampQueries* frameGpuQueries() {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  return timing != nullptr ? timing->gpuQueries() : nullptr;
+}
+
+#ifdef TRACY_ENABLE
+TracyVkCtx frameTracyVk() {
+  FrameTimingService* timing = g_runtime_global_context.m_frame_timing.get();
+  return timing != nullptr ? timing->tracyVk() : nullptr;
+}
+#endif
 
 uint64_t hashMixU64(uint64_t hash, uint64_t value) {
   hash ^= value;
@@ -2490,17 +2505,37 @@ void DeferredRenderPath::recordGBufferPass(
                           gpu_draw_count > 0;
   const bool viewport_stream = stream == SecondaryStream::viewport;
   if (record_gpu) {
-    gpu_driven->uploadAndCull(
-        command_buffer, frame_index, gpu_draws, gpu_draw_count, frame_state,
-        viewport_stream && frame_state.camera_distance < 2000.0f);
+    if (viewport_stream) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::internal_cull);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "cull");
+      gpu_driven->uploadAndCull(
+          command_buffer, frame_index, gpu_draws, gpu_draw_count, frame_state,
+          viewport_stream && frame_state.camera_distance < 2000.0f);
+    } else {
+      gpu_driven->uploadAndCull(
+          command_buffer, frame_index, gpu_draws, gpu_draw_count, frame_state,
+          viewport_stream && frame_state.camera_distance < 2000.0f);
+    }
   }
 
   if (viewport_stream || stream == SecondaryStream::immediate) {
-    m_forward_path->recordShadowPass(command_buffer, frame_state, opaque_draws,
-                                     opaque_draw_count, frame_index, stream,
-                                     frame_index,
-                                     record_gpu ? gpu_driven : nullptr, gpu_draws,
-                                     gpu_draw_count);
+    if (viewport_stream) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::internal_shadow);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "shadow");
+      m_forward_path->recordShadowPass(command_buffer, frame_state, opaque_draws,
+                                       opaque_draw_count, frame_index, stream,
+                                       frame_index,
+                                       record_gpu ? gpu_driven : nullptr, gpu_draws,
+                                       gpu_draw_count);
+    } else {
+      m_forward_path->recordShadowPass(command_buffer, frame_state, opaque_draws,
+                                       opaque_draw_count, frame_index, stream,
+                                       frame_index,
+                                       record_gpu ? gpu_driven : nullptr, gpu_draws,
+                                       gpu_draw_count);
+    }
   }
 
   {
@@ -2592,46 +2627,60 @@ void DeferredRenderPath::recordLightingPass(
                            frame_index, gpu_driven);
     writeLightingDescriptors(frame_index, slot_index);
     writeFroxelDescriptors(frame_index);
-    recordFroxelFill(command_buffer, frame_state, frame_index);
-
-    VkClearValue clear{};
-    clear.color = {{kViewportBackgroundRgb, kViewportBackgroundRgb,
-                    kViewportBackgroundRgb, 1.0f}};
-    VkRenderPassBeginInfo rp_begin{};
-    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rp_begin.renderPass = lighting_rp;
-    rp_begin.framebuffer = lighting_fb;
-    rp_begin.renderArea.extent = extent;
-    rp_begin.clearValueCount = 1;
-    rp_begin.pClearValues = &clear;
-    vkCmdBeginRenderPass(command_buffer, &rp_begin,
-                         VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-    m_offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-    const VkCommandBuffer lighting_secondary =
-        pool.begin(stream, SecondaryPass::deferred_lighting, frame_index,
-                   lighting_rp, lighting_fb);
-    VulkanPipeline* native = lighting_pipe->nativePipeline();
-    vkCmdBindPipeline(lighting_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      native->getGraphicsPipeline());
-    vkCmdBindDescriptorSets(lighting_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            native->getPipelineLayout(), 0, 1,
-                            &m_lighting_descriptor_sets[frame_index], 0,
-                            nullptr);
-    if (use_vrs) {
-      VkExtent2D fragment_size{1, 1};
-      VkFragmentShadingRateCombinerOpKHR combiners[2] = {
-          VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
-          VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR};
-      m_vk_context->cmdSetFragmentShadingRateKHR()(lighting_secondary,
-                                                   &fragment_size, combiners);
+    if (stream == SecondaryStream::viewport) {
+      GpuPassScope gpu(frameGpuQueries(), command_buffer,
+                       GpuTimestampZone::internal_froxel);
+      BLUNDER_TRACY_VK_ZONE(frameTracyVk(), command_buffer, "froxel");
+      recordFroxelFill(command_buffer, frame_state, frame_index);
+    } else {
+      recordFroxelFill(command_buffer, frame_state, frame_index);
     }
-    bindViewportScissor(lighting_secondary, extent.width, extent.height);
-    vkCmdDraw(lighting_secondary, 3, 1, 0, 0);
-    pool.end(stream, SecondaryPass::deferred_lighting, frame_index);
-    SecondaryCommandBufferPool::execute(command_buffer, lighting_secondary);
-    vkCmdEndRenderPass(command_buffer);
-    m_offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    {
+      const bool viewport = stream == SecondaryStream::viewport;
+      GpuPassScope gpu(viewport ? frameGpuQueries() : nullptr, command_buffer,
+                       GpuTimestampZone::internal_lighting_triangle);
+      BLUNDER_TRACY_VK_ZONE(viewport ? frameTracyVk() : nullptr, command_buffer,
+                            "lighting.triangle");
+      VkClearValue clear{};
+      clear.color = {{kViewportBackgroundRgb, kViewportBackgroundRgb,
+                      kViewportBackgroundRgb, 1.0f}};
+      VkRenderPassBeginInfo rp_begin{};
+      rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+      rp_begin.renderPass = lighting_rp;
+      rp_begin.framebuffer = lighting_fb;
+      rp_begin.renderArea.extent = extent;
+      rp_begin.clearValueCount = 1;
+      rp_begin.pClearValues = &clear;
+      vkCmdBeginRenderPass(command_buffer, &rp_begin,
+                           VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+      m_offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+      const VkCommandBuffer lighting_secondary =
+          pool.begin(stream, SecondaryPass::deferred_lighting, frame_index,
+                     lighting_rp, lighting_fb);
+      VulkanPipeline* native = lighting_pipe->nativePipeline();
+      vkCmdBindPipeline(lighting_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        native->getGraphicsPipeline());
+      vkCmdBindDescriptorSets(lighting_secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              native->getPipelineLayout(), 0, 1,
+                              &m_lighting_descriptor_sets[frame_index], 0,
+                              nullptr);
+      if (use_vrs) {
+        VkExtent2D fragment_size{1, 1};
+        VkFragmentShadingRateCombinerOpKHR combiners[2] = {
+            VK_FRAGMENT_SHADING_RATE_COMBINER_OP_KEEP_KHR,
+            VK_FRAGMENT_SHADING_RATE_COMBINER_OP_REPLACE_KHR};
+        m_vk_context->cmdSetFragmentShadingRateKHR()(lighting_secondary,
+                                                     &fragment_size, combiners);
+      }
+      bindViewportScissor(lighting_secondary, extent.width, extent.height);
+      vkCmdDraw(lighting_secondary, 3, 1, 0, 0);
+      pool.end(stream, SecondaryPass::deferred_lighting, frame_index);
+      SecondaryCommandBufferPool::execute(command_buffer, lighting_secondary);
+      vkCmdEndRenderPass(command_buffer);
+      m_offscreen->setCurrentLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
   }
 
   const bool run_sobel = use_vrs && !frame_state.shading.froxel_occupancy_heatmap;

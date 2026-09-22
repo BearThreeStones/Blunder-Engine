@@ -351,6 +351,19 @@ target_precompile_headers(job_system_test
 add_test(NAME job_system_test
          COMMAND job_system_test)
 
+add_executable(frame_timing_ring_test
+    "frame_timing_ring_test.cpp"
+    "../runtime/function/debug/frame_timing_ring.cpp"
+)
+target_include_directories(frame_timing_ring_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+)
+if(MSVC)
+    target_compile_options(frame_timing_ring_test PRIVATE /Zc:preprocessor)
+endif()
+add_test(NAME frame_timing_ring_test
+         COMMAND frame_timing_ring_test)
+
 add_executable(frame_graph_test
     "frame_graph_test.cpp"
 )
