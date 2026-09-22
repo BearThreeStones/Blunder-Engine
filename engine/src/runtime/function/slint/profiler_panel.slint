@@ -22,11 +22,58 @@ export component ProfilerPanel inherits Rectangle {
 
     background: EditorTheme.window;
     min-height: 240px;
-    clip: false;
 
     VerticalLayout {
         padding: 8px;
         spacing: 6px;
+
+        Text {
+            text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
+            color: EditorTheme.default-text;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-stretch: 0;
+        }
+        Text {
+            text: root.inspect-detail;
+            color: EditorTheme.muted;
+            font-size: 11px;
+            wrap: word-wrap;
+            vertical-stretch: 0;
+        }
+
+        Text {
+            text: "Lanes";
+            color: EditorTheme.muted;
+            font-size: 11px;
+            vertical-stretch: 0;
+        }
+
+        for lane in root.lanes: Rectangle {
+            height: 18px;
+            vertical-stretch: 0;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: lane.is-gpu ? "GPU" : "CPU";
+                    color: EditorTheme.muted;
+                    font-size: 10px;
+                    width: 28px;
+                }
+                Text {
+                    text: lane.name;
+                    color: EditorTheme.default-text;
+                    font-size: 11px;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: lane.ms-text + " ms";
+                    color: EditorTheme.default-text;
+                    font-size: 11px;
+                }
+            }
+        }
 
         Text {
             text: "Frame strip";
@@ -37,6 +84,8 @@ export component ProfilerPanel inherits Rectangle {
 
         Rectangle {
             height: 56px;
+            min-height: 56px;
+            max-height: 72px;
             vertical-stretch: 0;
             background: EditorTheme.app-bar;
             border-radius: 2px;
@@ -86,54 +135,6 @@ export component ProfilerPanel inherits Rectangle {
                     }
                 }
             }
-        }
-
-        Text {
-            text: "Lanes";
-            color: EditorTheme.muted;
-            font-size: 11px;
-            vertical-stretch: 0;
-        }
-
-        for lane in root.lanes: Rectangle {
-            height: 18px;
-            vertical-stretch: 0;
-            HorizontalLayout {
-                spacing: 8px;
-                Text {
-                    text: lane.is-gpu ? "GPU" : "CPU";
-                    color: EditorTheme.muted;
-                    font-size: 10px;
-                    width: 28px;
-                }
-                Text {
-                    text: lane.name;
-                    color: EditorTheme.default-text;
-                    font-size: 11px;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-                Text {
-                    text: lane.ms-text + " ms";
-                    color: EditorTheme.default-text;
-                    font-size: 11px;
-                }
-            }
-        }
-
-        Text {
-            text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
-            color: EditorTheme.default-text;
-            font-size: 12px;
-            font-weight: 600;
-            vertical-stretch: 0;
-        }
-        Text {
-            text: root.inspect-detail;
-            color: EditorTheme.muted;
-            font-size: 11px;
-            wrap: word-wrap;
-            vertical-stretch: 0;
         }
     }
 }

@@ -9465,7 +9465,7 @@ void SlintSystem::syncDockingWorkspace() {
   if (profiler_content_h > 0.0f) {
     LOG_INFO("[FrameTiming] profiler pane {:.0f}px",
              static_cast<double>(profiler_content_h));
-    if (profiler_content_h < 220.0f) {
+    if (profiler_content_h < 160.0f) {
       static float s_last_short_profiler_h = -1.0f;
       if (std::fabs(profiler_content_h - s_last_short_profiler_h) > 1.0f) {
         s_last_short_profiler_h = profiler_content_h;
