@@ -40,6 +40,7 @@ class GpuTimestampQueries final {
 
   void initialize(VulkanContext* context);
   void shutdown();
+  void waitDeviceIdle() const;
   bool isInitialized() const { return m_pool != VK_NULL_HANDLE; }
 
   void resetSlot(VkCommandBuffer command_buffer, uint32_t slot);

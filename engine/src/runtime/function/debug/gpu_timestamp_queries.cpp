@@ -61,7 +61,12 @@ void GpuTimestampQueries::initialize(VulkanContext* context) {
     LOG_WARN("[GpuTimestampQueries] vkCreateQueryPool failed: {}",
              static_cast<int>(result));
     m_pool = VK_NULL_HANDLE;
-    m_context = nullptr;
+  }
+}
+
+void GpuTimestampQueries::waitDeviceIdle() const {
+  if (m_context != nullptr && m_context->getDevice() != VK_NULL_HANDLE) {
+    vkDeviceWaitIdle(m_context->getDevice());
   }
 }
 

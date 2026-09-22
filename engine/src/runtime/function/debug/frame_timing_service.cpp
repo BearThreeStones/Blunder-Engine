@@ -80,6 +80,10 @@ void FrameTimingService::attachGpu(VulkanContext* context) {
 }
 
 void FrameTimingService::detachGpu() {
+  // In-flight timestamp writes (engine pool + Tracy Vk ctx) must finish
+  // before destroy. Callers currently detach before RenderSystem::shutdown
+  // waitIdle (VUID-vkDestroyQueryPool-queryPool-00793).
+  m_gpu.waitDeviceIdle();
 #ifdef TRACY_ENABLE
   if (m_tracy_vk != nullptr) {
     TracyVkDestroy(m_tracy_vk);
