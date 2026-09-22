@@ -154,10 +154,18 @@ GBufferOutput fragmentMain(VertexOutput input)
     if (inst.pbrTextureFlags.x > 0.5)
     {
         roughness *= sampledMr.g;
-        if (inst.materialFlags.z < 0.5)
+        if (inst.materialFlags.z > 0.5)
+        {
+            metallic = 0.0;
+        }
+        else
         {
             metallic *= sampledMr.b;
         }
+    }
+    if (inst.materialFlags.z > 0.5)
+    {
+        metallic = 0.0;
     }
 
     float ao = inst.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;

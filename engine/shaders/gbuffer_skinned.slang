@@ -203,10 +203,18 @@ GBufferOutput fragmentMain(VertexOutput input)
     if (ubo.pbrTextureFlags.x > 0.5)
     {
         roughness *= sampledMr.g;
-        if (ubo.materialFlags.z < 0.5)
+        if (ubo.materialFlags.z > 0.5)
+        {
+            metallic = 0.0;
+        }
+        else
         {
             metallic *= sampledMr.b;
         }
+    }
+    if (ubo.materialFlags.z > 0.5)
+    {
+        metallic = 0.0;
     }
 
     float ao = ubo.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;

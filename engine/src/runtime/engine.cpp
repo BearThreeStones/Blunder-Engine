@@ -514,10 +514,12 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
             active->rebindMeshRendererMaterialsFromMeshes();
           }
         }
-        // GPU-driven pack is sticky while scene_static. Hydrate after the
-        // first pack used to leave chrome/BLEND on the instance SSBO.
-        if (g_runtime_global_context.m_render_system) {
-          g_runtime_global_context.m_render_system->requestViewportRedraw();
+        // GPU-driven pack is sticky while scene_static: identity is not
+        // rehashed, so hydrate after the first pack used to leave chrome/BLEND
+        // on the instance SSBO. Bust the fingerprint, not only the present.
+        if (RenderSystem* render = g_runtime_global_context.m_render_system.get()) {
+          render->invalidateGpuDrivenOcclusion();
+          render->requestViewportRedraw();
         }
       }
     }
