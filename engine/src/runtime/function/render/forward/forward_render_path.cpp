@@ -843,7 +843,8 @@ void ForwardRenderPath::renderFrameTo(
   if (record_gpu) {
     gpu_driven->uploadAndCull(command_buffer, descriptor_frame, gpu_draws,
                               gpu_draw_count, frame_state,
-                              frame_state.camera_distance < 2000.0f);
+                              frame_state.camera_distance < 2000.0f,
+                              /*copy_hud_counts=*/true);
   }
 
   recordShadowPass(command_buffer, frame_state, opaque_draws, opaque_draw_count,

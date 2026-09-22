@@ -20,16 +20,16 @@ The product SHALL provide a Frame timing HUD (Layer 1) and an editor Profiler do
 - **THEN** the dock SHALL show a frame strip and Pass/zone lanes from the engine ring
 
 ### Requirement: Frame timing HUD is a Slint overlay with the same numbers on Editor and Player
-Windowed `engine_editor` Viewport and windowed `engine_player` SHALL share one Frame timing HUD readout: FPS, CPU frame milliseconds, GPU frame milliseconds, a main Pass table, and instance / light counts. The HUD SHALL be Slint. Headless Editor, Headless Player, `--mcp`, and Project Manager SHALL NOT show the HUD. The HUD SHALL NOT be an Editor Overlay (gizmo / grid / outline family). The HUD SHALL NOT be the 2027-01 game shell.
+Windowed `engine_editor` Viewport and windowed `engine_player` SHALL share one Frame timing HUD readout: FPS, CPU frame milliseconds, GPU frame milliseconds, a main Pass table, packed GPU-driven instance count, MeshBatch count, surviving meshlet-indirect command count (`cmds`, not `vkCmd*`), and light count. `inst` and `cmds` SHALL NOT be filled from the same CPU submit-list length. The HUD SHALL be Slint. Headless Editor, Headless Player, `--mcp`, and Project Manager SHALL NOT show the HUD. The HUD SHALL NOT be an Editor Overlay (gizmo / grid / outline family). The HUD SHALL NOT be the 2027-01 game shell.
 
 #### Scenario: Editor Viewport HUD
 - **WHEN** the author enables the Frame timing HUD in windowed `engine_editor`
-- **THEN** the Viewport SHALL show CPU ms, GPU ms, main Pass times, and instance / light counts
+- **THEN** the Viewport SHALL show CPU ms, GPU ms, main Pass times, packed `inst`, `batches`, surviving `cmds`, and light count
 
 #### Scenario: Player HUD matches Editor numbers
 - **WHEN** windowed `engine_player` and windowed `engine_editor` run the same scene on the same device
 - **AND** both have the HUD on
-- **THEN** both HUDs SHALL show the same class of numbers (FPS, CPU ms, GPU ms, main Passes, instance / light counts)
+- **THEN** both HUDs SHALL show the same class of numbers (FPS, CPU ms, GPU ms, main Passes, packed `inst` / `batches` / surviving `cmds`, lights)
 
 #### Scenario: Headless has no HUD
 - **WHEN** a Headless Editor or Headless Player is running
@@ -60,7 +60,7 @@ Windowed `engine_editor` SHALL provide a Profiler dock: a frame strip, thread an
 - **THEN** the Player SHALL NOT show the Profiler dock
 
 ### Requirement: Frame timing ring is engine-owned and ~120 frames
-Each `tickOneFrame` SHALL append one ring slot with CPU frame milliseconds, GPU frame milliseconds, named Pass GPU times, a small set of CPU zones (tick, Job, scene sync), and instance / light / draw counts. Capacity SHALL be about 120 frames. Older slots SHALL drop. HUD and dock SHALL read this ring. The ring SHALL work when Tracy Client is not compiled in. HUD and dock SHALL NOT read Tracy internal buffers, the Tracy protocol, or `.tracy` files.
+Each `tickOneFrame` SHALL append one ring slot with CPU frame milliseconds, GPU frame milliseconds, named Pass GPU times, a small set of CPU zones (tick, Job, scene sync), and packed instance / MeshBatch / surviving meshlet-cmd counts plus light count. Capacity SHALL be about 120 frames. Older slots SHALL drop. HUD and dock SHALL read this ring. The ring SHALL work when Tracy Client is not compiled in. HUD and dock SHALL NOT read Tracy internal buffers, the Tracy protocol, or `.tracy` files.
 
 #### Scenario: Ring wraps
 - **WHEN** more than about 120 ticks have been recorded

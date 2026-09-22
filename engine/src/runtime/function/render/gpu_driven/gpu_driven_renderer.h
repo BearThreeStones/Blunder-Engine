@@ -44,7 +44,8 @@ class GpuDrivenRenderer final {
 
   void uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
                      const GpuDrivenDraw* draws, uint32_t count,
-                     const ForwardFrameState& frame_state, bool enable_hiz);
+                     const ForwardFrameState& frame_state, bool enable_hiz,
+                     bool copy_hud_counts);
   void recordShadowCull(VkCommandBuffer cmd, uint32_t frame,
                         const ForwardFrameState& frame_state);
 
@@ -142,7 +143,7 @@ class GpuDrivenRenderer final {
                              VkBuffer early_cmds, VkBuffer late_cmds,
                              VkBuffer early_counts, VkBuffer late_counts,
                              VkImageView hiz_view, bool hiz_enabled);
-  void dispatchCull(VkCommandBuffer cmd, uint32_t frame, VkDescriptorSet set,
+  bool dispatchCull(VkCommandBuffer cmd, uint32_t frame, VkDescriptorSet set,
                     VulkanBuffer* ubo, const glm::mat4& view_projection,
                     const glm::vec3& camera, bool hiz_enabled, bool skip_cone,
                     VkBuffer early_cmds, VkBuffer late_cmds, VkBuffer early_counts,

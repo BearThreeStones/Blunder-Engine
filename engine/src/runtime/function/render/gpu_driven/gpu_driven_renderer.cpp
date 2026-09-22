@@ -309,8 +309,9 @@ void GpuDrivenRenderer::createBuffers() {
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     const VkBufferUsageFlags cmd_usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                          VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    const VkBufferUsageFlags count_usage =
+        cmd_usage | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     const VkDeviceSize cmd_bytes =
         sizeof(DrawIndexedIndirectCommand) * k_max_gpu_driven_meshlets;
     frame.early_cmds = make_device_buf(cmd_bytes, cmd_usage);
@@ -318,10 +319,10 @@ void GpuDrivenRenderer::createBuffers() {
     frame.shadow_cmds = make_device_buf(cmd_bytes, cmd_usage);
     frame.dummy_cmds = make_device_buf(cmd_bytes, cmd_usage);
     const VkDeviceSize count_bytes = sizeof(uint32_t) * k_max_mesh_batches;
-    frame.early_counts = make_device_buf(count_bytes, cmd_usage);
-    frame.late_counts = make_device_buf(count_bytes, cmd_usage);
-    frame.shadow_counts = make_device_buf(count_bytes, cmd_usage);
-    frame.dummy_counts = make_device_buf(count_bytes, cmd_usage);
+    frame.early_counts = make_device_buf(count_bytes, count_usage);
+    frame.late_counts = make_device_buf(count_bytes, count_usage);
+    frame.shadow_counts = make_device_buf(count_bytes, count_usage);
+    frame.dummy_counts = make_device_buf(count_bytes, count_usage);
     frame.early_count_readback = eastl::make_unique<VulkanBuffer>();
     frame.early_count_readback->create(m_allocator, count_bytes,
                                        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1162,7 +1163,7 @@ void GpuDrivenRenderer::harvestHudCounts(uint32_t frame) {
   m_surviving_late = sumCompactCountBuffer(late, n);
 }
 
-void GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
+bool GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
                                      VkDescriptorSet set, VulkanBuffer* ubo,
                                      const glm::mat4& view_projection,
                                      const glm::vec3& camera, bool hiz_enabled,
@@ -1171,8 +1172,22 @@ void GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
                                      VkBuffer late_counts) {
   if (m_meshlet_count == 0 || m_cull_pipeline == VK_NULL_HANDLE ||
       set == VK_NULL_HANDLE || ubo == nullptr) {
-    return;
+    return false;
   }
+  // Same PRIMARY may already have Viewport G-buffer INDIRECT_COMMAND_READ and
+  // a HUD vkCmdCopyBuffer TRANSFER_READ on these buffers (Camera Preview recull).
+  const VkAccessFlags fill_src_access =
+      VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+  const VkPipelineStageFlags fill_src_stage =
+      VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT;
+  cmdBufferBarrier(cmd, early_cmds, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, late_cmds, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, early_counts, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, late_counts, fill_src_access, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
   const uint32_t prev = (frame + k_frames - 1u) % k_frames;
   const bool can_hiz = hiz_enabled && m_hiz[prev].built;
   const bool compact = compactIndirectEnabled();
@@ -1265,12 +1280,13 @@ void GpuDrivenRenderer::dispatchCull(VkCommandBuffer cmd, uint32_t frame,
   cmdBufferBarrier(cmd, m_frames[frame].instances->getBuffer(),
                    VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, graphics_shader_stages);
+  return true;
 }
 
 void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
                                       const GpuDrivenDraw* draws, uint32_t count,
                                       const ForwardFrameState& frame_state,
-                                      bool enable_hiz) {
+                                      bool enable_hiz, bool copy_hud_counts) {
   frame %= k_frames;
   eastl::vector<GpuDrivenDraw> sorted;
   const GpuDrivenDraw* pack_draws = draws;
@@ -1310,6 +1326,7 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
     m_late_pass_enabled = false;
     m_surviving_early = 0;
     m_surviving_late = 0;
+    m_hud_copied_batches[frame] = 0;
     return;
   }
 
@@ -1383,12 +1400,15 @@ void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
   shadow_ubo.light_projection = frame_state.light_projection;
   buffers.shadow_ubo->upload(&shadow_ubo, sizeof(shadow_ubo));
 
-  dispatchCull(cmd, frame, m_cull_sets[frame], buffers.cull_ubo.get(),
-               frame_state.projection * frame_state.view,
-               frame_state.camera_position, enable_hiz, false,
-               buffers.early_cmds->getBuffer(), buffers.late_cmds->getBuffer(),
-               buffers.early_counts->getBuffer(), buffers.late_counts->getBuffer());
-  copyHudCounts(cmd, frame);
+  const bool cull_recorded = dispatchCull(
+      cmd, frame, m_cull_sets[frame], buffers.cull_ubo.get(),
+      frame_state.projection * frame_state.view, frame_state.camera_position,
+      enable_hiz, false, buffers.early_cmds->getBuffer(),
+      buffers.late_cmds->getBuffer(), buffers.early_counts->getBuffer(),
+      buffers.late_counts->getBuffer());
+  if (copy_hud_counts && cull_recorded) {
+    copyHudCounts(cmd, frame);
+  }
   cmdBufferBarrier(cmd, buffers.view_ubo->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
                    VK_ACCESS_UNIFORM_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
