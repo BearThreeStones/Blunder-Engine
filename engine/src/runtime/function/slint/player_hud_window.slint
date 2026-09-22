@@ -28,10 +28,11 @@ export component PlayerHudWindow inherits Window {
         visible: root.viewport-image-ready;
     }
 
-    FrameTimingHud {
+    if root.frame-timing-hud-visible: FrameTimingHud {
         x: parent.width - self.width - 8px;
         y: 8px;
-        hud-visible: root.frame-timing-hud-visible;
+        z: 1000;
+        hud-visible: true;
         fps: root.hud-fps;
         cpu-text: root.hud-cpu-text;
         gpu-text: root.hud-gpu-text;

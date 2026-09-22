@@ -54,6 +54,12 @@ void FrameTimingService::setCounts(uint32_t instance_count, uint32_t light_count
 
 void FrameTimingService::endTick(int fps) {
   m_building.fps = static_cast<float>(fps);
+  m_building.gpu_ms = m_pending_gpu.gpu_ms;
+  m_building.pass_count = m_pending_gpu.pass_count;
+  for (uint32_t i = 0; i < m_pending_gpu.pass_count && i < k_frame_timing_max_passes;
+       ++i) {
+    m_building.passes[i] = m_pending_gpu.passes[i];
+  }
   m_ring.push(m_building);
 }
 

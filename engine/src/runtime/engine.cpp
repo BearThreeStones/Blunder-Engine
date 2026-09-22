@@ -449,6 +449,8 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
   if (timing != nullptr) {
     timing->beginTick(delta_time);
   }
+
+  {
   CpuZoneScope tick_zone(timing, "tick");
 
   InputPresentPhaseTrace phases("frame-phases");
@@ -721,6 +723,8 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
     title += std::to_string(getFPS()).c_str();
     title += " FPS";
     g_runtime_global_context.m_window_system->setTitle(title.c_str());
+  }
+
   }
 
   FrameMark;

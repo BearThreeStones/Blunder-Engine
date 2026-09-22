@@ -100,6 +100,15 @@ void GpuTimestampQueries::resetSlot(VkCommandBuffer command_buffer,
   m_written_mask[slot] = 0;
   vkCmdResetQueryPool(command_buffer, m_pool, slot * k_queries_per_slot,
                       k_queries_per_slot);
+  // Reset is a transfer write. Timestamp writes have no implicit wait on it.
+  VkMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask =
+      VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+  vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &barrier, 0,
+                       nullptr, 0, nullptr);
 }
 
 void GpuTimestampQueries::writeBegin(VkCommandBuffer command_buffer,
@@ -133,25 +142,32 @@ void GpuTimestampQueries::harvestSlot(uint32_t slot, FrameTimingSlot& dest) {
     return;
   }
 
-  uint64_t timestamps[k_queries_per_slot]{};
-  const VkResult result = vkGetQueryPoolResults(
-      m_context->getDevice(), m_pool, slot * k_queries_per_slot,
-      k_queries_per_slot, sizeof(timestamps), timestamps, sizeof(uint64_t),
-      VK_QUERY_RESULT_64_BIT);
-  if (result != VK_SUCCESS && result != VK_NOT_READY) {
-    return;
-  }
-  if (result == VK_NOT_READY) {
-    return;
-  }
-
   float total_ms = 0.0f;
+  const uint64_t wrap = m_timestamp_mask + 1ull;
   for (uint32_t z = 0; z < k_gpu_timestamp_zone_count; ++z) {
     if ((written & (1u << z)) == 0) {
       continue;
     }
-    const uint64_t begin = timestamps[z * 2u] & m_timestamp_mask;
-    const uint64_t end = timestamps[z * 2u + 1u] & m_timestamp_mask;
+    // Fetch only this zone's begin/end. A whole-slot vkGetQueryPoolResults
+    // returns VK_NOT_READY when any reset-but-unwritten query is still
+    // unavailable, which zeroes GPU ms and empties the Pass list.
+    uint64_t samples[4]{};
+    const uint32_t first = queryIndex(slot, static_cast<GpuTimestampZone>(z), false);
+    const VkResult result = vkGetQueryPoolResults(
+        m_context->getDevice(), m_pool, first, 2u, sizeof(samples), samples,
+        sizeof(uint64_t) * 2u,
+        VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+    if (result != VK_SUCCESS && result != VK_NOT_READY) {
+      continue;
+    }
+    if (samples[1] == 0 || samples[3] == 0) {
+      continue;
+    }
+    uint64_t begin = samples[0] & m_timestamp_mask;
+    uint64_t end = samples[2] & m_timestamp_mask;
+    if (end < begin && wrap > 1ull) {
+      end += wrap;
+    }
     if (end < begin) {
       continue;
     }

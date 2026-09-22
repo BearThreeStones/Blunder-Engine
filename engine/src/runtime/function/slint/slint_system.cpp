@@ -2764,6 +2764,7 @@ void SlintSystem::toggleFrameTimingHud() {
       return;
     }
     if (m_window_adapter) {
+      m_window_adapter->forceSkiaFullRefresh();
       m_window_adapter->request_redraw();
     }
     LOG_INFO("[FrameTiming] HUD {}", visible ? "on" : "off");
@@ -2785,6 +2786,14 @@ void SlintSystem::toggleProfilerDock() {
       auto widget = m_dock_manager.createWidget(
           defaultDockPanelTitle(DockPanelKind::profiler), DockPanelKind::profiler);
       m_dock_manager.dockToRoot(widget, DockSlot::bottom);
+      if (const auto& root = m_dock_manager.root()) {
+        if (root->isSplit() &&
+            root->splitDirection() == SplitDirection::vertical) {
+          // Keep enough height for Frame strip + Lanes + inspect (not the
+          // animation-dock 14% strip).
+          root->setSplitRatio(0.62f);
+        }
+      }
     }
     m_docking_model_dirty = true;
     const bool dock_open =
@@ -2866,19 +2875,17 @@ void SlintSystem::syncFrameTimingUi() {
         }
         m_window_component->operator->()->set_profiler_lanes(lanes);
         m_window_component->operator->()->set_profiler_selected_index(selected);
-        if (selected >= 0 && static_cast<size_t>(selected) < count) {
-          m_window_component->operator->()->set_profiler_inspect_name(
-              slint::SharedString("frame"));
-          char detail[160];
-          std::snprintf(detail, sizeof(detail),
-                        "CPU %.2f ms  GPU %.2f ms  inst %u  lights %u  draws %u",
-                        static_cast<double>(inspect->cpu_ms),
-                        static_cast<double>(inspect->gpu_ms),
-                        inspect->instance_count, inspect->light_count,
-                        inspect->draw_count);
-          m_window_component->operator->()->set_profiler_inspect_detail(
-              slint::SharedString(detail));
-        }
+        m_window_component->operator->()->set_profiler_inspect_name(
+            slint::SharedString(selected >= 0 ? "frame" : "latest"));
+        char detail[160];
+        std::snprintf(detail, sizeof(detail),
+                      "CPU %.2f ms  GPU %.2f ms  inst %u  lights %u  draws %u",
+                      static_cast<double>(inspect->cpu_ms),
+                      static_cast<double>(inspect->gpu_ms),
+                      inspect->instance_count, inspect->light_count,
+                      inspect->draw_count);
+        m_window_component->operator->()->set_profiler_inspect_detail(
+            slint::SharedString(detail));
       }
     }
     if (m_player_hud_component) {
@@ -10878,6 +10885,12 @@ void SlintSystem::beginFrame() {
             static_cast<uint32_t>(size[1] > 0 ? size[1] : 1);
       }
       syncFrameTimingUi();
+      if (frameTimingHudVisible()) {
+        markFullSkiaRefresh();
+        if (m_window_adapter) {
+          m_window_adapter->request_redraw();
+        }
+      }
     } catch (const std::exception& e) {
       LOG_ERROR("[SlintSystem::beginFrame] player HUD: {}", e.what());
     } catch (...) {
@@ -11052,7 +11065,8 @@ void SlintSystem::endFrame() {
     try {
       ScopedDispatchGuard guard(m_slint_dispatch_depth);
       if (m_window_adapter &&
-          (m_viewport_frame_ready || m_window_adapter->needsRedraw())) {
+          (m_viewport_frame_ready || m_window_adapter->needsRedraw() ||
+           m_pending_full_skia_refresh)) {
         FrameMarkStart("slint-present");
         m_window_adapter->compositeFrame();
         FrameMarkEnd("slint-present");

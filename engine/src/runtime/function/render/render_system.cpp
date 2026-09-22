@@ -2561,6 +2561,7 @@ void RenderSystem::tickVulkan(float delta_time, uint32_t target_width,
 
   if (!tryBeginRecordingSlot(m_current_frame)) {
     phases.flag("skip", 3);
+    harvestReadyGpuTimestamps(vkSync(this));
     pollViewportPresent();
     if (m_viewport_render_generation != m_last_rendered_viewport_generation) {
       m_force_viewport_render = true;

@@ -21,6 +21,7 @@ export component ProfilerPanel inherits Rectangle {
     callback frame-clicked(int);
 
     background: EditorTheme.window;
+    min-height: 220px;
 
     VerticalLayout {
         padding: 8px;
@@ -38,84 +39,102 @@ export component ProfilerPanel inherits Rectangle {
             border-radius: 2px;
             clip: true;
 
-            HorizontalLayout {
-                padding: 4px;
-                spacing: 1px;
-                alignment: end;
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                mouse-cursor: pointer;
+                clicked => {
+                    if (root.frames.length > 0) {
+                        root.frame-clicked(root.frames.length - 1);
+                    }
+                }
 
-                for bar[index] in root.frames: TouchArea {
-                    width: 4px;
-                    height: 100%;
-                    mouse-cursor: pointer;
-                    clicked => { root.frame-clicked(index); }
+                HorizontalLayout {
+                    padding: 4px;
+                    spacing: 1px;
+                    alignment: end;
 
-                    Rectangle {
-                        width: 100%;
+                    for bar[index] in root.frames: TouchArea {
+                        width: 6px;
                         height: 100%;
-                        background: transparent;
+                        mouse-cursor: pointer;
+                        clicked => { root.frame-clicked(index); }
 
                         Rectangle {
-                            width: 2px;
-                            x: 1px;
-                            height: parent.height * bar.cpu-t;
-                            y: parent.height - self.height;
-                            background: index == root.selected-index ? EditorTheme.accent : EditorTheme.default-text;
-                        }
-                        Rectangle {
-                            width: 2px;
-                            x: 1px;
-                            height: parent.height * bar.gpu-t * 0.5;
-                            y: 0px;
-                            background: #4C8DFF88;
+                            width: 100%;
+                            height: 100%;
+                            background: transparent;
+
+                            Rectangle {
+                                width: 3px;
+                                x: 1px;
+                                height: parent.height * bar.cpu-t;
+                                y: parent.height - self.height;
+                                background: index == root.selected-index ? EditorTheme.accent : EditorTheme.default-text;
+                            }
+                            Rectangle {
+                                width: 3px;
+                                x: 1px;
+                                height: parent.height * bar.gpu-t * 0.5;
+                                y: 0px;
+                                background: #4C8DFF88;
+                            }
                         }
                     }
                 }
             }
         }
 
-        Text {
-            text: "Lanes";
-            color: EditorTheme.muted;
-            font-size: 11px;
-        }
+        Flickable {
+            vertical-stretch: 1;
 
-        for lane in root.lanes: Rectangle {
-            height: 18px;
-            HorizontalLayout {
+            VerticalLayout {
                 spacing: 8px;
+
                 Text {
-                    text: lane.is-gpu ? "GPU" : "CPU";
+                    text: "Lanes";
                     color: EditorTheme.muted;
-                    font-size: 10px;
-                    width: 28px;
+                    font-size: 11px;
+                }
+
+                for lane in root.lanes: Rectangle {
+                    height: 18px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: lane.is-gpu ? "GPU" : "CPU";
+                            color: EditorTheme.muted;
+                            font-size: 10px;
+                            width: 28px;
+                        }
+                        Text {
+                            text: lane.name;
+                            color: EditorTheme.default-text;
+                            font-size: 11px;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: lane.ms-text + " ms";
+                            color: EditorTheme.default-text;
+                            font-size: 11px;
+                        }
+                    }
+                }
+
+                Text {
+                    text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
+                    color: EditorTheme.default-text;
+                    font-size: 12px;
+                    font-weight: 600;
                 }
                 Text {
-                    text: lane.name;
-                    color: EditorTheme.default-text;
+                    text: root.inspect-detail;
+                    color: EditorTheme.muted;
                     font-size: 11px;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-                Text {
-                    text: lane.ms-text + " ms";
-                    color: EditorTheme.default-text;
-                    font-size: 11px;
+                    wrap: word-wrap;
                 }
             }
-        }
-
-        Text {
-            text: root.inspect-name == "" ? "Click a frame bar" : root.inspect-name;
-            color: EditorTheme.default-text;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        Text {
-            text: root.inspect-detail;
-            color: EditorTheme.muted;
-            font-size: 11px;
-            wrap: word-wrap;
-            vertical-stretch: 1;
         }
     }
 }
