@@ -32,10 +32,12 @@ export component ProfilerPanel inherits Rectangle {
             text: "Frame strip";
             color: EditorTheme.muted;
             font-size: 11px;
+            vertical-stretch: 0;
         }
 
         Rectangle {
             height: 56px;
+            vertical-stretch: 0;
             background: EditorTheme.app-bar;
             border-radius: 2px;
             clip: true;
@@ -90,10 +92,12 @@ export component ProfilerPanel inherits Rectangle {
             text: "Lanes";
             color: EditorTheme.muted;
             font-size: 11px;
+            vertical-stretch: 0;
         }
 
         for lane in root.lanes: Rectangle {
             height: 18px;
+            vertical-stretch: 0;
             HorizontalLayout {
                 spacing: 8px;
                 Text {
@@ -122,12 +126,14 @@ export component ProfilerPanel inherits Rectangle {
             color: EditorTheme.default-text;
             font-size: 12px;
             font-weight: 600;
+            vertical-stretch: 0;
         }
         Text {
             text: root.inspect-detail;
             color: EditorTheme.muted;
             font-size: 11px;
             wrap: word-wrap;
+            vertical-stretch: 0;
         }
     }
 }

@@ -687,8 +687,10 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     }
   }
 
+  const bool player_hud_overlay =
+      m_owner && m_owner->isPlayerHudMode() && m_owner->frameTimingHudVisible();
   const bool forced_full_refresh =
-      m_owner && m_owner->consumePendingFullSkiaRefresh();
+      (m_owner && m_owner->consumePendingFullSkiaRefresh()) || player_hud_overlay;
   if (forced_full_refresh) {
 #if BLUNDER_SLINT_FORK_SKIA
     m_renderer->force_full_refresh();
@@ -2179,6 +2181,9 @@ void SlintSystem::applyPendingViewportInvalidate() {
 }
 
 bool SlintSystem::slintPartialCompositeEnabled() const {
+  if (m_player_hud_mode) {
+    return false;
+  }
   return slintPartialCompositeEnabledEnv();
 }
 
@@ -2786,13 +2791,13 @@ void SlintSystem::enlargeProfilerDock() {
   }
   const float host_h = eastl::max(m_dock_manager.hostRect().height,
                                   eastl::max(m_docking_host_h, 1.0f));
-  constexpr float k_min_profiler_h = 280.0f;
+  constexpr float k_min_profiler_h = 260.0f;
   for (auto parent = node->parent(); parent; parent = parent->parent()) {
     if (parent->isSplit() &&
         parent->splitDirection() == SplitDirection::vertical &&
         parent->second() == node) {
       const float ratio =
-          std::clamp(1.0f - k_min_profiler_h / host_h, 0.42f, 0.70f);
+          std::clamp(1.0f - k_min_profiler_h / host_h, 0.50f, 0.70f);
       parent->setSplitRatio(ratio);
       LOG_INFO("[FrameTiming] profiler split ratio {:.2f} host_h {:.0f}",
                static_cast<double>(ratio), static_cast<double>(host_h));
