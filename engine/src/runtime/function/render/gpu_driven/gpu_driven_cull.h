@@ -27,6 +27,15 @@ inline bool meshletSkipHiZWhenFar(float dist, float radius) {
   return dist > 8.0f * r;
 }
 
+inline uint32_t uniqueMeshletLocal(uint32_t expanded_local, uint32_t unique_count) {
+  return unique_count == 0u ? 0u : expanded_local % unique_count;
+}
+
+inline uint32_t uniqueMeshletIndex(uint32_t unique_first, uint32_t expanded_local,
+                                   uint32_t unique_count) {
+  return unique_first + uniqueMeshletLocal(expanded_local, unique_count);
+}
+
 /// Sum per-batch compact counters (early or late cull count buffer).
 inline uint32_t sumCompactCountBuffer(const uint32_t* counts, uint32_t count) {
   uint32_t total = 0;

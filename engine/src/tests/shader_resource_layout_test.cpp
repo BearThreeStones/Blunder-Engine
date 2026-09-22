@@ -509,6 +509,17 @@ int main() {
                 shaderResourceBindingsMatch(cull.layout, bindings, count, sets,
                                             kinds));
 
+    fillMeshletEmitExpectedBindings(bindings, sets, &count, kinds);
+    const SlangCompiler::ComputeProgramResult emit =
+        compiler.compileComputeProgram("engine/shaders/meshlet_emit.slang");
+    if (!shaderResourceBindingsMatch(emit.layout, bindings, count, sets,
+                                     kinds)) {
+      dumpBindings("meshlet_emit.slang", emit.layout);
+    }
+    expect_true("meshlet_emit.slang layout",
+                shaderResourceBindingsMatch(emit.layout, bindings, count, sets,
+                                            kinds));
+
     fillHizPyramidExpectedBindings(bindings, sets, &count, kinds);
     const SlangCompiler::ComputeProgramResult hiz =
         compiler.compileComputeProgram("engine/shaders/hiz_pyramid.slang");

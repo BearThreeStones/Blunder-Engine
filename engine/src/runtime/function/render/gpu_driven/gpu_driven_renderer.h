@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -86,6 +88,9 @@ class GpuDrivenRenderer final {
     GpuMesh* mesh{nullptr};
     uint32_t meshlet_first{0};
     uint32_t meshlet_count{0};
+    uint32_t expanded_first{0};
+    uint32_t instance_first{0};
+    uint32_t instance_count{0};
   };
 
   struct FrameBuffers {
@@ -102,8 +107,23 @@ class GpuDrivenRenderer final {
     eastl::unique_ptr<VulkanBuffer> early_count_readback;
     eastl::unique_ptr<VulkanBuffer> late_count_readback;
     eastl::unique_ptr<VulkanBuffer> batch_bases;
+    eastl::unique_ptr<VulkanBuffer> unique_counts;
+    eastl::unique_ptr<VulkanBuffer> unique_firsts;
+    eastl::unique_ptr<VulkanBuffer> compact_bases;
+    eastl::unique_ptr<VulkanBuffer> unique_batch;
+    eastl::unique_ptr<VulkanBuffer> unique_expanded;
+    eastl::unique_ptr<VulkanBuffer> early_instance_counts;
+    eastl::unique_ptr<VulkanBuffer> late_instance_counts;
+    eastl::unique_ptr<VulkanBuffer> shadow_instance_counts;
+    eastl::unique_ptr<VulkanBuffer> dummy_instance_counts;
+    eastl::unique_ptr<VulkanBuffer> early_compact_ids;
+    eastl::unique_ptr<VulkanBuffer> late_compact_ids;
+    eastl::unique_ptr<VulkanBuffer> shadow_compact_ids;
+    eastl::unique_ptr<VulkanBuffer> dummy_compact_ids;
     eastl::unique_ptr<VulkanBuffer> cull_ubo;
     eastl::unique_ptr<VulkanBuffer> shadow_cull_ubo;
+    eastl::unique_ptr<VulkanBuffer> emit_ubo;
+    eastl::unique_ptr<VulkanBuffer> shadow_emit_ubo;
     eastl::unique_ptr<VulkanBuffer> view_ubo;
     eastl::unique_ptr<VulkanBuffer> gbuffer_ubo;
     eastl::unique_ptr<VulkanBuffer> shadow_ubo;
@@ -140,22 +160,21 @@ class GpuDrivenRenderer final {
                  const ForwardFrameState& frame_state);
   void updateInstanceTransforms(const GpuDrivenDraw* draws, uint32_t count);
   void updateCullDescriptors(uint32_t frame, VkDescriptorSet set, VulkanBuffer* ubo,
-                             VkBuffer early_cmds, VkBuffer late_cmds,
-                             VkBuffer early_counts, VkBuffer late_counts,
-                             VkImageView hiz_view, bool hiz_enabled);
-  bool dispatchCull(VkCommandBuffer cmd, uint32_t frame, VkDescriptorSet set,
+                             VkImageView hiz_view, bool hiz_enabled, bool shadow);
+  void updateEmitDescriptors(uint32_t frame, bool shadow);
+  void dispatchCull(VkCommandBuffer cmd, uint32_t frame, VkDescriptorSet set,
                     VulkanBuffer* ubo, const glm::mat4& view_projection,
                     const glm::vec3& camera, bool hiz_enabled, bool skip_cone,
-                    VkBuffer early_cmds, VkBuffer late_cmds, VkBuffer early_counts,
-                    VkBuffer late_counts);
+                    bool shadow);
   bool compactIndirectEnabled() const;
+  void dispatchEmit(VkCommandBuffer cmd, uint32_t frame, bool shadow);
   void copyHudCounts(VkCommandBuffer cmd, uint32_t frame);
   void recordIndirectBatches(VkCommandBuffer cmd, uint32_t frame, bool late,
                              bool gbuffer, bool shadow, ShadowMapTarget* shadow_map,
                              VulkanTexture* fallback);
   void writePbrDescriptors(uint32_t frame, ShadowMapTarget* shadow,
-                           VulkanTexture* fallback);
-  void writeGBufferDescriptors(uint32_t frame);
+                           VulkanTexture* fallback, bool late);
+  void writeGBufferDescriptors(uint32_t frame, bool late);
   void writeShadowDescriptors(uint32_t frame);
 
   VulkanContext* m_context{nullptr};
@@ -171,6 +190,9 @@ class GpuDrivenRenderer final {
   VkDescriptorSetLayout m_cull_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_cull_pipe_layout{VK_NULL_HANDLE};
   VkPipeline m_cull_pipeline{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_emit_layout{VK_NULL_HANDLE};
+  VkPipelineLayout m_emit_pipe_layout{VK_NULL_HANDLE};
+  VkPipeline m_emit_pipeline{VK_NULL_HANDLE};
   VkDescriptorSetLayout m_hiz_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_hiz_pipe_layout{VK_NULL_HANDLE};
   VkPipeline m_hiz_pipeline{VK_NULL_HANDLE};
@@ -181,6 +203,8 @@ class GpuDrivenRenderer final {
   VkDescriptorPool m_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorSet m_cull_sets[k_frames]{};
   VkDescriptorSet m_shadow_cull_sets[k_frames]{};
+  VkDescriptorSet m_emit_sets[k_frames]{};
+  VkDescriptorSet m_shadow_emit_sets[k_frames]{};
   VkDescriptorSet m_hiz_sets[k_frames][k_max_hiz_mips]{};
   VkDescriptorSet m_pbr_sets[k_frames]{};
   VkDescriptorSet m_gbuffer_sets[k_frames]{};
@@ -199,8 +223,14 @@ class GpuDrivenRenderer final {
   eastl::vector<GpuDrivenInstanceGpu> m_instance_cpu;
   eastl::vector<GpuDrivenMeshletGpu> m_meshlet_cpu;
   eastl::vector<uint32_t> m_batch_base_cpu;
+  eastl::vector<uint32_t> m_unique_count_cpu;
+  eastl::vector<uint32_t> m_unique_first_cpu;
+  eastl::vector<uint32_t> m_compact_base_cpu;
+  eastl::vector<uint32_t> m_unique_batch_cpu;
+  eastl::vector<uint32_t> m_unique_expanded_cpu;
   uint32_t m_instance_count{0};
   uint32_t m_meshlet_count{0};
+  uint32_t m_unique_meshlet_count{0};
   uint32_t m_surviving_early{0};
   uint32_t m_surviving_late{0};
   uint32_t m_hud_copied_batches[k_frames]{};

@@ -50,6 +50,14 @@ struct GpuDrivenCullUniforms
     float4 hizSize;
 };
 
+struct GpuDrivenEmitUniforms
+{
+    uint uniqueCount;
+    uint compactCommands;
+    uint pad0;
+    uint pad1;
+};
+
 struct DrawIndexedIndirectCommand
 {
     uint indexCount;

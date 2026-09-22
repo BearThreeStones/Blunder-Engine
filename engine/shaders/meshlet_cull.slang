@@ -10,25 +10,34 @@ StructuredBuffer<GpuDrivenInstanceGpu> instances;
 StructuredBuffer<GpuDrivenMeshletGpu> meshlets;
 
 [[vk::binding(3, 0)]]
-RWStructuredBuffer<DrawIndexedIndirectCommand> earlyCommands;
-
-[[vk::binding(4, 0)]]
-RWStructuredBuffer<DrawIndexedIndirectCommand> lateCommands;
-
-[[vk::binding(5, 0)]]
 Texture2D<float> hizPyramid;
 
-[[vk::binding(6, 0)]]
+[[vk::binding(4, 0)]]
 SamplerState hizSampler;
 
+[[vk::binding(5, 0)]]
+StructuredBuffer<uint> batchBases;
+
+[[vk::binding(6, 0)]]
+StructuredBuffer<uint> uniqueCounts;
+
 [[vk::binding(7, 0)]]
-RWStructuredBuffer<uint> earlyCounts;
+StructuredBuffer<uint> uniqueFirsts;
 
 [[vk::binding(8, 0)]]
-RWStructuredBuffer<uint> lateCounts;
+StructuredBuffer<uint> compactBases;
 
 [[vk::binding(9, 0)]]
-StructuredBuffer<uint> batchBases;
+RWStructuredBuffer<uint> earlyInstanceCounts;
+
+[[vk::binding(10, 0)]]
+RWStructuredBuffer<uint> lateInstanceCounts;
+
+[[vk::binding(11, 0)]]
+RWStructuredBuffer<uint> earlyCompactIds;
+
+[[vk::binding(12, 0)]]
+RWStructuredBuffer<uint> lateCompactIds;
 
 bool sphereInsideFrustum(float3 center, float radius)
 {
@@ -134,16 +143,6 @@ bool hizOccluded(float4 clip, float radiusWorld, float3 worldCenter)
 void main(uint3 id : SV_DispatchThreadID)
 {
     uint index = id.x;
-    DrawIndexedIndirectCommand emptyCmd;
-    emptyCmd.indexCount = 0;
-    emptyCmd.instanceCount = 0;
-    emptyCmd.firstIndex = 0;
-    emptyCmd.vertexOffset = 0;
-    emptyCmd.firstInstance = 0;
-    emptyCmd.pad0 = 0;
-    emptyCmd.pad1 = 0;
-    emptyCmd.pad2 = 0;
-
     if (index >= ubo.meshletCount)
     {
         return;
@@ -173,58 +172,28 @@ void main(uint3 id : SV_DispatchThreadID)
                               ubo.cameraPosition.xyz);
     }
 
-    DrawIndexedIndirectCommand cmd;
-    cmd.indexCount = meshlet.indexCount;
-    cmd.instanceCount = 1;
-    cmd.firstIndex = meshlet.firstIndex;
-    cmd.vertexOffset = 0;
-    cmd.firstInstance = meshlet.instanceIndex;
-    cmd.pad0 = index - batchBases[meshlet.flags >> kGpuDrivenMeshletBatchShift];
-    cmd.pad1 = 0;
-    cmd.pad2 = 0;
-
-    const bool compact = ubo.compactCommands != 0u;
     uint batchIndex = meshlet.flags >> kGpuDrivenMeshletBatchShift;
+    uint uniqueCount = uniqueCounts[batchIndex];
+    uint expandedLocal = index - batchBases[batchIndex];
+    uint uniqueLocal = uniqueCount == 0u ? 0u : expandedLocal % uniqueCount;
+    uint uniqueIndex = uniqueFirsts[batchIndex] + uniqueLocal;
+    uint compactBase = compactBases[uniqueIndex];
     if (!visible)
     {
-        if (!compact)
-        {
-            earlyCommands[index] = emptyCmd;
-            lateCommands[index] = emptyCmd;
-        }
         return;
     }
 
     float4 clip = mul(ubo.viewProjection, float4(worldCenter, 1.0));
     bool occluded = hizOccluded(clip, radius, worldCenter);
-    if (compact)
-    {
-        uint base = batchBases[batchIndex];
-        uint dst;
-        if (occluded)
-        {
-            InterlockedAdd(lateCounts[batchIndex], 1u, dst);
-            lateCommands[base + dst] = cmd;
-        }
-        else
-        {
-            InterlockedAdd(earlyCounts[batchIndex], 1u, dst);
-            earlyCommands[base + dst] = cmd;
-        }
-        return;
-    }
-
-    uint unused;
+    uint dst;
     if (occluded)
     {
-        InterlockedAdd(lateCounts[batchIndex], 1u, unused);
-        earlyCommands[index] = emptyCmd;
-        lateCommands[index] = cmd;
+        InterlockedAdd(lateInstanceCounts[uniqueIndex], 1u, dst);
+        lateCompactIds[compactBase + dst] = meshlet.instanceIndex;
     }
     else
     {
-        InterlockedAdd(earlyCounts[batchIndex], 1u, unused);
-        earlyCommands[index] = cmd;
-        lateCommands[index] = emptyCmd;
+        InterlockedAdd(earlyInstanceCounts[uniqueIndex], 1u, dst);
+        earlyCompactIds[compactBase + dst] = meshlet.instanceIndex;
     }
 }

@@ -64,6 +64,11 @@ int main() {
               sumCompactCountBuffer(nullptr, 4) == 0u);
   expect_true("sum compact empty is 0",
               sumCompactCountBuffer(compact, 0) == 0u);
+  expect_true("unique local wraps instance-major expanded",
+              uniqueMeshletLocal(5u, 3u) == 2u);
+  expect_true("unique index is first + local",
+              uniqueMeshletIndex(10u, 5u, 3u) == 12u);
+  expect_true("unique local zero count", uniqueMeshletLocal(4u, 0u) == 0u);
 
   glm::mat4 sponza_view = glm::lookAt(glm::vec3(0.0f, -1500.0f, 8000.0f),
                                      glm::vec3(0.0f, 0.0f, 500.0f),
