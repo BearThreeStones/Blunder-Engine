@@ -213,10 +213,16 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
           material->getNormalTextureAsset()) {
     normal_uri = normal->getVirtualPath().c_str();
   }
+  const char* albedo_uri = nullptr;
+  if (const eastl::shared_ptr<Texture2DAsset>& albedo =
+          material->getBaseColorTextureAsset()) {
+    albedo_uri = albedo->getVirtualPath().c_str();
+  }
   const bool roughness_only = metallicRoughnessUriIsRoughnessOnly(mr_uri);
   const bool paper_grain = textureUriIsPaperGrain(normal_uri);
+  const bool path_paper = textureUriIsPathPaperAlbedo(albedo_uri);
   const bool paper_card =
-      roughness_only || paper_grain || material->isPaperCard();
+      roughness_only || paper_grain || path_paper || material->isPaperCard();
   if (paper_card) {
     mesh_ubo.metallic_roughness_factors.x = resolveImportedMetallicFactor(
         mesh_ubo.metallic_roughness_factors.x, GltfMaterialExtras{}, mr_uri);
@@ -287,7 +293,8 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
     }
     mesh_ubo.material_flags.x = material->isUnlit() ? 1.0f : 0.0f;
     // y = has albedo map. Slot 0 is the smoke checker; untextured GEO
-    // (snow patches, paths) must use baseColorFactor, not bindless 0.
+    // (snow patches) must use baseColorFactor, not bindless 0. Dummy paths
+    // bind Godot dirt albedo so this flag is 1 and COLOR_0 RGB is skipped.
     mesh_ubo.material_flags.y =
         material->hasBaseColorTexture() ? 1.0f : 0.0f;
     mesh_ubo.material_flags.z = 0.0f;

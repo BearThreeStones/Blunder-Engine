@@ -297,6 +297,39 @@ void paperGrainNormalIsNotSampledAndPaperColorTints() {
               ubo.pbr_texture_flags.x > 0.5f);
 }
 
+void dummyPathAlbedoUriIsUnlitPaperMask() {
+  using namespace Blunder;
+  Asset::Meta albedo_meta;
+  albedo_meta.virtual_path =
+      "resources/se-world/assets/lib/textures/path_7_albedo.png";
+  auto albedo = eastl::make_shared<Texture2DAsset>(
+      eastl::move(albedo_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{140, 95, 70, 255});
+  AssetHandle albedo_handle;
+  albedo_handle.type = Asset::Type::Texture2D;
+  albedo_handle.key = albedo->getVirtualPath();
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path = "assets/Meshes/se-world/SL-fence-paths-m1p0.mesh.yaml#mat";
+  MaterialAsset path(eastl::move(mat_meta), glm::vec4(1.0f), albedo_handle,
+                     albedo, nullptr, nullptr, nullptr, glm::vec3(0.15f),
+                     glm::vec3(1.0f), glm::vec3(0.04f), 32.0f, 0.0f, 0.4f,
+                     cgltf_alpha_mode_opaque, 0.5f, true, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &path, {}, frame, cgltf_alpha_mode_opaque, 0.5f,
+                         true);
+  expect_true("dummy path URI is unlit paper", ubo.material_flags.x > 0.5f);
+  expect_true("dummy path skips COLOR_0 RGB tint",
+              ubo.material_flags.z > 0.5f);
+  expect_true("dummy path MASK cutout",
+              std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
+  expect_true("dummy path samples albedo", ubo.material_flags.y > 0.5f);
+  expect_true("dummy path stays dielectric",
+              ubo.metallic_roughness_factors.x < 0.01f);
+}
+
 void packedOrmMapKeepsMetalChannel() {
   using namespace Blunder;
   Asset::Meta mr_meta;
@@ -442,6 +475,7 @@ int main() {
   foliageMrMapWithZeroMetallicStaysDielectric();
   foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack();
   paperGrainNormalIsNotSampledAndPaperColorTints();
+  dummyPathAlbedoUriIsUnlitPaperMask();
   packedOrmMapKeepsMetalChannel();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();

@@ -558,6 +558,30 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, GltfMaterialExtras{},
       sidecar.metallic_roughness_texture.c_str());
 
+  if (sidecar.base_color_texture.empty()) {
+    bool dummy_path_set =
+        meshSourceLooksLikeDummyPathSet(mesh->getVirtualPath().c_str());
+    if (!dummy_path_set && !mesh->getAbsolutePath().empty()) {
+      dummy_path_set = meshSourceLooksLikeDummyPathSet(
+          mesh->getAbsolutePath().generic_string().c_str());
+    }
+    if (!dummy_path_set) {
+      eastl::string yaml_text;
+      MeshAssetDescriptor descriptor{};
+      if (!mesh->getAbsolutePath().empty() &&
+          m_file_system->readText(mesh->getAbsolutePath(), yaml_text) &&
+          AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+        dummy_path_set =
+            meshSourceLooksLikeDummyPathSet(descriptor.source.c_str());
+      }
+    }
+    if (dummy_path_set) {
+      // Godot remaps DUMMY-path-* onto dirt albedo. Old sidecars stored the
+      // dummy 0.8 gray and no URI, so re-hydrate from the glTF.
+      return false;
+    }
+  }
+
   auto loadSlot = [this](const eastl::string& virtual_path)
       -> eastl::shared_ptr<Texture2DAsset> {
     if (virtual_path.empty()) {
@@ -595,7 +619,8 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.double_sided, sidecar.unlit);
   if (textureUriIsPaperGrain(sidecar.normal_texture.c_str()) ||
       metallicRoughnessUriIsRoughnessOnly(
-          sidecar.metallic_roughness_texture.c_str())) {
+          sidecar.metallic_roughness_texture.c_str()) ||
+      textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str())) {
     material->markPaperCard();
   }
   material->promoteOpaqueTexturedBlendToMask();

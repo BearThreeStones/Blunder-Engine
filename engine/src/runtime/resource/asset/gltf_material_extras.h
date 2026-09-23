@@ -28,6 +28,24 @@ bool metallicRoughnessUriIsRoughnessOnly(const char* uri);
 /// It is not a tangent-space normal map.
 bool textureUriIsPaperGrain(const char* uri);
 
+/// Blender placeholder `DUMMY-path-*`. Godot remaps these via
+/// `material_index.json` / glTF import `_subresources` onto paper ShaderMaterials
+/// with dirt albedo PNGs. The exported glTF keeps the dummy 0.8 gray and no
+/// texture, so Blunder must bind the Godot map (or a dirt factor) itself.
+bool materialNameIsDummyPath(const char* name);
+
+/// Godot `path_1_albedo` / `path_7_albedo` / `path_faint_albedo` / snowman strip.
+bool textureUriIsPathPaperAlbedo(const char* uri);
+
+/// `SL-fence-paths` / `SL-hub-paths` / `SL-clearing-path` mesh yaml or glTF.
+bool meshSourceLooksLikeDummyPathSet(const char* path);
+
+/// File name under `resources/se-world/assets/lib/textures/`. Null if unknown.
+const char* dummyPathAlbedoFileName(const char* material_name);
+
+/// Mean dirt of Godot `path_1_albedo` when the PNG is missing.
+void dummyPathFallbackAlbedoRgb(float out[3]);
+
 /// Extras metallic wins. Else a roughness-only map with spec-default metal 1
 /// becomes dielectric so `metallic *= sampledMr.b` cannot chrome the card.
 float resolveImportedMetallicFactor(float gltf_metallic_factor,

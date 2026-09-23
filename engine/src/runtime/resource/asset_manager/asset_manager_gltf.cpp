@@ -459,6 +459,31 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
         gltfTextureImageUri(pbr.metallic_roughness_texture.texture);
   }
 
+  bool dummy_path = materialNameIsDummyPath(material.name);
+  if (!base_color_texture_asset && dummy_path) {
+    if (const char* file = dummyPathAlbedoFileName(material.name)) {
+      eastl::string virtual_path("resources/se-world/assets/lib/textures/");
+      virtual_path.append(file);
+      base_color_texture_asset = bindTexture2D(virtual_path);
+      if (base_color_texture_asset) {
+        LOG_INFO("[AssetManager] dummy path {} albedo {}", material.name,
+                 virtual_path.c_str());
+        base_color_factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+        alpha_mode = cgltf_alpha_mode_mask;
+        if (alpha_cutoff < 0.04f) {
+          alpha_cutoff = 0.5f;
+        }
+      }
+    }
+    if (!base_color_texture_asset) {
+      float rgb[3] = {0.55f, 0.38f, 0.28f};
+      dummyPathFallbackAlbedoRgb(rgb);
+      base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
+      LOG_WARN("[AssetManager] dummy path {} missing albedo, dirt factor",
+               material.name != nullptr ? material.name : "DUMMY-path");
+    }
+  }
+
   GltfMaterialExtras extras{};
   eastl::string extras_json;
   if (copyGltfMaterialExtrasJson(data, material.extras, extras_json)) {
@@ -505,7 +530,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
                                            extras.paper_color[1],
                                            extras.paper_color[2]));
-  } else if (paper_grain_normal ||
+  } else if (dummy_path || paper_grain_normal ||
              metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri)) {
     material_asset->markPaperCard();
   }

@@ -256,6 +256,32 @@ void resolvePolicy() {
                   "resources/se-world/assets/textures/paper_rough_256.png"));
   expect_true("albedo is not paper grain",
               !textureUriIsPaperGrain("pine_leaves_albedo_01.png"));
+  expect_true("dummy path pond name",
+              materialNameIsDummyPath("DUMMY-path-pond"));
+  expect_true("pine is not dummy path", !materialNameIsDummyPath("pine_tree"));
+  expect_true("pond albedo file",
+              dummyPathAlbedoFileName("DUMMY-path-pond") != nullptr &&
+                  std::strcmp(dummyPathAlbedoFileName("DUMMY-path-pond"),
+                              "path_7_albedo.png") == 0);
+  expect_true("fence albedo file",
+              dummyPathAlbedoFileName("DUMMY-path-fence") != nullptr &&
+                  std::strcmp(dummyPathAlbedoFileName("DUMMY-path-fence"),
+                              "path_1_albedo.png") == 0);
+  expect_true("path_7 uri is paper albedo",
+              textureUriIsPathPaperAlbedo(
+                  "resources/se-world/assets/lib/textures/path_7_albedo.png"));
+  expect_true("pine albedo is not path paper",
+              !textureUriIsPathPaperAlbedo("pine_leaves_albedo_01.png"));
+  expect_true("fence-paths yaml is dummy set",
+              meshSourceLooksLikeDummyPathSet(
+                  "assets/Meshes/se-world/SL-fence-paths-m1p0.mesh.yaml"));
+  expect_true("clearing bushes is not dummy set",
+              !meshSourceLooksLikeDummyPathSet(
+                  "assets/Meshes/se-world/SL-clearing-bushes-m0p0.mesh.yaml"));
+  float dirt[3] = {0.0f, 0.0f, 0.0f};
+  dummyPathFallbackAlbedoRgb(dirt);
+  expect_true("dirt fallback red-brown",
+              dirt[0] > dirt[1] && dirt[1] > dirt[2] && dirt[2] > 0.1f);
 }
 
 void maskPromotion() {
@@ -322,6 +348,111 @@ void importRoughnessAtlasWithoutExtras() {
   fs::remove_all(project);
 }
 
+void writeDummyPathProject(const fs::path& project, const std::string& gltf,
+                           bool write_albedo) {
+  writeTextFile(project / "Resources" / "se-world" / "assets" / "sets" /
+                    "fence" / "SL-fence-paths.gltf",
+                gltf);
+  if (write_albedo) {
+    writeBytes(project / "Resources" / "se-world" / "assets" / "lib" /
+                   "textures" / "path_7_albedo.png",
+               kMinimalPng, sizeof(kMinimalPng));
+  }
+  writeTextFile(project / "Assets" / "Meshes" / "se-world" /
+                    "SL-fence-paths-m0p0.mesh.yaml",
+                "type: Mesh\n"
+                "guid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee91\n"
+                "source: resources/se-world/assets/sets/fence/SL-fence-paths.gltf\n"
+                "import:\n  materials: true\n  animations: false\n"
+                "  scale: 1\n");
+}
+
+std::string makeDummyPathGltf() {
+  return std::string(R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [{
+    "name": "GEO-paths-pond",
+    "primitives": [{
+      "attributes": { "POSITION": 1 },
+      "indices": 0,
+      "material": 0
+    }]
+  }],
+  "materials": [{
+    "name": "DUMMY-path-pond",
+    "doubleSided": true,
+    "extras": { "asset_id": "9a9b2737a030d116" },
+    "pbrMetallicRoughness": {
+      "baseColorFactor": [0.8, 0.8, 0.8, 1],
+      "metallicFactor": 0,
+      "roughnessFactor": 0.4
+    }
+  }],
+  )") + kTriangleAccessors + "\n}\n";
+}
+
+void importDummyPathBindsAlbedo() {
+  using namespace Blunder;
+  ensureLogger();
+  const fs::path project = makeTempProject("dummypath");
+  writeDummyPathProject(project, makeDummyPathGltf(), true);
+  const eastl::shared_ptr<MeshAsset> mesh = loadMeshFromProject(
+      project, "assets/Meshes/se-world/SL-fence-paths-m0p0.mesh.yaml");
+  expect_true("dummy path mesh loads", mesh != nullptr);
+  const MaterialAsset* material =
+      mesh != nullptr ? mesh->getMaterialAsset().get() : nullptr;
+  expect_true("dummy path has material", material != nullptr);
+  if (material != nullptr) {
+    expect_true("dummy path binds Godot albedo",
+                material->hasBaseColorTexture());
+    expect_true("dummy path paper card", material->isPaperCard());
+    expect_true("dummy path MASK cutout",
+                material->getAlphaMode() == cgltf_alpha_mode_mask);
+    expect_true("dummy path white factor over texture",
+                std::fabs(material->getBaseColorFactor().x - 1.0f) < 1e-4f &&
+                    std::fabs(material->getBaseColorFactor().y - 1.0f) < 1e-4f &&
+                    std::fabs(material->getBaseColorFactor().z - 1.0f) < 1e-4f);
+    expect_true("dummy path dielectric",
+                material->getMetallicFactor() < 0.01f);
+    const eastl::shared_ptr<Texture2DAsset>& albedo =
+        material->getBaseColorTextureAsset();
+    expect_true(
+        "dummy path albedo uri",
+        albedo &&
+            albedo->getVirtualPath().find("path_7_albedo.png") !=
+                eastl::string::npos);
+  }
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void importDummyPathFallbackDirtFactor() {
+  using namespace Blunder;
+  ensureLogger();
+  const fs::path project = makeTempProject("dummypath_factor");
+  writeDummyPathProject(project, makeDummyPathGltf(), false);
+  const eastl::shared_ptr<MeshAsset> mesh = loadMeshFromProject(
+      project, "assets/Meshes/se-world/SL-fence-paths-m0p0.mesh.yaml");
+  expect_true("fallback dummy path mesh loads", mesh != nullptr);
+  const MaterialAsset* material =
+      mesh != nullptr ? mesh->getMaterialAsset().get() : nullptr;
+  expect_true("fallback dummy path material", material != nullptr);
+  if (material != nullptr) {
+    expect_true("fallback has no albedo file",
+                !material->hasBaseColorTexture());
+    expect_true("fallback paper card", material->isPaperCard());
+    const glm::vec4& factor = material->getBaseColorFactor();
+    expect_true("fallback dirt not dummy gray",
+                factor.x < 0.7f && factor.x > factor.y && factor.y > factor.z);
+    expect_true("fallback not black", factor.z > 0.1f);
+  }
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void importExplicitMetallicFactorZero() {
   using namespace Blunder;
   ensureLogger();
@@ -353,6 +484,8 @@ int main() {
   importExtrasMetallicZero();
   importRoughnessAtlasWithoutExtras();
   importExplicitMetallicFactorZero();
+  importDummyPathBindsAlbedo();
+  importDummyPathFallbackDirtFactor();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d gltf_material_extras_test failure(s)\n", g_failures);
     return 1;

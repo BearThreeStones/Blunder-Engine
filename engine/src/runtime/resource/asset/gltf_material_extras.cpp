@@ -256,6 +256,101 @@ bool textureUriIsPaperGrain(const char* uri) {
   return std::strstr(lower, "papergrain") != nullptr;
 }
 
+bool materialNameIsDummyPath(const char* name) {
+  if (name == nullptr || name[0] == '\0') {
+    return false;
+  }
+  return std::strncmp(name, "DUMMY-path", 10) == 0;
+}
+
+bool textureUriIsPathPaperAlbedo(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "path_1_albedo") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "path_2_albedo") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "path_7_albedo") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "path_faint_albedo") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "path_snowman") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "path_2_connection") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "path-albedo") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "path_albedo") != nullptr;
+}
+
+bool meshSourceLooksLikeDummyPathSet(const char* path) {
+  if (path == nullptr || path[0] == '\0') {
+    return false;
+  }
+  if (std::strstr(path, "SL-fence-paths") != nullptr) {
+    return true;
+  }
+  if (std::strstr(path, "SL-hub-paths") != nullptr) {
+    return true;
+  }
+  return std::strstr(path, "SL-clearing-path") != nullptr;
+}
+
+const char* dummyPathAlbedoFileName(const char* material_name) {
+  if (!materialNameIsDummyPath(material_name)) {
+    return nullptr;
+  }
+  const char* rest = material_name + 10;
+  if (*rest == '-') {
+    ++rest;
+  }
+  if (std::strcmp(rest, "pond") == 0) {
+    return "path_7_albedo.png";
+  }
+  if (std::strcmp(rest, "fence") == 0) {
+    return "path_1_albedo.png";
+  }
+  if (std::strcmp(rest, "hub") == 0) {
+    return "path_2_albedo.png";
+  }
+  if (std::strcmp(rest, "faint") == 0) {
+    return "path_faint_albedo.png";
+  }
+  if (std::strcmp(rest, "snowman") == 0) {
+    return "path_snowman_1.png";
+  }
+  if (std::strcmp(rest, "hub_connection") == 0) {
+    return "path_2_connection.png";
+  }
+  return nullptr;
+}
+
+void dummyPathFallbackAlbedoRgb(float out[3]) {
+  if (out == nullptr) {
+    return;
+  }
+  // Godot path_1_albedo mid-dirt (sRGB approx).
+  out[0] = 0.55f;
+  out[1] = 0.38f;
+  out[2] = 0.28f;
+}
+
 float resolveImportedMetallicFactor(float gltf_metallic_factor,
                                     const GltfMaterialExtras& extras,
                                     const char* metallic_roughness_uri) {
