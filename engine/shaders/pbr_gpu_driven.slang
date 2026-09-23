@@ -268,10 +268,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float4 sampledAo = sampleBindless(inst.bindlessTextureIndices.w, input.uv);
     float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
     float3 albedo = applyVertexColorToAlbedo(
-        baseSample.rgb * inst.baseColorFactor.rgb, input.color.rgb,
+        baseSample.rgb * inst.baseColorFactor.rgb, input.color,
         inst.materialFlags.y, inst.materialFlags.z);
     float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
-    clipPackedVertexColorCoverage(input.color.rgb, inst.materialFlags.y);
+    clipPackedVertexColorCoverage(input.color, inst.materialFlags.y);
 
     if (inst.metallicRoughnessFactors.w > 0.5 &&
         inst.metallicRoughnessFactors.w < 1.5)

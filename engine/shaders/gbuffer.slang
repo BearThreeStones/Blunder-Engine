@@ -139,10 +139,10 @@ GBufferOutput fragmentMain(VertexOutput input)
     float4 sampledAo = sampleBindless(ubo.bindlessTextureIndices.w, input.uv);
     float4 baseSample = ubo.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
     float3 albedo = applyVertexColorToAlbedo(
-        baseSample.rgb * ubo.baseColorFactor.rgb, input.color.rgb,
+        baseSample.rgb * ubo.baseColorFactor.rgb, input.color,
         ubo.materialFlags.y, ubo.materialFlags.z);
     float alpha = baseSample.a * ubo.baseColorFactor.a * input.color.a;
-    clipPackedVertexColorCoverage(input.color.rgb, ubo.materialFlags.y);
+    clipPackedVertexColorCoverage(input.color, ubo.materialFlags.y);
 
     // cgltf_alpha_mode: opaque=0, mask=1, blend=2. Clip MASK only.
     if (ubo.metallicRoughnessFactors.w > 0.5 &&
