@@ -460,6 +460,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   }
 
   bool dummy_path = materialNameIsDummyPath(material.name);
+  bool dummy_snow = materialNameIsDummySnowPatch(material.name);
   if (!base_color_texture_asset && dummy_path) {
     if (const char* file = dummyPathAlbedoFileName(material.name)) {
       eastl::string virtual_path("resources/se-world/assets/lib/textures/");
@@ -481,6 +482,31 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
       base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
       LOG_WARN("[AssetManager] dummy path {} missing albedo, dirt factor",
                material.name != nullptr ? material.name : "DUMMY-path");
+    }
+  }
+  if (!base_color_texture_asset && dummy_snow) {
+    if (const char* file = dummySnowPatchAlbedoFileName(material.name)) {
+      eastl::string virtual_path("resources/se-world/assets/textures/");
+      virtual_path.append(file);
+      base_color_texture_asset = bindTexture2D(virtual_path);
+      if (base_color_texture_asset) {
+        LOG_INFO("[AssetManager] dummy snow {} albedo {}", material.name,
+                 virtual_path.c_str());
+        float rgb[3] = {0.92f, 0.971f, 1.0f};
+        dummySnowPatchFallbackAlbedoRgb(rgb);
+        base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
+        alpha_mode = cgltf_alpha_mode_mask;
+        if (alpha_cutoff < 0.04f) {
+          alpha_cutoff = 0.5f;
+        }
+      }
+    }
+    if (!base_color_texture_asset) {
+      float rgb[3] = {0.92f, 0.971f, 1.0f};
+      dummySnowPatchFallbackAlbedoRgb(rgb);
+      base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
+      LOG_WARN("[AssetManager] dummy snow {} missing albedo, snow factor",
+               material.name != nullptr ? material.name : "DUMMY-snow_patch");
     }
   }
 
@@ -530,7 +556,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
                                            extras.paper_color[1],
                                            extras.paper_color[2]));
-  } else if (dummy_path || paper_grain_normal ||
+  } else if (dummy_path || dummy_snow || paper_grain_normal ||
              metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri)) {
     material_asset->markPaperCard();
   }

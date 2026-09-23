@@ -559,25 +559,28 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_roughness_texture.c_str());
 
   if (sidecar.base_color_texture.empty()) {
-    bool dummy_path_set =
-        meshSourceLooksLikeDummyPathSet(mesh->getVirtualPath().c_str());
-    if (!dummy_path_set && !mesh->getAbsolutePath().empty()) {
-      dummy_path_set = meshSourceLooksLikeDummyPathSet(
-          mesh->getAbsolutePath().generic_string().c_str());
+    bool dummy_paper_set =
+        meshSourceLooksLikeDummyPathSet(mesh->getVirtualPath().c_str()) ||
+        meshSourceLooksLikeDummySnowPatchSet(mesh->getVirtualPath().c_str());
+    if (!dummy_paper_set && !mesh->getAbsolutePath().empty()) {
+      const auto abs = mesh->getAbsolutePath().generic_string();
+      dummy_paper_set = meshSourceLooksLikeDummyPathSet(abs.c_str()) ||
+                        meshSourceLooksLikeDummySnowPatchSet(abs.c_str());
     }
-    if (!dummy_path_set) {
+    if (!dummy_paper_set) {
       eastl::string yaml_text;
       MeshAssetDescriptor descriptor{};
       if (!mesh->getAbsolutePath().empty() &&
           m_file_system->readText(mesh->getAbsolutePath(), yaml_text) &&
           AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
-        dummy_path_set =
-            meshSourceLooksLikeDummyPathSet(descriptor.source.c_str());
+        dummy_paper_set =
+            meshSourceLooksLikeDummyPathSet(descriptor.source.c_str()) ||
+            meshSourceLooksLikeDummySnowPatchSet(descriptor.source.c_str());
       }
     }
-    if (dummy_path_set) {
-      // Godot remaps DUMMY-path-* onto dirt albedo. Old sidecars stored the
-      // dummy 0.8 gray and no URI, so re-hydrate from the glTF.
+    if (dummy_paper_set) {
+      // Godot remaps DUMMY-path-* / DUMMY-snow_patch_* onto paper albedo.
+      // Old sidecars stored the dummy 0.8 gray and no URI, so re-hydrate.
       return false;
     }
   }
@@ -620,7 +623,8 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   if (textureUriIsPaperGrain(sidecar.normal_texture.c_str()) ||
       metallicRoughnessUriIsRoughnessOnly(
           sidecar.metallic_roughness_texture.c_str()) ||
-      textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str())) {
+      textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
+      textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str())) {
     material->markPaperCard();
   }
   material->promoteOpaqueTexturedBlendToMask();

@@ -330,6 +330,42 @@ void dummyPathAlbedoUriIsUnlitPaperMask() {
               ubo.metallic_roughness_factors.x < 0.01f);
 }
 
+void dummySnowPatchAlbedoUriIsUnlitPaperMask() {
+  using namespace Blunder;
+  Asset::Meta albedo_meta;
+  albedo_meta.virtual_path =
+      "resources/se-world/assets/textures/snow_gen_albedo-01.png";
+  auto albedo = eastl::make_shared<Texture2DAsset>(
+      eastl::move(albedo_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{235, 248, 255, 255});
+  AssetHandle albedo_handle;
+  albedo_handle.type = Asset::Type::Texture2D;
+  albedo_handle.key = albedo->getVirtualPath();
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path =
+      "assets/Meshes/se-world/SL-hub-snow_patches-m26p0.mesh.yaml#mat";
+  MaterialAsset snow(eastl::move(mat_meta), glm::vec4(0.92f, 0.971f, 1.0f, 1.0f),
+                     albedo_handle, albedo, nullptr, nullptr, nullptr,
+                     glm::vec3(0.15f), glm::vec3(1.0f), glm::vec3(0.04f), 32.0f,
+                     0.0f, 0.4f, cgltf_alpha_mode_opaque, 0.5f, true, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &snow, {}, frame, cgltf_alpha_mode_opaque, 0.5f,
+                         true);
+  expect_true("dummy snow URI is unlit paper", ubo.material_flags.x > 0.5f);
+  expect_true("dummy snow skips COLOR_0 RGB tint",
+              ubo.material_flags.z > 0.5f);
+  expect_true("dummy snow MASK cutout",
+              std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
+  expect_true("dummy snow samples albedo", ubo.material_flags.y > 0.5f);
+  expect_true("dummy snow stays dielectric",
+              ubo.metallic_roughness_factors.x < 0.01f);
+  expect_true("dummy snow keeps albedo_color r",
+              std::fabs(ubo.base_color_factor.x - 0.92f) < 1e-4f);
+}
+
 void packedOrmMapKeepsMetalChannel() {
   using namespace Blunder;
   Asset::Meta mr_meta;
@@ -476,6 +512,7 @@ int main() {
   foliageSpecDefaultMetalWithRoughnessAtlasBecomesDielectricAtPack();
   paperGrainNormalIsNotSampledAndPaperColorTints();
   dummyPathAlbedoUriIsUnlitPaperMask();
+  dummySnowPatchAlbedoUriIsUnlitPaperMask();
   packedOrmMapKeepsMetalChannel();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();

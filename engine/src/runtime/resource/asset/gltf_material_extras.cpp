@@ -351,6 +351,58 @@ void dummyPathFallbackAlbedoRgb(float out[3]) {
   out[2] = 0.28f;
 }
 
+bool materialNameIsDummySnowPatch(const char* name) {
+  if (name == nullptr || name[0] == '\0') {
+    return false;
+  }
+  return std::strncmp(name, "DUMMY-snow_patch", 16) == 0;
+}
+
+bool textureUriIsSnowPatchAlbedo(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "snow_gen_albedo") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "snow-gen-albedo") != nullptr;
+}
+
+bool meshSourceLooksLikeDummySnowPatchSet(const char* path) {
+  if (path == nullptr || path[0] == '\0') {
+    return false;
+  }
+  if (std::strstr(path, "SL-hub-snow_patches") != nullptr) {
+    return true;
+  }
+  return std::strstr(path, "SL-fence-snow_patches") != nullptr;
+}
+
+const char* dummySnowPatchAlbedoFileName(const char* material_name) {
+  if (!materialNameIsDummySnowPatch(material_name)) {
+    return nullptr;
+  }
+  return "snow_gen_albedo-01.png";
+}
+
+void dummySnowPatchFallbackAlbedoRgb(float out[3]) {
+  if (out == nullptr) {
+    return;
+  }
+  // Godot snow_patch_01.tres albedo_color (0.92, 0.971, 1).
+  out[0] = 0.92f;
+  out[1] = 0.971f;
+  out[2] = 1.0f;
+}
+
 float resolveImportedMetallicFactor(float gltf_metallic_factor,
                                     const GltfMaterialExtras& extras,
                                     const char* metallic_roughness_uri) {
