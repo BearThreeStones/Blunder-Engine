@@ -144,6 +144,7 @@ class MaterialAsset final : public Asset {
   void setRoughnessFactor(float value) { m_roughness_factor = value; }
   void setAlphaMode(cgltf_alpha_mode value) { m_alpha_mode = value; }
   void setUnlit(bool value) { m_unlit = value; }
+  void setDoubleSided(bool value) { m_double_sided = value; }
   void setPaperColor(const glm::vec3& value) {
     m_has_paper_color = true;
     m_paper_card = true;

@@ -624,8 +624,12 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       metallicRoughnessUriIsRoughnessOnly(
           sidecar.metallic_roughness_texture.c_str()) ||
       textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
-      textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str())) {
+      textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str()) ||
+      textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str())) {
     material->markPaperCard();
+    if (textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str())) {
+      material->setDoubleSided(true);
+    }
   }
   material->promoteOpaqueTexturedBlendToMask();
   material->promoteWaterSurfaceFilmToOpaque();

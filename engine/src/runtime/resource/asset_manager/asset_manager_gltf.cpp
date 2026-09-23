@@ -461,6 +461,10 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
 
   bool dummy_path = materialNameIsDummyPath(material.name);
   bool dummy_snow = materialNameIsDummySnowPatch(material.name);
+  bool plateau_snow = materialNameIsSnowEdgePlateau(material.name);
+  if (plateau_snow) {
+    double_sided = true;
+  }
   if (!base_color_texture_asset && dummy_path) {
     if (const char* file = dummyPathAlbedoFileName(material.name)) {
       eastl::string virtual_path("resources/se-world/assets/lib/textures/");
@@ -556,7 +560,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
                                            extras.paper_color[1],
                                            extras.paper_color[2]));
-  } else if (dummy_path || dummy_snow || paper_grain_normal ||
+  } else if (dummy_path || dummy_snow || plateau_snow || paper_grain_normal ||
              metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri)) {
     material_asset->markPaperCard();
   }

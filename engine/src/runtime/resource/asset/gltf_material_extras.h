@@ -47,15 +47,16 @@ const char* dummyPathAlbedoFileName(const char* material_name);
 void dummyPathFallbackAlbedoRgb(float out[3]);
 
 /// Blender placeholder `DUMMY-snow_patch_*`. Godot remaps these via
-/// `SL-*-snow_patches.gltf.import` onto paper ShaderMaterials with
-/// `snow_gen_albedo-01.png`. The exported glTF keeps dummy 0.8 gray, no
-/// albedo URI, and COLOR_0 G as paper wear (R=B=0, A=1).
+/// `SL-*-snow_patches.gltf.import` / `SL-clearing-snow.gltf.import` onto paper
+/// ShaderMaterials with `snow_gen_albedo-01.png`. The exported glTF keeps dummy
+/// 0.8 gray, no albedo URI, and COLOR_0 G as paper wear (R=B=0, A=1).
 bool materialNameIsDummySnowPatch(const char* name);
 
 /// Godot `snow_gen_albedo-01` snow paper.
 bool textureUriIsSnowPatchAlbedo(const char* uri);
 
-/// `SL-hub-snow_patches` / `SL-fence-snow_patches` mesh yaml or glTF.
+/// `SL-hub-snow_patches` / `SL-fence-snow_patches` / `SL-clearing-snow`
+/// mesh yaml or glTF.
 bool meshSourceLooksLikeDummySnowPatchSet(const char* path);
 
 /// File name under `resources/se-world/assets/textures/`. Null if unknown.
@@ -63,6 +64,12 @@ const char* dummySnowPatchAlbedoFileName(const char* material_name);
 
 /// Godot `snow_patch_01.tres` `albedo_color` when the PNG is missing.
 void dummySnowPatchFallbackAlbedoRgb(float out[3]);
+
+/// Godot `snow_edge_plateau.tres` on `GEO-stone_plateau_snow_*`.
+bool materialNameIsSnowEdgePlateau(const char* name);
+
+/// Godot `stone_plateau_albedo` paper on cliff snow overlays.
+bool textureUriIsPlateauSnowAlbedo(const char* uri);
 
 /// Extras metallic wins. Else a roughness-only map with spec-default metal 1
 /// becomes dielectric so `metallic *= sampledMr.b` cannot chrome the card.

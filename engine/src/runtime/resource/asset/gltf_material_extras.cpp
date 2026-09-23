@@ -383,7 +383,10 @@ bool meshSourceLooksLikeDummySnowPatchSet(const char* path) {
   if (std::strstr(path, "SL-hub-snow_patches") != nullptr) {
     return true;
   }
-  return std::strstr(path, "SL-fence-snow_patches") != nullptr;
+  if (std::strstr(path, "SL-fence-snow_patches") != nullptr) {
+    return true;
+  }
+  return std::strstr(path, "SL-clearing-snow") != nullptr;
 }
 
 const char* dummySnowPatchAlbedoFileName(const char* material_name) {
@@ -401,6 +404,31 @@ void dummySnowPatchFallbackAlbedoRgb(float out[3]) {
   out[0] = 0.92f;
   out[1] = 0.971f;
   out[2] = 1.0f;
+}
+
+bool materialNameIsSnowEdgePlateau(const char* name) {
+  if (name == nullptr || name[0] == '\0') {
+    return false;
+  }
+  return std::strcmp(name, "snow_edge_plateau") == 0;
+}
+
+bool textureUriIsPlateauSnowAlbedo(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "stone_plateau_albedo") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "stone-plateau-albedo") != nullptr;
 }
 
 float resolveImportedMetallicFactor(float gltf_metallic_factor,

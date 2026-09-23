@@ -312,9 +312,25 @@ void resolvePolicy() {
   expect_true("fence snow_patches yaml is dummy snow set",
               meshSourceLooksLikeDummySnowPatchSet(
                   "assets/Meshes/se-world/SL-fence-snow_patches-m20p0.mesh.yaml"));
-  expect_true("clearing snow is not dummy snow set",
-              !meshSourceLooksLikeDummySnowPatchSet(
+  expect_true("clearing snow yaml is dummy snow set",
+              meshSourceLooksLikeDummySnowPatchSet(
                   "assets/Meshes/se-world/SL-clearing-snow-m1p0.mesh.yaml"));
+  expect_true("clearing snow gltf is dummy snow set",
+              meshSourceLooksLikeDummySnowPatchSet(
+                  "resources/se-world/assets/sets/clearing/SL-clearing-snow.gltf"));
+  expect_true("clearing bushes is not dummy snow set",
+              !meshSourceLooksLikeDummySnowPatchSet(
+                  "assets/Meshes/se-world/SL-clearing-bushes-m0p0.mesh.yaml"));
+  expect_true("snow_edge_plateau name",
+              materialNameIsSnowEdgePlateau("snow_edge_plateau"));
+  expect_true("dummy snow is not plateau snow",
+              !materialNameIsSnowEdgePlateau("DUMMY-snow_patch_01"));
+  expect_true("plateau albedo uri is paper snow",
+              textureUriIsPlateauSnowAlbedo(
+                  "resources/se-world/assets/lib/stone_plateau_albedo.png"));
+  expect_true("snow_gen is not plateau albedo",
+              !textureUriIsPlateauSnowAlbedo(
+                  "resources/se-world/assets/textures/snow_gen_albedo-01.png"));
   float snow[3] = {0.0f, 0.0f, 0.0f};
   dummySnowPatchFallbackAlbedoRgb(snow);
   expect_true("snow fallback pale cool white",
@@ -596,6 +612,145 @@ void importDummySnowFallbackSnowFactor() {
   fs::remove_all(project);
 }
 
+void writeClearingSnowProject(const fs::path& project, const std::string& gltf,
+                              bool write_albedo) {
+  writeTextFile(project / "Resources" / "se-world" / "assets" / "sets" /
+                    "clearing" / "SL-clearing-snow.gltf",
+                gltf);
+  if (write_albedo) {
+    writeBytes(project / "Resources" / "se-world" / "assets" / "textures" /
+                   "snow_gen_albedo-01.png",
+               kMinimalPng, sizeof(kMinimalPng));
+  }
+  writeTextFile(project / "Assets" / "Meshes" / "se-world" /
+                    "SL-clearing-snow-m1p0.mesh.yaml",
+                "type: Mesh\n"
+                "guid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee93\n"
+                "source: resources/se-world/assets/sets/clearing/"
+                "SL-clearing-snow.gltf\n"
+                "import:\n  materials: true\n  animations: false\n"
+                "  scale: 1\n");
+}
+
+void importClearingSnowBindsAlbedo() {
+  using namespace Blunder;
+  ensureLogger();
+  const fs::path project = makeTempProject("clearingsnow");
+  writeClearingSnowProject(project, makeDummySnowGltf(), true);
+  const eastl::shared_ptr<MeshAsset> mesh = loadMeshFromProject(
+      project, "assets/Meshes/se-world/SL-clearing-snow-m1p0.mesh.yaml");
+  expect_true("clearing snow mesh loads", mesh != nullptr);
+  const MaterialAsset* material =
+      mesh != nullptr ? mesh->getMaterialAsset().get() : nullptr;
+  expect_true("clearing snow has material", material != nullptr);
+  if (material != nullptr) {
+    expect_true("clearing snow binds Godot albedo",
+                material->hasBaseColorTexture());
+    expect_true("clearing snow paper card", material->isPaperCard());
+    expect_true("clearing snow MASK cutout",
+                material->getAlphaMode() == cgltf_alpha_mode_mask);
+    const glm::vec4& factor = material->getBaseColorFactor();
+    expect_true("clearing snow albedo_color over texture",
+                std::fabs(factor.x - 0.92f) < 1e-4f &&
+                    std::fabs(factor.y - 0.971f) < 1e-4f &&
+                    std::fabs(factor.z - 1.0f) < 1e-4f);
+    const eastl::shared_ptr<Texture2DAsset>& albedo =
+        material->getBaseColorTextureAsset();
+    expect_true(
+        "clearing snow albedo uri",
+        albedo &&
+            albedo->getVirtualPath().find("snow_gen_albedo-01.png") !=
+                eastl::string::npos);
+  }
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
+void writePlateauSnowProject(const fs::path& project, const std::string& gltf,
+                             bool write_albedo) {
+  writeTextFile(project / "Resources" / "se-world" / "assets" / "lib" /
+                    "stone_plateaus" / "LI-stone_plateau_001.gltf",
+                gltf);
+  if (write_albedo) {
+    writeBytes(project / "Resources" / "se-world" / "assets" / "lib" /
+                   "stone_plateau_albedo.png",
+               kMinimalPng, sizeof(kMinimalPng));
+  }
+  writeTextFile(project / "Assets" / "Meshes" / "se-world" /
+                    "LI-stone_plateau_001-m1p0.mesh.yaml",
+                "type: Mesh\n"
+                "guid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee94\n"
+                "source: resources/se-world/assets/lib/stone_plateaus/"
+                "LI-stone_plateau_001.gltf\n"
+                "import:\n  materials: true\n  animations: false\n"
+                "  scale: 1\n  meshIndex: 0\n  primitiveIndex: 0\n");
+}
+
+std::string makePlateauSnowGltf() {
+  return std::string(R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 0 }],
+  "meshes": [{
+    "name": "GEO-stone_plateau_snow_001",
+    "primitives": [{
+      "attributes": { "POSITION": 1 },
+      "indices": 0,
+      "material": 0
+    }]
+  }],
+  "materials": [{
+    "name": "snow_edge_plateau",
+    "alphaMode": "BLEND",
+    "extras": {
+      "material_info": {
+        "metallic": 0.0,
+        "paper_color": [1.0, 1.0, 1.0]
+      }
+    },
+    "pbrMetallicRoughness": {
+      "baseColorFactor": [1, 1, 1, 1],
+      "metallicFactor": 0,
+      "baseColorTexture": { "index": 0 }
+    }
+  }],
+  "textures": [{ "source": 0 }],
+  "images": [{ "uri": "../stone_plateau_albedo.png" }],
+  )") + kTriangleAccessors + "\n}\n";
+}
+
+void importPlateauSnowMarksPaper() {
+  using namespace Blunder;
+  ensureLogger();
+  const fs::path project = makeTempProject("plateausnow");
+  writePlateauSnowProject(project, makePlateauSnowGltf(), true);
+  const eastl::shared_ptr<MeshAsset> mesh = loadMeshFromProject(
+      project, "assets/Meshes/se-world/LI-stone_plateau_001-m1p0.mesh.yaml");
+  expect_true("plateau snow mesh loads", mesh != nullptr);
+  const MaterialAsset* material =
+      mesh != nullptr ? mesh->getMaterialAsset().get() : nullptr;
+  expect_true("plateau snow has material", material != nullptr);
+  if (material != nullptr) {
+    expect_true("plateau snow binds albedo", material->hasBaseColorTexture());
+    expect_true("plateau snow paper card", material->isPaperCard());
+    expect_true("plateau snow two-sided", material->isDoubleSided());
+    expect_true("plateau snow MASK cutout",
+                material->getAlphaMode() == cgltf_alpha_mode_mask);
+    expect_true("plateau snow dielectric",
+                material->getMetallicFactor() < 0.01f);
+    const eastl::shared_ptr<Texture2DAsset>& albedo =
+        material->getBaseColorTextureAsset();
+    expect_true(
+        "plateau snow albedo uri",
+        albedo &&
+            albedo->getVirtualPath().find("stone_plateau_albedo.png") !=
+                eastl::string::npos);
+  }
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void importExplicitMetallicFactorZero() {
   using namespace Blunder;
   ensureLogger();
@@ -631,6 +786,8 @@ int main() {
   importDummyPathFallbackDirtFactor();
   importDummySnowBindsAlbedo();
   importDummySnowFallbackSnowFactor();
+  importClearingSnowBindsAlbedo();
+  importPlateauSnowMarksPaper();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d gltf_material_extras_test failure(s)\n", g_failures);
     return 1;
