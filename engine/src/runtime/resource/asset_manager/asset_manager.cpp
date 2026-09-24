@@ -540,6 +540,7 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
     return false;
   }
   if (mesh->getMaterialAsset()) {
+    mesh->getMaterialAsset()->promoteWaterSurfaceFilmToOpaque();
     return true;
   }
   const std::filesystem::path path = cookedMeshMaterialPath(*m_file_system, guid);
@@ -624,16 +625,20 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
-  if (textureUriIsPaperGrain(sidecar.normal_texture.c_str()) ||
-      metallicRoughnessUriIsRoughnessOnly(
-          sidecar.metallic_roughness_texture.c_str()) ||
-      textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
-      textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str()) ||
-      textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
-      textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str())) {
+  const bool creek_paper = textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str());
+  const bool water_film =
+      textureUriIsWaterSurfaceFilm(sidecar.base_color_texture.c_str());
+  if (!water_film &&
+      (textureUriIsPaperGrain(sidecar.normal_texture.c_str()) ||
+       metallicRoughnessUriIsRoughnessOnly(
+           sidecar.metallic_roughness_texture.c_str()) ||
+       textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
+       textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str()) ||
+       textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
+       creek_paper)) {
     material->markPaperCard();
     if (textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
-        textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str())) {
+        creek_paper) {
       material->setDoubleSided(true);
     }
   }

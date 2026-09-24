@@ -345,6 +345,17 @@ void resolvePolicy() {
               !textureUriIsCreekPaperAlbedo(
                   "resources/se-world/assets/textures/"
                   "creek_water_surface-albedo.png"));
+  expect_true("creek water albedo is water film",
+              textureUriIsWaterSurfaceFilm(
+                  "resources/se-world/assets/textures/"
+                  "creek_water_surface-albedo.png"));
+  expect_true("ice squiggles albedo is water film",
+              textureUriIsWaterSurfaceFilm(
+                  "resources/se-world/assets/textures/"
+                  "ice_surface_squiggles-albedo.png"));
+  expect_true("creek-bed is not water film",
+              !textureUriIsWaterSurfaceFilm(
+                  "resources/se-world/assets/lib/textures/creek-bed.png"));
   expect_true("path albedo is not creek paper",
               !textureUriIsCreekPaperAlbedo(
                   "resources/se-world/assets/lib/textures/path_7_albedo.png"));

@@ -156,26 +156,29 @@ class MaterialAsset final : public Asset {
   /// bed. COLOR_0 now multiplies albedo, but the paper shader is still missing,
   /// so that film is nearly invisible and does not write depth (editor grid
   /// shows in the hole).
-  /// Promote those textured films to opaque diffuse so the cyan/water albedo
-  /// fills the set. Bubbles stay transparent (texture path does not match).
+  /// Pond ice (`ice_surface_squiggles`) becomes opaque cyan so the pond fills.
+  /// Creek water stays BLEND: its albedo is near-black (mean RGB ~26) and
+  /// extras still carry `paper_color`; opaque MASK/unlit hides `creek-bed`
+  /// paper and reads as an empty trench. Bubbles stay transparent.
   void promoteWaterSurfaceFilmToOpaque() {
-    if (m_alpha_mode != cgltf_alpha_mode_blend ||
-        m_base_color_factor.a >= 0.999f) {
-      return;
-    }
     eastl::string path;
     if (m_base_color_texture_asset) {
       path = m_base_color_texture_asset->getVirtualPath();
     }
-    if (path.find("ice_surface_squiggles") == eastl::string::npos &&
-        path.find("creek_water_surface") == eastl::string::npos) {
+    const bool ice = path.find("ice_surface_squiggles") != eastl::string::npos;
+    const bool creek = path.find("creek_water_surface") != eastl::string::npos;
+    if (!ice && !creek) {
       return;
     }
-    m_alpha_mode = cgltf_alpha_mode_opaque;
-    m_base_color_factor.a = 1.0f;
+    m_paper_card = false;
+    m_has_paper_color = false;
     m_metallic_factor = 0.0f;
     m_specular_color = glm::vec3(0.04f);
-    m_paper_card = false;
+    if (ice && m_alpha_mode == cgltf_alpha_mode_blend &&
+        m_base_color_factor.a < 0.999f) {
+      m_alpha_mode = cgltf_alpha_mode_opaque;
+      m_base_color_factor.a = 1.0f;
+    }
   }
 
  private:

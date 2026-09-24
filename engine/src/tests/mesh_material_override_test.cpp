@@ -400,7 +400,7 @@ void creekAlbedoUriIsUnlitPaperMask() {
               ubo.metallic_roughness_factors.x < 0.01f);
 }
 
-void creekWaterFilmIsOpaqueNotPaperMask() {
+void creekWaterFilmIsDielectricBlendNotPaperMask() {
   using namespace Blunder;
   Asset::Meta albedo_meta;
   albedo_meta.virtual_path =
@@ -424,6 +424,8 @@ void creekWaterFilmIsOpaqueNotPaperMask() {
                       albedo_handle, albedo, mr, nullptr, nullptr,
                       glm::vec3(0.15f), glm::vec3(1.0f), glm::vec3(1.0f), 8.0f,
                       1.0f, 1.0f, cgltf_alpha_mode_blend, 0.5f, true, false);
+  // Blender extras still ship paper_color on this StandardMaterial3D.
+  water.setPaperColor(glm::vec3(1.0f, 1.0f, 1.0f));
   water.promoteWaterSurfaceFilmToOpaque();
 
   ForwardMeshUniformData ubo{};
@@ -431,11 +433,17 @@ void creekWaterFilmIsOpaqueNotPaperMask() {
   frame.live_scene_lighting = true;
   applyPbrToMeshUniforms(ubo, &water, {}, frame, water.getAlphaMode(), 0.5f,
                          true);
-  expect_true("creek water promote is opaque",
-              water.getAlphaMode() == cgltf_alpha_mode_opaque);
+  expect_true("creek water stays BLEND over bed paper",
+              water.getAlphaMode() == cgltf_alpha_mode_blend);
+  expect_true("creek water stays transparent pass",
+              water.usesForwardTransparentPass());
+  expect_true("creek extras paper_color does not stick", !water.isPaperCard());
   expect_true("creek water is not unlit paper", ubo.material_flags.x < 0.5f);
   expect_true("creek water is not MASK cutout",
-              ubo.metallic_roughness_factors.w < 0.5f);
+              ubo.metallic_roughness_factors.w < 0.5f ||
+                  ubo.metallic_roughness_factors.w > 1.5f);
+  expect_true("creek water gpu alpha is BLEND",
+              std::fabs(ubo.metallic_roughness_factors.w - 2.0f) < 0.1f);
   expect_true("creek water stays dielectric",
               ubo.metallic_roughness_factors.x < 0.01f);
 }
@@ -622,7 +630,7 @@ int main() {
   dummyPathAlbedoUriIsUnlitPaperMask();
   dummySnowPatchAlbedoUriIsUnlitPaperMask();
   creekAlbedoUriIsUnlitPaperMask();
-  creekWaterFilmIsOpaqueNotPaperMask();
+  creekWaterFilmIsDielectricBlendNotPaperMask();
   plateauSnowAlbedoUriIsUnlitPaperMask();
   packedOrmMapKeepsMetalChannel();
   assetInspectorRoutesGlobalHistory();

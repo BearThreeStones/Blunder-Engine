@@ -563,20 +563,26 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
       specular_color, shininess, metallic_factor, roughness_factor, alpha_mode,
       alpha_cutoff, double_sided, unlit);
   material_asset->promoteOpaqueTexturedBlendToMask();
-  material_asset->promoteWaterSurfaceFilmToOpaque();
-  if (extras.has_paper_color) {
+  const bool water_film = textureUriIsWaterSurfaceFilm(
+      base_color_texture_asset ? base_color_texture_asset->getVirtualPath().c_str()
+                               : bound_albedo_uri);
+  if (extras.has_paper_color && !water_film) {
     material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
                                            extras.paper_color[1],
                                            extras.paper_color[2]));
-  } else if (dummy_path || dummy_snow || plateau_snow || creek_paper ||
-             paper_grain_normal ||
-             metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri) ||
-             textureUriIsCreekPaperAlbedo(
-                 base_color_texture_asset
-                     ? base_color_texture_asset->getVirtualPath().c_str()
-                     : bound_albedo_uri)) {
+  } else if (!water_film &&
+             (dummy_path || dummy_snow || plateau_snow || creek_paper ||
+              paper_grain_normal ||
+              metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri) ||
+              textureUriIsCreekPaperAlbedo(
+                  base_color_texture_asset
+                      ? base_color_texture_asset->getVirtualPath().c_str()
+                      : bound_albedo_uri))) {
     material_asset->markPaperCard();
   }
+  // After extras: ice becomes opaque; creek water stays BLEND dielectric
+  // (near-black albedo must not cover creek-bed paper).
+  material_asset->promoteWaterSurfaceFilmToOpaque();
   m_material_cache[material_key] = material_asset;
   return material_asset;
 }

@@ -460,6 +460,24 @@ bool textureUriIsCreekPaperAlbedo(const char* uri) {
   return std::strstr(lower, "creek_snow_edge") != nullptr;
 }
 
+bool textureUriIsWaterSurfaceFilm(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "ice_surface_squiggles") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "creek_water_surface") != nullptr;
+}
+
 bool meshSourceLooksLikeWorldCreek(const char* path) {
   if (path == nullptr || path[0] == '\0') {
     return false;

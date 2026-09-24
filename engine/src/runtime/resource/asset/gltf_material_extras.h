@@ -75,6 +75,10 @@ bool textureUriIsPlateauSnowAlbedo(const char* uri);
 /// `creek-snow_edge.png` paper. Water stays a film (`promoteWaterSurfaceFilmToOpaque`).
 bool textureUriIsCreekPaperAlbedo(const char* uri);
 
+/// Pond ice (`ice_surface_squiggles`) and creek water (`creek_water_surface`).
+/// Not paper cards — extras still carry `paper_color` from the Blender export.
+bool textureUriIsWaterSurfaceFilm(const char* uri);
+
 /// `SL-world-creek` mesh yaml or glTF. Empty cooked sidecars must re-hydrate
 /// so the Godot albedo URIs bind.
 bool meshSourceLooksLikeWorldCreek(const char* path);
