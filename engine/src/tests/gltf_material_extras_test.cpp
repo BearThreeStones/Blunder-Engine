@@ -251,6 +251,10 @@ void resolvePolicy() {
                   "resources/se-world/pine_leaves_roughness_01.png"));
   expect_true("packed orm helper false",
               !metallicRoughnessUriIsRoughnessOnly("packed_orm.png"));
+  expect_true("creek water roughness is not paper atlas",
+              !metallicRoughnessUriIsRoughnessOnly(
+                  "resources/se-world/assets/textures/"
+                  "creek_water_surface-roughness.png"));
   expect_true("paper_rough is paper grain",
               textureUriIsPaperGrain(
                   "resources/se-world/assets/textures/paper_rough_256.png"));
@@ -331,6 +335,28 @@ void resolvePolicy() {
   expect_true("snow_gen is not plateau albedo",
               !textureUriIsPlateauSnowAlbedo(
                   "resources/se-world/assets/textures/snow_gen_albedo-01.png"));
+  expect_true("creek-bed uri is creek paper",
+              textureUriIsCreekPaperAlbedo(
+                  "resources/se-world/assets/lib/textures/creek-bed.png"));
+  expect_true("creek-snow_edge uri is creek paper",
+              textureUriIsCreekPaperAlbedo(
+                  "resources/se-world/assets/lib/textures/creek-snow_edge.png"));
+  expect_true("creek water albedo is not paper card",
+              !textureUriIsCreekPaperAlbedo(
+                  "resources/se-world/assets/textures/"
+                  "creek_water_surface-albedo.png"));
+  expect_true("path albedo is not creek paper",
+              !textureUriIsCreekPaperAlbedo(
+                  "resources/se-world/assets/lib/textures/path_7_albedo.png"));
+  expect_true("world-creek yaml is creek set",
+              meshSourceLooksLikeWorldCreek(
+                  "assets/Meshes/se-world/SL-world-creek-m3p0.mesh.yaml"));
+  expect_true("world-creek gltf is creek set",
+              meshSourceLooksLikeWorldCreek(
+                  "resources/se-world/assets/sets/world/SL-world-creek.gltf"));
+  expect_true("clearing snow is not creek set",
+              !meshSourceLooksLikeWorldCreek(
+                  "assets/Meshes/se-world/SL-clearing-snow-m1p0.mesh.yaml"));
   float snow[3] = {0.0f, 0.0f, 0.0f};
   dummySnowPatchFallbackAlbedoRgb(snow);
   expect_true("snow fallback pale cool white",

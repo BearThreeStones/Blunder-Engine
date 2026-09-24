@@ -175,6 +175,7 @@ class MaterialAsset final : public Asset {
     m_base_color_factor.a = 1.0f;
     m_metallic_factor = 0.0f;
     m_specular_color = glm::vec3(0.04f);
+    m_paper_card = false;
   }
 
  private:

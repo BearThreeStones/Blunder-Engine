@@ -462,7 +462,15 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   bool dummy_path = materialNameIsDummyPath(material.name);
   bool dummy_snow = materialNameIsDummySnowPatch(material.name);
   bool plateau_snow = materialNameIsSnowEdgePlateau(material.name);
-  if (plateau_snow) {
+  const char* bound_albedo_uri = nullptr;
+  if (base_color_texture_asset) {
+    bound_albedo_uri = base_color_texture_asset->getVirtualPath().c_str();
+  } else if (material.has_pbr_metallic_roughness) {
+    bound_albedo_uri = gltfTextureImageUri(
+        material.pbr_metallic_roughness.base_color_texture.texture);
+  }
+  bool creek_paper = textureUriIsCreekPaperAlbedo(bound_albedo_uri);
+  if (plateau_snow || creek_paper) {
     double_sided = true;
   }
   if (!base_color_texture_asset && dummy_path) {
@@ -560,8 +568,13 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
                                            extras.paper_color[1],
                                            extras.paper_color[2]));
-  } else if (dummy_path || dummy_snow || plateau_snow || paper_grain_normal ||
-             metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri)) {
+  } else if (dummy_path || dummy_snow || plateau_snow || creek_paper ||
+             paper_grain_normal ||
+             metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri) ||
+             textureUriIsCreekPaperAlbedo(
+                 base_color_texture_asset
+                     ? base_color_texture_asset->getVirtualPath().c_str()
+                     : bound_albedo_uri)) {
     material_asset->markPaperCard();
   }
   m_material_cache[material_key] = material_asset;

@@ -561,11 +561,13 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   if (sidecar.base_color_texture.empty()) {
     bool dummy_paper_set =
         meshSourceLooksLikeDummyPathSet(mesh->getVirtualPath().c_str()) ||
-        meshSourceLooksLikeDummySnowPatchSet(mesh->getVirtualPath().c_str());
+        meshSourceLooksLikeDummySnowPatchSet(mesh->getVirtualPath().c_str()) ||
+        meshSourceLooksLikeWorldCreek(mesh->getVirtualPath().c_str());
     if (!dummy_paper_set && !mesh->getAbsolutePath().empty()) {
       const auto abs = mesh->getAbsolutePath().generic_string();
       dummy_paper_set = meshSourceLooksLikeDummyPathSet(abs.c_str()) ||
-                        meshSourceLooksLikeDummySnowPatchSet(abs.c_str());
+                        meshSourceLooksLikeDummySnowPatchSet(abs.c_str()) ||
+                        meshSourceLooksLikeWorldCreek(abs.c_str());
     }
     if (!dummy_paper_set) {
       eastl::string yaml_text;
@@ -575,12 +577,14 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
           AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
         dummy_paper_set =
             meshSourceLooksLikeDummyPathSet(descriptor.source.c_str()) ||
-            meshSourceLooksLikeDummySnowPatchSet(descriptor.source.c_str());
+            meshSourceLooksLikeDummySnowPatchSet(descriptor.source.c_str()) ||
+            meshSourceLooksLikeWorldCreek(descriptor.source.c_str());
       }
     }
     if (dummy_paper_set) {
-      // Godot remaps DUMMY-path-* / DUMMY-snow_patch_* onto paper albedo.
-      // Old sidecars stored the dummy 0.8 gray and no URI, so re-hydrate.
+      // Godot remaps DUMMY-path-* / DUMMY-snow_patch_* onto paper albedo, and
+      // SL-world-creek onto creek-bed / creek-snow_edge / water albedo. Old
+      // sidecars stored empty URIs, so re-hydrate.
       return false;
     }
   }
@@ -625,9 +629,11 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
           sidecar.metallic_roughness_texture.c_str()) ||
       textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
       textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str()) ||
-      textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str())) {
+      textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
+      textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str())) {
     material->markPaperCard();
-    if (textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str())) {
+    if (textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
+        textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str())) {
       material->setDoubleSided(true);
     }
   }

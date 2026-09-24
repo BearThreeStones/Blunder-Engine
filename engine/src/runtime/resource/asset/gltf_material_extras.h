@@ -71,6 +71,14 @@ bool materialNameIsSnowEdgePlateau(const char* name);
 /// Godot `stone_plateau_albedo` paper on cliff snow overlays.
 bool textureUriIsPlateauSnowAlbedo(const char* uri);
 
+/// Godot remaps `creek_bed` / `creek_edge` onto `creek-bed.png` /
+/// `creek-snow_edge.png` paper. Water stays a film (`promoteWaterSurfaceFilmToOpaque`).
+bool textureUriIsCreekPaperAlbedo(const char* uri);
+
+/// `SL-world-creek` mesh yaml or glTF. Empty cooked sidecars must re-hydrate
+/// so the Godot albedo URIs bind.
+bool meshSourceLooksLikeWorldCreek(const char* path);
+
 /// Extras metallic wins. Else a roughness-only map with spec-default metal 1
 /// becomes dielectric so `metallic *= sampledMr.b` cannot chrome the card.
 float resolveImportedMetallicFactor(float gltf_metallic_factor,

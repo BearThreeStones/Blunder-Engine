@@ -220,6 +220,11 @@ bool metallicRoughnessUriIsRoughnessOnly(const char* uri) {
   if (std::strstr(lower, "roughness") == nullptr) {
     return false;
   }
+  // Godot creek water is StandardMaterial3D, not paper. The roughness
+  // atlas must not flip the film into unlit MASK (grid in the trench).
+  if (std::strstr(lower, "creek_water_surface") != nullptr) {
+    return false;
+  }
   if (std::strstr(lower, "metallic") != nullptr) {
     return false;
   }
@@ -429,6 +434,37 @@ bool textureUriIsPlateauSnowAlbedo(const char* uri) {
     return true;
   }
   return std::strstr(lower, "stone-plateau-albedo") != nullptr;
+}
+
+bool textureUriIsCreekPaperAlbedo(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "creek-bed") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "creek_bed") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "creek-snow_edge") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "creek_snow_edge") != nullptr;
+}
+
+bool meshSourceLooksLikeWorldCreek(const char* path) {
+  if (path == nullptr || path[0] == '\0') {
+    return false;
+  }
+  return std::strstr(path, "SL-world-creek") != nullptr;
 }
 
 float resolveImportedMetallicFactor(float gltf_metallic_factor,

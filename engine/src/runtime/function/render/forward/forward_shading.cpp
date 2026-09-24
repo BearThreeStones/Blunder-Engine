@@ -223,8 +223,10 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
   const bool path_paper = textureUriIsPathPaperAlbedo(albedo_uri);
   const bool snow_paper = textureUriIsSnowPatchAlbedo(albedo_uri);
   const bool plateau_snow = textureUriIsPlateauSnowAlbedo(albedo_uri);
+  const bool creek_paper = textureUriIsCreekPaperAlbedo(albedo_uri);
   const bool paper_card = roughness_only || paper_grain || path_paper ||
-                          snow_paper || plateau_snow || material->isPaperCard();
+                          snow_paper || plateau_snow || creek_paper ||
+                          material->isPaperCard();
   if (paper_card) {
     mesh_ubo.metallic_roughness_factors.x = resolveImportedMetallicFactor(
         mesh_ubo.metallic_roughness_factors.x, GltfMaterialExtras{}, mr_uri);
