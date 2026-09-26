@@ -113,8 +113,8 @@ VkPipeline createGraphicsPipeline(
   depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
   depth_stencil.depthTestEnable = depth_test ? VK_TRUE : VK_FALSE;
   depth_stencil.depthWriteEnable = depth_write ? VK_TRUE : VK_FALSE;
-  // Match editor perspectiveZO (near=1, far=0) + pick prepass.
-  depth_stencil.depthCompareOp = VK_COMPARE_OP_GREATER;
+  // Match main viewport / glm::perspectiveZO (near→0, far→1): LESS + clear 1.
+  depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
   VkPipelineColorBlendAttachmentState blend_attachment{};
   blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -751,8 +751,9 @@ void OutlineOverlay::drawPrepass(VkCommandBuffer cmd, const OverlayState& state)
 
   VkClearValue clears[2]{};
   clears[0].color.uint32[0] = 0;
-  // perspectiveZO: far=0, near=1 — clear to far so GREATER depth test works.
-  clears[1].depthStencil = {0.0f, 0};
+  // perspectiveZO: near→0, far→1 — clear to far so LESS depth test matches
+  // the main viewport and outline_resolve occlusion (outlineDepth > sceneDepth).
+  clears[1].depthStencil = {1.0f, 0};
 
   VkRenderPassBeginInfo begin{};
   begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
