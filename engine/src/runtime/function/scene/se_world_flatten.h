@@ -34,6 +34,7 @@ struct SeWorldFlattenStats {
   int skipped_missing_file{0};
   int skipped_suite{0};
   int set_geo_mesh_refs{0};
+  int col_collider_entities{0};
   int imported_mesh_assets{0};
   eastl::string scene_guid;
   eastl::vector<eastl::string> skipped_ids;

@@ -7,6 +7,7 @@ namespace Blunder {
 struct PhysicsCharacterMove {
   PhysicsTransform pose{};
   FixedVec3 displacement{};
+  PhysicsSweepShape shape = PhysicsSweepShape::Capsule;
   Fixed radius = Fixed::from_int(1) / Fixed::from_int(2);
   Fixed half_height = Fixed::from_int(1) / Fixed::from_int(2);
   Fixed snap_length = Fixed::from_int(1) / Fixed::from_int(5);

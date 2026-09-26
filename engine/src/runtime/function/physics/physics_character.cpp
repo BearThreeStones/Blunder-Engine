@@ -15,6 +15,19 @@ FixedVec3 slideAlong(FixedVec3 remaining, FixedVec3 normal) {
   return remaining - normal * n;
 }
 
+bool shapecastCharacter(const PhysicsWorld& world, const PhysicsCharacterMove& move,
+                        PhysicsTransform pose, FixedVec3 dir, Fixed length,
+                        PhysicsQueryHit& out_hit) {
+  if (move.shape == PhysicsSweepShape::Sphere) {
+    return world.shapecast(PhysicsSweepShape::Sphere, pose, FixedVec3{}, move.radius,
+                           Fixed::zero(), Fixed::zero(), dir, length, move.mask, false,
+                           out_hit);
+  }
+  return world.shapecast(PhysicsSweepShape::Capsule, pose, FixedVec3{}, Fixed::zero(),
+                         move.radius, move.half_height, dir, length, move.mask, false,
+                         out_hit);
+}
+
 }  // namespace
 
 PhysicsCharacterResult moveAndSlide(const PhysicsWorld& world, const PhysicsCharacterMove& move) {
@@ -35,9 +48,7 @@ PhysicsCharacterResult moveAndSlide(const PhysicsWorld& world, const PhysicsChar
     const Fixed length = sqrt(len_sq);
     const FixedVec3 dir = remaining / length;
     PhysicsQueryHit hit{};
-    const bool blocked =
-        world.shapecast(PhysicsSweepShape::Capsule, result.pose, FixedVec3{}, Fixed::zero(),
-                        move.radius, move.half_height, dir, length, move.mask, false, hit);
+    const bool blocked = shapecastCharacter(world, move, result.pose, dir, length, hit);
     if (!blocked) {
       result.pose.position = result.pose.position + remaining;
       break;
@@ -64,9 +75,7 @@ PhysicsCharacterResult moveAndSlide(const PhysicsWorld& world, const PhysicsChar
   if (move.snap_length.raw() > 0) {
     PhysicsQueryHit floor{};
     const FixedVec3 down(Fixed::zero(), Fixed::zero(), Fixed::from_int(-1));
-    if (world.shapecast(PhysicsSweepShape::Capsule, result.pose, FixedVec3{}, Fixed::zero(),
-                        move.radius, move.half_height, down, move.snap_length, move.mask, false,
-                        floor)) {
+    if (shapecastCharacter(world, move, result.pose, down, move.snap_length, floor)) {
       const Fixed up_dot = dot(floor.normal, worldUp());
       if (up_dot.raw() >= walkableDot().raw()) {
         Fixed travel = floor.distance - move.skin;

@@ -54,6 +54,14 @@ void emitCapsuleWire(float radius, float half_height, Fn&& fn) {
   fn(Vec3(0.0f, -r, -hh), Vec3(0.0f, -r, hh));
 }
 
+template <typename Fn>
+void emitSphereWire(float radius, Fn&& fn) {
+  const float r = std::max(radius, 1e-4f);
+  emitAxisRing(r, 0, 0.0f, fn);
+  emitAxisRing(r, 1, 0.0f, fn);
+  emitAxisRing(r, 2, 0.0f, fn);
+}
+
 }  // namespace collision_gizmo_detail
 
 template <typename Fn>
@@ -108,6 +116,10 @@ void forEachColliderWireSegment(const ColliderComponent& collider, Fn&& fn) {
 template <typename Fn>
 void forEachCharacterControllerWireSegment(const CharacterControllerComponent& cct,
                                            Fn&& fn) {
+  if (cct.shape == CharacterControllerShapeKind::Sphere) {
+    collision_gizmo_detail::emitSphereWire(cct.radius, fn);
+    return;
+  }
   collision_gizmo_detail::emitCapsuleWire(
       cct.radius, characterControllerHalfHeight(cct), fn);
 }
