@@ -223,12 +223,13 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
   const bool path_paper = textureUriIsPathPaperAlbedo(albedo_uri);
   const bool snow_paper = textureUriIsSnowPatchAlbedo(albedo_uri);
   const bool plateau_snow = textureUriIsPlateauSnowAlbedo(albedo_uri);
+  const bool wall_snow = textureUriIsWallSnowAlbedo(albedo_uri);
   const bool creek_paper = textureUriIsCreekPaperAlbedo(albedo_uri);
   const bool water_film = textureUriIsWaterSurfaceFilm(albedo_uri);
   const bool paper_card = !water_film &&
                           (roughness_only || paper_grain || path_paper ||
-                           snow_paper || plateau_snow || creek_paper ||
-                           material->isPaperCard());
+                           snow_paper || plateau_snow || wall_snow ||
+                           creek_paper || material->isPaperCard());
   if (paper_card) {
     mesh_ubo.metallic_roughness_factors.x = resolveImportedMetallicFactor(
         mesh_ubo.metallic_roughness_factors.x, GltfMaterialExtras{}, mr_uri);
@@ -300,8 +301,8 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
     mesh_ubo.material_flags.x = material->isUnlit() ? 1.0f : 0.0f;
     // y = has albedo map. Slot 0 is the smoke checker; untextured GEO
     // (snow patches) must use baseColorFactor, not bindless 0. Dummy paths,
-    // dummy snow patches, and plateau snow paper bind Godot albedo so this
-    // flag is 1 and COLOR_0 RGB is skipped.
+    // dummy snow patches, plateau snow, and wall snow paper bind Godot albedo so
+    // this flag is 1 and COLOR_0 RGB is skipped.
     mesh_ubo.material_flags.y =
         material->hasBaseColorTexture() ? 1.0f : 0.0f;
     mesh_ubo.material_flags.z = 0.0f;

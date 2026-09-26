@@ -68,8 +68,16 @@ void dummySnowPatchFallbackAlbedoRgb(float out[3]);
 /// Godot `snow_edge_plateau.tres` on `GEO-stone_plateau_snow_*`.
 bool materialNameIsSnowEdgePlateau(const char* name);
 
+/// Godot `snow_wall_top.tres` / `snow_edge_stone_wall.tres` on
+/// `GEO-stone_wall_snow_*`.
+bool materialNameIsWallSnow(const char* name);
+
 /// Godot `stone_plateau_albedo` paper on cliff snow overlays.
 bool textureUriIsPlateauSnowAlbedo(const char* uri);
+
+/// Godot `snow_edge_plateaus-albedo` paper on wall-snow mid-sections.
+/// `snow_wall_top` reuses `snow_gen_albedo-01` (`textureUriIsSnowPatchAlbedo`).
+bool textureUriIsWallSnowAlbedo(const char* uri);
 
 /// Godot remaps `creek_bed` / `creek_edge` onto `creek-bed.png` /
 /// `creek-snow_edge.png` paper. Water stays a film (`promoteWaterSurfaceFilmToOpaque`).

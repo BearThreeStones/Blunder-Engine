@@ -418,6 +418,16 @@ bool materialNameIsSnowEdgePlateau(const char* name) {
   return std::strcmp(name, "snow_edge_plateau") == 0;
 }
 
+bool materialNameIsWallSnow(const char* name) {
+  if (name == nullptr || name[0] == '\0') {
+    return false;
+  }
+  if (std::strcmp(name, "snow_wall_top") == 0) {
+    return true;
+  }
+  return std::strcmp(name, "snow_edge_stone_wall") == 0;
+}
+
 bool textureUriIsPlateauSnowAlbedo(const char* uri) {
   if (uri == nullptr || uri[0] == '\0') {
     return false;
@@ -434,6 +444,27 @@ bool textureUriIsPlateauSnowAlbedo(const char* uri) {
     return true;
   }
   return std::strstr(lower, "stone-plateau-albedo") != nullptr;
+}
+
+bool textureUriIsWallSnowAlbedo(const char* uri) {
+  if (uri == nullptr || uri[0] == '\0') {
+    return false;
+  }
+  char lower[512];
+  size_t n = 0;
+  while (uri[n] != '\0' && n + 1 < sizeof(lower)) {
+    lower[n] = uri[n];
+    ++n;
+  }
+  lower[n] = '\0';
+  asciiToLowerInPlace(lower);
+  if (std::strstr(lower, "snow_edge_plateaus-albedo") != nullptr) {
+    return true;
+  }
+  if (std::strstr(lower, "snow_edge_plateaus_albedo") != nullptr) {
+    return true;
+  }
+  return std::strstr(lower, "snow-edge-plateaus-albedo") != nullptr;
 }
 
 bool textureUriIsCreekPaperAlbedo(const char* uri) {

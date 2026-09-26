@@ -482,6 +482,39 @@ void plateauSnowAlbedoUriIsUnlitPaperMask() {
               ubo.metallic_roughness_factors.x < 0.01f);
 }
 
+void wallSnowAlbedoUriIsUnlitPaperMask() {
+  using namespace Blunder;
+  Asset::Meta albedo_meta;
+  albedo_meta.virtual_path =
+      "resources/se-world/assets/textures/snow_edge_plateaus-albedo.png";
+  auto albedo = eastl::make_shared<Texture2DAsset>(
+      eastl::move(albedo_meta), 1u, 1u, 4u,
+      eastl::vector<uint8_t>{245, 250, 255, 255});
+  AssetHandle albedo_handle;
+  albedo_handle.type = Asset::Type::Texture2D;
+  albedo_handle.key = albedo->getVirtualPath();
+  Asset::Meta mat_meta;
+  mat_meta.virtual_path =
+      "assets/Meshes/se-world/LI-stone_wall_004-m1p1.mesh.yaml#mat";
+  MaterialAsset snow(eastl::move(mat_meta), glm::vec4(1.0f), albedo_handle,
+                     albedo, nullptr, nullptr, nullptr, glm::vec3(0.15f),
+                     glm::vec3(1.0f), glm::vec3(0.04f), 32.0f, 1.0f, 1.0f,
+                     cgltf_alpha_mode_blend, 0.5f, false, false);
+
+  ForwardMeshUniformData ubo{};
+  ForwardFrameState frame{};
+  frame.live_scene_lighting = true;
+  applyPbrToMeshUniforms(ubo, &snow, {}, frame, cgltf_alpha_mode_blend, 0.5f,
+                         false);
+  expect_true("wall snow URI is unlit paper", ubo.material_flags.x > 0.5f);
+  expect_true("wall snow skips COLOR_0 RGB tint", ubo.material_flags.z > 0.5f);
+  expect_true("wall snow MASK cutout",
+              std::fabs(ubo.metallic_roughness_factors.w - 1.0f) < 1e-4f);
+  expect_true("wall snow samples albedo", ubo.material_flags.y > 0.5f);
+  expect_true("wall snow stays dielectric",
+              ubo.metallic_roughness_factors.x < 0.01f);
+}
+
 void packedOrmMapKeepsMetalChannel() {
   using namespace Blunder;
   Asset::Meta mr_meta;
@@ -632,6 +665,7 @@ int main() {
   creekAlbedoUriIsUnlitPaperMask();
   creekWaterFilmIsDielectricBlendNotPaperMask();
   plateauSnowAlbedoUriIsUnlitPaperMask();
+  wallSnowAlbedoUriIsUnlitPaperMask();
   packedOrmMapKeepsMetalChannel();
   assetInspectorRoutesGlobalHistory();
   undoFieldAndResetRestoreBag();

@@ -329,12 +329,27 @@ void resolvePolicy() {
               materialNameIsSnowEdgePlateau("snow_edge_plateau"));
   expect_true("dummy snow is not plateau snow",
               !materialNameIsSnowEdgePlateau("DUMMY-snow_patch_01"));
+  expect_true("snow_wall_top name", materialNameIsWallSnow("snow_wall_top"));
+  expect_true("snow_edge_stone_wall name",
+              materialNameIsWallSnow("snow_edge_stone_wall"));
+  expect_true("plateau snow is not wall snow",
+              !materialNameIsWallSnow("snow_edge_plateau"));
   expect_true("plateau albedo uri is paper snow",
               textureUriIsPlateauSnowAlbedo(
                   "resources/se-world/assets/lib/stone_plateau_albedo.png"));
   expect_true("snow_gen is not plateau albedo",
               !textureUriIsPlateauSnowAlbedo(
                   "resources/se-world/assets/textures/snow_gen_albedo-01.png"));
+  expect_true("wall snow edge albedo uri is paper",
+              textureUriIsWallSnowAlbedo(
+                  "resources/se-world/assets/textures/"
+                  "snow_edge_plateaus-albedo.png"));
+  expect_true("snow_gen is not wall-edge albedo",
+              !textureUriIsWallSnowAlbedo(
+                  "resources/se-world/assets/textures/snow_gen_albedo-01.png"));
+  expect_true("plateau albedo is not wall-edge albedo",
+              !textureUriIsWallSnowAlbedo(
+                  "resources/se-world/assets/lib/stone_plateau_albedo.png"));
   expect_true("creek-bed uri is creek paper",
               textureUriIsCreekPaperAlbedo(
                   "resources/se-world/assets/lib/textures/creek-bed.png"));
@@ -788,6 +803,104 @@ void importPlateauSnowMarksPaper() {
   fs::remove_all(project);
 }
 
+void writeWallSnowProject(const fs::path& project, const std::string& gltf,
+                          bool write_albedo) {
+  writeTextFile(project / "Resources" / "se-world" / "assets" / "lib" /
+                    "stone_walls" / "stone_walls" / "LI-stone_wall_004.gltf",
+                gltf);
+  if (write_albedo) {
+    writeBytes(project / "Resources" / "se-world" / "assets" / "textures" /
+                   "snow_edge_plateaus-albedo.png",
+               kMinimalPng, sizeof(kMinimalPng));
+  }
+  writeTextFile(project / "Assets" / "Meshes" / "se-world" /
+                    "LI-stone_wall_004-m1p1.mesh.yaml",
+                "type: Mesh\n"
+                "guid: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee95\n"
+                "source: resources/se-world/assets/lib/stone_walls/stone_walls/"
+                "LI-stone_wall_004.gltf\n"
+                "import:\n  materials: true\n  animations: false\n"
+                "  scale: 1\n  meshIndex: 1\n  primitiveIndex: 1\n");
+}
+
+std::string makeWallSnowGltf() {
+  return std::string(R"({
+  "asset": { "version": "2.0" },
+  "scene": 0,
+  "scenes": [{ "nodes": [0] }],
+  "nodes": [{ "mesh": 1 }],
+  "meshes": [
+    {
+      "name": "GEO-stone_wall_004",
+      "primitives": [{
+        "attributes": { "POSITION": 1 },
+        "indices": 0
+      }]
+    },
+    {
+      "name": "GEO-stone_wall_snow_004",
+      "primitives": [
+        {
+          "attributes": { "POSITION": 1 },
+          "indices": 0
+        },
+        {
+          "attributes": { "POSITION": 1 },
+          "indices": 0,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [{
+    "name": "snow_edge_stone_wall",
+    "alphaMode": "BLEND",
+    "extras": {
+      "material_info": {
+        "metallic": 0.0,
+        "paper_color": [1.0, 1.0, 1.0]
+      }
+    },
+    "pbrMetallicRoughness": {
+      "baseColorFactor": [1, 1, 1, 1],
+      "metallicFactor": 0,
+      "baseColorTexture": { "index": 0 }
+    }
+  }],
+  "textures": [{ "source": 0 }],
+  "images": [{ "uri": "../../../textures/snow_edge_plateaus-albedo.png" }],
+  )") + kTriangleAccessors + "\n}\n";
+}
+
+void importWallSnowMarksPaper() {
+  using namespace Blunder;
+  ensureLogger();
+  const fs::path project = makeTempProject("wallsnow");
+  writeWallSnowProject(project, makeWallSnowGltf(), true);
+  const eastl::shared_ptr<MeshAsset> mesh = loadMeshFromProject(
+      project, "assets/Meshes/se-world/LI-stone_wall_004-m1p1.mesh.yaml");
+  expect_true("wall snow mesh loads", mesh != nullptr);
+  const MaterialAsset* material =
+      mesh != nullptr ? mesh->getMaterialAsset().get() : nullptr;
+  expect_true("wall snow has material", material != nullptr);
+  if (material != nullptr) {
+    expect_true("wall snow binds albedo", material->hasBaseColorTexture());
+    expect_true("wall snow paper card", material->isPaperCard());
+    expect_true("wall snow two-sided", material->isDoubleSided());
+    expect_true("wall snow MASK cutout",
+                material->getAlphaMode() == cgltf_alpha_mode_mask);
+    expect_true("wall snow dielectric", material->getMetallicFactor() < 0.01f);
+    const eastl::shared_ptr<Texture2DAsset>& albedo =
+        material->getBaseColorTextureAsset();
+    expect_true(
+        "wall snow albedo uri",
+        albedo && albedo->getVirtualPath().find("snow_edge_plateaus-albedo.png") !=
+                      eastl::string::npos);
+  }
+  g_runtime_global_context.m_logger_system.reset();
+  fs::remove_all(project);
+}
+
 void importExplicitMetallicFactorZero() {
   using namespace Blunder;
   ensureLogger();
@@ -825,6 +938,7 @@ int main() {
   importDummySnowFallbackSnowFactor();
   importClearingSnowBindsAlbedo();
   importPlateauSnowMarksPaper();
+  importWallSnowMarksPaper();
   if (g_failures != 0) {
     std::fprintf(stderr, "%d gltf_material_extras_test failure(s)\n", g_failures);
     return 1;

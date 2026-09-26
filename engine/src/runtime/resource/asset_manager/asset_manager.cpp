@@ -625,6 +625,8 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
+  const bool plateau_snow = textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str());
+  const bool wall_snow = textureUriIsWallSnowAlbedo(sidecar.base_color_texture.c_str());
   const bool creek_paper = textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str());
   const bool water_film =
       textureUriIsWaterSurfaceFilm(sidecar.base_color_texture.c_str());
@@ -634,11 +636,9 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
            sidecar.metallic_roughness_texture.c_str()) ||
        textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
        textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str()) ||
-       textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
-       creek_paper)) {
+       plateau_snow || wall_snow || creek_paper)) {
     material->markPaperCard();
-    if (textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str()) ||
-        creek_paper) {
+    if (plateau_snow || wall_snow || creek_paper) {
       material->setDoubleSided(true);
     }
   }

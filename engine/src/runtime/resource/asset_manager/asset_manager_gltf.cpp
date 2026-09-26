@@ -462,6 +462,7 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
   bool dummy_path = materialNameIsDummyPath(material.name);
   bool dummy_snow = materialNameIsDummySnowPatch(material.name);
   bool plateau_snow = materialNameIsSnowEdgePlateau(material.name);
+  bool wall_snow = materialNameIsWallSnow(material.name);
   const char* bound_albedo_uri = nullptr;
   if (base_color_texture_asset) {
     bound_albedo_uri = base_color_texture_asset->getVirtualPath().c_str();
@@ -470,7 +471,10 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
         material.pbr_metallic_roughness.base_color_texture.texture);
   }
   bool creek_paper = textureUriIsCreekPaperAlbedo(bound_albedo_uri);
-  if (plateau_snow || creek_paper) {
+  if (!wall_snow) {
+    wall_snow = textureUriIsWallSnowAlbedo(bound_albedo_uri);
+  }
+  if (plateau_snow || wall_snow || creek_paper) {
     double_sided = true;
   }
   if (!base_color_texture_asset && dummy_path) {
@@ -571,10 +575,14 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
                                            extras.paper_color[1],
                                            extras.paper_color[2]));
   } else if (!water_film &&
-             (dummy_path || dummy_snow || plateau_snow || creek_paper ||
-              paper_grain_normal ||
+             (dummy_path || dummy_snow || plateau_snow || wall_snow ||
+              creek_paper || paper_grain_normal ||
               metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri) ||
               textureUriIsCreekPaperAlbedo(
+                  base_color_texture_asset
+                      ? base_color_texture_asset->getVirtualPath().c_str()
+                      : bound_albedo_uri) ||
+              textureUriIsWallSnowAlbedo(
                   base_color_texture_asset
                       ? base_color_texture_asset->getVirtualPath().c_str()
                       : bound_albedo_uri))) {
