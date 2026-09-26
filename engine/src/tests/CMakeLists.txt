@@ -1355,6 +1355,31 @@ target_precompile_headers(editor_camera_fly_test
 add_test(NAME editor_camera_fly_test
          COMMAND editor_camera_fly_test)
 
+add_executable(selection_focus_bounds_test
+    "selection_focus_bounds_test.cpp"
+)
+
+target_link_libraries(selection_focus_bounds_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(selection_focus_bounds_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(selection_focus_bounds_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(selection_focus_bounds_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME selection_focus_bounds_test
+         COMMAND selection_focus_bounds_test)
+
 add_executable(hierarchy_row_icons_test
     "hierarchy_row_icons_test.cpp"
 )

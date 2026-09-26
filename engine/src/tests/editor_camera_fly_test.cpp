@@ -223,6 +223,27 @@ int main() {
   }
 
   {
+    // Chocomel / dog-scale sphere (~1 m radius). Old floor of 10 m never zoomed in.
+    EditorCamera dog_cam(nullptr);
+    dog_cam.setViewportRect(0, 0, 1280.0f, 720.0f, 1280.0f, 720.0f);
+    dog_cam.snapLookAt(Vec3(40.0f, -30.0f, 20.0f), Vec3(0.0f, 0.0f, 0.0f));
+    const float dist_before = dog_cam.getDistance();
+    AABB dog{};
+    dog.min = Vec3(-0.5f, -0.5f, 0.0f);
+    dog.max = Vec3(0.5f, 0.5f, 1.5f);
+    dog_cam.snapFocusOnAABB(dog);
+    const float radius = glm::length(dog.extents());
+    expect_true("Dog snap looks at selection center",
+                glm::length(dog_cam.getFocalPoint() - dog.center()) < 1e-3f);
+    expect_true("Dog snap zooms closer than world-scale orbit",
+                dog_cam.getDistance() < dist_before &&
+                    dog_cam.getDistance() < 8.0f);
+    expect_true("Dog snap distance tracks selection radius",
+                dog_cam.getDistance() >= radius * 2.0f &&
+                    dog_cam.getDistance() <= radius * 3.5f);
+  }
+
+  {
     EditorCamera zoom_cam(nullptr);
     zoom_cam.snapLookAt(Vec3(-5500.0f, -6200.0f, 4200.0f),
                         Vec3(-60.0f, 40.0f, 650.0f));

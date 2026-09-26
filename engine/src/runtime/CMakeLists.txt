@@ -326,6 +326,7 @@ add_library(engine_runtime STATIC
     "function/scene/gpu_skinning.cpp"
     "function/editor/editor_selection_system.h"
     "function/editor/editor_selection_system.cpp"
+    "function/editor/selection_focus_bounds.h"
     "function/editor/inspector_transform_ops.h"
     "function/editor/inspector_transform_ops.cpp"
     "function/editor/inspector_asset_ops.h"

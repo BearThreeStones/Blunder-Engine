@@ -3,6 +3,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/function/editor/editor_scene_edit_system.h"
 #include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/selection_focus_bounds.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/physics/physics_manager.h"
 #include "runtime/function/physics/physics_world.h"
@@ -771,6 +772,44 @@ void dispatchMachineAdapter(const EditorSessionLaunch& launch,
       render->requestViewportRedraw();
     }
     fillVrsStatus(out);
+    succeed(out);
+    return;
+  }
+  // Same framing as editor F: selection AABB when selected, else world bounds.
+  if (verb == "focus") {
+    if (host.editor_camera == nullptr) {
+      fail(out, k_request_viewport_no_camera);
+      return;
+    }
+    SceneInstance* scene = host.live_scene;
+    if (scene == nullptr) {
+      fail(out, k_request_subject_no_live_document);
+      return;
+    }
+    scene->ensureWorldMatrices();
+    AABB focus_bounds{};
+    bool have_focus = false;
+    EditorSelectionSystem* selection =
+        g_runtime_global_context.m_editor_selection.get();
+    if (selection != nullptr && selection->hasSelection()) {
+      have_focus = computeSelectionFocusBounds(
+          *scene, selection->getSelectedIds(), focus_bounds);
+    }
+    if (!have_focus) {
+      if (!scene->hasWorldBounds()) {
+        scene->rebuildWorldBoundsFromMeshes();
+      }
+      if (scene->hasWorldBounds()) {
+        focus_bounds = scene->getWorldBounds();
+        have_focus = true;
+      }
+    }
+    if (!have_focus) {
+      fail(out, "focus.no_bounds");
+      return;
+    }
+    host.editor_camera->snapFocusOnAABB(focus_bounds);
+    fillCameraResult(*host.editor_camera, out);
     succeed(out);
     return;
   }

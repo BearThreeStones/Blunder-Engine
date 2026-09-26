@@ -19,6 +19,8 @@
 #include "runtime/core/event/mouse_event.h"
 #include "runtime/function/render/viewport_unproject.h"
 #include "runtime/platform/window/window_system.h"
+#include "runtime/function/editor/editor_selection_system.h"
+#include "runtime/function/editor/selection_focus_bounds.h"
 #include "runtime/function/global/global_context.h"
 #include "runtime/function/render/render_system.h"
 #include "runtime/function/scene/scene_instance.h"
@@ -331,11 +333,31 @@ bool EditorCamera::onKeyPressed(KeyPressedEvent& event) {
       SceneInstance* active_scene =
           g_runtime_global_context.m_scene_system->getActiveInstance();
       if (active_scene != nullptr) {
-        if (!active_scene->hasWorldBounds()) {
-          active_scene->rebuildWorldBoundsFromMeshes();
+        active_scene->ensureWorldMatrices();
+
+        AABB focus_bounds{};
+        bool have_focus = false;
+        if (g_runtime_global_context.m_editor_selection != nullptr &&
+            g_runtime_global_context.m_editor_selection->hasSelection()) {
+          have_focus = computeSelectionFocusBounds(
+              *active_scene,
+              g_runtime_global_context.m_editor_selection->getSelectedIds(),
+              focus_bounds);
         }
-        if (active_scene->hasWorldBounds()) {
-          snapFocusOnAABB(active_scene->getWorldBounds());
+
+        // No selection (or empty bounds): frame the whole scene, as before.
+        if (!have_focus) {
+          if (!active_scene->hasWorldBounds()) {
+            active_scene->rebuildWorldBoundsFromMeshes();
+          }
+          if (active_scene->hasWorldBounds()) {
+            focus_bounds = active_scene->getWorldBounds();
+            have_focus = true;
+          }
+        }
+
+        if (have_focus) {
+          snapFocusOnAABB(focus_bounds);
           return true;
         }
       }
@@ -878,11 +900,13 @@ void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
   // *below* the courtyard; 1.25*radius then parks inside a wing so gizmos
   // sit on the origin grid and the building is a corner slab. Look down from
   // a 3/4 at 3.4*radius so the whole mesh stays in frame.
+  // Small selections (dog ~1–2 m) must zoom in: the old 10 m floor left F
+  // looking like a no-op when framing Chocomel / other metre-scale entities.
   if (large_scene) {
     m_distance = std::max(radius * 3.4f, 6.0f);
     m_pitch = glm::radians(-32.0f);
   } else {
-    m_distance = std::max(radius * 2.5f, 10.0f);
+    m_distance = std::max(radius * 2.5f, 0.5f);
     m_pitch = glm::radians(28.0f);
   }
   m_yaw = glm::radians(-48.0f);
@@ -890,25 +914,28 @@ void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
   updateViewMatrix();
   updateProjectionMatrix();
 
-  const float min_eye_z =
-      bounds.min.z + glm::max(size.z * 0.12f, 2.0f);
-
   for (int attempt = 0; attempt < 8 && bounds.contains(m_position); ++attempt) {
     m_distance *= 1.2f;
     updateDirectionVectors();
     updateViewMatrix();
   }
 
-  if (m_position.z < min_eye_z) {
-    m_position.z = min_eye_z;
-    Vec3 to_focal = m_focal_point - m_position;
-    m_distance = glm::length(to_focal);
-    if (m_distance > 1e-4f) {
-      const Vec3 forward = to_focal / m_distance;
-      m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
-      m_yaw = std::atan2(forward.y, forward.x);
-      updateDirectionVectors();
-      updateViewMatrix();
+  // Lift the eye out of large building volumes only. A fixed +2 m floor on
+  // dog-sized AABBs pulled the camera back toward world scale.
+  if (large_scene) {
+    const float min_eye_z =
+        bounds.min.z + glm::max(size.z * 0.12f, 2.0f);
+    if (m_position.z < min_eye_z) {
+      m_position.z = min_eye_z;
+      Vec3 to_focal = m_focal_point - m_position;
+      m_distance = glm::length(to_focal);
+      if (m_distance > 1e-4f) {
+        const Vec3 forward = to_focal / m_distance;
+        m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+        m_yaw = std::atan2(forward.y, forward.x);
+        updateDirectionVectors();
+        updateViewMatrix();
+      }
     }
   }
 
