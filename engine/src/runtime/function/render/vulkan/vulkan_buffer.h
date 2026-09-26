@@ -49,6 +49,8 @@ class VulkanBuffer final {
               VkBufferUsageFlags usage, VmaMemoryUsage memory_usage);
   void destroy();
   void upload(const void* data, VkDeviceSize size);
+  /// Upload into a sub-range (e.g. dynamic UBO slot). Offset+size must fit.
+  void uploadAt(VkDeviceSize offset, const void* data, VkDeviceSize size);
   bool download(void* dst, VkDeviceSize size);
 
   VkBuffer getBuffer() const { return m_buffer; }

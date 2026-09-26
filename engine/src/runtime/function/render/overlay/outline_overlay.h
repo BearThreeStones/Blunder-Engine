@@ -49,6 +49,7 @@ class OutlineOverlay final : public Overlay {
   void destroyResolveRenderPass();
   void createDescriptorResources();
   void destroyDescriptorResources();
+  void writePrepassDescriptors();
   void writeResolveDescriptors(OffscreenRenderTarget* offscreen);
 
   VulkanContext* m_context{nullptr};
@@ -70,6 +71,8 @@ class OutlineOverlay final : public Overlay {
   VkDescriptorPool m_prepass_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorSet m_prepass_descriptor_set{VK_NULL_HANDLE};
   eastl::unique_ptr<class VulkanBuffer> m_prepass_uniform_buffer;
+  /// Soft cap so a huge selection cannot stall the editor (SE-world ~11k).
+  static constexpr uint32_t k_max_prepass_draws_per_frame = 16384u;
 
   VkRenderPass m_resolve_render_pass{VK_NULL_HANDLE};
   VkDescriptorSetLayout m_resolve_descriptor_layout{VK_NULL_HANDLE};
