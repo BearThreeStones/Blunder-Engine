@@ -176,7 +176,9 @@ uint64_t hashDrawIdentity(const GpuDrivenDraw* draws, uint32_t count) {
       hash = hashFloatBits(hash, material->getMetallicFactor());
       hash = hashFloatBits(hash, material->getRoughnessFactor());
       hash = hashFloatBits(hash, material->getAlphaCutoff());
+      hash = hashMix(hash, static_cast<uint32_t>(material->getAlphaMode()));
       hash = hashMix(hash, material->isUnlit() ? 1u : 0u);
+      hash = hashMix(hash, material->isPaperCard() ? 1u : 0u);
     }
   }
   return hash;
@@ -226,9 +228,13 @@ void fillInstance(GpuDrivenInstanceGpu& inst, const GpuDrivenDraw& draw,
                   BindlessTextureTable* table, VulkanTexture* fallback,
                   const ForwardFrameState& frame_state) {
   ForwardMeshUniformData ubo{};
-  applyPbrToMeshUniforms(ubo, draw.material.get(), frame_state.shading, frame_state,
-                         draw.alpha_mode, draw.alpha_cutoff, draw.double_sided,
-                         draw.entity_id);
+  const MaterialAsset* material = draw.material.get();
+  applyPbrToMeshUniforms(ubo, material, frame_state.shading, frame_state,
+                         material != nullptr ? material->getAlphaMode()
+                                             : draw.alpha_mode,
+                         material != nullptr ? material->getAlphaCutoff()
+                                             : draw.alpha_cutoff,
+                         draw.double_sided, draw.entity_id);
   inst.world = draw.model;
   inst.normal_matrix = glm::inverseTranspose(glm::mat4(glm::mat3(draw.model)));
   auto bindless_index = [&](VulkanTexture* texture) -> uint32_t {
@@ -245,12 +251,11 @@ void fillInstance(GpuDrivenInstanceGpu& inst, const GpuDrivenDraw& draw,
   inst.metallic_roughness_factors = ubo.metallic_roughness_factors;
   inst.pbr_texture_flags = ubo.pbr_texture_flags;
   inst.material_flags = ubo.material_flags;
-  inst.pbr_texture_flags.x =
-      inst.bindless_texture_indices.y != 0 ? 1.0f : 0.0f;
-  inst.pbr_texture_flags.y =
-      inst.bindless_texture_indices.z != 0 ? 1.0f : 0.0f;
-  inst.pbr_texture_flags.z =
-      inst.bindless_texture_indices.w != 0 ? 1.0f : 0.0f;
+  // Bindless 0 is the checker fallback, not a PBR map. Keep material_flags.z
+  // (roughness-only) so the shader still skips ORM B-as-metal, and do not
+  // re-enable paper_rough as a tangent normal.
+  applyBindlessPbrMapFlags(inst.pbr_texture_flags, inst.bindless_texture_indices,
+                           inst.material_flags);
   inst.receiver_id = draw.receiver_id;
   inst.flags = draw.double_sided ? k_gpu_driven_flag_two_sided : 0u;
 }

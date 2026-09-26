@@ -273,6 +273,202 @@ void testNestedLibraryAndMissingFile() {
   fs::remove_all(root);
 }
 
+std::string twoMeshPlateauLibraryGltf() {
+  return std::string(R"({
+  "asset": { "version": "2.0" },
+  "meshes": [
+    {
+      "name": "Cube",
+      "primitives": [{ "attributes": { "POSITION": 1 }, "indices": 0 }]
+    },
+    {
+      "name": "Cube.007",
+      "primitives": [{ "attributes": { "POSITION": 1 }, "indices": 0 }]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
+  ],
+  "buffers": [{
+    "byteLength": 44,
+    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
+  }],
+  "scene": 0,
+  "scenes": [{ "name": "LI-stone_plateau_001", "nodes": [0, 1] }],
+  "nodes": [
+    { "name": "GEO-stone_plateau_001", "mesh": 0 },
+    { "name": "GEO-stone_plateau_snow_001", "mesh": 1, "translation": [0, 0.16, 0] }
+  ]
+}
+)");
+}
+
+void testStonePlateauLibraryExpandsDeckGeo() {
+  using namespace Blunder;
+  const fs::path root = makeTempRoot("plateau");
+  writeTextFile(root / "assets" / "lib" / "stone_plateaus" /
+                    "LI-stone_plateau_001.gltf",
+                twoMeshPlateauLibraryGltf());
+  writeTextFile(root / "SE-world.gltf", triangleGltfNodes(
+      R"([
+        { "name": "LI-stone_plateau_001",
+          "extras": { "instance_asset_id": "263f28f5235b5572" },
+          "translation": [10, 0, 0] }
+      ])",
+      "SE-world", "[0]"));
+  writeTextFile(root / "asset_index.json",
+                assetIndexTwo("263f28f5235b5572",
+                              "assets/lib/stone_plateaus/LI-stone_plateau_001.gltf",
+                              nullptr, nullptr));
+
+  SeWorldFlattenOptions options;
+  options.layout_gltf = root / "SE-world.gltf";
+  options.asset_index_json = root / "asset_index.json";
+  options.godot_root = root;
+  Scene scene;
+  const SeWorldFlattenStats stats = bakeSeWorldFlattenScene(options, scene);
+  expect_true("plateau bake ok", stats.success);
+  const SceneEntityDefinition* instance = findEntity(scene, "LI-stone_plateau_001");
+  const SceneEntityDefinition* body = findEntity(scene, "GEO-stone_plateau_001");
+  const SceneEntityDefinition* deck =
+      findEntity(scene, "GEO-stone_plateau_snow_001");
+  expect_true("plateau instance grouping",
+              instance != nullptr && instance->mesh_virtual_path.empty());
+  expect_true("plateau body GEO restored",
+              body != nullptr && !body->mesh_virtual_path.empty() &&
+                  body->parent_name == "LI-stone_plateau_001");
+  expect_true("plateau snow deck GEO restored",
+              deck != nullptr && !deck->mesh_virtual_path.empty() &&
+                  deck->parent_name == "LI-stone_plateau_001");
+  expect_true("plateau body and deck are distinct meshes",
+              body != nullptr && deck != nullptr &&
+                  body->mesh_virtual_path != deck->mesh_virtual_path);
+  expect_true("plateau deck keeps local up offset",
+              deck != nullptr && std::fabs(deck->position.z - 0.16f) < 1e-4f);
+  fs::remove_all(root);
+}
+
+std::string twoMeshWallLibraryGltf() {
+  return std::string(R"({
+  "asset": { "version": "2.0" },
+  "meshes": [
+    {
+      "name": "Plane.004",
+      "primitives": [{ "attributes": { "POSITION": 1 }, "indices": 0 }]
+    },
+    {
+      "name": "Plane.016",
+      "primitives": [
+        { "attributes": { "POSITION": 1 }, "indices": 0 },
+        { "attributes": { "POSITION": 1 }, "indices": 0 }
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    }
+  ],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 6 },
+    { "buffer": 0, "byteOffset": 8, "byteLength": 36 }
+  ],
+  "buffers": [{
+    "byteLength": 44,
+    "uri": "data:application/octet-stream;base64,AAABAAIAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/"
+  }],
+  "scene": 0,
+  "scenes": [{ "name": "LI-stone_wall_004", "nodes": [0, 1] }],
+  "nodes": [
+    { "name": "GEO-stone_wall_004", "mesh": 0 },
+    { "name": "GEO-stone_wall_snow_004", "mesh": 1, "translation": [0.06, -0.05, 0] }
+  ]
+}
+)");
+}
+
+void testStoneWallLibraryExpandsSnowGeo() {
+  using namespace Blunder;
+  const fs::path root = makeTempRoot("wallsnow");
+  writeTextFile(root / "assets" / "lib" / "stone_walls" / "stone_walls" /
+                    "LI-stone_wall_004.gltf",
+                twoMeshWallLibraryGltf());
+  writeTextFile(root / "SE-world.gltf", triangleGltfNodes(
+      R"([
+        { "name": "LI-stone_wall_004",
+          "extras": { "instance_asset_id": "3b36775e9abdceeb" },
+          "translation": [14, 0, 0] }
+      ])",
+      "SE-world", "[0]"));
+  writeTextFile(root / "asset_index.json",
+                assetIndexTwo("3b36775e9abdceeb",
+                              "assets/lib/stone_walls/stone_walls/"
+                              "LI-stone_wall_004.gltf",
+                              nullptr, nullptr));
+
+  SeWorldFlattenOptions options;
+  options.layout_gltf = root / "SE-world.gltf";
+  options.asset_index_json = root / "asset_index.json";
+  options.godot_root = root;
+  Scene scene;
+  const SeWorldFlattenStats stats = bakeSeWorldFlattenScene(options, scene);
+  expect_true("wall bake ok", stats.success);
+  const SceneEntityDefinition* instance = findEntity(scene, "LI-stone_wall_004");
+  const SceneEntityDefinition* body = findEntity(scene, "GEO-stone_wall_004");
+  const SceneEntityDefinition* snow =
+      findEntity(scene, "GEO-stone_wall_snow_004");
+  const SceneEntityDefinition* snow_edge =
+      findEntity(scene, "GEO-stone_wall_snow_004_1");
+  expect_true("wall instance grouping",
+              instance != nullptr && instance->mesh_virtual_path.empty());
+  expect_true("wall body GEO restored",
+              body != nullptr && !body->mesh_virtual_path.empty() &&
+                  body->parent_name == "LI-stone_wall_004");
+  expect_true("wall snow GEO restored",
+              snow != nullptr && !snow->mesh_virtual_path.empty() &&
+                  snow->parent_name == "LI-stone_wall_004");
+  expect_true("wall snow edge primitive restored",
+              snow_edge != nullptr && !snow_edge->mesh_virtual_path.empty() &&
+                  snow_edge->parent_name == "LI-stone_wall_004");
+  expect_true("wall body and snow are distinct meshes",
+              body != nullptr && snow != nullptr &&
+                  body->mesh_virtual_path != snow->mesh_virtual_path);
+  expect_true("wall snow prims are distinct meshes",
+              snow != nullptr && snow_edge != nullptr &&
+                  snow->mesh_virtual_path != snow_edge->mesh_virtual_path);
+  expect_true("wall snow keeps local offset",
+              snow != nullptr && std::fabs(snow->position.x - 0.06f) < 1e-4f);
+  fs::remove_all(root);
+}
+
 void testMetresAndNegativeScale() {
   using namespace Blunder;
   const fs::path root = makeTempRoot("trs");
@@ -727,6 +923,8 @@ int main() {
   testBakerTwoInstancesUniqueNames();
   testSkipMissingId();
   testNestedLibraryAndMissingFile();
+  testStonePlateauLibraryExpandsDeckGeo();
+  testStoneWallLibraryExpandsSnowGeo();
   testMetresAndNegativeScale();
   testBakerOmitsColEntities();
   testColSkipAndExtrasIgnoredOnImport();

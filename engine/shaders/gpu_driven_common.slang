@@ -9,7 +9,7 @@ struct GpuDrivenInstanceGpu
     float4 baseColorFactor;
     float4 metallicRoughnessFactors;
     float4 pbrTextureFlags;
-    float4 materialFlags;  // x unlit, y has albedo map
+    float4 materialFlags;  // x unlit/paper, y albedo map, z roughness-only MR
     uint receiverId;
     uint flags;
     uint meshletOffset;

@@ -8,7 +8,7 @@ struct GBufferUniformData
     float4x4 projection;
     float4x4 normalMatrix;
     float4 baseColorFactor;
-    float4 materialFlags;
+    float4 materialFlags;  // x unlit, y albedo map, z roughness-only MR
     float4 metallicRoughnessFactors;
     float4 pbrTextureFlags;
     uint4 bindlessTextureIndices;
@@ -138,10 +138,10 @@ GBufferOutput fragmentMain(VertexOutput input)
     float4 sampledAo = sampleBindless(inst.bindlessTextureIndices.w, input.uv);
     float4 baseSample = inst.materialFlags.y > 0.5 ? sampledAlbedo : float4(1.0, 1.0, 1.0, 1.0);
     float3 albedo = applyVertexColorToAlbedo(
-        baseSample.rgb * inst.baseColorFactor.rgb, input.color.rgb,
-        inst.materialFlags.y);
+        baseSample.rgb * inst.baseColorFactor.rgb, input.color,
+        inst.materialFlags.y, inst.materialFlags.z);
     float alpha = baseSample.a * inst.baseColorFactor.a * input.color.a;
-    clipPackedVertexColorCoverage(input.color.rgb, inst.materialFlags.y);
+    clipPackedVertexColorCoverage(input.color, inst.materialFlags.y);
 
     if (inst.metallicRoughnessFactors.w > 0.5 &&
         inst.metallicRoughnessFactors.w < 1.5)
@@ -154,7 +154,18 @@ GBufferOutput fragmentMain(VertexOutput input)
     if (inst.pbrTextureFlags.x > 0.5)
     {
         roughness *= sampledMr.g;
-        metallic *= sampledMr.b;
+        if (inst.materialFlags.z > 0.5)
+        {
+            metallic = 0.0;
+        }
+        else
+        {
+            metallic *= sampledMr.b;
+        }
+    }
+    if (inst.materialFlags.z > 0.5)
+    {
+        metallic = 0.0;
     }
 
     float ao = inst.pbrTextureFlags.z > 0.5 ? sampledAo.r : 1.0;

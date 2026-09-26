@@ -15,6 +15,7 @@
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
 #include "runtime/platform/file_system/file_system.h"
+#include "runtime/resource/asset/gltf_material_extras.h"
 #include "runtime/resource/asset/mesh_asset.h"
 
 namespace Blunder {
@@ -75,6 +76,35 @@ const cgltf_attribute* findPrimitiveAttribute(const cgltf_primitive& primitive,
 
 bool isDataUri(const char* uri) {
   return uri != nullptr && std::strncmp(uri, "data:", 5) == 0;
+}
+
+bool copyGltfMaterialExtrasJson(const cgltf_data* data, const cgltf_extras& extras,
+                                eastl::string& out_json) {
+  if (data == nullptr) {
+    return false;
+  }
+  cgltf_size size = 0;
+  cgltf_copy_extras_json(data, &extras, nullptr, &size);
+  if (size <= 1) {
+    return false;
+  }
+  out_json.resize(size);
+  if (cgltf_copy_extras_json(data, &extras, out_json.data(), &size) !=
+      cgltf_result_success) {
+    out_json.clear();
+    return false;
+  }
+  if (!out_json.empty() && out_json.back() == '\0') {
+    out_json.pop_back();
+  }
+  return !out_json.empty();
+}
+
+const char* gltfTextureImageUri(const cgltf_texture* texture) {
+  if (texture == nullptr || texture->image == nullptr) {
+    return nullptr;
+  }
+  return texture->image->uri;
 }
 
 void computeMeshTangents(eastl::vector<MeshVertex>& vertices,
@@ -402,6 +432,8 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
         return bindTexture2D(texture_virtual_path);
       };
 
+  const char* metallic_roughness_uri = nullptr;
+  bool used_pbr_metallic_roughness = false;
   if (material.has_pbr_specular_glossiness) {
     const cgltf_pbr_specular_glossiness& sg = material.pbr_specular_glossiness;
     base_color_factor =
@@ -413,35 +445,111 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
     base_color_texture_asset = loadGltfImageTexture(sg.diffuse_texture.texture);
   } else if (material.has_pbr_metallic_roughness) {
     const cgltf_pbr_metallic_roughness& pbr = material.pbr_metallic_roughness;
+    used_pbr_metallic_roughness = true;
     base_color_factor =
         glm::vec4(pbr.base_color_factor[0], pbr.base_color_factor[1],
                   pbr.base_color_factor[2], pbr.base_color_factor[3]);
     metallic_factor = pbr.metallic_factor;
     roughness_factor = pbr.roughness_factor;
+    base_color_texture_asset =
+        loadGltfImageTexture(pbr.base_color_texture.texture);
+    metallic_roughness_texture_asset =
+        loadGltfImageTexture(pbr.metallic_roughness_texture.texture);
+    metallic_roughness_uri =
+        gltfTextureImageUri(pbr.metallic_roughness_texture.texture);
+  }
+
+  bool dummy_path = materialNameIsDummyPath(material.name);
+  bool dummy_snow = materialNameIsDummySnowPatch(material.name);
+  bool plateau_snow = materialNameIsSnowEdgePlateau(material.name);
+  bool wall_snow = materialNameIsWallSnow(material.name);
+  const char* bound_albedo_uri = nullptr;
+  if (base_color_texture_asset) {
+    bound_albedo_uri = base_color_texture_asset->getVirtualPath().c_str();
+  } else if (material.has_pbr_metallic_roughness) {
+    bound_albedo_uri = gltfTextureImageUri(
+        material.pbr_metallic_roughness.base_color_texture.texture);
+  }
+  bool creek_paper = textureUriIsCreekPaperAlbedo(bound_albedo_uri);
+  if (!wall_snow) {
+    wall_snow = textureUriIsWallSnowAlbedo(bound_albedo_uri);
+  }
+  if (plateau_snow || wall_snow || creek_paper) {
+    double_sided = true;
+  }
+  if (!base_color_texture_asset && dummy_path) {
+    if (const char* file = dummyPathAlbedoFileName(material.name)) {
+      eastl::string virtual_path("resources/se-world/assets/lib/textures/");
+      virtual_path.append(file);
+      base_color_texture_asset = bindTexture2D(virtual_path);
+      if (base_color_texture_asset) {
+        LOG_INFO("[AssetManager] dummy path {} albedo {}", material.name,
+                 virtual_path.c_str());
+        base_color_factor = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+        alpha_mode = cgltf_alpha_mode_mask;
+        if (alpha_cutoff < 0.04f) {
+          alpha_cutoff = 0.5f;
+        }
+      }
+    }
+    if (!base_color_texture_asset) {
+      float rgb[3] = {0.55f, 0.38f, 0.28f};
+      dummyPathFallbackAlbedoRgb(rgb);
+      base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
+      LOG_WARN("[AssetManager] dummy path {} missing albedo, dirt factor",
+               material.name != nullptr ? material.name : "DUMMY-path");
+    }
+  }
+  if (!base_color_texture_asset && dummy_snow) {
+    if (const char* file = dummySnowPatchAlbedoFileName(material.name)) {
+      eastl::string virtual_path("resources/se-world/assets/textures/");
+      virtual_path.append(file);
+      base_color_texture_asset = bindTexture2D(virtual_path);
+      if (base_color_texture_asset) {
+        LOG_INFO("[AssetManager] dummy snow {} albedo {}", material.name,
+                 virtual_path.c_str());
+        float rgb[3] = {0.92f, 0.971f, 1.0f};
+        dummySnowPatchFallbackAlbedoRgb(rgb);
+        base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
+        alpha_mode = cgltf_alpha_mode_mask;
+        if (alpha_cutoff < 0.04f) {
+          alpha_cutoff = 0.5f;
+        }
+      }
+    }
+    if (!base_color_texture_asset) {
+      float rgb[3] = {0.92f, 0.971f, 1.0f};
+      dummySnowPatchFallbackAlbedoRgb(rgb);
+      base_color_factor = glm::vec4(rgb[0], rgb[1], rgb[2], 1.0f);
+      LOG_WARN("[AssetManager] dummy snow {} missing albedo, snow factor",
+               material.name != nullptr ? material.name : "DUMMY-snow_patch");
+    }
+  }
+
+  GltfMaterialExtras extras{};
+  eastl::string extras_json;
+  if (copyGltfMaterialExtrasJson(data, material.extras, extras_json)) {
+    parseGltfMaterialExtrasJson(extras_json.c_str(), extras_json.size(), extras);
+  }
+  metallic_factor = resolveImportedMetallicFactor(
+      metallic_factor, extras, metallic_roughness_uri);
+  roughness_factor = resolveImportedRoughnessFactor(roughness_factor, extras);
+  const char* normal_uri =
+      gltfTextureImageUri(material.normal_texture.texture);
+  const bool paper_grain_normal = textureUriIsPaperGrain(normal_uri);
+  if (used_pbr_metallic_roughness) {
     const float metallic = metallic_factor;
     specular_color =
         glm::vec3(0.04f) * (1.0f - metallic) +
         glm::vec3(base_color_factor.x, base_color_factor.y, base_color_factor.z) *
             metallic;
     shininess = 8.0f + (256.0f - 8.0f) * (1.0f - roughness_factor);
-    base_color_texture_asset =
-        loadGltfImageTexture(pbr.base_color_texture.texture);
-    metallic_roughness_texture_asset =
-        loadGltfImageTexture(pbr.metallic_roughness_texture.texture);
   }
 
-  normal_texture_asset = loadGltfImageTexture(material.normal_texture.texture);
+  if (!paper_grain_normal) {
+    normal_texture_asset = loadGltfImageTexture(material.normal_texture.texture);
+  }
   occlusion_texture_asset = loadGltfImageTexture(material.occlusion_texture.texture);
-
-  if (alpha_mode == cgltf_alpha_mode_blend && base_color_factor.a >= 0.999f) {
-    // Blender tags solid meshes as BLEND (skips depth write). Foliage cards
-    // keep a base-color texture with alpha — MASK punches the cutout.
-    if (base_color_texture_asset) {
-      alpha_mode = cgltf_alpha_mode_mask;
-    } else {
-      alpha_mode = cgltf_alpha_mode_opaque;
-    }
-  }
 
   if (base_color_texture_asset) {
     base_color_texture_handle =
@@ -458,6 +566,30 @@ eastl::shared_ptr<MaterialAsset> AssetManager::loadGltfMaterial(
       normal_texture_asset, occlusion_texture_asset, ambient_color, diffuse_color,
       specular_color, shininess, metallic_factor, roughness_factor, alpha_mode,
       alpha_cutoff, double_sided, unlit);
+  material_asset->promoteOpaqueTexturedBlendToMask();
+  const bool water_film = textureUriIsWaterSurfaceFilm(
+      base_color_texture_asset ? base_color_texture_asset->getVirtualPath().c_str()
+                               : bound_albedo_uri);
+  if (extras.has_paper_color && !water_film) {
+    material_asset->setPaperColor(glm::vec3(extras.paper_color[0],
+                                           extras.paper_color[1],
+                                           extras.paper_color[2]));
+  } else if (!water_film &&
+             (dummy_path || dummy_snow || plateau_snow || wall_snow ||
+              creek_paper || paper_grain_normal ||
+              metallicRoughnessUriIsRoughnessOnly(metallic_roughness_uri) ||
+              textureUriIsCreekPaperAlbedo(
+                  base_color_texture_asset
+                      ? base_color_texture_asset->getVirtualPath().c_str()
+                      : bound_albedo_uri) ||
+              textureUriIsWallSnowAlbedo(
+                  base_color_texture_asset
+                      ? base_color_texture_asset->getVirtualPath().c_str()
+                      : bound_albedo_uri))) {
+    material_asset->markPaperCard();
+  }
+  // After extras: ice becomes opaque; creek water stays BLEND dielectric
+  // (near-black albedo must not cover creek-bed paper).
   material_asset->promoteWaterSurfaceFilmToOpaque();
   m_material_cache[material_key] = material_asset;
   return material_asset;

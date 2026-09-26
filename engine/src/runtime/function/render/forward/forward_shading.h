@@ -47,7 +47,7 @@ struct ForwardMeshUniformData {
   glm::vec4 ambient_color{0.15f, 0.15f, 0.15f, 0.0f};
   glm::vec4 diffuse_color{0.85f, 0.85f, 0.85f, 0.0f};
   glm::vec4 specular_color_and_shininess{0.4f, 0.4f, 0.4f, 32.0f};
-  glm::vec4 material_flags{0.0f};  // x unlit, y has base-color texture
+  glm::vec4 material_flags{0.0f};  // x unlit/paper, y albedo map, z roughness-only MR
   glm::mat4 normal_matrix{1.0f};
   glm::mat4 light_view_projection{1.0f};
   glm::vec4 shadow_params{0.0f};
@@ -96,6 +96,19 @@ void applyPbrToMeshUniforms(ForwardMeshUniformData& mesh_ubo,
                             cgltf_alpha_mode alpha_mode, float alpha_cutoff,
                             bool double_sided,
                             EntityId mesh_entity_id = k_invalid_entity_id);
+
+/// GPU pack: roughness-named MR maps are not glTF ORM. Zero spec-default
+/// metal, skip B-as-metal (`material_flags.z`), MASK cutout, two-sided cards.
+/// Paper grain in the normal slot is not a tangent map; those cards are unlit
+/// albedo * paper_color so Lambert/VSM cannot zero them.
+void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
+                                 const MaterialAsset* material);
+
+/// Bindless 0 is the checker fallback. Roughness-only / paper cards keep
+/// `pbr_texture_flags.y` off so `paper_rough` cannot be sampled as a normal.
+void applyBindlessPbrMapFlags(glm::vec4& pbr_texture_flags,
+                              const glm::uvec4& bindless_indices,
+                              const glm::vec4& material_flags);
 
 float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
                                            const glm::vec3& light_direction);

@@ -3,6 +3,7 @@
 #include "runtime/function/scene/scene_serializer.h"
 #include "runtime/resource/asset/scene_asset.h"
 #include "runtime/resource/asset/asset_yaml.h"
+#include "runtime/resource/asset/gltf_material_extras.h"
 #include "runtime/resource/asset/mesh_material_override.h"
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 #include "runtime/resource/asset_cook/mesh_cooker.h"
@@ -539,6 +540,7 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
     return false;
   }
   if (mesh->getMaterialAsset()) {
+    mesh->getMaterialAsset()->promoteWaterSurfaceFilmToOpaque();
     return true;
   }
   const std::filesystem::path path = cookedMeshMaterialPath(*m_file_system, guid);
@@ -553,6 +555,40 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   if (!AssetYaml::parseMeshCookedMaterialSidecar(yaml_text, sidecar)) {
     return false;
   }
+  sidecar.metallic_factor = resolveImportedMetallicFactor(
+      sidecar.metallic_factor, GltfMaterialExtras{},
+      sidecar.metallic_roughness_texture.c_str());
+
+  if (sidecar.base_color_texture.empty()) {
+    bool dummy_paper_set =
+        meshSourceLooksLikeDummyPathSet(mesh->getVirtualPath().c_str()) ||
+        meshSourceLooksLikeDummySnowPatchSet(mesh->getVirtualPath().c_str()) ||
+        meshSourceLooksLikeWorldCreek(mesh->getVirtualPath().c_str());
+    if (!dummy_paper_set && !mesh->getAbsolutePath().empty()) {
+      const auto abs = mesh->getAbsolutePath().generic_string();
+      dummy_paper_set = meshSourceLooksLikeDummyPathSet(abs.c_str()) ||
+                        meshSourceLooksLikeDummySnowPatchSet(abs.c_str()) ||
+                        meshSourceLooksLikeWorldCreek(abs.c_str());
+    }
+    if (!dummy_paper_set) {
+      eastl::string yaml_text;
+      MeshAssetDescriptor descriptor{};
+      if (!mesh->getAbsolutePath().empty() &&
+          m_file_system->readText(mesh->getAbsolutePath(), yaml_text) &&
+          AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
+        dummy_paper_set =
+            meshSourceLooksLikeDummyPathSet(descriptor.source.c_str()) ||
+            meshSourceLooksLikeDummySnowPatchSet(descriptor.source.c_str()) ||
+            meshSourceLooksLikeWorldCreek(descriptor.source.c_str());
+      }
+    }
+    if (dummy_paper_set) {
+      // Godot remaps DUMMY-path-* / DUMMY-snow_patch_* onto paper albedo, and
+      // SL-world-creek onto creek-bed / creek-snow_edge / water albedo. Old
+      // sidecars stored empty URIs, so re-hydrate.
+      return false;
+    }
+  }
 
   auto loadSlot = [this](const eastl::string& virtual_path)
       -> eastl::shared_ptr<Texture2DAsset> {
@@ -563,9 +599,14 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
   };
   eastl::shared_ptr<Texture2DAsset> base_color =
       loadSlot(sidecar.base_color_texture);
-  eastl::shared_ptr<Texture2DAsset> metallic_roughness;
-  eastl::shared_ptr<Texture2DAsset> normal;
-  eastl::shared_ptr<Texture2DAsset> occlusion;
+  eastl::shared_ptr<Texture2DAsset> metallic_roughness =
+      loadSlot(sidecar.metallic_roughness_texture);
+  eastl::shared_ptr<Texture2DAsset> normal =
+      textureUriIsPaperGrain(sidecar.normal_texture.c_str())
+          ? nullptr
+          : loadSlot(sidecar.normal_texture);
+  eastl::shared_ptr<Texture2DAsset> occlusion =
+      loadSlot(sidecar.occlusion_texture);
   AssetHandle base_color_handle;
   if (base_color) {
     base_color_handle =
@@ -584,6 +625,24 @@ bool AssetManager::applyCookedMeshMaterialSidecar(
       sidecar.metallic_factor, sidecar.roughness_factor,
       static_cast<cgltf_alpha_mode>(sidecar.alpha_mode), sidecar.alpha_cutoff,
       sidecar.double_sided, sidecar.unlit);
+  const bool plateau_snow = textureUriIsPlateauSnowAlbedo(sidecar.base_color_texture.c_str());
+  const bool wall_snow = textureUriIsWallSnowAlbedo(sidecar.base_color_texture.c_str());
+  const bool creek_paper = textureUriIsCreekPaperAlbedo(sidecar.base_color_texture.c_str());
+  const bool water_film =
+      textureUriIsWaterSurfaceFilm(sidecar.base_color_texture.c_str());
+  if (!water_film &&
+      (textureUriIsPaperGrain(sidecar.normal_texture.c_str()) ||
+       metallicRoughnessUriIsRoughnessOnly(
+           sidecar.metallic_roughness_texture.c_str()) ||
+       textureUriIsPathPaperAlbedo(sidecar.base_color_texture.c_str()) ||
+       textureUriIsSnowPatchAlbedo(sidecar.base_color_texture.c_str()) ||
+       plateau_snow || wall_snow || creek_paper)) {
+    material->markPaperCard();
+    if (plateau_snow || wall_snow || creek_paper) {
+      material->setDoubleSided(true);
+    }
+  }
+  material->promoteOpaqueTexturedBlendToMask();
   material->promoteWaterSurfaceFilmToOpaque();
   mesh->setMaterialAsset(eastl::move(material));
   if (!sidecar.base_color_texture.empty() && mesh->getMaterialAsset() &&

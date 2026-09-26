@@ -1056,6 +1056,31 @@ target_precompile_headers(gltf_color0_import_test
 add_test(NAME gltf_color0_import_test
          COMMAND gltf_color0_import_test)
 
+add_executable(gltf_material_extras_test
+    "gltf_material_extras_test.cpp"
+)
+
+target_link_libraries(gltf_material_extras_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(gltf_material_extras_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(gltf_material_extras_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(gltf_material_extras_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME gltf_material_extras_test
+         COMMAND gltf_material_extras_test)
+
 add_executable(scene_soft_delete_test
     "scene_soft_delete_test.cpp"
 )

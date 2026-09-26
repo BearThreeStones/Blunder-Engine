@@ -88,6 +88,19 @@ bool isLibraryOrPropFilepath(const eastl::string& filepath) {
          lower.find("assets/props/") != eastl::string::npos;
 }
 
+/// Godot cliff libraries keep two GEO meshes: the rock body plus a snow
+/// overlay (`GEO-stone_plateau_snow_*` / `GEO-stone_wall_snow_*`). Other
+/// library items stay one MeshRenderer on the instance so foliage cards
+/// do not explode the scene.
+bool looksLikeMultiGeoCliffLibrary(const fs::path& path) {
+  const eastl::string lower =
+      toLowerCopy(genericSlash(eastl::string(path.generic_string().c_str())));
+  return lower.find("stone_plateaus/") != eastl::string::npos ||
+         lower.find("li-stone_plateau") != eastl::string::npos ||
+         lower.find("stone_walls/") != eastl::string::npos ||
+         lower.find("li-stone_wall") != eastl::string::npos;
+}
+
 eastl::string jsonStringAfterKey(const char* object_begin, const char* object_end,
                                  const char* key) {
   eastl::string out;
@@ -661,10 +674,13 @@ struct FlattenBaker {
     bakeNodeLocal(node, position, rotation, scale);
     const eastl::string stem = gltfNodeDisplayName(node);
     eastl::string mesh_guid;
-    if (child_kind == FlattenKind::library) {
+    if (child_kind == FlattenKind::library &&
+        !looksLikeMultiGeoCliffLibrary(absolute)) {
       // Layout LI/PR keep one MeshRenderer on the instance (pre-pond bake).
       // Expanding every library GEO as a child exploded SE-world to 41k
       // entities and AV'd GPU-driven capture. Set GEO still expands below.
+      // Cliff library glTFs are the exception: mesh 0 is the rock body,
+      // mesh 1 is the snow overlay (plateau deck / wall snow).
       mesh_guid = firstDrawableMeshGuid(child_data, absolute);
     }
     const eastl::string entity_name =
@@ -702,7 +718,10 @@ struct FlattenBaker {
     }
 
     eastl::string current_parent = parent_name;
-    if (parent_kind != FlattenKind::library && nodeHasDrawableMesh(node) &&
+    const bool expand_drawable_geo =
+        parent_kind != FlattenKind::library ||
+        looksLikeMultiGeoCliffLibrary(gltf_absolute);
+    if (expand_drawable_geo && nodeHasDrawableMesh(node) &&
         data != nullptr && node->mesh != nullptr) {
       const size_t mesh_index = static_cast<size_t>(node->mesh - data->meshes);
       Vec3 position{};

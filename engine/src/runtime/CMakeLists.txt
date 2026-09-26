@@ -249,6 +249,8 @@ add_library(engine_runtime STATIC
     "resource/asset_import/companion_animation_gltf.h"
     "resource/asset_import/companion_animation_gltf.cpp"
     "resource/asset/material_asset.h"
+    "resource/asset/gltf_material_extras.h"
+    "resource/asset/gltf_material_extras.cpp"
     "resource/asset/shader_asset.h"
     "resource/asset/mesh_asset.h"
     "resource/asset/texture2d_asset.h"
