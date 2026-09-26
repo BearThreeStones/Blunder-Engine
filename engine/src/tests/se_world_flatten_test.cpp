@@ -501,7 +501,7 @@ void testMetresAndNegativeScale() {
   fs::remove_all(root);
 }
 
-void testBakerOmitsColEntities() {
+void testBakerBakesColColliders() {
   using namespace Blunder;
   const fs::path root = makeTempRoot("colbake");
   writeTextFile(root / "assets" / "lib" / "box.gltf",
@@ -510,10 +510,11 @@ void testBakerOmitsColEntities() {
                 triangleGltfNodes(
                     R"([
                       { "name": "COL-ground", "mesh": 0 },
+                      { "name": "COL-ice_detection", "mesh": 0, "translation": [0, 1, 0] },
                       { "name": "GEO-ground", "mesh": 0, "translation": [1, 0, 0] },
                       { "name": "GEO-water", "mesh": 0, "translation": [0, 0, 2] }
                     ])",
-                    "ground", "[0, 1, 2]"));
+                    "ground", "[0, 1, 2, 3]"));
   writeTextFile(root / "SE-world.gltf", triangleGltfNodes(
       R"([
         { "name": "Ground", "extras": { "instance_asset_id": "1111111111111111" } },
@@ -540,8 +541,22 @@ void testBakerOmitsColEntities() {
   expect_true("2.1 one layout", stats.layout_instances == 1);
   expect_true("2.1 Ground grouping exists", findEntity(scene, "Ground") != nullptr);
   expect_true("2.1 Bush layout exists", findEntity(scene, "Bush") != nullptr);
-  expect_true("2.1 COL-ground not spawned", findEntity(scene, "COL-ground") == nullptr);
-  expect_true("2.1 COL-layout not spawned", findEntity(scene, "COL-layout") == nullptr);
+  const SceneEntityDefinition* col_ground = findEntity(scene, "COL-ground");
+  const SceneEntityDefinition* col_layout = findEntity(scene, "COL-layout");
+  expect_true("2.1 COL-ground spawned", col_ground != nullptr);
+  expect_true("2.1 COL-layout spawned", col_layout != nullptr);
+  expect_true("2.1 COL-ground has collider",
+              col_ground != nullptr && col_ground->has_collider);
+  expect_true("2.1 COL-ground triangleMesh",
+              col_ground != nullptr &&
+                  col_ground->collider.shape == ColliderShapeKind::TriangleMesh);
+  expect_true("2.1 COL-ground has triangles",
+              col_ground != nullptr && !col_ground->collider.triangles.empty());
+  expect_true("2.1 COL-ground no mesh",
+              col_ground != nullptr && col_ground->mesh_virtual_path.empty());
+  expect_true("2.1 detection COL skipped",
+              findEntity(scene, "COL-ice_detection") == nullptr);
+  expect_true("2.1 col collider count", stats.col_collider_entities >= 2);
   const SceneEntityDefinition* geo_ground = findEntity(scene, "GEO-ground");
   const SceneEntityDefinition* geo_water = findEntity(scene, "GEO-water");
   expect_true("2.1 GEO-ground spawned", geo_ground != nullptr);
@@ -567,26 +582,25 @@ void testBakerOmitsColEntities() {
     expect_true("2.1 GEO-water engine Y from glTF Z",
                 std::fabs(geo_water->position.y + 2.0f) < 1e-4f);
   }
-  bool any_col = false;
   bool any_inactive = false;
   for (const SceneEntityDefinition& entity : scene.getEntities()) {
-    if (entity.name.find("COL-") == 0) {
-      any_col = true;
-    }
     if (!entity.active) {
       any_inactive = true;
     }
   }
-  expect_true("2.1 no COL-* entities", !any_col);
   expect_true("2.1 no active:false placeholders", !any_inactive);
   eastl::string json;
   expect_true("2.1 serialize", SceneSerializer::serialize(scene, json));
   expect_true("2.1 json has no active false",
               json.find("\"active\": false") == eastl::string::npos);
+  expect_true("2.1 json has collider",
+              json.find("\"collider\"") != eastl::string::npos);
+  expect_true("2.1 json has triangleMesh",
+              json.find("\"triangleMesh\"") != eastl::string::npos);
   fs::remove_all(root);
 }
 
-void testColSkipAndExtrasIgnoredOnImport() {
+void testColBakeAttachesOnImport() {
   using namespace Blunder;
   ensureLogger();
   const fs::path project = makeTempRoot("import");
@@ -597,9 +611,10 @@ void testColSkipAndExtrasIgnoredOnImport() {
                 triangleGltfNodes(
                     R"([
                       { "name": "COL-ground", "mesh": 0 },
+                      { "name": "COL-snow_detection", "mesh": 0 },
                       { "name": "GEO-ground", "mesh": 0, "translation": [1, 0, 0] }
                     ])",
-                    "set", "[0, 1]"));
+                    "set", "[0, 1, 2]"));
   writeTextFile(project / "Assets" / "Meshes" / "set.mesh.yaml",
                 "type: Mesh\n"
                 "guid: aaaaaaaa-bbbb-4ccc-8ddd-111111111111\n"
@@ -642,8 +657,14 @@ void testColSkipAndExtrasIgnoredOnImport() {
   const EntityId geo_prim = col_scene.findEntityByName("GEO-ground_prim0");
   expect_true("2.1 GEO primitive has MeshRenderer",
               isValid(geo_prim) && col_scene.getMeshRenderer(geo_prim) != nullptr);
-  expect_true("2.1 COL entity not spawned",
-              !isValid(col_scene.findEntityByName("COL-ground")));
+  const EntityId col_ground = col_scene.findEntityByName("COL-ground");
+  expect_true("2.1 COL entity spawned", isValid(col_ground));
+  expect_true("2.1 COL has collider",
+              isValid(col_ground) && col_scene.getCollider(col_ground) != nullptr);
+  expect_true("2.1 COL no MeshRenderer",
+              isValid(col_ground) && col_scene.getMeshRenderer(col_ground) == nullptr);
+  expect_true("2.1 detection COL skipped",
+              !isValid(col_scene.findEntityByName("COL-snow_detection")));
   expect_true("2.1 at least one renderer", liveMeshRendererCount(col_scene) >= 1u);
 
   SceneInstance extras_scene;
@@ -926,8 +947,8 @@ int main() {
   testStonePlateauLibraryExpandsDeckGeo();
   testStoneWallLibraryExpandsSnowGeo();
   testMetresAndNegativeScale();
-  testBakerOmitsColEntities();
-  testColSkipAndExtrasIgnoredOnImport();
+  testBakerBakesColColliders();
+  testColBakeAttachesOnImport();
   testAttachMeshAssetsBindWithoutGraphImport();
   testSeWorldOpenPath();
   testDogWalkSeWorldOpenTiming();

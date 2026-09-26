@@ -23,6 +23,7 @@
 
 #include "runtime/core/base/macro.h"
 #include "runtime/core/math/coordinate_system.h"
+#include "runtime/function/scene/gltf_collision_extras.h"
 #include "runtime/function/scene/gltf_node_extras.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_serializer.h"
@@ -367,6 +368,48 @@ struct FlattenBaker {
     return scene->getEntities().back().name;
   }
 
+  eastl::string emitColColliderEntity(const eastl::string& stem, const Vec3& position,
+                                      const Quat& rotation, const Vec3& scale,
+                                      const eastl::string& parent,
+                                      ColliderComponent collider) {
+    SceneEntityDefinition entity;
+    entity.name = uniquify(stem);
+    entity.position = position;
+    entity.rotation = rotation;
+    entity.scale = scale;
+    entity.parent_name = parent;
+    entity.has_collider = true;
+    entity.collider = eastl::move(collider);
+    scene->getEntities().push_back(eastl::move(entity));
+    return scene->getEntities().back().name;
+  }
+
+  bool shouldSkipColNode(const cgltf_node* node) const {
+    if (node == nullptr) {
+      return true;
+    }
+    const eastl::string lower = toLowerCopy(gltfNodeDisplayName(node));
+    // Triggers / Area detection meshes stay fall-through (Q8).
+    return lower.find("detection") != eastl::string::npos;
+  }
+
+  void bakeColNode(const cgltf_node* node, const eastl::string& parent_name) {
+    if (node == nullptr || shouldSkipColNode(node) || node->mesh == nullptr) {
+      return;
+    }
+    ColliderComponent collider{};
+    if (!buildStaticTrimeshColliderFromMesh(node->mesh, collider)) {
+      return;
+    }
+    Vec3 position{};
+    Quat rotation = glm::identity<Quat>();
+    Vec3 scale(1.0f);
+    bakeNodeLocal(node, position, rotation, scale);
+    emitColColliderEntity(gltfNodeDisplayName(node), position, rotation, scale,
+                          parent_name, eastl::move(collider));
+    ++stats->col_collider_entities;
+  }
+
   cgltf_data* loadGltf(const fs::path& absolute) {
     const eastl::string key(absolute.generic_string().c_str());
     const auto found = documents.find(key);
@@ -383,6 +426,12 @@ struct FlattenBaker {
       }
       documents[key] = nullptr;
       return nullptr;
+    }
+    const cgltf_result buffers =
+        cgltf_load_buffers(&parse_options, data, absolute.string().c_str());
+    if (buffers != cgltf_result_success) {
+      LOG_WARN("[se-world-flatten] cgltf_load_buffers failed for {} ({})",
+               absolute.generic_string().c_str(), static_cast<int>(buffers));
     }
     documents[key] = data;
     return data;
@@ -707,8 +756,9 @@ struct FlattenBaker {
     if (node == nullptr) {
       return;
     }
-    // Grill locked: omit COL-* nodes. Do not emit active:false placeholders.
+    // COL-* → static trimesh Unique (no MeshRenderer). Detection Areas skip.
     if (gltfNodeNameStartsWith(node, "COL-")) {
+      bakeColNode(node, parent_name);
       return;
     }
     eastl::string instance_id;
