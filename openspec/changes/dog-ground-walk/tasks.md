@@ -15,6 +15,7 @@
 
 ## 3. Product (C–E)
 
-- [ ] 3.1 C# Chocomel locomotion
-- [ ] 3.2 Editor debug overlay
-- [ ] 3.3 Wire Chocomel into se-world
+- [x] 3.1 C# ChocomelLocomotion (input + gravity when airborne + MoveAndSlide; no jump)
+- [x] 3.2 Editor View → Collision Debug (default off); CCT wire uses shape offset
+- [x] 3.3 Wire Chocomel into se-world + update root.scene.asset Walker to sphere CCT
+

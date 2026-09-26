@@ -3056,4 +3056,23 @@ void RenderSystem::toggleSceneGizmosVisible() {
   }
 }
 
+bool RenderSystem::areCollisionGizmosVisible() const {
+  if (m_overlay_system) {
+    return m_overlay_system->collisionGizmosVisible();
+  }
+  return false;
+}
+
+void RenderSystem::toggleCollisionGizmosVisible() {
+  if (!m_overlay_system) {
+    return;
+  }
+  m_overlay_system->setCollisionGizmosVisible(
+      !m_overlay_system->collisionGizmosVisible());
+  requestViewportRedraw();
+  if (g_runtime_global_context.m_slint_system) {
+    g_runtime_global_context.m_slint_system->syncTransformToolbarFromEngine();
+  }
+}
+
 }  // namespace Blunder

@@ -196,6 +196,8 @@ class RenderSystem final {
   bool isTranslateModalSessionActive() const;
   bool areSceneGizmosVisible() const;
   void toggleSceneGizmosVisible();
+  bool areCollisionGizmosVisible() const;
+  void toggleCollisionGizmosVisible();
   /// Forces the next viewport offscreen pass (gizmo mode/space, overlays, etc.).
   void requestViewportRedraw();
   rhi::IRenderBackend* getRenderBackend() const { return m_backend.get(); }

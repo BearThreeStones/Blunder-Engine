@@ -1555,6 +1555,12 @@ void SlintSystem::initialize(const SlintSystemInitInfo& init_info) {
       }
     });
 
+    component->on_collision_gizmos_toggled([this]() {
+      if (g_runtime_global_context.m_render_system) {
+        g_runtime_global_context.m_render_system->toggleCollisionGizmosVisible();
+      }
+    });
+
     component->on_browser_refresh_requested(UiCallbackBinder::bind(
         m_ui_host, [](UiHost& host) { host.enqueue(UiEvent::simple(UiEventKind::browserRefresh)); }));
     component->on_browser_import_requested([this]() { queueOpenImportFileDialog(); });
@@ -7098,6 +7104,8 @@ void SlintSystem::syncTransformToolbarFromEngine() {
         g_runtime_global_context.m_render_system->isTransformGizmoSpaceGlobal());
     ui->set_scene_gizmos_visible(
         g_runtime_global_context.m_render_system->areSceneGizmosVisible());
+    ui->set_collision_gizmos_visible(
+        g_runtime_global_context.m_render_system->areCollisionGizmosVisible());
     if (g_runtime_global_context.m_document_history ||
         g_runtime_global_context.m_global_history) {
       const EditorUndoScope scope = resolveUndoScope(
