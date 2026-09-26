@@ -902,12 +902,24 @@ void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
   // a 3/4 at 3.4*radius so the whole mesh stays in frame.
   // Small selections (dog ~1–2 m) must zoom in: the old 10 m floor left F
   // looking like a no-op when framing Chocomel / other metre-scale entities.
+  // Positive pitch puts the eye *below* the pivot (Z-up); for metre props that
+  // parks underground looking up into fog. Use a 3/4 look-down for both sizes.
   if (large_scene) {
     m_distance = std::max(radius * 3.4f, 6.0f);
     m_pitch = glm::radians(-32.0f);
   } else {
-    m_distance = std::max(radius * 2.5f, 0.5f);
-    m_pitch = glm::radians(28.0f);
+    // FOV fit so metre-scale selections (dog CCT ~1–2 m) fill the Viewport
+    // instead of sitting as a speck under a fixed radius*2.5 heuristic.
+    const float aspect =
+        std::max(m_viewport_width / std::max(m_viewport_height, 1e-4f), 1e-4f);
+    const float half_v = std::max(m_vertical_fov * 0.5f, 1e-4f);
+    const float half_h = std::atan(std::tan(half_v) * aspect);
+    const float max_half =
+        std::max({extents.x, extents.y, extents.z, 1e-4f});
+    const float dist_v = max_half / std::tan(half_v);
+    const float dist_h = max_half / std::tan(half_h);
+    m_distance = std::max(std::max(dist_v, dist_h) * 1.25f, 0.5f);
+    m_pitch = glm::radians(-28.0f);
   }
   m_yaw = glm::radians(-48.0f);
   updateDirectionVectors();
@@ -920,22 +932,21 @@ void EditorCamera::snapFocusOnAABB(const AABB& bounds) {
     updateViewMatrix();
   }
 
-  // Lift the eye out of large building volumes only. A fixed +2 m floor on
-  // dog-sized AABBs pulled the camera back toward world scale.
-  if (large_scene) {
-    const float min_eye_z =
-        bounds.min.z + glm::max(size.z * 0.12f, 2.0f);
-    if (m_position.z < min_eye_z) {
-      m_position.z = min_eye_z;
-      Vec3 to_focal = m_focal_point - m_position;
-      m_distance = glm::length(to_focal);
-      if (m_distance > 1e-4f) {
-        const Vec3 forward = to_focal / m_distance;
-        m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
-        m_yaw = std::atan2(forward.y, forward.x);
-        updateDirectionVectors();
-        updateViewMatrix();
-      }
+  // Keep the eye above the framed volume. Large scenes need a taller floor so
+  // centimetre Sponza does not park inside a wing; dog-scale uses a soft pad.
+  const float min_eye_z =
+      large_scene ? bounds.min.z + glm::max(size.z * 0.12f, 2.0f)
+                  : bounds.min.z + glm::max(size.z * 0.35f, radius * 0.6f);
+  if (m_position.z < min_eye_z) {
+    m_position.z = min_eye_z;
+    Vec3 to_focal = m_focal_point - m_position;
+    m_distance = glm::length(to_focal);
+    if (m_distance > 1e-4f) {
+      const Vec3 forward = to_focal / m_distance;
+      m_pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+      m_yaw = std::atan2(forward.y, forward.x);
+      updateDirectionVectors();
+      updateViewMatrix();
     }
   }
 

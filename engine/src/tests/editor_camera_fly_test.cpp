@@ -238,9 +238,10 @@ int main() {
     expect_true("Dog snap zooms closer than world-scale orbit",
                 dog_cam.getDistance() < dist_before &&
                     dog_cam.getDistance() < 8.0f);
-    expect_true("Dog snap distance tracks selection radius",
-                dog_cam.getDistance() >= radius * 2.0f &&
-                    dog_cam.getDistance() <= radius * 3.5f);
+    expect_true("Dog snap FOV-fits selection (not world floor)",
+                dog_cam.getDistance() < radius * 3.0f);
+    expect_true("Dog snap keeps the eye above the selection",
+                dog_cam.getPosition().z > dog.min.z);
   }
 
   {
