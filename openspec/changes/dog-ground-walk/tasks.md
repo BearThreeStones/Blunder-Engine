@@ -9,9 +9,9 @@
 
 ## 2. Sphere CCT (slice B+)
 
-- [ ] 2.1 CharacterController Unique sphere mode
-- [ ] 2.2 Sphere × trimesh continuous sweep
-- [ ] 2.3 Host tests rest + thin plate
+- [x] 2.1 CharacterController Unique sphere mode + local offset
+- [x] 2.2 Sphere × trimesh continuous sweep (inflated mesh cast)
+- [x] 2.3 Host tests: thin plate rest + mild slope
 
 ## 3. Product (C–E)
 
