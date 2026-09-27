@@ -1,6 +1,7 @@
 #include "runtime/function/render/vulkan/vulkan_buffer.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #include "runtime/core/base/macro.h"
@@ -157,22 +158,29 @@ void VulkanBuffer::destroy() {
 }
 
 void VulkanBuffer::upload(const void* data, VkDeviceSize size) {
+  uploadAt(0, data, size);
+}
+
+void VulkanBuffer::uploadAt(VkDeviceSize offset, const void* data,
+                            VkDeviceSize size) {
   ASSERT(m_allocator);
   ASSERT(m_buffer != VK_NULL_HANDLE);
   ASSERT(m_allocation != VK_NULL_HANDLE);
   ASSERT(data);
-  ASSERT(size > 0 && size <= m_size);
+  ASSERT(size > 0);
+  ASSERT(offset + size <= m_size);
 
   void* mapped_data = nullptr;
   const VkResult map_result =
       vmaMapMemory(m_allocator->getAllocator(), m_allocation, &mapped_data);
   if (map_result != VK_SUCCESS) {
-    LOG_FATAL("[VulkanBuffer::upload] vmaMapMemory failed: {}",
+    LOG_FATAL("[VulkanBuffer::uploadAt] vmaMapMemory failed: {}",
               static_cast<int>(map_result));
   }
 
-  std::memcpy(mapped_data, data, static_cast<size_t>(size));
-  vmaFlushAllocation(m_allocator->getAllocator(), m_allocation, 0, size);
+  std::memcpy(static_cast<uint8_t*>(mapped_data) + static_cast<size_t>(offset),
+              data, static_cast<size_t>(size));
+  vmaFlushAllocation(m_allocator->getAllocator(), m_allocation, offset, size);
   vmaUnmapMemory(m_allocator->getAllocator(), m_allocation);
 }
 

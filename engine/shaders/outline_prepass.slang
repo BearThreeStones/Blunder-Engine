@@ -1,14 +1,21 @@
 struct OutlinePrepassUniformData
 {
-    float4x4 model;
     float4x4 view;
     float4x4 projection;
+};
+
+struct OutlinePrepassPushData
+{
+    float4x4 model;
     uint packedObjectId;
     uint3 _pad;
 };
 
 [[vk::binding(0, 0)]]
 ConstantBuffer<OutlinePrepassUniformData> ubo;
+
+[[vk::push_constant]]
+ConstantBuffer<OutlinePrepassPushData> push;
 
 struct VertexInput
 {
@@ -29,7 +36,7 @@ struct VertexOutput
 VertexOutput vertexMain(VertexInput input)
 {
     VertexOutput output;
-    float4 worldPos = mul(ubo.model, float4(input.inPosition, 1.0));
+    float4 worldPos = mul(push.model, float4(input.inPosition, 1.0));
     float4 viewPos = mul(ubo.view, worldPos);
     output.sv_position = mul(ubo.projection, viewPos);
     return output;
@@ -38,5 +45,5 @@ VertexOutput vertexMain(VertexInput input)
 [shader("fragment")]
 uint fragmentMain(VertexOutput input) : SV_Target
 {
-    return ubo.packedObjectId;
+    return push.packedObjectId;
 }

@@ -33,9 +33,12 @@ namespace Blunder {
 namespace {
 
 struct OutlinePrepassUniformData {
-  glm::mat4 model;
   glm::mat4 view;
   glm::mat4 projection;
+};
+
+struct OutlinePrepassPushData {
+  glm::mat4 model;
   uint32_t packed_object_id{0};
   uint32_t _pad[3]{};
 };
@@ -110,6 +113,7 @@ VkPipeline createGraphicsPipeline(
   depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
   depth_stencil.depthTestEnable = depth_test ? VK_TRUE : VK_FALSE;
   depth_stencil.depthWriteEnable = depth_write ? VK_TRUE : VK_FALSE;
+  // Match main viewport / glm::perspectiveZO (near→0, far→1): LESS + clear 1.
   depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
   VkPipelineColorBlendAttachmentState blend_attachment{};
@@ -408,6 +412,25 @@ void OutlineOverlay::begin_sync(OverlayResources& /*res*/,
   enabled_ = !m_cached_draws.empty();
 }
 
+void OutlineOverlay::writePrepassDescriptors() {
+  if (m_prepass_descriptor_set == VK_NULL_HANDLE ||
+      m_prepass_uniform_buffer == nullptr) {
+    return;
+  }
+  VkDescriptorBufferInfo prepass_ubo_info{};
+  prepass_ubo_info.buffer = m_prepass_uniform_buffer->getBuffer();
+  prepass_ubo_info.offset = 0;
+  prepass_ubo_info.range = sizeof(OutlinePrepassUniformData);
+  VkWriteDescriptorSet prepass_write{};
+  prepass_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  prepass_write.dstSet = m_prepass_descriptor_set;
+  prepass_write.dstBinding = 0;
+  prepass_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  prepass_write.descriptorCount = 1;
+  prepass_write.pBufferInfo = &prepass_ubo_info;
+  vkUpdateDescriptorSets(m_context->getDevice(), 1, &prepass_write, 0, nullptr);
+}
+
 void OutlineOverlay::createDescriptorResources() {
   VkDevice device = m_context->getDevice();
 
@@ -415,8 +438,7 @@ void OutlineOverlay::createDescriptorResources() {
   prepass_binding.binding = 0;
   prepass_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   prepass_binding.descriptorCount = 1;
-  prepass_binding.stageFlags =
-      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  prepass_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
   VkDescriptorSetLayoutCreateInfo prepass_layout_info{};
   prepass_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -425,10 +447,18 @@ void OutlineOverlay::createDescriptorResources() {
   vkCreateDescriptorSetLayout(device, &prepass_layout_info, nullptr,
                               &m_prepass_descriptor_layout);
 
+  VkPushConstantRange prepass_push{};
+  prepass_push.stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  prepass_push.offset = 0;
+  prepass_push.size = sizeof(OutlinePrepassPushData);
+
   VkPipelineLayoutCreateInfo prepass_pipeline_layout_info{};
   prepass_pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   prepass_pipeline_layout_info.setLayoutCount = 1;
   prepass_pipeline_layout_info.pSetLayouts = &m_prepass_descriptor_layout;
+  prepass_pipeline_layout_info.pushConstantRangeCount = 1;
+  prepass_pipeline_layout_info.pPushConstantRanges = &prepass_push;
   vkCreatePipelineLayout(device, &prepass_pipeline_layout_info, nullptr,
                          &m_prepass_pipeline_layout);
 
@@ -449,18 +479,7 @@ void OutlineOverlay::createDescriptorResources() {
   prepass_alloc_info.descriptorSetCount = 1;
   prepass_alloc_info.pSetLayouts = &m_prepass_descriptor_layout;
   vkAllocateDescriptorSets(device, &prepass_alloc_info, &m_prepass_descriptor_set);
-
-  VkDescriptorBufferInfo prepass_ubo_info{};
-  prepass_ubo_info.buffer = m_prepass_uniform_buffer->getBuffer();
-  prepass_ubo_info.range = sizeof(OutlinePrepassUniformData);
-  VkWriteDescriptorSet prepass_write{};
-  prepass_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  prepass_write.dstSet = m_prepass_descriptor_set;
-  prepass_write.dstBinding = 0;
-  prepass_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  prepass_write.descriptorCount = 1;
-  prepass_write.pBufferInfo = &prepass_ubo_info;
-  vkUpdateDescriptorSets(device, 1, &prepass_write, 0, nullptr);
+  writePrepassDescriptors();
 
   VkDescriptorSetLayoutBinding resolve_bindings[5]{};
   resolve_bindings[0].binding = 0;
@@ -732,6 +751,8 @@ void OutlineOverlay::drawPrepass(VkCommandBuffer cmd, const OverlayState& state)
 
   VkClearValue clears[2]{};
   clears[0].color.uint32[0] = 0;
+  // perspectiveZO: near→0, far→1 — clear to far so LESS depth test matches
+  // the main viewport and outline_resolve occlusion (outlineDepth > sceneDepth).
   clears[1].depthStencil = {1.0f, 0};
 
   VkRenderPassBeginInfo begin{};
@@ -741,50 +762,59 @@ void OutlineOverlay::drawPrepass(VkCommandBuffer cmd, const OverlayState& state)
   begin.renderArea.extent = extent;
   begin.clearValueCount = 2;
   begin.pClearValues = clears;
-  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-
-  SecondaryCommandBufferPool& pool = m_context->secondaryCommandBuffers();
-  const VkCommandBuffer secondary = pool.begin(
-      SecondaryStream::viewport, SecondaryPass::outline_prepass,
-      state.frame_index, begin.renderPass, begin.framebuffer);
+  // Inline (not secondary): matches PickOverlay. Per-draw model matrices go
+  // through push constants so multi-mesh selections (SE-world) cannot share a
+  // single last-wins UBO upload recorded into a secondary command buffer.
+  vkCmdBeginRenderPass(cmd, &begin, VK_SUBPASS_CONTENTS_INLINE);
 
   VkViewport viewport{};
   viewport.width = static_cast<float>(extent.width);
   viewport.height = static_cast<float>(extent.height);
   viewport.maxDepth = 1.0f;
   VkRect2D scissor{{0, 0}, extent};
-  vkCmdSetViewport(secondary, 0, 1, &viewport);
-  vkCmdSetScissor(secondary, 0, 1, &scissor);
+  vkCmdSetViewport(cmd, 0, 1, &viewport);
+  vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-  vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, m_prepass_pipeline);
-  vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  OutlinePrepassUniformData frame_ubo{};
+  frame_ubo.view = state.view;
+  frame_ubo.projection = state.projection;
+  m_prepass_uniform_buffer->upload(&frame_ubo, sizeof(frame_ubo));
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_prepass_pipeline);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_prepass_pipeline_layout, 0, 1,
                           &m_prepass_descriptor_set, 0, nullptr);
 
+  uint32_t draw_slot = 0;
   for (const CachedDraw& draw : m_cached_draws) {
     if (draw.gpu_mesh == nullptr) {
       continue;
     }
+    if (draw_slot >= k_max_prepass_draws_per_frame) {
+      LOG_WARN(
+          "[OutlineOverlay] prepass draw cap ({}) reached; remaining meshes "
+          "skipped",
+          k_max_prepass_draws_per_frame);
+      break;
+    }
 
-    OutlinePrepassUniformData ubo{};
-    ubo.model = draw.world_matrix;
-    ubo.view = state.view;
-    ubo.projection = state.projection;
-    ubo.packed_object_id = static_cast<uint32_t>(draw.packed_id);
-    m_prepass_uniform_buffer->upload(&ubo, sizeof(ubo));
+    OutlinePrepassPushData push{};
+    push.model = draw.world_matrix;
+    push.packed_object_id = static_cast<uint32_t>(draw.packed_id);
+    vkCmdPushConstants(cmd, m_prepass_pipeline_layout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(push), &push);
 
     GpuMesh* mesh = draw.gpu_mesh;
     VkBuffer vertex_buffers[] = {mesh->getVertexBuffer()->getBuffer()};
     VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(secondary, 0, 1, vertex_buffers, offsets);
-    vkCmdBindIndexBuffer(secondary, mesh->getIndexBuffer()->getBuffer(), 0,
+    vkCmdBindVertexBuffers(cmd, 0, 1, vertex_buffers, offsets);
+    vkCmdBindIndexBuffer(cmd, mesh->getIndexBuffer()->getBuffer(), 0,
                          VK_INDEX_TYPE_UINT32);
-    vkCmdDrawIndexed(secondary, mesh->getIndexCount(), 1, 0, 0, 0);
+    vkCmdDrawIndexed(cmd, mesh->getIndexCount(), 1, 0, 0, 0);
+    ++draw_slot;
   }
 
-  pool.end(SecondaryStream::viewport, SecondaryPass::outline_prepass,
-           state.frame_index);
-  SecondaryCommandBufferPool::execute(cmd, secondary);
   vkCmdEndRenderPass(cmd);
   m_targets->cmdBarrierToShaderRead(cmd);
 }
