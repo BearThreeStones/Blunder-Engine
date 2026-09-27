@@ -237,6 +237,8 @@ int main() {
                 listed.find("set-vrs-rate-mask") != std::string::npos);
     expect_true("mcp tools select",
                 listed.find("\"name\":\"select\"") != std::string::npos);
+    expect_true("mcp tools focus",
+                listed.find("\"name\":\"focus\"") != std::string::npos);
     expect_true(
         "mcp initialize needs no engine",
         !mcpMessageNeedsEngine(
