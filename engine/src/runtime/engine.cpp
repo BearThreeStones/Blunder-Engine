@@ -604,7 +604,7 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
           s_move_diag_enabled =
               (env != nullptr && env[0] != '\0' && env[0] != '0') ? 1 : 0;
         }
-        if (s_move_diag_enabled == 1 && s_move_diag_frames < 6000) {
+        if (s_move_diag_enabled == 1 && s_move_diag_frames < 120000) {
           ++s_move_diag_frames;
           const char* path_env = std::getenv("BLUNDER_GAMEPLAY_MOVE_DIAG_PATH");
           const char* path =
