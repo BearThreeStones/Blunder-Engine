@@ -19,6 +19,11 @@ struct AssetCompilerStats {
   uint32_t textures_cooked{0};
   uint32_t skipped{0};
   uint32_t failed{0};
+  /// True when cookAll stopped early (window closed / heartbeat).
+  bool aborted{false};
+  /// True when cookIfStale reused `.blunder/cooked/cook_stamp` and skipped the
+  /// per-descriptor freshness walk.
+  bool used_stamp{false};
 };
 
 class AssetCompilerService final {
@@ -40,7 +45,22 @@ class AssetCompilerService final {
   /// Optional startup / packaging warm-up: cooks every stale Asset under Assets/.
   /// Pull freshness is defined by markFinalStale / cookAsset / cookDependents,
   /// not by this scan.
+  /// When `.blunder/cooked/cook_stamp` matches the current Assets+Resources
+  /// fingerprint, skips the per-descriptor cook walk (registry scan still runs).
   AssetCompilerStats cookIfStale();
+
+  /// Player boot: if cook stamp fingerprint matches (Assets descriptors +
+  /// Resources sources), trust it and skip the cook walk + rebuildFromScan
+  /// (registry already loaded from `.blunder/asset_registry.yaml`). Otherwise
+  /// falls back to cookIfStale().
+  AssetCompilerStats cookIfStaleForPlayer();
+
+  /// Drop the cook stamp so the next cookIfStale rescans descriptors.
+  void invalidateCookStamp();
+
+  /// Recompute Assets+Resources fingerprint and write `.blunder/cooked/cook_stamp`.
+  /// Call after a completed cookAll(force) so subsequent cookIfStale can skip.
+  bool refreshCookStamp();
 
   /// Rebuild the held Asset Dependency Graph from the registry + on-disk docs.
   void rebuildDependencyGraph();
@@ -71,10 +91,17 @@ class AssetCompilerService final {
   void cookDependents(const eastl::string& guid);
 
  private:
-  bool cookMeshDescriptor(const eastl::string& descriptor_virtual_path,
-                          bool force);
-  bool cookTextureDescriptor(const eastl::string& descriptor_virtual_path,
-                             bool force);
+  /// Outcome of cooking one Mesh/Texture descriptor (warm-up accounting).
+  enum class DescriptorCookResult {
+    Cooked,
+    SkippedFresh,
+    Failed,
+  };
+
+  DescriptorCookResult cookMeshDescriptor(
+      const eastl::string& descriptor_virtual_path, bool force);
+  DescriptorCookResult cookTextureDescriptor(
+      const eastl::string& descriptor_virtual_path, bool force);
 
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};

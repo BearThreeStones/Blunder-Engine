@@ -1,7 +1,14 @@
 #include "runtime/resource/asset_cook/asset_compiler_service.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "EASTL/hash_set.h"
 #include "EASTL/vector.h"
@@ -24,6 +31,9 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// v2: fingerprint mixes Assets cook-descriptors and Resources source files.
+constexpr uint32_t kCookStampVersion = 2;
+
 bool endsWith(const eastl::string& value, const char* suffix) {
   const size_t suffix_length = std::strlen(suffix);
   if (value.size() < suffix_length) {
@@ -31,6 +41,185 @@ bool endsWith(const eastl::string& value, const char* suffix) {
   }
   return value.compare(value.size() - suffix_length, suffix_length, suffix) ==
          0;
+}
+
+bool endsWithPath(const fs::path& path, const char* suffix) {
+  const std::string name = path.filename().generic_string();
+  const size_t suffix_length = std::strlen(suffix);
+  if (name.size() < suffix_length) {
+    return false;
+  }
+  return name.compare(name.size() - suffix_length, suffix_length, suffix) == 0;
+}
+
+fs::path cookStampPath(FileSystem& file_system) {
+  return cookedRoot(file_system) / "cook_stamp";
+}
+
+struct CookStampFingerprint {
+  uint32_t descriptor_count{0};
+  uint64_t hash{14695981039346656037ull};  // FNV-1a 64 offset
+};
+
+void fnv1aMix(uint64_t& hash, const char* data, size_t size) {
+  for (size_t i = 0; i < size; ++i) {
+    hash ^= static_cast<uint64_t>(static_cast<unsigned char>(data[i]));
+    hash *= 1099511628211ull;
+  }
+}
+
+void fnv1aMixU64(uint64_t& hash, uint64_t value) {
+  char buf[32];
+  const int written =
+      std::snprintf(buf, sizeof(buf), "%llu",
+                    static_cast<unsigned long long>(value));
+  if (written > 0) {
+    fnv1aMix(hash, buf, static_cast<size_t>(written));
+  }
+}
+
+bool isCookDescriptorPath(const fs::path& path) {
+  return endsWithPath(path, ".mesh.yaml") || endsWithPath(path, ".texture.yaml");
+}
+
+struct StampSample {
+  std::string relative;  // namespaced: "assets/..." or "resources/..."
+  uint64_t mtime{0};
+};
+
+void appendRootSamples(FileSystem& file_system, const fs::path& root,
+                       const char* path_prefix,
+                       bool (*accept)(const fs::path&),
+                       std::vector<StampSample>& samples) {
+  if (!file_system.exists(root)) {
+    return;
+  }
+  const eastl::vector<DirectoryEntry> entries =
+      file_system.listDirectoryRecursive(root, root, -1);
+  for (const DirectoryEntry& entry : entries) {
+    if (entry.is_directory) {
+      continue;
+    }
+    if (accept != nullptr && !accept(entry.absolute_path)) {
+      continue;
+    }
+    StampSample sample;
+    sample.relative = std::string(path_prefix) + entry.relative_path.c_str();
+    sample.mtime = file_system.lastWriteTime(entry.absolute_path);
+    samples.push_back(std::move(sample));
+  }
+}
+
+bool acceptAnyFile(const fs::path&) {
+  return true;
+}
+
+CookStampFingerprint computeCookStampFingerprint(FileSystem& file_system) {
+  CookStampFingerprint out{};
+
+  std::vector<StampSample> samples;
+  samples.reserve(512);
+
+  // Assets: only cook descriptors (same set cookAll walks).
+  appendRootSamples(file_system, file_system.getAssetRoot(), "assets/",
+                    isCookDescriptorPath, samples);
+  // Resources: all source files — MeshLoader trusts stamp without meta check,
+  // so offline Resource edits must invalidate the stamp.
+  appendRootSamples(file_system, file_system.getResourcesRoot(), "resources/",
+                    acceptAnyFile, samples);
+
+  std::sort(samples.begin(), samples.end(),
+            [](const StampSample& a, const StampSample& b) {
+              return a.relative < b.relative;
+            });
+
+  for (const StampSample& sample : samples) {
+    fnv1aMix(out.hash, sample.relative.c_str(), sample.relative.size());
+    const char nul = '\0';
+    fnv1aMix(out.hash, &nul, 1);
+    fnv1aMixU64(out.hash, sample.mtime);
+    if (sample.relative.compare(0, 7, "assets/") == 0) {
+      ++out.descriptor_count;
+    }
+  }
+  return out;
+}
+
+void removeIfExists(FileSystem& file_system, const fs::path& path) {
+  if (!file_system.exists(path)) {
+    return;
+  }
+  std::error_code ec;
+  fs::remove(path, ec);
+  if (ec) {
+    LOG_WARN("[AssetCompiler] failed to remove {}: {}", path.generic_string(),
+             ec.message());
+  }
+}
+
+bool readCookStamp(FileSystem& file_system, CookStampFingerprint& out) {
+  const fs::path path = cookStampPath(file_system);
+  if (!file_system.exists(path)) {
+    return false;
+  }
+  std::ifstream stream(path);
+  if (!stream) {
+    return false;
+  }
+
+  uint32_t version = 0;
+  uint32_t descriptor_count = 0;
+  uint64_t hash = 0;
+  bool found_version = false;
+  bool found_count = false;
+  bool found_hash = false;
+  std::string line;
+  while (std::getline(stream, line)) {
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) {
+      continue;
+    }
+    const std::string key = line.substr(0, colon);
+    const std::string value = line.substr(colon + 1);
+    if (key == "version") {
+      version = static_cast<uint32_t>(std::strtoul(value.c_str(), nullptr, 10));
+      found_version = true;
+    } else if (key == "descriptor_count") {
+      descriptor_count =
+          static_cast<uint32_t>(std::strtoul(value.c_str(), nullptr, 10));
+      found_count = true;
+    } else if (key == "fingerprint") {
+      hash = std::strtoull(value.c_str(), nullptr, 16);
+      found_hash = true;
+    }
+  }
+  if (!found_version || !found_count || !found_hash ||
+      version != kCookStampVersion) {
+    return false;
+  }
+  out.descriptor_count = descriptor_count;
+  out.hash = hash;
+  return true;
+}
+
+bool writeCookStamp(FileSystem& file_system, const CookStampFingerprint& stamp) {
+  const fs::path path = cookStampPath(file_system);
+  file_system.ensureParentDirectory(path);
+  std::ofstream stream(path, std::ios::trunc);
+  if (!stream) {
+    return false;
+  }
+  stream << "version: " << kCookStampVersion << '\n';
+  stream << "descriptor_count: " << stamp.descriptor_count << '\n';
+  char hash_hex[32];
+  std::snprintf(hash_hex, sizeof(hash_hex), "%016llx",
+                static_cast<unsigned long long>(stamp.hash));
+  stream << "fingerprint: " << hash_hex << '\n';
+  return stream.good();
+}
+
+void removeCookStamp(FileSystem& file_system) {
+  removeIfExists(file_system, cookStampPath(file_system));
 }
 
 fs::path resolveDescriptorAbsolute(FileSystem& file_system,
@@ -76,18 +265,6 @@ bool isCookFresh(FileSystem& file_system, const fs::path& cooked_path,
   }
   return meta.source_mtime == source_mtime &&
          meta.descriptor_mtime == descriptor_mtime;
-}
-
-void removeIfExists(FileSystem& file_system, const fs::path& path) {
-  if (!file_system.exists(path)) {
-    return;
-  }
-  std::error_code ec;
-  fs::remove(path, ec);
-  if (ec) {
-    LOG_WARN("[AssetCompiler] failed to remove {}: {}", path.generic_string(),
-             ec.message());
-  }
 }
 
 }  // namespace
@@ -142,6 +319,7 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
   }
 
   if (m_cook_heartbeat && !m_cook_heartbeat()) {
+    stats.aborted = true;
     return stats;
   }
 
@@ -152,6 +330,7 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
   }
 
   if (m_cook_heartbeat && !m_cook_heartbeat()) {
+    stats.aborted = true;
     return stats;
   }
 
@@ -161,6 +340,7 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
 
   for (const DirectoryEntry& entry : entries) {
     if (m_cook_heartbeat && !m_cook_heartbeat()) {
+      stats.aborted = true;
       break;
     }
     if (entry.is_directory) {
@@ -169,39 +349,122 @@ AssetCompilerStats AssetCompilerService::cookAll(bool force) {
 
     const eastl::string virtual_path(
         (eastl::string("assets/") + entry.relative_path.c_str()).c_str());
-    bool cooked = false;
     if (endsWith(virtual_path, ".mesh.yaml")) {
-      cooked = cookMeshDescriptor(virtual_path, force);
-      if (cooked) {
+      const DescriptorCookResult result =
+          cookMeshDescriptor(virtual_path, force);
+      if (result == DescriptorCookResult::Cooked) {
         ++stats.meshes_cooked;
-      } else if (m_file_system->exists(entry.absolute_path)) {
+      } else if (result == DescriptorCookResult::SkippedFresh) {
         ++stats.skipped;
       } else {
         ++stats.failed;
       }
     } else if (endsWith(virtual_path, ".texture.yaml")) {
-      cooked = cookTextureDescriptor(virtual_path, force);
-      if (cooked) {
+      const DescriptorCookResult result =
+          cookTextureDescriptor(virtual_path, force);
+      if (result == DescriptorCookResult::Cooked) {
         ++stats.textures_cooked;
-      } else if (m_file_system->exists(entry.absolute_path)) {
+      } else if (result == DescriptorCookResult::SkippedFresh) {
         ++stats.skipped;
       } else {
         ++stats.failed;
       }
     }
-    (void)cooked;
   }
 
   LOG_INFO(
-      "[AssetCompiler] cooked meshes={} textures={} skipped={} failed={}",
-      stats.meshes_cooked, stats.textures_cooked, stats.skipped, stats.failed);
+      "[AssetCompiler] cooked meshes={} textures={} skipped={} failed={}{}",
+      stats.meshes_cooked, stats.textures_cooked, stats.skipped, stats.failed,
+      stats.aborted ? " (aborted)" : "");
   return stats;
 }
 
 AssetCompilerStats AssetCompilerService::cookIfStale() {
   // Warm-up only: full Assets/ scan of stale Finals. Prefer cookAsset /
   // markFinalStale for Pull freshness.
-  return cookAll(false);
+  AssetCompilerStats stats{};
+  if (!m_is_initialized) {
+    return stats;
+  }
+
+  const CookStampFingerprint current =
+      computeCookStampFingerprint(*m_file_system);
+  CookStampFingerprint stamped{};
+  if (readCookStamp(*m_file_system, stamped) &&
+      stamped.descriptor_count == current.descriptor_count &&
+      stamped.hash == current.hash) {
+    m_asset_registry->rebuildFromScan();
+    stats.skipped = current.descriptor_count;
+    stats.used_stamp = true;
+    LOG_INFO(
+        "[AssetCompiler] cookIfStale skipped (stamp fresh, descriptors={})",
+        current.descriptor_count);
+    return stats;
+  }
+
+  stats = cookAll(false);
+  if (!stats.aborted && stats.failed == 0) {
+    // Recompute after cook: Resources/Assets mtimes are unchanged by cook, but
+    // keep the written stamp aligned with the post-walk fingerprint.
+    const CookStampFingerprint after =
+        computeCookStampFingerprint(*m_file_system);
+    if (!writeCookStamp(*m_file_system, after)) {
+      LOG_WARN("[AssetCompiler] failed to write cook stamp");
+    }
+  } else if (stats.failed != 0) {
+    // Do not leave a prior stamp that would skip retry on the next boot.
+    removeCookStamp(*m_file_system);
+    LOG_WARN(
+        "[AssetCompiler] cookIfStale: {} failure(s); cook stamp not written",
+        stats.failed);
+  }
+  return stats;
+}
+
+AssetCompilerStats AssetCompilerService::cookIfStaleForPlayer() {
+  AssetCompilerStats stats{};
+  if (!m_is_initialized) {
+    return stats;
+  }
+
+  const CookStampFingerprint current =
+      computeCookStampFingerprint(*m_file_system);
+  CookStampFingerprint stamped{};
+  if (readCookStamp(*m_file_system, stamped) &&
+      stamped.descriptor_count == current.descriptor_count &&
+      stamped.hash == current.hash) {
+    // initialize() already loaded `.blunder/asset_registry.yaml`. Fingerprint
+    // matched — skip cook walk + rebuildFromScan. MeshLoader trusts Finals
+    // without meta checks, so fingerprint must cover Resources (see stamp v2).
+    stats.skipped = current.descriptor_count;
+    stats.used_stamp = true;
+    LOG_INFO(
+        "[AssetCompiler] cookIfStaleForPlayer trusted stamp (fingerprint "
+        "match, descriptors={}, no cook walk)",
+        current.descriptor_count);
+    return stats;
+  }
+
+  LOG_INFO(
+      "[AssetCompiler] cookIfStaleForPlayer: stamp missing or stale, falling "
+      "back to cookIfStale");
+  return cookIfStale();
+}
+
+void AssetCompilerService::invalidateCookStamp() {
+  if (!m_is_initialized || m_file_system == nullptr) {
+    return;
+  }
+  removeCookStamp(*m_file_system);
+}
+
+bool AssetCompilerService::refreshCookStamp() {
+  if (!m_is_initialized || m_file_system == nullptr) {
+    return false;
+  }
+  const CookStampFingerprint current =
+      computeCookStampFingerprint(*m_file_system);
+  return writeCookStamp(*m_file_system, current);
 }
 
 void AssetCompilerService::markFinalStale(const eastl::string& guid) {
@@ -214,6 +477,7 @@ void AssetCompilerService::markFinalStale(const eastl::string& guid) {
   removeIfExists(*m_file_system, cookedMeshMaterialPath(*m_file_system, guid));
   removeIfExists(*m_file_system, cookedTexturePath(*m_file_system, guid));
   removeIfExists(*m_file_system, cookedTextureMetaPath(*m_file_system, guid));
+  invalidateCookStamp();
 }
 
 void AssetCompilerService::invalidateAssetAndDependents(
@@ -255,10 +519,12 @@ bool AssetCompilerService::cookAsset(const eastl::string& guid, bool force) {
   }
 
   if (endsWith(descriptor_path, ".mesh.yaml")) {
-    return cookMeshDescriptor(descriptor_path, force);
+    return cookMeshDescriptor(descriptor_path, force) ==
+           DescriptorCookResult::Cooked;
   }
   if (endsWith(descriptor_path, ".texture.yaml")) {
-    return cookTextureDescriptor(descriptor_path, force);
+    return cookTextureDescriptor(descriptor_path, force) ==
+           DescriptorCookResult::Cooked;
   }
 
   LOG_WARN("[AssetCompiler] cookAsset: unsupported descriptor {}",
@@ -278,19 +544,20 @@ void AssetCompilerService::cookDependents(const eastl::string& guid) {
   }
 }
 
-bool AssetCompilerService::cookMeshDescriptor(
+AssetCompilerService::DescriptorCookResult
+AssetCompilerService::cookMeshDescriptor(
     const eastl::string& descriptor_virtual_path, bool force) {
   const fs::path descriptor_absolute =
       resolveDescriptorAbsolute(*m_file_system, descriptor_virtual_path);
 
   eastl::string yaml_text;
   if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   MeshAssetDescriptor descriptor{};
   if (!AssetYaml::parseMeshDescriptor(yaml_text, descriptor)) {
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   const fs::path source_absolute =
@@ -305,7 +572,7 @@ bool AssetCompilerService::cookMeshDescriptor(
   if (!force &&
       isCookFresh(*m_file_system, cooked_path, meta_path, source_mtime,
                   descriptor_mtime, kMeshCookVersion)) {
-    return false;
+    return DescriptorCookResult::SkippedFresh;
   }
 
   const eastl::shared_ptr<MeshAsset> mesh =
@@ -313,7 +580,7 @@ bool AssetCompilerService::cookMeshDescriptor(
   if (!mesh) {
     LOG_ERROR("[AssetCompiler] failed to load mesh descriptor {}",
               descriptor_virtual_path.c_str());
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   m_file_system->ensureParentDirectory(cooked_path);
@@ -329,7 +596,7 @@ bool AssetCompilerService::cookMeshDescriptor(
   }
   if (!writeMeshCookFile(cooked_path, mesh->getVertices(), mesh->getIndices(),
                          skin_ptr, meshlets_ptr)) {
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   CookedAssetMeta meta{};
@@ -342,22 +609,23 @@ bool AssetCompilerService::cookMeshDescriptor(
   LOG_INFO("[AssetCompiler] cooked mesh {} -> {}", descriptor_virtual_path.c_str(),
            cooked_path.generic_string());
   (void)m_asset_manager->hydrateMeshGltfMaterial(mesh);
-  return true;
+  return DescriptorCookResult::Cooked;
 }
 
-bool AssetCompilerService::cookTextureDescriptor(
+AssetCompilerService::DescriptorCookResult
+AssetCompilerService::cookTextureDescriptor(
     const eastl::string& descriptor_virtual_path, bool force) {
   const fs::path descriptor_absolute =
       resolveDescriptorAbsolute(*m_file_system, descriptor_virtual_path);
 
   eastl::string yaml_text;
   if (!m_file_system->readText(descriptor_absolute, yaml_text)) {
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   TextureAssetDescriptor descriptor{};
   if (!AssetYaml::parseTextureDescriptor(yaml_text, descriptor)) {
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   const fs::path source_absolute =
@@ -374,7 +642,7 @@ bool AssetCompilerService::cookTextureDescriptor(
   if (!force &&
       isCookFresh(*m_file_system, cooked_path, meta_path, source_mtime,
                   descriptor_mtime)) {
-    return false;
+    return DescriptorCookResult::SkippedFresh;
   }
 
   const eastl::shared_ptr<Texture2DAsset> texture =
@@ -382,14 +650,14 @@ bool AssetCompilerService::cookTextureDescriptor(
   if (!texture) {
     LOG_ERROR("[AssetCompiler] failed to load texture source {}",
               descriptor.source.c_str());
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   m_file_system->ensureParentDirectory(cooked_path);
   if (!writeTextureCookFile(cooked_path, texture->getWidth(),
                             texture->getHeight(), texture->getPixelData(),
                             descriptor.import.srgb)) {
-    return false;
+    return DescriptorCookResult::Failed;
   }
 
   CookedAssetMeta meta{};
@@ -400,7 +668,7 @@ bool AssetCompilerService::cookTextureDescriptor(
   m_asset_registry->registerAsset(descriptor.guid, descriptor_virtual_path);
   LOG_INFO("[AssetCompiler] cooked texture {} -> {}",
            descriptor_virtual_path.c_str(), cooked_path.generic_string());
-  return true;
+  return DescriptorCookResult::Cooked;
 }
 
 }  // namespace Blunder

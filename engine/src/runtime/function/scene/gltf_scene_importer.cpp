@@ -566,9 +566,91 @@ void bindPendingMeshRenderer(SceneInstance& instance, EntityId entity_id,
   instance.setMeshRenderer(entity_id, eastl::move(renderer));
 }
 
+bool containsInsensitive(const eastl::string& value, const char* needle) {
+  if (needle == nullptr || needle[0] == '\0') {
+    return false;
+  }
+  const size_t needle_len = std::strlen(needle);
+  if (value.size() < needle_len) {
+    return false;
+  }
+  for (size_t i = 0; i + needle_len <= value.size(); ++i) {
+    bool match = true;
+    for (size_t j = 0; j < needle_len; ++j) {
+      char a = value[i + j];
+      char b = needle[j];
+      if (a >= 'A' && a <= 'Z') {
+        a = static_cast<char>(a - 'A' + 'a');
+      }
+      if (b >= 'A' && b <= 'Z') {
+        b = static_cast<char>(b - 'A' + 'a');
+      }
+      if (a != b) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return true;
+    }
+  }
+  return false;
+}
+
+Vec3 resolveStreamFocus(const SceneInstance& instance) {
+  Vec3 focus(0.0f);
+  bool found_main = false;
+  bool found_any = false;
+  instance.forEachCamera([&](EntityId id, const CameraComponent& camera) {
+    Vec3 position{};
+    Quat rotation{};
+    Vec3 scale{};
+    if (!instance.getTransform(id, position, rotation, scale)) {
+      return;
+    }
+    if (camera.is_main) {
+      focus = position;
+      found_main = true;
+      return;
+    }
+    if (!found_main && !found_any) {
+      focus = position;
+      found_any = true;
+    }
+  });
+  return focus;
+}
+
+uint32_t streamPriorityForEntity(const eastl::string& name, const Vec3& position,
+                                 const Vec3& focus) {
+  const float dx = position.x - focus.x;
+  const float dy = position.y - focus.y;
+  const float dz = position.z - focus.z;
+  const float dist_sq = dx * dx + dy * dy + dz * dz;
+  uint32_t priority = 100000u;
+  if (dist_sq < 25.0f) {
+    priority = 500000u;
+  } else if (dist_sq < 400.0f) {
+    priority = 400000u;
+  } else if (dist_sq < 2500.0f) {
+    priority = 300000u;
+  } else if (dist_sq < 10000.0f) {
+    priority = 200000u;
+  }
+  if (containsInsensitive(name, "chocomel")) {
+    priority += 1000000u;
+  } else if (containsInsensitive(name, "hub")) {
+    priority += 500000u;
+  } else if (containsInsensitive(name, "player") ||
+             containsInsensitive(name, "character")) {
+    priority += 400000u;
+  }
+  return priority;
+}
+
 bool enqueueUniqueMesh(AssetManager* asset_manager, MeshLoader* mesh_loader,
                        const eastl::string& definition_ref,
-                       const eastl::string& resolved_ref,
+                       const eastl::string& resolved_ref, uint32_t priority,
                        eastl::string& out_key) {
   out_key.clear();
   if (asset_manager == nullptr || mesh_loader == nullptr) {
@@ -591,6 +673,7 @@ bool enqueueUniqueMesh(AssetManager* asset_manager, MeshLoader* mesh_loader,
     request.key = virtual_path;
   }
   request.virtual_path = virtual_path;
+  request.priority = priority;
 
   if (endsWithInsensitive(virtual_path, ".mesh.yaml") ||
       endsWithInsensitive(virtual_path, ".mesh.asset")) {
@@ -658,6 +741,7 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
   LOG_INFO("[GltfSceneImporter] attachEntityMeshes begin (entities={})",
            scene.getEntities().size());
   const auto attach_begin = std::chrono::steady_clock::now();
+  const Vec3 stream_focus = resolveStreamFocus(instance);
 
   for (const SceneEntityDefinition& definition : scene.getEntities()) {
     if (definition.mesh_virtual_path.empty()) {
@@ -671,8 +755,14 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
       continue;
     }
 
+    const uint32_t stream_priority = streamPriorityForEntity(
+        definition.name, definition.position, stream_focus);
+
     if (auto streamed = stream_key_by_ref.find(definition.mesh_virtual_path);
         streamed != stream_key_by_ref.end()) {
+      if (mesh_loader != nullptr) {
+        mesh_loader->boostPriority(streamed->second, stream_priority);
+      }
       bindPendingMeshRenderer(instance, entity_id, streamed->second);
       ++mesh_asset_binds;
       continue;
@@ -703,7 +793,7 @@ void GltfSceneImporter::attachEntityMeshes(AssetManager* asset_manager,
         eastl::string stream_key;
         if (enqueueUniqueMesh(asset_manager, mesh_loader,
                               definition.mesh_virtual_path, mesh_ref,
-                              stream_key)) {
+                              stream_priority, stream_key)) {
           stream_key_by_ref[definition.mesh_virtual_path] = stream_key;
           bindPendingMeshRenderer(instance, entity_id, stream_key);
           ++mesh_asset_binds;

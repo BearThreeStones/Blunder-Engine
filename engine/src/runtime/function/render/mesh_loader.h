@@ -39,6 +39,8 @@ class MeshLoader final {
     std::filesystem::path descriptor_path;
     uint32_t mesh_index{0};
     uint32_t primitive_index{0};
+    /// Higher values upload sooner when draining the per-tick GPU budget.
+    uint32_t priority{0};
   };
 
   MeshLoader();
@@ -63,6 +65,10 @@ class MeshLoader final {
 
   void enableGpu(bool enabled);
   void request(const Request& request);
+
+  /// Raise stream priority for an already-requested key (near-camera / hero).
+  /// Reorders `gpu_pending` when the CPU mesh is already waiting for upload.
+  void boostPriority(const eastl::string& key, uint32_t priority);
 
   eastl::shared_ptr<MeshAsset> cpuMesh(const eastl::string& key) const;
   bool isFailed(const eastl::string& key) const;
