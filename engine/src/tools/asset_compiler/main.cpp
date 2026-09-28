@@ -16,9 +16,9 @@ void printUsage() {
                "Usage: asset_compiler --project-root <path> [--force] "
                "[--player-trust]\n"
                "  Default: cookIfStale (verify stamp fingerprint).\n"
-               "  --player-trust: cookIfStaleForPlayer (trust stamp, no "
-               "fingerprint walk).\n"
-               "  --force: cookAll(true) then refresh cook stamp.\n");
+               "  --player-trust: cookIfStaleForPlayer (verify fingerprint; "
+               "skip cook walk on match).\n"
+               "  --force: cookAll(true) then refresh cook stamp on success.\n");
 }
 
 }  // namespace
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
   Blunder::AssetCompilerStats stats{};
   if (force) {
     stats = compiler.cookAll(true);
-    if (!stats.aborted) {
+    if (!stats.aborted && stats.failed == 0) {
       (void)compiler.refreshCookStamp();
     }
   } else if (player_trust) {

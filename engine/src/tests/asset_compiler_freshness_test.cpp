@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -473,6 +474,161 @@ void cookIfStaleReusesStampWhenDescriptorsUnchanged() {
   fs::remove_all(project);
 }
 
+void cookIfStaleInvalidatesWhenResourceSourceChanges() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "bbbbbbbb-0001-4000-8000-0000000000a1";
+  const fs::path source = project / "Resources" / "Models" / "triRes.gltf";
+
+  writeTextFile(source, kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "triRes.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/triRes.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  const AssetCompilerStats first = compiler.cookIfStale();
+  expect_true("resource stamp: first cook writes stamp",
+              file_system.exists(project / ".blunder" / "cooked" / "cook_stamp"));
+  expect_true("resource stamp: first does not use stamp", !first.used_stamp);
+
+  const AssetCompilerStats second = compiler.cookIfStale();
+  expect_true("resource stamp: second uses stamp", second.used_stamp);
+
+  // Touch Resources source without touching Assets descriptor.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  writeTextFile(source, std::string(kMinimalTriangleGltf) + "\n");
+
+  const AssetCompilerStats after_resource =
+      compiler.cookIfStale();
+  expect_true("resource mtime change does not reuse stamp",
+              !after_resource.used_stamp);
+  expect_true("resource mtime change recooks mesh",
+              after_resource.meshes_cooked >= 1);
+
+  const AssetCompilerStats player_after =
+      compiler.cookIfStaleForPlayer();
+  expect_true("player trusts after resource recook", player_after.used_stamp);
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void cookIfStaleForPlayerRejectsMismatchedFingerprint() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "bbbbbbbb-0001-4000-8000-0000000000a2";
+
+  writeTextFile(project / "Resources" / "Models" / "triFp.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "triFp.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/triFp.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  (void)compiler.cookIfStale();
+  expect_true("player fingerprint: stamp exists after cook",
+              file_system.exists(project / ".blunder" / "cooked" / "cook_stamp"));
+
+  // Corrupt stamp contents while leaving the file present (existence alone
+  // must not be enough for Player trust).
+  writeTextFile(project / ".blunder" / "cooked" / "cook_stamp",
+                "version: 2\n"
+                "descriptor_count: 999\n"
+                "fingerprint: deadbeefdeadbeef\n");
+
+  const AssetCompilerStats player = compiler.cookIfStaleForPlayer();
+  expect_true("player rejects mismatched fingerprint", !player.used_stamp);
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
+void cookIfStaleDoesNotWriteStampOnFailedCook() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "bbbbbbbb-0001-4000-8000-0000000000a3";
+
+  // Descriptor points at a missing source → cook fails.
+  writeTextFile(project / "Assets" / "Meshes" / "missingSrc.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/does_not_exist.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  const AssetCompilerStats stats = compiler.cookIfStale();
+  expect_true("failed cook reports failure", stats.failed >= 1);
+  expect_true("failed cook does not write stamp",
+              !file_system.exists(project / ".blunder" / "cooked" / "cook_stamp"));
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -483,6 +639,9 @@ int main() {
   cookHeartbeatStopsCookAllBeforeDescriptors();
   cookAssetForceRecooksFreshFinal();
   cookIfStaleReusesStampWhenDescriptorsUnchanged();
+  cookIfStaleInvalidatesWhenResourceSourceChanges();
+  cookIfStaleForPlayerRejectsMismatchedFingerprint();
+  cookIfStaleDoesNotWriteStampOnFailedCook();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

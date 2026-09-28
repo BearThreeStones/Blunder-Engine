@@ -45,11 +45,12 @@ class AssetCompilerService final {
   /// Optional startup / packaging warm-up: cooks every stale Asset under Assets/.
   /// Pull freshness is defined by markFinalStale / cookAsset / cookDependents,
   /// not by this scan.
-  /// When `.blunder/cooked/cook_stamp` matches the current Assets descriptor
+  /// When `.blunder/cooked/cook_stamp` matches the current Assets+Resources
   /// fingerprint, skips the per-descriptor cook walk (registry scan still runs).
   AssetCompilerStats cookIfStale();
 
-  /// Player boot: if a cook stamp exists, trust it and skip Assets walks
+  /// Player boot: if cook stamp fingerprint matches (Assets descriptors +
+  /// Resources sources), trust it and skip the cook walk + rebuildFromScan
   /// (registry already loaded from `.blunder/asset_registry.yaml`). Otherwise
   /// falls back to cookIfStale().
   AssetCompilerStats cookIfStaleForPlayer();
@@ -57,7 +58,7 @@ class AssetCompilerService final {
   /// Drop the cook stamp so the next cookIfStale rescans descriptors.
   void invalidateCookStamp();
 
-  /// Recompute Assets descriptor fingerprint and write `.blunder/cooked/cook_stamp`.
+  /// Recompute Assets+Resources fingerprint and write `.blunder/cooked/cook_stamp`.
   /// Call after a completed cookAll(force) so subsequent cookIfStale can skip.
   bool refreshCookStamp();
 
@@ -90,10 +91,17 @@ class AssetCompilerService final {
   void cookDependents(const eastl::string& guid);
 
  private:
-  bool cookMeshDescriptor(const eastl::string& descriptor_virtual_path,
-                          bool force);
-  bool cookTextureDescriptor(const eastl::string& descriptor_virtual_path,
-                             bool force);
+  /// Outcome of cooking one Mesh/Texture descriptor (warm-up accounting).
+  enum class DescriptorCookResult {
+    Cooked,
+    SkippedFresh,
+    Failed,
+  };
+
+  DescriptorCookResult cookMeshDescriptor(
+      const eastl::string& descriptor_virtual_path, bool force);
+  DescriptorCookResult cookTextureDescriptor(
+      const eastl::string& descriptor_virtual_path, bool force);
 
   FileSystem* m_file_system{nullptr};
   AssetManager* m_asset_manager{nullptr};
