@@ -116,7 +116,7 @@ int main() {
     expect_true("nonplayer idle jump", !snap.jump_pressed);
   }
 
-  // Unfocused idle
+  // Unfocused Player still accepts Move (Editor-spawned Player workflow)
   {
     state.reset();
     auto k = base;
@@ -124,7 +124,8 @@ int main() {
     k.w = true;
     k.space = true;
     auto snap = state.sample(k);
-    expect_true("unfocus idle", near0(snap.move_y) && !snap.jump_pressed);
+    expect_true("unfocus player move y", near1(snap.move_y));
+    expect_true("unfocus player jump edge", snap.jump_pressed);
   }
 
   // Pause discards jump; resume no buffered edge

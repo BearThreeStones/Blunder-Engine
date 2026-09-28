@@ -13,8 +13,11 @@ void GameplayInputState::reset() {
 
 GameplayInputSnapshot GameplayInputState::sample(const GameplayInputKeys& keys) {
   const bool cine_suppressed = cineSegmentService().isGameplayInputSuppressed();
-  const bool authoritative = keys.player_host && keys.focused && !keys.paused &&
-                             !cine_suppressed;
+  // Player gameplay accepts Move without OS/SDL window focus. Editor-spawned
+  // Player often never steals foreground; quiet-unfocus idle made GetMove
+  // permanently zero in that workflow. Still gate on host / pause / CINE.
+  const bool authoritative =
+      keys.player_host && !keys.paused && !cine_suppressed;
 
   if (!authoritative) {
     m_space_was_down = keys.space;

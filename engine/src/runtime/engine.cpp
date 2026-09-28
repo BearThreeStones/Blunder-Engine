@@ -54,6 +54,7 @@
 #include <SDL3/SDL_system.h>
 #endif
 
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 
@@ -575,7 +576,63 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
         keys.right = kb[SDL_SCANCODE_RIGHT];
         keys.space = kb[SDL_SCANCODE_SPACE];
       }
-      gameplayInputState().sample(keys);
+#if defined(_WIN32)
+      // SDL keyboard state only updates from focused-window events. Editor Play
+      // often leaves Player without INPUT_FOCUS while the user still holds
+      // WASD; poll OS async keys so Move works without stealing foreground.
+      if (keys.player_host) {
+        auto async_down = [](int vk) -> bool {
+          return (GetAsyncKeyState(vk) & 0x8000) != 0;
+        };
+        keys.w = keys.w || async_down('W');
+        keys.a = keys.a || async_down('A');
+        keys.s = keys.s || async_down('S');
+        keys.d = keys.d || async_down('D');
+        keys.up = keys.up || async_down(VK_UP);
+        keys.left = keys.left || async_down(VK_LEFT);
+        keys.down = keys.down || async_down(VK_DOWN);
+        keys.right = keys.right || async_down(VK_RIGHT);
+        keys.space = keys.space || async_down(VK_SPACE);
+      }
+#endif
+      const GameplayInputSnapshot snap = gameplayInputState().sample(keys);
+      if (keys.player_host) {
+        static int s_move_diag_frames = 0;
+        static int s_move_diag_enabled = -1;
+        if (s_move_diag_enabled < 0) {
+          const char* env = std::getenv("BLUNDER_GAMEPLAY_MOVE_DIAG");
+          s_move_diag_enabled =
+              (env != nullptr && env[0] != '\0' && env[0] != '0') ? 1 : 0;
+        }
+        if (s_move_diag_enabled == 1 && s_move_diag_frames < 6000) {
+          ++s_move_diag_frames;
+          const char* path_env = std::getenv("BLUNDER_GAMEPLAY_MOVE_DIAG_PATH");
+          const char* path =
+              (path_env != nullptr && path_env[0] != '\0')
+                  ? path_env
+                  : "gameplay-move-diag.ndjson";
+          static FILE* diag = nullptr;
+          static bool diag_opened = false;
+          if (!diag_opened) {
+            diag_opened = true;
+            diag = std::fopen(path, "ab");
+          }
+          if (diag != nullptr) {
+            std::fprintf(
+                diag,
+                "{\"f\":%d,\"focused\":%s,\"paused\":%s,"
+                "\"mx\":%.4f,\"my\":%.4f,\"jump\":%s,"
+                "\"w\":%d,\"a\":%d,\"s\":%d,\"d\":%d}\n",
+                s_move_diag_frames, keys.focused ? "true" : "false",
+                keys.paused ? "true" : "false", snap.move_x, snap.move_y,
+                snap.jump_pressed ? "true" : "false", keys.w ? 1 : 0,
+                keys.a ? 1 : 0, keys.s ? 1 : 0, keys.d ? 1 : 0);
+            if ((s_move_diag_frames % 30) == 0) {
+              std::fflush(diag);
+            }
+          }
+        }
+      }
     }
     phases.mark("inputMs");
 

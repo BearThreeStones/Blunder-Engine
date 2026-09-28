@@ -14,6 +14,8 @@ struct GameplayInputKeys {
   bool right{false};
   bool space{false};
   /// Window keyboard focus (Player: SDL input focus, not Focus Mode / Left Alt).
+  /// Informational / host diagnostics only — sample() no longer gates on it for
+  /// engine_player (Editor-spawned Player often lacks foreground).
   bool focused{true};
   bool paused{false};
   bool player_host{false};
