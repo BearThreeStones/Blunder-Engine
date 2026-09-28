@@ -22,16 +22,16 @@ GameplayInputSnapshot GameplayInputState::sample(const GameplayInputKeys& keys) 
   } else {
     float x = 0.f;
     float y = 0.f;
-    if (keys.d) {
+    if (keys.d || keys.right) {
       x += 1.f;
     }
-    if (keys.a) {
+    if (keys.a || keys.left) {
       x -= 1.f;
     }
-    if (keys.w) {
+    if (keys.w || keys.up) {
       y += 1.f;
     }
-    if (keys.s) {
+    if (keys.s || keys.down) {
       y -= 1.f;
     }
     const float len = std::sqrt(x * x + y * y);

@@ -67,7 +67,9 @@ void WindowSystem::initialize(WindowCreateInfo create_info) {
 
   m_should_close = false;
   m_is_focus_mode = false;
-  m_startup_foreground_frames = 90;
+  // ~5s at 60 Hz: Editor→Play often needs several retries before Windows
+  // grants the Player HWND input focus (required for Gameplay Input).
+  m_startup_foreground_frames = 300;
   SDL_FlashWindow(m_window, SDL_FLASH_UNTIL_FOCUSED);
   bringToForeground();
   SDL_StartTextInput(m_window);

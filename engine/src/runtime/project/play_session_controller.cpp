@@ -217,6 +217,9 @@ bool spawnPlayerProcess(const PlaySpawnArgs& args,
   if (!ok) {
     return false;
   }
+  // Parent must allow the child to steal foreground so Player gets
+  // SDL_WINDOW_INPUT_FOCUS; otherwise Gameplay Input stays idle (Move=0).
+  AllowSetForegroundWindow(pi.dwProcessId);
   CloseHandle(pi.hThread);
   out_process.close();
   out_process.process = pi.hProcess;

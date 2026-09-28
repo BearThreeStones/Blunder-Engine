@@ -569,6 +569,10 @@ bool BlunderEngine::tickOneFrame(float delta_time) {
         keys.a = kb[SDL_SCANCODE_A];
         keys.s = kb[SDL_SCANCODE_S];
         keys.d = kb[SDL_SCANCODE_D];
+        keys.up = kb[SDL_SCANCODE_UP];
+        keys.left = kb[SDL_SCANCODE_LEFT];
+        keys.down = kb[SDL_SCANCODE_DOWN];
+        keys.right = kb[SDL_SCANCODE_RIGHT];
         keys.space = kb[SDL_SCANCODE_SPACE];
       }
       gameplayInputState().sample(keys);
