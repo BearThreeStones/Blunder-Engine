@@ -276,6 +276,11 @@ void RuntimeGlobalContext::startSystems(
   MeshLoader::InitInfo mesh_loader_init{};
   mesh_loader_init.job_system = m_job_system.get();
   mesh_loader_init.asset_manager = m_asset_manager.get();
+  // Player: slightly higher GPU upload budget so near-camera / hero meshes
+  // become interactive sooner after the window opens.
+  if (player_host) {
+    mesh_loader_init.gpu_budget = MeshLoader::kDefaultGpuMeshBudget * 2u;
+  }
   m_mesh_loader->initialize(mesh_loader_init);
 
   m_asset_compiler = eastl::make_shared<AssetCompilerService>();
@@ -289,7 +294,11 @@ void RuntimeGlobalContext::startSystems(
     return;
   }
   m_asset_compiler->setCookHeartbeat([]() { return startupCoverPump(); });
-  m_asset_compiler->cookIfStale();
+  if (player_host) {
+    m_asset_compiler->cookIfStaleForPlayer();
+  } else {
+    m_asset_compiler->cookIfStale();
+  }
   m_asset_compiler->setCookHeartbeat({});
   if (m_window_system && m_window_system->shouldClose()) {
     requestQuit();

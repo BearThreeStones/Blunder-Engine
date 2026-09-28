@@ -105,11 +105,84 @@ size_t pendingMeshCount(const Blunder::SceneInstance& scene) {
   return count;
 }
 
+void priorityOrdersGpuPending() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kLow = "cccccccc-bbbb-4ccc-8ddd-eeeeeeeeee01";
+  const char* kHigh = "cccccccc-bbbb-4ccc-8ddd-eeeeeeeeee02";
+  expect_true("priority meshbin low",
+              writeMeshCookFile(project / ".blunder" / "cooked" /
+                                    (std::string(kLow) + ".meshbin"),
+                                makeTriangle(0.0f), makeTriangleIndices()));
+  expect_true("priority meshbin high",
+              writeMeshCookFile(project / ".blunder" / "cooked" /
+                                    (std::string(kHigh) + ".meshbin"),
+                                makeTriangle(2.0f), makeTriangleIndices()));
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  JobSystem jobs;
+  jobs.initialize();
+
+  MeshLoader loader;
+  MeshLoader::InitInfo info;
+  info.job_system = &jobs;
+  info.asset_manager = &manager;
+  info.gpu_budget = 1;
+  loader.initialize(info);
+
+  MeshLoader::Request low{};
+  low.key = kLow;
+  low.guid = kLow;
+  low.priority = 1;
+  low.cooked_path =
+      project / ".blunder" / "cooked" / (std::string(kLow) + ".meshbin");
+  MeshLoader::Request high{};
+  high.key = kHigh;
+  high.guid = kHigh;
+  high.priority = 50;
+  high.cooked_path =
+      project / ".blunder" / "cooked" / (std::string(kHigh) + ".meshbin");
+
+  // Request low first, then high — GPU pending must still prefer high.
+  loader.request(low);
+  loader.request(high);
+  jobs.wait();
+  loader.tick();
+
+  const eastl::vector<eastl::string> pending = loader.gpuPendingKeys();
+  expect_true("priority pending has both meshes", pending.size() == 2);
+  expect_true("higher priority uploads first",
+              !pending.empty() && pending.front() == eastl::string(kHigh));
+
+  loader.boostPriority(eastl::string(kLow), 100);
+  const eastl::vector<eastl::string> boosted = loader.gpuPendingKeys();
+  expect_true("boostPriority moves key to front",
+              !boosted.empty() && boosted.front() == eastl::string(kLow));
+
+  loader.shutdown();
+  jobs.shutdown();
+  manager.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
   using namespace Blunder;
   ensureLogger();
+  priorityOrdersGpuPending();
 
   const fs::path project = makeTempProject();
   const char* kGuidA = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeee01";

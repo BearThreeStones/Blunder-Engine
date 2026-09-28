@@ -402,6 +402,77 @@ void cookAssetForceRecooksFreshFinal() {
   fs::remove_all(project);
 }
 
+void cookIfStaleReusesStampWhenDescriptorsUnchanged() {
+  using namespace Blunder;
+  ensureLogger();
+
+  const fs::path project = makeTempProject();
+  const char* kGuid = "bbbbbbbb-0001-4000-8000-000000000099";
+
+  writeTextFile(project / "Resources" / "Models" / "triStamp.gltf",
+                kMinimalTriangleGltf);
+  writeTextFile(project / "Assets" / "Meshes" / "triStamp.mesh.yaml",
+                std::string("type: Mesh\n") + "guid: " + kGuid + "\n" +
+                    "source: resources/Models/triStamp.gltf\n" +
+                    "import:\n  materials: false\n  animations: false\n"
+                    "  scale: 1\n");
+
+  FileSystem file_system;
+  FileSystemInitInfo fs_init;
+  fs_init.project_root = project;
+  file_system.initialize(fs_init);
+
+  AssetRegistry registry;
+  registry.initialize(&file_system);
+
+  AssetManager manager;
+  AssetManagerInitInfo am_init;
+  am_init.file_system = &file_system;
+  manager.initialize(am_init);
+
+  AssetCompilerService compiler;
+  compiler.initialize(&file_system, &manager, &registry);
+
+  const AssetCompilerStats first = compiler.cookIfStale();
+  expect_true("first cookIfStale cooks or skips descriptors",
+              first.meshes_cooked >= 1 || first.skipped >= 1);
+  expect_true("first cookIfStale does not use stamp", !first.used_stamp);
+  expect_true("first cookIfStale completes", !first.aborted);
+  expect_true("cook stamp written",
+              file_system.exists(project / ".blunder" / "cooked" / "cook_stamp"));
+
+  const AssetCompilerStats second = compiler.cookIfStale();
+  expect_true("second cookIfStale uses stamp", second.used_stamp);
+  expect_true("second cookIfStale cooks nothing", second.meshes_cooked == 0);
+  expect_true("second cookIfStale reports skipped descriptors",
+              second.skipped >= 1);
+
+  compiler.markFinalStale(eastl::string(kGuid));
+  expect_true("markFinalStale drops cook stamp",
+              !file_system.exists(project / ".blunder" / "cooked" / "cook_stamp"));
+
+  const AssetCompilerStats third = compiler.cookIfStale();
+  expect_true("after invalidate stamp is not reused", !third.used_stamp);
+  expect_true("after invalidate mesh is cooked again", third.meshes_cooked >= 1);
+
+  const AssetCompilerStats player_trust = compiler.cookIfStaleForPlayer();
+  expect_true("player path trusts stamp after recook", player_trust.used_stamp);
+  expect_true("player trust cooks nothing", player_trust.meshes_cooked == 0);
+
+  compiler.invalidateCookStamp();
+  expect_true("manual invalidate drops stamp",
+              !file_system.exists(project / ".blunder" / "cooked" / "cook_stamp"));
+  const AssetCompilerStats player_fallback = compiler.cookIfStaleForPlayer();
+  expect_true("player path without stamp does not trust",
+              !player_fallback.used_stamp);
+
+  compiler.shutdown();
+  manager.shutdown();
+  registry.shutdown();
+  file_system.shutdown();
+  fs::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
@@ -411,6 +482,7 @@ int main() {
   markFinalStaleForcesRecook();
   cookHeartbeatStopsCookAllBeforeDescriptors();
   cookAssetForceRecooksFreshFinal();
+  cookIfStaleReusesStampWhenDescriptorsUnchanged();
 
   const int exit_code = g_failures != 0 ? 1 : 0;
   if (g_failures != 0) {

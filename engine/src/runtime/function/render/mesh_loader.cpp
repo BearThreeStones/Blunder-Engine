@@ -1,12 +1,14 @@
 #include "runtime/function/render/mesh_loader.h"
 
 #include <atomic>
+#include <cstddef>
 #include <cstring>
 #include <fstream>
 #include <string>
 
 #include <cgltf.h>
 
+#include "EASTL/sort.h"
 #include "EASTL/unordered_map.h"
 #include "EASTL/unordered_set.h"
 #include "EASTL/unique_ptr.h"
@@ -141,11 +143,60 @@ struct MeshLoaderImpl {
   eastl::unordered_map<eastl::string, eastl::shared_ptr<MeshAsset>> cpu_meshes;
   eastl::unordered_set<eastl::string> failed_keys;
   eastl::unordered_set<eastl::string> gpu_uploaded;
+  eastl::unordered_map<eastl::string, uint32_t> priorities;
   eastl::vector<eastl::string> submit_order;
   eastl::vector<eastl::string> gpu_pending;
 };
 
 namespace {
+
+void enqueueGpuPending(MeshLoaderImpl& impl, const eastl::string& key) {
+  if (impl.gpu_uploaded.find(key) != impl.gpu_uploaded.end()) {
+    return;
+  }
+  for (const eastl::string& pending : impl.gpu_pending) {
+    if (pending == key) {
+      return;
+    }
+  }
+  const uint32_t priority = [&]() -> uint32_t {
+    if (auto it = impl.priorities.find(key); it != impl.priorities.end()) {
+      return it->second;
+    }
+    return 0;
+  }();
+  size_t insert_at = impl.gpu_pending.size();
+  for (size_t i = 0; i < impl.gpu_pending.size(); ++i) {
+    uint32_t other = 0;
+    if (auto it = impl.priorities.find(impl.gpu_pending[i]);
+        it != impl.priorities.end()) {
+      other = it->second;
+    }
+    if (priority > other) {
+      insert_at = i;
+      break;
+    }
+  }
+  impl.gpu_pending.insert(impl.gpu_pending.begin() +
+                              static_cast<ptrdiff_t>(insert_at),
+                          key);
+}
+
+void resortGpuPending(MeshLoaderImpl& impl) {
+  eastl::stable_sort(
+      impl.gpu_pending.begin(), impl.gpu_pending.end(),
+      [&](const eastl::string& a, const eastl::string& b) {
+        uint32_t pa = 0;
+        uint32_t pb = 0;
+        if (auto it = impl.priorities.find(a); it != impl.priorities.end()) {
+          pa = it->second;
+        }
+        if (auto it = impl.priorities.find(b); it != impl.priorities.end()) {
+          pb = it->second;
+        }
+        return pa > pb;
+      });
+}
 
 void publishCpuMesh(MeshLoaderImpl& impl, RequestRecord& record) {
   if (record.vertices.empty() || record.indices.empty()) {
@@ -175,18 +226,7 @@ void publishCpuMesh(MeshLoaderImpl& impl, RequestRecord& record) {
     impl.asset_manager->adoptStreamedMesh(mesh, record.guid);
   }
   impl.cpu_meshes[record.key] = mesh;
-  if (impl.gpu_uploaded.find(record.key) == impl.gpu_uploaded.end()) {
-    bool already_pending = false;
-    for (const eastl::string& pending : impl.gpu_pending) {
-      if (pending == record.key) {
-        already_pending = true;
-        break;
-      }
-    }
-    if (!already_pending) {
-      impl.gpu_pending.push_back(record.key);
-    }
-  }
+  enqueueGpuPending(impl, record.key);
   impl.residency_changed = true;
 }
 
@@ -224,18 +264,7 @@ RequestRecord* beginRequest(MeshLoaderImpl& impl, const eastl::string& key) {
     return nullptr;
   }
   if (impl.cpu_meshes.find(key) != impl.cpu_meshes.end()) {
-    if (impl.gpu_uploaded.find(key) == impl.gpu_uploaded.end()) {
-      bool already_pending = false;
-      for (const eastl::string& pending : impl.gpu_pending) {
-        if (pending == key) {
-          already_pending = true;
-          break;
-        }
-      }
-      if (!already_pending) {
-        impl.gpu_pending.push_back(key);
-      }
-    }
+    enqueueGpuPending(impl, key);
     return nullptr;
   }
   auto it = impl.requests.find(key);
@@ -279,6 +308,7 @@ void MeshLoader::shutdown() {
   m_impl->cpu_meshes.clear();
   m_impl->failed_keys.clear();
   m_impl->gpu_uploaded.clear();
+  m_impl->priorities.clear();
   m_impl->submit_order.clear();
   m_impl->gpu_pending.clear();
   m_impl.reset();
@@ -333,6 +363,11 @@ void MeshLoader::request(const Request& request) {
     return;
   }
   m_impl->request_args[request.key] = request;
+  uint32_t& stored_priority = m_impl->priorities[request.key];
+  if (request.priority > stored_priority) {
+    stored_priority = request.priority;
+    resortGpuPending(*m_impl);
+  }
   RequestRecord* record = beginRequest(*m_impl, request.key);
   if (record == nullptr) {
     return;
@@ -350,6 +385,21 @@ void MeshLoader::request(const Request& request) {
   }
   ++m_impl->submitted_job_count;
   m_impl->job_system->submit(&cpuReadJob, record);
+}
+
+void MeshLoader::boostPriority(const eastl::string& key, uint32_t priority) {
+  if (!m_impl || key.empty()) {
+    return;
+  }
+  uint32_t& stored = m_impl->priorities[key];
+  if (priority <= stored) {
+    return;
+  }
+  stored = priority;
+  if (auto it = m_impl->request_args.find(key); it != m_impl->request_args.end()) {
+    it->second.priority = priority;
+  }
+  resortGpuPending(*m_impl);
 }
 
 eastl::shared_ptr<MeshAsset> MeshLoader::cpuMesh(const eastl::string& key) const {

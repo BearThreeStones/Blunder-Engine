@@ -19,6 +19,11 @@ struct AssetCompilerStats {
   uint32_t textures_cooked{0};
   uint32_t skipped{0};
   uint32_t failed{0};
+  /// True when cookAll stopped early (window closed / heartbeat).
+  bool aborted{false};
+  /// True when cookIfStale reused `.blunder/cooked/cook_stamp` and skipped the
+  /// per-descriptor freshness walk.
+  bool used_stamp{false};
 };
 
 class AssetCompilerService final {
@@ -40,7 +45,21 @@ class AssetCompilerService final {
   /// Optional startup / packaging warm-up: cooks every stale Asset under Assets/.
   /// Pull freshness is defined by markFinalStale / cookAsset / cookDependents,
   /// not by this scan.
+  /// When `.blunder/cooked/cook_stamp` matches the current Assets descriptor
+  /// fingerprint, skips the per-descriptor cook walk (registry scan still runs).
   AssetCompilerStats cookIfStale();
+
+  /// Player boot: if a cook stamp exists, trust it and skip Assets walks
+  /// (registry already loaded from `.blunder/asset_registry.yaml`). Otherwise
+  /// falls back to cookIfStale().
+  AssetCompilerStats cookIfStaleForPlayer();
+
+  /// Drop the cook stamp so the next cookIfStale rescans descriptors.
+  void invalidateCookStamp();
+
+  /// Recompute Assets descriptor fingerprint and write `.blunder/cooked/cook_stamp`.
+  /// Call after a completed cookAll(force) so subsequent cookIfStale can skip.
+  bool refreshCookStamp();
 
   /// Rebuild the held Asset Dependency Graph from the registry + on-disk docs.
   void rebuildDependencyGraph();
