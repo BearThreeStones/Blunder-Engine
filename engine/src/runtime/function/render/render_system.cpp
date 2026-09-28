@@ -920,8 +920,18 @@ void RenderSystem::pollViewportPickIfActive() {
 }
 
 bool RenderSystem::usesZeroCopyViewport() const {
-  return !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
-         m_viewport_layout_source->viewportUsesSharedDevice();
+  if (viewportZeroCopyDisabled() || m_viewport_layout_source == nullptr ||
+      !m_viewport_layout_source->viewportUsesSharedDevice()) {
+    return false;
+  }
+  // Windowed Player HUD: borrowed VkImage bind logs OK, but Skia never composites
+  // the image into PlayerHudWindow — the client stays #383838 (kViewportBackgroundRgb
+  // / RGB 56). CPU readback through UIViewportBridge presents the offscreen color.
+  // Editor Viewport keeps zero-copy.
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    return false;
+  }
+  return true;
 }
 
 void RenderSystem::resetZeroCopyPresentState() {
