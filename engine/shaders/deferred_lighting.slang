@@ -316,7 +316,10 @@ float4 fragmentMain(VertexOutput input) : SV_Target
     float ao = albedoAo.a;
     if ((receiver & kReceiverUnlitBit) != 0)
     {
-        return float4(albedo, 1.0);
+        // Paper/unlit cards still need the same display transform as lit pixels.
+        // Skipping Reinhard+sRGB let near-white snow/path albedo (and Godot paper
+        // cards) write straight into the UNORM target and wash the hub white.
+        return float4(linearToSrgb(tonemapReinhard(albedo)), 1.0);
     }
 
     float4 nmr = gbufferNormalMetalRough.Load(pixel);
