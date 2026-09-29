@@ -20,7 +20,8 @@ class VulkanSync;
 ///
 /// Staging buffers are persistently mapped (VMA GPU_TO_CPU); pollAndPresent()
 /// hands the mapped pointer directly to the sink, avoiding an intermediate
-/// cpu_pixels memcpy per frame.
+/// cpu_pixels memcpy per frame. tryMapSlot() invalidates each completed
+/// allocation so HOST_CACHED views see the latest GPU copy.
 class UIViewportBridge final {
  public:
   UIViewportBridge();
