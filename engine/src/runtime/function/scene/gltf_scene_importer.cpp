@@ -315,7 +315,14 @@ GltfSceneImporter::ImportResult importGltfDocument(
     }
 
     if (node->skin != nullptr) {
-      Object* skin_object = scene_instance.ensureBoundObject(node_entity_id);
+      // Host the skin Skeleton on the attach root (character Object that owns
+      // AnimationTree / AnimationPlayer), not on every GEO mesh node. Chocomel
+      // ships skin on each GEO-*; populating per-node left mesh renderers
+      // bound to rest-pose child Skeletons while the root Tree wrote poses
+      // nowhere the GPU palette read.
+      const EntityId skeleton_host_id =
+          isValid(attach_parent_entity) ? attach_parent_entity : node_entity_id;
+      Object* skin_object = scene_instance.ensureBoundObject(skeleton_host_id);
       if (skin_object != nullptr) {
         Skeleton* skeleton = skin_object->ensureSkeleton();
         if (skeleton->getBoneCount() == 0) {
