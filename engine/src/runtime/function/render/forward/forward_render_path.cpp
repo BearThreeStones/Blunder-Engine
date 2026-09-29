@@ -682,6 +682,24 @@ void drawMeshList(VkCommandBuffer cmd, VulkanContext* context,
     applyBindlessPbrMapFlags(mesh_ubo.pbr_texture_flags,
                              mesh_ubo.bindless_texture_indices,
                              mesh_ubo.material_flags);
+    if (draw.base_color_texture != nullptr &&
+        draw.base_color_texture != fallback_texture && draw.material != nullptr) {
+      const eastl::shared_ptr<Texture2DAsset>& albedo =
+          draw.material->getBaseColorTextureAsset();
+      const eastl::string& tex_path =
+          albedo ? albedo->getVirtualPath() : eastl::string{};
+      if (tex_path.find("chocomel") != eastl::string::npos ||
+          tex_path.find("Chocomel") != eastl::string::npos) {
+        static uint32_t s_fwd_logs = 0;
+        if (s_fwd_logs < 8u) {
+          ++s_fwd_logs;
+          LOG_INFO(
+              "[Forward] bindless chocomel idx={} flags_y={:.0f} skinned={}",
+              mesh_ubo.bindless_texture_indices.x, mesh_ubo.material_flags.y,
+              gpu_skinned ? 1 : 0);
+        }
+      }
+    }
 
     const VkDescriptorSet descriptor_set = reinterpret_cast<VkDescriptorSet>(
         gpu_skinned ? skinned_descriptor_sets[descriptor_index]

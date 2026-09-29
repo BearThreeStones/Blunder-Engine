@@ -253,9 +253,30 @@ void fillInstance(GpuDrivenInstanceGpu& inst, const GpuDrivenDraw& draw,
   inst.material_flags = ubo.material_flags;
   // Bindless 0 is the checker fallback, not a PBR map. Keep material_flags.z
   // (roughness-only) so the shader still skips ORM B-as-metal, and do not
-  // re-enable paper_rough as a tangent normal.
+  // re-enable paper_rough as a tangent normal. Also clears material_flags.y
+  // when albedo is still on slot 0 (pending TextureLoader).
   applyBindlessPbrMapFlags(inst.pbr_texture_flags, inst.bindless_texture_indices,
                            inst.material_flags);
+  if (draw.base_color_texture != nullptr && draw.base_color_texture != fallback &&
+      draw.material != nullptr) {
+    const eastl::shared_ptr<Texture2DAsset>& albedo =
+        draw.material->getBaseColorTextureAsset();
+    const eastl::string& tex_path =
+        albedo ? albedo->getVirtualPath() : eastl::string{};
+    const bool watch = tex_path.find("chocomel") != eastl::string::npos ||
+                       tex_path.find("Chocomel") != eastl::string::npos ||
+                       tex_path.find("snow_gen_albedo") != eastl::string::npos;
+    if (watch) {
+      static uint32_t s_bindless_logs = 0;
+      if (s_bindless_logs < 16u) {
+        ++s_bindless_logs;
+        LOG_INFO(
+            "[GpuDriven] bindless tex={} idx={} flags_y={:.0f} has_map={:.0f}",
+            tex_path.c_str(), inst.bindless_texture_indices.x,
+            inst.material_flags.y, ubo.material_flags.y);
+      }
+    }
+  }
   inst.receiver_id = draw.receiver_id;
   inst.flags = draw.double_sided ? k_gpu_driven_flag_two_sided : 0u;
 }
@@ -972,9 +993,8 @@ void GpuDrivenRenderer::resizeHiZ(uint32_t width, uint32_t height) {
   createHiz(width, height);
 }
 
-void GpuDrivenRenderer::invalidateSceneOcclusion() {
+void GpuDrivenRenderer::invalidatePackedIdentity() {
   for (uint32_t i = 0; i < k_frames; ++i) {
-    m_hiz[i].built = false;
     m_uploaded_fingerprint[i] = 0;
     m_uploaded_identity_fingerprint[i] = 0;
   }
@@ -983,6 +1003,13 @@ void GpuDrivenRenderer::invalidateSceneOcclusion() {
   m_packed_fingerprint = 0;
   m_mask_fingerprint = 0;
   m_lights_fingerprint = 0;
+}
+
+void GpuDrivenRenderer::invalidateSceneOcclusion() {
+  invalidatePackedIdentity();
+  for (uint32_t i = 0; i < k_frames; ++i) {
+    m_hiz[i].built = false;
+  }
   std::memset(m_cull_hiz_bound, 0, sizeof(m_cull_hiz_bound));
   std::memset(m_shadow_cull_hiz_bound, 0, sizeof(m_shadow_cull_hiz_bound));
 }

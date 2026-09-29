@@ -274,6 +274,10 @@ void completeGpu(TextureLoaderImpl& impl, RequestRecord& record) {
     impl.context->adoptUploadedTexture(key, eastl::move(texture));
     impl.context->bindlessTextureTable().acquire(resident);
     impl.residency_changed = true;
+    const bool verify =
+        impl.context->findUploadedTexture(key) == resident;
+    LOG_INFO("[TextureLoader] resident {} enqueue_total={} verify_find={}",
+             key.c_str(), impl.gpu_enqueue_count, verify ? 1 : 0);
   } else if (texture) {
     texture->destroy();
     texture.reset();
@@ -520,11 +524,23 @@ VulkanTexture* TextureLoader::request(const Texture2DAsset* asset) {
 
   if (asset->getAbsolutePath().empty() || m_impl->job_system == nullptr ||
       !m_impl->job_system->isInitialized()) {
+    LOG_ERROR(
+        "[TextureLoader] cannot decode {}: absolute_path empty={} job_system={}",
+        key.c_str(), asset->getAbsolutePath().empty() ? 1 : 0,
+        m_impl->job_system != nullptr && m_impl->job_system->isInitialized()
+            ? 1
+            : 0);
     record->cpu_state.store(k_cpu_failed, std::memory_order_release);
     return nullptr;
   }
   record->absolute_path = asset->getAbsolutePath();
   ++m_impl->submitted_job_count;
+  if (m_impl->submitted_job_count <= 8u ||
+      (m_impl->submitted_job_count % 64u) == 0u) {
+    LOG_INFO("[TextureLoader] request #{} key={} path={}",
+             m_impl->submitted_job_count, key.c_str(),
+             record->absolute_path.generic_string());
+  }
   m_impl->job_system->submit(&decodeJob, record);
   return nullptr;
 }

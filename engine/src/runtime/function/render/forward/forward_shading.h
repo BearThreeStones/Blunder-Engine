@@ -106,9 +106,11 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
 
 /// Bindless 0 is the checker fallback. Roughness-only / paper cards keep
 /// `pbr_texture_flags.y` off so `paper_rough` cannot be sampled as a normal.
+/// Clears `material_flags.y` when albedo bindless is 0 so pending TextureLoader
+/// residency uses baseColorFactor instead of smoke-checker.
 void applyBindlessPbrMapFlags(glm::vec4& pbr_texture_flags,
                               const glm::uvec4& bindless_indices,
-                              const glm::vec4& material_flags);
+                              glm::vec4& material_flags);
 
 float computeShadowOrthoHalfExtentFromAABB(const AABB& bounds,
                                            const glm::vec3& light_direction);

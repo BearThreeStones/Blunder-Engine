@@ -142,6 +142,9 @@ void syncSceneToRender(RenderSystem* render_system, SceneInstance* scene_instanc
     return;
   }
 
+  // Complete TextureLoader copies before resolveTexture snapshots draws.
+  // Otherwise the same-frame pack keeps fallback pointers until the next sync.
+  render_system->pumpTextureLoader();
   render_system->pumpMeshLoader(scene_instance);
 
   if (OverlaySystem* overlay = render_system->getOverlaySystem()) {

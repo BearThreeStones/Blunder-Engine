@@ -1440,6 +1440,32 @@ void DeferredRenderPath::drawGBufferList(VkCommandBuffer cmd,
     applyBindlessPbrMapFlags(mesh_ubo.pbr_texture_flags,
                              mesh_ubo.bindless_texture_indices,
                              mesh_ubo.material_flags);
+    if (draw.material != nullptr) {
+      const eastl::shared_ptr<Texture2DAsset>& albedo =
+          draw.material->getBaseColorTextureAsset();
+      if (albedo) {
+        const eastl::string& tex_path = albedo->getVirtualPath();
+        if (tex_path.find("chocomel") != eastl::string::npos ||
+            tex_path.find("Chocomel") != eastl::string::npos) {
+          static uint32_t s_def_logs = 0;
+          static uint32_t s_last_idx = UINT32_MAX;
+          const uint32_t idx = mesh_ubo.bindless_texture_indices.x;
+          const bool interesting =
+              idx != s_last_idx || s_def_logs < 4u ||
+              (idx == 0u && (s_def_logs % 120u) == 0u);
+          if (interesting && s_def_logs < 40u) {
+            ++s_def_logs;
+            s_last_idx = idx;
+            LOG_INFO(
+                "[Deferred] bindless chocomel idx={} flags_y={:.0f} "
+                "skinned={} tex_ptr={} fallback={}",
+                idx, mesh_ubo.material_flags.y, gpu_skinned ? 1 : 0,
+                draw.base_color_texture != nullptr ? 1 : 0,
+                draw.base_color_texture == m_fallback_texture ? 1 : 0);
+          }
+        }
+      }
+    }
     mesh_ubo.receiver = glm::uvec4(draw.slot_index, 0u, 0u, 0u);
 
     VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
