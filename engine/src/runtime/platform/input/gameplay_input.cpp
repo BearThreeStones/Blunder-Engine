@@ -13,8 +13,11 @@ void GameplayInputState::reset() {
 
 GameplayInputSnapshot GameplayInputState::sample(const GameplayInputKeys& keys) {
   const bool cine_suppressed = cineSegmentService().isGameplayInputSuppressed();
-  const bool authoritative = keys.player_host && keys.focused && !keys.paused &&
-                             !cine_suppressed;
+  // Player gameplay accepts Move without OS/SDL window focus. Editor-spawned
+  // Player often never steals foreground; quiet-unfocus idle made GetMove
+  // permanently zero in that workflow. Still gate on host / pause / CINE.
+  const bool authoritative =
+      keys.player_host && !keys.paused && !cine_suppressed;
 
   if (!authoritative) {
     m_space_was_down = keys.space;
@@ -22,16 +25,16 @@ GameplayInputSnapshot GameplayInputState::sample(const GameplayInputKeys& keys) 
   } else {
     float x = 0.f;
     float y = 0.f;
-    if (keys.d) {
+    if (keys.d || keys.right) {
       x += 1.f;
     }
-    if (keys.a) {
+    if (keys.a || keys.left) {
       x -= 1.f;
     }
-    if (keys.w) {
+    if (keys.w || keys.up) {
       y += 1.f;
     }
-    if (keys.s) {
+    if (keys.s || keys.down) {
       y -= 1.f;
     }
     const float len = std::sqrt(x * x + y * y);

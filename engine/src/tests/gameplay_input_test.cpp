@@ -52,6 +52,24 @@ int main() {
     expect_true("d +x", near1(snap.move_x) && near0(snap.move_y));
   }
 
+  // Arrow Right → +X (WASD alias)
+  {
+    state.reset();
+    auto k = base;
+    k.right = true;
+    auto snap = state.sample(k);
+    expect_true("arrow right +x", near1(snap.move_x) && near0(snap.move_y));
+  }
+
+  // Arrow Up → +Y
+  {
+    state.reset();
+    auto k = base;
+    k.up = true;
+    auto snap = state.sample(k);
+    expect_true("arrow up +y", near1(snap.move_y) && near0(snap.move_x));
+  }
+
   // A+D cancel X
   {
     state.reset();
@@ -98,7 +116,7 @@ int main() {
     expect_true("nonplayer idle jump", !snap.jump_pressed);
   }
 
-  // Unfocused idle
+  // Unfocused Player still accepts Move (Editor-spawned Player workflow)
   {
     state.reset();
     auto k = base;
@@ -106,7 +124,8 @@ int main() {
     k.w = true;
     k.space = true;
     auto snap = state.sample(k);
-    expect_true("unfocus idle", near0(snap.move_y) && !snap.jump_pressed);
+    expect_true("unfocus player move y", near1(snap.move_y));
+    expect_true("unfocus player jump edge", snap.jump_pressed);
   }
 
   // Pause discards jump; resume no buffered edge

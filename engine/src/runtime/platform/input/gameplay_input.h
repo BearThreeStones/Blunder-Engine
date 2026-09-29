@@ -7,8 +7,15 @@ struct GameplayInputKeys {
   bool a{false};
   bool s{false};
   bool d{false};
+  /// Arrow aliases OR'd with WASD by the host before sample (same Move axis).
+  bool up{false};
+  bool left{false};
+  bool down{false};
+  bool right{false};
   bool space{false};
   /// Window keyboard focus (Player: SDL input focus, not Focus Mode / Left Alt).
+  /// Informational / host diagnostics only — sample() no longer gates on it for
+  /// engine_player (Editor-spawned Player often lacks foreground).
   bool focused{true};
   bool paused{false};
   bool player_host{false};
