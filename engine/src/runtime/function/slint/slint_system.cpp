@@ -687,6 +687,11 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
     }
   }
 
+  // Player HUD: borrowed VkImage pixels change every GPU frame without the Slint
+  // Image handle changing. Keep partial dirty-rects enabled so compositeFrame can
+  // re-mark the full-window Image each present. When the frame-timing overlay is
+  // on, force a full refresh so the overlay is not erased by an Image-only dirty
+  // rect (see profiler Player HUD paint fix).
   const bool player_hud_overlay =
       m_owner && m_owner->isPlayerHudMode() && m_owner->frameTimingHudVisible();
   const bool forced_full_refresh =
@@ -697,6 +702,7 @@ void SlintSystem::SlintWindowAdapter::compositeFrame() {
 #endif
   } else if (m_owner && m_owner->slintPartialCompositeEnabled()) {
     // Re-mark immediately before render — dirty state can be stale after layout.
+    // Player HUD uses the cached full-window rect as the viewport dirty region.
     m_owner->markViewportDirtyRegion();
   }
 
@@ -2181,9 +2187,12 @@ void SlintSystem::applyPendingViewportInvalidate() {
 }
 
 bool SlintSystem::slintPartialCompositeEnabled() const {
-  if (m_player_hud_mode) {
-    return false;
-  }
+  // Player HUD must keep partial dirty-rects enabled: zero-copy borrowed VkImage
+  // content changes every GPU frame without a Slint Image property change, and
+  // compositeFrame re-marks the full-window viewport rect before each present.
+  // Disabling partial here left Rust Skia partial on with no dirty marks → the
+  // window stayed on the #383838 clear. Frame-timing overlay still forces a full
+  // Skia refresh while visible so Image dirty-rects cannot erase the HUD.
   return slintPartialCompositeEnabledEnv();
 }
 
@@ -2465,7 +2474,10 @@ void SlintSystem::setViewportExternalTexture(uint64_t image, uint32_t format,
       } else {
         markFullSkiaRefresh();
       }
-    } else if (image_changed && slintPartialCompositeEnabled()) {
+    } else if (m_player_hud_mode ||
+               (image_changed && slintPartialCompositeEnabled())) {
+      // Player: even when composite pacing skips a Skia request, dirty the
+      // full-window Image so the next present re-samples the borrowed VkImage.
       markViewportDirtyRegion();
     }
   } catch (const std::exception& e) {
