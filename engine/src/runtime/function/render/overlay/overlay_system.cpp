@@ -145,6 +145,13 @@ void OverlaySystem::setSceneGizmosVisible(const bool visible) {
   }
 }
 
+void OverlaySystem::setCollisionGizmosVisible(const bool visible) {
+  if (m_collision_gizmos_visible == visible) {
+    return;
+  }
+  m_collision_gizmos_visible = visible;
+}
+
 void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
                                uint32_t current_frame) {
   m_state = OverlayState::fromFrameState(frame_state, current_frame);

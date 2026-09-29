@@ -803,6 +803,10 @@ bool PhysicsWorld::shapecast(PhysicsSweepShape sweep_shape, PhysicsTransform pos
         point = point_b;
         normal = normal_b;
       }
+    } else if (sweep_shape == PhysicsSweepShape::Sphere &&
+               world_shape.shape == ColliderShape::TriangleMesh) {
+      hit = raycastInflatedTriangleMesh(world_shape, pose.position, dir, max_distance,
+                                        sphere_radius, t, point, normal);
     } else {
       Fixed inflated = sphere_radius;
       if (sweep_shape == PhysicsSweepShape::Box) {

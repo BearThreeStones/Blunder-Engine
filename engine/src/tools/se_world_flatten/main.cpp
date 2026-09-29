@@ -126,6 +126,7 @@ int main(int argc, char** argv) {
   std::printf("nested_instances=%d\n", stats.nested_instances);
   std::printf("grouping_entities=%d\n", stats.grouping_entities);
   std::printf("set_geo_mesh_refs=%d\n", stats.set_geo_mesh_refs);
+  std::printf("col_collider_entities=%d\n", stats.col_collider_entities);
   std::printf("skipped_missing_id=%d\n", stats.skipped_missing_id);
   std::printf("skipped_missing_file=%d\n", stats.skipped_missing_file);
   std::printf("imported_mesh_assets=%d\n", stats.imported_mesh_assets);

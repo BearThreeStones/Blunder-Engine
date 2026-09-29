@@ -1124,8 +1124,16 @@ bool parseColliderObject(const char* object_start, const char* object_end,
 
 bool parseCharacterControllerObject(const char* object_start, const char* object_end,
                                     CharacterControllerComponent& out_cct) {
+  eastl::string shape_text;
+  if (parseStringField(object_start, object_end, "\"shape\"", shape_text)) {
+    CharacterControllerShapeKind shape = out_cct.shape;
+    if (characterControllerShapeKindFromJson(shape_text, shape)) {
+      out_cct.shape = shape;
+    }
+  }
   parseFloatField(object_start, object_end, "\"radius\"", out_cct.radius);
   parseFloatField(object_start, object_end, "\"height\"", out_cct.height);
+  parseVec3Field(object_start, object_end, "\"offset\"", out_cct.shape_offset, Vec3(0.0f));
   parseFloatField(object_start, object_end, "\"slopeLimit\"", out_cct.slope_limit_degrees);
   parseFloatField(object_start, object_end, "\"stepHeight\"", out_cct.step_height);
   parseFloatField(object_start, object_end, "\"snap\"", out_cct.snap_length);
@@ -2148,13 +2156,20 @@ void appendCharacterControllerJson(eastl::string& out,
                                    const CharacterControllerComponent& cct) {
   CharacterControllerComponent sanitized = cct;
   sanitizeCharacterControllerComponent(sanitized);
-  char buffer[256];
+  char buffer[384];
   out.append(",\n      \"characterController\": {\n");
+  out.append("        \"shape\": \"");
+  out.append(characterControllerShapeKindJson(sanitized.shape));
+  out.append("\",\n");
   std::snprintf(buffer, sizeof(buffer),
                 "        \"radius\": %.6g,\n        \"height\": %.6g,\n        "
+                "\"offset\": [%.6g, %.6g, %.6g],\n        "
                 "\"slopeLimit\": %.6g,\n        \"stepHeight\": %.6g,\n        "
                 "\"snap\": %.6g,\n        \"skin\": %.6g,\n        \"mask\": %u\n      }",
                 static_cast<double>(sanitized.radius), static_cast<double>(sanitized.height),
+                static_cast<double>(sanitized.shape_offset.x),
+                static_cast<double>(sanitized.shape_offset.y),
+                static_cast<double>(sanitized.shape_offset.z),
                 static_cast<double>(sanitized.slope_limit_degrees),
                 static_cast<double>(sanitized.step_height),
                 static_cast<double>(sanitized.snap_length), static_cast<double>(sanitized.skin),

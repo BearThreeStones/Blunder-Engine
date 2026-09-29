@@ -285,8 +285,42 @@ GltfSceneImporter::ImportResult importGltfDocument(
     }
 
     const eastl::string node_name = gltfNodeDisplayName(node);
-    // Grill locked: omit COL-* (no MeshRenderer, no inactive placeholder entity).
+    // COL-* → static trimesh Unique (no MeshRenderer). Detection Areas skip.
     if (gltfNodeNameStartsWith(node, "COL-")) {
+      eastl::string lower = node_name;
+      for (size_t i = 0; i < lower.size(); ++i) {
+        if (lower[i] >= 'A' && lower[i] <= 'Z') {
+          lower[i] = static_cast<char>(lower[i] - 'A' + 'a');
+        }
+      }
+      if (lower.find("detection") == eastl::string::npos && node->mesh != nullptr) {
+        ColliderComponent collider{};
+        if (buildStaticTrimeshColliderFromMesh(node->mesh, collider)) {
+          Vec3 local_position{};
+          Quat local_rotation = glm::identity<Quat>();
+          Vec3 local_scale(1.0f);
+          decomposeCgltfNodeLocal(node, local_position, local_rotation, local_scale);
+          maybeAbsorbNodeScaleIntoAncestor(scene_instance, parent_entity_id,
+                                           local_scale);
+          EntityId col_entity_id = findReusableNamedEntity(
+              scene_instance, attach_parent_entity, parent_entity_id, node_name,
+              reused_ids);
+          if (isValid(col_entity_id)) {
+            reused_ids.insert(col_entity_id);
+            scene_instance.setTransform(col_entity_id, local_position, local_rotation,
+                                        local_scale);
+          } else {
+            col_entity_id = scene_instance.createEntity(
+                node_name, local_position, local_rotation, local_scale,
+                parent_entity_id);
+          }
+          scene_instance.setCollider(col_entity_id, eastl::move(collider));
+        }
+      }
+      for (cgltf_size child_index = 0; child_index < node->children_count;
+           ++child_index) {
+        visit_self(visit_self, node->children[child_index], parent_entity_id);
+      }
       return;
     }
     eastl::string instance_asset_id;

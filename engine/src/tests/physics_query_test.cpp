@@ -263,6 +263,90 @@ void move_and_slide_trimesh_floor_rest_height() {
   world->destroy();
 }
 
+PhysicsTriangle thinFloorPlate() {
+  // Large thin plate at z=0 spanning ±4 m (author-style COL floor).
+  PhysicsTriangle tri{};
+  tri.v0 = FixedVec3(Fixed::from_int(-4), Fixed::from_int(-4), Fixed::zero());
+  tri.v1 = FixedVec3(Fixed::from_int(4), Fixed::from_int(-4), Fixed::zero());
+  tri.v2 = FixedVec3(Fixed::from_int(0), Fixed::from_int(4), Fixed::zero());
+  return tri;
+}
+
+void sphere_cast_hits_thin_trimesh_plate() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  const PhysicsTriangle floor = thinFloorPlate();
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachTriangleMeshCollider(body, &floor, 1);
+
+  Blunder::PhysicsTransform pose{};
+  pose.position = FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(2));
+  const Fixed radius = Fixed::from_int(7) / Fixed::from_int(10);  // 0.7 Chocomel
+  PhysicsQueryHit hit{};
+  const bool ok = world->shapecast(
+      PhysicsSweepShape::Sphere, pose, FixedVec3{}, radius, Fixed::zero(), Fixed::zero(),
+      FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(-1)), Fixed::from_int(4),
+      0xFFFFFFFFu, false, hit);
+  assert(ok);
+  assert(hit.hit);
+  // Sphere center should stop near radius above the plate (z≈0.7).
+  const Fixed expected = radius;
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(5);
+  assert(hit.distance.raw() > (Fixed::from_int(2) - expected - slop).raw());
+  assert(hit.distance.raw() < (Fixed::from_int(2) - expected + slop).raw());
+  world->destroy();
+}
+
+void move_and_slide_sphere_trimesh_floor_rest() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  const PhysicsTriangle floor = thinFloorPlate();
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachTriangleMeshCollider(body, &floor, 1);
+
+  Blunder::PhysicsCharacterMove move{};
+  move.shape = PhysicsSweepShape::Sphere;
+  move.pose.position.z = Fixed::from_int(3);
+  move.displacement = FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(-10));
+  move.radius = Fixed::from_int(7) / Fixed::from_int(10);
+  move.half_height = Fixed::zero();
+  move.snap_length = Fixed::zero();
+  move.skin = Fixed::zero();
+  const Blunder::PhysicsCharacterResult result = Blunder::moveAndSlide(*world, move);
+  assert(result.on_floor);
+  const Fixed expected = move.radius;
+  const Fixed slop = Fixed::from_int(1) / Fixed::from_int(5);
+  assert(result.pose.position.z.raw() > (expected - slop).raw());
+  assert(result.pose.position.z.raw() < (expected + slop).raw());
+  world->destroy();
+}
+
+void move_and_slide_sphere_mild_slope() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  // Mild slope: rise 0.5 over run 4 (~7°).
+  PhysicsTriangle slope{};
+  slope.v0 = FixedVec3(Fixed::from_int(-2), Fixed::from_int(-2), Fixed::zero());
+  slope.v1 = FixedVec3(Fixed::from_int(2), Fixed::from_int(-2), Fixed::zero());
+  slope.v2 = FixedVec3(Fixed::zero(), Fixed::from_int(2), Fixed::from_int(1) / Fixed::from_int(2));
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachTriangleMeshCollider(body, &slope, 1);
+
+  Blunder::PhysicsCharacterMove move{};
+  move.shape = PhysicsSweepShape::Sphere;
+  move.pose.position = FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(3));
+  move.displacement = FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(-8));
+  move.radius = Fixed::from_int(7) / Fixed::from_int(10);
+  move.half_height = Fixed::zero();
+  move.snap_length = Fixed::from_int(1) / Fixed::from_int(5);
+  move.skin = Fixed::from_int(1) / Fixed::from_int(25);
+  const Blunder::PhysicsCharacterResult result = Blunder::moveAndSlide(*world, move);
+  assert(result.on_floor);
+  assert(result.pose.position.z.raw() > Fixed::from_int(0).raw());
+  assert(result.pose.position.z.raw() < Fixed::from_int(3).raw());
+  world->destroy();
+}
+
 }  // namespace
 
 int main() {
@@ -278,5 +362,8 @@ int main() {
   move_and_slide_floor();
   move_and_slide_box_floor_rest_height();
   move_and_slide_trimesh_floor_rest_height();
+  sphere_cast_hits_thin_trimesh_plate();
+  move_and_slide_sphere_trimesh_floor_rest();
+  move_and_slide_sphere_mild_slope();
   return 0;
 }

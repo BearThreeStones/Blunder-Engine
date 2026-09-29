@@ -106,6 +106,10 @@ class OverlaySystem final {
   bool sceneGizmosVisible() const { return m_scene_gizmos_visible; }
   void setSceneGizmosVisible(bool visible);
 
+  /// Collision wireframes (static colliders + CCT). Default off (dog-ground-walk Q7).
+  bool collisionGizmosVisible() const { return m_collision_gizmos_visible; }
+  void setCollisionGizmosVisible(bool visible);
+
   bool tryHandleCameraOrLightGizmoClick(const Vec2& window_position,
                                         EditorCamera& camera);
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
@@ -141,6 +145,7 @@ class OverlaySystem final {
   LightGizmoOverlay m_light_gizmo;
   OverlayAntiAliasing m_anti_aliasing;
   bool m_scene_gizmos_visible{true};
+  bool m_collision_gizmos_visible{false};
 };
 
 }  // namespace Blunder

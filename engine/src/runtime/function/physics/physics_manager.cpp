@@ -274,9 +274,19 @@ bool PhysicsManager::moveAndSlide(SceneInstance& scene, EntityId entity_id,
   if (world == nullptr) {
     return false;
   }
+  const Mat4 world_matrix = scene.getWorldMatrix(entity_id);
+  const Quat rotation = rotationFromWorld(world_matrix);
+  const Vec3 entity_pos = translationFromWorld(world_matrix);
+  const Vec3 offset_world = rotation * controller->shape_offset;
+
   PhysicsCharacterMove move{};
-  move.pose = physicsPoseFromWorld(scene.getWorldMatrix(entity_id));
+  move.pose.position = physicsVecFromFloat(entity_pos + offset_world);
+  move.pose.rotation = FixedQuat(fixedFromFloat(rotation.x), fixedFromFloat(rotation.y),
+                                 fixedFromFloat(rotation.z), fixedFromFloat(rotation.w));
   move.displacement = physicsVecFromFloat(displacement);
+  move.shape = controller->shape == CharacterControllerShapeKind::Sphere
+                   ? PhysicsSweepShape::Sphere
+                   : PhysicsSweepShape::Capsule;
   move.radius = fixedFromFloat(controller->radius);
   move.half_height = fixedFromFloat(characterControllerHalfHeight(*controller));
   move.snap_length = fixedFromFloat(controller->snap_length);
@@ -290,7 +300,7 @@ bool PhysicsManager::moveAndSlide(SceneInstance& scene, EntityId entity_id,
   if (entity == nullptr) {
     return false;
   }
-  const Vec3 world_pos = floatVecFromPhysics(result.pose.position);
+  const Vec3 world_pos = floatVecFromPhysics(result.pose.position) - offset_world;
   // CCT Unique pose follows entity local +Z; write world translation back as local
   // when the entity is unparented (DogWalk fixture). Parented: convert via parent world.
   Vec3 local = world_pos;

@@ -1,8 +1,13 @@
 #include "runtime/function/scene/gltf_collision_extras.h"
 
+#include "runtime/core/math/coordinate_system.h"
+
+#include "EASTL/vector.h"
+
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 namespace Blunder {
 namespace {
@@ -134,6 +139,86 @@ bool parseCollisionExtrasJson(const char* json, size_t length, ColliderComponent
   }
   sanitizeColliderComponent(collider);
   out = collider;
+  return true;
+}
+
+bool extractColliderTrianglesFromPrimitive(const cgltf_primitive& primitive,
+                                           eastl::vector<ColliderTriangle>& out_triangles) {
+  if (primitive.type != cgltf_primitive_type_triangles) {
+    return false;
+  }
+  const cgltf_accessor* position_accessor = nullptr;
+  for (cgltf_size i = 0; i < primitive.attributes_count; ++i) {
+    if (primitive.attributes[i].type == cgltf_attribute_type_position) {
+      position_accessor = primitive.attributes[i].data;
+      break;
+    }
+  }
+  if (position_accessor == nullptr || position_accessor->count == 0) {
+    return false;
+  }
+
+  eastl::vector<Vec3> positions(static_cast<size_t>(position_accessor->count));
+  for (cgltf_size vertex_index = 0; vertex_index < position_accessor->count; ++vertex_index) {
+    float position[3] = {0.0f, 0.0f, 0.0f};
+    if (!cgltf_accessor_read_float(position_accessor, vertex_index, position, 3)) {
+      return false;
+    }
+    positions[static_cast<size_t>(vertex_index)] =
+        transformPointGltfToEngine(Vec3(position[0], position[1], position[2]));
+  }
+
+  eastl::vector<uint32_t> indices;
+  if (primitive.indices != nullptr) {
+    indices.resize(static_cast<size_t>(primitive.indices->count));
+    for (cgltf_size index = 0; index < primitive.indices->count; ++index) {
+      const cgltf_size value = cgltf_accessor_read_index(primitive.indices, index);
+      if (value > std::numeric_limits<uint32_t>::max() ||
+          value >= positions.size()) {
+        return false;
+      }
+      indices[static_cast<size_t>(index)] = static_cast<uint32_t>(value);
+    }
+  } else {
+    indices.resize(positions.size());
+    for (size_t index = 0; index < positions.size(); ++index) {
+      indices[index] = static_cast<uint32_t>(index);
+    }
+  }
+
+  if (indices.size() < 3 || (indices.size() % 3u) != 0u) {
+    return false;
+  }
+
+  const size_t before = out_triangles.size();
+  out_triangles.reserve(before + indices.size() / 3u);
+  for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+    ColliderTriangle tri{};
+    tri.v0 = positions[indices[i]];
+    tri.v1 = positions[indices[i + 1]];
+    tri.v2 = positions[indices[i + 2]];
+    out_triangles.push_back(tri);
+  }
+  return out_triangles.size() > before;
+}
+
+bool buildStaticTrimeshColliderFromMesh(const cgltf_mesh* mesh, ColliderComponent& out) {
+  if (mesh == nullptr || mesh->primitives_count == 0) {
+    return false;
+  }
+  ColliderComponent collider{};
+  collider.shape = ColliderShapeKind::TriangleMesh;
+  collider.body_kind = ColliderBodyKind::Static;
+  collider.layer = 1u;
+  collider.mask = 0xFFFFFFFFu;
+  for (cgltf_size prim_index = 0; prim_index < mesh->primitives_count; ++prim_index) {
+    extractColliderTrianglesFromPrimitive(mesh->primitives[prim_index], collider.triangles);
+  }
+  if (collider.triangles.empty()) {
+    return false;
+  }
+  sanitizeColliderComponent(collider);
+  out = eastl::move(collider);
   return true;
 }
 
