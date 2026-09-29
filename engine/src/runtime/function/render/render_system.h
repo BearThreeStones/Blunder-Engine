@@ -168,6 +168,10 @@ class RenderSystem final {
   void clearOpaqueMeshDraws();
   void clearTransparentMeshDraws();
   void clearGpuDrivenDraws();
+  /// Poll TextureLoader before draw collection so resolveTexture sees residents.
+  void pumpTextureLoader();
+  /// Re-bind draw texture pointers from materials after residency flips mid-frame.
+  void refreshMeshDrawTextures();
   VulkanTexture* getFallbackTexture() const { return m_fallback_texture; }
 
   EditorCamera* getEditorCamera() const { return m_editor_camera.get(); }

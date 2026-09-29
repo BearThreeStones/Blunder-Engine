@@ -254,6 +254,7 @@ VulkanTexture* VulkanContext::ensureUploadedTexture(
   uploaded_texture->createFromTexture2DAsset(this, allocator, asset);
   VulkanTexture* uploaded_texture_ptr = uploaded_texture.get();
   m_uploaded_textures[key] = eastl::move(uploaded_texture);
+  m_bindless_table.acquire(uploaded_texture_ptr);
   LOG_INFO("[VulkanContext] texture uploaded {} ({}x{}, {} bytes)",
            key.c_str(), asset.getWidth(), asset.getHeight(),
            asset.getPixelByteSize());

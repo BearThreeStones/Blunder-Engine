@@ -251,6 +251,16 @@ class ViewportSceneAllocator final : public IFrameGraphAllocator {
 };
 
 float editorRenderScale() {
+  // Player HUD fills the window; do not inherit the Editor's default 0.85
+  // downscale (that left a letterboxed present and made resize/readback thrash).
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    const char* env = std::getenv("BLUNDER_PLAYER_RENDER_SCALE");
+    if (env == nullptr || env[0] == '\0') {
+      return 1.0f;
+    }
+    const float scale = static_cast<float>(std::atof(env));
+    return std::clamp(scale, 0.25f, 1.0f);
+  }
   const char* env = std::getenv("BLUNDER_EDITOR_RENDER_SCALE");
   if (env == nullptr || env[0] == '\0') {
     return 0.85f;
@@ -920,8 +930,18 @@ void RenderSystem::pollViewportPickIfActive() {
 }
 
 bool RenderSystem::usesZeroCopyViewport() const {
-  return !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
-         m_viewport_layout_source->viewportUsesSharedDevice();
+  if (viewportZeroCopyDisabled() || m_viewport_layout_source == nullptr ||
+      !m_viewport_layout_source->viewportUsesSharedDevice()) {
+    return false;
+  }
+  // Windowed Player HUD: borrowed VkImage bind logs OK, but Skia never composites
+  // the image into PlayerHudWindow — the client stays #383838 (kViewportBackgroundRgb
+  // / RGB 56). CPU readback through UIViewportBridge presents the offscreen color.
+  // Editor Viewport keeps zero-copy.
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    return false;
+  }
+  return true;
 }
 
 void RenderSystem::resetZeroCopyPresentState() {
@@ -1484,13 +1504,39 @@ VulkanTexture* RenderSystem::ensureTextureUploaded(
   if (VulkanTexture* resident = vkCtx(this)->findUploadedTexture(key)) {
     return resident;
   }
+  const bool watch = key.find("chocomel-albedo") != eastl::string::npos ||
+                     key.find("snow_gen_albedo") != eastl::string::npos;
   if (texture_asset->getPixelData() != nullptr &&
       texture_asset->getPixelByteSize() > 0 && texture_asset->getWidth() > 0 &&
       texture_asset->getHeight() > 0) {
-    return vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
+    VulkanTexture* sync =
+        vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
+    if (watch) {
+      LOG_INFO(
+          "[ensureTextureUploaded] sync key={} result={} pending={}",
+          key.c_str(), sync != nullptr ? 1 : 0,
+          vkCtx(this)->isAsyncTextureUploadPending(key) ? 1 : 0);
+    }
+    return sync;
   }
   if (m_texture_loader) {
-    return m_texture_loader->request(texture_asset);
+    VulkanTexture* async = m_texture_loader->request(texture_asset);
+    if (watch && async == nullptr) {
+      static uint32_t s_miss_logs = 0;
+      if (s_miss_logs < 8u) {
+        ++s_miss_logs;
+        LOG_WARN(
+            "[ensureTextureUploaded] async miss key={} pending={} "
+            "width={} bytes={}",
+            key.c_str(),
+            vkCtx(this)->isAsyncTextureUploadPending(key) ? 1 : 0,
+            texture_asset->getWidth(),
+            static_cast<uint32_t>(texture_asset->getPixelByteSize()));
+      }
+    } else if (watch && async != nullptr) {
+      LOG_INFO("[ensureTextureUploaded] async hit key={}", key.c_str());
+    }
+    return async;
   }
   return vkCtx(this)->ensureUploadedTexture(vkAlloc(this), *texture_asset);
 }
@@ -1856,14 +1902,108 @@ void RenderSystem::notifyActiveSceneChanged() {
   }
 }
 
-void RenderSystem::tick(float delta_time, uint32_t target_width,
-                        uint32_t target_height) {
-  if (m_texture_loader) {
-    m_texture_loader->tick();
-    if (m_texture_loader->consumeResidencyChanged()) {
-      m_defer_viewport_for_texture_residency = true;
+void RenderSystem::pumpTextureLoader() {
+  if (!m_texture_loader) {
+    return;
+  }
+  m_texture_loader->tick();
+  if (m_texture_loader->consumeResidencyChanged()) {
+    m_defer_viewport_for_texture_residency = true;
+    // Bust packed identity so Editor scene_static rehashes bindless indices.
+    // Avoid full HiZ invalidate — residency churn would otherwise drop survivors
+    // to clear-color gray for a frame (and more under CPU present).
+    if (m_gpu_driven_renderer) {
+      m_gpu_driven_renderer->invalidatePackedIdentity();
     }
   }
+}
+
+void RenderSystem::refreshMeshDrawTextures() {
+  VulkanTexture* fallback = m_fallback_texture;
+  bool changed = false;
+  uint32_t albedo_assets = 0;
+  uint32_t albedo_bound = 0;
+  uint32_t chocomel_miss = 0;
+  auto resolve_slot =
+      [&](const eastl::shared_ptr<Texture2DAsset>& asset, VulkanTexture*& slot,
+          bool is_albedo) {
+        if (!asset) {
+          return;
+        }
+        if (is_albedo) {
+          ++albedo_assets;
+        }
+        VulkanTexture* uploaded = ensureTextureUploaded(asset.get());
+        // Never demote a resident draw pointer back to fallback while decode is
+        // still pending — that re-flashes slot-0 / baseColorFactor mid-stream.
+        VulkanTexture* next = uploaded;
+        if (next == nullptr) {
+          if (slot != nullptr && slot != fallback) {
+            next = slot;
+          } else {
+            next = fallback;
+          }
+        }
+        if (is_albedo) {
+          if (next != nullptr && next != fallback) {
+            ++albedo_bound;
+          } else {
+            const eastl::string& key = asset->getVirtualPath();
+            if (key.find("chocomel") != eastl::string::npos ||
+                key.find("Chocomel") != eastl::string::npos) {
+              ++chocomel_miss;
+            }
+          }
+        }
+        if (next != slot) {
+          slot = next;
+          changed = true;
+        }
+      };
+  auto refresh_draw = [&](auto& draw) {
+    if (!draw.material) {
+      return;
+    }
+    resolve_slot(draw.material->getBaseColorTextureAsset(),
+                 draw.base_color_texture, true);
+    resolve_slot(draw.material->getMetallicRoughnessTextureAsset(),
+                 draw.metallic_roughness_texture, false);
+    resolve_slot(draw.material->getNormalTextureAsset(), draw.normal_texture,
+                 false);
+    resolve_slot(draw.material->getOcclusionTextureAsset(),
+                 draw.occlusion_texture, false);
+  };
+  for (OpaqueMeshDraw& draw : m_opaque_mesh_draws) {
+    refresh_draw(draw);
+  }
+  for (OpaqueMeshDraw& draw : m_transparent_mesh_draws) {
+    refresh_draw(draw);
+  }
+  for (GpuDrivenDraw& draw : m_gpu_driven_draws) {
+    refresh_draw(draw);
+  }
+  if (changed) {
+    if (m_gpu_driven_renderer) {
+      m_gpu_driven_renderer->invalidatePackedIdentity();
+    }
+  }
+  static uint32_t s_refresh_log = 0;
+  if ((++s_refresh_log % 60u) == 1u) {
+    LOG_INFO(
+        "[RenderSystem] draw textures albedo_assets={} bound={} "
+        "chocomel_miss={} opaque={} gpu_driven={} changed={}",
+        albedo_assets, albedo_bound, chocomel_miss,
+        static_cast<uint32_t>(m_opaque_mesh_draws.size()),
+        static_cast<uint32_t>(m_gpu_driven_draws.size()), changed ? 1 : 0);
+  }
+}
+
+void RenderSystem::tick(float delta_time, uint32_t target_width,
+                        uint32_t target_height) {
+  pumpTextureLoader();
+  // syncSceneToRender runs before tick; residency that completed after the
+  // draw snapshot must rebind before pack/draw or albedo stays on slot 0.
+  refreshMeshDrawTextures();
   if (g_runtime_global_context.m_mesh_loader) {
     if (g_runtime_global_context.m_mesh_loader->consumeResidencyChanged()) {
       requestViewportRedraw();

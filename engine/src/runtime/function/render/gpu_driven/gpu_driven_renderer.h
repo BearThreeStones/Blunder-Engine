@@ -43,6 +43,8 @@ class GpuDrivenRenderer final {
   /// Drop previous-scene HiZ so the first record of a new document does not
   /// occlusion-cull courtyard meshlets against the old depth pyramid.
   void invalidateSceneOcclusion();
+  /// Force packDraws / instance upload without resetting Hi-Z pyramids.
+  void invalidatePackedIdentity();
 
   void uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
                      const GpuDrivenDraw* draws, uint32_t count,

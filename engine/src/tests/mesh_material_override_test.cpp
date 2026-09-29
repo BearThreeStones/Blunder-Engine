@@ -295,6 +295,13 @@ void paperGrainNormalIsNotSampledAndPaperColorTints() {
               ubo.pbr_texture_flags.y < 0.5f);
   expect_true("bindless still samples roughness atlas",
               ubo.pbr_texture_flags.x > 0.5f);
+
+  ubo.material_flags.y = 1.0f;
+  glm::uvec4 fallback_albedo{0u, 0u, 0u, 0u};
+  applyBindlessPbrMapFlags(ubo.pbr_texture_flags, fallback_albedo,
+                           ubo.material_flags);
+  expect_true("bindless slot 0 clears albedo map flag",
+              ubo.material_flags.y < 0.5f);
 }
 
 void dummyPathAlbedoUriIsUnlitPaperMask() {

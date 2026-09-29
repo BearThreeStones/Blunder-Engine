@@ -8993,7 +8993,10 @@ bool SlintSystem::trySelectContentBrowserTreeFolder(float window_x,
 
 void SlintSystem::syncWindowChromeSize(int override_logical_w,
                                        int override_logical_h) {
-  if (!m_window_component || !m_window_system || !m_window_adapter) {
+  // Player HUD has no editor MainEditorWindow; still must size the Slint root
+  // to the HWND or the viewport Image stays at preferred 1280x720 in a corner.
+  if ((!m_window_component && !m_player_hud_component) || !m_window_system ||
+      !m_window_adapter) {
     return;
   }
 
@@ -10914,8 +10917,12 @@ void SlintSystem::beginFrame() {
       slint::platform::update_timers_and_animations();
       if (m_window_adapter) {
         m_window_adapter->pollDrawableSize();
-        syncWindowChromeSize();
-        m_window_adapter->commitWindowSize(m_force_window_commit);
+      }
+      // Size Slint root to the HWND before commit — otherwise PlayerHudWindow
+      // stays at preferred 1280x720 and letterboxes inside a larger client.
+      syncWindowChromeSize();
+      if (m_window_adapter) {
+        m_window_adapter->commitWindowSize(true);
         m_force_window_commit = false;
       }
       if (m_window_system) {

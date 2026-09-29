@@ -155,6 +155,20 @@ void UIViewportBridge::tryMapSlot(const uint32_t slot) {
     return;
   }
 
+  // GPU_TO_CPU staging is typically HOST_CACHED. Without invalidate, the CPU
+  // keeps a stale view of the first completed copy. Player HUD (forced CPU
+  // present) then stays on smoke-checker while play-frame readback — which
+  // invalidates — shows real albedos.
+  if (m_allocator != nullptr && readback_slot.staging != nullptr) {
+    const VkDeviceSize bytes =
+        static_cast<VkDeviceSize>(readback_slot.width) *
+        static_cast<VkDeviceSize>(readback_slot.height) * 4u;
+    if (bytes > 0) {
+      vmaInvalidateAllocation(m_allocator->getAllocator(),
+                              readback_slot.staging->getAllocation(), 0, bytes);
+    }
+  }
+
   readback_slot.pending_gpu = false;
   readback_slot.has_cpu_frame = true;
   readback_slot.completed_generation = m_next_completed_generation++;

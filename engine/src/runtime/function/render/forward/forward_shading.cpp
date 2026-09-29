@@ -267,7 +267,10 @@ void finalizeImportedPbrSampling(ForwardMeshUniformData& mesh_ubo,
 
 void applyBindlessPbrMapFlags(glm::vec4& pbr_texture_flags,
                               const glm::uvec4& bindless_indices,
-                              const glm::vec4& material_flags) {
+                              glm::vec4& material_flags) {
+  if (bindless_indices.x == 0) {
+    material_flags.y = 0.0f;
+  }
   pbr_texture_flags.x = bindless_indices.y != 0 ? 1.0f : 0.0f;
   pbr_texture_flags.z = bindless_indices.w != 0 ? 1.0f : 0.0f;
   if (material_flags.z > 0.5f) {
