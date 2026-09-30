@@ -930,11 +930,19 @@ void RenderSystem::pollViewportPickIfActive() {
 }
 
 bool RenderSystem::usesZeroCopyViewport() const {
-  // Player HUD uses zero-copy + Slint dirty marks (#54). Force-CPU present was a
-  // gray-screen workaround superseded by dirtying PlayerHud so Skia resamples the
-  // borrowed VkImage. Keep BLUNDER_VIEWPORT_ZERO_COPY=0 as emergency fallback.
-  return !viewportZeroCopyDisabled() && m_viewport_layout_source != nullptr &&
-         m_viewport_layout_source->viewportUsesSharedDevice();
+  if (viewportZeroCopyDisabled() || m_viewport_layout_source == nullptr ||
+      !m_viewport_layout_source->viewportUsesSharedDevice()) {
+    return false;
+  }
+  // Windowed Player HUD: borrowed VkImage bind + first shared present log OK, but
+  // Skia never composites into PlayerHudWindow — client stays #383838 even with
+  // #54 dirty marks and force_full_refresh. #53 restored zero-copy relying on
+  // those marks; tip repro still flat gray. CPU readback presents correctly
+  // (BLUNDER_VIEWPORT_ZERO_COPY=0 A/B). Editor Viewport keeps zero-copy.
+  if (g_runtime_global_context.hostMode() == EngineHostMode::Player) {
+    return false;
+  }
+  return true;
 }
 
 void RenderSystem::resetZeroCopyPresentState() {
