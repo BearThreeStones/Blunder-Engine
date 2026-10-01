@@ -540,6 +540,17 @@ int main() {
     expect_true("pbr_mesh.slang layout",
                 shaderResourceBindingsMatch(mesh.layout, bindings, count, sets,
                                             kinds));
+
+    fillGpuDrivenGBufferMeshExpectedBindings(bindings, sets, &count, kinds);
+    const SlangCompiler::MeshProgramResult gbuffer_mesh =
+        compiler.compileMeshProgram("engine/shaders/gbuffer_mesh.slang");
+    if (!shaderResourceBindingsMatch(gbuffer_mesh.layout, bindings, count, sets,
+                                     kinds)) {
+      dumpBindings("gbuffer_mesh.slang", gbuffer_mesh.layout);
+    }
+    expect_true("gbuffer_mesh.slang layout",
+                shaderResourceBindingsMatch(gbuffer_mesh.layout, bindings, count,
+                                            sets, kinds));
   }
 
   {
