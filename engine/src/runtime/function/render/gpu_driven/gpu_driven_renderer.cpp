@@ -349,6 +349,12 @@ void GpuDrivenRenderer::createBuffers() {
     frame.late_counts = make_device_buf(count_bytes, count_usage);
     frame.shadow_counts = make_device_buf(count_bytes, count_usage);
     frame.dummy_counts = make_device_buf(count_bytes, count_usage);
+    const VkDeviceSize mesh_task_cmd_bytes =
+        sizeof(DrawMeshTasksIndirectCommand) * k_max_mesh_batches;
+    frame.early_mesh_task_cmds = make_device_buf(mesh_task_cmd_bytes, cmd_usage);
+    frame.late_mesh_task_cmds = make_device_buf(mesh_task_cmd_bytes, cmd_usage);
+    frame.early_mesh_task_draw_counts = make_device_buf(count_bytes, cmd_usage);
+    frame.late_mesh_task_draw_counts = make_device_buf(count_bytes, cmd_usage);
     frame.early_count_readback = eastl::make_unique<VulkanBuffer>();
     frame.early_count_readback->create(m_allocator, count_bytes,
                                        VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -389,6 +395,8 @@ void GpuDrivenRenderer::createBuffers() {
                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     frame.shadow_emit_ubo = make_host_buf(sizeof(GpuDrivenEmitUniforms),
                                           VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    frame.mesh_task_pack_ubo = make_host_buf(
+        sizeof(GpuDrivenMeshTaskPackUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     frame.view_ubo = make_host_buf(sizeof(ForwardMeshUniformData),
                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     frame.gbuffer_ubo = make_host_buf(sizeof(GpuDrivenGBufferUniformData),
@@ -421,6 +429,10 @@ void GpuDrivenRenderer::destroyBuffers() {
     drop(frame.late_counts);
     drop(frame.shadow_counts);
     drop(frame.dummy_counts);
+    drop(frame.early_mesh_task_cmds);
+    drop(frame.late_mesh_task_cmds);
+    drop(frame.early_mesh_task_draw_counts);
+    drop(frame.late_mesh_task_draw_counts);
     drop(frame.early_count_readback);
     drop(frame.late_count_readback);
     drop(frame.batch_bases);
@@ -441,6 +453,7 @@ void GpuDrivenRenderer::destroyBuffers() {
     drop(frame.shadow_cull_ubo);
     drop(frame.emit_ubo);
     drop(frame.shadow_emit_ubo);
+    drop(frame.mesh_task_pack_ubo);
     drop(frame.view_ubo);
     drop(frame.gbuffer_ubo);
     drop(frame.shadow_ubo);
@@ -568,6 +581,16 @@ void GpuDrivenRenderer::createPipelines(VkRenderPass offscreen_pass,
   createComputePipeline("engine/shaders/meshlet_emit.slang", emit_bindings, emit_sets,
                         emit_count, emit_kinds, &m_emit_layout, &m_emit_pipe_layout,
                         &m_emit_pipeline);
+
+  uint32_t pack_bindings[k_max_expected_descriptor_bindings];
+  uint32_t pack_sets[k_max_expected_descriptor_bindings];
+  ShaderDescriptorKind pack_kinds[k_max_expected_descriptor_bindings];
+  uint32_t pack_count = 0;
+  fillMeshTaskCmdPackExpectedBindings(pack_bindings, pack_sets, &pack_count,
+                                      pack_kinds);
+  createComputePipeline("engine/shaders/mesh_task_cmd_pack.slang", pack_bindings,
+                        pack_sets, pack_count, pack_kinds, &m_mesh_task_pack_layout,
+                        &m_mesh_task_pack_pipe_layout, &m_mesh_task_pack_pipeline);
 
   uint32_t hiz_bindings[k_max_expected_descriptor_bindings];
   uint32_t hiz_sets[k_max_expected_descriptor_bindings];
@@ -883,6 +906,9 @@ void GpuDrivenRenderer::destroyPipelines() {
   drop_pipe(m_emit_pipeline);
   drop_layout(m_emit_pipe_layout);
   drop_set_layout(m_emit_layout);
+  drop_pipe(m_mesh_task_pack_pipeline);
+  drop_layout(m_mesh_task_pack_pipe_layout);
+  drop_set_layout(m_mesh_task_pack_layout);
   if (m_gbuffer_pipeline) {
     m_gbuffer_pipeline->shutdown();
     m_gbuffer_pipeline.reset();
@@ -908,10 +934,10 @@ void GpuDrivenRenderer::createDescriptors() {
   VkDescriptorPoolSize sizes[5]{};
   sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   sizes[0].descriptorCount =
-      64u + hiz_set_count + k_frames * 8u + gbuffer_mesh_set_count;
+      64u + hiz_set_count + k_frames * 10u + gbuffer_mesh_set_count;
   sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   sizes[1].descriptorCount = 128u + mesh_set_count * 10u +
-                              gbuffer_mesh_set_count * 8u + k_frames * 80u;
+                              gbuffer_mesh_set_count * 8u + k_frames * 96u;
   sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   sizes[2].descriptorCount =
       64u + hiz_set_count + mesh_set_count * 3u + k_frames * 16u;
@@ -926,7 +952,7 @@ void GpuDrivenRenderer::createDescriptors() {
   pool_info.pPoolSizes = sizes;
   pool_info.maxSets =
       32u + mesh_set_count + gbuffer_mesh_set_count + hiz_set_count +
-      k_frames * 8u;
+      k_frames * 10u;
   if (vkCreateDescriptorPool(device, &pool_info, nullptr, &m_descriptor_pool) !=
       VK_SUCCESS) {
     LOG_FATAL("[GpuDrivenRenderer] vkCreateDescriptorPool failed");
@@ -947,6 +973,7 @@ void GpuDrivenRenderer::createDescriptors() {
   alloc(m_cull_layout, k_frames, m_shadow_cull_sets);
   alloc(m_emit_layout, k_frames, m_emit_sets);
   alloc(m_emit_layout, k_frames, m_shadow_emit_sets);
+  alloc(m_mesh_task_pack_layout, k_frames, m_mesh_task_pack_sets);
   for (uint32_t f = 0; f < k_frames; ++f) {
     alloc(m_hiz_layout, k_max_hiz_mips, m_hiz_sets[f]);
   }
@@ -1385,6 +1412,176 @@ bool GpuDrivenRenderer::compactIndirectEnabled() const {
   return m_context != nullptr && m_context->drawIndirectCountEnabled();
 }
 
+bool GpuDrivenRenderer::meshTaskSurvivingDispatchEnabled() const {
+  if (!compactIndirectEnabled() || m_context == nullptr ||
+      m_mesh_task_pack_pipeline == VK_NULL_HANDLE) {
+    return false;
+  }
+  return m_context->cmdDrawMeshTasksIndirectCountEXT() != nullptr ||
+         m_context->cmdDrawMeshTasksIndirectEXT() != nullptr;
+}
+
+void GpuDrivenRenderer::updateMeshTaskPackDescriptors(uint32_t frame) {
+  FrameBuffers& buffers = m_frames[frame];
+  VkDescriptorSet set = m_mesh_task_pack_sets[frame];
+  if (set == VK_NULL_HANDLE || buffers.mesh_task_pack_ubo == nullptr) {
+    return;
+  }
+  auto ssbo = [](VulkanBuffer* buf) {
+    VkDescriptorBufferInfo info{};
+    info.buffer = buf->getBuffer();
+    info.range = VK_WHOLE_SIZE;
+    return info;
+  };
+  VkDescriptorBufferInfo ubo_info{};
+  ubo_info.buffer = buffers.mesh_task_pack_ubo->getBuffer();
+  ubo_info.range = sizeof(GpuDrivenMeshTaskPackUniforms);
+  VkDescriptorBufferInfo early_counts = ssbo(buffers.early_counts.get());
+  VkDescriptorBufferInfo late_counts = ssbo(buffers.late_counts.get());
+  VkDescriptorBufferInfo early_cmds = ssbo(buffers.early_mesh_task_cmds.get());
+  VkDescriptorBufferInfo late_cmds = ssbo(buffers.late_mesh_task_cmds.get());
+  VkDescriptorBufferInfo early_draws =
+      ssbo(buffers.early_mesh_task_draw_counts.get());
+  VkDescriptorBufferInfo late_draws =
+      ssbo(buffers.late_mesh_task_draw_counts.get());
+  VkWriteDescriptorSet writes[7]{};
+  for (uint32_t i = 0; i < 7; ++i) {
+    writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[i].dstSet = set;
+    writes[i].descriptorCount = 1;
+    writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  }
+  writes[0].dstBinding = 0;
+  writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writes[0].pBufferInfo = &ubo_info;
+  writes[1].dstBinding = 1;
+  writes[1].pBufferInfo = &early_counts;
+  writes[2].dstBinding = 2;
+  writes[2].pBufferInfo = &late_counts;
+  writes[3].dstBinding = 3;
+  writes[3].pBufferInfo = &early_cmds;
+  writes[4].dstBinding = 4;
+  writes[4].pBufferInfo = &late_cmds;
+  writes[5].dstBinding = 5;
+  writes[5].pBufferInfo = &early_draws;
+  writes[6].dstBinding = 6;
+  writes[6].pBufferInfo = &late_draws;
+  vkUpdateDescriptorSets(m_context->getDevice(), 7, writes, 0, nullptr);
+}
+
+void GpuDrivenRenderer::dispatchMeshTaskCmdPack(VkCommandBuffer cmd,
+                                                uint32_t frame) {
+  if (!meshTaskSurvivingDispatchEnabled()) {
+    return;
+  }
+  FrameBuffers& buffers = m_frames[frame];
+  VkDescriptorSet set = m_mesh_task_pack_sets[frame];
+  VulkanBuffer* ubo = buffers.mesh_task_pack_ubo.get();
+  if (set == VK_NULL_HANDLE || ubo == nullptr ||
+      buffers.early_mesh_task_cmds == nullptr) {
+    return;
+  }
+  const uint32_t batch_count =
+      eastl::max(1u, static_cast<uint32_t>(m_batches.size()));
+  GpuDrivenMeshTaskPackUniforms uniforms{};
+  uniforms.batch_count = batch_count;
+  ubo->upload(&uniforms, sizeof(uniforms));
+  updateMeshTaskPackDescriptors(frame);
+
+  VkBuffer early_cmds = buffers.early_mesh_task_cmds->getBuffer();
+  VkBuffer late_cmds = buffers.late_mesh_task_cmds->getBuffer();
+  VkBuffer early_draws = buffers.early_mesh_task_draw_counts->getBuffer();
+  VkBuffer late_draws = buffers.late_mesh_task_draw_counts->getBuffer();
+  const VkDeviceSize cmd_bytes =
+      static_cast<VkDeviceSize>(sizeof(DrawMeshTasksIndirectCommand) * batch_count);
+  const VkDeviceSize draw_bytes =
+      static_cast<VkDeviceSize>(sizeof(uint32_t) * batch_count);
+  const VkAccessFlags fill_src = VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
+                                 VK_ACCESS_SHADER_READ_BIT |
+                                 VK_ACCESS_SHADER_WRITE_BIT;
+  const VkPipelineStageFlags fill_src_stage =
+      VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+      VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT;
+  cmdBufferBarrier(cmd, early_cmds, fill_src, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, late_cmds, fill_src, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, early_draws, fill_src, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  cmdBufferBarrier(cmd, late_draws, fill_src, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   fill_src_stage, VK_PIPELINE_STAGE_TRANSFER_BIT);
+  vkCmdFillBuffer(cmd, early_cmds, 0, cmd_bytes, 0);
+  vkCmdFillBuffer(cmd, late_cmds, 0, cmd_bytes, 0);
+  vkCmdFillBuffer(cmd, early_draws, 0, draw_bytes, 0);
+  vkCmdFillBuffer(cmd, late_draws, 0, draw_bytes, 0);
+  cmdBufferBarrier(cmd, early_cmds, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, late_cmds, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, early_draws, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, late_draws, VK_ACCESS_TRANSFER_WRITE_BIT,
+                   VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+  cmdBufferBarrier(cmd, ubo->getBuffer(), VK_ACCESS_HOST_WRITE_BIT,
+                   VK_ACCESS_UNIFORM_READ_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_mesh_task_pack_pipeline);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          m_mesh_task_pack_pipe_layout, 0, 1, &set, 0, nullptr);
+  const uint32_t groups = (batch_count + 63u) / 64u;
+  vkCmdDispatch(cmd, groups, 1, 1);
+  cmdBufferBarrier(cmd, early_cmds, VK_ACCESS_SHADER_WRITE_BIT,
+                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+  cmdBufferBarrier(cmd, late_cmds, VK_ACCESS_SHADER_WRITE_BIT,
+                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+  cmdBufferBarrier(cmd, early_draws, VK_ACCESS_SHADER_WRITE_BIT,
+                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+  cmdBufferBarrier(cmd, late_draws, VK_ACCESS_SHADER_WRITE_BIT,
+                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT);
+}
+
+void GpuDrivenRenderer::recordMeshTasksForBatch(VkCommandBuffer cmd, uint32_t frame,
+                                                 bool late, uint32_t batch_i,
+                                                 uint32_t meshlet_count) {
+  if (meshTaskSurvivingDispatchEnabled()) {
+    FrameBuffers& buffers = m_frames[frame];
+    VkBuffer task_cmds = late ? buffers.late_mesh_task_cmds->getBuffer()
+                              : buffers.early_mesh_task_cmds->getBuffer();
+    VkBuffer draw_counts = late ? buffers.late_mesh_task_draw_counts->getBuffer()
+                                : buffers.early_mesh_task_draw_counts->getBuffer();
+    const VkDeviceSize cmd_offset =
+        static_cast<VkDeviceSize>(batch_i) * sizeof(DrawMeshTasksIndirectCommand);
+    const uint32_t stride =
+        static_cast<uint32_t>(sizeof(DrawMeshTasksIndirectCommand));
+    // One {surviving,1,1} per batch — not N×{1,1,1} (that resets dtid).
+    if (const PFN_vkCmdDrawMeshTasksIndirectCountEXT draw_count =
+            m_context->cmdDrawMeshTasksIndirectCountEXT()) {
+      draw_count(cmd, task_cmds, cmd_offset, draw_counts,
+                 static_cast<VkDeviceSize>(batch_i) * sizeof(uint32_t), 1u, stride);
+      return;
+    }
+    if (const PFN_vkCmdDrawMeshTasksIndirectEXT draw_indirect =
+            m_context->cmdDrawMeshTasksIndirectEXT()) {
+      draw_indirect(cmd, task_cmds, cmd_offset, 1u, stride);
+      return;
+    }
+  }
+  m_context->cmdDrawMeshTasksEXT()(cmd, meshlet_count, 1, 1);
+}
+
 bool GpuDrivenRenderer::latePassEnabled() const {
   return m_late_pass_enabled;
 }
@@ -1715,16 +1912,20 @@ void GpuDrivenRenderer::dispatchEmit(VkCommandBuffer cmd, uint32_t frame,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, cmd_dst_stage);
   cmdBufferBarrier(cmd, late_cmds, VK_ACCESS_SHADER_WRITE_BIT, cmd_dst_access,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, cmd_dst_stage);
-  cmdBufferBarrier(cmd, early_counts, VK_ACCESS_SHADER_WRITE_BIT,
-                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
-                       VK_PIPELINE_STAGE_TRANSFER_BIT);
-  cmdBufferBarrier(cmd, late_counts, VK_ACCESS_SHADER_WRITE_BIT,
-                   VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
-                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                   VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
-                       VK_PIPELINE_STAGE_TRANSFER_BIT);
+  // Counts feed MDI DrawIndexedIndirectCount and mesh-task pack CS.
+  const VkAccessFlags count_dst_access =
+      VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT |
+      VK_ACCESS_SHADER_READ_BIT;
+  const VkPipelineStageFlags count_dst_stage =
+      VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT |
+      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+  cmdBufferBarrier(cmd, early_counts, VK_ACCESS_SHADER_WRITE_BIT, count_dst_access,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, count_dst_stage);
+  cmdBufferBarrier(cmd, late_counts, VK_ACCESS_SHADER_WRITE_BIT, count_dst_access,
+                   VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, count_dst_stage);
+  if (!shadow) {
+    dispatchMeshTaskCmdPack(cmd, frame);
+  }
 }
 
 void GpuDrivenRenderer::uploadAndCull(VkCommandBuffer cmd, uint32_t frame,
@@ -2208,7 +2409,7 @@ void GpuDrivenRenderer::recordOpaqueIndirect(VkCommandBuffer cmd, uint32_t frame
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_mesh_pipe_layout, 1, 1, &table, 0, nullptr);
       }
-      m_context->cmdDrawMeshTasksEXT()(cmd, batch.meshlet_count, 1, 1);
+      recordMeshTasksForBatch(cmd, frame, late, batch_i, batch.meshlet_count);
       ++batch_i;
     }
     return;
@@ -2314,12 +2515,9 @@ void GpuDrivenRenderer::recordGBufferMeshIndirect(VkCommandBuffer cmd,
                               m_gbuffer_mesh_pipe_layout, 1, 1, &table, 0,
                               nullptr);
     }
-    // Emit writes DrawIndexedIndirectCommand SSBOs for VS/FS MDI and for the
-    // task shader to read. VkDrawMeshTasksIndirectCountEXT needs a different
-    // command layout (or one {surviving,1,1} per batch); multi-draw {1,1,1}
-    // resets dtid and breaks commands[dtid]. Match Forward until Phase 3 emits
-    // mesh-task cmds: unique meshlets with culled slots DispatchMesh(0).
-    m_context->cmdDrawMeshTasksEXT()(cmd, batch.meshlet_count, 1, 1);
+    // Compact emit packs surviving DrawIndexed cmds; mesh-task pack writes one
+    // {surviving,1,1} per batch. IndirectCount draw-count is 0/1 (not N×{1,1,1}).
+    recordMeshTasksForBatch(cmd, frame, late, batch_i, batch.meshlet_count);
     ++batch_i;
   }
 }
