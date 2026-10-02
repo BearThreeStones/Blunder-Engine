@@ -81,6 +81,9 @@ class VulkanContext final {
   PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasksEXT() const {
     return m_cmd_draw_mesh_tasks_ext;
   }
+  PFN_vkCmdDrawMeshTasksIndirectEXT cmdDrawMeshTasksIndirectEXT() const {
+    return m_cmd_draw_mesh_tasks_indirect_ext;
+  }
   PFN_vkCmdDrawMeshTasksIndirectCountEXT cmdDrawMeshTasksIndirectCountEXT()
       const {
     return m_cmd_draw_mesh_tasks_indirect_count_ext;
@@ -163,6 +166,7 @@ class VulkanContext final {
   bool m_draw_indirect_count_enabled{false};
   uint32_t m_max_draw_indirect_count{1};
   PFN_vkCmdDrawMeshTasksEXT m_cmd_draw_mesh_tasks_ext{nullptr};
+  PFN_vkCmdDrawMeshTasksIndirectEXT m_cmd_draw_mesh_tasks_indirect_ext{nullptr};
   PFN_vkCmdDrawMeshTasksIndirectCountEXT
       m_cmd_draw_mesh_tasks_indirect_count_ext{nullptr};
   PFN_vkCmdDrawIndexedIndirectCount m_cmd_draw_indexed_indirect_count{nullptr};

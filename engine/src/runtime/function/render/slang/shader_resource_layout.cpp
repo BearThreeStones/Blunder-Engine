@@ -382,6 +382,28 @@ void fillMeshletEmitExpectedBindings(uint32_t* bindings, uint32_t* sets,
   ASSERT(n == k_meshlet_emit_descriptor_binding_count);
 }
 
+void fillMeshTaskCmdPackExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                         uint32_t* count,
+                                         ShaderDescriptorKind* kinds) {
+  if (bindings == nullptr || sets == nullptr || count == nullptr ||
+      kinds == nullptr) {
+    return;
+  }
+  uint32_t n = 0;
+  auto push = [&](uint32_t binding, ShaderDescriptorKind kind) {
+    bindings[n] = binding;
+    sets[n] = 0;
+    kinds[n] = kind;
+    ++n;
+  };
+  push(0, ShaderDescriptorKind::UniformBuffer);
+  for (uint32_t b = 1; b <= 6; ++b) {
+    push(b, ShaderDescriptorKind::StorageBuffer);
+  }
+  *count = n;
+  ASSERT(n == k_mesh_task_cmd_pack_descriptor_binding_count);
+}
+
 void fillHizPyramidExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                     uint32_t* count,
                                     ShaderDescriptorKind* kinds) {
