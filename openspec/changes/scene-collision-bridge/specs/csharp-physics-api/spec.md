@@ -23,7 +23,7 @@ Blunder.Api exposes physics queries, entity groups, and Character Controller Mov
 - **AND** Object.Position is not the required walk call
 
 ### Requirement: Group façade on Object
-When an Object is bound to an entity, `Blunder.Api` SHALL expose add/remove/query of that entity’s groups and find-Objects-in-group. Find SHALL return only bound Objects.
+When an Object is bound to an entity, `Blunder.Api` SHALL expose add/remove/query of that entity’s groups and find-Objects-in-group. Find SHALL return a handle for every non-tombstoned entity in the group, binding an Object when that entity does not already have one.
 
 #### Scenario: IsInGroup after add
 - **WHEN** a Behaviour adds group `LeashPivots` on its Object

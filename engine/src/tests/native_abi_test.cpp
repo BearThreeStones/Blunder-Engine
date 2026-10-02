@@ -250,6 +250,18 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.character_controller_is_on_wall != nullptr);
   expect_true((std::string(label) + ": character_controller_is_on_ceiling").c_str(),
               abi.character_controller_is_on_ceiling != nullptr);
+  expect_true((std::string(label) + ": scene_find_object").c_str(),
+              abi.scene_find_object != nullptr);
+  expect_true((std::string(label) + ": object_get_name").c_str(),
+              abi.object_get_name != nullptr);
+  expect_true((std::string(label) + ": object_get_parent").c_str(),
+              abi.object_get_parent != nullptr);
+  expect_true((std::string(label) + ": object_child_count").c_str(),
+              abi.object_child_count != nullptr);
+  expect_true((std::string(label) + ": object_child_at").c_str(),
+              abi.object_child_at != nullptr);
+  expect_true((std::string(label) + ": object_get_world_position").c_str(),
+              abi.object_get_world_position != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {

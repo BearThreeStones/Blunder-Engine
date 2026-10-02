@@ -86,8 +86,8 @@ void PhysicsManager::unbind(const SceneInstance* scene) {
   m_worlds.erase(it);
 }
 
-void PhysicsManager::fillHit(const SceneInstance& scene, const PhysicsQueryHit& kernel,
-                             PhysicsSceneHit& out_hit) const {
+void PhysicsManager::fillHit(SceneInstance& scene, const PhysicsQueryHit& kernel,
+                             PhysicsSceneHit& out_hit) {
   out_hit = {};
   if (!kernel.hit) {
     return;
@@ -100,7 +100,7 @@ void PhysicsManager::fillHit(const SceneInstance& scene, const PhysicsQueryHit& 
   out_hit.entity_id = static_cast<EntityId>(kernel.user_data);
   if (isValid(out_hit.entity_id)) {
     out_hit.groups = scene.getGroups(out_hit.entity_id);
-    if (const Object* object = scene.findBoundObject(out_hit.entity_id)) {
+    if (Object* object = scene.ensureBoundObject(out_hit.entity_id)) {
       out_hit.object_id = static_cast<uint64_t>(object->getId());
     }
   }

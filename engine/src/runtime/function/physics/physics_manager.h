@@ -58,8 +58,8 @@ class PhysicsManager final {
   };
 
   void destroyBinding(WorldBinding& binding);
-  void fillHit(const SceneInstance& scene, const PhysicsQueryHit& kernel,
-               PhysicsSceneHit& out_hit) const;
+  void fillHit(SceneInstance& scene, const PhysicsQueryHit& kernel,
+               PhysicsSceneHit& out_hit);
   void attachCollider(WorldBinding& binding, SceneInstance& scene, EntityId entity_id);
 
   eastl::unordered_map<const SceneInstance*, WorldBinding> m_worlds;
