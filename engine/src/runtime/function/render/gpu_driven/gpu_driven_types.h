@@ -41,6 +41,13 @@ struct GpuDrivenEmitUniforms {
   uint32_t pad1{0};
 };
 
+struct GpuDrivenMeshTaskPackUniforms {
+  uint32_t batch_count{0};
+  uint32_t pad0{0};
+  uint32_t pad1{0};
+  uint32_t pad2{0};
+};
+
 /// CPU draw submitted to GPU-driven static opaque/alpha-clip.
 struct GpuDrivenDraw {
   GpuMesh* gpu_mesh{nullptr};
@@ -115,8 +122,19 @@ struct DrawIndexedIndirectCommand {
   uint32_t pad2{0};
 };
 
+/// Matches VkDrawMeshTasksIndirectCommandEXT + pad for SSBO alignment.
+/// Indirect draws use stride == sizeof (16); hardware reads the first 12 bytes.
+struct DrawMeshTasksIndirectCommand {
+  uint32_t group_count_x{0};
+  uint32_t group_count_y{1};
+  uint32_t group_count_z{1};
+  uint32_t pad0{0};
+};
+
 static_assert(sizeof(DrawIndexedIndirectCommand) == 32,
               "indirect command SSBO stride must be 32");
+static_assert(sizeof(DrawMeshTasksIndirectCommand) == 16,
+              "mesh-task indirect command stride must be 16");
 static_assert(sizeof(GpuDrivenMeshletGpu) == 64,
               "meshlet SSBO stride must be 64");
 static_assert(sizeof(GpuDrivenInstanceGpu) == 240,

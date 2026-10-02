@@ -520,6 +520,17 @@ int main() {
                 shaderResourceBindingsMatch(emit.layout, bindings, count, sets,
                                             kinds));
 
+    fillMeshTaskCmdPackExpectedBindings(bindings, sets, &count, kinds);
+    const SlangCompiler::ComputeProgramResult mesh_task_pack =
+        compiler.compileComputeProgram("engine/shaders/mesh_task_cmd_pack.slang");
+    if (!shaderResourceBindingsMatch(mesh_task_pack.layout, bindings, count, sets,
+                                     kinds)) {
+      dumpBindings("mesh_task_cmd_pack.slang", mesh_task_pack.layout);
+    }
+    expect_true("mesh_task_cmd_pack.slang layout",
+                shaderResourceBindingsMatch(mesh_task_pack.layout, bindings, count,
+                                            sets, kinds));
+
     fillHizPyramidExpectedBindings(bindings, sets, &count, kinds);
     const SlangCompiler::ComputeProgramResult hiz =
         compiler.compileComputeProgram("engine/shaders/hiz_pyramid.slang");
