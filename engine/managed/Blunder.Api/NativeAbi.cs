@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v13 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v14 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -147,6 +147,13 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<ulong, int*, int> character_controller_is_on_floor;
     public delegate* unmanaged[Cdecl]<ulong, int*, int> character_controller_is_on_wall;
     public delegate* unmanaged[Cdecl]<ulong, int*, int> character_controller_is_on_ceiling;
+    public delegate* unmanaged[Cdecl]<byte*, ulong*, int> scene_find_object;
+    public delegate* unmanaged[Cdecl]<ulong, byte*, int, int> object_get_name;
+    public delegate* unmanaged[Cdecl]<ulong, ulong*, int> object_get_parent;
+    public delegate* unmanaged[Cdecl]<ulong, int> object_child_count;
+    public delegate* unmanaged[Cdecl]<ulong, int, ulong*, int> object_child_at;
+    public delegate* unmanaged[Cdecl]<ulong, float*, float*, float*, int>
+        object_get_world_position;
 }
 
 /// <summary>

@@ -43,6 +43,23 @@ public sealed class ObjectHandle
                 Id, ObjectClass, PositionProperty, value.X, value.Y, value.Z);
     }
 
+    /// <summary>
+    /// Translation of the entity world matrix. <see cref="Position"/> stays local.
+    /// </summary>
+    public Vec3 WorldPosition
+    {
+        get
+        {
+            if (Native.blunder_object_get_world_position(
+                    Id, out float x, out float y, out float z) != Native.Ok)
+            {
+                return default;
+            }
+
+            return new Vec3(x, y, z);
+        }
+    }
+
     public Quat Rotation
     {
         get
@@ -182,6 +199,88 @@ public sealed class ObjectHandle
     }
 
     public bool IsValid => Native.blunder_object_is_valid(Id) != 0;
+
+    /// <summary>Entity name in the active scene.</summary>
+    public string Name
+    {
+        get
+        {
+            if (Native.blunder_object_get_name(Id, out string name) != Native.Ok)
+            {
+                return "";
+            }
+
+            return name;
+        }
+    }
+
+    /// <summary>
+    /// Exact-name lookup in the active scene. Duplicate names resolve to the
+    /// last entity. Tombstoned entities are omitted. Inactive entities are
+    /// returned. A missing name returns null.
+    /// </summary>
+    public static ObjectHandle? Find(string name)
+    {
+        if (string.IsNullOrEmpty(name) ||
+            Native.blunder_scene_find_object(name, out ulong id) != Native.Ok ||
+            id == 0)
+        {
+            return null;
+        }
+
+        return GetOrCreate(id);
+    }
+
+    /// <summary>Direct entity parent, or null when this entity is a root.</summary>
+    public ObjectHandle? Parent
+    {
+        get
+        {
+            if (Native.blunder_object_get_parent(Id, out ulong parentId) != Native.Ok ||
+                parentId == 0)
+            {
+                return null;
+            }
+
+            return GetOrCreate(parentId);
+        }
+    }
+
+    /// <summary>
+    /// Direct entity children in entity-table order. Tombstones are omitted.
+    /// </summary>
+    public ObjectHandle[] Children
+    {
+        get
+        {
+            int count = Native.blunder_object_child_count(Id);
+            if (count <= 0)
+            {
+                return [];
+            }
+
+            ObjectHandle[] children = new ObjectHandle[count];
+            int written = 0;
+            for (int i = 0; i < count; ++i)
+            {
+                if (Native.blunder_object_child_at(Id, i, out ulong childId) != Native.Ok ||
+                    childId == 0)
+                {
+                    continue;
+                }
+
+                children[written++] = GetOrCreate(childId);
+            }
+
+            if (written == count)
+            {
+                return children;
+            }
+
+            Array.Resize(ref children, written);
+            return children;
+        }
+    }
 
     /// <summary>Cached co-located AnimationPlayer façade for this Object.</summary>
     public AnimationPlayer EnsureAnimationPlayer() =>

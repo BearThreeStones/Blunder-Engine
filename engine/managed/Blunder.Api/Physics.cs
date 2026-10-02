@@ -1,8 +1,8 @@
 namespace Blunder;
 
 /// <summary>
-/// Physics query result in SI metres. Groups are entity strings; Object is
-/// set only when the hit entity has a bound Object.
+/// Physics query result in SI metres. Groups are entity strings. Object is
+/// the hit entity's handle, bound on demand when the entity is not tombstoned.
 /// </summary>
 public readonly struct PhysicsHit
 {

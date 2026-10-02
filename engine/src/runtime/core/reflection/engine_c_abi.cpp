@@ -1458,6 +1458,12 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->character_controller_is_on_wall = &blunder_character_controller_is_on_wall;
   out->character_controller_is_on_ceiling =
       &blunder_character_controller_is_on_ceiling;
+  out->scene_find_object = &blunder_scene_find_object;
+  out->object_get_name = &blunder_object_get_name;
+  out->object_get_parent = &blunder_object_get_parent;
+  out->object_child_count = &blunder_object_child_count;
+  out->object_child_at = &blunder_object_child_at;
+  out->object_get_world_position = &blunder_object_get_world_position;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -1657,6 +1663,13 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
                           "blunder_character_controller_is_on_wall");
   BLUNDER_NATIVE_ABI_LOAD(character_controller_is_on_ceiling,
                           "blunder_character_controller_is_on_ceiling");
+  BLUNDER_NATIVE_ABI_LOAD(scene_find_object, "blunder_scene_find_object");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_name, "blunder_object_get_name");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_parent, "blunder_object_get_parent");
+  BLUNDER_NATIVE_ABI_LOAD(object_child_count, "blunder_object_child_count");
+  BLUNDER_NATIVE_ABI_LOAD(object_child_at, "blunder_object_child_at");
+  BLUNDER_NATIVE_ABI_LOAD(object_get_world_position,
+                          "blunder_object_get_world_position");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

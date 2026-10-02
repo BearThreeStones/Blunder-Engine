@@ -741,7 +741,7 @@ bool SceneInstance::isInGroup(EntityId id, const eastl::string& name) const {
 }
 
 void SceneInstance::findBoundObjectsInGroup(const eastl::string& name,
-                                           eastl::vector<Object*>& out_objects) const {
+                                           eastl::vector<Object*>& out_objects) {
   out_objects.clear();
   if (name.empty()) {
     return;
@@ -750,7 +750,7 @@ void SceneInstance::findBoundObjectsInGroup(const eastl::string& name,
     if (entity.isTombstoned() || !entity.isInGroup(name)) {
       return;
     }
-    if (Object* object = findBoundObject(entity_id)) {
+    if (Object* object = ensureBoundObject(entity_id)) {
       out_objects.push_back(object);
     }
   });

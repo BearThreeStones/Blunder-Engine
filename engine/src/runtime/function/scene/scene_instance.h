@@ -200,7 +200,7 @@ class SceneInstance final : public IEntityStore {
   void removeGroup(EntityId id, const eastl::string& name);
   bool isInGroup(EntityId id, const eastl::string& name) const;
   void findBoundObjectsInGroup(const eastl::string& name,
-                               eastl::vector<Object*>& out_objects) const;
+                               eastl::vector<Object*>& out_objects);
 
   bool hasWorldBounds() const { return m_has_world_bounds; }
   const AABB& getWorldBounds() const { return m_world_bounds; }

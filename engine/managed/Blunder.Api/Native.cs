@@ -141,7 +141,13 @@ internal static unsafe class Native
         abi.character_controller_get_velocity != null &&
         abi.character_controller_is_on_floor != null &&
         abi.character_controller_is_on_wall != null &&
-        abi.character_controller_is_on_ceiling != null;
+        abi.character_controller_is_on_ceiling != null &&
+        abi.scene_find_object != null &&
+        abi.object_get_name != null &&
+        abi.object_get_parent != null &&
+        abi.object_child_count != null &&
+        abi.object_child_at != null &&
+        abi.object_get_world_position != null;
 
     static void EnsureRegistered()
     {
@@ -824,6 +830,88 @@ internal static unsafe class Native
         int flag = 0;
         int rc = s_abi.character_controller_is_on_ceiling(id, &flag);
         value = flag;
+        return rc;
+    }
+
+    public static int blunder_scene_find_object(string name, out ulong id)
+    {
+        EnsureRegistered();
+        id = 0;
+        byte[] utf8 = ToUtf8(name);
+        fixed (byte* namePtr = utf8)
+        {
+            ulong found = 0;
+            int rc = s_abi.scene_find_object(namePtr, &found);
+            id = found;
+            return rc;
+        }
+    }
+
+    public static int blunder_object_get_name(ulong id, out string name)
+    {
+        EnsureRegistered();
+        name = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.object_get_name(id, namePtr, capacity);
+            if (rc != Ok)
+            {
+                return rc;
+            }
+
+            int length = 0;
+            while (length < capacity - 1 && buffer[length] != 0)
+            {
+                ++length;
+            }
+
+            name = length == 0 ? "" : Encoding.UTF8.GetString(buffer, 0, length);
+            return rc;
+        }
+    }
+
+    public static int blunder_object_get_parent(ulong id, out ulong parentId)
+    {
+        EnsureRegistered();
+        parentId = 0;
+        ulong found = 0;
+        int rc = s_abi.object_get_parent(id, &found);
+        parentId = found;
+        return rc;
+    }
+
+    public static int blunder_object_child_count(ulong id)
+    {
+        EnsureRegistered();
+        return s_abi.object_child_count(id);
+    }
+
+    public static int blunder_object_child_at(ulong id, int index, out ulong childId)
+    {
+        EnsureRegistered();
+        childId = 0;
+        ulong found = 0;
+        int rc = s_abi.object_child_at(id, index, &found);
+        childId = found;
+        return rc;
+    }
+
+    public static int blunder_object_get_world_position(
+        ulong id, out float x, out float y, out float z)
+    {
+        EnsureRegistered();
+        x = 0;
+        y = 0;
+        z = 0;
+        float ox = 0;
+        float oy = 0;
+        float oz = 0;
+        int rc = s_abi.object_get_world_position(id, &ox, &oy, &oz);
+        x = ox;
+        y = oy;
+        z = oz;
         return rc;
     }
 
