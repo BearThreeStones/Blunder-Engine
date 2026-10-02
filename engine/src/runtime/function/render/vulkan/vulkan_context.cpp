@@ -976,13 +976,20 @@ void VulkanContext::createLogicalDevice() {
   if (m_mesh_shaders_enabled) {
     m_cmd_draw_mesh_tasks_ext = reinterpret_cast<PFN_vkCmdDrawMeshTasksEXT>(
         vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksEXT"));
+    m_cmd_draw_mesh_tasks_indirect_count_ext =
+        reinterpret_cast<PFN_vkCmdDrawMeshTasksIndirectCountEXT>(
+            vkGetDeviceProcAddr(m_device, "vkCmdDrawMeshTasksIndirectCountEXT"));
     if (m_cmd_draw_mesh_tasks_ext == nullptr) {
       LOG_WARN(
           "[VulkanContext] VK_EXT_mesh_shader enabled but "
           "vkCmdDrawMeshTasksEXT is null; falling back to compute+VS/FS");
       m_mesh_shaders_enabled = false;
+      m_cmd_draw_mesh_tasks_indirect_count_ext = nullptr;
     } else {
-      LOG_INFO("[VulkanContext] VK_EXT_mesh_shader enabled");
+      LOG_INFO(
+          "[VulkanContext] VK_EXT_mesh_shader enabled "
+          "(DrawMeshTasksIndirectCountEXT={})",
+          m_cmd_draw_mesh_tasks_indirect_count_ext != nullptr ? 1 : 0);
     }
   } else {
     LOG_INFO(

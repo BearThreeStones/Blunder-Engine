@@ -81,6 +81,10 @@ class VulkanContext final {
   PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasksEXT() const {
     return m_cmd_draw_mesh_tasks_ext;
   }
+  PFN_vkCmdDrawMeshTasksIndirectCountEXT cmdDrawMeshTasksIndirectCountEXT()
+      const {
+    return m_cmd_draw_mesh_tasks_indirect_count_ext;
+  }
   PFN_vkCmdDrawIndexedIndirectCount cmdDrawIndexedIndirectCount() const {
     return m_cmd_draw_indexed_indirect_count;
   }
@@ -159,6 +163,8 @@ class VulkanContext final {
   bool m_draw_indirect_count_enabled{false};
   uint32_t m_max_draw_indirect_count{1};
   PFN_vkCmdDrawMeshTasksEXT m_cmd_draw_mesh_tasks_ext{nullptr};
+  PFN_vkCmdDrawMeshTasksIndirectCountEXT
+      m_cmd_draw_mesh_tasks_indirect_count_ext{nullptr};
   PFN_vkCmdDrawIndexedIndirectCount m_cmd_draw_indexed_indirect_count{nullptr};
   bool m_fragment_shading_rate_enabled{false};
   VkExtent2D m_fragment_shading_rate_texel{1, 1};

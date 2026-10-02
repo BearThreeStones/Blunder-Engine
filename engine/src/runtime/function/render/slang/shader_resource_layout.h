@@ -54,6 +54,7 @@ constexpr uint32_t k_meshlet_cull_descriptor_binding_count = 13;
 constexpr uint32_t k_meshlet_emit_descriptor_binding_count = 13;
 constexpr uint32_t k_hiz_pyramid_descriptor_binding_count = 4;
 constexpr uint32_t k_gpu_driven_mesh_descriptor_binding_count = 16;
+constexpr uint32_t k_gpu_driven_gbuffer_mesh_descriptor_binding_count = 10;
 
 /// True when extracted (set, binding[, kind]) tuples equal expected tuples.
 /// `expected_sets` nullptr means every expected binding is set 0.
@@ -121,5 +122,9 @@ void fillHizPyramidExpectedBindings(uint32_t* bindings, uint32_t* sets,
 void fillGpuDrivenMeshExpectedBindings(uint32_t* bindings, uint32_t* sets,
                                        uint32_t* count,
                                        ShaderDescriptorKind* kinds);
+
+void fillGpuDrivenGBufferMeshExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                              uint32_t* count,
+                                              ShaderDescriptorKind* kinds);
 
 }  // namespace Blunder
