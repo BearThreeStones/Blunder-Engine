@@ -12,6 +12,7 @@
 #include "runtime/resource/asset/meshlet.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <vector>
 
@@ -399,6 +400,159 @@ int main() {
     expect_true("tiny shadow far stays at least courtyard default",
                 place.far_plane >= 60.0f);
     expect_true("tiny shadow view at least 8", place.view_distance >= 8.0f);
+  }
+
+  {
+    GpuMesh* mesh_a = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0x10));
+    GpuMesh* mesh_b = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0x20));
+    GpuDrivenDraw draws[4]{};
+    draws[0].gpu_mesh = mesh_b;
+    draws[0].entity_id = 1;
+    draws[1].gpu_mesh = mesh_a;
+    draws[1].entity_id = 5;
+    draws[2].gpu_mesh = mesh_a;
+    draws[2].entity_id = 2;
+    draws[3].gpu_mesh = mesh_b;
+    draws[3].entity_id = 4;
+    eastl::vector<MeshShadowCasterDraw> casters;
+    casters.push_back(MeshShadowCasterDraw{&draws[0], 3});
+    casters.push_back(MeshShadowCasterDraw{&draws[1], 3});
+    casters.push_back(MeshShadowCasterDraw{&draws[2], 3});
+    casters.push_back(MeshShadowCasterDraw{&draws[3], 3});
+    eastl::vector<ShadowMeshBatch> batches;
+    const uint32_t packed =
+        packShadowCasterBatches(casters, 16128u, 262144u, 1024u, batches);
+    expect_true("interleaved casters pack into two meshes",
+                packed == 4u && batches.size() == 2u);
+    expect_true("lower mesh pointer is the first batch",
+                batches.size() == 2u && batches[0].mesh == mesh_a &&
+                    batches[0].instance_count == 2u &&
+                    batches[0].instance_first == 0u &&
+                    batches[0].meshlet_count == 3u);
+    expect_true("second mesh batch follows",
+                batches.size() == 2u && batches[1].mesh == mesh_b &&
+                    batches[1].instance_first == 2u &&
+                    batches[1].instance_count == 2u &&
+                    batches[1].meshlet_offset == 3u);
+    expect_true("same mesh stays ordered by entity id",
+                casters.size() == 4u && casters[0].draw->entity_id == 2u &&
+                    casters[1].draw->entity_id == 5u);
+  }
+
+  {
+    constexpr uint32_t k_casters = 2000u;
+    GpuMesh* mesh_a = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0xA0));
+    GpuMesh* mesh_b = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0xB0));
+    std::vector<GpuDrivenDraw> draws(k_casters);
+    eastl::vector<MeshShadowCasterDraw> casters;
+    casters.reserve(k_casters);
+    for (uint32_t i = 0; i < k_casters; ++i) {
+      draws[i].gpu_mesh = (i % 2u == 0u) ? mesh_b : mesh_a;
+      draws[i].entity_id = k_casters - i;
+      casters.push_back(MeshShadowCasterDraw{&draws[i], 8u});
+    }
+    eastl::vector<ShadowMeshBatch> batches;
+    const uint32_t packed = packShadowCasterBatches(
+        casters, 16128u, 262144u, 1024u, batches);
+    expect_true("2000 casters are not cut by the 1024 set cap",
+                packed == k_casters);
+    expect_true("sets follow unique meshes, not casters",
+                batches.size() == 2u && packed > 1024u);
+    expect_true("shared meshlets are counted once per mesh",
+                batches.size() == 2u && batches[0].meshlet_count == 8u &&
+                    batches[1].meshlet_count == 8u &&
+                    batches[0].meshlet_offset == 0u &&
+                    batches[1].meshlet_offset == 8u);
+    uint32_t instances = 0;
+    for (const ShadowMeshBatch& batch : batches) {
+      instances += batch.instance_count;
+    }
+    expect_true("batch instance counts cover every caster",
+                instances == k_casters);
+  }
+
+  {
+    GpuMesh* mesh_a = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0x1));
+    GpuMesh* mesh_b = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0x2));
+    GpuMesh* mesh_c = reinterpret_cast<GpuMesh*>(static_cast<uintptr_t>(0x3));
+    GpuDrivenDraw draws[6]{};
+    draws[0].gpu_mesh = mesh_c;
+    draws[0].entity_id = 1;
+    draws[1].gpu_mesh = mesh_a;
+    draws[1].entity_id = 1;
+    draws[2].gpu_mesh = mesh_b;
+    draws[2].entity_id = 1;
+    draws[3].gpu_mesh = mesh_a;
+    draws[3].entity_id = 2;
+    draws[4].gpu_mesh = mesh_b;
+    draws[4].entity_id = 2;
+    draws[5].gpu_mesh = mesh_c;
+    draws[5].entity_id = 2;
+    eastl::vector<MeshShadowCasterDraw> casters;
+    for (GpuDrivenDraw& draw : draws) {
+      casters.push_back(MeshShadowCasterDraw{&draw, 40u});
+    }
+    eastl::vector<ShadowMeshBatch> batches;
+    const uint32_t packed =
+        packShadowCasterBatches(casters, 16128u, 80u, 1024u, batches);
+    expect_true("unique meshlet budget keeps two meshes",
+                packed == 4u && batches.size() == 2u);
+    expect_true("third mesh is outside the unique meshlet budget",
+                batches.size() == 2u && batches[0].mesh == mesh_a &&
+                    batches[1].mesh == mesh_b);
+  }
+
+  auto dispatch_covers = [](uint32_t meshlets, uint32_t instances,
+                            uint32_t face_mul, uint32_t max_dim,
+                            uint32_t max_total) {
+    eastl::vector<ShadowMeshTaskDispatch> dispatches;
+    buildShadowMeshTaskDispatches(meshlets, instances, face_mul, max_dim,
+                                  max_total, dispatches);
+    uint64_t covered = 0;
+    for (const ShadowMeshTaskDispatch& dispatch : dispatches) {
+      if (dispatch.group_count_x > max_dim || dispatch.group_count_y > max_dim ||
+          dispatch.group_count_x == 0u || dispatch.group_count_y == 0u) {
+        return false;
+      }
+      const uint64_t product = static_cast<uint64_t>(dispatch.group_count_x) *
+                               dispatch.group_count_y;
+      if (product > max_total) {
+        return false;
+      }
+      if (dispatch.group_count_x != dispatch.meshlet_count * face_mul) {
+        return false;
+      }
+      covered += static_cast<uint64_t>(dispatch.meshlet_count) *
+                 dispatch.group_count_y;
+    }
+    return covered == static_cast<uint64_t>(meshlets) * instances;
+  };
+  expect_true("one dispatch covers 8 meshlets x 2000 casters",
+              dispatch_covers(8u, 2000u, 1u, k_shadow_mesh_task_group_limit,
+                              k_shadow_mesh_task_group_total_limit));
+  {
+    eastl::vector<ShadowMeshTaskDispatch> dispatches;
+    buildShadowMeshTaskDispatches(8u, 2000u, 1u, k_shadow_mesh_task_group_limit,
+                                  k_shadow_mesh_task_group_total_limit,
+                                  dispatches);
+    expect_true("small batch is a single mesh-task",
+                dispatches.size() == 1u && dispatches[0].group_count_x == 8u &&
+                    dispatches[0].group_count_y == 2000u);
+  }
+  expect_true("layered cube multiplies task X by 6 faces",
+              dispatch_covers(4u, 10u, 6u, k_shadow_mesh_task_group_limit,
+                              k_shadow_mesh_task_group_total_limit));
+  expect_true("task groups split when X*Y exceeds the total limit",
+              dispatch_covers(100u, 50u, 1u, 65535u, 1000u));
+  expect_true("task groups split along meshlets past 65535",
+              dispatch_covers(70000u, 2u, 1u, 65535u,
+                              k_shadow_mesh_task_group_total_limit));
+  {
+    eastl::vector<ShadowMeshTaskDispatch> dispatches;
+    buildShadowMeshTaskDispatches(0u, 10u, 1u, 64u, 64u, dispatches);
+    expect_true("zero meshlets dispatch nothing", dispatches.empty());
+    buildShadowMeshTaskDispatches(4u, 0u, 1u, 64u, 64u, dispatches);
+    expect_true("zero instances dispatch nothing", dispatches.empty());
   }
 
   g_runtime_global_context.m_logger_system.reset();

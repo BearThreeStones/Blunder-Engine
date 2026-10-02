@@ -61,6 +61,8 @@ class MeshShadowSystem final {
   bool shaderOutputLayerEnabled() const { return m_shader_output_layer; }
   bool vsmEnabled() const { return m_vsm_enabled; }
   const LocalShadowCasters& casters() const { return m_local; }
+  /// Unique meshlets stored for shadow fill (one copy per GpuMesh), not
+  /// caster count times meshlets.
   uint32_t opaqueCasterMeshlets() const { return m_meshlet_count; }
   uint32_t markedPageCount() const { return m_marked_count; }
   uint32_t vsmOverflow() const { return m_overflow; }
@@ -127,7 +129,7 @@ class MeshShadowSystem final {
                       const ForwardOpaqueDraw* opaque_draws,
                       uint32_t opaque_draw_count, uint32_t frame_index);
   void fillLinkIds(const LightComponent* light, ShadowMeshUniformCpu& ubo) const;
-  void writeInstanceMeshSets();
+  void writeBatchMeshSets();
   void uploadUboSlot(uint32_t slot, const void* data, VkDeviceSize size);
   void logDrops();
 
@@ -180,6 +182,7 @@ class MeshShadowSystem final {
   glm::mat4 m_spot_vp[k_max_spot_shadow_maps]{};
   glm::mat4 m_inv_view_projection{1.0f};
   eastl::vector<MeshShadowCasterDraw> m_casters;
+  eastl::vector<ShadowMeshBatch> m_batches;
   eastl::vector<GpuMesh*> m_instance_meshes;
   eastl::vector<GpuDrivenInstanceGpu> m_instance_cpu;
   eastl::vector<GpuDrivenMeshletGpu> m_meshlet_cpu;
@@ -200,6 +203,7 @@ class MeshShadowSystem final {
   bool m_logged_spot_drop{false};
   bool m_logged_page_overflow{false};
   bool m_logged_ubo_overflow{false};
+  bool m_logged_batch_overflow{false};
 };
 
 }  // namespace Blunder

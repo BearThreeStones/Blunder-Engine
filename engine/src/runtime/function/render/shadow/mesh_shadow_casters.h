@@ -29,6 +29,46 @@ void filterCastersForLight(const eastl::vector<MeshShadowCasterDraw>& casters,
                            const LightComponent* light,
                            eastl::vector<MeshShadowCasterDraw>& out_filtered);
 
+/// One shadow-fill batch: every caster that shares a `GpuMesh`. Meshlet
+/// records are stored once per batch; instances keep their own world matrices.
+struct ShadowMeshBatch {
+  GpuMesh* mesh{nullptr};
+  uint32_t instance_first{0};
+  uint32_t instance_count{0};
+  uint32_t meshlet_offset{0};
+  uint32_t meshlet_count{0};
+};
+
+/// Vulkan `vkCmdDrawMeshTasksEXT` minimums (one dimension, and X*Y*Z).
+inline constexpr uint32_t k_shadow_mesh_task_group_limit = 65535u;
+inline constexpr uint32_t k_shadow_mesh_task_group_total_limit = 1u << 22;
+
+/// Sorts `casters` by `GpuMesh*` then entity id and packs a prefix into
+/// unique-mesh batches. Meshlet budget counts each mesh once, not once per
+/// caster. Returns how many leading casters were packed. Does not drop the
+/// unpacked tail from `casters` (the VS fallback still walks the full list).
+uint32_t packShadowCasterBatches(eastl::vector<MeshShadowCasterDraw>& casters,
+                                 uint32_t max_instances,
+                                 uint32_t max_unique_meshlets,
+                                 uint32_t max_batches,
+                                 eastl::vector<ShadowMeshBatch>& out_batches);
+
+/// One `vkCmdDrawMeshTasksEXT` covering a slice of a mesh batch.
+/// X = meshlets in the slice × face count, Y = instances in the slice.
+struct ShadowMeshTaskDispatch {
+  uint32_t group_count_x{0};
+  uint32_t group_count_y{0};
+  uint32_t instance_first{0};
+  uint32_t meshlet_base{0};
+  uint32_t meshlet_count{0};
+};
+
+void buildShadowMeshTaskDispatches(uint32_t meshlets_per_instance,
+                                   uint32_t instance_count, uint32_t face_mul,
+                                   uint32_t max_groups_per_dim,
+                                   uint32_t max_groups_total,
+                                   eastl::vector<ShadowMeshTaskDispatch>& out);
+
 struct LocalShadowCasters {
   EntityId directional{k_invalid_entity_id};
   EntityId points[k_max_point_shadow_maps]{};
