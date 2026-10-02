@@ -152,11 +152,19 @@ uint loadTriangleByte(uint byteOffset)
 [numthreads(1, 1, 1)]
 void taskMain(uint3 dtid : SV_DispatchThreadID)
 {
+    // Surviving-count dispatch (Phase 3): groupCountX = compact surviving cmds,
+    // so dtid.x indexes the packed command list (0..surviving-1), not holes.
+    // Sparse fallback still launches unique meshlets; culled slots DispatchMesh(0).
     DrawIndexedIndirectCommand cmd = commands[dtid.x];
     MeshPayload payload;
     payload.meshletIndex = cmd.pad0;
     payload.compactFirst = cmd.firstInstance;
     uint n = cmd.instanceCount;
+    if (n == 0u)
+    {
+        DispatchMesh(0, 1, 1, payload);
+        return;
+    }
     if (n > 16128u)
     {
         n = 16128u;

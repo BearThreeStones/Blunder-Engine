@@ -58,6 +58,14 @@ struct GpuDrivenEmitUniforms
     uint pad1;
 };
 
+struct GpuDrivenMeshTaskPackUniforms
+{
+    uint batchCount;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+};
+
 struct DrawIndexedIndirectCommand
 {
     uint indexCount;
@@ -68,6 +76,16 @@ struct DrawIndexedIndirectCommand
     uint pad0;
     uint pad1;
     uint pad2;
+};
+
+/// Matches VkDrawMeshTasksIndirectCommandEXT (12 bytes) plus pad for SSBO
+/// StructuredBuffer alignment. Indirect stride uses the full 16 bytes.
+struct DrawMeshTasksIndirectCommand
+{
+    uint groupCountX;
+    uint groupCountY;
+    uint groupCountZ;
+    uint pad0;
 };
 
 static const uint kGpuDrivenFlagTwoSided = 1u;

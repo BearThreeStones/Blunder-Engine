@@ -106,6 +106,12 @@ class GpuDrivenRenderer final {
     eastl::unique_ptr<VulkanBuffer> late_counts;
     eastl::unique_ptr<VulkanBuffer> shadow_counts;
     eastl::unique_ptr<VulkanBuffer> dummy_counts;
+    /// One VkDrawMeshTasksIndirectCommandEXT per MeshBatch (surviving groupCount).
+    eastl::unique_ptr<VulkanBuffer> early_mesh_task_cmds;
+    eastl::unique_ptr<VulkanBuffer> late_mesh_task_cmds;
+    /// 0/1 draw counts for DrawMeshTasksIndirectCountEXT (skip empty batches).
+    eastl::unique_ptr<VulkanBuffer> early_mesh_task_draw_counts;
+    eastl::unique_ptr<VulkanBuffer> late_mesh_task_draw_counts;
     eastl::unique_ptr<VulkanBuffer> early_count_readback;
     eastl::unique_ptr<VulkanBuffer> late_count_readback;
     eastl::unique_ptr<VulkanBuffer> batch_bases;
@@ -126,6 +132,7 @@ class GpuDrivenRenderer final {
     eastl::unique_ptr<VulkanBuffer> shadow_cull_ubo;
     eastl::unique_ptr<VulkanBuffer> emit_ubo;
     eastl::unique_ptr<VulkanBuffer> shadow_emit_ubo;
+    eastl::unique_ptr<VulkanBuffer> mesh_task_pack_ubo;
     eastl::unique_ptr<VulkanBuffer> view_ubo;
     eastl::unique_ptr<VulkanBuffer> gbuffer_ubo;
     eastl::unique_ptr<VulkanBuffer> shadow_ubo;
@@ -171,6 +178,11 @@ class GpuDrivenRenderer final {
                     bool shadow);
   bool compactIndirectEnabled() const;
   void dispatchEmit(VkCommandBuffer cmd, uint32_t frame, bool shadow);
+  void updateMeshTaskPackDescriptors(uint32_t frame);
+  void dispatchMeshTaskCmdPack(VkCommandBuffer cmd, uint32_t frame);
+  bool meshTaskSurvivingDispatchEnabled() const;
+  void recordMeshTasksForBatch(VkCommandBuffer cmd, uint32_t frame, bool late,
+                               uint32_t batch_i, uint32_t meshlet_count);
   void copyHudCounts(VkCommandBuffer cmd, uint32_t frame);
   void recordIndirectBatches(VkCommandBuffer cmd, uint32_t frame, bool late,
                              bool gbuffer, bool shadow, ShadowMapTarget* shadow_map,
@@ -197,6 +209,9 @@ class GpuDrivenRenderer final {
   VkDescriptorSetLayout m_emit_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_emit_pipe_layout{VK_NULL_HANDLE};
   VkPipeline m_emit_pipeline{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_mesh_task_pack_layout{VK_NULL_HANDLE};
+  VkPipelineLayout m_mesh_task_pack_pipe_layout{VK_NULL_HANDLE};
+  VkPipeline m_mesh_task_pack_pipeline{VK_NULL_HANDLE};
   VkDescriptorSetLayout m_hiz_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_hiz_pipe_layout{VK_NULL_HANDLE};
   VkPipeline m_hiz_pipeline{VK_NULL_HANDLE};
@@ -212,6 +227,7 @@ class GpuDrivenRenderer final {
   VkDescriptorSet m_shadow_cull_sets[k_frames]{};
   VkDescriptorSet m_emit_sets[k_frames]{};
   VkDescriptorSet m_shadow_emit_sets[k_frames]{};
+  VkDescriptorSet m_mesh_task_pack_sets[k_frames]{};
   VkDescriptorSet m_hiz_sets[k_frames][k_max_hiz_mips]{};
   VkDescriptorSet m_pbr_sets[k_frames]{};
   VkDescriptorSet m_gbuffer_sets[k_frames]{};
