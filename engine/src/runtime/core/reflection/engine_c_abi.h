@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 13
+#define BLUNDER_ENGINE_C_ABI_VERSION 14
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -358,13 +358,27 @@ BLUNDER_ENGINE_C_API int blunder_character_controller_is_on_wall(
 BLUNDER_ENGINE_C_API int blunder_character_controller_is_on_ceiling(
     BlunderObjectId id, int* out_value);
 
+BLUNDER_ENGINE_C_API int blunder_scene_find_object(const char* name,
+                                                   BlunderObjectId* out_id);
+BLUNDER_ENGINE_C_API int blunder_object_get_name(BlunderObjectId id,
+                                                 char* out_name,
+                                                 int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_object_get_parent(
+    BlunderObjectId id, BlunderObjectId* out_parent_id);
+BLUNDER_ENGINE_C_API int blunder_object_child_count(BlunderObjectId id);
+BLUNDER_ENGINE_C_API int blunder_object_child_at(BlunderObjectId id, int index,
+                                                 BlunderObjectId* out_child_id);
+BLUNDER_ENGINE_C_API int blunder_object_get_world_position(BlunderObjectId id,
+                                                           float* x, float* y,
+                                                           float* z);
+
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          const char* method_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
-// Function-pointer table mirroring Blunder.Api Native.cs C-ABI v12 entry points.
+// Function-pointer table mirroring Blunder.Api NativeAbi.cs C-ABI v14 entry points.
 // Hosts register this into ScriptHost so managed code shares one ObjectDB image.
 typedef struct BlunderNativeAbi {
   int (*engine_abi_version)(void);
@@ -544,6 +558,14 @@ typedef struct BlunderNativeAbi {
   int (*character_controller_is_on_floor)(BlunderObjectId id, int* out_value);
   int (*character_controller_is_on_wall)(BlunderObjectId id, int* out_value);
   int (*character_controller_is_on_ceiling)(BlunderObjectId id, int* out_value);
+  int (*scene_find_object)(const char* name, BlunderObjectId* out_id);
+  int (*object_get_name)(BlunderObjectId id, char* out_name, int name_capacity);
+  int (*object_get_parent)(BlunderObjectId id, BlunderObjectId* out_parent_id);
+  int (*object_child_count)(BlunderObjectId id);
+  int (*object_child_at)(BlunderObjectId id, int index,
+                         BlunderObjectId* out_child_id);
+  int (*object_get_world_position)(BlunderObjectId id, float* x, float* y,
+                                   float* z);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).

@@ -94,6 +94,16 @@ CharacterControllerComponent* controllerForObject(Object* object,
   return scene->getCharacterController(object->getEntityId());
 }
 
+void collectLiveChildren(SceneInstance& scene, EntityId parent_id,
+                         eastl::vector<EntityId>& out_ids) {
+  out_ids.clear();
+  scene.forEachChild(parent_id, [&](EntityId id, const Entity& entity) {
+    if (!entity.isTombstoned()) {
+      out_ids.push_back(id);
+    }
+  });
+}
+
 int writeCString(const eastl::string& value, char* out_name, int name_capacity) {
   if (out_name == nullptr || name_capacity <= 0) {
     return BLUNDER_ENGINE_ERROR;
@@ -311,6 +321,125 @@ int blunder_character_controller_is_on_ceiling(BlunderObjectId id, int* out_valu
     return BLUNDER_ENGINE_ERROR;
   }
   *out_value = controller->on_ceiling ? 1 : 0;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_scene_find_object(const char* name, BlunderObjectId* out_id) {
+  if (out_id != nullptr) {
+    *out_id = 0;
+  }
+  SceneInstance* scene = activeScene();
+  if (scene == nullptr || name == nullptr || name[0] == '\0' || out_id == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const EntityId entity_id = scene->findEntityByName(eastl::string(name));
+  if (!isValid(entity_id) || scene->isTombstoned(entity_id)) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  Object* object = scene->ensureBoundObject(entity_id);
+  if (object == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_id = static_cast<BlunderObjectId>(object->getId());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_object_get_name(BlunderObjectId id, char* out_name, int name_capacity) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  SceneInstance* scene = sceneForObject(object);
+  if (scene == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Entity* entity = scene->getEntity(object->getEntityId());
+  if (entity == nullptr || entity->isTombstoned()) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  return writeCString(entity->getName(), out_name, name_capacity);
+}
+
+int blunder_object_get_parent(BlunderObjectId id, BlunderObjectId* out_parent_id) {
+  if (out_parent_id != nullptr) {
+    *out_parent_id = 0;
+  }
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  SceneInstance* scene = sceneForObject(object);
+  if (scene == nullptr || out_parent_id == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Entity* entity = scene->getEntity(object->getEntityId());
+  if (entity == nullptr || entity->isTombstoned()) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const EntityId parent_id = entity->getParentId();
+  if (!isValid(parent_id) || scene->isTombstoned(parent_id)) {
+    return BLUNDER_ENGINE_OK;
+  }
+  Object* parent = scene->ensureBoundObject(parent_id);
+  if (parent == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_parent_id = static_cast<BlunderObjectId>(parent->getId());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_object_child_count(BlunderObjectId id) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  SceneInstance* scene = sceneForObject(object);
+  if (scene == nullptr) {
+    return 0;
+  }
+  const Entity* entity = scene->getEntity(object->getEntityId());
+  if (entity == nullptr || entity->isTombstoned()) {
+    return 0;
+  }
+  eastl::vector<EntityId> children;
+  collectLiveChildren(*scene, object->getEntityId(), children);
+  return static_cast<int>(children.size());
+}
+
+int blunder_object_child_at(BlunderObjectId id, int index,
+                            BlunderObjectId* out_child_id) {
+  if (out_child_id != nullptr) {
+    *out_child_id = 0;
+  }
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  SceneInstance* scene = sceneForObject(object);
+  if (scene == nullptr || out_child_id == nullptr || index < 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Entity* entity = scene->getEntity(object->getEntityId());
+  if (entity == nullptr || entity->isTombstoned()) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  eastl::vector<EntityId> children;
+  collectLiveChildren(*scene, object->getEntityId(), children);
+  if (static_cast<size_t>(index) >= children.size()) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  Object* child = scene->ensureBoundObject(children[static_cast<size_t>(index)]);
+  if (child == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_child_id = static_cast<BlunderObjectId>(child->getId());
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_object_get_world_position(BlunderObjectId id, float* x, float* y,
+                                      float* z) {
+  Object* object = ObjectDB::get(static_cast<ObjectId>(id));
+  SceneInstance* scene = sceneForObject(object);
+  if (scene == nullptr || x == nullptr || y == nullptr || z == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Entity* entity = scene->getEntity(object->getEntityId());
+  if (entity == nullptr || entity->isTombstoned()) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  scene->ensureWorldMatrices();
+  const Vec3 translation(scene->getWorldMatrix(object->getEntityId())[3]);
+  *x = translation.x;
+  *y = translation.y;
+  *z = translation.z;
   return BLUNDER_ENGINE_OK;
 }
 

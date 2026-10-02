@@ -79,8 +79,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 102 * sizeof(nint),
-            "BlunderNativeAbi layout size is 102 pointers");
+            sizeof(BlunderNativeAbi) == 108 * sizeof(nint),
+            "BlunderNativeAbi layout size is 108 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -212,6 +212,12 @@ static unsafe class Program
         abi.character_controller_is_on_floor = &StubCharacterControllerIsOnFloor;
         abi.character_controller_is_on_wall = &StubCharacterControllerIsOnWall;
         abi.character_controller_is_on_ceiling = &StubCharacterControllerIsOnCeiling;
+        abi.scene_find_object = &StubSceneFindObject;
+        abi.object_get_name = &StubObjectGetName;
+        abi.object_get_parent = &StubObjectGetParent;
+        abi.object_child_count = &StubObjectChildCount;
+        abi.object_child_at = &StubObjectChildAt;
+        abi.object_get_world_position = &StubObjectGetWorldPosition;
 
         Native.Register(in abi);
 
@@ -249,6 +255,7 @@ static unsafe class Program
         RunSyncGroupAndCineSmokeTests();
         RunSyncFireOneShotSmokeTests();
         RunPhysicsGroupsAndCctSmokeTests();
+        RunSceneQuerySmokeTests();
 
         if (s_failures == 0)
         {
@@ -664,6 +671,32 @@ static unsafe class Program
                 out BlunderPhysicsHit nativeHit) == Native.Ok &&
             nativeHit.hit != 0,
             "Native raycast after register (no DllImport)");
+    }
+
+    static void RunSceneQuerySmokeTests()
+    {
+        Expect(ObjectHandle.Find("") == null, "Find empty name is null");
+        Expect(ObjectHandle.Find("Missing") == null, "Find missing name is null");
+
+        ObjectHandle? pivot = ObjectHandle.Find("Pivot");
+        Expect(pivot != null && pivot.Id == 11UL && pivot.Name == "Pivot", "Find Pivot");
+        if (pivot == null)
+        {
+            return;
+        }
+
+        Expect(
+            pivot.Parent != null && pivot.Parent.Id == 10UL && pivot.Parent.Name == "Root",
+            "Parent is Root");
+        Expect(pivot.Parent!.Children.Length == 1 && pivot.Parent.Children[0].Id == pivot.Id,
+            "Root children are one level");
+        Expect(
+            pivot.WorldPosition.X == 10f && pivot.WorldPosition.Y == 2f &&
+            pivot.WorldPosition.Z == 4f,
+            "WorldPosition via stub");
+        Expect(
+            pivot.Position.X == 1f && pivot.Position.Y == 2f && pivot.Position.Z == 3f,
+            "Position stays the local property");
     }
 
     static void Expect(bool condition, string label)
@@ -1836,6 +1869,94 @@ static unsafe class Program
         }
 
         *outValue = s_cctOnCeiling;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSceneFindObject(byte* name, ulong* outId)
+    {
+        if (name == null || outId == null)
+        {
+            return Native.Error;
+        }
+
+        *outId = 0;
+        if (Utf8ToString(name) != "Pivot")
+        {
+            return Native.Error;
+        }
+
+        *outId = 11;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectGetName(ulong id, byte* outName, int nameCapacity)
+    {
+        if (id == 0 || outName == null || nameCapacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        if (id == 11)
+        {
+            WriteUtf8("Pivot", outName, nameCapacity);
+            return Native.Ok;
+        }
+
+        if (id == 10)
+        {
+            WriteUtf8("Root", outName, nameCapacity);
+            return Native.Ok;
+        }
+
+        return Native.Error;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectGetParent(ulong id, ulong* outParentId)
+    {
+        if (id == 0 || outParentId == null)
+        {
+            return Native.Error;
+        }
+
+        *outParentId = id == 11 ? 10UL : 0UL;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectChildCount(ulong id) => id == 10 ? 1 : 0;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectChildAt(ulong id, int index, ulong* outChildId)
+    {
+        if (outChildId == null)
+        {
+            return Native.Error;
+        }
+
+        *outChildId = 0;
+        if (id != 10 || index != 0)
+        {
+            return Native.Error;
+        }
+
+        *outChildId = 11;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubObjectGetWorldPosition(ulong id, float* x, float* y, float* z)
+    {
+        if (id == 0 || x == null || y == null || z == null)
+        {
+            return Native.Error;
+        }
+
+        *x = 10f;
+        *y = 2f;
+        *z = 4f;
         return Native.Ok;
     }
 }
