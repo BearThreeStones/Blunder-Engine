@@ -580,6 +580,9 @@ void GpuDrivenRenderer::createPipelines(VkRenderPass offscreen_pass,
 
   if (m_mesh_shaders_enabled) {
     createMeshPipeline(offscreen_pass);
+    if (gbuffer_pass != VK_NULL_HANDLE) {
+      createGBufferMeshPipeline(gbuffer_pass);
+    }
   }
 }
 
@@ -712,6 +715,139 @@ void GpuDrivenRenderer::createMeshPipeline(VkRenderPass render_pass) {
   }
 }
 
+void GpuDrivenRenderer::createGBufferMeshPipeline(VkRenderPass render_pass) {
+  const SlangCompiler::MeshProgramResult program =
+      m_compiler->compileMeshProgram("engine/shaders/gbuffer_mesh.slang");
+  uint32_t bindings[k_max_expected_descriptor_bindings];
+  uint32_t sets[k_max_expected_descriptor_bindings];
+  ShaderDescriptorKind kinds[k_max_expected_descriptor_bindings];
+  uint32_t count = 0;
+  fillGpuDrivenGBufferMeshExpectedBindings(bindings, sets, &count, kinds);
+  if (!shaderResourceBindingsMatch(program.layout, bindings, count, sets, kinds)) {
+    LOG_FATAL(
+        "[GpuDrivenRenderer] Shader resource layout does not match record-path "
+        "bindings for 'engine/shaders/gbuffer_mesh.slang' (extracted {} bindings, "
+        "expected {})",
+        program.layout.count, count);
+  }
+
+  eastl::vector<VkDescriptorSetLayoutBinding> layout_bindings;
+  bool uses_bindless = false;
+  for (uint32_t i = 0; i < program.layout.count; ++i) {
+    const ShaderResourceBinding& resource = program.layout.bindings[i];
+    if (resource.set == 1) {
+      uses_bindless = true;
+      continue;
+    }
+    VkDescriptorSetLayoutBinding b{};
+    b.binding = resource.binding;
+    b.descriptorType = descriptorType(resource.kind);
+    b.descriptorCount = 1;
+    b.stageFlags = VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT |
+                   VK_SHADER_STAGE_FRAGMENT_BIT;
+    layout_bindings.push_back(b);
+  }
+  VkDescriptorSetLayoutCreateInfo layout_info{};
+  layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layout_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+  layout_info.pBindings = layout_bindings.data();
+  vkCreateDescriptorSetLayout(m_context->getDevice(), &layout_info, nullptr,
+                              &m_gbuffer_mesh_layout);
+
+  VkDescriptorSetLayout set_layouts[2] = {
+      m_gbuffer_mesh_layout,
+      m_context->bindlessTextureTable().descriptorSetLayout()};
+  VkPipelineLayoutCreateInfo pipe_layout_info{};
+  pipe_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipe_layout_info.setLayoutCount = uses_bindless ? 2u : 1u;
+  pipe_layout_info.pSetLayouts = set_layouts;
+  vkCreatePipelineLayout(m_context->getDevice(), &pipe_layout_info, nullptr,
+                         &m_gbuffer_mesh_pipe_layout);
+
+  auto make_module = [this](const eastl::vector<uint8_t>& spirv) {
+    VkShaderModuleCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    info.codeSize = spirv.size();
+    info.pCode = reinterpret_cast<const uint32_t*>(spirv.data());
+    VkShaderModule module = VK_NULL_HANDLE;
+    vkCreateShaderModule(m_context->getDevice(), &info, nullptr, &module);
+    return module;
+  };
+  VkShaderModule task_mod = make_module(program.task.spirv_code);
+  VkShaderModule mesh_mod = make_module(program.mesh.spirv_code);
+  VkShaderModule frag_mod = make_module(program.fragment.spirv_code);
+
+  VkPipelineShaderStageCreateInfo stages[3]{};
+  stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[0].stage = VK_SHADER_STAGE_TASK_BIT_EXT;
+  stages[0].module = task_mod;
+  stages[0].pName = program.task.entry_point_name.c_str();
+  stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[1].stage = VK_SHADER_STAGE_MESH_BIT_EXT;
+  stages[1].module = mesh_mod;
+  stages[1].pName = program.mesh.entry_point_name.c_str();
+  stages[2].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[2].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  stages[2].module = frag_mod;
+  stages[2].pName = program.fragment.entry_point_name.c_str();
+
+  VkPipelineViewportStateCreateInfo viewport{};
+  viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  viewport.viewportCount = 1;
+  viewport.scissorCount = 1;
+  VkPipelineRasterizationStateCreateInfo raster{};
+  raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  raster.polygonMode = VK_POLYGON_MODE_FILL;
+  raster.lineWidth = 1.0f;
+  raster.cullMode = VK_CULL_MODE_NONE;
+  raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  VkPipelineMultisampleStateCreateInfo ms{};
+  ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  VkPipelineColorBlendAttachmentState blend_attach[3]{};
+  for (uint32_t i = 0; i < 3; ++i) {
+    blend_attach[i].colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+  }
+  VkPipelineColorBlendStateCreateInfo blend{};
+  blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  blend.attachmentCount = 3;
+  blend.pAttachments = blend_attach;
+  VkDynamicState dyn_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+  VkPipelineDynamicStateCreateInfo dyn{};
+  dyn.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dyn.dynamicStateCount = 2;
+  dyn.pDynamicStates = dyn_states;
+  VkPipelineDepthStencilStateCreateInfo depth{};
+  depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  depth.depthTestEnable = VK_TRUE;
+  depth.depthWriteEnable = VK_TRUE;
+  depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+  VkGraphicsPipelineCreateInfo gp{};
+  gp.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  gp.stageCount = 3;
+  gp.pStages = stages;
+  gp.pViewportState = &viewport;
+  gp.pRasterizationState = &raster;
+  gp.pMultisampleState = &ms;
+  gp.pColorBlendState = &blend;
+  gp.pDynamicState = &dyn;
+  gp.pDepthStencilState = &depth;
+  gp.layout = m_gbuffer_mesh_pipe_layout;
+  gp.renderPass = render_pass;
+  const VkResult result =
+      m_context->createGraphicsPipelines(1, &gp, &m_gbuffer_mesh_pipeline);
+  vkDestroyShaderModule(m_context->getDevice(), task_mod, nullptr);
+  vkDestroyShaderModule(m_context->getDevice(), mesh_mod, nullptr);
+  vkDestroyShaderModule(m_context->getDevice(), frag_mod, nullptr);
+  if (result != VK_SUCCESS) {
+    LOG_FATAL("[GpuDrivenRenderer] gbuffer mesh pipeline create failed: {}",
+              static_cast<int>(result));
+  }
+}
+
 void GpuDrivenRenderer::destroyPipelines() {
   VkDevice device = m_context != nullptr ? m_context->getDevice() : VK_NULL_HANDLE;
   auto drop_pipe = [&](VkPipeline& p) {
@@ -735,6 +871,9 @@ void GpuDrivenRenderer::destroyPipelines() {
   drop_pipe(m_mesh_pipeline);
   drop_layout(m_mesh_pipe_layout);
   drop_set_layout(m_mesh_layout);
+  drop_pipe(m_gbuffer_mesh_pipeline);
+  drop_layout(m_gbuffer_mesh_pipe_layout);
+  drop_set_layout(m_gbuffer_mesh_layout);
   drop_pipe(m_hiz_pipeline);
   drop_layout(m_hiz_pipe_layout);
   drop_set_layout(m_hiz_layout);
@@ -761,14 +900,21 @@ void GpuDrivenRenderer::destroyPipelines() {
 void GpuDrivenRenderer::createDescriptors() {
   VkDevice device = m_context->getDevice();
   const uint32_t mesh_set_count = k_frames * 2u * k_max_mesh_batches;
+  const uint32_t gbuffer_mesh_set_count =
+      m_mesh_shaders_enabled && m_gbuffer_mesh_layout != VK_NULL_HANDLE
+          ? mesh_set_count
+          : 0u;
   const uint32_t hiz_set_count = k_frames * k_max_hiz_mips;
   VkDescriptorPoolSize sizes[5]{};
   sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  sizes[0].descriptorCount = 64u + hiz_set_count + k_frames * 8u;
+  sizes[0].descriptorCount =
+      64u + hiz_set_count + k_frames * 8u + gbuffer_mesh_set_count;
   sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  sizes[1].descriptorCount = 128u + mesh_set_count * 10u + k_frames * 80u;
+  sizes[1].descriptorCount = 128u + mesh_set_count * 10u +
+                              gbuffer_mesh_set_count * 8u + k_frames * 80u;
   sizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-  sizes[2].descriptorCount = 64u + hiz_set_count + mesh_set_count * 3u + k_frames * 16u;
+  sizes[2].descriptorCount =
+      64u + hiz_set_count + mesh_set_count * 3u + k_frames * 16u;
   sizes[3].type = VK_DESCRIPTOR_TYPE_SAMPLER;
   sizes[3].descriptorCount = 64u + hiz_set_count + k_frames * 8u;
   sizes[4].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
@@ -778,7 +924,9 @@ void GpuDrivenRenderer::createDescriptors() {
   pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
   pool_info.poolSizeCount = 5;
   pool_info.pPoolSizes = sizes;
-  pool_info.maxSets = 32u + mesh_set_count + hiz_set_count + k_frames * 8u;
+  pool_info.maxSets =
+      32u + mesh_set_count + gbuffer_mesh_set_count + hiz_set_count +
+      k_frames * 8u;
   if (vkCreateDescriptorPool(device, &pool_info, nullptr, &m_descriptor_pool) !=
       VK_SUCCESS) {
     LOG_FATAL("[GpuDrivenRenderer] vkCreateDescriptorPool failed");
@@ -813,6 +961,12 @@ void GpuDrivenRenderer::createDescriptors() {
     for (uint32_t f = 0; f < k_frames; ++f) {
       alloc(m_mesh_layout, k_max_mesh_batches, m_mesh_sets[f][0]);
       alloc(m_mesh_layout, k_max_mesh_batches, m_mesh_sets[f][1]);
+    }
+  }
+  if (m_mesh_shaders_enabled && m_gbuffer_mesh_layout != VK_NULL_HANDLE) {
+    for (uint32_t f = 0; f < k_frames; ++f) {
+      alloc(m_gbuffer_mesh_layout, k_max_mesh_batches, m_gbuffer_mesh_sets[f][0]);
+      alloc(m_gbuffer_mesh_layout, k_max_mesh_batches, m_gbuffer_mesh_sets[f][1]);
     }
   }
 }
@@ -2066,7 +2220,108 @@ void GpuDrivenRenderer::recordGBufferIndirect(VkCommandBuffer cmd, uint32_t fram
                                               const ForwardFrameState&, bool late,
                                               VulkanTexture* fallback) {
   frame %= k_frames;
+  (void)fallback;
+  if (m_mesh_shaders_enabled && m_gbuffer_mesh_pipeline != VK_NULL_HANDLE &&
+      m_context->cmdDrawMeshTasksEXT() != nullptr) {
+    recordGBufferMeshIndirect(cmd, frame, late);
+    return;
+  }
   recordIndirectBatches(cmd, frame, late, true, false, nullptr, fallback);
+}
+
+void GpuDrivenRenderer::recordGBufferMeshIndirect(VkCommandBuffer cmd,
+                                                   uint32_t frame, bool late) {
+  if (m_packed_draws.empty() || m_meshlet_count == 0 || m_batches.empty()) {
+    return;
+  }
+  FrameBuffers& buffers = m_frames[frame];
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_gbuffer_mesh_pipeline);
+  VkDescriptorSet table = m_context->bindlessTextureTable().descriptorSet();
+  uint32_t batch_i = 0;
+  for (const MeshBatch& batch : m_batches) {
+    if (batch_i >= k_max_mesh_batches) {
+      break;
+    }
+    if (batch.mesh == nullptr ||
+        batch.mesh->getMeshletVertexBuffer() == nullptr ||
+        batch.mesh->getMeshletTriangleBuffer() == nullptr ||
+        batch.mesh->getVertexBuffer() == nullptr) {
+      ++batch_i;
+      continue;
+    }
+    VkDescriptorSet set = m_gbuffer_mesh_sets[frame][late ? 1u : 0u][batch_i];
+    VkDescriptorBufferInfo ubo{};
+    ubo.buffer = buffers.gbuffer_ubo->getBuffer();
+    ubo.range = sizeof(GpuDrivenGBufferUniformData);
+    VkDescriptorBufferInfo instances{};
+    instances.buffer = buffers.instances->getBuffer();
+    instances.range = VK_WHOLE_SIZE;
+    VkDescriptorBufferInfo commands{};
+    commands.buffer = late ? buffers.late_cmds->getBuffer()
+                           : buffers.early_cmds->getBuffer();
+    commands.offset = static_cast<VkDeviceSize>(batch.meshlet_first) *
+                      sizeof(DrawIndexedIndirectCommand);
+    commands.range = static_cast<VkDeviceSize>(batch.meshlet_count) *
+                     sizeof(DrawIndexedIndirectCommand);
+    VkDescriptorBufferInfo verts{};
+    verts.buffer = batch.mesh->getVertexBuffer()->getBuffer();
+    verts.range = VK_WHOLE_SIZE;
+    VkDescriptorBufferInfo meshlet_verts{};
+    meshlet_verts.buffer = batch.mesh->getMeshletVertexBuffer()->getBuffer();
+    meshlet_verts.range = VK_WHOLE_SIZE;
+    VkDescriptorBufferInfo meshlet_tris{};
+    meshlet_tris.buffer = batch.mesh->getMeshletTriangleBuffer()->getBuffer();
+    meshlet_tris.range = VK_WHOLE_SIZE;
+    VkDescriptorBufferInfo meshlets{};
+    meshlets.buffer = buffers.meshlets->getBuffer();
+    meshlets.offset = static_cast<VkDeviceSize>(batch.expanded_first) *
+                      sizeof(GpuDrivenMeshletGpu);
+    meshlets.range = static_cast<VkDeviceSize>(batch.meshlet_count) *
+                     sizeof(GpuDrivenMeshletGpu);
+    VkDescriptorBufferInfo compact{};
+    compact.buffer = late ? buffers.late_compact_ids->getBuffer()
+                          : buffers.early_compact_ids->getBuffer();
+    compact.range = VK_WHOLE_SIZE;
+    VkWriteDescriptorSet writes[8]{};
+    for (uint32_t i = 0; i < 8; ++i) {
+      writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+      writes[i].dstSet = set;
+      writes[i].descriptorCount = 1;
+      writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    }
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &ubo;
+    writes[1].dstBinding = 1;
+    writes[1].pBufferInfo = &instances;
+    writes[2].dstBinding = 2;
+    writes[2].pBufferInfo = &commands;
+    writes[3].dstBinding = 3;
+    writes[3].pBufferInfo = &verts;
+    writes[4].dstBinding = 4;
+    writes[4].pBufferInfo = &meshlet_verts;
+    writes[5].dstBinding = 5;
+    writes[5].pBufferInfo = &meshlet_tris;
+    writes[6].dstBinding = 6;
+    writes[6].pBufferInfo = &meshlets;
+    writes[7].dstBinding = 7;
+    writes[7].pBufferInfo = &compact;
+    vkUpdateDescriptorSets(m_context->getDevice(), 8, writes, 0, nullptr);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_gbuffer_mesh_pipe_layout, 0, 1, &set, 0, nullptr);
+    if (table != VK_NULL_HANDLE) {
+      vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              m_gbuffer_mesh_pipe_layout, 1, 1, &table, 0,
+                              nullptr);
+    }
+    // Emit writes DrawIndexedIndirectCommand SSBOs for VS/FS MDI and for the
+    // task shader to read. VkDrawMeshTasksIndirectCountEXT needs a different
+    // command layout (or one {surviving,1,1} per batch); multi-draw {1,1,1}
+    // resets dtid and breaks commands[dtid]. Match Forward until Phase 3 emits
+    // mesh-task cmds: unique meshlets with culled slots DispatchMesh(0).
+    m_context->cmdDrawMeshTasksEXT()(cmd, batch.meshlet_count, 1, 1);
+    ++batch_i;
+  }
 }
 
 void GpuDrivenRenderer::recordShadowIndirect(VkCommandBuffer cmd, uint32_t frame,

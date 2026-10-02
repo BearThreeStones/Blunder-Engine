@@ -438,4 +438,32 @@ void fillGpuDrivenMeshExpectedBindings(uint32_t* bindings, uint32_t* sets,
   ASSERT(n == k_gpu_driven_mesh_descriptor_binding_count);
 }
 
+void fillGpuDrivenGBufferMeshExpectedBindings(uint32_t* bindings, uint32_t* sets,
+                                              uint32_t* count,
+                                              ShaderDescriptorKind* kinds) {
+  if (bindings == nullptr || sets == nullptr || count == nullptr ||
+      kinds == nullptr) {
+    return;
+  }
+  uint32_t n = 0;
+  auto push = [&](uint32_t set, uint32_t binding, ShaderDescriptorKind kind) {
+    bindings[n] = binding;
+    sets[n] = set;
+    kinds[n] = kind;
+    ++n;
+  };
+  push(0, 0, ShaderDescriptorKind::UniformBuffer);
+  push(0, 1, ShaderDescriptorKind::StorageBuffer);
+  push(0, 2, ShaderDescriptorKind::StorageBuffer);
+  push(0, 3, ShaderDescriptorKind::StorageBuffer);
+  push(0, 4, ShaderDescriptorKind::StorageBuffer);
+  push(0, 5, ShaderDescriptorKind::StorageBuffer);
+  push(0, 6, ShaderDescriptorKind::StorageBuffer);
+  push(0, 7, ShaderDescriptorKind::StorageBuffer);
+  push(1, 0, ShaderDescriptorKind::SampledImage);
+  push(1, 1, ShaderDescriptorKind::Sampler);
+  *count = n;
+  ASSERT(n == k_gpu_driven_gbuffer_mesh_descriptor_binding_count);
+}
+
 }  // namespace Blunder
