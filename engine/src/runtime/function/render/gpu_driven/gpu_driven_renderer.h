@@ -156,6 +156,7 @@ class GpuDrivenRenderer final {
                              VkDescriptorSetLayout* layout, VkPipelineLayout* pipe_layout,
                              VkPipeline* pipeline);
   void createMeshPipeline(VkRenderPass render_pass);
+  void createGBufferMeshPipeline(VkRenderPass render_pass);
   void destroyHiz();
   void createHiz(uint32_t width, uint32_t height);
   void packDraws(const GpuDrivenDraw* draws, uint32_t count,
@@ -174,6 +175,7 @@ class GpuDrivenRenderer final {
   void recordIndirectBatches(VkCommandBuffer cmd, uint32_t frame, bool late,
                              bool gbuffer, bool shadow, ShadowMapTarget* shadow_map,
                              VulkanTexture* fallback);
+  void recordGBufferMeshIndirect(VkCommandBuffer cmd, uint32_t frame, bool late);
   void writePbrDescriptors(uint32_t frame, ShadowMapTarget* shadow,
                            VulkanTexture* fallback, bool late);
   void writeGBufferDescriptors(uint32_t frame, bool late);
@@ -201,6 +203,9 @@ class GpuDrivenRenderer final {
   VkDescriptorSetLayout m_mesh_layout{VK_NULL_HANDLE};
   VkPipelineLayout m_mesh_pipe_layout{VK_NULL_HANDLE};
   VkPipeline m_mesh_pipeline{VK_NULL_HANDLE};
+  VkDescriptorSetLayout m_gbuffer_mesh_layout{VK_NULL_HANDLE};
+  VkPipelineLayout m_gbuffer_mesh_pipe_layout{VK_NULL_HANDLE};
+  VkPipeline m_gbuffer_mesh_pipeline{VK_NULL_HANDLE};
 
   VkDescriptorPool m_descriptor_pool{VK_NULL_HANDLE};
   VkDescriptorSet m_cull_sets[k_frames]{};
@@ -212,6 +217,7 @@ class GpuDrivenRenderer final {
   VkDescriptorSet m_gbuffer_sets[k_frames]{};
   VkDescriptorSet m_shadow_sets[k_frames]{};
   VkDescriptorSet m_mesh_sets[k_frames][2][k_max_mesh_batches]{};
+  VkDescriptorSet m_gbuffer_mesh_sets[k_frames][2][k_max_mesh_batches]{};
 
   FrameBuffers m_frames[k_frames];
   HizPyramid m_hiz[k_frames];
