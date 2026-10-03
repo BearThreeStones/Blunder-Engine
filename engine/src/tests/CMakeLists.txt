@@ -507,6 +507,31 @@ target_precompile_headers(skeleton_modifier_catalog_test
 add_test(NAME skeleton_modifier_catalog_test
          COMMAND skeleton_modifier_catalog_test)
 
+add_executable(spring_bone_modifier_test
+    "spring_bone_modifier_test.cpp"
+)
+
+target_link_libraries(spring_bone_modifier_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+target_include_directories(spring_bone_modifier_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+if(MSVC)
+    target_compile_options(spring_bone_modifier_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(spring_bone_modifier_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME spring_bone_modifier_test
+         COMMAND spring_bone_modifier_test)
+
 add_executable(variant_test
     "variant_test.cpp"
 )

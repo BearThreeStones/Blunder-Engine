@@ -1149,15 +1149,24 @@ void SlintSystem::applyPreviewModifierField(int entity_id, int kind, int index,
     after_def.target.y = number;
   } else if (key == "target_z") {
     after_def.target.z = number;
+  } else if (key == "end_bone_name") {
+    after_def.end_bone_name = text;
+  } else if (key == "stiffness") {
+    after_def.stiffness = number;
+  } else if (key == "drag") {
+    after_def.drag = number;
+  } else if (key == "gravity_x") {
+    after_def.gravity.x = number;
+  } else if (key == "gravity_y") {
+    after_def.gravity.y = number;
+  } else if (key == "gravity_z") {
+    after_def.gravity.z = number;
+  } else if (key == "end_bone_length") {
+    after_def.end_bone_length = number;
   } else {
     return;
   }
-  const auto defs_equal = [](const SceneSkeletonModifierDef& a,
-                             const SceneSkeletonModifierDef& b) {
-    return a.type == b.type && a.enabled == b.enabled && a.bone_name == b.bone_name &&
-           a.open_amount == b.open_amount && a.attach_driven == b.attach_driven &&
-           a.target == b.target && a.child_entity_name == b.child_entity_name;
-  };
+  const auto defs_equal = skeletonModifierDefsEqual;
   const size_t modifier_index = static_cast<size_t>(index);
   if (defs_equal(before_def, after_def) && !m_inspector_modifier_edit_open) {
     return;

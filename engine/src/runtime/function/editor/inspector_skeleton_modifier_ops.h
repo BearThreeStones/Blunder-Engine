@@ -13,6 +13,7 @@
 #include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/core/object/skeleton_modifier_catalog.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/object/skeleton_spring_bone_modifier.h"
 #include "runtime/function/scene/scene.h"
 #include "runtime/function/scene/scene_instance.h"
 
@@ -28,7 +29,44 @@ struct InspectorSkeletonModifierRowData final {
   bool attach_driven{false};
   Vec3 target{0.0f, 0.0f, 1.0f};
   eastl::string child_entity_name;
+  eastl::string end_bone_name;
+  float stiffness{0.2f};
+  float drag{0.2f};
+  Vec3 gravity{0.0f};
+  float end_bone_length{0.1f};
 };
+
+inline bool skeletonModifierDefsEqual(const SceneSkeletonModifierDef& a,
+                                      const SceneSkeletonModifierDef& b) {
+  return a.type == b.type && a.enabled == b.enabled && a.bone_name == b.bone_name &&
+         a.end_bone_name == b.end_bone_name && a.open_amount == b.open_amount &&
+         a.attach_driven == b.attach_driven && a.stiffness == b.stiffness &&
+         a.drag == b.drag && a.end_bone_length == b.end_bone_length &&
+         a.target == b.target && a.gravity == b.gravity &&
+         a.child_entity_name == b.child_entity_name;
+}
+
+inline void copySpringBoneToDef(const SkeletonSpringBoneModifier& spring,
+                                SceneSkeletonModifierDef& def) {
+  def.bone_name = spring.getRootBoneName();
+  def.end_bone_name = spring.getEndBoneName();
+  def.stiffness = spring.getStiffness();
+  def.drag = spring.getDrag();
+  def.gravity = spring.getGravity();
+  def.end_bone_length = spring.getEndBoneLength();
+}
+
+inline void applySpringBoneFromDef(SkeletonSpringBoneModifier& spring,
+                                   const SceneSkeletonModifierDef& def) {
+  if (!def.bone_name.empty()) {
+    spring.setRootBoneName(def.bone_name);
+  }
+  spring.setEndBoneName(def.end_bone_name);
+  spring.setStiffness(def.stiffness);
+  spring.setDrag(def.drag);
+  spring.setGravity(def.gravity);
+  spring.setEndBoneLength(def.end_bone_length);
+}
 
 inline SkeletonModifier* addSkeletonModifierByType(Object* object,
                                                  const eastl::string& type) {
@@ -64,6 +102,9 @@ inline void applyProductModifierFields(SkeletonModifier& modifier,
     if (!def.bone_name.empty()) {
       attach->setBoneName(def.bone_name);
     }
+  } else if (type == "SpringBone") {
+    applySpringBoneFromDef(*static_cast<SkeletonSpringBoneModifier*>(&modifier),
+                           def);
   }
 }
 
@@ -139,6 +180,9 @@ inline bool captureSkeletonModifierDef(const SceneInstance& scene,
                                       ? child_entity->getName()
                                       : child->getName();
     }
+  } else if (out_def.type == "SpringBone") {
+    copySpringBoneToDef(
+        *static_cast<const SkeletonSpringBoneModifier*>(modifier), out_def);
   }
   return true;
 }
@@ -178,6 +222,9 @@ inline void applySkeletonModifierFieldsOnObject(SceneInstance* scene, Object* ob
     if (scene != nullptr && !def.child_entity_name.empty()) {
       wireAttachChildFromScene(scene, object, index, def.child_entity_name);
     }
+  } else if (def.type == "SpringBone") {
+    auto* spring = static_cast<SkeletonSpringBoneModifier*>(modifier);
+    applySpringBoneFromDef(*spring, def);
   }
 }
 
@@ -237,6 +284,9 @@ inline void buildInspectorSkeletonModifierRows(
         const auto* attach =
             static_cast<const SkeletonAttachModifier*>(modifier);
         def.bone_name = attach->getBoneName();
+      } else if (def.type == "SpringBone") {
+        copySpringBoneToDef(
+            *static_cast<const SkeletonSpringBoneModifier*>(modifier), def);
       }
     }
 
@@ -251,6 +301,11 @@ inline void buildInspectorSkeletonModifierRows(
     row.attach_driven = def.attach_driven;
     row.target = def.target;
     row.child_entity_name = def.child_entity_name;
+    row.end_bone_name = def.end_bone_name;
+    row.stiffness = def.stiffness;
+    row.drag = def.drag;
+    row.gravity = def.gravity;
+    row.end_bone_length = def.end_bone_length;
     out_rows.push_back(eastl::move(row));
   }
 }

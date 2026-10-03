@@ -79,6 +79,10 @@ class AnimationTree {
 
   void bindSamplingSkeleton(Skeleton* skeleton);
   void bindSkeletonModifierChain(SkeletonModifierChainFn fn, void* userdata);
+  /// Seconds passed to SpringBone during the current advance. Zero outside advance.
+  float getSkeletonModifierDeltaTime() const {
+    return m_skeleton_modifier_delta_seconds;
+  }
 
   bool isActive() const { return m_active; }
   bool setActive(bool active);
@@ -283,6 +287,7 @@ class AnimationTree {
   float m_clip_play_time{0.0f};
   float m_method_prev_clock{0.0f};
   eastl::string m_asset_guid;
+  float m_skeleton_modifier_delta_seconds{0.0f};
 };
 
 }  // namespace Blunder

@@ -387,4 +387,7 @@ public sealed class ObjectHandle
 
     /// <summary>Lean LookAt drive façade at <paramref name="index"/>.</summary>
     public LookAt LookAtAt(int index) => new(this, index);
+
+    /// <summary>Lean SpringBone drive façade at <paramref name="index"/>.</summary>
+    public SpringBone SpringBoneAt(int index) => new(this, index);
 }

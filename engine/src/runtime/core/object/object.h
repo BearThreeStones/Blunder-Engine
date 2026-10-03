@@ -20,6 +20,7 @@ namespace Blunder {
 class SkeletonAttachModifier;
 class SkeletonLookAtModifier;
 class SkeletonPaperMouthModifier;
+class SkeletonSpringBoneModifier;
 
 BLUNDER_CLASS()
 class Object {
@@ -114,6 +115,7 @@ class Object {
   SkeletonLookAtModifier* addSkeletonLookAtModifier();
   SkeletonPaperMouthModifier* addSkeletonPaperMouthModifier();
   SkeletonAttachModifier* addSkeletonAttachModifier();
+  SkeletonSpringBoneModifier* addSkeletonSpringBoneModifier();
   bool moveSkeletonModifier(size_t from_index, size_t to_index);
   bool removeSkeletonModifierAt(size_t index);
   bool insertSkeletonModifierAt(size_t index,

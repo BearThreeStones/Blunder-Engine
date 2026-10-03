@@ -34,9 +34,11 @@ struct SceneBehaviourDeclaration final {
 /// per-session handle that cannot survive a save.
 struct SceneSkeletonModifierDef final {
   /// ClassDB name: `"PaperMouth"`, `"SkeletonAttachModifier"`,
-  /// `"SkeletonLookAtModifier"`, or `"SkeletonModifier"` for a bare chain slot.
+  /// `"SkeletonLookAtModifier"`, `"SpringBone"`, or `"SkeletonModifier"` for a
+  /// bare chain slot.
   eastl::string type;
   bool enabled{true};
+  /// PaperMouth / LookAt / Attach bone, or SpringBone chain root.
   eastl::string bone_name;
   /// PaperMouth.
   float open_amount{0.0f};
@@ -45,6 +47,13 @@ struct SceneSkeletonModifierDef final {
   Vec3 target{0.0f, 0.0f, 1.0f};
   /// SkeletonAttachModifier child, by scene entity name.
   eastl::string child_entity_name;
+  /// SpringBone chain end. Empty means the root bone alone.
+  eastl::string end_bone_name;
+  float stiffness{0.2f};
+  float drag{0.2f};
+  /// SpringBone world acceleration (Z-up).
+  Vec3 gravity{0.0f};
+  float end_bone_length{0.1f};
   /// Leftover JSON properties when `type` is not in the catalog.
   eastl::vector<SkeletonModifierExtraField> extra_fields;
 };

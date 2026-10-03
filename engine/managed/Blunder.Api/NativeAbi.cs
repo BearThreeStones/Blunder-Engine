@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v14 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v15 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -154,6 +154,30 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<ulong, int, ulong*, int> object_child_at;
     public delegate* unmanaged[Cdecl]<ulong, float*, float*, float*, int>
         object_get_world_position;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int>
+        skeleton_modifier_set_spring_bone_root_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int>
+        skeleton_modifier_get_spring_bone_root_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int>
+        skeleton_modifier_set_spring_bone_end_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int>
+        skeleton_modifier_get_spring_bone_end_bone_name;
+    public delegate* unmanaged[Cdecl]<ulong, int, float, int>
+        skeleton_modifier_set_spring_bone_stiffness;
+    public delegate* unmanaged[Cdecl]<ulong, int, float*, int>
+        skeleton_modifier_get_spring_bone_stiffness;
+    public delegate* unmanaged[Cdecl]<ulong, int, float, int>
+        skeleton_modifier_set_spring_bone_drag;
+    public delegate* unmanaged[Cdecl]<ulong, int, float*, int>
+        skeleton_modifier_get_spring_bone_drag;
+    public delegate* unmanaged[Cdecl]<ulong, int, float, float, float, int>
+        skeleton_modifier_set_spring_bone_gravity;
+    public delegate* unmanaged[Cdecl]<ulong, int, float*, float*, float*, int>
+        skeleton_modifier_get_spring_bone_gravity;
+    public delegate* unmanaged[Cdecl]<ulong, int, float, int>
+        skeleton_modifier_set_spring_bone_end_length;
+    public delegate* unmanaged[Cdecl]<ulong, int, float*, int>
+        skeleton_modifier_get_spring_bone_end_length;
 }
 
 /// <summary>

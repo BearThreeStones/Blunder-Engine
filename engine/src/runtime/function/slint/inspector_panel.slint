@@ -50,6 +50,13 @@ export struct SkeletonModifierRow {
     target-y: float,
     target-z: float,
     child-entity-name: string,
+    end-bone-name: string,
+    stiffness: float,
+    drag: float,
+    gravity-x: float,
+    gravity-y: float,
+    gravity-z: float,
+    end-bone-length: float,
 }
 
 export struct AnimationClipRow {
@@ -1839,6 +1846,112 @@ export component InspectorPanel inherits Rectangle {
                                     committed => {
                                         root.commit-skeleton-modifier-field(
                                             modifier.modifier-index, "target_z", "", self.value, false, true);
+                                    }
+                                }
+                            }
+
+                            if !modifier.missing && modifier.type-name == "SpringBone": VerticalBox {
+                                spacing: 4px;
+                                HorizontalBox {
+                                    spacing: 6px;
+                                    Text {
+                                        text: "End Bone";
+                                        color: EditorTheme.muted;
+                                        font-size: 11px;
+                                        width: 96px;
+                                        vertical-alignment: center;
+                                    }
+                                    end-bone-input := EditorCompactField {
+                                        horizontal-stretch: 1;
+                                        text: modifier.end-bone-name;
+                                        accepted => {
+                                            root.commit-skeleton-modifier-field(
+                                                modifier.modifier-index, "end_bone_name", self.text, 0.0, false, true);
+                                        }
+                                        changed has-focus => {
+                                            if (!self.has-focus) {
+                                                root.commit-skeleton-modifier-field(
+                                                    modifier.modifier-index, "end_bone_name", self.text, 0.0, false, true);
+                                            }
+                                        }
+                                    }
+                                }
+                                InspectorScalarRow {
+                                    label: "Stiffness";
+                                    value: modifier.stiffness;
+                                    reset-value: 0.2;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "stiffness", "", self.value, false, false);
+                                    }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "stiffness", "", self.value, false, true);
+                                    }
+                                }
+                                InspectorScalarRow {
+                                    label: "Drag";
+                                    value: modifier.drag;
+                                    reset-value: 0.2;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "drag", "", self.value, false, false);
+                                    }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "drag", "", self.value, false, true);
+                                    }
+                                }
+                                InspectorScalarRow {
+                                    label: "Gravity X";
+                                    value: modifier.gravity-x;
+                                    reset-value: 0.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "gravity_x", "", self.value, false, false);
+                                    }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "gravity_x", "", self.value, false, true);
+                                    }
+                                }
+                                InspectorScalarRow {
+                                    label: "Gravity Y";
+                                    value: modifier.gravity-y;
+                                    reset-value: 0.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "gravity_y", "", self.value, false, false);
+                                    }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "gravity_y", "", self.value, false, true);
+                                    }
+                                }
+                                InspectorScalarRow {
+                                    label: "Gravity Z";
+                                    value: modifier.gravity-z;
+                                    reset-value: 0.0;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "gravity_z", "", self.value, false, false);
+                                    }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "gravity_z", "", self.value, false, true);
+                                    }
+                                }
+                                InspectorScalarRow {
+                                    label: "End Length";
+                                    value: modifier.end-bone-length;
+                                    reset-value: 0.1;
+                                    live-edited => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "end_bone_length", "", self.value, false, false);
+                                    }
+                                    committed => {
+                                        root.commit-skeleton-modifier-field(
+                                            modifier.modifier-index, "end_bone_length", "", self.value, false, true);
                                     }
                                 }
                             }
