@@ -26,6 +26,8 @@ namespace Blunder {
 
 namespace {
 
+/// Unique-mesh descriptor sets per in-flight frame. Not a caster cap:
+/// se-world is ~10k instances and ~252 meshes, so one set per mesh fits.
 constexpr uint32_t k_shadow_mesh_sets = 1024u;
 constexpr uint32_t k_shadow_ubo_slots = 16384u;
 /// CPU frustum stamp covers receivers; GPU mark+download was a 320KB hitch
@@ -776,48 +778,70 @@ void MeshShadowSystem::uploadCasters(const GpuDrivenDraw* draws, uint32_t count,
                                      bool scene_static) {
   if (scene_static && m_casters_ready && count == m_last_caster_draw_count) {
     if (!m_mesh_sets_written[m_record_frame]) {
-      writeInstanceMeshSets();
+      writeBatchMeshSets();
       m_mesh_sets_written[m_record_frame] = true;
     }
     return;
   }
   collectOpaqueMeshletCasters(draws, count, m_casters);
+  const uint32_t packed = packShadowCasterBatches(
+      m_casters, k_max_gpu_driven_instances, k_max_gpu_driven_meshlets,
+      k_shadow_mesh_sets, m_batches);
+  if (packed < static_cast<uint32_t>(m_casters.size()) &&
+      !m_logged_batch_overflow) {
+    LOG_WARN(
+        "[MeshShadowSystem] packed {} of {} shadow casters into {} unique-mesh "
+        "batches",
+        packed, static_cast<uint32_t>(m_casters.size()),
+        static_cast<uint32_t>(m_batches.size()));
+    m_logged_batch_overflow = true;
+  }
   m_instance_cpu.clear();
   m_meshlet_cpu.clear();
   m_instance_meshes.clear();
   m_instance_count = 0;
   m_meshlet_count = 0;
-  for (const MeshShadowCasterDraw& caster : m_casters) {
-    if (caster.draw == nullptr || caster.draw->gpu_mesh == nullptr) {
+  m_instance_cpu.reserve(packed);
+  m_instance_meshes.reserve(packed);
+  for (ShadowMeshBatch& batch : m_batches) {
+    if (batch.mesh == nullptr) {
       continue;
     }
-    if (m_instance_count >= k_max_gpu_driven_instances) {
-      break;
-    }
-    const auto& records = caster.draw->gpu_mesh->getMeshletRecords();
-    GpuDrivenInstanceGpu inst{};
-    inst.world = caster.draw->model;
-    inst.meshlet_offset = m_meshlet_count;
-    inst.meshlet_count = static_cast<uint32_t>(records.size());
-    inst.pad0 = caster.draw->entity_id;
-    m_instance_cpu.push_back(inst);
-    m_instance_meshes.push_back(caster.draw->gpu_mesh);
-    for (const GpuMeshletGpuRecord& rec : records) {
+    const eastl::vector<GpuMeshletGpuRecord>& records =
+        batch.mesh->getMeshletRecords();
+    const uint32_t recs = static_cast<uint32_t>(
+        eastl::min(records.size(), static_cast<size_t>(batch.meshlet_count)));
+    batch.meshlet_offset = m_meshlet_count;
+    batch.meshlet_count = 0;
+    for (uint32_t r = 0; r < recs; ++r) {
       if (m_meshlet_count >= k_max_gpu_driven_meshlets) {
         break;
       }
+      const GpuMeshletGpuRecord& rec = records[r];
       GpuDrivenMeshletGpu meshlet{};
       meshlet.sphere = rec.sphere;
       meshlet.cone = rec.cone;
-      meshlet.instance_index = m_instance_count;
+      meshlet.instance_index = batch.instance_first;
       meshlet.vertex_offset = rec.vertex_offset;
       meshlet.vertex_count = rec.vertex_count;
       meshlet.triangle_offset = rec.triangle_offset;
       meshlet.triangle_count = rec.triangle_count;
       m_meshlet_cpu.push_back(meshlet);
       ++m_meshlet_count;
+      ++batch.meshlet_count;
     }
-    ++m_instance_count;
+    for (uint32_t n = 0; n < batch.instance_count; ++n) {
+      const uint32_t index = batch.instance_first + n;
+      const GpuDrivenDraw& draw = *m_casters[index].draw;
+      GpuDrivenInstanceGpu inst{};
+      inst.world = draw.model;
+      inst.meshlet_offset = batch.meshlet_offset;
+      inst.meshlet_count = batch.meshlet_count;
+      inst.pad0 = draw.entity_id;
+      m_instance_cpu.push_back(inst);
+      m_instance_meshes.push_back(batch.mesh);
+      ++m_instance_count;
+    }
   }
   if (m_instance_count > 0) {
     m_instances->upload(m_instance_cpu.data(),
@@ -827,7 +851,7 @@ void MeshShadowSystem::uploadCasters(const GpuDrivenDraw* draws, uint32_t count,
     m_meshlets->upload(m_meshlet_cpu.data(),
                        sizeof(GpuDrivenMeshletGpu) * m_meshlet_count);
   }
-  writeInstanceMeshSets();
+  writeBatchMeshSets();
   for (bool& written : m_mesh_sets_written) {
     written = false;
   }
@@ -854,14 +878,14 @@ void MeshShadowSystem::uploadUboSlot(uint32_t slot, const void* data,
   vmaUnmapMemory(m_allocator->getAllocator(), m_shadow_ubo->getAllocation());
 }
 
-void MeshShadowSystem::writeInstanceMeshSets() {
+void MeshShadowSystem::writeBatchMeshSets() {
   if (m_mesh_sets.empty() || m_shadow_ubo == nullptr) {
     return;
   }
   VkDevice device = m_context->getDevice();
   const uint32_t set_base = m_record_frame * k_shadow_mesh_sets;
   const uint32_t n = eastl::min(
-      m_instance_count,
+      static_cast<uint32_t>(m_batches.size()),
       eastl::min(k_shadow_mesh_sets,
                  static_cast<uint32_t>(m_mesh_sets.size() > set_base
                                            ? m_mesh_sets.size() - set_base
@@ -873,7 +897,7 @@ void MeshShadowSystem::writeInstanceMeshSets() {
   meshlets.buffer = m_meshlets->getBuffer();
   meshlets.range = VK_WHOLE_SIZE;
   for (uint32_t i = 0; i < n; ++i) {
-    GpuMesh* mesh = i < m_instance_meshes.size() ? m_instance_meshes[i] : nullptr;
+    GpuMesh* mesh = m_batches[i].mesh;
     if (mesh == nullptr || mesh->getVertexBuffer() == nullptr ||
         mesh->getMeshletVertexBuffer() == nullptr ||
         mesh->getMeshletTriangleBuffer() == nullptr) {
@@ -894,7 +918,7 @@ void MeshShadowSystem::writeInstanceMeshSets() {
     VkWriteDescriptorSet writes[6]{};
     for (uint32_t w = 0; w < 6; ++w) {
       writes[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[w].dstSet = m_mesh_sets[set_base + i];
+      writes[w].dstSet = m_mesh_sets[set_base + i];
       writes[w].descriptorCount = 1;
       writes[w].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     }
@@ -1052,12 +1076,14 @@ void MeshShadowSystem::logVsmFrame() {
   probe(glm::vec3(0.0f, 0.0f, 0.0f), &floor_virt, &floor_slot, &floor_z);
   probe(glm::vec3(0.0f, -4.0f, 0.0f), &mid_virt, &mid_slot, &mid_z);
   LOG_INFO(
-      "[MeshShadowSystem] frame={} vsm={} dir={} meshlets={} marked={} "
+      "[MeshShadowSystem] frame={} vsm={} dir={} batches={} casters={} "
+      "uniqueMeshlets={} marked={} "
       "gpuMarks={} overflow={} light=({:.3f},{:.3f},{:.3f}) cam=({:.3f},{:.3f},"
       "{:.3f}) floorVirt={} floorSlot={} floorZ={:.4f} midVirt={} midSlot={} "
       "midZ={:.4f}",
       m_debug_frame, m_vsm_enabled ? 1 : 0, isValid(m_local.directional) ? 1 : 0,
-      m_meshlet_count, m_marked_count, m_gpu_mark_count, m_overflow, m_light_dir.x,
+      static_cast<uint32_t>(m_batches.size()), m_instance_count, m_meshlet_count,
+      m_marked_count, m_gpu_mark_count, m_overflow, m_light_dir.x,
       m_light_dir.y, m_light_dir.z, m_camera.x, m_camera.y, m_camera.z, floor_virt,
       floor_slot, floor_z, mid_virt, mid_slot, mid_z);
 }
@@ -1197,7 +1223,7 @@ void MeshShadowSystem::recordMeshTarget(VkCommandBuffer cmd, VkFramebuffer fb,
 
   const uint32_t set_base = m_record_frame * k_shadow_mesh_sets;
   const uint32_t n = eastl::min(
-      m_instance_count,
+      static_cast<uint32_t>(m_batches.size()),
       eastl::min(k_shadow_mesh_sets,
                  static_cast<uint32_t>(m_mesh_sets.size() > set_base
                                            ? m_mesh_sets.size() - set_base
@@ -1216,24 +1242,39 @@ void MeshShadowSystem::recordMeshTarget(VkCommandBuffer cmd, VkFramebuffer fb,
   uploadUboSlot(slot, &page, sizeof(page));
   const uint32_t dyn = slot * m_ubo_stride;
   struct ShadowMeshPushCpu {
-    uint32_t instance_index;
-    uint32_t pad0;
-    uint32_t pad1;
-    uint32_t pad2;
+    uint32_t instance_first;
+    uint32_t instance_count;
+    uint32_t meshlet_base;
+    uint32_t meshlet_count;
   };
+  eastl::vector<ShadowMeshTaskDispatch> dispatches;
   for (uint32_t i = 0; i < n; ++i) {
-    const uint32_t meshlet_count = m_instance_cpu[i].meshlet_count;
-    if (meshlet_count == 0 || m_mesh_sets[set_base + i] == VK_NULL_HANDLE) {
+    const ShadowMeshBatch& batch = m_batches[i];
+    GpuMesh* mesh = batch.mesh;
+    if (batch.meshlet_count == 0 || batch.instance_count == 0 ||
+        mesh == nullptr || mesh->getVertexBuffer() == nullptr ||
+        mesh->getMeshletVertexBuffer() == nullptr ||
+        mesh->getMeshletTriangleBuffer() == nullptr ||
+        m_mesh_sets[set_base + i] == VK_NULL_HANDLE) {
       continue;
     }
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_mesh_pipe_layout,
                             0, 1, &m_mesh_sets[set_base + i], 1, &dyn);
-    ShadowMeshPushCpu push{};
-    push.instance_index = i;
-    vkCmdPushConstants(cmd, m_mesh_pipe_layout, VK_SHADER_STAGE_TASK_BIT_EXT, 0,
-                       sizeof(push), &push);
-    const uint32_t groups = meshlet_count * eastl::max(1u, dispatch_mul);
-    m_context->cmdDrawMeshTasksEXT()(cmd, groups, 1, 1);
+    buildShadowMeshTaskDispatches(
+        batch.meshlet_count, batch.instance_count, eastl::max(1u, dispatch_mul),
+        k_shadow_mesh_task_group_limit, k_shadow_mesh_task_group_total_limit,
+        dispatches);
+    for (const ShadowMeshTaskDispatch& dispatch : dispatches) {
+      ShadowMeshPushCpu push{};
+      push.instance_first = batch.instance_first + dispatch.instance_first;
+      push.instance_count = dispatch.group_count_y;
+      push.meshlet_base = dispatch.meshlet_base;
+      push.meshlet_count = dispatch.meshlet_count;
+      vkCmdPushConstants(cmd, m_mesh_pipe_layout, VK_SHADER_STAGE_TASK_BIT_EXT, 0,
+                         sizeof(push), &push);
+      m_context->cmdDrawMeshTasksEXT()(cmd, dispatch.group_count_x,
+                                       dispatch.group_count_y, 1);
+    }
   }
   vkCmdEndRenderPass(cmd);
 }

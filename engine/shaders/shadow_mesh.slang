@@ -22,10 +22,10 @@ struct MeshPayload
 
 struct ShadowMeshPush
 {
-    uint instanceIndex;
-    uint pad0;
-    uint pad1;
-    uint pad2;
+    uint instanceFirst;
+    uint instanceCount;
+    uint meshletBase;
+    uint meshletCount;
 };
 
 [[vk::binding(0, 0)]]
@@ -130,32 +130,41 @@ float instanceMaxScale(float4x4 world)
 [numthreads(1, 1, 1)]
 void taskMain(uint3 dtid : SV_DispatchThreadID)
 {
+    // One task group per meshlet per caster in this unique-mesh batch.
+    // X walks meshlets (×6 faces in layered cube mode); Y walks instances.
     MeshPayload payload;
-    GpuDrivenInstanceGpu inst = instances[push.instanceIndex];
-    uint meshletLocal = dtid.x;
-    uint face = 0;
-    uint limit = inst.meshletCount;
-    if (ubo.mode == 3u)
-    {
-        meshletLocal = dtid.x / 6u;
-        face = dtid.x % 6u;
-        limit = inst.meshletCount * 6u;
-    }
-    uint meshletIndex = inst.meshletOffset + meshletLocal;
-    payload.meshletIndex = meshletIndex;
-    payload.instanceIndex = push.instanceIndex;
-    payload.layer = (ubo.mode == 3u) ? face : ubo.layer;
+    payload.meshletIndex = 0;
+    payload.instanceIndex = 0;
+    payload.layer = ubo.layer;
     uint visible = 0;
-    if (dtid.x < limit && meshletLocal < inst.meshletCount)
+    if (dtid.y < push.instanceCount)
     {
-        GpuDrivenMeshletGpu meshlet = meshlets[meshletIndex];
-        if (instanceLinked(inst.pad0))
+        uint instanceIndex = push.instanceFirst + dtid.y;
+        GpuDrivenInstanceGpu inst = instances[instanceIndex];
+        uint within = dtid.x;
+        uint localInChunk = within;
+        uint face = 0;
+        if (ubo.mode == 3u)
         {
-            float radius = meshlet.sphere.w * max(instanceMaxScale(inst.world), 1e-6);
-            float3 center = mul(inst.world, float4(meshlet.sphere.xyz, 1.0)).xyz;
-            if (sphereInMatrix(faceViewProjection(face), center, radius))
+            localInChunk = within / 6u;
+            face = within % 6u;
+        }
+        uint meshletLocal = push.meshletBase + localInChunk;
+        if (localInChunk < push.meshletCount && meshletLocal < inst.meshletCount)
+        {
+            uint meshletIndex = inst.meshletOffset + meshletLocal;
+            payload.meshletIndex = meshletIndex;
+            payload.instanceIndex = instanceIndex;
+            payload.layer = (ubo.mode == 3u) ? face : ubo.layer;
+            GpuDrivenMeshletGpu meshlet = meshlets[meshletIndex];
+            if (instanceLinked(inst.pad0))
             {
-                visible = 1;
+                float radius = meshlet.sphere.w * max(instanceMaxScale(inst.world), 1e-6);
+                float3 center = mul(inst.world, float4(meshlet.sphere.xyz, 1.0)).xyz;
+                if (sphereInMatrix(faceViewProjection(face), center, radius))
+                {
+                    visible = 1;
+                }
             }
         }
     }
