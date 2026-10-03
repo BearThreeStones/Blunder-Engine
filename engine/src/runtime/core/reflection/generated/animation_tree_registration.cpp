@@ -44,6 +44,26 @@ void set_animation_tree_add2_weight(void* instance, const Variant& value) {
   static_cast<AnimationTree*>(instance)->setAdd2Weight(value.asFloat());
 }
 
+Variant get_animation_tree_time_seek_request(const void* instance) {
+  return Variant(
+      static_cast<const AnimationTree*>(instance)->getTimeSeekRequest());
+}
+
+void set_animation_tree_time_seek_request(void* instance, const Variant& value) {
+  static_cast<AnimationTree*>(instance)->setTimeSeekRequest(value.asFloat());
+}
+
+Variant get_animation_tree_time_seek_explicit_elapse(const void* instance) {
+  return Variant(static_cast<const AnimationTree*>(instance)
+                     ->getTimeSeekExplicitElapse());
+}
+
+void set_animation_tree_time_seek_explicit_elapse(void* instance,
+                                                  const Variant& value) {
+  static_cast<AnimationTree*>(instance)->setTimeSeekExplicitElapse(
+      value.asBool());
+}
+
 Variant get_animation_tree_oneshot_slot_clip(const void* instance) {
   return Variant(
       static_cast<const AnimationTree*>(instance)->getOneShotSlotClip());
@@ -93,6 +113,20 @@ class MethodBindSetBlendSpaceScalar final : public MethodBind {
   const char* getName() const override { return "set_blend_space_scalar"; }
 };
 
+class MethodBindSetBlend2Amount final : public MethodBind {
+ public:
+  void ptrcall(void* instance, const void** args, void* ret) override {
+    const Variant* node_arg = static_cast<const Variant*>(args[0]);
+    const Variant* amount_arg = static_cast<const Variant*>(args[1]);
+    static_cast<AnimationTree*>(instance)->setBlend2Amount(
+        node_arg->asString(), amount_arg->asFloat());
+    if (ret != nullptr) {
+      *static_cast<Variant*>(ret) = Variant(true);
+    }
+  }
+  const char* getName() const override { return "set_blend2_amount"; }
+};
+
 class MethodBindRequestOneShot final : public MethodBind {
  public:
   void ptrcall(void* instance, const void** args, void* ret) override {
@@ -126,12 +160,22 @@ void register_animation_tree_reflection() {
       "AnimationTree", PropertyInfo{"add2_weight", VariantType::Float},
       set_animation_tree_add2_weight, get_animation_tree_add2_weight);
   ClassDB::addProperty(
+      "AnimationTree", PropertyInfo{"time_seek_request", VariantType::Float},
+      set_animation_tree_time_seek_request,
+      get_animation_tree_time_seek_request);
+  ClassDB::addProperty(
+      "AnimationTree",
+      PropertyInfo{"time_seek_explicit_elapse", VariantType::Bool},
+      set_animation_tree_time_seek_explicit_elapse,
+      get_animation_tree_time_seek_explicit_elapse);
+  ClassDB::addProperty(
       "AnimationTree", PropertyInfo{"oneshot_slot_clip", VariantType::String},
       set_animation_tree_oneshot_slot_clip,
       get_animation_tree_oneshot_slot_clip);
   ClassDB::addMethod("AnimationTree", new MethodBindTravel());
   ClassDB::addMethod("AnimationTree", new MethodBindStart());
   ClassDB::addMethod("AnimationTree", new MethodBindSetBlendSpaceScalar());
+  ClassDB::addMethod("AnimationTree", new MethodBindSetBlend2Amount());
   ClassDB::addMethod("AnimationTree", new MethodBindRequestOneShot());
 }
 

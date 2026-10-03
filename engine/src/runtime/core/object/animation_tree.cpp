@@ -422,6 +422,76 @@ void AnimationTree::setAdd2Weight(float weight) {
   }
 }
 
+namespace {
+
+const eastl::string& emptyString() {
+  static const eastl::string k_empty;
+  return k_empty;
+}
+
+float clampUnit(float value) {
+  if (value < 0.0f) {
+    return 0.0f;
+  }
+  if (value > 1.0f) {
+    return 1.0f;
+  }
+  return value;
+}
+
+eastl::vector<eastl::string> sortedBoneNames(
+    const eastl::hash_set<eastl::string>& bones) {
+  eastl::vector<eastl::string> names;
+  names.reserve(bones.size());
+  for (const eastl::string& bone : bones) {
+    names.push_back(bone);
+  }
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+}  // namespace
+
+void AnimationTree::setAdd2BoneFilterEnabled(bool enabled) {
+  m_add2_bone_filter_enabled = enabled;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
+bool AnimationTree::addAdd2BoneFilterBone(const eastl::string& bone) {
+  if (bone.empty()) {
+    return false;
+  }
+  m_add2_bone_filter.insert(bone);
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+bool AnimationTree::removeAdd2BoneFilterBone(const eastl::string& bone) {
+  const size_t erased = m_add2_bone_filter.erase(bone);
+  if (erased > 0 && m_active) {
+    sampleBoundSkeleton();
+  }
+  return erased > 0;
+}
+
+void AnimationTree::clearAdd2BoneFilter() {
+  if (m_add2_bone_filter.empty()) {
+    return;
+  }
+  m_add2_bone_filter.clear();
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
+bool AnimationTree::add2BoneFilterContains(const eastl::string& bone) const {
+  return m_add2_bone_filter.find(bone) != m_add2_bone_filter.end();
+}
+
 bool AnimationTree::addBlendSpacePoint(const eastl::string& node_name,
                                      const eastl::string& clip_name,
                                      float scalar) {
@@ -474,6 +544,7 @@ bool AnimationTree::setBaseBlendSpaceNode(const eastl::string& node_name) {
   }
   m_base_blend_space_node = node_name;
   m_base_blend_space_2d_node.clear();
+  m_base_blend2_node.clear();
   if (m_active) {
     sampleBoundSkeleton();
   }
@@ -532,9 +603,186 @@ bool AnimationTree::setBaseBlendSpace2DNode(const eastl::string& node_name) {
   }
   m_base_blend_space_2d_node = node_name;
   m_base_blend_space_node.clear();
+  m_base_blend2_node.clear();
   if (m_active) {
     sampleBoundSkeleton();
   }
+  return true;
+}
+
+bool AnimationTree::setBlend2Clips(const eastl::string& node_name,
+                                   const eastl::string& clip_a,
+                                   const eastl::string& clip_b) {
+  if (node_name.empty() || clip_a.empty() || clip_b.empty()) {
+    return false;
+  }
+  eastl::string guid_a;
+  eastl::string guid_b;
+  if (!resolveClipGuid(clip_a, guid_a) || !resolveClipGuid(clip_b, guid_b)) {
+    return false;
+  }
+  Blend2Node& node = m_blend2_nodes[node_name];
+  node.clip_a = clip_a;
+  node.clip_b = clip_b;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+void AnimationTree::setBlend2Amount(const eastl::string& node_name,
+                                    float amount) {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return;
+  }
+  it->second.amount = clampUnit(amount);
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
+float AnimationTree::getBlend2Amount(const eastl::string& node_name) const {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return 0.0f;
+  }
+  return it->second.amount;
+}
+
+const eastl::string& AnimationTree::getBlend2ClipA(
+    const eastl::string& node_name) const {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return emptyString();
+  }
+  return it->second.clip_a;
+}
+
+const eastl::string& AnimationTree::getBlend2ClipB(
+    const eastl::string& node_name) const {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return emptyString();
+  }
+  return it->second.clip_b;
+}
+
+bool AnimationTree::setBaseBlend2Node(const eastl::string& node_name) {
+  if (node_name.empty()) {
+    m_base_blend2_node.clear();
+    return false;
+  }
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end() || it->second.clip_a.empty() ||
+      it->second.clip_b.empty()) {
+    return false;
+  }
+  m_base_blend2_node = node_name;
+  m_base_blend_space_node.clear();
+  m_base_blend_space_2d_node.clear();
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+void AnimationTree::setBlend2BoneFilterEnabled(const eastl::string& node_name,
+                                               bool enabled) {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return;
+  }
+  it->second.bone_filter_enabled = enabled;
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
+bool AnimationTree::getBlend2BoneFilterEnabled(
+    const eastl::string& node_name) const {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return false;
+  }
+  return it->second.bone_filter_enabled;
+}
+
+bool AnimationTree::addBlend2BoneFilterBone(const eastl::string& node_name,
+                                            const eastl::string& bone) {
+  if (bone.empty()) {
+    return false;
+  }
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return false;
+  }
+  it->second.bone_filter.insert(bone);
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+  return true;
+}
+
+bool AnimationTree::removeBlend2BoneFilterBone(const eastl::string& node_name,
+                                               const eastl::string& bone) {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return false;
+  }
+  const size_t erased = it->second.bone_filter.erase(bone);
+  if (erased > 0 && m_active) {
+    sampleBoundSkeleton();
+  }
+  return erased > 0;
+}
+
+void AnimationTree::clearBlend2BoneFilter(const eastl::string& node_name) {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end() || it->second.bone_filter.empty()) {
+    return;
+  }
+  it->second.bone_filter.clear();
+  if (m_active) {
+    sampleBoundSkeleton();
+  }
+}
+
+bool AnimationTree::blend2BoneFilterContains(const eastl::string& node_name,
+                                             const eastl::string& bone) const {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return false;
+  }
+  return it->second.bone_filter.find(bone) != it->second.bone_filter.end();
+}
+
+void AnimationTree::setTimeSeekRequest(float seconds) {
+  if (!(seconds >= 0.0f)) {
+    m_time_seek_request = -1.0f;
+    return;
+  }
+  m_time_seek_request = seconds;
+}
+
+bool AnimationTree::consumeTimeSeek() {
+  if (!(m_time_seek_request >= 0.0f)) {
+    return false;
+  }
+  const float prev = getDominantBasePlaybackPosition();
+  const float seek_to = m_time_seek_request;
+  m_time_seek_request = -1.0f;
+  if (m_oneshot_active) {
+    m_oneshot_time = seek_to;
+  } else if (m_clip_play_active) {
+    m_clip_play_time = seek_to;
+  } else {
+    m_sample_time = seek_to;
+  }
+  if (m_time_seek_explicit_elapse) {
+    dispatchDominantMethodKeysCrossed(prev, seek_to);
+  }
+  resetMethodDispatchClock(seek_to);
   return true;
 }
 
@@ -586,21 +834,48 @@ bool AnimationTree::setStateBlendSpace2D(const eastl::string& state_name,
   return true;
 }
 
+bool AnimationTree::setStateBlend2(const eastl::string& state_name,
+                                   const eastl::string& blend2_node) {
+  if (state_name.empty() || blend2_node.empty()) {
+    return false;
+  }
+  const auto it = m_blend2_nodes.find(blend2_node);
+  if (it == m_blend2_nodes.end() || it->second.clip_a.empty() ||
+      it->second.clip_b.empty()) {
+    return false;
+  }
+  AnimationStateDefinition state;
+  state.kind = AnimationStatePlaybackKind::Blend2;
+  state.blend_space_node = blend2_node;
+  m_states[state_name] = state;
+  return true;
+}
+
 bool AnimationTree::applyStatePlayback(const AnimationStateDefinition& state) {
   if (state.kind == AnimationStatePlaybackKind::BlendSpace1D) {
     m_base_blend_space_node = state.blend_space_node;
     m_base_blend_space_2d_node.clear();
+    m_base_blend2_node.clear();
     m_sample_clip_name.clear();
     return true;
   }
   if (state.kind == AnimationStatePlaybackKind::BlendSpace2D) {
     m_base_blend_space_2d_node = state.blend_space_node;
     m_base_blend_space_node.clear();
+    m_base_blend2_node.clear();
+    m_sample_clip_name.clear();
+    return true;
+  }
+  if (state.kind == AnimationStatePlaybackKind::Blend2) {
+    m_base_blend2_node = state.blend_space_node;
+    m_base_blend_space_node.clear();
+    m_base_blend_space_2d_node.clear();
     m_sample_clip_name.clear();
     return true;
   }
   m_base_blend_space_node.clear();
   m_base_blend_space_2d_node.clear();
+  m_base_blend2_node.clear();
   m_sample_clip_name = state.clip_name;
   return true;
 }
@@ -927,6 +1202,13 @@ eastl::string AnimationTree::rulerClipName() const {
     }
   }
 
+  if (!m_base_blend2_node.empty()) {
+    const auto it = m_blend2_nodes.find(m_base_blend2_node);
+    if (it != m_blend2_nodes.end()) {
+      return it->second.amount > 0.5f ? it->second.clip_b : it->second.clip_a;
+    }
+  }
+
   return m_sample_clip_name;
 }
 
@@ -1005,6 +1287,8 @@ void AnimationTree::clearAuthoredTopology() {
   m_blend_space_2d_params.clear();
   m_base_blend_space_node.clear();
   m_base_blend_space_2d_node.clear();
+  m_blend2_nodes.clear();
+  m_base_blend2_node.clear();
   m_states.clear();
   m_current_state_name.clear();
   m_tree_params.clear();
@@ -1014,6 +1298,10 @@ void AnimationTree::clearAuthoredTopology() {
   m_add2_clip_name.clear();
   m_add2_weight = 0.0f;
   m_add2_time = 0.0f;
+  m_add2_bone_filter_enabled = false;
+  m_add2_bone_filter.clear();
+  m_time_seek_request = -1.0f;
+  m_time_seek_explicit_elapse = false;
   m_oneshot_slot_clip.clear();
   m_oneshot_active = false;
   m_oneshot_clip_name.clear();
@@ -1049,6 +1337,19 @@ bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology)
     setBlendSpace2DParam(space.node_name, space.x, space.y);
   }
 
+  for (const AnimationTreeTopologyData::Blend2Def& node : topology.blend2_nodes) {
+    if (!setBlend2Clips(node.node_name, node.clip_a, node.clip_b)) {
+      return false;
+    }
+    setBlend2Amount(node.node_name, node.amount);
+    for (const eastl::string& bone : node.bone_filter) {
+      if (!addBlend2BoneFilterBone(node.node_name, bone)) {
+        return false;
+      }
+    }
+    setBlend2BoneFilterEnabled(node.node_name, node.bone_filter_enabled);
+  }
+
   for (const AnimationTreeTopologyData::StateDef& state : topology.states) {
     if (state.kind == "blendSpace1D") {
       if (!setStateBlendSpace(state.name, state.blend_space_node)) {
@@ -1058,6 +1359,10 @@ bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology)
       if (!setStateBlendSpace2D(state.name, state.blend_space_node)) {
         return false;
       }
+    } else if (state.kind == "blend2") {
+      if (!setStateBlend2(state.name, state.blend_space_node)) {
+        return false;
+      }
     } else {
       if (!setStateClip(state.name, state.clip_name)) {
         return false;
@@ -1065,7 +1370,11 @@ bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology)
     }
   }
 
-  if (!topology.base_blend_space_2d_node.empty()) {
+  if (!topology.base_blend2_node.empty()) {
+    if (!setBaseBlend2Node(topology.base_blend2_node)) {
+      return false;
+    }
+  } else if (!topology.base_blend_space_2d_node.empty()) {
     if (!setBaseBlendSpace2DNode(topology.base_blend_space_2d_node)) {
       return false;
     }
@@ -1080,6 +1389,13 @@ bool AnimationTree::applyTopologyData(const AnimationTreeTopologyData& topology)
       return false;
     }
   }
+  for (const eastl::string& bone : topology.add2_bone_filter) {
+    if (!addAdd2BoneFilterBone(bone)) {
+      return false;
+    }
+  }
+  setAdd2BoneFilterEnabled(topology.add2_bone_filter_enabled);
+  setTimeSeekExplicitElapse(topology.time_seek_explicit_elapse);
   if (!topology.oneshot_clip.empty()) {
     if (!setOneShotSlotClip(topology.oneshot_clip)) {
       return false;
@@ -1147,8 +1463,23 @@ void AnimationTree::exportTopologyData(
   out_topology = AnimationTreeTopologyData{};
   out_topology.base_blend_space_node = m_base_blend_space_node;
   out_topology.base_blend_space_2d_node = m_base_blend_space_2d_node;
+  out_topology.base_blend2_node = m_base_blend2_node;
   out_topology.add2_clip = m_add2_clip_name;
+  out_topology.add2_bone_filter_enabled = m_add2_bone_filter_enabled;
+  out_topology.add2_bone_filter = sortedBoneNames(m_add2_bone_filter);
+  out_topology.time_seek_explicit_elapse = m_time_seek_explicit_elapse;
   out_topology.oneshot_clip = m_oneshot_slot_clip;
+
+  for (const auto& entry : m_blend2_nodes) {
+    AnimationTreeTopologyData::Blend2Def node;
+    node.node_name = entry.first;
+    node.clip_a = entry.second.clip_a;
+    node.clip_b = entry.second.clip_b;
+    node.amount = entry.second.amount;
+    node.bone_filter_enabled = entry.second.bone_filter_enabled;
+    node.bone_filter = sortedBoneNames(entry.second.bone_filter);
+    out_topology.blend2_nodes.push_back(eastl::move(node));
+  }
 
   visitBlendSpaces(
       [](const eastl::string& node_name,
@@ -1200,6 +1531,9 @@ void AnimationTree::exportTopologyData(
           state.blend_space_node = blend_space_node;
         } else if (kind == AnimationStatePlaybackKind::BlendSpace2D) {
           state.kind = "blendSpace2D";
+          state.blend_space_node = blend_space_node;
+        } else if (kind == AnimationStatePlaybackKind::Blend2) {
+          state.kind = "blend2";
           state.blend_space_node = blend_space_node;
         } else {
           state.kind = "clip";
@@ -1298,6 +1632,10 @@ void AnimationTree::applyInstanceOverrides(
        overrides.blend_space_2d_params) {
     setBlendSpace2DParam(entry.node_name, entry.x, entry.y);
   }
+  for (const AnimationTreeInstanceOverrides::Blend2AmountOverride& entry :
+       overrides.blend2_amounts) {
+    setBlend2Amount(entry.node_name, entry.amount);
+  }
   if (overrides.has_add2_weight) {
     setAdd2Weight(overrides.add2_weight);
   }
@@ -1311,6 +1649,13 @@ void AnimationTree::applyInstanceOverrides(
 
 void AnimationTree::advance(float delta_seconds) {
   if (delta_seconds <= 0.0f) {
+    return;
+  }
+
+  if (consumeTimeSeek()) {
+    if (m_active) {
+      sampleBoundSkeleton();
+    }
     return;
   }
 
@@ -1457,11 +1802,50 @@ bool AnimationTree::resolveDominantBaseClip(AnimationClipData& out_clip) const {
     }
   }
 
+  if (!m_base_blend2_node.empty()) {
+    return resolveDominantBlend2Clip(m_base_blend2_node, out_clip);
+  }
+
   if (!m_sample_clip_name.empty()) {
     return resolveClipForName(m_sample_clip_name, out_clip);
   }
 
   return false;
+}
+
+bool AnimationTree::resolveDominantBlend2Clip(const eastl::string& node_name,
+                                              AnimationClipData& out_clip) const {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return false;
+  }
+  const eastl::string& clip_name =
+      it->second.amount > 0.5f ? it->second.clip_b : it->second.clip_a;
+  if (clip_name.empty()) {
+    return false;
+  }
+  return resolveClipForName(clip_name, out_clip);
+}
+
+bool AnimationTree::sampleBlend2OntoSkeleton(Skeleton& skeleton,
+                                             const eastl::string& node_name) {
+  const auto it = m_blend2_nodes.find(node_name);
+  if (it == m_blend2_nodes.end()) {
+    return false;
+  }
+  AnimationClipData clip_a;
+  AnimationClipData clip_b;
+  if (!resolveClipForName(it->second.clip_a, clip_a) ||
+      !resolveClipForName(it->second.clip_b, clip_b)) {
+    return false;
+  }
+  AnimationBoneFilter filter;
+  filter.enabled = it->second.bone_filter_enabled;
+  filter.bones = &it->second.bone_filter;
+  blendClipsOntoSkeleton(skeleton, clip_a, m_sample_time, clip_b, m_sample_time,
+                         it->second.amount,
+                         it->second.bone_filter_enabled ? &filter : nullptr);
+  return true;
 }
 
 bool AnimationTree::resolveDominantBlendSpace2DClip(
@@ -1594,6 +1978,12 @@ void AnimationTree::sampleBaseOntoSkeleton(Skeleton& skeleton) {
     }
   }
 
+  if (!m_base_blend2_node.empty()) {
+    if (sampleBlend2OntoSkeleton(skeleton, m_base_blend2_node)) {
+      return;
+    }
+  }
+
   if (m_sample_clip_name.empty()) {
     return;
   }
@@ -1609,9 +1999,12 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
     return;
   }
 
+  consumeTimeSeek();
+
   const bool has_base = m_clip_play_active || m_oneshot_active ||
                         !m_base_blend_space_node.empty() ||
                         !m_base_blend_space_2d_node.empty() ||
+                        !m_base_blend2_node.empty() ||
                         !m_sample_clip_name.empty();
   if (!has_base) {
     return;
@@ -1622,8 +2015,12 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
   if (m_add2_weight > 0.0f && !m_add2_clip_name.empty()) {
     AnimationClipData add2_clip;
     if (resolveClipForName(m_add2_clip_name, add2_clip)) {
-      applyAdditiveClipOntoSkeleton(skeleton, add2_clip, m_add2_time,
-                                    m_add2_weight);
+      AnimationBoneFilter filter;
+      filter.enabled = m_add2_bone_filter_enabled;
+      filter.bones = &m_add2_bone_filter;
+      applyAdditiveClipOntoSkeleton(
+          skeleton, add2_clip, m_add2_time, m_add2_weight,
+          m_add2_bone_filter_enabled ? &filter : nullptr);
     }
   }
 }
@@ -1711,6 +2108,13 @@ float AnimationTree::getBaseLayerClipLength() const {
           return clip.duration;
         }
       }
+    }
+  }
+
+  if (!m_base_blend2_node.empty()) {
+    AnimationClipData clip;
+    if (resolveDominantBlend2Clip(m_base_blend2_node, clip)) {
+      return clip.duration;
     }
   }
 
