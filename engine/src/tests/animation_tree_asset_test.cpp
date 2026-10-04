@@ -164,6 +164,74 @@ void test_no_asset_embed_topology_still_works() {
                         Vec3(5.0f, 0.0f, 0.0f)));
 }
 
+void test_blend2_timeseek_and_bone_filter_yaml_round_trip() {
+  using namespace Blunder;
+
+  Fixture f;
+  expect_true("blend2", f.tree.setBlend2Clips("Pose", "idle", "walk"));
+  f.tree.setBlend2Amount("Pose", 0.25f);
+  expect_true("filter bone", f.tree.addBlend2BoneFilterBone("Pose", "Spine"));
+  expect_true("filter bone 2", f.tree.addBlend2BoneFilterBone("Pose", "Head"));
+  f.tree.setBlend2BoneFilterEnabled("Pose", true);
+  expect_true("blend2 base", f.tree.setBaseBlend2Node("Pose"));
+  expect_true("blend2 state", f.tree.setStateBlend2("Look", "Pose"));
+  expect_true("add2", f.tree.setAdd2ClipName("walk"));
+  expect_true("add2 bone", f.tree.addAdd2BoneFilterBone("Head"));
+  f.tree.setAdd2BoneFilterEnabled(true);
+  f.tree.setTimeSeekExplicitElapse(true);
+
+  AnimationTreeTopologyData exported;
+  f.tree.exportTopologyData(exported);
+  const eastl::string yaml =
+      AssetYaml::serializeAnimationTreeTopologyData(exported);
+  AnimationTreeTopologyData parsed;
+  expect_true("parse blend2 topology",
+              AssetYaml::parseAnimationTreeTopologyData(yaml, parsed));
+  expect_true("base blend2", parsed.base_blend2_node == "Pose");
+  expect_true("one blend2", parsed.blend2_nodes.size() == 1);
+  expect_true("blend2 amount",
+              parsed.blend2_nodes.size() == 1 &&
+                  float_near(parsed.blend2_nodes[0].amount, 0.25f));
+  expect_true("blend2 filter on",
+              parsed.blend2_nodes.size() == 1 &&
+                  parsed.blend2_nodes[0].bone_filter_enabled);
+  expect_true("sorted filter",
+              parsed.blend2_nodes.size() == 1 &&
+                  parsed.blend2_nodes[0].bone_filter.size() == 2 &&
+                  parsed.blend2_nodes[0].bone_filter[0] == "Head" &&
+                  parsed.blend2_nodes[0].bone_filter[1] == "Spine");
+  expect_true("blend2 state kind",
+              parsed.states.size() == 1 && parsed.states[0].kind == "blend2");
+  expect_true("add2 filter",
+              parsed.add2_bone_filter_enabled &&
+                  parsed.add2_bone_filter.size() == 1 &&
+                  parsed.add2_bone_filter[0] == "Head");
+  expect_true("explicit elapse", parsed.time_seek_explicit_elapse);
+
+  AnimationTree loaded;
+  loaded.bindAnimationPlayer(&f.player);
+  expect_true("apply", loaded.applyTopologyData(parsed));
+  expect_true("loaded base", loaded.getBaseBlend2Node() == "Pose");
+  expect_true("loaded amount", float_near(loaded.getBlend2Amount("Pose"), 0.25f));
+  expect_true("loaded filter", loaded.blend2BoneFilterContains("Pose", "Spine"));
+  expect_true("loaded add2 filter", loaded.add2BoneFilterContains("Head"));
+  expect_true("loaded elapse", loaded.getTimeSeekExplicitElapse());
+
+  loaded.bindSamplingSkeleton(&f.skeleton);
+  AnimationTreeInstanceOverrides overrides;
+  overrides.blend2_amounts.push_back({"Pose", 1.0f});
+  overrides.has_active = true;
+  overrides.active = true;
+  applyAnimationTreeInstanceOverrides(loaded, overrides);
+  expect_true("filtered hips stay on clip a",
+              vec3_near(f.skeleton.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+  loaded.setBlend2BoneFilterEnabled("Pose", false);
+  expect_true("override amount pose",
+              vec3_near(f.skeleton.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+}
+
 void test_inspector_authorship_via_topology_yaml_no_canvas() {
   using namespace Blunder;
   // Inspector Done path: author topology as YAML body (no visual canvas).
@@ -190,6 +258,7 @@ int main() {
   test_instance_overrides_on_asset_base();
   test_no_asset_embed_topology_still_works();
   test_inspector_authorship_via_topology_yaml_no_canvas();
+  test_blend2_timeseek_and_bone_filter_yaml_round_trip();
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
