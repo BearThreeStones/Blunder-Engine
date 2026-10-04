@@ -38,6 +38,13 @@ int main() {
   expect_true("player hides scene gizmos even when user-visible",
               !sceneAuthorshipGizmosEnabled(EngineHostMode::Player, true));
 
+  expect_true("editor debug draw ignores ingame off",
+              debugDrawVisible(EngineHostMode::Editor, false));
+  expect_true("player debug draw off by default",
+              !debugDrawVisible(EngineHostMode::Player, false));
+  expect_true("player debug draw on with InGame",
+              debugDrawVisible(EngineHostMode::Player, true));
+
   if (g_failures != 0) {
     std::fprintf(stderr, "%d failure(s)\n", g_failures);
     return 1;

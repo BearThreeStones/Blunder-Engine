@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include "runtime/core/math/math_types.h"
@@ -39,6 +40,17 @@ inline CameraGizmoFrame buildCameraGizmoFrameLocal(float vertical_fov_radians,
   frame.up_triangle[2] = frame.corners[1];
 
   return frame;
+}
+
+inline float cameraGizmoLocalCullRadius(const CameraGizmoFrame& frame) {
+  float r = glm::length(frame.origin);
+  for (int i = 0; i < 4; ++i) {
+    r = std::max(r, glm::length(frame.corners[i]));
+  }
+  for (int i = 0; i < 3; ++i) {
+    r = std::max(r, glm::length(frame.up_triangle[i]));
+  }
+  return r + 0.25f;
 }
 
 }  // namespace Blunder

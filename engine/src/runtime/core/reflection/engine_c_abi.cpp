@@ -1464,6 +1464,15 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->object_child_count = &blunder_object_child_count;
   out->object_child_at = &blunder_object_child_at;
   out->object_get_world_position = &blunder_object_get_world_position;
+  out->debug_draw_line = &blunder_debug_draw_line;
+  out->debug_draw_ray = &blunder_debug_draw_ray;
+  out->debug_draw_arrow = &blunder_debug_draw_arrow;
+  out->debug_draw_wire_box = &blunder_debug_draw_wire_box;
+  out->debug_draw_wire_sphere = &blunder_debug_draw_wire_sphere;
+  out->debug_draw_wire_capsule = &blunder_debug_draw_wire_capsule;
+  out->debug_draw_cross = &blunder_debug_draw_cross;
+  out->debug_draw_set_ingame_enabled = &blunder_debug_draw_set_ingame_enabled;
+  out->debug_draw_get_ingame_enabled = &blunder_debug_draw_get_ingame_enabled;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -1670,6 +1679,19 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
   BLUNDER_NATIVE_ABI_LOAD(object_child_at, "blunder_object_child_at");
   BLUNDER_NATIVE_ABI_LOAD(object_get_world_position,
                           "blunder_object_get_world_position");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_line, "blunder_debug_draw_line");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_ray, "blunder_debug_draw_ray");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_arrow, "blunder_debug_draw_arrow");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_wire_box, "blunder_debug_draw_wire_box");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_wire_sphere,
+                          "blunder_debug_draw_wire_sphere");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_wire_capsule,
+                          "blunder_debug_draw_wire_capsule");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_cross, "blunder_debug_draw_cross");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_set_ingame_enabled,
+                          "blunder_debug_draw_set_ingame_enabled");
+  BLUNDER_NATIVE_ABI_LOAD(debug_draw_get_ingame_enabled,
+                          "blunder_debug_draw_get_ingame_enabled");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

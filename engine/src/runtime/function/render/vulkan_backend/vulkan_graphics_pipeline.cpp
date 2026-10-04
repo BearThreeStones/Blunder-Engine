@@ -48,9 +48,21 @@ VulkanPipelineCreateInfo toVulkanPipelineCreateInfo(
   info.depth_only_subpass = desc.depth_only_subpass;
   info.color_attachment_count = desc.color_attachment_count;
   info.enable_fragment_shading_rate = desc.enable_fragment_shading_rate;
-  info.depth_compare_op = desc.depth_compare_op == rhi::CompareOp::Less
-                              ? VK_COMPARE_OP_LESS
-                              : VK_COMPARE_OP_LESS_OR_EQUAL;
+  switch (desc.depth_compare_op) {
+    case rhi::CompareOp::Less:
+      info.depth_compare_op = VK_COMPARE_OP_LESS;
+      break;
+    case rhi::CompareOp::Greater:
+      info.depth_compare_op = VK_COMPARE_OP_GREATER;
+      break;
+    case rhi::CompareOp::GreaterOrEqual:
+      info.depth_compare_op = VK_COMPARE_OP_GREATER_OR_EQUAL;
+      break;
+    case rhi::CompareOp::LessOrEqual:
+    default:
+      info.depth_compare_op = VK_COMPARE_OP_LESS_OR_EQUAL;
+      break;
+  }
   return info;
 }
 

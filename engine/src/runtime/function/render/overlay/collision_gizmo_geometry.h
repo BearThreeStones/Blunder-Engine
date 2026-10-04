@@ -124,4 +124,28 @@ void forEachCharacterControllerWireSegment(const CharacterControllerComponent& c
       cct.radius, characterControllerHalfHeight(cct), fn);
 }
 
+inline bool colliderGizmoTryLocalCullRadius(const ColliderComponent& collider,
+                                            float& out_radius) {
+  switch (collider.shape) {
+    case ColliderShapeKind::Box:
+      out_radius = glm::length(collider.box_half_extents);
+      return true;
+    case ColliderShapeKind::Sphere:
+      out_radius = collider.sphere_radius;
+      return true;
+    case ColliderShapeKind::Capsule:
+      out_radius = colliderCapsuleHalfHeight(collider) + collider.capsule_radius;
+      return true;
+    case ColliderShapeKind::TriangleMesh:
+      return false;
+  }
+  return false;
+}
+
+inline float characterControllerLocalCullRadius(
+    const CharacterControllerComponent& cct) {
+  return characterControllerHalfHeight(cct) + cct.radius +
+         glm::length(cct.shape_offset);
+}
+
 }  // namespace Blunder

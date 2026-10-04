@@ -16,6 +16,7 @@
 #include "runtime/function/render/opaque_mesh_draw.h"
 #include "runtime/function/render/forward/forward_render_path.h"
 #include "runtime/function/render/forward/forward_shading.h"
+#include "runtime/function/render/overlay/debug_draw.h"
 #include "runtime/function/render/overlay/editor_overlay_policy.h"
 #include "runtime/function/render/overlay/camera_preview_resolve.h"
 #include "runtime/function/render/overlay/camera_preview_rt_size.h"
@@ -2011,13 +2012,16 @@ void RenderSystem::tick(float delta_time, uint32_t target_width,
     }
   }
   if (!m_backend || !m_offscreen) {
+    DebugDraw::endFrame(delta_time);
     return;
   }
   if (m_backend->type() == rhi::RenderBackendType::D3D12) {
     tickD3D12Skeleton(delta_time, target_width, target_height);
+    DebugDraw::endFrame(delta_time);
     return;
   }
   tickVulkan(delta_time, target_width, target_height);
+  DebugDraw::endFrame(delta_time);
 }
 
 void RenderSystem::tickD3D12Skeleton(float delta_time, uint32_t target_width,
@@ -2201,6 +2205,15 @@ void RenderSystem::recordViewportGraph(
                            "viewport.volumetric_fog");
       m_volumetric_fog_pass->apply(command_buffer, offscreen, frame_state, active_fog,
                                    frame_index);
+    });
+  }
+  if (m_overlay_system && m_overlay_system->hasActiveDebugDraw()) {
+    const FrameGraphPassHandle debug_draw =
+        builder.addPass("viewport.debug_draw");
+    color_handshake(debug_draw);
+    builder.read(debug_draw, depth, FrameGraphUsage::Sampled);
+    builder.setExecute(debug_draw, [&](IFrameGraphRecorder&) {
+      m_overlay_system->draw_debug_draw(command_buffer);
     });
   }
   if (m_overlay_system) {
