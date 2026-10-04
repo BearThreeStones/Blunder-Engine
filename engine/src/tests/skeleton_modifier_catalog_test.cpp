@@ -75,7 +75,7 @@ void test_initialize_twice_no_duplicate_add_menu() {
 
   eastl::vector<eastl::string> names;
   SkeletonModifierCatalog::listAddMenuTypes(names);
-  expect_true("three Add… product types", names.size() == 3);
+  expect_true("four Add… product types", names.size() == 4);
   bool saw_base = false;
   for (const eastl::string& name : names) {
     if (name == "SkeletonModifier") {
@@ -225,13 +225,15 @@ void test_add_menu_three_product_names() {
   ClassDB::initialize();
   eastl::vector<eastl::string> names;
   SkeletonModifierCatalog::listAddMenuTypes(names);
-  expect_true("Add… count 3", names.size() == 3);
+  expect_true("Add… count 4", names.size() == 4);
   expect_true("Add… [0] PaperMouth",
               names.size() >= 1 && names[0] == "PaperMouth");
   expect_true("Add… [1] Attach",
               names.size() >= 2 && names[1] == "SkeletonAttachModifier");
   expect_true("Add… [2] LookAt",
               names.size() >= 3 && names[2] == "SkeletonLookAtModifier");
+  expect_true("Add… [3] SpringBone",
+              names.size() >= 4 && names[3] == "SpringBone");
   ClassDB::shutdown();
 }
 

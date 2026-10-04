@@ -147,7 +147,19 @@ internal static unsafe class Native
         abi.object_get_parent != null &&
         abi.object_child_count != null &&
         abi.object_child_at != null &&
-        abi.object_get_world_position != null;
+        abi.object_get_world_position != null &&
+        abi.skeleton_modifier_set_spring_bone_root_bone_name != null &&
+        abi.skeleton_modifier_get_spring_bone_root_bone_name != null &&
+        abi.skeleton_modifier_set_spring_bone_end_bone_name != null &&
+        abi.skeleton_modifier_get_spring_bone_end_bone_name != null &&
+        abi.skeleton_modifier_set_spring_bone_stiffness != null &&
+        abi.skeleton_modifier_get_spring_bone_stiffness != null &&
+        abi.skeleton_modifier_set_spring_bone_drag != null &&
+        abi.skeleton_modifier_get_spring_bone_drag != null &&
+        abi.skeleton_modifier_set_spring_bone_gravity != null &&
+        abi.skeleton_modifier_get_spring_bone_gravity != null &&
+        abi.skeleton_modifier_set_spring_bone_end_length != null &&
+        abi.skeleton_modifier_get_spring_bone_end_length != null;
 
     static void EnsureRegistered()
     {
@@ -1245,6 +1257,158 @@ internal static unsafe class Native
 
             return rc;
         }
+    }
+
+    public static int blunder_skeleton_modifier_set_spring_bone_root_bone_name(
+        ulong id, int index, string boneName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(boneName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.skeleton_modifier_set_spring_bone_root_bone_name(id, index, namePtr);
+        }
+    }
+
+    public static int blunder_skeleton_modifier_get_spring_bone_root_bone_name(
+        ulong id, int index, out string boneName)
+    {
+        EnsureRegistered();
+        boneName = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.skeleton_modifier_get_spring_bone_root_bone_name(
+                id, index, namePtr, capacity);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                boneName = Encoding.UTF8.GetString(buffer, 0, len);
+            }
+
+            return rc;
+        }
+    }
+
+    public static int blunder_skeleton_modifier_set_spring_bone_end_bone_name(
+        ulong id, int index, string boneName)
+    {
+        EnsureRegistered();
+        byte[] utf8 = ToUtf8(boneName);
+        fixed (byte* namePtr = utf8)
+        {
+            return s_abi.skeleton_modifier_set_spring_bone_end_bone_name(id, index, namePtr);
+        }
+    }
+
+    public static int blunder_skeleton_modifier_get_spring_bone_end_bone_name(
+        ulong id, int index, out string boneName)
+    {
+        EnsureRegistered();
+        boneName = "";
+        const int capacity = 256;
+        byte[] buffer = new byte[capacity];
+        fixed (byte* namePtr = buffer)
+        {
+            int rc = s_abi.skeleton_modifier_get_spring_bone_end_bone_name(
+                id, index, namePtr, capacity);
+            if (rc == Ok)
+            {
+                int len = 0;
+                while (len < capacity && buffer[len] != 0)
+                {
+                    ++len;
+                }
+
+                boneName = Encoding.UTF8.GetString(buffer, 0, len);
+            }
+
+            return rc;
+        }
+    }
+
+    public static int blunder_skeleton_modifier_set_spring_bone_stiffness(
+        ulong id, int index, float stiffness)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_spring_bone_stiffness(id, index, stiffness);
+    }
+
+    public static int blunder_skeleton_modifier_get_spring_bone_stiffness(
+        ulong id, int index, out float stiffness)
+    {
+        EnsureRegistered();
+        stiffness = 0f;
+        float value = 0f;
+        int rc = s_abi.skeleton_modifier_get_spring_bone_stiffness(id, index, &value);
+        stiffness = value;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_spring_bone_drag(
+        ulong id, int index, float drag)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_spring_bone_drag(id, index, drag);
+    }
+
+    public static int blunder_skeleton_modifier_get_spring_bone_drag(
+        ulong id, int index, out float drag)
+    {
+        EnsureRegistered();
+        drag = 0f;
+        float value = 0f;
+        int rc = s_abi.skeleton_modifier_get_spring_bone_drag(id, index, &value);
+        drag = value;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_spring_bone_gravity(
+        ulong id, int index, float x, float y, float z)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_spring_bone_gravity(id, index, x, y, z);
+    }
+
+    public static int blunder_skeleton_modifier_get_spring_bone_gravity(
+        ulong id, int index, out float x, out float y, out float z)
+    {
+        EnsureRegistered();
+        x = 0f;
+        y = 0f;
+        z = 0f;
+        float ox = 0f;
+        float oy = 0f;
+        float oz = 0f;
+        int rc = s_abi.skeleton_modifier_get_spring_bone_gravity(id, index, &ox, &oy, &oz);
+        x = ox;
+        y = oy;
+        z = oz;
+        return rc;
+    }
+
+    public static int blunder_skeleton_modifier_set_spring_bone_end_length(
+        ulong id, int index, float length)
+    {
+        EnsureRegistered();
+        return s_abi.skeleton_modifier_set_spring_bone_end_length(id, index, length);
+    }
+
+    public static int blunder_skeleton_modifier_get_spring_bone_end_length(
+        ulong id, int index, out float length)
+    {
+        EnsureRegistered();
+        length = 0f;
+        float value = 0f;
+        int rc = s_abi.skeleton_modifier_get_spring_bone_end_length(id, index, &value);
+        length = value;
+        return rc;
     }
 
     public static int blunder_animation_player_get_method_key_count(

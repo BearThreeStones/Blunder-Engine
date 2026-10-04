@@ -151,6 +151,7 @@ void ClassDB::initialize() {
   register_skeleton_look_at_modifier_reflection();
   register_skeleton_paper_mouth_modifier_reflection();
   register_skeleton_attach_modifier_reflection();
+  register_skeleton_spring_bone_modifier_reflection();
   SkeletonModifierCatalog::registerBuiltins();
 }
 

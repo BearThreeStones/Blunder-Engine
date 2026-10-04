@@ -13,6 +13,7 @@
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/object/skeleton_spring_bone_modifier.h"
 #include "runtime/core/reflection/class_db.h"
 #include "runtime/core/reflection/lifecycle.h"
 #include "runtime/core/reflection/message_dispatch.h"
@@ -954,6 +955,15 @@ SkeletonLookAtModifier* lookAtModifierAt(BlunderObjectId id, int index) {
   return static_cast<SkeletonLookAtModifier*>(modifier);
 }
 
+SkeletonSpringBoneModifier* springBoneModifierAt(BlunderObjectId id, int index) {
+  SkeletonModifier* modifier = skeletonModifierAt(id, index);
+  if (modifier == nullptr ||
+      std::strcmp(modifier->getTypeName(), "SpringBone") != 0) {
+    return nullptr;
+  }
+  return static_cast<SkeletonSpringBoneModifier*>(modifier);
+}
+
 void copyStringToBuffer(const eastl::string& value, char* out_buffer,
                         int capacity) {
   if (out_buffer == nullptr || capacity <= 0) {
@@ -1129,6 +1139,158 @@ int blunder_skeleton_modifier_get_look_at_bone_name(BlunderObjectId id,
     return BLUNDER_ENGINE_ERROR;
   }
   copyStringToBuffer(modifier->getBoneName(), out_bone_name, name_capacity);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_spring_bone_root_bone_name(
+    BlunderObjectId id, int index, const char* bone_name) {
+  if (bone_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setRootBoneName(eastl::string(bone_name));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_spring_bone_root_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity) {
+  if (out_bone_name == nullptr || name_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  copyStringToBuffer(modifier->getRootBoneName(), out_bone_name, name_capacity);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_spring_bone_end_bone_name(
+    BlunderObjectId id, int index, const char* bone_name) {
+  if (bone_name == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setEndBoneName(eastl::string(bone_name));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_spring_bone_end_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity) {
+  if (out_bone_name == nullptr || name_capacity <= 0) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  copyStringToBuffer(modifier->getEndBoneName(), out_bone_name, name_capacity);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_spring_bone_stiffness(BlunderObjectId id,
+                                                       int index,
+                                                       float stiffness) {
+  SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setStiffness(stiffness);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_spring_bone_stiffness(BlunderObjectId id,
+                                                       int index,
+                                                       float* out_stiffness) {
+  if (out_stiffness == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_stiffness = modifier->getStiffness();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_spring_bone_drag(BlunderObjectId id, int index,
+                                                  float drag) {
+  SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setDrag(drag);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_spring_bone_drag(BlunderObjectId id, int index,
+                                                  float* out_drag) {
+  if (out_drag == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_drag = modifier->getDrag();
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_spring_bone_gravity(BlunderObjectId id,
+                                                     int index, float x, float y,
+                                                     float z) {
+  SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setGravity(Vec3(x, y, z));
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_spring_bone_gravity(BlunderObjectId id,
+                                                     int index, float* out_x,
+                                                     float* out_y, float* out_z) {
+  if (out_x == nullptr || out_y == nullptr || out_z == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const Vec3& gravity = modifier->getGravity();
+  *out_x = gravity.x;
+  *out_y = gravity.y;
+  *out_z = gravity.z;
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_set_spring_bone_end_length(BlunderObjectId id,
+                                                        int index, float length) {
+  SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  modifier->setEndBoneLength(length);
+  return BLUNDER_ENGINE_OK;
+}
+
+int blunder_skeleton_modifier_get_spring_bone_end_length(BlunderObjectId id,
+                                                        int index,
+                                                        float* out_length) {
+  if (out_length == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  const SkeletonSpringBoneModifier* modifier = springBoneModifierAt(id, index);
+  if (modifier == nullptr) {
+    return BLUNDER_ENGINE_ERROR;
+  }
+  *out_length = modifier->getEndBoneLength();
   return BLUNDER_ENGINE_OK;
 }
 
@@ -1464,6 +1626,30 @@ void blunder_native_abi_fill_from_process(BlunderNativeAbi* out) {
   out->object_child_count = &blunder_object_child_count;
   out->object_child_at = &blunder_object_child_at;
   out->object_get_world_position = &blunder_object_get_world_position;
+  out->skeleton_modifier_set_spring_bone_root_bone_name =
+      &blunder_skeleton_modifier_set_spring_bone_root_bone_name;
+  out->skeleton_modifier_get_spring_bone_root_bone_name =
+      &blunder_skeleton_modifier_get_spring_bone_root_bone_name;
+  out->skeleton_modifier_set_spring_bone_end_bone_name =
+      &blunder_skeleton_modifier_set_spring_bone_end_bone_name;
+  out->skeleton_modifier_get_spring_bone_end_bone_name =
+      &blunder_skeleton_modifier_get_spring_bone_end_bone_name;
+  out->skeleton_modifier_set_spring_bone_stiffness =
+      &blunder_skeleton_modifier_set_spring_bone_stiffness;
+  out->skeleton_modifier_get_spring_bone_stiffness =
+      &blunder_skeleton_modifier_get_spring_bone_stiffness;
+  out->skeleton_modifier_set_spring_bone_drag =
+      &blunder_skeleton_modifier_set_spring_bone_drag;
+  out->skeleton_modifier_get_spring_bone_drag =
+      &blunder_skeleton_modifier_get_spring_bone_drag;
+  out->skeleton_modifier_set_spring_bone_gravity =
+      &blunder_skeleton_modifier_set_spring_bone_gravity;
+  out->skeleton_modifier_get_spring_bone_gravity =
+      &blunder_skeleton_modifier_get_spring_bone_gravity;
+  out->skeleton_modifier_set_spring_bone_end_length =
+      &blunder_skeleton_modifier_set_spring_bone_end_length;
+  out->skeleton_modifier_get_spring_bone_end_length =
+      &blunder_skeleton_modifier_get_spring_bone_end_length;
 }
 
 int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
@@ -1670,6 +1856,30 @@ int blunder_native_abi_fill_from_module(BlunderNativeAbi* out, void* module) {
   BLUNDER_NATIVE_ABI_LOAD(object_child_at, "blunder_object_child_at");
   BLUNDER_NATIVE_ABI_LOAD(object_get_world_position,
                           "blunder_object_get_world_position");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_spring_bone_root_bone_name,
+                          "blunder_skeleton_modifier_set_spring_bone_root_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_spring_bone_root_bone_name,
+                          "blunder_skeleton_modifier_get_spring_bone_root_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_spring_bone_end_bone_name,
+                          "blunder_skeleton_modifier_set_spring_bone_end_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_spring_bone_end_bone_name,
+                          "blunder_skeleton_modifier_get_spring_bone_end_bone_name");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_spring_bone_stiffness,
+                          "blunder_skeleton_modifier_set_spring_bone_stiffness");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_spring_bone_stiffness,
+                          "blunder_skeleton_modifier_get_spring_bone_stiffness");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_spring_bone_drag,
+                          "blunder_skeleton_modifier_set_spring_bone_drag");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_spring_bone_drag,
+                          "blunder_skeleton_modifier_get_spring_bone_drag");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_spring_bone_gravity,
+                          "blunder_skeleton_modifier_set_spring_bone_gravity");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_spring_bone_gravity,
+                          "blunder_skeleton_modifier_get_spring_bone_gravity");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_set_spring_bone_end_length,
+                          "blunder_skeleton_modifier_set_spring_bone_end_length");
+  BLUNDER_NATIVE_ABI_LOAD(skeleton_modifier_get_spring_bone_end_length,
+                          "blunder_skeleton_modifier_get_spring_bone_end_length");
 
 #undef BLUNDER_NATIVE_ABI_LOAD
   return BLUNDER_ENGINE_OK;

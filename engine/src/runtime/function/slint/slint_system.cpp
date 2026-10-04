@@ -3251,6 +3251,13 @@ std::shared_ptr<slint::VectorModel<SkeletonModifierRow>> makeSkeletonModifierRow
     slint_row.target_y = row.target.y;
     slint_row.target_z = row.target.z;
     slint_row.child_entity_name = slint::SharedString(row.child_entity_name.c_str());
+    slint_row.end_bone_name = slint::SharedString(row.end_bone_name.c_str());
+    slint_row.stiffness = row.stiffness;
+    slint_row.drag = row.drag;
+    slint_row.gravity_x = row.gravity.x;
+    slint_row.gravity_y = row.gravity.y;
+    slint_row.gravity_z = row.gravity.z;
+    slint_row.end_bone_length = row.end_bone_length;
     model->push_back(slint_row);
   }
   return model;
@@ -3362,6 +3369,13 @@ void copySkeletonModifierRowsToSnapshot(
     copy.target_y = row.target_y;
     copy.target_z = row.target_z;
     copy.child_entity_name = row.child_entity_name.data();
+    copy.end_bone_name = row.end_bone_name.data();
+    copy.stiffness = row.stiffness;
+    copy.drag = row.drag;
+    copy.gravity_x = row.gravity_x;
+    copy.gravity_y = row.gravity_y;
+    copy.gravity_z = row.gravity_z;
+    copy.end_bone_length = row.end_bone_length;
     out_rows.push_back(eastl::move(copy));
   }
 }
@@ -6847,16 +6861,25 @@ void SlintSystem::applyInspectorSkeletonModifierFieldCommit(size_t modifier_inde
       after_def.target.y = number_value;
     } else if (key == "target_z") {
       after_def.target.z = number_value;
+    } else if (key == "end_bone_name") {
+      after_def.end_bone_name = text_value;
+    } else if (key == "stiffness") {
+      after_def.stiffness = number_value;
+    } else if (key == "drag") {
+      after_def.drag = number_value;
+    } else if (key == "gravity_x") {
+      after_def.gravity.x = number_value;
+    } else if (key == "gravity_y") {
+      after_def.gravity.y = number_value;
+    } else if (key == "gravity_z") {
+      after_def.gravity.z = number_value;
+    } else if (key == "end_bone_length") {
+      after_def.end_bone_length = number_value;
     } else {
       return;
     }
 
-    const auto defs_equal = [](const SceneSkeletonModifierDef& a,
-                               const SceneSkeletonModifierDef& b) {
-      return a.type == b.type && a.enabled == b.enabled && a.bone_name == b.bone_name &&
-             a.open_amount == b.open_amount && a.attach_driven == b.attach_driven &&
-             a.target == b.target && a.child_entity_name == b.child_entity_name;
-    };
+    const auto defs_equal = skeletonModifierDefsEqual;
     if (defs_equal(current_def, after_def) && !m_inspector_modifier_edit_open) {
       if (commit) {
         syncInspectorSkeletonModifiersFromSelection();
