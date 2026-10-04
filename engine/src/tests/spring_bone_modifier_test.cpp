@@ -41,6 +41,36 @@ void add_forward_chain(Blunder::Skeleton& skeleton) {
   skeleton.resetPoseToRest();
 }
 
+void add_twisted_chain(Blunder::Skeleton& skeleton) {
+  using namespace Blunder;
+  const int root = skeleton.addBone("Logo", -1);
+  const int tip = skeleton.addBone("LogoTip", root);
+  BoneTransform logo_rest;
+  logo_rest.rotation =
+      glm::angleAxis(glm::radians(90.0f), Vec3(0.0f, 1.0f, 0.0f));
+  skeleton.setBoneRestLocal(static_cast<size_t>(root), logo_rest);
+  BoneTransform tip_rest;
+  tip_rest.translation = Vec3(0.0f, 1.0f, 0.0f);
+  skeleton.setBoneRestLocal(static_cast<size_t>(tip), tip_rest);
+  skeleton.resetPoseToRest();
+}
+
+Blunder::Mat4 host_matrix(const Blunder::Vec3& position, float scale) {
+  using namespace Blunder;
+  return glm::translate(Mat4(1.0f), position) *
+         glm::scale(Mat4(1.0f), Vec3(scale));
+}
+
+Blunder::Vec3 logo_local_axis(const Blunder::Skeleton& skeleton,
+                              const Blunder::Vec3& axis) {
+  using namespace Blunder;
+  const int logo = skeleton.findBoneIndex("Logo");
+  if (logo < 0) {
+    return Vec3(0.0f);
+  }
+  return skeleton.getBonePoseLocal(static_cast<size_t>(logo)).rotation * axis;
+}
+
 float tip_z(const Blunder::Skeleton& skeleton) {
   const int tip = skeleton.findBoneIndex("LogoTip");
   if (tip < 0) {
@@ -130,6 +160,97 @@ void test_gravity_sags_and_stiffness_holds() {
   step_spring(stiff, held, 1.0f / 30.0f, 24);
   expect_true("full stiffness holds the animated pose",
               std::fabs(tip_z(held)) < 1.0e-3f);
+}
+
+void test_stiffness_holds_twist() {
+  using namespace Blunder;
+  Skeleton skeleton;
+  add_twisted_chain(skeleton);
+  const int logo = skeleton.findBoneIndex("Logo");
+  expect_true("twisted logo bone", logo >= 0);
+  if (logo < 0) {
+    return;
+  }
+  const Vec3 rest_side = logo_local_axis(skeleton, Vec3(1.0f, 0.0f, 0.0f));
+  const Vec3 rest_aim = logo_local_axis(skeleton, Vec3(0.0f, 1.0f, 0.0f));
+
+  SkeletonSpringBoneModifier stiff;
+  stiff.setRootBoneName("Logo");
+  stiff.setEndBoneName("LogoTip");
+  stiff.setStiffness(1.0f);
+  stiff.setDrag(0.0f);
+  stiff.setGravity(Vec3(0.0f, 0.0f, -30.0f));
+  stiff.setDeltaTime(1.0f / 30.0f);
+  stiff.apply(skeleton);
+  expect_true("seed apply keeps rest roll",
+              glm::dot(logo_local_axis(skeleton, Vec3(1.0f, 0.0f, 0.0f)),
+                       rest_side) > 0.999f);
+
+  step_spring(stiff, skeleton, 1.0f / 30.0f, 8);
+  const Vec3 pose_side = logo_local_axis(skeleton, Vec3(1.0f, 0.0f, 0.0f));
+  const Vec3 pose_aim = logo_local_axis(skeleton, Vec3(0.0f, 1.0f, 0.0f));
+  expect_true("stiffness 1 keeps rest roll around child offset",
+              glm::dot(pose_side, rest_side) > 0.999f);
+  expect_true("stiffness 1 still aims along child offset",
+              glm::dot(pose_aim, rest_aim) > 0.999f);
+  expect_true("twisted tip stays at rest", std::fabs(tip_z(skeleton)) < 1.0e-3f);
+}
+
+void test_scaled_host_length_and_lag() {
+  using namespace Blunder;
+  const Vec3 axis(0.0f, 1.0f, 0.0f);
+  const float model_length = 1.0f;
+  const float scale = 2.0f;
+  const Vec3 move(10.0f, 0.0f, 0.0f);
+  const float dt = 1.0f / 30.0f;
+
+  auto lag_aim = [&](float host_scale) {
+    Skeleton skeleton;
+    add_forward_chain(skeleton);
+    SkeletonSpringBoneModifier spring;
+    spring.setRootBoneName("Logo");
+    spring.setEndBoneName("LogoTip");
+    spring.setStiffness(0.0f);
+    spring.setDrag(1.0f);
+    spring.setGravity(Vec3(0.0f));
+    spring.setDeltaTime(dt);
+    spring.setHostWorldMatrix(host_matrix(Vec3(0.0f), host_scale));
+    spring.apply(skeleton);
+    spring.setHostWorldMatrix(host_matrix(move, host_scale));
+    spring.apply(skeleton);
+    return glm::normalize(logo_local_axis(skeleton, axis));
+  };
+
+  const Vec3 scaled_aim = lag_aim(scale);
+  const Vec3 unit_aim = lag_aim(1.0f);
+
+  const Vec3 seed_tail(0.0f, scale * model_length, 0.0f);
+  const Vec3 head_after = move;
+  const Vec3 expected_world =
+      head_after + glm::normalize(seed_tail - head_after) *
+                       (scale * model_length);
+  const Vec3 expected_model = Vec3(
+      glm::inverse(host_matrix(move, scale)) * Vec4(expected_world, 1.0f));
+  const Vec3 expected_dir = glm::normalize(expected_model);
+
+  expect_true("scaled host lag matches world rest length",
+              glm::dot(scaled_aim, expected_dir) > 0.999f);
+  expect_true("scale 2 lag is not the unscaled model-length lag",
+              glm::dot(scaled_aim, unit_aim) < 0.999f);
+
+  Skeleton held;
+  add_forward_chain(held);
+  SkeletonSpringBoneModifier stiff;
+  stiff.setRootBoneName("Logo");
+  stiff.setEndBoneName("LogoTip");
+  stiff.setStiffness(1.0f);
+  stiff.setDrag(0.0f);
+  stiff.setGravity(Vec3(0.0f, 0.0f, -30.0f));
+  stiff.setHostWorldMatrix(host_matrix(Vec3(0.0f), scale));
+  step_spring(stiff, held, dt, 8);
+  expect_true("stiffness 1 at scale 2 still holds aim",
+              glm::dot(glm::normalize(logo_local_axis(held, axis)), axis) >
+                  0.999f);
 }
 
 void test_drag_and_inertia() {
@@ -416,6 +537,8 @@ void test_play_frame_integrates() {
 int main() {
   test_catalog_and_classdb();
   test_gravity_sags_and_stiffness_holds();
+  test_stiffness_holds_twist();
+  test_scaled_host_length_and_lag();
   test_drag_and_inertia();
   test_disabled_and_missing_bone();
   test_scene_round_trip();

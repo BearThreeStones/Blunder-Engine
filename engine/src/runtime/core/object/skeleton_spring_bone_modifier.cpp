@@ -110,7 +110,9 @@ void aimBone(Skeleton& skeleton, size_t bone_index, const Vec3& local_axis,
 
   const Vec3 desired_local_dir = glm::inverse(parent_model_rot) * to_target;
   BoneTransform pose = skeleton.getBonePoseLocal(bone_index);
-  pose.rotation = quatFromTo(local_axis, desired_local_dir);
+  const Quat aim_delta =
+      quatFromTo(pose.rotation * local_axis, desired_local_dir);
+  pose.rotation = aim_delta * pose.rotation;
   skeleton.setBonePoseLocal(bone_index, pose);
 }
 
@@ -192,13 +194,8 @@ void SkeletonSpringBoneModifier::apply(Skeleton& skeleton) {
   auto model_to_world = [this](const Vec3& model) {
     return Vec3(m_host_world * Vec4(model, 1.0f));
   };
-  auto direction_to_world = [this](const Vec3& direction) {
-    Vec3 world = Vec3(m_host_world * Vec4(direction, 0.0f));
-    const float world_len = glm::length(world);
-    if (world_len < 1.0e-8f) {
-      return Vec3(0.0f, 1.0f, 0.0f);
-    }
-    return world / world_len;
+  auto vector_to_world = [this](const Vec3& vector) {
+    return Vec3(m_host_world * Vec4(vector, 0.0f));
   };
   auto world_to_model = [&host_inv](const Vec3& world) {
     return Vec3(host_inv * Vec4(world, 1.0f));
@@ -214,12 +211,15 @@ void SkeletonSpringBoneModifier::apply(Skeleton& skeleton) {
       parent_rot = glm::quat_cast(
           skeleton.getBoneGlobalPoseMatrix(static_cast<size_t>(parent_index)));
     }
-    const Vec3 goal_dir_model =
-        parent_rot * (animated_local[i] * local_axis[i]);
+    Vec3 goal_dir_model = parent_rot * (animated_local[i] * local_axis[i]);
+    const float dir_len2 = glm::dot(goal_dir_model, goal_dir_model);
+    if (dir_len2 > 1.0e-12f) {
+      goal_dir_model *= 1.0f / std::sqrt(dir_len2);
+    } else {
+      goal_dir_model = local_axis[i];
+    }
     const Vec3 head_world = model_to_world(head_model);
-    const Vec3 goal_world =
-        head_world + direction_to_world(goal_dir_model) * length[i];
-    return goal_world;
+    return head_world + vector_to_world(goal_dir_model * length[i]);
   };
 
   if (!m_initialized || m_tail.size() != count) {
@@ -260,14 +260,21 @@ void SkeletonSpringBoneModifier::apply(Skeleton& skeleton) {
     const Vec3 velocity = (m_tail[i] - m_prev_tail[i]) / prev_dt;
     Vec3 next = m_tail[i] + velocity * dt * keep + m_gravity * dt * dt;
     next = glm::mix(next, goal, m_stiffness);
+    Vec3 rest_offset = goal - head_world;
+    float world_length = glm::length(rest_offset);
+    if (world_length < 1.0e-8f) {
+      rest_offset = vector_to_world(local_axis[i] * length[i]);
+      world_length = glm::length(rest_offset);
+    }
     Vec3 offset = next - head_world;
     if (glm::dot(offset, offset) < 1.0e-12f) {
-      offset = goal - head_world;
+      offset = rest_offset;
     }
-    if (glm::dot(offset, offset) < 1.0e-12f) {
-      offset = direction_to_world(local_axis[i]) * length[i];
+    if (world_length < 1.0e-8f || glm::dot(offset, offset) < 1.0e-12f) {
+      next = head_world;
+    } else {
+      next = head_world + glm::normalize(offset) * world_length;
     }
-    next = head_world + glm::normalize(offset) * length[i];
     m_prev_tail[i] = m_tail[i];
     m_tail[i] = next;
     aimBone(skeleton, bone_index, local_axis[i], world_to_model(next));
