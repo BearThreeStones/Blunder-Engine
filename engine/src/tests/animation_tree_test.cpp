@@ -1970,6 +1970,102 @@ void test_time_seek_replaces_advance_and_samples_pose() {
   expect_true("later advance continues", float_near(tree.getSampleTime(), 1.25f));
 }
 
+void test_time_seek_survives_incidental_pose_refresh() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string hit_guid = "22222222-2222-2222-2222-222222222222";
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+  AnimationClipData hit;
+  hit.duration = 0.5f;
+  hit.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(50.0f, 0.0f, 0.0f)}, {0.5f, Vec3(50.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("hit", hit_guid);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(hit_guid, hit);
+
+  expect_true("idle state", tree.setStateClip("Idle", "walk"));
+  expect_true("locomotion state", tree.setStateClip("Locomotion", "walk"));
+  expect_true("activate", tree.setActive(true));
+  expect_true("start idle", tree.start("Idle"));
+
+  tree.setSampleTime(0.0f);
+  tree.setTimeSeekRequest(0.5f);
+  tree.seekRuler(0.2f);
+  expect_true("ruler keeps written time", float_near(tree.getSampleTime(), 0.2f));
+  expect_true("seek pending after ruler",
+              float_near(tree.getTimeSeekRequest(), 0.5f));
+  expect_true("ruler pose at written time",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(2.0f, 0.0f, 0.0f)));
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes after ruler",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("sample applies pending seek",
+              float_near(tree.getSampleTime(), 0.5f));
+  expect_true("pose at pending seek",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+
+  tree.setTimeSeekRequest(0.4f);
+  expect_true("oneshot", tree.requestOneShot("hit"));
+  expect_true("oneshot starts at zero", float_near(tree.rulerPosition(), 0.0f));
+  expect_true("seek pending after oneshot",
+              float_near(tree.getTimeSeekRequest(), 0.4f));
+  expect_true("oneshot pose at start",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(50.0f, 0.0f, 0.0f)));
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes onto oneshot",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("oneshot clock at seek", float_near(tree.rulerPosition(), 0.4f));
+  tree.clearOneShot();
+
+  tree.setTimeSeekRequest(0.3f);
+  expect_true("clip play", tree.clipPlay("hit"));
+  expect_true("clip play starts at zero",
+              float_near(tree.getClipPlayTime(), 0.0f));
+  expect_true("seek pending after clip play",
+              float_near(tree.getTimeSeekRequest(), 0.3f));
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes onto clip play",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("clip play clock at seek",
+              float_near(tree.getClipPlayTime(), 0.3f));
+  tree.clearClipPlay();
+
+  tree.setSampleTime(0.8f);
+  tree.setTimeSeekRequest(0.5f);
+  expect_true("travel keeps clock", tree.travel("Locomotion"));
+  expect_true("travel does not apply seek",
+              float_near(tree.getSampleTime(), 0.8f));
+  expect_true("seek pending after travel",
+              float_near(tree.getTimeSeekRequest(), 0.5f));
+
+  expect_true("start locomotion", tree.start("Locomotion"));
+  expect_true("start resets to zero", float_near(tree.getSampleTime(), 0.0f));
+  expect_true("seek pending after start",
+              float_near(tree.getTimeSeekRequest(), 0.5f));
+  tree.advance(0.1f);
+  expect_true("advance applies seek not delta",
+              float_near(tree.getSampleTime(), 0.5f));
+  expect_true("seek consumed by advance",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+}
+
 struct TimeSeekMessageSpy {
   std::vector<Blunder::MessageId> ids;
 };
@@ -2154,6 +2250,7 @@ int main() {
   test_blend2_bone_filter_keeps_other_bones_on_clip_a();
   test_add2_bone_filter_skips_unlisted_bones();
   test_time_seek_replaces_advance_and_samples_pose();
+  test_time_seek_survives_incidental_pose_refresh();
   test_time_seek_explicit_elapse_dispatches_method_keys();
   test_classdb_blend2_amount_and_time_seek();
   test_clip_play_not_exported_in_topology();

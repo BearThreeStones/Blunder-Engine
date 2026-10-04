@@ -376,7 +376,7 @@ bool AnimationTree::setActive(bool active) {
   m_active = active;
   syncPlayerSamplingBlock();
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   } else if (m_animation_player != nullptr) {
     m_animation_player->resampleBoundSkeleton();
   }
@@ -394,7 +394,7 @@ bool AnimationTree::setSampleClipName(const eastl::string& name) {
   }
   m_sample_clip_name = name;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -410,7 +410,7 @@ bool AnimationTree::setAdd2ClipName(const eastl::string& name) {
   }
   m_add2_clip_name = name;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -418,7 +418,7 @@ bool AnimationTree::setAdd2ClipName(const eastl::string& name) {
 void AnimationTree::setAdd2Weight(float weight) {
   m_add2_weight = weight;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -455,7 +455,7 @@ eastl::vector<eastl::string> sortedBoneNames(
 void AnimationTree::setAdd2BoneFilterEnabled(bool enabled) {
   m_add2_bone_filter_enabled = enabled;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -465,7 +465,7 @@ bool AnimationTree::addAdd2BoneFilterBone(const eastl::string& bone) {
   }
   m_add2_bone_filter.insert(bone);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -473,7 +473,7 @@ bool AnimationTree::addAdd2BoneFilterBone(const eastl::string& bone) {
 bool AnimationTree::removeAdd2BoneFilterBone(const eastl::string& bone) {
   const size_t erased = m_add2_bone_filter.erase(bone);
   if (erased > 0 && m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return erased > 0;
 }
@@ -484,7 +484,7 @@ void AnimationTree::clearAdd2BoneFilter() {
   }
   m_add2_bone_filter.clear();
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -504,7 +504,7 @@ bool AnimationTree::addBlendSpacePoint(const eastl::string& node_name,
   }
   m_blend_spaces[node_name].push_back({clip_name, scalar});
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -512,7 +512,7 @@ bool AnimationTree::addBlendSpacePoint(const eastl::string& node_name,
 void AnimationTree::clearBlendSpacePoints(const eastl::string& node_name) {
   m_blend_spaces.erase(node_name);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -520,7 +520,7 @@ void AnimationTree::setBlendSpaceScalar(const eastl::string& node_name,
                                         float scalar) {
   m_blend_space_scalars[node_name] = scalar;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -546,7 +546,7 @@ bool AnimationTree::setBaseBlendSpaceNode(const eastl::string& node_name) {
   m_base_blend_space_2d_node.clear();
   m_base_blend2_node.clear();
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -563,7 +563,7 @@ bool AnimationTree::addBlendSpace2DPoint(const eastl::string& node_name,
   }
   m_blend_spaces_2d[node_name].push_back({clip_name, x, y});
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -571,7 +571,7 @@ bool AnimationTree::addBlendSpace2DPoint(const eastl::string& node_name,
 void AnimationTree::clearBlendSpace2DPoints(const eastl::string& node_name) {
   m_blend_spaces_2d.erase(node_name);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -579,7 +579,7 @@ void AnimationTree::setBlendSpace2DParam(const eastl::string& node_name, float x
                                          float y) {
   m_blend_space_2d_params[node_name] = {x, y};
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -605,7 +605,7 @@ bool AnimationTree::setBaseBlendSpace2DNode(const eastl::string& node_name) {
   m_base_blend_space_node.clear();
   m_base_blend2_node.clear();
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -625,7 +625,7 @@ bool AnimationTree::setBlend2Clips(const eastl::string& node_name,
   node.clip_a = clip_a;
   node.clip_b = clip_b;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -638,7 +638,7 @@ void AnimationTree::setBlend2Amount(const eastl::string& node_name,
   }
   it->second.amount = clampUnit(amount);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -682,7 +682,7 @@ bool AnimationTree::setBaseBlend2Node(const eastl::string& node_name) {
   m_base_blend_space_node.clear();
   m_base_blend_space_2d_node.clear();
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -695,7 +695,7 @@ void AnimationTree::setBlend2BoneFilterEnabled(const eastl::string& node_name,
   }
   it->second.bone_filter_enabled = enabled;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -719,7 +719,7 @@ bool AnimationTree::addBlend2BoneFilterBone(const eastl::string& node_name,
   }
   it->second.bone_filter.insert(bone);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -732,7 +732,7 @@ bool AnimationTree::removeBlend2BoneFilterBone(const eastl::string& node_name,
   }
   const size_t erased = it->second.bone_filter.erase(bone);
   if (erased > 0 && m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return erased > 0;
 }
@@ -744,7 +744,7 @@ void AnimationTree::clearBlend2BoneFilter(const eastl::string& node_name) {
   }
   it->second.bone_filter.clear();
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -893,7 +893,7 @@ bool AnimationTree::travel(const eastl::string& state_name) {
   m_clip_play_time = 0.0f;
   m_current_state_name = state_name;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -905,7 +905,7 @@ bool AnimationTree::start(const eastl::string& state_name) {
   m_sample_time = 0.0f;
   resetMethodDispatchClock(0.0f);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -1112,7 +1112,7 @@ bool AnimationTree::requestOneShot(const eastl::string& clip_name) {
   m_oneshot_active = true;
   resetMethodDispatchClock(0.0f);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
   return true;
 }
@@ -1122,7 +1122,7 @@ void AnimationTree::clearOneShot() {
   m_oneshot_clip_name.clear();
   m_oneshot_time = 0.0f;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -1138,7 +1138,7 @@ bool AnimationTree::clipPlay(const eastl::string& clip_name) {
   m_clip_play_time = 0.0f;
   m_clip_play_active = true;
   resetMethodDispatchClock(0.0f);
-  sampleBoundSkeleton();
+  refreshBoundSkeleton();
   return true;
 }
 
@@ -1147,7 +1147,7 @@ void AnimationTree::clearClipPlay() {
   m_clip_play_clip_name.clear();
   m_clip_play_time = 0.0f;
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -1230,7 +1230,7 @@ void AnimationTree::seekRuler(float seconds) {
   }
   resetMethodDispatchClock(clamped);
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -1654,7 +1654,7 @@ void AnimationTree::advance(float delta_seconds) {
 
   if (consumeTimeSeek()) {
     if (m_active) {
-      sampleBoundSkeleton();
+      refreshBoundSkeleton();
     }
     return;
   }
@@ -1740,7 +1740,7 @@ void AnimationTree::advance(float delta_seconds) {
   }
 
   if (m_active) {
-    sampleBoundSkeleton();
+    refreshBoundSkeleton();
   }
 }
 
@@ -1994,13 +1994,7 @@ void AnimationTree::sampleBaseOntoSkeleton(Skeleton& skeleton) {
   sampleClipOntoSkeleton(skeleton, clip, m_sample_time);
 }
 
-void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
-  if (!m_active) {
-    return;
-  }
-
-  consumeTimeSeek();
-
+void AnimationTree::samplePoseOntoSkeleton(Skeleton& skeleton) {
   const bool has_base = m_clip_play_active || m_oneshot_active ||
                         !m_base_blend_space_node.empty() ||
                         !m_base_blend_space_2d_node.empty() ||
@@ -2022,6 +2016,25 @@ void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
           skeleton, add2_clip, m_add2_time, m_add2_weight,
           m_add2_bone_filter_enabled ? &filter : nullptr);
     }
+  }
+}
+
+void AnimationTree::sampleOntoSkeleton(Skeleton& skeleton) {
+  if (!m_active) {
+    return;
+  }
+
+  consumeTimeSeek();
+  samplePoseOntoSkeleton(skeleton);
+}
+
+void AnimationTree::refreshBoundSkeleton() {
+  if (m_sampling_skeleton != nullptr && m_active) {
+    samplePoseOntoSkeleton(*m_sampling_skeleton);
+    animationPipelineFinalize(*m_sampling_skeleton, m_skeleton_modifier_chain_fn,
+                              m_skeleton_modifier_chain_userdata);
+    syncPlayerPlaybackClock();
+    notifyPlayerPoseApplied();
   }
 }
 

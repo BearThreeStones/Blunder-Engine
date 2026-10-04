@@ -157,7 +157,9 @@ class AnimationTree {
                                 const eastl::string& bone) const;
 
   /// TimeSeek: a request >= 0 seeks the dominant base clock on the next
-  /// advance (that step's delta is not applied) or sample, then returns to -1.
+  /// advance (that step's delta is not applied) or explicit sample, then
+  /// returns to -1. Pose refreshes from other APIs (seekRuler, start/travel,
+  /// requestOneShot, clipPlay, parameter edits) do not consume the request.
   /// explicit_elapse also dispatches method keys crossed by a forward seek.
   void setTimeSeekRequest(float seconds);
   float getTimeSeekRequest() const { return m_time_seek_request; }
@@ -294,6 +296,8 @@ class AnimationTree {
                                        float y,
                                        AnimationClipData& out_clip) const;
   bool consumeTimeSeek();
+  void samplePoseOntoSkeleton(Skeleton& skeleton);
+  void refreshBoundSkeleton();
   bool sampleBlend2OntoSkeleton(Skeleton& skeleton,
                                 const eastl::string& node_name);
   bool resolveDominantBlend2Clip(const eastl::string& node_name,
