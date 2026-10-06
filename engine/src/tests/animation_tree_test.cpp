@@ -1,12 +1,15 @@
 #include "runtime/core/object/animation_player.h"
 #include "runtime/core/object/animation_tree.h"
+#include "runtime/core/object/object.h"
 #include "runtime/core/object/object_db.h"
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/reflection/class_db.h"
+#include "runtime/core/reflection/message_dispatch.h"
 
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace {
 
@@ -1724,6 +1727,459 @@ void test_clip_play_fire_add2_and_failures() {
   expect_true("inactive no mutate name", tree.getClipPlayClipName() == "hit");
 }
 
+Blunder::Skeleton makeTwoBoneSkeleton() {
+  Blunder::Skeleton skeleton;
+  skeleton.addBone("Hips", -1);
+  skeleton.addBone("Spine", 0);
+  return skeleton;
+}
+
+void test_blend2_lerps_clips_and_clears_other_bases() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  AnimationClipData idle;
+  idle.duration = 1.0f;
+  idle.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(10.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  player.injectClipData(idle_guid, idle);
+  player.injectClipData(walk_guid, walk);
+
+  expect_true("missing blend2 clip fails",
+              !tree.setBlend2Clips("Pose", "idle", "missing"));
+  expect_true("blend2 clips", tree.setBlend2Clips("Pose", "idle", "walk"));
+  expect_true("blend space point",
+              tree.addBlendSpacePoint("Locomotion", "idle", 0.0f));
+  expect_true("blend space base", tree.setBaseBlendSpaceNode("Locomotion"));
+  expect_true("blend2 base", tree.setBaseBlend2Node("Pose"));
+  expect_true("blend2 clears 1d base", tree.getBaseBlendSpaceNode().empty());
+  expect_true("blend2 is base", tree.getBaseBlend2Node() == "Pose");
+
+  tree.setBlend2Amount("Pose", 0.5f);
+  expect_true("activate", tree.setActive(true));
+  expect_true("blend2 midpoint",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+
+  tree.setBlend2Amount("Pose", 2.0f);
+  expect_true("amount clamps high", float_near(tree.getBlend2Amount("Pose"), 1.0f));
+  expect_true("amount 1 is clip b",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+  tree.setBlend2Amount("Pose", -3.0f);
+  expect_true("amount clamps low", float_near(tree.getBlend2Amount("Pose"), 0.0f));
+  expect_true("amount 0 is clip a",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(0.0f, 0.0f, 0.0f)));
+
+  expect_true("state blend2", tree.setStateBlend2("Overlay", "Pose"));
+  tree.setBlend2Amount("Pose", 0.5f);
+  expect_true("travel blend2 state", tree.travel("Overlay"));
+  expect_true("state pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+  expect_true("clip a name", tree.getBlend2ClipA("Pose") == "idle");
+  expect_true("clip b name", tree.getBlend2ClipB("Pose") == "walk");
+}
+
+void test_blend2_bone_filter_keeps_other_bones_on_clip_a() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeTwoBoneSkeleton();
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string a_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string b_guid = "22222222-2222-2222-2222-222222222222";
+  AnimationClipData clip_a;
+  clip_a.duration = 1.0f;
+  clip_a.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(1.0f, 0.0f, 0.0f)}, {1.0f, Vec3(1.0f, 0.0f, 0.0f)}}));
+  clip_a.tracks.push_back(makeTranslationTrack(
+      "Spine", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+  AnimationClipData clip_b;
+  clip_b.duration = 1.0f;
+  clip_b.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(11.0f, 0.0f, 0.0f)}, {1.0f, Vec3(11.0f, 0.0f, 0.0f)}}));
+  clip_b.tracks.push_back(makeTranslationTrack(
+      "Spine", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(8.0f, 0.0f, 0.0f)}, {1.0f, Vec3(8.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("a", a_guid);
+  player.setClipGuid("b", b_guid);
+  player.injectClipData(a_guid, clip_a);
+  player.injectClipData(b_guid, clip_b);
+
+  expect_true("clips", tree.setBlend2Clips("Upper", "a", "b"));
+  expect_true("base", tree.setBaseBlend2Node("Upper"));
+  tree.setBlend2Amount("Upper", 1.0f);
+  expect_true("empty filter bone fails", !tree.addBlend2BoneFilterBone("Upper", ""));
+  expect_true("add spine", tree.addBlend2BoneFilterBone("Upper", "Spine"));
+  tree.setBlend2BoneFilterEnabled("Upper", true);
+  expect_true("filter on", tree.getBlend2BoneFilterEnabled("Upper"));
+  expect_true("contains spine", tree.blend2BoneFilterContains("Upper", "Spine"));
+  expect_true("activate", tree.setActive(true));
+  expect_true("hips stay on clip a",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(1.0f, 0.0f, 0.0f)));
+  expect_true("spine takes clip b",
+              vec3_near(skeleton.getBonePoseLocal(1).translation,
+                        Vec3(8.0f, 0.0f, 0.0f)));
+
+  tree.clearBlend2BoneFilter("Upper");
+  expect_true("cleared", !tree.blend2BoneFilterContains("Upper", "Spine"));
+  tree.sampleBoundSkeleton();
+  expect_true("enabled empty filter blocks blend",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(1.0f, 0.0f, 0.0f)));
+  expect_true("spine also stays on a",
+              vec3_near(skeleton.getBonePoseLocal(1).translation,
+                        Vec3(2.0f, 0.0f, 0.0f)));
+
+  tree.setBlend2BoneFilterEnabled("Upper", false);
+  tree.sampleBoundSkeleton();
+  expect_true("filter off blends hips",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(11.0f, 0.0f, 0.0f)));
+}
+
+void test_add2_bone_filter_skips_unlisted_bones() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeTwoBoneSkeleton();
+  skeleton.setBoneRestLocal(0, BoneTransform{});
+  skeleton.setBoneRestLocal(1, BoneTransform{});
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string base_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string add_guid = "22222222-2222-2222-2222-222222222222";
+  AnimationClipData base_clip;
+  base_clip.duration = 1.0f;
+  base_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(4.0f, 0.0f, 0.0f)}, {1.0f, Vec3(4.0f, 0.0f, 0.0f)}}));
+  base_clip.tracks.push_back(makeTranslationTrack(
+      "Spine", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(4.0f, 0.0f, 0.0f)}, {1.0f, Vec3(4.0f, 0.0f, 0.0f)}}));
+  AnimationClipData add_clip;
+  add_clip.duration = 1.0f;
+  add_clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+  add_clip.tracks.push_back(makeTranslationTrack(
+      "Spine", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(2.0f, 0.0f, 0.0f)}, {1.0f, Vec3(2.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("base", base_guid);
+  player.setClipGuid("turn_add", add_guid);
+  player.injectClipData(base_guid, base_clip);
+  player.injectClipData(add_guid, add_clip);
+
+  expect_true("base", tree.setSampleClipName("base"));
+  expect_true("add2", tree.setAdd2ClipName("turn_add"));
+  tree.setAdd2Weight(1.0f);
+  expect_true("empty bone fails", !tree.addAdd2BoneFilterBone(""));
+  expect_true("hips filter", tree.addAdd2BoneFilterBone("Hips"));
+  tree.setAdd2BoneFilterEnabled(true);
+  expect_true("contains hips", tree.add2BoneFilterContains("Hips"));
+  expect_true("activate", tree.setActive(true));
+  expect_true("filtered hips additive",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(6.0f, 0.0f, 0.0f)));
+  expect_true("unlisted spine unchanged",
+              vec3_near(skeleton.getBonePoseLocal(1).translation,
+                        Vec3(4.0f, 0.0f, 0.0f)));
+
+  expect_true("remove hips", tree.removeAdd2BoneFilterBone("Hips"));
+  tree.sampleBoundSkeleton();
+  expect_true("empty allow-list skips hips",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(4.0f, 0.0f, 0.0f)));
+  tree.setAdd2BoneFilterEnabled(false);
+  tree.sampleBoundSkeleton();
+  expect_true("filter off adds spine",
+              vec3_near(skeleton.getBonePoseLocal(1).translation,
+                        Vec3(6.0f, 0.0f, 0.0f)));
+}
+
+void test_time_seek_replaces_advance_and_samples_pose() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string guid = "11111111-1111-1111-1111-111111111111";
+  AnimationClipData clip;
+  clip.duration = 1.0f;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("walk", guid);
+  player.injectClipData(guid, clip);
+
+  expect_true("base", tree.setSampleClipName("walk"));
+  expect_true("idle request", float_near(tree.getTimeSeekRequest(), -1.0f));
+  tree.setTimeSeekRequest(-4.0f);
+  expect_true("negative stays idle", float_near(tree.getTimeSeekRequest(), -1.0f));
+  tree.setTimeSeekRequest(0.5f);
+  expect_true("pending while inactive", float_near(tree.getTimeSeekRequest(), 0.5f));
+  tree.advance(0.2f);
+  expect_true("seek consumed", float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("seek replaces delta", float_near(tree.getSampleTime(), 0.5f));
+  expect_true("activate at seek", tree.setActive(true));
+  expect_true("pose at seek",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+
+  tree.setTimeSeekRequest(1.0f);
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes seek", float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("sample time at end", float_near(tree.getSampleTime(), 1.0f));
+  expect_true("end pose",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(10.0f, 0.0f, 0.0f)));
+  tree.advance(0.25f);
+  expect_true("later advance continues", float_near(tree.getSampleTime(), 1.25f));
+}
+
+void test_time_seek_survives_incidental_pose_refresh() {
+  using namespace Blunder;
+
+  Skeleton skeleton = makeSingleBoneSkeleton("Hips");
+  AnimationPlayer player;
+  AnimationTree tree;
+  player.bindSamplingSkeleton(&skeleton);
+  tree.bindAnimationPlayer(&player);
+  tree.bindSamplingSkeleton(&skeleton);
+
+  const eastl::string walk_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string hit_guid = "22222222-2222-2222-2222-222222222222";
+  AnimationClipData walk;
+  walk.duration = 1.0f;
+  walk.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Linear,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(10.0f, 0.0f, 0.0f)}}));
+  AnimationClipData hit;
+  hit.duration = 0.5f;
+  hit.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(50.0f, 0.0f, 0.0f)}, {0.5f, Vec3(50.0f, 0.0f, 0.0f)}}));
+  player.setClipGuid("walk", walk_guid);
+  player.setClipGuid("hit", hit_guid);
+  player.injectClipData(walk_guid, walk);
+  player.injectClipData(hit_guid, hit);
+
+  expect_true("idle state", tree.setStateClip("Idle", "walk"));
+  expect_true("locomotion state", tree.setStateClip("Locomotion", "walk"));
+  expect_true("activate", tree.setActive(true));
+  expect_true("start idle", tree.start("Idle"));
+
+  tree.setSampleTime(0.0f);
+  tree.setTimeSeekRequest(0.5f);
+  tree.seekRuler(0.2f);
+  expect_true("ruler keeps written time", float_near(tree.getSampleTime(), 0.2f));
+  expect_true("seek pending after ruler",
+              float_near(tree.getTimeSeekRequest(), 0.5f));
+  expect_true("ruler pose at written time",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(2.0f, 0.0f, 0.0f)));
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes after ruler",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("sample applies pending seek",
+              float_near(tree.getSampleTime(), 0.5f));
+  expect_true("pose at pending seek",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(5.0f, 0.0f, 0.0f)));
+
+  tree.setTimeSeekRequest(0.4f);
+  expect_true("oneshot", tree.requestOneShot("hit"));
+  expect_true("oneshot starts at zero", float_near(tree.rulerPosition(), 0.0f));
+  expect_true("seek pending after oneshot",
+              float_near(tree.getTimeSeekRequest(), 0.4f));
+  expect_true("oneshot pose at start",
+              vec3_near(skeleton.getBonePoseLocal(0).translation,
+                        Vec3(50.0f, 0.0f, 0.0f)));
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes onto oneshot",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("oneshot clock at seek", float_near(tree.rulerPosition(), 0.4f));
+  tree.clearOneShot();
+
+  tree.setTimeSeekRequest(0.3f);
+  expect_true("clip play", tree.clipPlay("hit"));
+  expect_true("clip play starts at zero",
+              float_near(tree.getClipPlayTime(), 0.0f));
+  expect_true("seek pending after clip play",
+              float_near(tree.getTimeSeekRequest(), 0.3f));
+  tree.sampleBoundSkeleton();
+  expect_true("sample consumes onto clip play",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+  expect_true("clip play clock at seek",
+              float_near(tree.getClipPlayTime(), 0.3f));
+  tree.clearClipPlay();
+
+  tree.setSampleTime(0.8f);
+  tree.setTimeSeekRequest(0.5f);
+  expect_true("travel keeps clock", tree.travel("Locomotion"));
+  expect_true("travel does not apply seek",
+              float_near(tree.getSampleTime(), 0.8f));
+  expect_true("seek pending after travel",
+              float_near(tree.getTimeSeekRequest(), 0.5f));
+
+  expect_true("start locomotion", tree.start("Locomotion"));
+  expect_true("start resets to zero", float_near(tree.getSampleTime(), 0.0f));
+  expect_true("seek pending after start",
+              float_near(tree.getTimeSeekRequest(), 0.5f));
+  tree.advance(0.1f);
+  expect_true("advance applies seek not delta",
+              float_near(tree.getSampleTime(), 0.5f));
+  expect_true("seek consumed by advance",
+              float_near(tree.getTimeSeekRequest(), -1.0f));
+}
+
+struct TimeSeekMessageSpy {
+  std::vector<Blunder::MessageId> ids;
+};
+
+void time_seek_message_hook(void* peer, Blunder::MessageId id,
+                            const Blunder::MessageArg* args, int argc) {
+  (void)args;
+  (void)argc;
+  static_cast<TimeSeekMessageSpy*>(peer)->ids.push_back(id);
+}
+
+void test_time_seek_explicit_elapse_dispatches_method_keys() {
+  using namespace Blunder;
+
+  ObjectDB::clear();
+  MessageDispatch::clear();
+  const ObjectId id = ObjectDB::create();
+  Object* object = ObjectDB::get(id);
+  expect_true("object", object != nullptr);
+  if (object == nullptr) {
+    return;
+  }
+  object->ensureSkeleton()->addBone("Hips", -1);
+  AnimationPlayer* player = object->ensureAnimationPlayer();
+  AnimationTree* tree = object->ensureAnimationTree();
+
+  AnimationClipData clip;
+  clip.duration = 1.0f;
+  clip.tracks.push_back(makeTranslationTrack(
+      "Hips", AnimationInterpolation::Constant,
+      {{0.0f, Vec3(0.0f, 0.0f, 0.0f)}, {1.0f, Vec3(0.0f, 0.0f, 0.0f)}}));
+  AnimationMethodKey early;
+  early.name = "Early";
+  early.time = 0.25f;
+  AnimationMethodKey late;
+  late.name = "Late";
+  late.time = 0.75f;
+  clip.method_keys.push_back(early);
+  clip.method_keys.push_back(late);
+
+  const eastl::string guid = "11111111-1111-1111-1111-111111111111";
+  player->setClipGuid("walk", guid);
+  player->injectClipData(guid, clip);
+  expect_true("base", tree->setSampleClipName("walk"));
+  expect_true("active", tree->setActive(true));
+
+  const MessageId early_id = MessageDispatch::registerName("Early");
+  const MessageId late_id = MessageDispatch::registerName("Late");
+  TimeSeekMessageSpy spy;
+  MessageDispatch::setHook(time_seek_message_hook);
+  const BehaviourId behaviour_id = object->addBehaviour("Spy");
+  object->setBehaviourScriptPeer(behaviour_id, &spy);
+
+  tree->setTimeSeekExplicitElapse(false);
+  tree->setSampleTime(0.0f);
+  tree->setTimeSeekRequest(1.0f);
+  tree->advance(0.1f);
+  expect_true("seek without elapse", float_near(tree->getSampleTime(), 1.0f));
+  expect_true("no keys without elapse", spy.ids.empty());
+
+  spy.ids.clear();
+  tree->setTimeSeekExplicitElapse(true);
+  tree->setSampleTime(0.0f);
+  tree->setTimeSeekRequest(1.0f);
+  tree->advance(0.1f);
+  expect_true("two keys", spy.ids.size() == 2);
+  expect_true("early key", spy.ids.size() == 2 && spy.ids[0] == early_id);
+  expect_true("late key", spy.ids.size() == 2 && spy.ids[1] == late_id);
+
+  ObjectDB::clear();
+  MessageDispatch::clear();
+}
+
+void test_classdb_blend2_amount_and_time_seek() {
+  using namespace Blunder;
+
+  ClassDB::initialize();
+  AnimationPlayer player;
+  AnimationTree tree;
+  tree.bindAnimationPlayer(&player);
+  const eastl::string idle_guid = "11111111-1111-1111-1111-111111111111";
+  const eastl::string walk_guid = "22222222-2222-2222-2222-222222222222";
+  player.setClipGuid("idle", idle_guid);
+  player.setClipGuid("walk", walk_guid);
+  expect_true("clips", tree.setBlend2Clips("Pose", "idle", "walk"));
+
+  MethodBind* amount_method =
+      ClassDB::getMethod("AnimationTree", "set_blend2_amount");
+  expect_true("set_blend2_amount registered", amount_method != nullptr);
+  if (amount_method != nullptr) {
+    Variant node_arg(eastl::string("Pose"));
+    Variant amount_arg(0.25f);
+    const void* args[] = {&node_arg, &amount_arg};
+    Variant ret;
+    amount_method->ptrcall(&tree, args, &ret);
+    expect_true("amount method ok", ret.asBool());
+    expect_true("amount applied", float_near(tree.getBlend2Amount("Pose"), 0.25f));
+  }
+
+  expect_true("set time seek",
+              ClassDB::setProperty(&tree, "AnimationTree", "time_seek_request",
+                                   Variant(0.4f)));
+  Variant request;
+  expect_true("get time seek",
+              ClassDB::getProperty(&tree, "AnimationTree", "time_seek_request",
+                                   request));
+  expect_true("request stored", float_near(request.asFloat(), 0.4f));
+  expect_true(
+      "set explicit elapse",
+      ClassDB::setProperty(&tree, "AnimationTree", "time_seek_explicit_elapse",
+                           Variant(true)));
+  expect_true("explicit elapse", tree.getTimeSeekExplicitElapse());
+}
+
 void test_clip_play_not_exported_in_topology() {
   using namespace Blunder;
 
@@ -1790,6 +2246,13 @@ int main() {
   test_clip_play_restart_hold_and_travel_clear();
   test_clip_play_suspends_auto_transition();
   test_clip_play_fire_add2_and_failures();
+  test_blend2_lerps_clips_and_clears_other_bases();
+  test_blend2_bone_filter_keeps_other_bones_on_clip_a();
+  test_add2_bone_filter_skips_unlisted_bones();
+  test_time_seek_replaces_advance_and_samples_pose();
+  test_time_seek_survives_incidental_pose_refresh();
+  test_time_seek_explicit_elapse_dispatches_method_keys();
+  test_classdb_blend2_amount_and_time_seek();
   test_clip_play_not_exported_in_topology();
 
   if (g_failures != 0) {

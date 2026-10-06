@@ -132,7 +132,8 @@ void sampleClipOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip,
 
 void blendClipsOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip0,
                             float time0, const AnimationClipData& clip1,
-                            float time1, float blend_weight) {
+                            float time1, float blend_weight,
+                            const AnimationBoneFilter* bone_filter) {
   const size_t bone_count = skeleton.getBoneCount();
   eastl::vector<BoneTransform> pose0(bone_count);
   eastl::vector<BoneTransform> pose1(bone_count);
@@ -149,6 +150,10 @@ void blendClipsOntoSkeleton(Skeleton& skeleton, const AnimationClipData& clip0,
 
   skeleton.resetPoseToRest();
   for (size_t i = 0; i < bone_count; ++i) {
+    if (!animationBonePassesFilter(skeleton.getBoneName(i), bone_filter)) {
+      skeleton.setBonePoseLocal(i, pose0[i]);
+      continue;
+    }
     skeleton.setBonePoseLocal(
         i, blendBoneTransforms(pose0[i], pose1[i], blend_weight));
   }
@@ -233,13 +238,17 @@ void blendThreeClipsOntoSkeleton(Skeleton& skeleton,
 
 void applyAdditiveClipOntoSkeleton(Skeleton& skeleton,
                                    const AnimationClipData& clip, float time,
-                                   float weight) {
+                                   float weight,
+                                   const AnimationBoneFilter* bone_filter) {
   if (weight <= 0.0f) {
     return;
   }
 
   eastl::vector<float> scratch;
   for (const AnimationTrack& track : clip.tracks) {
+    if (!animationBonePassesFilter(track.bone, bone_filter)) {
+      continue;
+    }
     const int bone_index = skeleton.findBoneIndex(track.bone);
     if (bone_index < 0) {
       continue;

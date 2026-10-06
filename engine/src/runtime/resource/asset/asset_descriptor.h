@@ -203,6 +203,8 @@ struct AnimationClipAssetDescriptor {
 };
 
 /// Reusable AnimationTree topology body (Intermediate / Asset).
+/// Version 2 also carries optional Blend2, TimeSeek, and bone-filter keys.
+/// Files that omit them stay valid.
 struct AnimationTreeTopologyData {
   static constexpr int kVersion = 2;
 
@@ -226,9 +228,17 @@ struct AnimationTreeTopologyData {
     float y{0.0f};
     eastl::vector<BlendSpace2DPointDef> points;
   };
+  struct Blend2Def {
+    eastl::string node_name;
+    eastl::string clip_a;
+    eastl::string clip_b;
+    float amount{0.0f};
+    bool bone_filter_enabled{false};
+    eastl::vector<eastl::string> bone_filter;
+  };
   struct StateDef {
     eastl::string name;
-    /// "clip" | "blendSpace1D" | "blendSpace2D"
+    /// "clip" | "blendSpace1D" | "blendSpace2D" | "blend2"
     eastl::string kind{"clip"};
     eastl::string clip_name;
     eastl::string blend_space_node;
@@ -261,10 +271,16 @@ struct AnimationTreeTopologyData {
 
   eastl::string base_blend_space_node;
   eastl::string base_blend_space_2d_node;
+  eastl::string base_blend2_node;
   eastl::string add2_clip;
+  bool add2_bone_filter_enabled{false};
+  eastl::vector<eastl::string> add2_bone_filter;
+  /// When true, TimeSeek also dispatches method keys crossed by the seek.
+  bool time_seek_explicit_elapse{false};
   eastl::string oneshot_clip;
   eastl::vector<BlendSpace1DDef> blend_spaces_1d;
   eastl::vector<BlendSpace2DDef> blend_spaces_2d;
+  eastl::vector<Blend2Def> blend2_nodes;
   eastl::vector<StateDef> states;
   eastl::vector<TreeParamDef> tree_params;
   eastl::vector<TransitionDef> transitions;
@@ -288,6 +304,10 @@ struct AnimationTreeInstanceOverrides {
     float x{0.0f};
     float y{0.0f};
   };
+  struct Blend2AmountOverride {
+    eastl::string node_name;
+    float amount{0.0f};
+  };
 
   bool has_active{false};
   bool active{false};
@@ -296,6 +316,7 @@ struct AnimationTreeInstanceOverrides {
   eastl::string current_state;
   eastl::vector<ScalarOverride> blend_space_scalars;
   eastl::vector<Param2DOverride> blend_space_2d_params;
+  eastl::vector<Blend2AmountOverride> blend2_amounts;
 };
 
 }  // namespace Blunder

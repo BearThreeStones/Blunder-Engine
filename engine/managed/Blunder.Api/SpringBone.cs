@@ -1,7 +1,7 @@
 namespace Blunder;
 
 /// <summary>
-/// Managed façade for a SpringBone SkeletonModifier at <see cref="Index"/> (C-ABI v15).
+/// Managed façade for a SpringBone SkeletonModifier at <see cref="Index"/> (C-ABI v16).
 /// </summary>
 public sealed class SpringBone
 {

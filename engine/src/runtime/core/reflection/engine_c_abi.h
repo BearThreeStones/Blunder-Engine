@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 15
+#define BLUNDER_ENGINE_C_ABI_VERSION 16
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -372,6 +372,29 @@ BLUNDER_ENGINE_C_API int blunder_object_get_world_position(BlunderObjectId id,
                                                            float* x, float* y,
                                                            float* z);
 
+BLUNDER_ENGINE_C_API int blunder_debug_draw_line(
+    float ax, float ay, float az, float bx, float by, float bz, float r,
+    float g, float b, float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_ray(
+    float ox, float oy, float oz, float dx, float dy, float dz, float r,
+    float g, float b, float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_arrow(
+    float ax, float ay, float az, float bx, float by, float bz, float r,
+    float g, float b, float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_wire_box(
+    float cx, float cy, float cz, float sx, float sy, float sz, float r,
+    float g, float b, float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_wire_sphere(
+    float cx, float cy, float cz, float radius, float r, float g, float b,
+    float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_wire_capsule(
+    float ax, float ay, float az, float bx, float by, float bz, float radius,
+    float r, float g, float b, float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_cross(
+    float px, float py, float pz, float size, float r, float g, float b,
+    float a, float duration_s, float width_px);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_set_ingame_enabled(int enabled);
+BLUNDER_ENGINE_C_API int blunder_debug_draw_get_ingame_enabled(int* out_enabled);
 BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_root_bone_name(
     BlunderObjectId id, int index, const char* bone_name);
 BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_root_bone_name(
@@ -403,7 +426,7 @@ BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
-// Function-pointer table mirroring Blunder.Api NativeAbi.cs C-ABI v15 entry points.
+// Function-pointer table mirroring Blunder.Api NativeAbi.cs C-ABI v16 entry points.
 // Hosts register this into ScriptHost so managed code shares one ObjectDB image.
 typedef struct BlunderNativeAbi {
   int (*engine_abi_version)(void);
@@ -591,6 +614,30 @@ typedef struct BlunderNativeAbi {
                          BlunderObjectId* out_child_id);
   int (*object_get_world_position)(BlunderObjectId id, float* x, float* y,
                                    float* z);
+  int (*debug_draw_line)(float ax, float ay, float az, float bx, float by,
+                         float bz, float r, float g, float b, float a,
+                         float duration_s, float width_px);
+  int (*debug_draw_ray)(float ox, float oy, float oz, float dx, float dy,
+                        float dz, float r, float g, float b, float a,
+                        float duration_s, float width_px);
+  int (*debug_draw_arrow)(float ax, float ay, float az, float bx, float by,
+                          float bz, float r, float g, float b, float a,
+                          float duration_s, float width_px);
+  int (*debug_draw_wire_box)(float cx, float cy, float cz, float sx, float sy,
+                             float sz, float r, float g, float b, float a,
+                             float duration_s, float width_px);
+  int (*debug_draw_wire_sphere)(float cx, float cy, float cz, float radius,
+                                float r, float g, float b, float a,
+                                float duration_s, float width_px);
+  int (*debug_draw_wire_capsule)(float ax, float ay, float az, float bx,
+                                 float by, float bz, float radius, float r,
+                                 float g, float b, float a, float duration_s,
+                                 float width_px);
+  int (*debug_draw_cross)(float px, float py, float pz, float size, float r,
+                          float g, float b, float a, float duration_s,
+                          float width_px);
+  int (*debug_draw_set_ingame_enabled)(int enabled);
+  int (*debug_draw_get_ingame_enabled)(int* out_enabled);
   int (*skeleton_modifier_set_spring_bone_root_bone_name)(
       BlunderObjectId id, int index, const char* bone_name);
   int (*skeleton_modifier_get_spring_bone_root_bone_name)(

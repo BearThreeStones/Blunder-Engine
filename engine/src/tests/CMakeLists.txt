@@ -1704,6 +1704,55 @@ target_precompile_headers(collision_gizmo_geometry_test
 add_test(NAME collision_gizmo_geometry_test
          COMMAND collision_gizmo_geometry_test)
 
+add_executable(gizmo_line_batch_test
+    "gizmo_line_batch_test.cpp"
+)
+
+target_include_directories(gizmo_line_batch_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+target_link_libraries(gizmo_line_batch_test
+    PRIVATE engine_runtime
+)
+
+if(MSVC)
+    target_compile_options(gizmo_line_batch_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(gizmo_line_batch_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME gizmo_line_batch_test
+         COMMAND gizmo_line_batch_test)
+
+add_executable(debug_draw_test
+    "debug_draw_test.cpp"
+)
+
+target_include_directories(debug_draw_test
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+    PRIVATE "${CMAKE_SOURCE_DIR}/engine/3rdparty/cgltf"
+)
+
+target_link_libraries(debug_draw_test
+    PRIVATE engine_runtime
+    PRIVATE blunder_engine_c_static
+)
+
+if(MSVC)
+    target_compile_options(debug_draw_test PRIVATE /Zc:preprocessor)
+endif()
+
+target_precompile_headers(debug_draw_test
+    REUSE_FROM engine_runtime
+)
+
+add_test(NAME debug_draw_test
+         COMMAND debug_draw_test)
+
 add_executable(light_gizmo_hit_test_test
     "light_gizmo_hit_test_test.cpp"
 )

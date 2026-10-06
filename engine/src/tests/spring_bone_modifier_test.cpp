@@ -477,7 +477,7 @@ void test_c_abi() {
   expect_true("wrong type",
               blunder_skeleton_modifier_set_spring_bone_stiffness(id, 0, 0.2f) ==
                   BLUNDER_ENGINE_ERROR);
-  expect_true("abi version is 15", BLUNDER_ENGINE_C_ABI_VERSION == 15);
+  expect_true("abi version is 16", BLUNDER_ENGINE_C_ABI_VERSION == 16);
 
   BlunderNativeAbi abi{};
   blunder_native_abi_fill_from_process(&abi);

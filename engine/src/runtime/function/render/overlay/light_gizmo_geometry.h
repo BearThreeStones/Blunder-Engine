@@ -159,6 +159,37 @@ inline Mat4 makeLightGizmoWorldMatchingMesh(const Mat4& unique_world,
       overlayInferUniqueLocal(unique_world, parent_world));
 }
 
+inline float lightGizmoLocalCullRadius(const LightGizmoShape& shape) {
+  float r = kLightGizmoOriginCrossHalfLen;
+  switch (shape.kind) {
+    case LightGizmoKind::directional:
+      r = std::max(r, kLightGizmoDirectionalArrowLength);
+      break;
+    case LightGizmoKind::point:
+      r = std::max(r, kLightGizmoPointDisplayRadius);
+      if (shape.show_range) {
+        r = std::max(r, shape.range);
+      }
+      break;
+    case LightGizmoKind::spot: {
+      const float length =
+          shape.show_range ? shape.range : kLightGizmoSpotDisplayLength;
+      const float outer =
+          glm::radians(glm::clamp(shape.outer_cone_degrees, 0.0f, 89.9f));
+      const float cone_r = length * std::tan(outer);
+      r = std::max(r, std::sqrt(length * length + cone_r * cone_r));
+      break;
+    }
+    case LightGizmoKind::area: {
+      const float hx = std::max(shape.width, 1e-4f) * 0.5f;
+      const float hy = std::max(shape.height, 1e-4f) * 0.5f;
+      r = std::max(r, std::sqrt(hx * hx + hy * hy) + kLightGizmoAreaEmitTick);
+      break;
+    }
+  }
+  return r + 0.25f;
+}
+
 template <typename Fn>
 void forEachLightGizmoSegmentLocal(const LightGizmoShape& shape, Fn&& fn) {
   const float cross = kLightGizmoOriginCrossHalfLen;

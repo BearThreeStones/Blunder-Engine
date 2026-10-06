@@ -16,6 +16,8 @@ internal static unsafe class Native
     static BlunderNativeAbi s_abi;
     static bool s_registered;
 
+    internal static bool IsRegistered => s_registered;
+
     /// <summary>
     /// Stores a complete non-null C-ABI table for subsequent Native calls.
     /// </summary>
@@ -148,6 +150,15 @@ internal static unsafe class Native
         abi.object_child_count != null &&
         abi.object_child_at != null &&
         abi.object_get_world_position != null &&
+        abi.debug_draw_line != null &&
+        abi.debug_draw_ray != null &&
+        abi.debug_draw_arrow != null &&
+        abi.debug_draw_wire_box != null &&
+        abi.debug_draw_wire_sphere != null &&
+        abi.debug_draw_wire_capsule != null &&
+        abi.debug_draw_cross != null &&
+        abi.debug_draw_set_ingame_enabled != null &&
+        abi.debug_draw_get_ingame_enabled != null &&
         abi.skeleton_modifier_set_spring_bone_root_bone_name != null &&
         abi.skeleton_modifier_get_spring_bone_root_bone_name != null &&
         abi.skeleton_modifier_set_spring_bone_end_bone_name != null &&
@@ -1551,6 +1562,85 @@ internal static unsafe class Native
         {
             return s_abi.log(severity, textPtr, stack == null ? null : stackPtr);
         }
+    }
+
+    public static int blunder_debug_draw_line(
+        float ax, float ay, float az, float bx, float by, float bz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_line(ax, ay, az, bx, by, bz, r, g, b, a,
+            durationS, widthPx);
+    }
+
+    public static int blunder_debug_draw_ray(
+        float ox, float oy, float oz, float dx, float dy, float dz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_ray(ox, oy, oz, dx, dy, dz, r, g, b, a,
+            durationS, widthPx);
+    }
+
+    public static int blunder_debug_draw_arrow(
+        float ax, float ay, float az, float bx, float by, float bz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_arrow(ax, ay, az, bx, by, bz, r, g, b, a,
+            durationS, widthPx);
+    }
+
+    public static int blunder_debug_draw_wire_box(
+        float cx, float cy, float cz, float sx, float sy, float sz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_wire_box(cx, cy, cz, sx, sy, sz, r, g, b, a,
+            durationS, widthPx);
+    }
+
+    public static int blunder_debug_draw_wire_sphere(
+        float cx, float cy, float cz, float radius,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_wire_sphere(cx, cy, cz, radius, r, g, b, a,
+            durationS, widthPx);
+    }
+
+    public static int blunder_debug_draw_wire_capsule(
+        float ax, float ay, float az, float bx, float by, float bz, float radius,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_wire_capsule(ax, ay, az, bx, by, bz, radius,
+            r, g, b, a, durationS, widthPx);
+    }
+
+    public static int blunder_debug_draw_cross(
+        float px, float py, float pz, float size,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_cross(px, py, pz, size, r, g, b, a, durationS,
+            widthPx);
+    }
+
+    public static int blunder_debug_draw_set_ingame_enabled(int enabled)
+    {
+        EnsureRegistered();
+        return s_abi.debug_draw_set_ingame_enabled(enabled);
+    }
+
+    public static int blunder_debug_draw_get_ingame_enabled(out int enabled)
+    {
+        EnsureRegistered();
+        enabled = 0;
+        int value = 0;
+        int rc = s_abi.debug_draw_get_ingame_enabled(&value);
+        enabled = value;
+        return rc;
     }
 
     static byte[] ToUtf8(string value)

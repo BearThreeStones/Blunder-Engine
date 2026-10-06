@@ -561,6 +561,7 @@ endif()
 add_library(blunder_engine_c_static STATIC
     "core/reflection/engine_c_abi.cpp"
     "core/reflection/engine_c_abi_physics.cpp"
+    "core/reflection/engine_c_abi_debug_draw.cpp"
 )
 target_include_directories(blunder_engine_c_static
     PUBLIC
@@ -583,6 +584,7 @@ endif()
 add_library(blunder_engine_c SHARED
     "core/reflection/engine_c_abi.cpp"
     "core/reflection/engine_c_abi_physics.cpp"
+    "core/reflection/engine_c_abi_debug_draw.cpp"
 )
 target_include_directories(blunder_engine_c
     PUBLIC

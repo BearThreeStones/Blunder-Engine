@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace Blunder;
 
 /// <summary>
-/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v15 function-pointer table).
+/// Managed mirror of native <c>BlunderNativeAbi</c> (C-ABI v16 function-pointer table).
 /// Layout must match <c>engine_c_abi.h</c> field-for-field.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -154,6 +154,22 @@ public unsafe struct BlunderNativeAbi
     public delegate* unmanaged[Cdecl]<ulong, int, ulong*, int> object_child_at;
     public delegate* unmanaged[Cdecl]<ulong, float*, float*, float*, int>
         object_get_world_position;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_line;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_ray;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_arrow;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_wire_box;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_wire_sphere;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_wire_capsule;
+    public delegate* unmanaged[Cdecl]<float, float, float, float, float, float, float, float, float, float, int>
+        debug_draw_cross;
+    public delegate* unmanaged[Cdecl]<int, int> debug_draw_set_ingame_enabled;
+    public delegate* unmanaged[Cdecl]<int*, int> debug_draw_get_ingame_enabled;
     public delegate* unmanaged[Cdecl]<ulong, int, byte*, int>
         skeleton_modifier_set_spring_bone_root_bone_name;
     public delegate* unmanaged[Cdecl]<ulong, int, byte*, int, int>
