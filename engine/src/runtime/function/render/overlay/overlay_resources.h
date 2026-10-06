@@ -22,6 +22,7 @@ struct OverlayResources {
   /// ground grid must be created against this pass, not ScreenOverlayPass.
   VkRenderPass scene_render_pass{VK_NULL_HANDLE};
   VkRenderPass screen_render_pass{VK_NULL_HANDLE};
+  VkRenderPass debug_draw_render_pass{VK_NULL_HANDLE};
 };
 
 }  // namespace Blunder

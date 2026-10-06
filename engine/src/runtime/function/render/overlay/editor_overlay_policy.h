@@ -17,4 +17,14 @@ inline bool sceneAuthorshipGizmosEnabled(EngineHostMode host_mode,
   return editorOverlaysEnabled(host_mode) && gizmos_visible;
 }
 
+/// Debug draw is not authorship chrome. Editor viewports always draw
+/// (including play-in-editor). Player is off unless the InGame switch is on.
+/// Scene Gizmos does not gate this.
+inline bool debugDrawVisible(EngineHostMode host_mode, bool ingame_enabled) {
+  if (host_mode == EngineHostMode::Editor) {
+    return true;
+  }
+  return ingame_enabled;
+}
+
 }  // namespace Blunder

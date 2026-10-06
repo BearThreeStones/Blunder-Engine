@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Blunder;
@@ -59,6 +60,8 @@ static unsafe class Program
     static int s_lastLogSeverity = -1;
     static string s_lastLogText = "";
     static string s_lastLogStack = "";
+    static string s_lastDebugDraw = "";
+    static int s_debugDrawInGame;
 
     static float s_quatX;
     static float s_quatY;
@@ -79,8 +82,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 108 * sizeof(nint),
-            "BlunderNativeAbi layout size is 108 pointers");
+            sizeof(BlunderNativeAbi) == 117 * sizeof(nint),
+            "BlunderNativeAbi layout size is 117 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -218,6 +221,15 @@ static unsafe class Program
         abi.object_child_count = &StubObjectChildCount;
         abi.object_child_at = &StubObjectChildAt;
         abi.object_get_world_position = &StubObjectGetWorldPosition;
+        abi.debug_draw_line = &StubDebugDrawLine;
+        abi.debug_draw_ray = &StubDebugDrawRay;
+        abi.debug_draw_arrow = &StubDebugDrawArrow;
+        abi.debug_draw_wire_box = &StubDebugDrawWireBox;
+        abi.debug_draw_wire_sphere = &StubDebugDrawWireSphere;
+        abi.debug_draw_wire_capsule = &StubDebugDrawWireCapsule;
+        abi.debug_draw_cross = &StubDebugDrawCross;
+        abi.debug_draw_set_ingame_enabled = &StubDebugDrawSetInGame;
+        abi.debug_draw_get_ingame_enabled = &StubDebugDrawGetInGame;
 
         Native.Register(in abi);
 
@@ -256,6 +268,7 @@ static unsafe class Program
         RunSyncFireOneShotSmokeTests();
         RunPhysicsGroupsAndCctSmokeTests();
         RunSceneQuerySmokeTests();
+        RunDebugDrawSmokeTests();
 
         if (s_failures == 0)
         {
@@ -697,6 +710,31 @@ static unsafe class Program
         Expect(
             pivot.Position.X == 1f && pivot.Position.Y == 2f && pivot.Position.Z == 3f,
             "Position stays the local property");
+    }
+
+    static void RunDebugDrawSmokeTests()
+    {
+        s_lastDebugDraw = "";
+        Draw.Line(new Vec3(1f, 2f, 3f), new Vec3(4f, 5f, 6f), new Vec3(1f, 0f, 0f),
+            0.25f);
+        Expect(s_lastDebugDraw == "line:1,2,3,4,5,6,1,0,0,1,0.25,1",
+            "Draw.Line via stub");
+
+        Draw.SetInGameEnabled(true);
+        Expect(Draw.IsInGameEnabled(), "Draw InGame switch");
+
+        Native.ClearRegistrationForTests();
+        bool threw = false;
+        try
+        {
+            Draw.Line(new Vec3(0f, 0f, 0f), new Vec3(1f, 0f, 0f), new Vec3(1f, 1f, 1f));
+        }
+        catch
+        {
+            threw = true;
+        }
+
+        Expect(!threw, "Draw.Line no-ops without ABI");
     }
 
     static void Expect(bool condition, string label)
@@ -1957,6 +1995,91 @@ static unsafe class Program
         *x = 10f;
         *y = 2f;
         *z = 4f;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawLine(
+        float ax, float ay, float az, float bx, float by, float bz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = string.Format(
+            CultureInfo.InvariantCulture,
+            "line:{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}",
+            ax, ay, az, bx, by, bz, r, g, b, a, durationS, widthPx);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawRay(
+        float ox, float oy, float oz, float dx, float dy, float dz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = "ray";
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawArrow(
+        float ax, float ay, float az, float bx, float by, float bz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = "arrow";
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawWireBox(
+        float cx, float cy, float cz, float sx, float sy, float sz,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = "box";
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawWireSphere(
+        float cx, float cy, float cz, float radius,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = "sphere";
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawWireCapsule(
+        float ax, float ay, float az, float bx, float by, float bz, float radius,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = "capsule";
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawCross(
+        float px, float py, float pz, float size,
+        float r, float g, float b, float a, float durationS, float widthPx)
+    {
+        s_lastDebugDraw = "cross";
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawSetInGame(int enabled)
+    {
+        s_debugDrawInGame = enabled;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubDebugDrawGetInGame(int* outEnabled)
+    {
+        if (outEnabled == null)
+        {
+            return Native.Error;
+        }
+
+        *outEnabled = s_debugDrawInGame;
         return Native.Ok;
     }
 }
