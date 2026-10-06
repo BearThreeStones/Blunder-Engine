@@ -44,6 +44,37 @@ bool readBoolField(const YAML::Node& root, const char* key, bool default_value,
   return true;
 }
 
+bool readStringListField(const YAML::Node& root, const char* key,
+                         eastl::vector<eastl::string>& out_values) {
+  out_values.clear();
+  const YAML::Node node = root[key];
+  if (!node) {
+    return true;
+  }
+  if (!node.IsSequence()) {
+    return false;
+  }
+  for (const auto& item : node) {
+    if (!item || !item.IsScalar()) {
+      return false;
+    }
+    eastl::string value = item.as<std::string>().c_str();
+    if (!value.empty()) {
+      out_values.push_back(eastl::move(value));
+    }
+  }
+  return true;
+}
+
+void emitStringList(YAML::Emitter& emitter, const char* key,
+                    const eastl::vector<eastl::string>& values) {
+  emitter << YAML::Key << key << YAML::Value << YAML::BeginSeq;
+  for (const eastl::string& value : values) {
+    emitter << value.c_str();
+  }
+  emitter << YAML::EndSeq;
+}
+
 bool readFloatField(const YAML::Node& root, const char* key, float default_value,
                     float& out_value) {
   const YAML::Node node = root[key];
@@ -1015,7 +1046,16 @@ bool AssetYaml::parseAnimationTreeTopologyData(
                             out_data.base_blend_space_node);
     readOptionalStringField(root, "base_blend_space_2d_node",
                             out_data.base_blend_space_2d_node);
+    readOptionalStringField(root, "base_blend2_node", out_data.base_blend2_node);
     readOptionalStringField(root, "add2_clip", out_data.add2_clip);
+    readBoolField(root, "add2_bone_filter_enabled", false,
+                  out_data.add2_bone_filter_enabled);
+    if (!readStringListField(root, "add2_bone_filter",
+                             out_data.add2_bone_filter)) {
+      return false;
+    }
+    readBoolField(root, "time_seek_explicit_elapse", false,
+                  out_data.time_seek_explicit_elapse);
     readOptionalStringField(root, "oneshot_clip", out_data.oneshot_clip);
 
     const YAML::Node spaces1d = root["blend_spaces_1d"];
@@ -1070,6 +1110,30 @@ bool AssetYaml::parseAnimationTreeTopologyData(
         }
         out_data.blend_spaces_2d.push_back(eastl::move(space));
       }
+    }
+
+    const YAML::Node blend2_nodes = root["blend2_nodes"];
+    if (blend2_nodes && blend2_nodes.IsSequence()) {
+      for (const auto& node : blend2_nodes) {
+        if (!node || !node.IsMap()) {
+          return false;
+        }
+        AnimationTreeTopologyData::Blend2Def blend2;
+        if (!readStringField(node, "node_name", blend2.node_name) ||
+            !readStringField(node, "clip_a", blend2.clip_a) ||
+            !readStringField(node, "clip_b", blend2.clip_b)) {
+          return false;
+        }
+        readFloatField(node, "amount", 0.0f, blend2.amount);
+        readBoolField(node, "bone_filter_enabled", false,
+                      blend2.bone_filter_enabled);
+        if (!readStringListField(node, "bone_filter", blend2.bone_filter)) {
+          return false;
+        }
+        out_data.blend2_nodes.push_back(eastl::move(blend2));
+      }
+    } else if (blend2_nodes && !blend2_nodes.IsSequence()) {
+      return false;
     }
 
     const YAML::Node states = root["states"];
@@ -1190,8 +1254,20 @@ eastl::string AssetYaml::serializeAnimationTreeTopologyData(
     emitter << YAML::Key << "base_blend_space_2d_node" << YAML::Value
             << data.base_blend_space_2d_node.c_str();
   }
+  if (!data.base_blend2_node.empty()) {
+    emitter << YAML::Key << "base_blend2_node" << YAML::Value
+            << data.base_blend2_node.c_str();
+  }
   if (!data.add2_clip.empty()) {
     emitter << YAML::Key << "add2_clip" << YAML::Value << data.add2_clip.c_str();
+  }
+  if (data.add2_bone_filter_enabled || !data.add2_bone_filter.empty()) {
+    emitter << YAML::Key << "add2_bone_filter_enabled" << YAML::Value
+            << data.add2_bone_filter_enabled;
+    emitStringList(emitter, "add2_bone_filter", data.add2_bone_filter);
+  }
+  if (data.time_seek_explicit_elapse) {
+    emitter << YAML::Key << "time_seek_explicit_elapse" << YAML::Value << true;
   }
   if (!data.oneshot_clip.empty()) {
     emitter << YAML::Key << "oneshot_clip" << YAML::Value
@@ -1241,6 +1317,25 @@ eastl::string AssetYaml::serializeAnimationTreeTopologyData(
     emitter << YAML::EndMap;
   }
   emitter << YAML::EndSeq;
+
+  if (!data.blend2_nodes.empty()) {
+    emitter << YAML::Key << "blend2_nodes" << YAML::Value << YAML::BeginSeq;
+    for (const AnimationTreeTopologyData::Blend2Def& node : data.blend2_nodes) {
+      emitter << YAML::BeginMap;
+      emitter << YAML::Key << "node_name" << YAML::Value
+              << node.node_name.c_str();
+      emitter << YAML::Key << "clip_a" << YAML::Value << node.clip_a.c_str();
+      emitter << YAML::Key << "clip_b" << YAML::Value << node.clip_b.c_str();
+      emitter << YAML::Key << "amount" << YAML::Value << node.amount;
+      if (node.bone_filter_enabled || !node.bone_filter.empty()) {
+        emitter << YAML::Key << "bone_filter_enabled" << YAML::Value
+                << node.bone_filter_enabled;
+        emitStringList(emitter, "bone_filter", node.bone_filter);
+      }
+      emitter << YAML::EndMap;
+    }
+    emitter << YAML::EndSeq;
+  }
 
   emitter << YAML::Key << "states" << YAML::Value << YAML::BeginSeq;
   for (const AnimationTreeTopologyData::StateDef& state : data.states) {

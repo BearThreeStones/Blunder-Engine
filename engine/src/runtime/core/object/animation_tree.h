@@ -1,6 +1,7 @@
 #pragma once
 
 #include "EASTL/hash_map.h"
+#include "EASTL/hash_set.h"
 #include "EASTL/string.h"
 #include "EASTL/vector.h"
 
@@ -33,6 +34,7 @@ enum class AnimationStatePlaybackKind {
   Clip,
   BlendSpace1D,
   BlendSpace2D,
+  Blend2,
 };
 
 struct AnimationStateDefinition {
@@ -94,6 +96,14 @@ class AnimationTree {
   void setAdd2Time(float time) { m_add2_time = time; }
   float getAdd2Time() const { return m_add2_time; }
 
+  /// Add2 bone filter: enabled allow-list. Bones outside it skip the additive.
+  void setAdd2BoneFilterEnabled(bool enabled);
+  bool getAdd2BoneFilterEnabled() const { return m_add2_bone_filter_enabled; }
+  bool addAdd2BoneFilterBone(const eastl::string& bone);
+  bool removeAdd2BoneFilterBone(const eastl::string& bone);
+  void clearAdd2BoneFilter();
+  bool add2BoneFilterContains(const eastl::string& bone) const;
+
   void setSampleTime(float time) { m_sample_time = time; }
   float getSampleTime() const { return m_sample_time; }
 
@@ -123,13 +133,52 @@ class AnimationTree {
   }
   void clearBaseBlendSpace2DNode() { m_base_blend_space_2d_node.clear(); }
 
-  /// StateMachine: named states with single-clip or BlendSpace1D/2D playback.
+  /// Blend2: lerp clip A (amount 0) toward clip B (amount 1) on the base clock.
+  bool setBlend2Clips(const eastl::string& node_name,
+                      const eastl::string& clip_a, const eastl::string& clip_b);
+  void setBlend2Amount(const eastl::string& node_name, float amount);
+  float getBlend2Amount(const eastl::string& node_name) const;
+  const eastl::string& getBlend2ClipA(const eastl::string& node_name) const;
+  const eastl::string& getBlend2ClipB(const eastl::string& node_name) const;
+
+  bool setBaseBlend2Node(const eastl::string& node_name);
+  const eastl::string& getBaseBlend2Node() const { return m_base_blend2_node; }
+  void clearBaseBlend2Node() { m_base_blend2_node.clear(); }
+
+  /// Blend2 bone filter: enabled allow-list. Other bones stay on clip A.
+  void setBlend2BoneFilterEnabled(const eastl::string& node_name, bool enabled);
+  bool getBlend2BoneFilterEnabled(const eastl::string& node_name) const;
+  bool addBlend2BoneFilterBone(const eastl::string& node_name,
+                               const eastl::string& bone);
+  bool removeBlend2BoneFilterBone(const eastl::string& node_name,
+                                  const eastl::string& bone);
+  void clearBlend2BoneFilter(const eastl::string& node_name);
+  bool blend2BoneFilterContains(const eastl::string& node_name,
+                                const eastl::string& bone) const;
+
+  /// TimeSeek: a request >= 0 seeks the dominant base clock on the next
+  /// advance (that step's delta is not applied) or explicit sample, then
+  /// returns to -1. Pose refreshes from other APIs (seekRuler, start/travel,
+  /// requestOneShot, clipPlay, parameter edits) do not consume the request.
+  /// explicit_elapse also dispatches method keys crossed by a forward seek.
+  void setTimeSeekRequest(float seconds);
+  float getTimeSeekRequest() const { return m_time_seek_request; }
+  void setTimeSeekExplicitElapse(bool enabled) {
+    m_time_seek_explicit_elapse = enabled;
+  }
+  bool getTimeSeekExplicitElapse() const {
+    return m_time_seek_explicit_elapse;
+  }
+
+  /// StateMachine: named states with single-clip or BlendSpace1D/2D/Blend2 playback.
   bool setStateClip(const eastl::string& state_name,
                     const eastl::string& clip_name);
   bool setStateBlendSpace(const eastl::string& state_name,
                           const eastl::string& blend_space_node);
   bool setStateBlendSpace2D(const eastl::string& state_name,
                             const eastl::string& blend_space_node);
+  bool setStateBlend2(const eastl::string& state_name,
+                      const eastl::string& blend2_node);
   bool travel(const eastl::string& state_name);
   bool start(const eastl::string& state_name);
   const eastl::string& getCurrentStateName() const {
@@ -246,6 +295,13 @@ class AnimationTree {
   bool resolveDominantBlendSpace2DClip(const eastl::string& node_name, float x,
                                        float y,
                                        AnimationClipData& out_clip) const;
+  bool consumeTimeSeek();
+  void samplePoseOntoSkeleton(Skeleton& skeleton);
+  void refreshBoundSkeleton();
+  bool sampleBlend2OntoSkeleton(Skeleton& skeleton,
+                                const eastl::string& node_name);
+  bool resolveDominantBlend2Clip(const eastl::string& node_name,
+                                 AnimationClipData& out_clip) const;
 
   AnimationPlayer* m_animation_player{nullptr};
   Skeleton* m_sampling_skeleton{nullptr};
@@ -257,6 +313,19 @@ class AnimationTree {
   eastl::string m_add2_clip_name;
   float m_add2_weight{0.0f};
   float m_add2_time{0.0f};
+  bool m_add2_bone_filter_enabled{false};
+  eastl::hash_set<eastl::string> m_add2_bone_filter;
+  struct Blend2Node {
+    eastl::string clip_a;
+    eastl::string clip_b;
+    float amount{0.0f};
+    bool bone_filter_enabled{false};
+    eastl::hash_set<eastl::string> bone_filter;
+  };
+  eastl::hash_map<eastl::string, Blend2Node> m_blend2_nodes;
+  eastl::string m_base_blend2_node;
+  float m_time_seek_request{-1.0f};
+  bool m_time_seek_explicit_elapse{false};
   eastl::hash_map<eastl::string, eastl::vector<BlendSpace1DPoint>> m_blend_spaces;
   eastl::hash_map<eastl::string, float> m_blend_space_scalars;
   eastl::string m_base_blend_space_node;

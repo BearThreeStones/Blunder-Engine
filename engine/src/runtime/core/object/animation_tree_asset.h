@@ -11,7 +11,7 @@ class AnimationTree;
 /// Clear authored graph fields (keeps player/skeleton/modifier bindings).
 void clearAnimationTreeTopology(AnimationTree& tree);
 
-/// Apply Asset/embed topology (points, states, base nodes, Add2/OneShot slots).
+/// Apply Asset/embed topology (points, states, base nodes, Blend2, Add2/OneShot slots).
 /// Does not set active or travel unless `topology` carries those via overrides.
 bool applyAnimationTreeTopologyData(AnimationTree& tree,
                                     const AnimationTreeTopologyData& topology);
