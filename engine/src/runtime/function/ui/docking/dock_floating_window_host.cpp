@@ -332,6 +332,13 @@ void DockFloatingWindowHost::applySnapshotToEntry(FloatEntry& entry,
           slint_row.target_y = row.target_y;
           slint_row.target_z = row.target_z;
           slint_row.child_entity_name = toSharedString(row.child_entity_name);
+          slint_row.end_bone_name = toSharedString(row.end_bone_name);
+          slint_row.stiffness = row.stiffness;
+          slint_row.drag = row.drag;
+          slint_row.gravity_x = row.gravity_x;
+          slint_row.gravity_y = row.gravity_y;
+          slint_row.gravity_z = row.gravity_z;
+          slint_row.end_bone_length = row.end_bone_length;
           skeleton_model->push_back(slint_row);
         }
         ui.set_inspector_skeleton_modifiers(skeleton_model);

@@ -15,6 +15,14 @@ namespace Blunder {
 
 namespace {
 
+struct ModifierDeltaGuard {
+  float& slot;
+  ModifierDeltaGuard(float& slot_in, float value) : slot(slot_in) {
+    slot = value;
+  }
+  ~ModifierDeltaGuard() { slot = 0.0f; }
+};
+
 struct BlendSpaceNeighbor {
   const BlendSpace1DPoint* left{nullptr};
   const BlendSpace1DPoint* right{nullptr};
@@ -1671,6 +1679,7 @@ void AnimationTree::advance(float delta_seconds) {
   if (scaled_delta <= 0.0f) {
     return;
   }
+  ModifierDeltaGuard delta_guard(m_skeleton_modifier_delta_seconds, scaled_delta);
 
   const float prev_clock = getDominantBasePlaybackPosition();
   const bool was_oneshot = m_oneshot_active;

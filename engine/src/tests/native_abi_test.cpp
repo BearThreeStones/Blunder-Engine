@@ -266,6 +266,40 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.debug_draw_line != nullptr);
   expect_true((std::string(label) + ": debug_draw_set_ingame_enabled").c_str(),
               abi.debug_draw_set_ingame_enabled != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_spring_bone_root_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_set_spring_bone_root_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_spring_bone_root_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_get_spring_bone_root_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_spring_bone_end_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_set_spring_bone_end_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_spring_bone_end_bone_name")
+                  .c_str(),
+              abi.skeleton_modifier_get_spring_bone_end_bone_name != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_spring_bone_stiffness")
+                  .c_str(),
+              abi.skeleton_modifier_set_spring_bone_stiffness != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_spring_bone_stiffness")
+                  .c_str(),
+              abi.skeleton_modifier_get_spring_bone_stiffness != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_spring_bone_drag").c_str(),
+              abi.skeleton_modifier_set_spring_bone_drag != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_spring_bone_drag").c_str(),
+              abi.skeleton_modifier_get_spring_bone_drag != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_spring_bone_gravity")
+                  .c_str(),
+              abi.skeleton_modifier_set_spring_bone_gravity != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_spring_bone_gravity")
+                  .c_str(),
+              abi.skeleton_modifier_get_spring_bone_gravity != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_set_spring_bone_end_length")
+                  .c_str(),
+              abi.skeleton_modifier_set_spring_bone_end_length != nullptr);
+  expect_true((std::string(label) + ": skeleton_modifier_get_spring_bone_end_length")
+                  .c_str(),
+              abi.skeleton_modifier_get_spring_bone_end_length != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -285,7 +319,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 15", BLUNDER_ENGINE_C_ABI_VERSION >= 15);
+  expect_true("abi version >= 16", BLUNDER_ENGINE_C_ABI_VERSION >= 16);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

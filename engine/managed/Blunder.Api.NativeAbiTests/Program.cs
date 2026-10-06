@@ -56,6 +56,14 @@ static unsafe class Program
     static float s_lookAtTargetX;
     static float s_lookAtTargetY;
     static float s_lookAtTargetZ = 1.0f;
+    static string s_springRootBoneName = "Root";
+    static string s_springEndBoneName = "";
+    static float s_springStiffness = 0.2f;
+    static float s_springDrag = 0.2f;
+    static float s_springGravityX;
+    static float s_springGravityY;
+    static float s_springGravityZ;
+    static float s_springEndLength = 0.1f;
 
     static int s_lastLogSeverity = -1;
     static string s_lastLogText = "";
@@ -82,8 +90,8 @@ static unsafe class Program
     static int Main()
     {
         Expect(
-            sizeof(BlunderNativeAbi) == 117 * sizeof(nint),
-            "BlunderNativeAbi layout size is 117 pointers");
+            sizeof(BlunderNativeAbi) == 129 * sizeof(nint),
+            "BlunderNativeAbi layout size is 129 pointers");
 
         Native.ClearRegistrationForTests();
 
@@ -230,6 +238,28 @@ static unsafe class Program
         abi.debug_draw_cross = &StubDebugDrawCross;
         abi.debug_draw_set_ingame_enabled = &StubDebugDrawSetInGame;
         abi.debug_draw_get_ingame_enabled = &StubDebugDrawGetInGame;
+        abi.skeleton_modifier_set_spring_bone_root_bone_name =
+            &StubSkeletonModifierSetSpringBoneRootBoneName;
+        abi.skeleton_modifier_get_spring_bone_root_bone_name =
+            &StubSkeletonModifierGetSpringBoneRootBoneName;
+        abi.skeleton_modifier_set_spring_bone_end_bone_name =
+            &StubSkeletonModifierSetSpringBoneEndBoneName;
+        abi.skeleton_modifier_get_spring_bone_end_bone_name =
+            &StubSkeletonModifierGetSpringBoneEndBoneName;
+        abi.skeleton_modifier_set_spring_bone_stiffness =
+            &StubSkeletonModifierSetSpringBoneStiffness;
+        abi.skeleton_modifier_get_spring_bone_stiffness =
+            &StubSkeletonModifierGetSpringBoneStiffness;
+        abi.skeleton_modifier_set_spring_bone_drag = &StubSkeletonModifierSetSpringBoneDrag;
+        abi.skeleton_modifier_get_spring_bone_drag = &StubSkeletonModifierGetSpringBoneDrag;
+        abi.skeleton_modifier_set_spring_bone_gravity =
+            &StubSkeletonModifierSetSpringBoneGravity;
+        abi.skeleton_modifier_get_spring_bone_gravity =
+            &StubSkeletonModifierGetSpringBoneGravity;
+        abi.skeleton_modifier_set_spring_bone_end_length =
+            &StubSkeletonModifierSetSpringBoneEndLength;
+        abi.skeleton_modifier_get_spring_bone_end_length =
+            &StubSkeletonModifierGetSpringBoneEndLength;
 
         Native.Register(in abi);
 
@@ -490,6 +520,14 @@ static unsafe class Program
         s_lookAtTargetX = 0.0f;
         s_lookAtTargetY = 0.0f;
         s_lookAtTargetZ = 1.0f;
+        s_springRootBoneName = "Root";
+        s_springEndBoneName = "";
+        s_springStiffness = 0.2f;
+        s_springDrag = 0.2f;
+        s_springGravityX = 0.0f;
+        s_springGravityY = 0.0f;
+        s_springGravityZ = 0.0f;
+        s_springEndLength = 0.1f;
 
         ObjectHandle host = ObjectHandle.GetOrCreate(7);
         ObjectHandle child = ObjectHandle.GetOrCreate(42);
@@ -529,6 +567,30 @@ static unsafe class Program
         lookAt.BoneName = "Neck";
         Expect(s_lookAtBoneName == "Neck", "LookAt.BoneName set forwarded");
         Expect(lookAt.BoneName == "Neck", "LookAt.BoneName get forwarded");
+
+        SpringBone spring = host.SpringBoneAt(3);
+        Expect(spring.Index == 3, "SpringBone.Index");
+        spring.RootBoneName = "Logo";
+        Expect(s_springRootBoneName == "Logo", "SpringBone.RootBoneName set forwarded");
+        Expect(spring.RootBoneName == "Logo", "SpringBone.RootBoneName get forwarded");
+        spring.EndBoneName = "LogoTip";
+        Expect(s_springEndBoneName == "LogoTip", "SpringBone.EndBoneName set forwarded");
+        Expect(spring.EndBoneName == "LogoTip", "SpringBone.EndBoneName get forwarded");
+        spring.Stiffness = 0.45f;
+        Expect(Math.Abs(s_springStiffness - 0.45f) < 0.0001f, "SpringBone.Stiffness set forwarded");
+        Expect(Math.Abs(spring.Stiffness - 0.45f) < 0.0001f, "SpringBone.Stiffness get forwarded");
+        spring.Drag = 0.3f;
+        Expect(Math.Abs(s_springDrag - 0.3f) < 0.0001f, "SpringBone.Drag set forwarded");
+        Expect(Math.Abs(spring.Drag - 0.3f) < 0.0001f, "SpringBone.Drag get forwarded");
+        spring.Gravity = new Vec3(0.0f, 1.0f, -9.8f);
+        Expect(
+            Math.Abs(s_springGravityY - 1.0f) < 0.0001f &&
+            Math.Abs(s_springGravityZ - -9.8f) < 0.0001f,
+            "SpringBone.Gravity set forwarded");
+        Expect(spring.Gravity == new Vec3(0.0f, 1.0f, -9.8f), "SpringBone.Gravity get forwarded");
+        spring.EndBoneLength = 0.25f;
+        Expect(Math.Abs(s_springEndLength - 0.25f) < 0.0001f, "SpringBone.EndBoneLength set forwarded");
+        Expect(Math.Abs(spring.EndBoneLength - 0.25f) < 0.0001f, "SpringBone.EndBoneLength get forwarded");
     }
 
     static void RunSyncFireOneShotSmokeTests()
@@ -1527,6 +1589,158 @@ static unsafe class Program
         }
 
         WriteUtf8(s_lookAtBoneName, outBoneName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetSpringBoneRootBoneName(ulong id, int index, byte* boneName)
+    {
+        if (id == 0 || index != 3 || boneName == null)
+        {
+            return Native.Error;
+        }
+
+        s_springRootBoneName = Utf8ToString(boneName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetSpringBoneRootBoneName(
+        ulong id, int index, byte* outBoneName, int nameCapacity)
+    {
+        if (id == 0 || index != 3 || outBoneName == null || nameCapacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_springRootBoneName, outBoneName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetSpringBoneEndBoneName(ulong id, int index, byte* boneName)
+    {
+        if (id == 0 || index != 3 || boneName == null)
+        {
+            return Native.Error;
+        }
+
+        s_springEndBoneName = Utf8ToString(boneName);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetSpringBoneEndBoneName(
+        ulong id, int index, byte* outBoneName, int nameCapacity)
+    {
+        if (id == 0 || index != 3 || outBoneName == null || nameCapacity <= 0)
+        {
+            return Native.Error;
+        }
+
+        WriteUtf8(s_springEndBoneName, outBoneName, nameCapacity);
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetSpringBoneStiffness(ulong id, int index, float stiffness)
+    {
+        if (id == 0 || index != 3)
+        {
+            return Native.Error;
+        }
+
+        s_springStiffness = stiffness;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetSpringBoneStiffness(ulong id, int index, float* outStiffness)
+    {
+        if (id == 0 || index != 3 || outStiffness == null)
+        {
+            return Native.Error;
+        }
+
+        *outStiffness = s_springStiffness;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetSpringBoneDrag(ulong id, int index, float drag)
+    {
+        if (id == 0 || index != 3)
+        {
+            return Native.Error;
+        }
+
+        s_springDrag = drag;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetSpringBoneDrag(ulong id, int index, float* outDrag)
+    {
+        if (id == 0 || index != 3 || outDrag == null)
+        {
+            return Native.Error;
+        }
+
+        *outDrag = s_springDrag;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetSpringBoneGravity(
+        ulong id, int index, float x, float y, float z)
+    {
+        if (id == 0 || index != 3)
+        {
+            return Native.Error;
+        }
+
+        s_springGravityX = x;
+        s_springGravityY = y;
+        s_springGravityZ = z;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetSpringBoneGravity(
+        ulong id, int index, float* outX, float* outY, float* outZ)
+    {
+        if (id == 0 || index != 3 || outX == null || outY == null || outZ == null)
+        {
+            return Native.Error;
+        }
+
+        *outX = s_springGravityX;
+        *outY = s_springGravityY;
+        *outZ = s_springGravityZ;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierSetSpringBoneEndLength(ulong id, int index, float length)
+    {
+        if (id == 0 || index != 3)
+        {
+            return Native.Error;
+        }
+
+        s_springEndLength = length;
+        return Native.Ok;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int StubSkeletonModifierGetSpringBoneEndLength(ulong id, int index, float* outLength)
+    {
+        if (id == 0 || index != 3 || outLength == null)
+        {
+            return Native.Error;
+        }
+
+        *outLength = s_springEndLength;
         return Native.Ok;
     }
 

@@ -11,6 +11,7 @@
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/object/skeleton_spring_bone_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
 
 #include <glm/geometric.hpp>
@@ -389,6 +390,11 @@ SkeletonAttachModifier* Object::addSkeletonAttachModifier() {
       addSkeletonModifier(eastl::make_unique<SkeletonAttachModifier>()));
 }
 
+SkeletonSpringBoneModifier* Object::addSkeletonSpringBoneModifier() {
+  return static_cast<SkeletonSpringBoneModifier*>(
+      addSkeletonModifier(eastl::make_unique<SkeletonSpringBoneModifier>()));
+}
+
 bool Object::moveSkeletonModifier(size_t from_index, size_t to_index) {
   const size_t count = m_skeleton_modifiers.size();
   if (count == 0 || from_index >= count) {
@@ -441,6 +447,12 @@ bool Object::insertSkeletonModifierAt(
 
 void Object::applySkeletonModifiers(Skeleton& skeleton) {
   const Mat4 host_world = computeWorldMatrix();
+  float delta_time = 0.0f;
+  if (m_animation_tree != nullptr && m_animation_tree->isActive()) {
+    delta_time = m_animation_tree->getSkeletonModifierDeltaTime();
+  } else if (m_animation_player != nullptr) {
+    delta_time = m_animation_player->getSkeletonModifierDeltaTime();
+  }
   for (const eastl::unique_ptr<SkeletonModifier>& modifier : m_skeleton_modifiers) {
     if (modifier == nullptr) {
       continue;
@@ -448,6 +460,10 @@ void Object::applySkeletonModifiers(Skeleton& skeleton) {
     if (std::strcmp(modifier->getTypeName(), "SkeletonLookAtModifier") == 0) {
       static_cast<SkeletonLookAtModifier*>(modifier.get())
           ->setHostWorldMatrix(host_world);
+    } else if (std::strcmp(modifier->getTypeName(), "SpringBone") == 0) {
+      auto* spring = static_cast<SkeletonSpringBoneModifier*>(modifier.get());
+      spring->setHostWorldMatrix(host_world);
+      spring->setDeltaTime(delta_time);
     }
     modifier->apply(skeleton);
   }

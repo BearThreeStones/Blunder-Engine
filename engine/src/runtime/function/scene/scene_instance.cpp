@@ -12,6 +12,7 @@
 #include "runtime/core/object/skeleton.h"
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
+#include "runtime/core/object/skeleton_spring_bone_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
 #include "runtime/core/object/missing_skeleton_modifier.h"
 #include "runtime/core/object/skeleton_modifier.h"
@@ -254,6 +255,15 @@ void captureSkeletonModifiers(const SceneInstance& scene, const Object& object,
                                     ? child_entity->getName()
                                     : child->getName();
       }
+    } else if (def.type == "SpringBone") {
+      const auto* spring =
+          static_cast<const SkeletonSpringBoneModifier*>(modifier);
+      def.bone_name = spring->getRootBoneName();
+      def.end_bone_name = spring->getEndBoneName();
+      def.stiffness = spring->getStiffness();
+      def.drag = spring->getDrag();
+      def.gravity = spring->getGravity();
+      def.end_bone_length = spring->getEndBoneLength();
     }
 
     definition.skeleton_modifiers.push_back(eastl::move(def));

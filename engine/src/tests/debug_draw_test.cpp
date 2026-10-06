@@ -87,7 +87,7 @@ int main() {
   expect_true("c-abi line enqueues world units when no scene",
               DebugDraw::commandCount() == 1u);
 
-  expect_true("c-abi version 15", BLUNDER_ENGINE_C_ABI_VERSION == 15);
+  expect_true("c-abi version 16", BLUNDER_ENGINE_C_ABI_VERSION == 16);
 
   DebugDraw::reset();
   if (g_failures != 0) {

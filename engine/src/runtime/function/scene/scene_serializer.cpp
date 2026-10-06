@@ -916,6 +916,19 @@ bool parseSkeletonModifierObject(const char* object_start,
                        child_entity_name)) {
     out_modifier.child_entity_name = eastl::move(child_entity_name);
   }
+
+  eastl::string end_bone_name;
+  if (parseStringField(object_start, object_end, "\"endBoneName\"",
+                       end_bone_name)) {
+    out_modifier.end_bone_name = eastl::move(end_bone_name);
+  }
+  parseFloatField(object_start, object_end, "\"stiffness\"",
+                  out_modifier.stiffness);
+  parseFloatField(object_start, object_end, "\"drag\"", out_modifier.drag);
+  parseVec3Field(object_start, object_end, "\"gravity\"", out_modifier.gravity,
+                 out_modifier.gravity);
+  parseFloatField(object_start, object_end, "\"endBoneLength\"",
+                  out_modifier.end_bone_length);
   if (!SkeletonModifierCatalog::hasType(out_modifier.type.c_str())) {
     collectModifierExtraFields(object_start, object_end,
                                out_modifier.extra_fields);
@@ -1523,6 +1536,21 @@ void appendSkeletonModifierJson(eastl::string& out,
       out.append(",\n          \"childEntity\": ");
       appendJsonString(out, modifier.child_entity_name);
     }
+  } else if (modifier.type == "SpringBone") {
+    if (!modifier.end_bone_name.empty()) {
+      out.append(",\n          \"endBoneName\": ");
+      appendJsonString(out, modifier.end_bone_name);
+    }
+    std::snprintf(buffer, sizeof(buffer),
+                  ",\n          \"stiffness\": %.6g,\n          \"drag\": %.6g",
+                  static_cast<double>(modifier.stiffness),
+                  static_cast<double>(modifier.drag));
+    out.append(buffer);
+    out.append(",\n          \"gravity\": ");
+    appendFloat3(out, modifier.gravity);
+    std::snprintf(buffer, sizeof(buffer), ",\n          \"endBoneLength\": %.6g",
+                  static_cast<double>(modifier.end_bone_length));
+    out.append(buffer);
   }
 
   out.append(is_last ? "\n        }\n" : "\n        },\n");

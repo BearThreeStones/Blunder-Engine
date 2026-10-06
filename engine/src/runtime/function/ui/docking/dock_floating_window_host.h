@@ -99,6 +99,13 @@ struct NativeFloatSkeletonModifierRow {
   float target_y{0.0f};
   float target_z{1.0f};
   eastl::string child_entity_name;
+  eastl::string end_bone_name;
+  float stiffness{0.2f};
+  float drag{0.2f};
+  float gravity_x{0.0f};
+  float gravity_y{0.0f};
+  float gravity_z{0.0f};
+  float end_bone_length{0.1f};
 };
 
 struct NativeFloatHistoryRow {

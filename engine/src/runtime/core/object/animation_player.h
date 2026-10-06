@@ -92,6 +92,10 @@ class AnimationPlayer {
   /// Co-located Skeleton only (set by Object). When bound, play/advance sample poses.
   void bindSamplingSkeleton(Skeleton* skeleton);
   void bindSkeletonModifierChain(SkeletonModifierChainFn fn, void* userdata);
+  /// Seconds passed to SpringBone during the current advance. Zero outside advance.
+  float getSkeletonModifierDeltaTime() const {
+    return m_skeleton_modifier_delta_seconds;
+  }
   void sampleOntoSkeleton(Skeleton& skeleton);
 
   /// Co-located AnimationTree (set by Object / tree bind). Non-owning.
@@ -178,6 +182,7 @@ class AnimationPlayer {
   bool m_tree_blocks_sampling{false};
   float m_tree_playback_position{0.0f};
   float m_tree_clip_length{0.0f};
+  float m_skeleton_modifier_delta_seconds{0.0f};
 };
 
 }  // namespace Blunder

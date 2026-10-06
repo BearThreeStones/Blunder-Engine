@@ -48,8 +48,8 @@ int main() {
   ObjectDB::clear();
   ClassDB::initialize();
 
-  expect_true("abi version 15", blunder_engine_abi_version() == 15);
-  expect_true("header version 15", BLUNDER_ENGINE_C_ABI_VERSION == 15);
+  expect_true("abi version 16", blunder_engine_abi_version() == 16);
+  expect_true("header version 16", BLUNDER_ENGINE_C_ABI_VERSION == 16);
 
   auto scenes = eastl::make_shared<SceneSystem>();
   g_runtime_global_context.m_scene_system = scenes;

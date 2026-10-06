@@ -7,6 +7,7 @@
 #include "runtime/core/object/skeleton_attach_modifier.h"
 #include "runtime/core/object/skeleton_look_at_modifier.h"
 #include "runtime/core/object/skeleton_paper_mouth_modifier.h"
+#include "runtime/core/object/skeleton_spring_bone_modifier.h"
 
 namespace Blunder {
 namespace {
@@ -42,6 +43,10 @@ eastl::unique_ptr<SkeletonModifier> makeAttach() {
 
 eastl::unique_ptr<SkeletonModifier> makeLookAt() {
   return eastl::make_unique<SkeletonLookAtModifier>();
+}
+
+eastl::unique_ptr<SkeletonModifier> makeSpringBone() {
+  return eastl::make_unique<SkeletonSpringBoneModifier>();
 }
 
 CatalogEntry* findEntry(const char* name) {
@@ -165,6 +170,7 @@ void SkeletonModifierCatalog::registerBuiltins() {
   addOrReplaceEntry("PaperMouth", &makePaperMouth, true, next_id()++);
   addOrReplaceEntry("SkeletonAttachModifier", &makeAttach, true, next_id()++);
   addOrReplaceEntry("SkeletonLookAtModifier", &makeLookAt, true, next_id()++);
+  addOrReplaceEntry("SpringBone", &makeSpringBone, true, next_id()++);
 }
 
 }  // namespace Blunder

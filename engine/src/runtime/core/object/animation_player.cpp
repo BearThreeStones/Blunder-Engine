@@ -9,6 +9,17 @@
 #include <cmath>
 
 namespace Blunder {
+namespace {
+
+struct ModifierDeltaGuard {
+  float& slot;
+  ModifierDeltaGuard(float& slot_in, float value) : slot(slot_in) {
+    slot = value;
+  }
+  ~ModifierDeltaGuard() { slot = 0.0f; }
+};
+
+}  // namespace
 
 void AnimationPlayer::setClipGuid(const eastl::string& name,
                                   const eastl::string& guid) {
@@ -536,6 +547,7 @@ void AnimationPlayer::advance(float delta_seconds) {
   if (scaled_delta <= 0.0f) {
     return;
   }
+  ModifierDeltaGuard delta_guard(m_skeleton_modifier_delta_seconds, scaled_delta);
 
   advanceCrossfade(scaled_delta);
 

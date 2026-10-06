@@ -18,7 +18,7 @@
 extern "C" {
 #endif
 
-#define BLUNDER_ENGINE_C_ABI_VERSION 15
+#define BLUNDER_ENGINE_C_ABI_VERSION 16
 
 typedef uint64_t BlunderObjectId;
 typedef uint64_t BlunderBehaviourId;
@@ -395,6 +395,30 @@ BLUNDER_ENGINE_C_API int blunder_debug_draw_cross(
     float a, float duration_s, float width_px);
 BLUNDER_ENGINE_C_API int blunder_debug_draw_set_ingame_enabled(int enabled);
 BLUNDER_ENGINE_C_API int blunder_debug_draw_get_ingame_enabled(int* out_enabled);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_root_bone_name(
+    BlunderObjectId id, int index, const char* bone_name);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_root_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_end_bone_name(
+    BlunderObjectId id, int index, const char* bone_name);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_end_bone_name(
+    BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_stiffness(
+    BlunderObjectId id, int index, float stiffness);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_stiffness(
+    BlunderObjectId id, int index, float* out_stiffness);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_drag(
+    BlunderObjectId id, int index, float drag);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_drag(
+    BlunderObjectId id, int index, float* out_drag);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_gravity(
+    BlunderObjectId id, int index, float x, float y, float z);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_gravity(
+    BlunderObjectId id, int index, float* out_x, float* out_y, float* out_z);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_set_spring_bone_end_length(
+    BlunderObjectId id, int index, float length);
+BLUNDER_ENGINE_C_API int blunder_skeleton_modifier_get_spring_bone_end_length(
+    BlunderObjectId id, int index, float* out_length);
 
 typedef void (*BlunderPtrCallFn)(void* instance, const void** args, void* ret);
 BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
@@ -402,7 +426,7 @@ BLUNDER_ENGINE_C_API int blunder_ptrcall(const char* class_name,
                                          BlunderObjectId id, const void** args,
                                          void* ret);
 
-// Function-pointer table mirroring Blunder.Api NativeAbi.cs C-ABI v15 entry points.
+// Function-pointer table mirroring Blunder.Api NativeAbi.cs C-ABI v16 entry points.
 // Hosts register this into ScriptHost so managed code shares one ObjectDB image.
 typedef struct BlunderNativeAbi {
   int (*engine_abi_version)(void);
@@ -614,6 +638,33 @@ typedef struct BlunderNativeAbi {
                           float width_px);
   int (*debug_draw_set_ingame_enabled)(int enabled);
   int (*debug_draw_get_ingame_enabled)(int* out_enabled);
+  int (*skeleton_modifier_set_spring_bone_root_bone_name)(
+      BlunderObjectId id, int index, const char* bone_name);
+  int (*skeleton_modifier_get_spring_bone_root_bone_name)(
+      BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+  int (*skeleton_modifier_set_spring_bone_end_bone_name)(
+      BlunderObjectId id, int index, const char* bone_name);
+  int (*skeleton_modifier_get_spring_bone_end_bone_name)(
+      BlunderObjectId id, int index, char* out_bone_name, int name_capacity);
+  int (*skeleton_modifier_set_spring_bone_stiffness)(BlunderObjectId id,
+                                                     int index, float stiffness);
+  int (*skeleton_modifier_get_spring_bone_stiffness)(BlunderObjectId id,
+                                                     int index,
+                                                     float* out_stiffness);
+  int (*skeleton_modifier_set_spring_bone_drag)(BlunderObjectId id, int index,
+                                                float drag);
+  int (*skeleton_modifier_get_spring_bone_drag)(BlunderObjectId id, int index,
+                                                float* out_drag);
+  int (*skeleton_modifier_set_spring_bone_gravity)(BlunderObjectId id, int index,
+                                                   float x, float y, float z);
+  int (*skeleton_modifier_get_spring_bone_gravity)(BlunderObjectId id, int index,
+                                                   float* out_x, float* out_y,
+                                                   float* out_z);
+  int (*skeleton_modifier_set_spring_bone_end_length)(BlunderObjectId id,
+                                                      int index, float length);
+  int (*skeleton_modifier_get_spring_bone_end_length)(BlunderObjectId id,
+                                                      int index,
+                                                      float* out_length);
 } BlunderNativeAbi;
 
 // Fill from process-linked C-ABI symbols (editor / blunder_engine_c_static).
