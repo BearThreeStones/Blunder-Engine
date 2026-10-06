@@ -1,6 +1,7 @@
-// camera_gizmo.slang — Blender-like Camera Gizmo wire overlay (ScreenOverlayPass).
+// camera_gizmo.slang — batched Camera / Light overlay wires (ScreenOverlayPass).
 
 static const float kPolylineSmoothWidth = 0.5;
+static const float kLineEndPadPx = 1.0;
 static const uint kLineVertCount = 6u;
 static const uint kTriangleVertCount = 3u;
 static const uint kOriginDiscVertCount = 6u;
@@ -14,18 +15,26 @@ static const float3 kIconOutline = float3(0.08, 0.08, 0.08);
 struct CameraGizmoUniform {
     float4x4 view;
     float4x4 proj;
-    float4 color;
     float line_width_px;
+    float viewport_width_px;
     float viewport_height_px;
-    float style;
-    float _pad;
+    float command_count;
+};
+
+struct GizmoLineCommand {
     float4 p0;
     float4 p1;
     float4 p2;
+    float4 color;
+    float style;
+    float3 _pad;
 };
 
 [[vk::binding(0, 0)]]
 ConstantBuffer<CameraGizmoUniform> ubo;
+
+[[vk::binding(1, 0)]]
+StructuredBuffer<GizmoLineCommand> commands;
 
 struct VertexOutput {
     float4 sv_position : SV_Position;
@@ -36,10 +45,6 @@ struct VertexOutput {
     [[vk::location(2)]]
     float2 disc_uv;
 };
-
-float3 worldToView(float3 w) {
-    return mul(ubo.view, float4(w, 1.0)).xyz;
-}
 
 float2 getArmParams(uint idx) {
     switch (idx) {
@@ -72,76 +77,85 @@ VertexOutput emitDiscarded() {
     return o;
 }
 
-VertexOutput vsLine(uint vid) {
-    float3 startWorld = ubo.p0.xyz;
-    float3 endWorld = ubo.p1.xyz;
-    float3 startView = worldToView(startWorld);
-    float3 endView = worldToView(endWorld);
-    float3 armDelta = endView - startView;
-    float armLen = length(armDelta);
-    if (armLen < 1e-6) {
+float4 worldToClip(float3 w) {
+    return mul(ubo.proj, mul(ubo.view, float4(w, 1.0)));
+}
+
+VertexOutput vsLine(uint vid, GizmoLineCommand cmd) {
+    float3 startWorld = cmd.p0.xyz;
+    float3 endWorld = cmd.p1.xyz;
+    float3 worldDir = endWorld - startWorld;
+    if (length(worldDir) < 1e-6) {
         return emitDiscarded();
     }
 
-    float3 armDir = armDelta / armLen;
-    float3 perp = cross(armDir, float3(0.0, 0.0, 1.0));
-    float perpLen = length(perp);
-    float3 armPerp = (perpLen > 1e-3) ? (perp / perpLen) : float3(1.0, 0.0, 0.0);
-
-    float4 clipStart = mul(ubo.proj, float4(startView, 1.0));
-    float4 clipEnd = mul(ubo.proj, float4(endView, 1.0));
-    float startScale = abs(clipStart.w);
-    float endScale = abs(clipEnd.w);
-    float armHalfW = (ubo.line_width_px + kPolylineSmoothWidth) * 0.5 *
-                     (2.0 / max(ubo.viewport_height_px, 1.0));
-    armPerp *= armHalfW * (startScale + endScale) * 0.5;
-
     float2 ap = getArmParams(vid);
-    float3 cornerView = lerp(startView, endView, ap.x) + armPerp * ap.y;
+    float3 worldPos = lerp(startWorld, endWorld, ap.x);
+    float4 Mv = worldToClip(worldPos);
+    if (abs(Mv.w) < 1e-6) {
+        return emitDiscarded();
+    }
+
+    float4 Mn = worldToClip(worldPos + worldDir);
+    float4 delta = (Mn - Mv * (Mn.w / Mv.w)) / Mv.w;
+    float2 vp = float2(max(ubo.viewport_width_px, 1.0),
+                       max(ubo.viewport_height_px, 1.0));
+    float2 pixelDelta = delta.xy * vp;
+    float pixelLen = length(pixelDelta);
+    if (pixelLen < 1e-8) {
+        return emitDiscarded();
+    }
+    pixelDelta /= pixelLen;
+    float2 screenNormal = float2(-pixelDelta.y, pixelDelta.x) / vp;
+    float pixelWidth = ubo.line_width_px + kPolylineSmoothWidth;
+    float4 outpos = (Mv / Mv.w) + float4(screenNormal * ap.y * pixelWidth * 0.5, 0, 0);
+    float forwards = (ap.x - 0.5) * 2.0;
+    outpos.xy += forwards * (pixelDelta / vp) * 0.5 * kLineEndPadPx;
+    outpos *= Mv.w;
 
     VertexOutput o;
-    o.sv_position = mul(ubo.proj, float4(cornerView, 1.0));
-    o.color = ubo.color;
+    o.sv_position = outpos;
+    o.color = cmd.color;
     o.style = 0.0;
-    o.disc_uv = float2(0, 0);
+    o.disc_uv = float2(ap.y * 0.5 + 0.5, ap.x);
     return o;
 }
 
-VertexOutput vsTriangle(uint vid) {
+VertexOutput vsTriangle(uint vid, GizmoLineCommand cmd) {
     float3 p;
     if (vid == 0u) {
-        p = ubo.p0.xyz;
+        p = cmd.p0.xyz;
     } else if (vid == 1u) {
-        p = ubo.p1.xyz;
+        p = cmd.p1.xyz;
     } else {
-        p = ubo.p2.xyz;
+        p = cmd.p2.xyz;
     }
 
     VertexOutput o;
-    o.sv_position = mul(ubo.proj, mul(ubo.view, float4(p, 1.0)));
-    o.color = ubo.color;
+    o.sv_position = worldToClip(p);
+    o.color = cmd.color;
     o.style = 1.0;
     o.disc_uv = float2(0, 0);
     return o;
 }
 
-VertexOutput vsOriginDisc(uint vid) {
-    float4 clipC = mul(ubo.proj, mul(ubo.view, float4(ubo.p0.xyz, 1.0)));
+VertexOutput vsOriginDisc(uint vid, GizmoLineCommand cmd) {
+    float4 clipC = worldToClip(cmd.p0.xyz);
     float radiusClip = kOriginDiscRadiusPx * 2.0 / max(ubo.viewport_height_px, 1.0) * abs(clipC.w);
     float2 uv = quadUV(vid);
     float2 offset = uv * radiusClip;
 
     VertexOutput o;
     o.sv_position = float4(clipC.xy + offset, clipC.z, clipC.w);
-    o.color = ubo.color;
+    o.color = cmd.color;
     o.style = 2.0;
     o.disc_uv = uv;
     return o;
 }
 
 /// Screen-aligned billboard at world p0 (always faces viewport, upright on screen).
-VertexOutput vsIconBillboard(uint vid) {
-    float4 clipC = mul(ubo.proj, mul(ubo.view, float4(ubo.p0.xyz, 1.0)));
+VertexOutput vsIconBillboard(uint vid, GizmoLineCommand cmd) {
+    float4 clipC = worldToClip(cmd.p0.xyz);
     if (clipC.w <= 1e-5) {
         return emitDiscarded();
     }
@@ -152,8 +166,8 @@ VertexOutput vsIconBillboard(uint vid) {
 
     VertexOutput o;
     o.sv_position = float4(clipC.xy + offset, clipC.z, clipC.w);
-    o.color = ubo.color;
-    o.style = ubo.style;
+    o.color = cmd.color;
+    o.style = cmd.style;
     o.disc_uv = uv;
     return o;
 }
@@ -207,31 +221,36 @@ float lightBulbSdf(float2 uv) {
 }
 
 [shader("vertex")]
-VertexOutput vertexMain(uint vid : SV_VertexID) {
-    uint style = uint(ubo.style + 0.5);
+VertexOutput vertexMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
+    uint count = uint(ubo.command_count + 0.5);
+    if (iid >= count) {
+        return emitDiscarded();
+    }
+    GizmoLineCommand cmd = commands[iid];
+    uint style = uint(cmd.style + 0.5);
     if (style == 0u) {
         if (vid >= kLineVertCount) {
             return emitDiscarded();
         }
-        return vsLine(vid);
+        return vsLine(vid, cmd);
     }
     if (style == 1u) {
         if (vid >= kTriangleVertCount) {
             return emitDiscarded();
         }
-        return vsTriangle(vid);
+        return vsTriangle(vid, cmd);
     }
     if (style == 2u) {
         if (vid >= kOriginDiscVertCount) {
             return emitDiscarded();
         }
-        return vsOriginDisc(vid);
+        return vsOriginDisc(vid, cmd);
     }
     if (style == 3u || style == 4u) {
         if (vid >= kIconVertCount) {
             return emitDiscarded();
         }
-        return vsIconBillboard(vid);
+        return vsIconBillboard(vid, cmd);
     }
     return emitDiscarded();
 }
@@ -243,6 +262,15 @@ float4 fragmentMain(VertexOutput input) : SV_Target {
     }
 
     float4 color = input.color;
+    if (input.style < 0.5 && input.style > -0.5) {
+        float dist = abs((input.disc_uv.x - 0.5) * 2.0);
+        float aa = max(fwidth(dist), 1e-4);
+        color.a *= saturate((1.0 - dist) / aa);
+        if (color.a < 0.001) {
+            discard;
+        }
+        return color;
+    }
     if (input.style > 3.5) {
         float d = lightBulbSdf(input.disc_uv);
         float aa = max(fwidth(d), 1e-4);

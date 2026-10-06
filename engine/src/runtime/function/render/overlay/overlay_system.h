@@ -8,6 +8,8 @@
 
 #include "runtime/function/render/overlay/axes_overlay.h"
 #include "runtime/function/render/overlay/camera_gizmo_overlay.h"
+#include "runtime/function/render/overlay/debug_draw_overlay.h"
+#include "runtime/function/render/overlay/debug_draw_pass.h"
 #include "runtime/function/render/overlay/light_gizmo_overlay.h"
 #include "runtime/function/render/overlay/grid_overlay.h"
 #include "runtime/function/render/gizmo/transform_gizmo_overlay.h"
@@ -67,11 +69,13 @@ class OverlaySystem final {
 
   bool hasActiveLineOverlays() const;
   bool hasActiveOutline() const;
+  bool hasActiveDebugDraw() const;
 
   void draw_scene_overlays(VkCommandBuffer cmd);
   void draw_outline(VkCommandBuffer cmd);
   void draw_overlay_lines(VkCommandBuffer cmd);
   void draw_overlay_aa(VkCommandBuffer cmd);
+  void draw_debug_draw(VkCommandBuffer cmd);
   void draw_screen_overlays(VkCommandBuffer cmd);
 
   EntityId pickAtWindowPosition(float window_x, float window_y, EditorCamera& camera,
@@ -110,6 +114,9 @@ class OverlaySystem final {
   bool collisionGizmosVisible() const { return m_collision_gizmos_visible; }
   void setCollisionGizmosVisible(bool visible);
 
+  bool debugDrawInGameEnabled() const;
+  void setDebugDrawInGameEnabled(bool enabled);
+
   bool tryHandleCameraOrLightGizmoClick(const Vec2& window_position,
                                         EditorCamera& camera);
   OverlayAntiAliasing& anti_aliasing() { return m_anti_aliasing; }
@@ -123,6 +130,7 @@ class OverlaySystem final {
   OffscreenRenderTarget* m_native_offscreen{nullptr};
 
   ScreenOverlayPass m_screen_pass;
+  DebugDrawPass m_debug_draw_pass;
   OverlayLineTargets m_line_targets;
   OverlayLinePass m_line_pass;
 
@@ -143,6 +151,7 @@ class OverlaySystem final {
   TransformGizmoOverlay m_transform_gizmo;
   CameraGizmoOverlay m_camera_gizmo;
   LightGizmoOverlay m_light_gizmo;
+  DebugDrawOverlay m_debug_draw;
   OverlayAntiAliasing m_anti_aliasing;
   bool m_scene_gizmos_visible{true};
   bool m_collision_gizmos_visible{false};

@@ -262,6 +262,10 @@ void expect_all_api_entries_non_null(const char* label, const BlunderNativeAbi& 
               abi.object_child_at != nullptr);
   expect_true((std::string(label) + ": object_get_world_position").c_str(),
               abi.object_get_world_position != nullptr);
+  expect_true((std::string(label) + ": debug_draw_line").c_str(),
+              abi.debug_draw_line != nullptr);
+  expect_true((std::string(label) + ": debug_draw_set_ingame_enabled").c_str(),
+              abi.debug_draw_set_ingame_enabled != nullptr);
 }
 
 std::filesystem::path sharedEngineCPath() {
@@ -281,7 +285,7 @@ int main() {
   expect_true("process abi version callable",
               process_abi.engine_abi_version != nullptr &&
                   process_abi.engine_abi_version() == BLUNDER_ENGINE_C_ABI_VERSION);
-  expect_true("abi version >= 13", BLUNDER_ENGINE_C_ABI_VERSION >= 13);
+  expect_true("abi version >= 15", BLUNDER_ENGINE_C_ABI_VERSION >= 15);
 
   Blunder::gameplayInputState().reset();
   float mx = 1.f;

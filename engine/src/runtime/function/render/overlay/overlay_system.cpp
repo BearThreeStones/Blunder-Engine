@@ -10,6 +10,7 @@
 #include "runtime/function/render/editor_camera.h"
 #include "runtime/function/render/offscreen_render_target.h"
 #include "runtime/function/render/render_system.h"
+#include "runtime/function/render/overlay/debug_draw.h"
 #include "runtime/function/render/overlay/editor_overlay_policy.h"
 #include "runtime/function/render/overlay/overlay_gizmo_pick.h"
 #include "runtime/function/render/overlay/overlay_state.h"
@@ -46,6 +47,9 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_resources.scene_render_pass = m_native_offscreen->getRenderPass();
   m_resources.screen_render_pass = m_screen_pass.renderPass();
 
+  m_debug_draw_pass.initialize(ctx, m_native_offscreen);
+  m_resources.debug_draw_render_pass = m_debug_draw_pass.renderPass();
+
   m_line_targets.initialize(ctx, alloc, m_native_offscreen);
   m_line_pass.initialize(ctx, m_native_offscreen, &m_line_targets);
 
@@ -64,6 +68,7 @@ void OverlaySystem::initialize(VulkanContext* ctx, VulkanAllocator* alloc,
   m_transform_gizmo.initialize(m_resources, compiler);
   m_camera_gizmo.initialize(m_resources, compiler);
   m_light_gizmo.initialize(m_resources, compiler);
+  m_debug_draw.initialize(m_resources, compiler, m_debug_draw_pass.renderPass());
   m_anti_aliasing.initialize(ctx, alloc, offscreen, compiler, &m_line_targets);
 }
 
@@ -79,16 +84,19 @@ void OverlaySystem::shutdown() {
   m_transform_gizmo.shutdown();
   m_camera_gizmo.shutdown();
   m_light_gizmo.shutdown();
+  m_debug_draw.shutdown();
   m_grid.shutdown();
   m_outline.shutdown();
   m_outline_targets.shutdown();
   m_line_pass.shutdown();
   m_line_targets.shutdown();
+  m_debug_draw_pass.shutdown();
   m_screen_pass.shutdown();
 
   m_native_offscreen = nullptr;
   m_resources.scene_render_pass = VK_NULL_HANDLE;
   m_resources.screen_render_pass = VK_NULL_HANDLE;
+  m_resources.debug_draw_render_pass = VK_NULL_HANDLE;
   m_resources.offscreen = nullptr;
   m_resources.slang_compiler = nullptr;
   m_resources.vk_allocator = nullptr;
@@ -152,6 +160,14 @@ void OverlaySystem::setCollisionGizmosVisible(const bool visible) {
   m_collision_gizmos_visible = visible;
 }
 
+bool OverlaySystem::debugDrawInGameEnabled() const {
+  return DebugDraw::inGameEnabled();
+}
+
+void OverlaySystem::setDebugDrawInGameEnabled(const bool enabled) {
+  DebugDraw::setInGameEnabled(enabled);
+}
+
 void OverlaySystem::begin_sync(const ForwardFrameState& frame_state,
                                uint32_t current_frame) {
   m_state = OverlayState::fromFrameState(frame_state, current_frame);
@@ -207,6 +223,12 @@ bool OverlaySystem::hasActiveOutline() const {
   return m_outline.isEnabled();
 }
 
+bool OverlaySystem::hasActiveDebugDraw() const {
+  return debugDrawVisible(g_runtime_global_context.hostMode(),
+                          DebugDraw::inGameEnabled()) &&
+         DebugDraw::commandCount() > 0u;
+}
+
 void OverlaySystem::draw_scene_overlays(VkCommandBuffer cmd) {
   if (!authorshipOverlaysActive()) {
     return;
@@ -253,6 +275,25 @@ void OverlaySystem::draw_overlay_aa(VkCommandBuffer cmd) {
     return;
   }
   m_anti_aliasing.apply(cmd, m_native_offscreen, m_state);
+}
+
+void OverlaySystem::draw_debug_draw(VkCommandBuffer cmd) {
+  if (!hasActiveDebugDraw()) {
+    return;
+  }
+  m_debug_draw_pass.begin(cmd, rhi::SubpassContents::Secondary);
+  SecondaryCommandBufferPool& pool =
+      m_resources.vk_context->secondaryCommandBuffers();
+  const VkCommandBuffer secondary = pool.begin(
+      SecondaryStream::viewport, SecondaryPass::debug_draw, m_state.frame_index,
+      m_debug_draw_pass.renderPass(), m_native_offscreen->getFramebuffer());
+  m_debug_draw_pass.bindViewportScissor(secondary, m_state.viewport_width,
+                                        m_state.viewport_height);
+  m_debug_draw.draw(secondary, m_state);
+  pool.end(SecondaryStream::viewport, SecondaryPass::debug_draw,
+           m_state.frame_index);
+  SecondaryCommandBufferPool::execute(cmd, secondary);
+  m_debug_draw_pass.end(cmd);
 }
 
 void OverlaySystem::draw_screen_overlays(VkCommandBuffer cmd) {
