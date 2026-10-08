@@ -347,6 +347,48 @@ void move_and_slide_sphere_mild_slope() {
   world->destroy();
 }
 
+void grazing_ray_over_trimesh_floor_misses_without_trap() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  PhysicsTriangle floor{};
+  floor.v1 = FixedVec3(Fixed::from_int(1), Fixed::zero(), Fixed::zero());
+  floor.v2 = FixedVec3(Fixed::zero(), Fixed::from_int(1), Fixed::zero());
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachTriangleMeshCollider(body, &floor, 1);
+
+  // Möller–Trumbore det == -1 raw: 1/det used to overflow _div128 (hardware #DE).
+  PhysicsQueryHit hit{};
+  const bool ok = world->raycast(
+      FixedVec3(Fixed::zero(), Fixed::zero(), Fixed::from_int(1)),
+      FixedVec3(Fixed::from_int(1), Fixed::zero(), Fixed::from_raw(-1)),
+      Fixed::from_int(20), Blunder::kDefaultColliderMask, false, hit);
+  assert(!ok);
+  world->destroy();
+}
+
+void move_and_slide_sphere_walks_across_thin_trimesh_plate() {
+  PhysicsWorld* world = PhysicsWorld::create();
+  const PhysicsTriangle floor = thinFloorPlate();
+  const RigidBodyHandle body =
+      world->createRigidBody(MotionType::Static, {}, Fixed::zero());
+  world->attachTriangleMeshCollider(body, &floor, 1);
+
+  Blunder::PhysicsCharacterMove move{};
+  move.shape = PhysicsSweepShape::Sphere;
+  move.radius = Fixed::from_int(7) / Fixed::from_int(10);
+  move.pose.position = FixedVec3(Fixed::zero(), Fixed::zero(), move.radius);
+  move.displacement =
+      FixedVec3(Fixed::from_int(1) / Fixed::from_int(10), Fixed::zero(), Fixed::zero());
+  move.half_height = Fixed::zero();
+  move.snap_length = Fixed::from_int(1) / Fixed::from_int(5);
+  move.skin = Fixed::from_int(1) / Fixed::from_int(25);
+  const Blunder::PhysicsCharacterResult result = Blunder::moveAndSlide(*world, move);
+  assert(result.on_floor);
+  assert(result.pose.position.x.raw() > 0);
+  assert(result.pose.position.z.raw() > 0);
+  world->destroy();
+}
+
 }  // namespace
 
 int main() {
@@ -365,5 +407,7 @@ int main() {
   sphere_cast_hits_thin_trimesh_plate();
   move_and_slide_sphere_trimesh_floor_rest();
   move_and_slide_sphere_mild_slope();
+  grazing_ray_over_trimesh_floor_misses_without_trap();
+  move_and_slide_sphere_walks_across_thin_trimesh_plate();
   return 0;
 }
