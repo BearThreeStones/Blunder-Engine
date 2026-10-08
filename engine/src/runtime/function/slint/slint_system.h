@@ -779,9 +779,6 @@ class SlintSystem final : public IEditorUiPresentation {
   bool m_pending_viewport_invalidate{false};
   uint32_t m_viewport_upload_width{0};
   uint32_t m_viewport_upload_height{0};
-  /// CPU readback path: reuse one Slint pixel buffer instead of reallocating per frame.
-  std::optional<slint::SharedPixelBuffer<slint::Rgba8Pixel>> m_viewport_cpu_pixel_buffer;
-  bool m_cpu_viewport_slint_image_bound{false};
   /// Zero-copy: avoid re-binding Slint Image when only VkImage contents changed.
   bool m_borrowed_viewport_image_bound{false};
   uint64_t m_borrowed_viewport_vk_image{0};

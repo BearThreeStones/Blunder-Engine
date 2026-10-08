@@ -2180,8 +2180,6 @@ void SlintSystem::applyPendingViewportInvalidate() {
   m_viewport_image_stale = true;
   m_borrowed_viewport_image_bound = false;
   m_borrowed_viewport_vk_image = 0;
-  m_viewport_cpu_pixel_buffer.reset();
-  m_cpu_viewport_slint_image_bound = false;
   clearBorrowedViewportImageCache();
   // Match Blender ThemeSpaceView3D / kViewportBackgroundRgb (0.22).
   static const uint8_t k_clear_pixel[4] = {56u, 56u, 56u, 255u};
@@ -2595,22 +2593,15 @@ void SlintSystem::setViewportImageInternal(const uint8_t* pixels_rgba,
     ScopedDispatchGuard guard(m_slint_dispatch_depth);
     const bool size_changed =
         width != m_viewport_upload_width || height != m_viewport_upload_height;
-    const size_t pixel_bytes =
-        static_cast<size_t>(width) * static_cast<size_t>(height) * 4u;
-    if (!m_viewport_cpu_pixel_buffer || size_changed) {
-      m_viewport_cpu_pixel_buffer =
-          slint::SharedPixelBuffer<slint::Rgba8Pixel>(width, height);
-      m_cpu_viewport_slint_image_bound = false;
-    }
-    std::memcpy(m_viewport_cpu_pixel_buffer->begin(), pixels_rgba, pixel_bytes);
-    if (!m_cpu_viewport_slint_image_bound) {
-      const slint::Image image(*m_viewport_cpu_pixel_buffer);
-      if (m_window_component) {
-        m_window_component->operator->()->set_viewport_image(image);
-      } else if (m_player_hud_component) {
-        m_player_hud_component->operator->()->set_viewport_image(image);
-      }
-      m_cpu_viewport_slint_image_bound = true;
+    // A bound slint::Image shares the pixel buffer's copy-on-write SharedVector:
+    // writing into a retained buffer detaches it and the window keeps showing the
+    // first frame. Hand Slint a fresh buffer every upload instead.
+    const slint::Image image(slint::SharedPixelBuffer<slint::Rgba8Pixel>(
+        width, height, reinterpret_cast<const slint::Rgba8Pixel*>(pixels_rgba)));
+    if (m_window_component) {
+      m_window_component->operator->()->set_viewport_image(image);
+    } else if (m_player_hud_component) {
+      m_player_hud_component->operator->()->set_viewport_image(image);
     }
     if (m_window_component) {
       m_window_component->operator->()->set_viewport_image_ready(image_ready);

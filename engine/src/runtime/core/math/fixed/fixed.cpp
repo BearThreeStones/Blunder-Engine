@@ -43,6 +43,11 @@ int64_t div_shift_left_32(int64_t lhs, int64_t rhs) {
   const bool negate = (lhs < 0) != (rhs < 0);
   const uint64_t lhs_abs = abs_u64(lhs);
   const uint64_t rhs_abs = abs_u64(rhs);
+  // _div128 raises #DE (STATUS_INTEGER_OVERFLOW) when the quotient does not fit;
+  // across P/Invoke that surfaces as a managed OverflowException.
+  if (rhs_abs <= (lhs_abs >> 31)) {
+    return negate ? INT64_MIN : INT64_MAX;
+  }
 
   int64_t remainder = 0;
   const uint64_t div_hi = lhs_abs >> 32;
@@ -67,7 +72,14 @@ int64_t mul_shift_right_32(int64_t lhs, int64_t rhs) {
 
 int64_t div_shift_left_32(int64_t lhs, int64_t rhs) {
   assert(rhs != 0);
-  return static_cast<int64_t>((static_cast<Int128>(lhs) << Fixed::kFracBits) / static_cast<Int128>(rhs));
+  const Int128 quotient = (static_cast<Int128>(lhs) << Fixed::kFracBits) / static_cast<Int128>(rhs);
+  if (quotient > INT64_MAX) {
+    return INT64_MAX;
+  }
+  if (quotient < INT64_MIN) {
+    return INT64_MIN;
+  }
+  return static_cast<int64_t>(quotient);
 }
 
 bool u128_square_le(uint64_t value, uint64_t high, uint64_t low) {

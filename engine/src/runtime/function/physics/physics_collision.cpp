@@ -6,6 +6,9 @@ namespace Blunder {
 namespace {
 
 constexpr int kMaxBoxAxes = 15;
+// ~1e-6 in 32.32. Rays closer to parallel than this are treated as misses so
+// reciprocals stay far inside the representable range (|1/x| < 2^31).
+constexpr int64_t kRayParallelEpsilonRaw = int64_t{1} << 12;
 
 FixedVec3 cross(FixedVec3 a, FixedVec3 b) {
   return FixedVec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -485,7 +488,7 @@ bool rayTriangle(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, const Phys
   const FixedVec3 e2 = tri.v2 - tri.v0;
   const FixedVec3 pvec = cross(dir, e2);
   const Fixed det = dot(e1, pvec);
-  if (det.raw() == 0) {
+  if (absFixed(det).raw() < kRayParallelEpsilonRaw) {
     return false;
   }
   const Fixed inv_det = Fixed::from_int(1) / det;
@@ -637,7 +640,7 @@ bool rayBox(FixedVec3 origin, FixedVec3 dir, Fixed max_distance, const ColliderW
   const Fixed dirs[3] = {local_dir.x, local_dir.y, local_dir.z};
   const Fixed extents[3] = {he.x, he.y, he.z};
   for (int i = 0; i < 3; ++i) {
-    if (dirs[i].raw() == 0) {
+    if (absFixed(dirs[i]).raw() < kRayParallelEpsilonRaw) {
       if (absFixed(comps[i]).raw() > extents[i].raw()) {
         return false;
       }

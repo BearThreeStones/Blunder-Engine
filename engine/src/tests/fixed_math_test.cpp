@@ -82,6 +82,16 @@ void scalar_divide_negative_twelve_by_negative_four_equals_three() {
   assert(c.raw() == (3LL << Fixed::kFracBits));
 }
 
+void scalar_divide_overflow_saturates() {
+  const Fixed one = Fixed::from_int(1);
+  assert((one / Fixed::from_raw(1)).raw() == INT64_MAX);
+  assert((one / Fixed::from_raw(-1)).raw() == INT64_MIN);
+  assert((-one / Fixed::from_raw(1)).raw() == INT64_MIN);
+  assert((Fixed::from_int(1 << 30) / Fixed::from_raw(Fixed::kOne >> 2)).raw() == INT64_MAX);
+  assert((Fixed::from_int(1 << 29) / Fixed::from_int(1)).raw() ==
+         (static_cast<int64_t>(1) << (29 + Fixed::kFracBits)));
+}
+
 void sqrt_four_has_bit_pattern_of_two() {
   const Fixed two = sqrt(Fixed::from_int(4));
   assert(two.raw() == (2LL << Fixed::kFracBits));
@@ -122,6 +132,7 @@ int main() {
   scalar_divide_negative_twelve_by_four_equals_negative_three();
   scalar_divide_twelve_by_negative_four_equals_negative_three();
   scalar_divide_negative_twelve_by_negative_four_equals_three();
+  scalar_divide_overflow_saturates();
   sqrt_four_has_bit_pattern_of_two();
   inv_sqrt_four_has_bit_pattern_of_half();
   vec3_normalize_unit_x();
