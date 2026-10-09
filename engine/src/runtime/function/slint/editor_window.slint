@@ -677,7 +677,8 @@ export component MainEditorWindow inherits Window {
                     background: EditorTheme.window;
                     border-color: EditorTheme.hairline;
                     border-width: 1px;
-                    border-radius: EditorTheme.radius-surface;
+                    // Viewport chrome is square; other dock tiles keep radius-surface.
+                    border-radius: tile.active-panel-kind == 1 ? 0px : EditorTheme.radius-surface;
                     clip: true;
 
                     if tile.active-panel-kind == 1: Rectangle {
