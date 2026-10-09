@@ -21,13 +21,17 @@ struct CameraGizmoUniform {
     float command_count;
 };
 
+/// 80-byte std430 row. `float3` pad would align to 16 and stride 96, which
+/// misreads CPU `GizmoLineCommand` (80) so line `p2` (origin) becomes an
+/// endpoint — Collision Debug starburst. Keep in sync with debug_draw.slang.
 struct GizmoLineCommand {
     float4 p0;
     float4 p1;
     float4 p2;
     float4 color;
     float style;
-    float3 _pad;
+    float width_px;
+    float2 _pad;
 };
 
 [[vk::binding(0, 0)]]

@@ -10,6 +10,8 @@
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
+#include <cstddef>
+
 #include "EASTL/vector.h"
 
 #include "runtime/function/render/gpu_driven/gpu_driven_cull.h"
@@ -17,7 +19,9 @@
 namespace Blunder {
 
 /// Packed overlay wire primitive. Must match `GizmoLineCommand` in
-/// `engine/shaders/camera_gizmo.slang`.
+/// `engine/shaders/camera_gizmo.slang` and `debug_draw.slang` (80-byte std430:
+/// four float4 + four floats). Do not use a shader `float3` pad — std430
+/// aligns it to 16 and the SSBO stride becomes 96.
 struct GizmoLineCommand {
   glm::vec4 p0{0.0f};
   glm::vec4 p1{0.0f};
@@ -31,6 +35,10 @@ struct GizmoLineCommand {
 
 static_assert(sizeof(GizmoLineCommand) == 80u,
               "GizmoLineCommand must match camera_gizmo.slang structured layout");
+static_assert(offsetof(GizmoLineCommand, style) == 64u,
+              "GizmoLineCommand.style must sit immediately after color");
+static_assert(offsetof(GizmoLineCommand, pad0) == 68u,
+              "GizmoLineCommand tail must be four tightly packed floats");
 
 enum class GizmoLineDrawStyle : uint32_t {
   line = 0,
