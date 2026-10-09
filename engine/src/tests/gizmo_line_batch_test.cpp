@@ -5,7 +5,9 @@
 #include "runtime/function/render/gpu_driven/gpu_driven_cull.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
+#include <cstring>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -32,6 +34,34 @@ int main() {
     stream.push(GizmoLineDrawStyle::line, glm::vec3(x, 0.0f, 0.0f),
                 glm::vec3(x + 1.0f, 0.0f, 0.0f), glm::vec3(0.0f), red);
   }
+  expect_true("SSBO row is 80 bytes, not std430 float3-padded 96",
+              sizeof(GizmoLineCommand) == 80u);
+  expect_true("style immediately follows color",
+              offsetof(GizmoLineCommand, style) == 64u);
+  expect_true("per-command width occupies the first pad float",
+              offsetof(GizmoLineCommand, pad0) == 68u);
+
+  GizmoLineCommand packed[2]{};
+  packed[0].p0 = glm::vec4(1.0f, 2.0f, 3.0f, 1.0f);
+  packed[0].p1 = glm::vec4(4.0f, 5.0f, 6.0f, 1.0f);
+  packed[0].p2 = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  packed[0].color = red;
+  packed[1].p0 = glm::vec4(7.0f, 8.0f, 9.0f, 1.0f);
+  packed[1].p1 = glm::vec4(10.0f, 11.0f, 12.0f, 1.0f);
+  packed[1].p2 = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  packed[1].color = red;
+  GizmoLineCommand second_at_80{};
+  std::memcpy(&second_at_80, reinterpret_cast<const char*>(packed) + 80,
+              sizeof(GizmoLineCommand));
+  expect_true("80-byte stride keeps second p0",
+              second_at_80.p0.x == 7.0f && second_at_80.p0.y == 8.0f);
+  GizmoLineCommand second_at_96{};
+  std::memcpy(&second_at_96, reinterpret_cast<const char*>(packed) + 96,
+              sizeof(GizmoLineCommand));
+  expect_true("96-byte stride would steal line p2 origin as an endpoint",
+              second_at_96.p1.x == 0.0f && second_at_96.p1.y == 0.0f &&
+                  second_at_96.p1.z == 0.0f);
+
   expect_true("3000 segments stay in the command stream", stream.size() == 3000u);
   expect_true("batched path is one draw, not per-segment",
               gizmoLineBatchedDrawCalls(stream.size()) == 1u);
